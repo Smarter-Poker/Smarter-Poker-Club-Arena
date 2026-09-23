@@ -141,8 +141,15 @@ describe('Tournament result card delivery', () => {
     expect(card).toBeTruthy();
     // The place is the largest thing on the card and the whole point of it.
     expect(card.textContent).toContain(label);
-    // Field size reads as "#1(3)" — the place, of how many.
-    expect(card.textContent).toContain(`#${place}(3)`);
+    /* SAME TWO FACTS, NO LONGER CONCATENATED (2026-09-15, #ClubArenaConsole).
+       The card used to print the field size as "#1(3)" - the place, of how
+       many - in one string. On the console the three facts are separated: the
+       event is the engraved title, the place is the word in the painted pill,
+       and the field size joins the date in the subtitle. The pin moved with
+       the render; it still requires BOTH, so a card that forgets either one
+       fails here exactly as it did before. */
+    expect(card.textContent).toContain(`#${place}`);
+    expect(card.textContent).toContain('3 Entrants');
   });
 
   it.each([

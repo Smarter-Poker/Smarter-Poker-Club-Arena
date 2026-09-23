@@ -1,8 +1,18 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * ⚖️ TOS ACCEPTANCE MODAL — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOS ACCEPTANCE MODAL - on the spade console (#ClubArenaConsole)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   spade master (components/console/SpadeConsole.css); the tosc-* rules at
+   the end of this file lay the terms in a scroll well on the black glass
+   between the rails, and the agreement row, the server's reason and ACCEPT &
+   CONTINUE as a lit word under an engraved rule. Nothing is drawn. No :hover
+   (tests/no-hover-effects.law.test.ts).
+
+   THE tos-* RULES BELOW ARE NOT DEAD. AgeGate.tsx imports this sheet and
+   prints its own gate with .tos-modal / .tos-header / .tos-content /
+   .tos-footer / .tos-accept-btn / .tos-error. They stay until that gate is
+   rebuilt on the console; TOSAcceptanceModal itself no longer uses them.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .tos-modal-overlay {
   position: fixed;
@@ -13,6 +23,8 @@
   justify-content: center;
   z-index: 99999;
   padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .tos-modal {
@@ -91,53 +103,12 @@
   margin-bottom: 0.5rem;
 }
 
-.tos-updated {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
-  margin-bottom: 1rem !important;
-}
-
-.tos-scroll-hint {
-  text-align: center;
-  color: #60a5fa;
-  font-size: 0.85rem;
-  padding: 1rem 0;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.5;
-  }
-}
-
 .tos-footer {
   padding: 1.5rem 2rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.tos-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.tos-checkbox-label input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
-  accent-color: #3b82f6;
-  cursor: pointer;
 }
 
 .tos-accept-btn {
@@ -167,4 +138,200 @@
   color: #fca5a5;
   font-size: 0.875rem;
   line-height: 1.4;
+}
+
+/* ─── THE CONSOLE (#ClubArenaConsole) ────────────────────────────────────── */
+
+.tosc {
+  --tosc-rule: 1px solid #000;
+  --tosc-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  width: min(100%, 560px);
+  min-width: 0;
+  margin: auto 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+.tosc__console {
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+}
+
+.tosc .sc__title,
+.tosc .sc__eyebrow,
+.tosc .sc__subtitle {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* The terms: a scroll well on the glass. The player has to reach the bottom
+   of it (handleScroll) before the agreement can be ticked. */
+.tosc__terms {
+  max-height: min(48vh, 420px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2cqw;
+  border-bottom: var(--tosc-rule);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  color: #d7dee7;
+  font:
+    500 3.4cqw/1.6 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.tosc__terms h2 {
+  margin: 0 0 1.6cqw;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tosc__terms h3 {
+  margin: 4cqw 0 1.4cqw;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.2cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 60%);
+}
+
+/* Restated on the element: inside a dialog metallic-popups.css hands every
+   <p> the popup chassis' muted ink at 0 specificity, which beats inheritance. */
+.tosc__terms p {
+  margin: 0 0 2.4cqw;
+  color: #d7dee7;
+}
+
+.tosc__terms ul {
+  margin: 1.4cqw 0 2.4cqw 4cqw;
+  padding: 0;
+}
+
+.tosc__terms li {
+  margin-bottom: 1.2cqw;
+}
+
+.tosc__updated {
+  font-size: 2.9cqw;
+}
+
+.tosc__scroll-hint {
+  min-height: 1em;
+  padding: 2cqw 0 0;
+  text-align: center;
+  font-size: 3cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  animation: tosc-pulse 2s ease-in-out infinite;
+}
+
+@keyframes tosc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Reduced motion collapses motion, never meaning: the hint stays. */
+@media (prefers-reduced-motion: reduce) {
+  .tosc__scroll-hint {
+    animation: none;
+  }
+}
+
+/* ── The agreement, the reason, the lit word ────────────────────────────── */
+
+.tosc__agree {
+  display: grid;
+  gap: 2.4cqw;
+  justify-items: center;
+}
+
+.tosc__agree-label {
+  display: flex;
+  gap: 2.4cqw;
+  align-items: center;
+  justify-self: stretch;
+  font-size: 3.2cqw;
+  cursor: pointer;
+}
+
+/* The native control keeps the semantics and the label binding; the kit's
+   engraved well (`sc-check__box`) is what it looks like, so `appearance: none`
+   is what lets the groove show instead of the platform's own tick box. */
+.tosc__agree-label input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+.tosc__error {
+  margin: 0;
+  justify-self: stretch;
+  font:
+    600 3.1cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.tosc-word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.6cqw 4cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tosc-word:active {
+  filter: brightness(1.25);
+}
+
+.tosc-word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tosc-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
+}
+
+/* metallic-popups.css bevels every button inside a dialog with !important
+   at 0,0,1. A lit word paints nothing: the longhands are restated at 0,3,0. */
+[role='dialog'] .tosc-word.tosc-word {
+  min-width: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }

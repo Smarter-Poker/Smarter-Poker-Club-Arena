@@ -1,0 +1,87 @@
+.backButton,
+.playButton,
+.claimButton,
+.claimAllButton,
+.buyFreezeBtn,
+.confirmButton,
+.missionActionButton,
+.rerollButton,
+.cancelButton,
+.retryButton,
+.alertButton,
+.alertSecondaryButton,
+.celebrateButton {
+  --control-frame-color: rgba(184, 196, 201, 0.62);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.backButton::after,
+.playButton::after,
+.claimButton::after,
+.claimAllButton::after,
+.buyFreezeBtn::after,
+.confirmButton::after,
+.missionActionButton::after,
+.rerollButton::after,
+.cancelButton::after,
+.retryButton::after,
+.alertButton::after,
+.alertSecondaryButton::after,
+.celebrateButton::after {
+  --control-bevel-size: 7px;
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  background:
+    linear-gradient(
+        to bottom right,
+        transparent 40%,
+        var(--control-frame-color) 44%,
+        var(--control-frame-color) 56%,
+        transparent 60%
+      )
+      0 0 / var(--control-bevel-size) var(--control-bevel-size) no-repeat,
+    linear-gradient(
+        to bottom right,
+        transparent 40%,
+        var(--control-frame-color) 44%,
+        var(--control-frame-color) 56%,
+        transparent 60%
+      )
+      100% 100% / var(--control-bevel-size) var(--control-bevel-size) no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color))
+      var(--control-bevel-size) 0 / calc(100% - var(--control-bevel-size)) 1px no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color)) 100% 0 / 1px
+      calc(100% - var(--control-bevel-size)) no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color)) 0 100% /
+      calc(100% - var(--control-bevel-size)) 1px no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color)) 0
+      var(--control-bevel-size) / 1px calc(100% - var(--control-bevel-size)) no-repeat;
+  content: '';
+  pointer-events: none;
+}
+
+.backButton,
+.playButton,
+.claimButton,
+.claimAllButton,
+.buyFreezeBtn,
+.confirmButton,
+.missionActionButton,
+.alertButton,
+.celebrateButton {
+  --control-frame-color: color-mix(in srgb, var(--mission-blue) 76%, var(--mission-chrome));
+}
+
+.heroActions .playButton {
+  --control-frame-color: color-mix(in srgb, var(--mission-gold) 78%, var(--mission-chrome));
+}
+
+.challengeCard
+  :is(.missionActionButton, .claimButton, .rerollButton, .cancelButton, .confirmButton) {
+  --control-frame-color: color-mix(in srgb, var(--card-tier-color) 62%, var(--mission-chrome));
+}

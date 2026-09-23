@@ -1,0 +1,124 @@
+.alertConsole {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 22px;
+  border: 1px solid #3d4851;
+  background: linear-gradient(105deg, rgba(85, 232, 255, 0.055), transparent 38%), #080c0f;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.055),
+    0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.alertIcon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(85, 232, 255, 0.55);
+  color: var(--mission-blue);
+  font-size: 1.2rem;
+  box-shadow: inset 0 0 18px rgba(85, 232, 255, 0.08);
+  transform: rotate(45deg);
+}
+
+.alertControlIcon {
+  --control-size: 36px;
+
+  transform: rotate(-45deg);
+}
+
+.alertCopy {
+  min-width: 0;
+}
+
+.alertCopy h2 {
+  margin: 6px 0 4px;
+  color: var(--mission-white);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.alertCopy p,
+.alertCopy small {
+  display: block;
+  max-width: 680px;
+  margin: 0;
+  color: #98a5ae;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.alertCopy small {
+  margin-top: 5px;
+  color: #bdc8cf;
+}
+
+.alertCopy .alertError {
+  color: #ff5b6e;
+}
+
+.alertControls {
+  display: grid;
+  min-width: 220px;
+  gap: 7px;
+}
+
+.alertStatus,
+.alertStatusOn {
+  color: #8997a1;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.alertStatusOn {
+  color: var(--mission-blue);
+}
+
+.alertButton {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(85, 232, 255, 0.68);
+  background: linear-gradient(180deg, #142027, #070b0e);
+  color: #f3f8fa;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(85, 232, 255, 0.11);
+}
+
+.alertButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.alertSecondaryButton {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(174, 190, 201, 0.32);
+  background: transparent;
+  color: #aebac2;
+  font-family: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.alertSecondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}

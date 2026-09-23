@@ -3,15 +3,25 @@
  *  DIAMOND GAMES SERVICE - Plinko and Crash
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan 2026-09-08: two alternates to the Diamond Wheel, a Plinko board and a
- * Crash (Aviator-style) curve, 50x or higher, a crash pays nothing, the 20
- * percent edge kept, and neither ever pays out more than it takes in.
+ * Dan 2026-09-08 asked for two alternates to the Diamond Wheel: a Plinko board
+ * and a Crash (Aviator-style) curve, 50x or higher, the 20 percent edge kept,
+ * and neither ever paying out more than it takes in.
+ *
+ * A CRASH HAS NOT PAID NOTHING SINCE 2026-09-19 (migration 20260919034436, and
+ * the reason the sentence above used to end differently). Every round seals a
+ * guaranteed minimum - a tenth of the stake on an ordinary wheel award, half on
+ * a Super one, fn_diamond_bonus_minimum - and funds it out of its own odds, so
+ * a lost round still pays that minimum and the curve crashes sooner. The 50x is
+ * the old ask, not the limit a round gets: since the wheel-award release the cap
+ * comes from the award (fn_diamond_game_cap_cents scales it by base over total),
+ * 20x to 100x in practice, and `cap_cents` on each quoted bet is what the server
+ * will actually promise.
  *
  * NOTHING IS DECIDED HERE. fn_diamond_game_state says what a bet can win right
  * now (the cap the pool can promise on it), fn_plinko_drop and fn_crash_start /
- * fn_crash_settle are the money doors, and the browser draws what they say:
- * the ball follows the path the server rolled, the curve is read off the
- * server's clock. The design: supabase/migrations/20260908010241.
+ * fn_crash_settle / fn_crash_cashout are the money doors, and the browser draws
+ * what they say: the ball follows the path the server rolled, the curve is read
+ * off the server's clock. The design: supabase/migrations/20260908010241.
  */
 
 import { supabase } from '../lib/supabase';

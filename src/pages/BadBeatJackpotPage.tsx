@@ -29,6 +29,7 @@ import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
 import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
 import { ArenaJackpotDisplay } from '../components/club-buttons';
 import { playerDisplayName } from '../utils/playerDisplayName';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 
 interface JackpotInfo {
   id: string;
@@ -537,31 +538,56 @@ export default function BadBeatJackpotPage() {
   if (loadFailed || !jackpot) {
     return (
       <div className="bbj-page" data-initial-layout="settled">
-        <div className="bbj-page__empty">
-          <h2 className="bbj-page__empty-title">
-            {loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
-          </h2>
-          <p className="bbj-page__empty-body">
-            {loadFailed
-              ? 'The Jackpot Could Not Be Read Just Now. Nothing Is Lost - Try Again.'
-              : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
-          </p>
-          {loadFailed && (
-            <button
-              type="button"
-              className="bbj-page__retry"
-              onClick={() => {
-                setLoading(true);
-                void loadJackpotData();
-              }}
-            >
-              Try Again
-            </button>
-          )}
+        <div className="bbj-page__console-wrap">
+          <SpadeConsole
+            className="bbj-page__console"
+            eyebrow="Bad Beat Jackpot"
+            title={loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
+            pill={loadFailed ? 'Unread' : 'No Pool'}
+            pillInk={loadFailed ? 'red' : 'muted'}
+            foot="foot"
+          >
+            <p className="sc-copy sc-copy--center bbj-page__empty-body">
+              {loadFailed
+                ? 'The Jackpot Could Not Be Read Just Now. Nothing Is Lost - Try Again.'
+                : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
+            </p>
+            {loadFailed && (
+              <div className="bbj-page__actions">
+                <button
+                  type="button"
+                  className="bbj-page__retry sc-ink--white"
+                  onClick={() => {
+                    setLoading(true);
+                    void loadJackpotData();
+                  }}
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+          </SpadeConsole>
         </div>
       </div>
     );
   }
+
+  /* THE MINI'S FIGURE, one row on the glass. Reading / Unavailable / Off /
+     Paused / a flat amount or a range, exactly as the card said it. */
+  const miniValue = (() => {
+    if (!pageMini) return miniFirstRead === null ? 'Reading' : 'Unavailable';
+    if (!pageMini.enabled) return 'Off';
+    const payable = pageMini.tiers.filter((t) => t.enabled && t.payable).map((t) => t.amount);
+    if (payable.length === 0) return 'Paused';
+    const lo = Math.trunc(Math.min(...payable)).toLocaleString();
+    const hi = Math.trunc(Math.max(...payable)).toLocaleString();
+    return lo === hi ? `${lo} Chips` : `${lo} - ${hi} Chips`;
+  })();
+  const mainBalance = jackpot?.main_balance || 0;
+  const pivotPct =
+    allocationPolicy !== null
+      ? Math.min(100, (mainBalance / allocationPolicy.pivotThreshold) * 100)
+      : 0;
 
   return (
     <div className="bbj-page" data-initial-layout={miniFirstRead !== null ? 'settled' : 'pending'}>
@@ -578,301 +604,242 @@ export default function BadBeatJackpotPage() {
         />
       </div>
 
-      {/* THE PIVOT, READ FROM THE ALLOCATOR (2026-09-11).
+      <div className="bbj-page__console-wrap">
+        {/* THE POOLS (#ClubArenaConsole): what used to be two info cards, the
+            pivot banner, three fact cards and the promo box is one console -
+            every figure a row on the glass, label in lit blue, value in
+            silver, an engraved rule between. */}
+        <SpadeConsole
+          className="bbj-page__console"
+          eyebrow="Where It Sits"
+          title="The Pools"
+          pill={justUpdated ? 'Updating' : 'Live'}
+          pillInk={justUpdated ? 'gold' : 'green'}
+          foot="foot"
+        >
+          {/* THE PIVOT, READ FROM THE ALLOCATOR (2026-09-11).
 
-          This banner typed `>= 80000` as its trigger and divided by `100000`
-          for its percentage and its bar - the same threshold written three
-          times, none of them the authority. The authority is `ca_bbj_policy`,
-          which `fn_bbj_allocate` reads on every raked hand and which is a
-          TABLE: one UPDATE moves the real pivot with no migration and no
-          failing test, after which this banner would have gone on counting
-          toward a number the bank had stopped using.
+              This banner typed `>= 80000` as its trigger and divided by `100000`
+              for its percentage and its bar - the same threshold written three
+              times, none of them the authority. The authority is `ca_bbj_policy`,
+              which `fn_bbj_allocate` reads on every raked hand and which is a
+              TABLE: one UPDATE moves the real pivot with no migration and no
+              failing test, after which this banner would have gone on counting
+              toward a number the bank had stopped using.
 
-          RAKE-AUDIT 2026-07-24 had already caught these literals out of step
-          once - the alert fired at 50k while the bar measured against 100k -
-          and fixed it by typing a third literal. `allocationPolicy` is the
-          fix that ends the class: one read, one number.
+              RAKE-AUDIT 2026-07-24 had already caught these literals out of step
+              once - the alert fired at 50k while the bar measured against 100k -
+              and fixed it by typing a third literal. `allocationPolicy` is the
+              fix that ends the class: one read, one number.
 
-          `allocationPolicy` is null when the rule could not be READ, and a
-          banner counting toward a threshold it invented is worse than no
-          banner, so it renders nothing rather than guessing (10.86). */}
-      {allocationPolicy !== null &&
-        (jackpot?.main_balance || 0) >=
-          allocationPolicy.pivotThreshold * BBJ_PIVOT_APPROACH_FRACTION && (
-          <div
-            style={{
-              margin: '0 1rem 0.75rem',
-              padding: '12px 16px',
-              background:
-                'linear-gradient(135deg, rgba(213, 218, 226,0.08) 0%, rgba(186, 193, 203,0.06) 100%)',
-              border: '1px solid rgba(213, 218, 226,0.25)',
-              borderRadius: '12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <div>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  color: '#d5dae2',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}
-              >
-                Approaching {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')}
-              </span>
-              {/* WORDS A PLAYER CAN ACT ON. This read "100K Pivot Alert" over
-                "Pool At 82.3% Of Pivot Threshold" - internal vocabulary on a
-                page every player can open, and shaped like a warning about
-                their own jackpot. What actually happens at the threshold is
-                that each drop starts sending less to this pool and more to
-                promotions, so the jackpot keeps growing and grows more slowly.
-                The percentages are the policy's, never typed beside it. */}
-              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                At {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')} Chips, Each
-                Hand Starts Sending {Math.round(allocationPolicy.pivotMain * 100)}% Of Its Jackpot
-                Drop Here Instead Of {Math.round(allocationPolicy.standardMain * 100)}%, And{' '}
-                {Math.round(allocationPolicy.pivotPromo * 100)}% To Club Promotions. The Jackpot
-                Keeps Growing, More Slowly.
+              `allocationPolicy` is null when the rule could not be READ, and a
+              banner counting toward a threshold it invented is worse than no
+              banner, so it renders nothing rather than guessing (10.86). */}
+          {allocationPolicy !== null &&
+            (jackpot?.main_balance || 0) >=
+              allocationPolicy.pivotThreshold * BBJ_PIVOT_APPROACH_FRACTION && (
+              <div className="bbj-page__pivot">
+                <div className="bbj-page__row">
+                  <span className="bbj-page__row-label sc-ink--blue">
+                    Approaching{' '}
+                    {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')}
+                  </span>
+                  <span className="bbj-page__row-value sc-ink--silver">
+                    {Math.round(pivotPct)}%
+                  </span>
+                </div>
+                <div className="bbj-page__meter" aria-hidden="true">
+                  <div className="bbj-page__meter-fill" style={{ width: `${pivotPct}%` }} />
+                </div>
+                {/* WORDS A PLAYER CAN ACT ON. This read "100K Pivot Alert" over
+                  "Pool At 82.3% Of Pivot Threshold" - internal vocabulary on a
+                  page every player can open, and shaped like a warning about
+                  their own jackpot. What actually happens at the threshold is
+                  that each drop starts sending less to this pool and more to
+                  promotions, so the jackpot keeps growing and grows more slowly.
+                  The percentages are the policy's, never typed beside it. */}
+                <p className="sc-copy bbj-page__row-note sc-ink--muted">
+                  At {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')} Chips,
+                  Each Hand Starts Sending {Math.round(allocationPolicy.pivotMain * 100)}% Of Its
+                  Jackpot Drop Here Instead Of {Math.round(allocationPolicy.standardMain * 100)}%,
+                  And {Math.round(allocationPolicy.pivotPromo * 100)}% To Club Promotions. The
+                  Jackpot Keeps Growing, More Slowly.
+                </p>
               </div>
+            )}
+
+          {/* Triple-Bank Breakdown */}
+          <div className="bbj-page__row bbj-page__row--stacked">
+            <div className="bbj-page__row-line">
+              <span className="bbj-page__row-label sc-ink--blue">Backup Pool</span>
+              <span className="bbj-page__row-value sc-ink--silver">
+                {(jackpot?.backup_balance || 0).toLocaleString()} Chips
+              </span>
             </div>
-            <div
-              style={{
-                width: '80px',
-                height: '6px',
-                background: 'rgba(255,255,255,0.06)',
-                borderRadius: '3px',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  height: '100%',
-                  width: `${Math.min(100, ((jackpot?.main_balance || 0) / allocationPolicy.pivotThreshold) * 100)}%`,
-                  background: 'linear-gradient(90deg, #d5dae2, #8f97a3)',
-                  borderRadius: '3px',
-                  transition: 'width 1s ease',
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-      {/* Triple-Bank Breakdown */}
-      <div className="jackpot-info" style={{ marginBottom: '0.5rem' }}>
-        <div
-          className="info-card"
-          style={{
-            border: '1px solid rgba(0, 122, 255, 0.3)',
-            background: 'rgba(0, 122, 255, 0.08)',
-          }}
-        >
-          <span className="info-label">Backup Pool</span>
-          <span className="info-value" style={{ color: '#007aff' }}>
-            {(jackpot?.backup_balance || 0).toLocaleString()} Chips
-          </span>
-          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-            Funds The Mini Jackpot
-            {pageMini ? ` - ${pageMini.reserveFloor.toLocaleString()} Floor` : ''}
-          </span>
-        </div>
-        <div
-          className="info-card"
-          style={{
-            border: '1px solid rgba(255, 176, 32, 0.35)',
-            background: 'rgba(255, 176, 32, 0.08)',
-          }}
-        >
-          <span className="info-label">Mini Jackpot</span>
-          <span className="info-value" style={{ color: '#ffb020' }}>
-            {(() => {
-              if (!pageMini) return miniFirstRead === null ? 'Reading' : 'Unavailable';
-              if (!pageMini.enabled) return 'Off';
-              const payable = pageMini.tiers
-                .filter((t) => t.enabled && t.payable)
-                .map((t) => t.amount);
-              if (payable.length === 0) return 'Paused';
-              const lo = Math.trunc(Math.min(...payable)).toLocaleString();
-              const hi = Math.trunc(Math.max(...payable)).toLocaleString();
-              return lo === hi ? `${lo} Chips` : `${lo} - ${hi} Chips`;
-            })()}
-          </span>
-          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-            {pageMini && pageMini.enabled
-              ? `Flat By Stakes - ${pageMini.hits30d.toLocaleString()} Paid In 30 Days`
-              : 'Flat By Stakes'}
-          </span>
-        </div>
-        {/* The "Promo Pool" card used to print `bbj_pools.promo_balance` - a
-            staging slot the sweep empties continuously, 14.61 chips against a
-            56,291 purse. It is shown to the people who can act on it, as the
-            PURSE, in the panel below; a number nobody can spend is not a fact
-            worth putting on a card. */}
-      </div>
-
-      {/* Admin-only jackpot health panel (server-gated; renders nothing for
-          non-admins). 2026-08-18 */}
-      <BBJAdminAnalytics poolId={jackpot?.id || null} />
-
-      {/* WHERE THE PROMO SLICE ACTUALLY GOES (phase 5, 2026-09-11).
-          This was a promo-rain control calling a function Dan ruled unbuilt.
-          It is replaced by the truth, for the people who can act on it. */}
-      {promoFacts && (
-        <div
-          style={{
-            margin: '4px 0 16px',
-            padding: '14px 16px',
-            borderRadius: '12px',
-            border: '1px solid rgba(175,82,222,0.3)',
-            background: 'rgba(175,82,222,0.06)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '13px',
-              fontWeight: 700,
-              color: '#af52de',
-              marginBottom: '8px',
-            }}
-          >
-            The Promo Slice
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            Every Raked Hand Sends {promoFacts.observedRatePct.toFixed(1)}% To Promo -{' '}
-            {Math.round(promoFacts.contributedAllTime).toLocaleString()} Chips So Far. It Does Not
-            Sit In This Pool: It Is Swept To{' '}
-            {promoFacts.purseKind === 'union' ? 'The Union' : 'The Club'} Promo Wallet, Which Holds{' '}
-            <strong>{Math.round(promoFacts.purseAvailable).toLocaleString()} Chips</strong> Right
-            Now.
-          </div>
-          <div
-            style={{
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-              marginTop: '8px',
-              lineHeight: 1.6,
-            }}
-          >
-            Promo Is Paid Out Two Ways: An Owner Sends It From The Wallet Page, And Leaderboards Pay
-            It Automatically. The Splash Pot Is Not Built Yet.
-          </div>
-        </div>
-      )}
-
-      {/* Info Cards.
-          2026-08-18: "Qualifying Hand: Quad 2s or better beaten" was wrong for
-          every game we spread — the per-variant truth now lives in the rules
-          panel below. "Hands Dealt" showed total_contributed, which is a CHIP
-          AMOUNT, not a hand count; both facts now come from the ledger. */}
-      <div className="jackpot-info">
-        <div className="info-card">
-          <span className="info-label">Hands Contributed</span>
-          <span className="info-value">{(poolFacts?.hands || 0).toLocaleString()}</span>
-        </div>
-        <div className="info-card">
-          <span className="info-label">Total Collected</span>
-          <span className="info-value">{(poolFacts?.chips || 0).toLocaleString()} Chips</span>
-        </div>
-        {playerContribution > 0 && (
-          <div
-            className="info-card"
-            style={{
-              border: '1px solid rgba(52, 199, 89, 0.3)',
-              background: 'rgba(52, 199, 89, 0.08)',
-            }}
-          >
-            <span className="info-label">Your Contribution (90D)</span>
-            <span className="info-value" style={{ color: '#34c759' }}>
-              {playerContribution.toLocaleString(undefined, { maximumFractionDigits: 2 })} Chips
-            </span>
-            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
-              Across {myHands.toLocaleString()} Hands
+            <span className="bbj-page__row-sub sc-ink--muted">
+              Funds The Mini Jackpot
+              {pageMini ? ` - ${pageMini.reserveFloor.toLocaleString()} Floor` : ''}
             </span>
           </div>
-        )}
-      </div>
+          <div className="bbj-page__row bbj-page__row--stacked">
+            <div className="bbj-page__row-line">
+              <span className="bbj-page__row-label sc-ink--blue">Mini Jackpot</span>
+              <span className="bbj-page__row-value sc-ink--gold">{miniValue}</span>
+            </div>
+            <span className="bbj-page__row-sub sc-ink--muted">
+              {pageMini && pageMini.enabled
+                ? `Flat By Stakes - ${pageMini.hits30d.toLocaleString()} Paid In 30 Days`
+                : 'Flat By Stakes'}
+            </span>
+          </div>
+          {/* The "Promo Pool" card used to print `bbj_pools.promo_balance` - a
+              staging slot the sweep empties continuously, 14.61 chips against a
+              56,291 purse. It is shown to the people who can act on it, as the
+              PURSE, in the rows below; a number nobody can spend is not a fact
+              worth putting on a card. */}
 
-      {/* What qualifies / what it pays — per variant and per stakes tier */}
-      <BBJRulesPanel poolAmount={jackpot?.main_balance || 0} mini={pageMini} />
+          {/* Info rows.
+              2026-08-18: "Qualifying Hand: Quad 2s or better beaten" was wrong for
+              every game we spread - the per-variant truth now lives in the rules
+              panel below. "Hands Dealt" showed total_contributed, which is a CHIP
+              AMOUNT, not a hand count; both facts now come from the ledger. */}
+          <div className="bbj-page__row">
+            <span className="bbj-page__row-label sc-ink--blue">Hands Contributed</span>
+            <span className="bbj-page__row-value sc-ink--silver">
+              {(poolFacts?.hands || 0).toLocaleString()}
+            </span>
+          </div>
+          <div className="bbj-page__row">
+            <span className="bbj-page__row-label sc-ink--blue">Total Collected</span>
+            <span className="bbj-page__row-value sc-ink--silver">
+              {(poolFacts?.chips || 0).toLocaleString()} Chips
+            </span>
+          </div>
+          {playerContribution > 0 && (
+            <div className="bbj-page__row bbj-page__row--stacked">
+              <div className="bbj-page__row-line">
+                <span className="bbj-page__row-label sc-ink--blue">Your Contribution (90D)</span>
+                <span className="bbj-page__row-value sc-ink--green">
+                  {Math.round(playerContribution).toLocaleString()} Chips
+                </span>
+              </div>
+              <span className="bbj-page__row-sub sc-ink--muted">
+                Across {myHands.toLocaleString()} Hands
+              </span>
+            </div>
+          )}
 
-      {/* Payout Structure */}
-      <div className="payout-structure">
-        <h3>Payout Structure</h3>
-        <p
-          style={{
-            margin: '0 0 10px',
-            fontSize: '12px',
-            color: 'rgba(255,255,255,0.6)',
-            lineHeight: 1.5,
-          }}
+          {/* WHERE THE PROMO SLICE ACTUALLY GOES (phase 5, 2026-09-11).
+              This was a promo-rain control calling a function Dan ruled unbuilt.
+              It is replaced by the truth, for the people who can act on it. */}
+          {promoFacts && (
+            <div className="bbj-page__row bbj-page__row--stacked">
+              <div className="bbj-page__row-line">
+                <span className="bbj-page__row-label sc-ink--blue">The Promo Slice</span>
+                <span className="bbj-page__row-value sc-ink--silver">
+                  {Math.round(promoFacts.purseAvailable).toLocaleString()} Chips
+                </span>
+              </div>
+              <p className="sc-copy bbj-page__row-note">
+                Every Raked Hand Sends {promoFacts.observedRatePct.toFixed(1)}% To Promo -{' '}
+                {Math.round(promoFacts.contributedAllTime).toLocaleString()} Chips So Far. It Does
+                Not Sit In This Pool: It Is Swept To{' '}
+                {promoFacts.purseKind === 'union' ? 'The Union' : 'The Club'} Promo Wallet, Which
+                Holds {Math.round(promoFacts.purseAvailable).toLocaleString()} Chips Right Now.
+              </p>
+              <p className="sc-copy bbj-page__row-note sc-ink--muted">
+                Promo Is Paid Out Two Ways: An Owner Sends It From The Wallet Page, And Leaderboards
+                Pay It Automatically. The Splash Pot Is Not Built Yet.
+              </p>
+            </div>
+          )}
+
+          {/* Payout Structure */}
+          <h3 className="bbj-page__section-title sc-label sc-ink--blue">Payout Structure</h3>
+          <p className="sc-copy bbj-page__row-note sc-ink--muted">
+            Applied To The Stakes-Tiered Share Of The Pool Shown Above - Not The Whole Pool.
+          </p>
+          <div className="payout-bars">
+            <div className="payout-bar">
+              <span className="payout-label sc-ink--blue">Loser (Bad Beat)</span>
+              <div className="bbj-page__meter" aria-hidden="true">
+                <div className="bar-fill" style={{ width: '50%' }} />
+              </div>
+              <span className="payout-percent sc-ink--silver">50%</span>
+            </div>
+            <div className="payout-bar">
+              <span className="payout-label sc-ink--blue">Winner</span>
+              <div className="bbj-page__meter" aria-hidden="true">
+                <div className="bar-fill" style={{ width: '25%' }} />
+              </div>
+              <span className="payout-percent sc-ink--silver">25%</span>
+            </div>
+            <div className="payout-bar">
+              <span className="payout-label sc-ink--blue">Table Share</span>
+              <div className="bbj-page__meter" aria-hidden="true">
+                <div className="bar-fill" style={{ width: '25%' }} />
+              </div>
+              <span className="payout-percent sc-ink--silver">25%</span>
+            </div>
+          </div>
+        </SpadeConsole>
+
+        {/* Admin-only jackpot health panel (server-gated; renders nothing for
+            non-admins). 2026-08-18 */}
+        <BBJAdminAnalytics poolId={jackpot?.id || null} />
+
+        {/* What qualifies / what it pays — per variant and per stakes tier */}
+        <BBJRulesPanel poolAmount={jackpot?.main_balance || 0} mini={pageMini} />
+
+        {/* History */}
+        <SpadeConsole
+          className="bbj-page__console jackpot-history"
+          eyebrow="Who Hit It"
+          title="Winners"
+          pill={historyKind === 'mini' ? 'Mini' : 'Main'}
+          pillInk="blue"
+          foot="foot"
         >
-          Applied To The Stakes-Tiered Share Of The Pool Shown Above - Not The Whole Pool.
-        </p>
-        <div className="payout-bars">
-          <div className="payout-bar">
-            <span className="payout-label">Loser (Bad Beat)</span>
-            <div className="bar-fill" style={{ width: '50%' }} />
-            <span className="payout-percent">50%</span>
-          </div>
-          <div className="payout-bar">
-            <span className="payout-label">Winner</span>
-            <div className="bar-fill" style={{ width: '25%' }} />
-            <span className="payout-percent">25%</span>
-          </div>
-          <div className="payout-bar">
-            <span className="payout-label">Table Share</span>
-            <div className="bar-fill" style={{ width: '25%' }} />
-            <span className="payout-percent">25%</span>
-          </div>
-        </div>
-      </div>
-
-      {/* History */}
-      <div className="jackpot-history" style={{ padding: '0 0.5rem' }}>
-        {openHandPayoutId ? (
-          <div style={{ marginTop: '1rem' }}>
+          {openHandPayoutId ? (
             <BBJHandDetail
               payoutId={openHandPayoutId}
               onBack={() => setOpenHandPayoutId(null)}
               currentUserName={user ? playerDisplayName(user) : null}
               currentUserId={user?.id}
             />
-          </div>
-        ) : (
-          <>
-            <div className="bbj-modal__tiers" role="group" aria-label="Which Winners">
-              <button
-                type="button"
-                className={`bbj-modal__tier${historyKind === 'main' ? ' is-active' : ''}`}
-                aria-pressed={historyKind === 'main'}
-                onClick={() => setHistoryKind('main')}
-              >
-                Bad Beat Jackpot
-              </button>
-              <button
-                type="button"
-                className={`bbj-modal__tier${historyKind === 'mini' ? ' is-active' : ''}`}
-                aria-pressed={historyKind === 'mini'}
-                onClick={() => setHistoryKind('mini')}
-              >
-                Mini
-              </button>
-            </div>
-            <BBJRecentHits
-              key={historyKind}
-              poolId={jackpot?.id || null}
-              limit={10}
-              poolAmount={jackpot?.main_balance || 0}
-              currentUserId={user?.id}
-              currentUserName={user ? playerDisplayName(user) : null}
-              onOpenHand={setOpenHandPayoutId}
-              kind={historyKind}
-            />
-          </>
-        )}
+          ) : (
+            <>
+              <div className="bbj-modal__tiers" role="group" aria-label="Which Winners">
+                <button
+                  type="button"
+                  className={`bbj-modal__tier${historyKind === 'main' ? ' is-active' : ''}`}
+                  aria-pressed={historyKind === 'main'}
+                  onClick={() => setHistoryKind('main')}
+                >
+                  Bad Beat Jackpot
+                </button>
+                <button
+                  type="button"
+                  className={`bbj-modal__tier${historyKind === 'mini' ? ' is-active' : ''}`}
+                  aria-pressed={historyKind === 'mini'}
+                  onClick={() => setHistoryKind('mini')}
+                >
+                  Mini
+                </button>
+              </div>
+              <BBJRecentHits
+                key={historyKind}
+                poolId={jackpot?.id || null}
+                limit={10}
+                poolAmount={jackpot?.main_balance || 0}
+                currentUserId={user?.id}
+                currentUserName={user ? playerDisplayName(user) : null}
+                onOpenHand={setOpenHandPayoutId}
+                kind={historyKind}
+              />
+            </>
+          )}
+        </SpadeConsole>
       </div>
 
       {/* Bottom Navigation */}

@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/cw-diamond-gate/fix/the-health-watch-resolves-what-it-filed. Applied to production as migration 20260919223032 (rehearsed rolled-back first, then applied by claude for Dan on 2026-09-20): ca_diamond_incidents gains a resolution note so the health watch can close what it filed when the cause is gone. The transfer-door migration 20260919223115 creates no new object.",
+  "tables": [],
+  "functions": [],
+  "columns": {
+    "ca_diamond_incidents": ["resolution"]
+  }
+}

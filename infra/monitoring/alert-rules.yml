@@ -134,6 +134,135 @@ groups:
   # Restored verbatim from the running file so the repo is a superset and a
   # deploy is safe. The reasoning comments are the original author's.
   # ═══════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════
+  #  THE ENGINE CANNOT BE REPLACED
+  # ═══════════════════════════════════════════════════════════════════
+  #
+  # The gap this closes, stated plainly: on 2026-09-18 engine 8825af51 took a
+  # tournament hand permit that could never resolve, and the restart gate shut
+  # behind it. It stayed shut for 70 of the 71 breaks that engine lived
+  # through - 57 hours - and NOTHING PAGED. /health said ok the whole time,
+  # because every table was dealing; thaw_ok was true and ~158 tables resumed
+  # at each break. The felt was healthy. Only the deploy route was dead, and
+  # the build that fixes the permit was on the far side of it.
+  #
+  # poker_maintenance_breaks_since_restart_certified is emitted by the engine
+  # code merged in #4909 and, until this rule, NOTHING READ IT (CLAUDE.md
+  # 10.83). The reader is this rule; the path is Alertmanager, same as its
+  # neighbours.
+  #
+  # CORRECTED 2026-09-21, and the correction is the point of CLAUDE.md 10.86's
+  # last paragraph. The line above used to read "has been published by the
+  # engine since #4909" - a claim about the environment, written from the repo,
+  # with no expiry and never checked. Production was running 8825af51, built
+  # 2026-09-18 and 125 commits behind main, and that build contains no such
+  # metric: /metrics carried 771 poker_ series and none of them this one. So
+  # this rule and PokerEngineCannotBeReplaced both loaded, both read
+  # health=ok/state=inactive, and both were structurally unable to fire
+  # THROUGHOUT the outage they were written for. A rule is live when the half
+  # that reads the metric and the half that publishes it are the same
+  # generation; check-alert-rules-match.mjs now compares them and refuses.
+  - name: engine-release-route
+    rules:
+      - alert: EngineCannotBeReplaced
+        # THRESHOLD DERIVED FROM THE LIVE SERIES, NOT GUESSED (CLAUDE.md 10.84).
+        # Every run of consecutive uncertified breaks in engine_maintenance_break_log
+        # over the 30 days to 2026-09-21, by run length:
+        #
+        #     1 break   20 times      4 breaks   2 times
+        #     2 breaks   2 times      8 breaks   1 time    <- real outage
+        #     3 breaks   1 time      70 breaks   1 time    <- this outage
+        #
+        # A single uncertified break is ORDINARY - 20 of them in a month, a
+        # long hand outlasting the window, retried an hour later. Runs of two
+        # to four happened five times and each resolved itself. Only 8 and 70
+        # were "the engine cannot be replaced at all".
+        #
+        # >= 6 therefore fires on both real events and on NONE of the 25
+        # benign runs in the same window. It is deliberately not 2 (the
+        # engine's own comment calls two "cannot be replaced", which the data
+        # says is too eager) and not 8 (that is the observed ceiling, and a
+        # budget set to the number you just read has no headroom - 10.86
+        # rule 4). Six consecutive breaks is about six hours of undeployable
+        # production, caught instead of the 57 hours it actually took.
+        expr: |
+          max_over_time(poker_maintenance_breaks_since_restart_certified[15m]) >= 6
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'Engine cannot be replaced: {{ $value }} consecutive breaks certified no restart'
+          description: |
+            {{ $labels.instance }} has ended {{ $value }} consecutive maintenance
+            breaks without ever opening readyForRestart. Poker is unaffected and
+            will look healthy; what is broken is the DEPLOY ROUTE, so this will
+            not surface anywhere else.
+
+            Read /health maintenance.unparkedReasons for the cause by name.
+            f06_preparation_stuck means a permit outlived its bound and is no
+            longer holding the gate - the release should now pass. Anything
+            else, especially cards_in_air, is still blocking on purpose.
+
+            This is NOT repaired by a job, a sweep or a retry (CLAUDE.md 10.12).
+            Find the live path that wedged and fix that.
+
+      # THE DEPLOY-ROUTE WATCHDOG CAN BE BLIND, AND ON 2026-09-21 IT WAS.
+      #
+      # EngineCannotBeReplaced above reads
+      # poker_maintenance_breaks_since_restart_certified, which GameServer.ts has
+      # published since #4909. The engine that needed watching - 8825af51, live
+      # since 2026-09-18 - PREDATES that commit and does not emit the series at
+      # all, so the alarm written for this exact outage could not fire during
+      # this exact outage. Sixty-five hours passed, roughly fifteen releases
+      # failed, and nothing said a word.
+      #
+      # MEASURED, not inferred. https://engine.smarter.poker/metrics on
+      # 2026-09-21 carried 1185 series, among them
+      # poker_maintenance_break_active, poker_maintenance_break_ready_for_restart,
+      # poker_uptime_seconds and poker_engine_info{version="8825af51"} - and NOT
+      # ONE series matching `certif` or `since_restart`.
+      #
+      # A rule whose expression evaluates over a series that does not exist is
+      # not quiet because things are well; it is quiet because it cannot see.
+      # That is CLAUDE.md 10.86 rule 2 exactly - an unreadable answer coerced
+      # into an empty one, which reads as good news. absent() is how Prometheus
+      # says "I could not tell", so this rule is that sentence, out loud.
+      #
+      # There is no threshold to derive here and none has been invented: the
+      # condition is precisely "the engine is reporting, and the one series its
+      # deploy-route watchdog needs is missing". `count(...) > 0` is what keeps
+      # a plain scrape failure - where EVERY series is absent - from firing it.
+      # `for: 30m` clears a restart's own scrape gap, which is seconds. It
+      # resolves itself the moment a newer engine lands, which is the same
+      # moment EngineCannotBeReplaced gets its sight back.
+      - alert: EngineReplacementWatchdogBlind
+        expr: |
+          absent(poker_maintenance_breaks_since_restart_certified)
+          and on() (count(poker_maintenance_break_active) > 0)
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'Engine replacement watchdog is blind: the serving engine does not publish the series EngineCannotBeReplaced reads'
+          description: |
+            The engine is up and scraping fine, but it does not emit
+            poker_maintenance_breaks_since_restart_certified, so
+            EngineCannotBeReplaced cannot evaluate and will stay silent however
+            long the deploy route is dead. The serving build predates the commit
+            that added the series.
+
+            Read poker_engine_info for the version actually serving. The fix is
+            to land a newer engine, which is also the thing this blindness is
+            hiding the failure of - so treat a release failure right now as
+            unreported by default and read the auto-deploy-hetzner runs directly.
+
+            This is not repaired by a job or a retry (CLAUDE.md 10.12). It is a
+            monitoring gap, and it closes when the engine is replaced.
+
   - name: cron-health
     interval: 30s
     rules:
@@ -179,7 +308,7 @@ groups:
           component: cron
         annotations:
           summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
-          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
+          description: "SELECT job_name, result FROM cron_execution_log WHERE status = 'success' AND result ? 'skipped' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering."
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: OpenClawFleetLongSilence
@@ -1278,6 +1407,120 @@ groups:
             generation, canonical claimants and durable settlement markers.
             Tournament completion must remain blocked until this reaches zero.
           runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
+
+      # ── A TOURNAMENT NOBODY IS DEALING (2026-09-21) ────────────────────
+      #
+      # On 2026-09-21 six RUNNING tournaments holding 49 live seats and
+      # 4,908,000 tournament chips had no row in engine_tournament_leases. The
+      # oldest had been that way since 2026-09-14 - SEVEN DAYS - and nothing
+      # anywhere raised anything, because the managers holding their slots were
+      # counted as healthy owners: /health read activeTournaments 472 against
+      # 465 lease rows, tournamentResumesFailing 0 and a full resume budget.
+      # No series existed for "a RUNNING tournament nobody is dealing", so
+      # there was nothing for an alert to be written against. There is now.
+      #
+      # THRESHOLD, MEASURED - NOT GUESSED (CLAUDE.md 10.84).
+      # Measured against production at 2026-09-21 08:12 UTC: 471 RUNNING
+      # tournaments, 465 holding a lease whose newest heartbeat was 2.7s old,
+      # 6 holding none. The legitimate window in which this gauge is non-zero
+      # is bounded by the re-adoption lane itself: it runs every 5s
+      # (TOURNAMENT_DISCOVERY_INTERVAL) with a budget of at most 25
+      # (ENGINE_START_BUDGET_MAX), so offering every one of 471 tournaments
+      # takes ~95s after a restart or a thaw, and a resume that keeps failing
+      # backs off to at most 5 minutes (RESUME_COOLDOWN_CAP_MS). 15m is three
+      # times that worst legitimate window. The six would have fired this on
+      # their first hour, every hour, for a week.
+      #
+      # The break guard is CLAUDE.md section 13 rule 6: the engine is replaced
+      # at :55 inside the announced break, every tournament is unowned while it
+      # boots, and a 15m window necessarily overlaps that. Without the guard
+      # this pages hourly about a stop we scheduled.
+      - alert: TournamentRunningWithNoOwner
+        expr: |
+          poker_tournaments_running_without_owner > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $value }} RUNNING tournament(s) that no manager is dealing'
+          description: |
+            {{ $labels.instance }} read these tournaments from the RUNNING
+            board and is not dealing them: either the slot is empty, or a
+            manager that could not be stopped still holds it. Read
+            /health.quarantinedTournamentManagers for the ids, the age and the
+            error context of each, and poker_tournament_managers_quarantined
+            for how many are the second kind. A quarantined manager is retried
+            by settleQuarantinedTournamentManagers on its own backoff; one that
+            never clears means its stop is still failing, and the stop error is
+            the defect to fix - not this alert.
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
+      # The same condition an hour in. Fifteen minutes can still be a slow
+      # thaw; an hour is a tournament that has stopped dealing for its players.
+      - alert: TournamentRunningWithNoOwnerCritical
+        expr: |
+          poker_tournaments_running_without_owner > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 1h
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $value }} RUNNING tournament(s) undealt for an hour'
+          description: |
+            Players are seated at a tournament that is not dealing and has not
+            been for an hour. This is the condition that ran for seven days
+            undetected on 2026-09-21.
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
+      # A quarantine that outlives a maintenance cycle is a stop that will
+      # never succeed on its own: only a restart has ever cleared one, and the
+      # point of the retry pass is that a restart should not be required. Two
+      # hours is two :55 cutovers.
+      - alert: TournamentManagerQuarantineStuck
+        expr: |
+          poker_tournament_manager_quarantine_oldest_seconds > 7200
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'A tournament manager has been unstoppable for {{ $value | humanizeDuration }}'
+          description: |
+            settleQuarantinedTournamentManagers has been re-offering this
+            manager to the stop path and the stop keeps failing. Read the
+            reason on /health.quarantinedTournamentManagers and fix the stop;
+            the slot is deliberately never released while its table engines may
+            still be live (TournamentManagerOwnership.stopOwnedTournamentManager).
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
+      # Custody reads that did not prove custody, by what actually happened.
+      # Before 2026-09-21 all three outcomes were one bare log string and none
+      # was a number: production logged f06_drained_custody_unproven 1,551
+      # times in ninety minutes and moved no series at all. A sustained
+      # `refused` rate means the database is deliberately turning a handover
+      # down and some manager is not retiring because of it.
+      - alert: F06DrainedCustodyRefused
+        expr: |
+          sum(rate(poker_f06_drained_custody_outcomes_total{outcome="refused"}[15m])) > 0.05
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'Drained-custody handovers are being refused by the database'
+          description: |
+            More than three refusals a minute, sustained for half an hour. The
+            refusal names itself in the engine log now
+            (f06_drained_custody_unproven [refused:F06_...]); that token is the
+            defect. 0.05/s is just above the zero this series reads in normal
+            operation and well under the 0.29/s measured during the 2026-09-21
+            incident.
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
 
   - name: cluster
     interval: 15s

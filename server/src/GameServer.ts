@@ -222,6 +222,11 @@ import {
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
+import {
+  tournamentManagerQuarantineOldestSeconds,
+  tournamentManagersQuarantined,
+  tournamentsRunningWithoutOwner,
+} from './observability/engineInstruments.js';
 import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isFleetWideStall } from './fleetWideZombieVerdict.js';
@@ -230,6 +235,10 @@ import {
   resumesHoldingASlot,
   selectRunningResumes,
 } from './tournamentResumeBudget.js';
+import { QuarantinedTournamentManagers } from './tournament/quarantinedTournamentManagers.js';
+
+/** Error context for a re-offered stop of a manager that could not be stopped. */
+const QUARANTINED_MANAGER_STOP_RETRY = 'GameServer.quarantined_tournament_manager_stop_retry';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 import { assertCashTablePlayEnabled, type CashTablePlayRow } from './services/supabase/tables.js';
 import { DiamondCashPolicyClosedError } from './services/cashTablePlayEligibility.js';
@@ -1520,6 +1529,17 @@ export class GameServer {
    * events that cannot resume no longer takes every slot on every pass.
    */
   private readonly tournamentResumeCooldowns = new RunningResumeCooldowns();
+  /**
+   * Managers that could not be stopped and therefore still hold their slot.
+   * stopOwnedTournamentManager keeps a failed teardown as the owner on purpose
+   * and says so: "Keep it quarantined for the next cleanup pass." Until
+   * 2026-09-21 there was no next cleanup pass, so six RUNNING tournaments sat
+   * behind six corpses for as long as a week while every number on /health
+   * read healthy. See tournament/quarantinedTournamentManagers.ts.
+   */
+  private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
+  /** Bookkeeping that could not be recorded; never a reason to change a stop. */
+  private tournamentQuarantineBookkeepingFailures?: number;
 
   /** Applies the C20 control law to this instance. Returns the new budget. */
   private adjustEngineStartBudget(distressed: boolean): number {
@@ -2064,6 +2084,27 @@ export class GameServer {
         }
         return stopped;
       } finally {
+        /* THE QUARANTINE IS RECORDED WHERE IT HAPPENS (2026-09-21). In the
+           finally, not beside `return stopped`, because the two ways a stop
+           leaves the slot occupied are a false return AND a throw - and on
+           2026-09-21 it was the throw (`f06_drained_custody_unproven` out of
+           transferDrainedF06Custody) that stranded six tournaments. The map
+           is the authority: if this manager is still in it, the slot was not
+           released, whatever route we took to get here. */
+        try {
+          const quarantine = (this.tournamentManagerQuarantine ??=
+            new QuarantinedTournamentManagers());
+          if (this.tournamentEngines.get(tournamentId) === manager) {
+            quarantine.record(tournamentId, errorContext, Date.now(), manager);
+          } else {
+            quarantine.forget(tournamentId);
+          }
+        } catch {
+          // Same rule the diagnostic index above follows: a bookkeeping failure
+          // must never replace the physical stop result a caller is awaiting.
+          this.tournamentQuarantineBookkeepingFailures =
+            (this.tournamentQuarantineBookkeepingFailures ?? 0) + 1;
+        }
         if (
           releaseBarrier &&
           this.tournamentManagerLeaseReleaseOperations.get(tournamentId) === releaseBarrier
@@ -2135,6 +2176,27 @@ export class GameServer {
       )
     )
       return false;
+    // Stage every original's exact bank acknowledgment before mutating any map.
+    // The validated immutable receipt is already durable; a lost reply never
+    // reaches this edge. The original capture remains available for successor CAS.
+    const bankReceipts = packet.mixed
+      ? packet.engines.map(([id, engine]) => {
+          const proof = (
+            packet!.mixed!.local.engines as Array<{
+              table_id: string;
+              bank_custody: { stopped_capture?: unknown };
+            }>
+          ).find((value) => value.table_id === id)?.bank_custody.stopped_capture;
+          return engine.prepareStoppedTimeBankReceipt(
+            packet!.mixed!.transferId,
+            id,
+            tournamentId,
+            packet!.originGeneration,
+            proof
+          );
+        })
+      : [];
+    if (bankReceipts.some((acknowledge) => acknowledge === null)) return false;
     // Publish custody before removing any activation slot. Original local maps
     // remain intact; this is a handoff, never successful business teardown.
     this.drainedF06TournamentCustody.set(tournamentId, packet);
@@ -2142,6 +2204,7 @@ export class GameServer {
       this.durableMixedF06Custody ??= new Map();
       this.durableMixedF06Custody.set(tournamentId, packet.mixed);
     }
+    for (const acknowledge of bankReceipts) acknowledge!();
     for (const [id] of packet.engines) {
       this.tableEngines.delete(id);
       this.tournamentOwnedTables.delete(id);
@@ -3867,6 +3930,12 @@ export class GameServer {
         }
         reportError(result.reason, 'GameServer.table_engine_stop_cleanup_failed', { tableId });
       }
+      if (engine.hasUnretiredStoppedTimeBankCustody()) {
+        ownershipFailures.push(
+          new Error(`Table ${tableId} retained unconfirmed time-bank custody`)
+        );
+        continue;
+      }
       if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
     }
     for (let index = 0; index < managerStopResults.length; index++) {
@@ -4290,6 +4359,15 @@ export class GameServer {
        * events that cannot resume.
        */
       tournamentResumesFailing: this.tournamentResumeCooldowns.size,
+      /* Managers that could not be stopped and still hold their slot, and the
+         RUNNING tournaments nobody is dealing as a result. Before 2026-09-21
+         the only hint either existed was that activeTournaments (472) quietly
+         exceeded the lease rows (465), and nothing compared those two. */
+      tournamentManagersQuarantined: this.tournamentManagerQuarantine?.size ?? 0,
+      tournamentManagerQuarantineOldestMs:
+        this.tournamentManagerQuarantine?.oldestAgeMs(Date.now()) ?? 0,
+      quarantinedTournamentManagers:
+        this.tournamentManagerQuarantine?.snapshot(Date.now()).slice(0, 20) ?? [],
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
@@ -8020,6 +8098,82 @@ export class GameServer {
    * was designed to, and a slow REGISTERING walk no longer throttles it to a
    * trickle.
    */
+  /**
+   * THE CLEANUP PASS stopOwnedTournamentManager WAS WRITTEN TO DEPEND ON
+   * (2026-09-21).
+   *
+   * TournamentManagerOwnership.stopOwnedTournamentManager keeps a manager in
+   * `tournamentEngines` when its stop fails, deliberately and with its reason
+   * written down: "A failed teardown is still the owner. Releasing the slot
+   * here would let a replacement start while the old generation may still have
+   * live table engines or callbacks. Keep it quarantined for the next cleanup
+   * pass." That is correct and is not changed here - a slot whose engines may
+   * still be live is exactly the slot you do not hand to a replacement.
+   *
+   * There was no next cleanup pass. Nothing in the process ever came back for
+   * a quarantined manager, so the only thing that ever cleared one was a
+   * restart, and on 2026-09-21 six RUNNING tournaments - 49 live seats and
+   * 4,908,000 tournament chips, the oldest stranded since 2026-09-14 - were
+   * held by six of them in a process that had been up 58 hours. The RUNNING
+   * re-adoption lane could not see any of it: it asks
+   * `tournamentEngines.has(id)` and a corpse answers yes, so /health reported
+   * tournamentResumesFailing: 0, tournamentResumesInFlight: 0 and a full
+   * budget while activeTournaments (472) exceeded the lease rows (465).
+   *
+   * This pass is the missing half. It releases no slot, claims no lease and
+   * repairs nothing a live path should have done (CLAUDE.md 10.12): it offers
+   * the SAME physical stop again, on a backoff, so a manager whose blocker has
+   * cleared leaves without waiting for a restart - and while it waits it is
+   * COUNTED AND NAMED instead of being indistinguishable from a healthy one.
+   *
+   * Called only from the branch where the RUNNING board was actually read. An
+   * unreadable board says nothing about who is still stuck, so it must not
+   * settle anything - the same rule the resume cooldowns follow.
+   */
+  private settleQuarantinedTournamentManagers(
+    running: readonly { id: string }[],
+    generation: number
+  ): void {
+    const now = Date.now();
+    const quarantine = (this.tournamentManagerQuarantine ??= new QuarantinedTournamentManagers());
+    // Identity-exact. A released slot ends the quarantine, and so does a
+    // replacement manager admitted for the same tournament: "some manager is
+    // present" is the very conflation that hid this.
+    quarantine.settle((id) => this.tournamentEngines.get(id) === quarantine.heldBy(id));
+    /* The number nobody had. A RUNNING tournament this process has just read
+       from the board and is not dealing, whether the slot is empty (normal for
+       a pass or two after a restart or a thaw) or a quarantined manager holds
+       it (never normal). This was 6 for 58 hours with nothing to show it. */
+    let withoutOwner = 0;
+    for (const row of running) {
+      const id = String(row.id);
+      if (!this.tournamentEngines.has(id) || quarantine.has(id)) {
+        withoutOwner++;
+      }
+    }
+    try {
+      tournamentsRunningWithoutOwner.set(withoutOwner);
+      tournamentManagersQuarantined.set(quarantine.size);
+      tournamentManagerQuarantineOldestSeconds.set(Math.floor(quarantine.oldestAgeMs(now) / 1000));
+    } catch {
+      /* metrics must never affect a retirement decision */
+    }
+    for (const tournamentId of quarantine.due(now)) {
+      if (!this.directAdmissionIsCurrent(generation)) return;
+      const manager = this.tournamentEngines.get(tournamentId);
+      // Only the exact manager this quarantine was recorded against.
+      if (!manager || manager !== quarantine.heldBy(tournamentId)) continue;
+      // Charge the attempt BEFORE the retry, so a stop that stays stuck backs
+      // off on its own schedule instead of being re-offered every five seconds.
+      quarantine.record(tournamentId, QUARANTINED_MANAGER_STOP_RETRY, now, manager);
+      this.retireTournamentManagerInDiscovery(
+        tournamentId,
+        manager,
+        QUARANTINED_MANAGER_STOP_RETRY
+      );
+    }
+  }
+
   private async discoverRunningResumes(): Promise<void> {
     const generation = this.lifecycleGeneration;
     while (this.directAdmissionIsCurrent(generation)) {
@@ -8078,6 +8232,7 @@ export class GameServer {
           resumePassDistressed = true;
         } else {
           this.tournamentResumeCooldowns.settle(running, (id) => this.tournamentEngines.has(id));
+          this.settleQuarantinedTournamentManagers(running, generation);
         }
 
         /**
@@ -9697,7 +9852,8 @@ export class GameServer {
         replacement,
         () =>
           this.tournamentRetirementCustody.admissionAllowed(tableId) &&
-          !expected.hasClaimedTournamentMoveBoundary()
+          !expected.hasClaimedTournamentMoveBoundary(),
+        () => replacement.adoptStoppedTimeBankCustody(expected)
       );
     } catch (error) {
       // ServerTableEngine reports cleanup failures only after releasing its
@@ -9713,6 +9869,7 @@ export class GameServer {
       ) {
         throw error;
       }
+      if (!replacement.adoptStoppedTimeBankCustody(expected)) throw error;
       reportError(error, 'GameServer.tournament_table_teardown_cleanup_failed', { tableId });
       this.tableEngines.set(tableId, replacement);
       this.tournamentOwnedTables.add(tableId);
@@ -9767,6 +9924,7 @@ export class GameServer {
       return true;
     }
     if (current !== engine) return false;
+    if (!engine.retireStoppedTimeBanksForClosedSession()) return false;
     this.tableEngines.delete(tableId);
     this.tournamentOwnedTables.delete(tableId);
     tableStateHub.dropTable(tableId);

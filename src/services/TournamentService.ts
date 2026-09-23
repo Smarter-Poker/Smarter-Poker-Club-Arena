@@ -35,6 +35,7 @@ import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindSt
    three-spelling precedence right - see getCurrentLevelState. Pure, no React,
    despite living under components/lobby. */
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
+import { tournamentRowUnitCents } from '../components/tournament/details/types';
 import { readCommittedTournamentBlinds } from '../utils/committedTournamentBlinds';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import type { TournamentGameVariant } from '../config/tournamentVariants';
@@ -1005,6 +1006,43 @@ class TournamentService {
      * explicitly rather than letting either become a confident "chips".
      */
     return (data ?? null) as TournamentWithArena | null;
+  }
+
+  /**
+   * THE UNIT A TOURNAMENT PAYS IN, READ BY ITS ID (2026-09-21).
+   *
+   * For a surface that holds a tournament id and no row. The one Sign Up card
+   * every registration path funnels through is the case it was written for:
+   * six callers build its payload by hand, and not one of them carries the
+   * arena, so the card printed "Chips" beside a Diamond head and gated a
+   * Diamond entry on a chip wallet.
+   *
+   * It reads exactly the embed `getTournament` carries, by the same named
+   * constraint, and answers through `tournamentRowUnitCents`, so the unit is
+   * the one every tab, ladder and door already agrees on.
+   *
+   * `null` is "I could not tell" (CLAUDE.md 10.86 rule 1): a refused read, a
+   * dropped connection, or no row at all. It never throws and never answers a
+   * cent it did not read, so a caller shows its own unknown state instead of a
+   * figure in the wrong currency.
+   */
+  async readTournamentUnitCents(tournamentId: string): Promise<number | null> {
+    try {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select(TOURNAMENT_ARENA_EMBED)
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (error) {
+        reportError(error, 'TournamentService.readTournamentUnitCents', { tournamentId });
+        return null;
+      }
+      if (!data) return null;
+      return tournamentRowUnitCents(data);
+    } catch (e) {
+      reportError(e, 'TournamentService.readTournamentUnitCents', { tournamentId });
+      return null;
+    }
   }
 
   /**

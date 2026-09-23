@@ -43,6 +43,9 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
+/* #ClubArenaConsole: the banner prints in the console's own inks, so it loads
+   the console's sheet itself rather than trusting the chunk to carry it. */
+import '../console/SpadeConsole.css';
 import './TableConnectionBanner.css';
 
 /** Mirrors EngineConnectionStatus from services/EngineStateClient. */
@@ -237,6 +240,12 @@ export function TableConnectionBanner({
 
   if (!visible || !label) return null;
 
+  /* The bullet's ink, from the master's own palette. Blue while something is
+     still being attempted on the player's behalf, red once the link is down.
+     Two literal branches rather than one clever expression (#ClubArenaConsole
+     trap 7.6): the class names stay greppable in the source. */
+  const dotInk = status === 'failed' || status === 'auth_failed' ? 'sc-ink--red' : 'sc-ink--blue';
+
   return (
     <div
       // 'access_refused' wears the hard-failure tone that 'failed' already
@@ -248,7 +257,9 @@ export function TableConnectionBanner({
       aria-live="polite"
       data-testid="table-connection-banner"
     >
-      <span className="table-conn-banner__dot" aria-hidden="true" />
+      <span className={`table-conn-banner__dot ${dotInk}`} aria-hidden="true">
+        &bull;
+      </span>
       <span className="table-conn-banner__label">{formatPopupText(label)}</span>
     </div>
   );

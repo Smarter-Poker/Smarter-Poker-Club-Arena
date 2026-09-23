@@ -1,17 +1,38 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🎫 TOURNAMENT LOBBY PAGE — Premium Dark Theme Styles
+ *  TOURNAMENT LOBBY PAGE - on the spade console (#ClubArenaConsole, 2026-09-20)
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The route family's pinned anchor
+ * (CasinoSurfaceHeader, cinematicRouteFamilies) stays at the top and carries
+ * the three counts. Below it the page used to be a "Premium Dark Theme": a
+ * gradient page, a quick-stats strip repeating the header's counts, a rounded
+ * search box, two rows of filled filter pills and purple group bars with count
+ * bubbles. Dan, on that shape: "I'M NOT A BIG FAN OF THESE CARDS ... I'D MUCH
+ * RATHER SEE THEM LOOK MORE LIKE [the plain console]."
+ *
+ * So the board is Dan's approved spade master: the search field is the one
+ * drawn control (the art paints no field), every filter is a lit word on the
+ * black glass (the chosen one white, the rest muted), and each time window is
+ * an engraved rule with its label and count printed on it. The cards below
+ * are TournamentLobbyCard, already on the console. The page itself is black.
+ * Sizes are cqw against the console; no :hover (no-hover-effects law); no
+ * border-radius and no gradient anywhere on this file.
  */
 
-.page {
+.page.page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(135deg, #0d1120 0%, #1a2436 100%);
+  /* Black, doubled and important: PlayCircuitSurfaces.css paints every
+     `[data-arena-surface='play']` page with a blue radial gradient, and the
+     spade console sits on black (SKILL.md: the harness shoots on black
+     because that is where the art lives). The anchor header keeps its own
+     art; the page around it does not get a wash. */
+  background: #000 !important;
   color: #fff;
   width: 100%;
   max-width: 100vw;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
      one axis computes the other to `auto`, which makes this a scroll container,
      and WebKit then resolves the fixed ClubBottomNav against IT instead of the
      viewport. The bar leaves the bottom of the screen and rides up the page. */
@@ -20,257 +41,175 @@
   padding-bottom: 2rem;
 }
 
-/* Quick Stats */
-.quickStats {
-  display: flex;
-  justify-content: center;
-  gap: 2rem;
-  padding: 1.5rem;
-  background: rgba(26, 36, 54, 0.6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
+/* ── The board: search and the two filter rows, on the console ─────────── */
 
-.stat {
-  text-align: center;
-}
-
-.statValue {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #6fdcff;
-}
-
-.statLabel {
-  display: block;
-  font-size: 0.8rem;
-  color: #9ca3af;
-  margin-top: 0.25rem;
-}
-
-/* Search */
-.searchBar {
-  padding: 1rem 1.5rem;
-  background: rgba(26, 36, 54, 0.4);
-}
-
-.searchInput {
+.board {
   width: 100%;
-  padding: 0.875rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  color: #fff;
-  font-size: 16px; /* was 0.95rem; under 16px makes iOS zoom the page on focus */
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  max-width: 560px;
+  margin: 0 auto;
 }
 
-.searchInput::placeholder {
-  color: #6b7280;
+.searchField {
+  display: grid;
+  gap: 1.2cqw;
+  padding: 1cqw 0.5cqw 0;
 }
 
-.searchInput:focus {
+/* The one drawn control. Two engraved rules and lit type; no box, no radius,
+   no fill. The !important lines beat the global input skin in club-engine.css,
+   which paints a rounded navy field on every input it can reach, and the
+   Play Circuit skin (`[data-arena-surface='play'] :is(input, select)`) that
+   frames and fills every input on this route family. Three classes deep so
+   it outranks both. */
+.page .searchField .searchInput {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 2.6cqw 1cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e6e9ee !important;
+  font:
+    700 3.8cqw/1.2 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.04em;
   outline: none;
-  border-color: rgba(139, 92, 246, 0.5);
-  background: rgba(139, 92, 246, 0.1);
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.2);
+  appearance: none;
+  -webkit-appearance: none;
 }
 
-/* Filters */
+.page .searchField .searchInput::placeholder {
+  color: #7f8b99;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 3cqw;
+}
+
+.page .searchField .searchInput:focus-visible {
+  outline: 0.5cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
 .filters {
-  padding: 1rem 1.5rem;
-  background: rgba(26, 36, 54, 0.3);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.filters::-webkit-scrollbar {
-  display: none;
-}
-
-.filterGroup {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 1.6cqw 5cqw;
+  padding: 2cqw 0.5cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.filterBtn {
-  padding: 0.5rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #9ca3af;
+/* A filter is a lit word, never a pill: no fill, no frame, no radius. The
+   Play Circuit skin rounds every button on this route family; refused. */
+.page .filters .filter {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 3cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  border-radius: 0 !important;
 }
 
-.typeBtn {
-  font-size: 0.75rem;
-  padding: 0.35rem 0.75rem;
-}
-.filterBtn.active {
-  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-  border-color: transparent;
-  color: #fff;
+.page .filters .filter:active {
+  filter: brightness(1.3);
 }
 
-/* Tournament List */
+.page .filters .filter:focus-visible,
+.link:focus-visible {
+  outline: 0.5cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+/* ── The list ─────────────────────────────────────────────────────────────── */
+
 .tournamentList {
-  padding: 1.5rem;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 1rem 0 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
-/* Tournament Group Header */
+/* A time window is an engraved rule (a black cut with a lit edge above it)
+   with the window's name on the left and its count on the right, in the
+   master's own inks. It was a purple bar with a count bubble. */
 .groupHeader {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%);
-  border-left: 3px solid #8b5cf6;
-  border-radius: 8px;
-  margin-bottom: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 1rem;
+  margin: 0 4% 0.6rem;
+  padding: 0.55rem 0.25rem 0.45rem;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
+/* The window's name. It is an <h2> so a screen reader can move between the
+   time windows; it was a <span>.
+   `line-height` is declared because of that swap and for no other reason:
+   globals.css and club-engine.css both give h1-h6 `line-height: 1.2`, while a
+   span here inherited the body's 1.6, so promoting the element would have
+   shortened this row. It does not today - `.groupCount` beside it is still a
+   span at 1.6 and the row is `align-items: baseline`, so the sibling holds the
+   height open - but that is luck, not a rule, and it would end the first time
+   the count moved or got its own line-height. Pinned so the promotion is inert
+   by construction. Everything else the heading would bring is already pinned:
+   `.sc-label` owns the size, weight, letter-spacing and case, `sc-ink--blue`
+   owns the colour, and `* { margin: 0 }` in globals.css kills the UA margin. */
 .groupLabel {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #c4b5fd;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.6;
 }
 
 .groupCount {
-  font-size: 0.8rem;
-  background: rgba(139, 92, 246, 0.3);
-  color: #e9d5ff;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-weight: 600;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* Loading & Empty */
-.loading,
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  color: #9ca3af;
+/* ── Empty: on the console, with its one way out as a lit word ───────────── */
+
+.emptyCopy {
+  padding: 2cqw 0.5cqw;
 }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(139, 92, 246, 0.3);
-  border-top-color: #8b5cf6;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.emptyWay {
+  margin: 0;
+  padding: 1cqw 0.5cqw 2cqw;
+  text-align: center;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.emptyIcon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-}
-
-.createBtn {
-  margin-top: 1rem;
-  padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border-radius: 10px;
-  color: #fff;
+.link {
+  font:
+    800 3cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   text-decoration: none;
-  font-weight: 600;
-  transition: transform 0.2s;
-}
-/* ═══════ TABLET ═══════ */
-@media (max-width: 768px) {
-  .quickStats {
-    gap: 1rem;
-    padding: 1rem;
-  }
-
-  .statValue {
-    font-size: 1.25rem;
-  }
-
-  /* 2026-08-23 mobile pass: keep filter pills tappable even where later
-     breakpoints shrink their padding/font */
-  .filterBtn {
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-
-  .page {
-    padding-bottom: var(--bottom-nav-clearance, 74px);
-  }
 }
 
-/* ═══════ PHONE ═══════ */
-@media (max-width: 480px) {
-  .quickStats {
-    gap: 0.5rem;
-    padding: 0.75rem;
-    flex-wrap: wrap;
-  }
+/* ── Entrance ───────────────────────────────────────────────────────────── */
 
-  .statValue {
-    font-size: 1rem;
-  }
-
-  .statLabel {
-    font-size: 0.6rem;
-  }
-
-  .filters {
-    gap: 4px;
-    padding: 0 0.5rem;
-  }
-
-  .filterBtn {
-    font-size: 0.7rem;
-    padding: 5px 8px;
-  }
-
-  .createBtn {
-    padding: 0.6rem 1rem;
-    font-size: 0.85rem;
-  }
-}
-
-/* ═══════ SMALL PHONE ═══════ */
-@media (max-width: 380px) {
-  .quickStats {
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .filterBtn {
-    font-size: 0.6rem;
-    padding: 4px 6px;
-  }
-}
-
-/* ═══════ PREMIUM ANIMATIONS ═══════ */
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -282,14 +221,10 @@
   }
 }
 
-.hidden {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
 .fadeInUp {
   animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+
 /* The loading skeleton's grid. Without it the four CardSkeletons stacked in a
    single column, so the skeleton did not resemble the grid it stands in for
    and the layout jumped when the real cards arrived. */
@@ -297,30 +232,19 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1rem;
-  padding: 1rem 0;
+  padding: 1rem 4%;
 }
 
-/* Phase 6 visual convergence: black-first, engineered, and blur-free. */
-.page {
-  background:
-    radial-gradient(circle at 82% 4%, rgba(58, 168, 255, 0.09), transparent 28rem),
-    linear-gradient(180deg, #05080c 0%, #020407 100%);
-}
-
-.quickStats,
-.searchBar,
-.filters {
-  border-color: #26333d;
-  background: #080d12;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.searchInput,
-.filterBtn {
-  border-radius: 3px;
-  border-color: #26333d;
-  background: #080d12;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+/* Announced, never drawn: the console paints no status line, and the count
+   already shows on the pill for anyone who can see it. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

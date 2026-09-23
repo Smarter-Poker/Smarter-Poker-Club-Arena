@@ -142,8 +142,16 @@ export default function AnalysisTab({
       {/* Notable hands - every stat above used to be a dead end. */}
       <PanelBoundary name="Notable Hands" resetKey={panelResetKey}>
         <div>
+          {/* ALL TIME ON A RANGE-SCOPED PAGE (Stats contract truth, 2026-09-20).
+              ca_player_hands_v2 takes no window argument, and the loader in
+              PlayerStatsPage leaves rangeKey out of its dependencies on
+              purpose. Every other heading here is read against the range
+              selector, so an unmarked "Notable Hands" read as "the biggest
+              pots of the last 7 days". It is the biggest pots ever, and the
+              header now says so, in the page's existing caption style. */}
           <div className="stats-section-header">
             <h3>Notable Hands</h3>
+            <span className="hero-stat-sub">All Time</span>
           </div>
           <div className="hand-mode-row">
             {(

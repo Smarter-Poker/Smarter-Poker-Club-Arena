@@ -66,7 +66,7 @@ jobs:
           git merge-base --is-ancestor "$RESOLVED_SHA" "$MAIN_SHA" \
             || { echo "::error::target is not contained in protected main $MAIN_SHA"; exit 1; }
           LATEST_REQUIRED="$(git log "$MAIN_SHA" -1 --format=%H -- \
-            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**')"
           [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
             || { echo '::error::latest engine component SHA is unreadable'; exit 1; }
           # Protected-main containment is mandatory. A newer merge alone cannot
@@ -206,7 +206,7 @@ jobs:
           git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA" \
             || { echo '::error::workflow control commit left protected-main history'; exit 1; }
           LATEST_REQUIRED="$(git log "$MAIN_SHA" -1 --format=%H -- \
-            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**')"
           [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
             || { echo '::error::latest engine component SHA is unreadable'; exit 1; }
           # Protected-main containment is mandatory. A newer merge alone cannot
@@ -283,7 +283,7 @@ jobs:
             git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"
           done
           LATEST_REQUIRED="$(git -C "$REPO_DIR" log "$MAIN_SHA" -1 --format=%H -- \
-            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**')"
           [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
             || { echo '::error::latest engine component SHA is unreadable'; exit 1; }
           # Protected-main containment is mandatory. A newer merge alone cannot

@@ -1,0 +1,3 @@
+# tests/a-refused-move-is-an-answer.law.test.ts
+
+A Donkey Cross or Diamond Mines move the server refused is an answer, never a lost one: DiamondChoiceService.act throws the server's own {ok:false,error} reason (and a database-raised error, read by the same rule as the start doors' bonusErrorKind) as ChoiceMoveRefused, the page shows that reason, reads the game again and never marks the move unconfirmed, and the end of the maintenance break takes the reason down without a press; the console's second plate is Book The Win, live only once a win can be booked, and nothing on the console refreshes by hand (review 2026-09-22, owner rule that no game asks a player to check, refresh or retry).

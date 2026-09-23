@@ -55,15 +55,30 @@
   animation: createEnter 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.scrollBody {
+/* ── THE STAGE, AND WHY THE CONSOLE NARROWS BY HEIGHT (2026-09-22) ───────
+   This page used to scroll the WHOLE console, painted foot included, so on a
+   393px phone CLOSE and CREATE CLUB sat at y 1407 of an 852px screen. Now the
+   console is exactly as tall as the stage and only its own body scrolls (the
+   scroll body below), so the head and the plates never move.
+
+   The painted head and foot are fixed fractions of the console's WIDTH:
+   (348 + 277) / 1000 = 62.5%. So the console's width is derived from the
+   stage's height: the width that leaves a 220px body is (height - 220px) x 1.6.
+   The stage is a size container, so 100cqh inside it is that height exactly,
+   whatever the status strip below takes. The ceiling stays 560px (the standard
+   lets --sc-max narrow the art, never raise it past 1000px), and the 340px
+   floor keeps the fitted type legible on a screen too short for a full 220px.
+   The top inset clears the notch; the status strip clears the home indicator. */
+.stage {
   display: flex;
   flex: 1 1 auto;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: center;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 16px 12px;
+  overflow: hidden;
+  container-type: size;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 16px
+    max(12px, env(safe-area-inset-left, 0px));
 }
 
 .pageFooter {
@@ -87,10 +102,36 @@
   line-height: 1.35;
 }
 
-/* One picture, centred. */
-.console {
+/* One picture, centred, exactly as tall as the stage. Two classes on purpose:
+   the kit sets --sc-max on `.sc` at one class, and its sheet may load later. */
+.console.console {
+  --sc-max: min(560px, max(340px, calc((100cqh - 220px) * 1.6)));
   width: 100%;
-  max-width: 560px;
+  max-width: var(--sc-max);
+  min-height: 0;
+}
+
+.console > :global(.sc__head),
+.console > :global(.sc__foot) {
+  flex: 0 0 auto;
+}
+
+/* The console's body takes whatever height the head and the plates leave. */
+.console > :global(.sc__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Everything between the head and the plates scrolls here, and only here. */
+.scrollBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3cqw;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .copy {
@@ -148,7 +189,7 @@
     system-ui,
     sans-serif;
   outline: none;
-  caret-color: #5bb8ff;
+  caret-color: #45adff;
 }
 
 .textarea.textarea {
@@ -158,7 +199,7 @@
 
 .input.input::placeholder,
 .textarea.textarea::placeholder {
-  color: #6b7784;
+  color: #9aa5b3;
 }
 
 .input.input:focus-visible,
@@ -306,9 +347,12 @@
   flex: 0 0 auto;
 }
 
+/* The agreement lays the kit's tick well (sc-check) beside its words, so it
+   is a left-aligned row; this rule outranks `.sc-check` on purpose. */
 .terms.terms {
   appearance: none;
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   margin: 0;
   min-height: 44px;
@@ -325,7 +369,7 @@
     Inter,
     sans-serif;
   letter-spacing: 0.1em;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
   cursor: pointer;
   touch-action: manipulation;
@@ -384,6 +428,20 @@
   min-height: 0;
   padding: 0;
   font-size: 11px;
+}
+
+/* A short screen (a landscape phone) gives the console every pixel it can.
+   Only the cosmetic margins shrink: both safe-area insets stay. */
+@media (max-height: 480px) {
+  .stage {
+    padding-top: max(8px, env(safe-area-inset-top, 0px));
+    padding-bottom: 8px;
+  }
+
+  .pageFooter {
+    padding-top: 6px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  }
 }
 
 @keyframes createFade {

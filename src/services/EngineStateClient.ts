@@ -1379,31 +1379,38 @@ export class EngineStateClient {
     this.requestResync();
   }
 
-  /**
-   * Refresh authoritative state after a confirmed server purchase.
-   *
-   * 2026-09-20: while the table is MISSING (4404, slow ladder) there is no
-   * socket to resync on, and the caller is saying "I have reason to believe
-   * there is state to be had" - TablePage does exactly that after re-reading
-   * the `tables` row and finding it still wakeable. So the pending slow-ladder
-   * wait is cut short and one attempt is made now. retryCount is untouched: if
-   * the engine says 4404 again the ladder resumes where it was, so this cannot
-   * be turned into a fast loop by calling it repeatedly (no pending timer, no
-   * effect; openOnce is single-flight).
-   */
+  /** Refresh authoritative state after a confirmed server purchase. */
   requestSnapshot(): void {
-    if (
-      this.tableMissing &&
-      !this.intentionalClose &&
-      this.reconnectTimer !== null &&
-      (this.ws === null || this.ws.readyState > 1)
-    ) {
-      window.clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-      void this.openOnce();
-      return;
-    }
     this.requestResync();
+  }
+
+  /**
+   * Skip the backoff wait that is pending and make one attempt now
+   * (2026-09-20).
+   *
+   * For a caller that knows something the ladder cannot: TablePage re-reads
+   * the `tables` row after three 4404s, and when the engine's own wake rule
+   * says the table comes up on first demand, it asks for the attempt now
+   * rather than ~30s from now. Its own verb, not a mode of requestSnapshot():
+   * that one asks a LIVE socket for a RESYNC after a purchase and never opens
+   * anything, and a buy-in confirmation must not start reconnecting.
+   *
+   * Deliberately narrow:
+   *   - it only ever SHORTENS a wait that is already pending. No timer, no
+   *     effect: a live or opening socket, an access verdict (terminal, no
+   *     timer), a disconnected client, an offline browser (the 'online'
+   *     listener owns that). openOnce is single-flight on top of that, so
+   *     calling this repeatedly cannot become a loop;
+   *   - the ladder is not reset. retryCount and the missing-table flag stand,
+   *     so an attempt answered 4404 again goes back to the step it was on.
+   */
+  reconnectNow(): void {
+    if (this.intentionalClose || this.reconnectTimer === null) return;
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    void this.openOnce();
   }
 
   /** The engine's access verdict while status is 'access_refused', else null. */

@@ -29,6 +29,11 @@ const GAME_SERVER_URL =
 
 export interface UseEngineTableStateResult {
   requestSnapshot: () => void;
+  /**
+   * 2026-09-20: cut a pending reconnect wait short and try now (see
+   * EngineStateClient.reconnectNow). A no-op unless a retry is waiting.
+   */
+  reconnectNow: () => void;
   snapshot: EngineSnapshot | null;
   seq: number;
   status: EngineConnectionStatus;
@@ -134,7 +139,17 @@ export function useEngineTableState(
   }, [tableId, enabled]);
 
   const requestSnapshot = useCallback(() => clientRef.current?.requestSnapshot(), []);
-  return { snapshot, seq, status, lastError, lastEvent, lastUserEvent, requestSnapshot };
+  const reconnectNow = useCallback(() => clientRef.current?.reconnectNow(), []);
+  return {
+    snapshot,
+    seq,
+    status,
+    lastError,
+    lastEvent,
+    lastUserEvent,
+    requestSnapshot,
+    reconnectNow,
+  };
 }
 
 export default useEngineTableState;

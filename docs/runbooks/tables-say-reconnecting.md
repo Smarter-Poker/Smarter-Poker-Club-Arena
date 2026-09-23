@@ -26,6 +26,11 @@ distinguish between:
 The reason the banner is vague is the reason this page is long: the client
 cannot tell, and neither can you until you look at the numbers below.
 
+One refusal CAN be told, and since 2026-09-20 it has its own words: an engine
+that will not show this account the table at all. That is the status
+`access_refused`, it never says "Reconnecting", and it has its own section
+below.
+
 ---
 
 ## The first four minutes
@@ -214,6 +219,19 @@ faster than they are being created (look at the cluster controller alerts).
 table the new engine has not adopted yet. The client asks the database (the
 single row in `engine_maintenance_break`) before it believes a 4404.
 
+**Nor is a 4404 on a table created seconds ago** (2026-09-20). The engine builds
+a created cash table on first demand (`GameServer.ensureCashTableEngine`), so
+a SUBSCRIBE that loses that race hears `TABLE_NOT_FOUND`. A client that has
+never connected retries its first three 4404s on the fast end of the ladder
+(1s, 2s, 2s - `NEVER_CONNECTED_FAST_NOT_FOUND_RETRIES`) before it falls to the
+slow step, and after three 4404s TablePage reads the `tables` row before it
+says "This Table Is No Longer Running": a row the engine would still wake
+(cash, no tournament, not deleted, status waiting, running or active -
+`isStillWakeableTableRow`, the client's copy of
+`server/src/services/onDemandTableWake.ts`) gets another attempt at once
+(`reconnectNow`) instead of the toast. A row read that fails says the toast,
+as before.
+
 ### 4429 - `rate_limited_or_socket_cap`
 
 Either backpressure eviction, or the per-user socket cap (phase 5, 10 sockets
@@ -234,6 +252,76 @@ look, not the platform.
 client sent something malformed - a version skew or a hand-rolled client. 4500
 is the engine failing inside the upgrade; check the engine log
 (project `club-arena-engine`).
+
+On the multiplexed socket 4400 is also how `EngineSocketMux` closes one table's
+facade when the engine refuses that table's SUBSCRIBE, with the engine's code
+in the reason (`subscription refused: <CODE>`). Two of those codes are a
+verdict on the viewer and have their own status - next section.
+
+### 4400 `subscription refused: <CODE>` - status `access_refused`
+
+**Not a connection problem, and nothing retries it.** The engine's viewer
+check (`server/src/services/TableViewerAccess.ts`) has ruled that this account
+may not watch this table. It admits a player seated at the table and an active
+or approved member of a club in the table's scope (`fn_club_scope_ids`); a
+table with `restrict_observers` admits seated players only. Everyone else is
+refused - including a union owner or admin who was allowed to CREATE the game
+(`fn_can_create_games`) but is a member of no club in its scope. That is the
+usual way to meet this, and it is not a client bug: the client can only say
+it honestly.
+
+On the multiplexed socket (the default) the engine answers the table's
+SUBSCRIBE with `ERROR` and one of two codes, and the facade closes with 4400
+and one of these reasons:
+
+- `subscription refused: CLUB_MEMBERSHIP_REQUIRED` - not a member of any club
+  in the table's scope;
+- `subscription refused: OBSERVERS_RESTRICTED` - a member, at a table that
+  admits seated players only.
+
+`accessRefusalFromClose` reads the code back out of the reason and
+`EngineStateClient` moves to `access_refused`. That status is terminal for the
+reconnect ladder: no timer is armed and the watchdog stops. The client's wake
+listeners (network back, tab brought to the front) still ask once more each
+time, so a membership granted in another tab is honoured without a reload, and
+a socket that opens clears the verdict.
+
+What the player reads on the felt (`TableConnectionBanner`, a steady red
+bullet - it does not pulse, because nothing is being attempted):
+
+| reason                                           | banner                                                          |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| `subscription refused: CLUB_MEMBERSHIP_REQUIRED` | This Table Is Open To Club Members Only. Join The Club To Watch |
+| `subscription refused: OBSERVERS_RESTRICTED`     | This Table Is Open To Seated Players Only                       |
+| the code is not available                        | You Do Not Have Access To This Table                            |
+
+Start in the New Cash Game flow meets the same verdict over HTTP first: GET
+`/state/:id` answers 403 with the same code, `GameServerAPI.wakeTable` keeps
+it, and the host is told "Game Created. Only Club Members Can Watch This
+Table" (or "... Only Seated Players ...") and sent to the club page, never
+told the game started and never retried for it.
+
+**With the mux switched off** (`localStorage ca_ws_mux='0'`) none of this
+applies: the single-table socket gets the same verdict as a PRE-handshake HTTP
+403, which the browser reports as 1006 - see the 1006 section. That player sees
+the ordinary reconnect ladder. A player stuck on "Reconnecting" at one table
+with the mux off: check membership before the network.
+
+```sql
+-- Does the table's scope admit this account as an observer?
+select m.club_id, m.role, m.status
+from club_members m
+where m.user_id = '<user id>'
+  and m.status in ('active', 'approved')
+  and m.club_id = any (public.fn_club_scope_ids(
+        (select coalesce(union_id, club_id) from tables where id = '<table id>')));
+
+-- And does the table admit observers at all?
+select restrict_observers from tables where id = '<table id>';
+```
+
+Pinned by `tests/a-new-table-is-waking-not-gone.test.ts` (the transport) and
+`tests/a-refused-viewer-is-told-why.test.tsx` (the words, and this section).
 
 ### 4901 - `mux_superseded`
 

@@ -13,6 +13,7 @@ import {
   openingLeaderboardFundingCapacity,
   openingLeaderboardFundingRefusal,
   openingLeaderboardPrizeSplit,
+  presentOpeningSetupRefusal,
   type ClubOpeningSetupInput,
 } from '../../src/services/ClubOpeningSetupService';
 
@@ -23,6 +24,17 @@ const openingSql = readFileSync(
 );
 const fundingGateSql = readFileSync(
   resolve(root, 'supabase/migrations/20260906003717_leaderboard_phase3_funded_publication.sql'),
+  'utf8'
+);
+const settlementSql = readFileSync(
+  resolve(
+    root,
+    'supabase/migrations/20260906084547_leaderboard_phase_4_promo_only_settlement_truth.sql'
+  ),
+  'utf8'
+);
+const wizardSource = readFileSync(
+  resolve(root, 'src/components/club/ClubOpeningWizard.tsx'),
   'utf8'
 );
 
@@ -111,14 +123,21 @@ describe('opening leaderboard funding gate, mirrored from the live SQL', () => {
     ).toBe(300);
   });
 
-  it('prints the exact capacity with separators and never an em dash or decimal', () => {
+  it('prints the cap compact, the minimum it asks for in full, and never an em dash', () => {
     const message = openingLeaderboardFundingRefusal({
       promoEnabled: true,
       promoBudget: 12500,
       leaderboardPrizeBudget: 20000,
     });
-    expect(message).toContain('The 12,500 Chip Promotion Budget');
-    expect(message).not.toMatch(/—|\d\.\d/);
+    expect(message).toContain('Cannot Exceed The 12.5K Chip Promotion Budget');
+    expect(
+      openingLeaderboardFundingRefusal({
+        promoEnabled: false,
+        promoBudget: 0,
+        leaderboardPrizeBudget: 1250,
+      })
+    ).toContain('A Promotion Budget Of At Least 1,250 Chips');
+    expect(message).not.toMatch(/—|\d\.\d{2}/);
   });
 });
 
@@ -221,14 +240,14 @@ describe('opening setup request key and refusals', () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it('marks a coded database refusal definitive and keeps its message', async () => {
+  it('marks a coded database refusal definitive and prints its reason without decimals', async () => {
     mocks.rpc.mockResolvedValue({
       data: null,
-      error: { message: 'Club Bank Has 500 Chips But Setup Requires 600.00', code: 'P0001' },
+      error: { message: 'Club Bank Has 500.75 Chips But Setup Requires 1600.00', code: 'P0001' },
     });
     const error = await clubOpeningSetupService.complete(input, 'k').catch((e) => e);
     expect(error).toBeInstanceOf(ClubOpeningSetupError);
-    expect(error.message).toBe('Club Bank Has 500 Chips But Setup Requires 600.00');
+    expect(error.message).toBe('Club Bank Has 500 Chips But Setup Requires 1,600');
     expect(error.definitive).toBe(true);
     expect(isDefinitiveOpeningSetupRefusal(error)).toBe(true);
   });
@@ -268,5 +287,73 @@ describe('opening setup request key and refusals', () => {
     await expect(clubOpeningSetupService.getAppliedState('club-1')).rejects.toMatchObject({
       code: '42501',
     });
+  });
+});
+
+describe('a server refusal, fit to print', () => {
+  it('floors every chip figure to a whole chip with separators', () => {
+    expect(
+      presentOpeningSetupRefusal(
+        'Leaderboard Prize Program Requires 1000.00 Promo Chips But Only 500.00 Are Available After Other Published Commitments'
+      )
+    ).toBe(
+      'Leaderboard Prize Program Requires 1,000 Promo Chips But Only 500 Are Available After Other Published Commitments'
+    );
+    expect(
+      presentOpeningSetupRefusal('Spin Seed Must Be At Least 20000.00 Chips For The Selected Board')
+    ).toBe('Spin Seed Must Be At Least 20,000 Chips For The Selected Board');
+    expect(presentOpeningSetupRefusal('A New Promotion Requires A Minimum 100-Chip Budget')).toBe(
+      'A New Promotion Requires A Minimum 100-Chip Budget'
+    );
+  });
+
+  it('keeps a percentage rate as written', () => {
+    expect(presentOpeningSetupRefusal('Rake Above 12.5% Is Not Allowed')).toBe(
+      'Rake Above 12.5% Is Not Allowed'
+    );
+  });
+
+  it('never shows a raw database message or an internal identifier', () => {
+    for (const raw of [
+      'permission denied for function fn_complete_club_opening_setup',
+      'Spin Setup Failed: insufficient_funds',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(presentOpeningSetupRefusal(raw)).toBe(
+        'Club Opening Setup Was Refused. Nothing Was Deducted'
+      );
+    }
+  });
+});
+
+describe('the review copy describes the live settlement SQL', () => {
+  it('pays a standalone round from the seed and the Promo Wallet only, never the Club Bank', () => {
+    // Seed first, then the Promo Wallet, and the unused seed is released into it.
+    expect(settlementSql).toContain('v_seed_debit := LEAST(v_total, v_seed_available);');
+    expect(settlementSql).toContain('v_promo_debit := v_total - v_seed_debit;');
+    expect(settlementSql).toContain(
+      'SET promo_balance = promo_balance - v_promo_debit + v_seed_release,'
+    );
+    // An underfunded round is refused and left for the automatic retry.
+    expect(settlementSql).toContain('LEADERBOARD_PROMO_UNDERFUNDED|');
+    expect(settlementSql).toContain('Automatic Retry Is Active');
+    // No overlay: the batch records 0 overlay and nothing debits chip_treasury.
+    expect(settlementSql).toContain("'overlay_funded', 0,");
+    expect(settlementSql).not.toMatch(/chip_treasury\s*=\s*chip_treasury\s*-/);
+    // And the opening RPC holds the seed outside the Promo Wallet.
+    expect(openingSql).toContain('leaderboard_seed_remaining,');
+    expect(openingSql).toContain('promo_balance = COALESCE(promo_balance, 0) + v_promo_budget,');
+  });
+
+  it('prints that behavior and no longer promises an overlay', () => {
+    // JSX copy wraps across source lines; compare it with whitespace folded.
+    const copy = wizardSource.replace(/\s+/g, ' ');
+    expect(copy).toContain('Held As The First-Round Prize Seed, Outside The Promo Wallet');
+    expect(copy).toContain('That Round Stays Unpaid And Is Retried Automatically');
+    expect(copy).toContain('No Round');
+    expect(copy).not.toContain('Covers Any Overlay');
+    expect(copy).not.toContain('Reserved In The Promo Wallet');
   });
 });

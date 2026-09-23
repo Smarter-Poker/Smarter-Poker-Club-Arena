@@ -5,9 +5,10 @@
  * Game Management deck), so the art is the frame and nothing here draws one.
  * Every colour is a schema ink: silver #e4e7ec, white #f4f7fb, blue #45adff,
  * red #ff5b6e, gold #ffd700, brass #d6ad52, muted #9aa5b3, the brand blue
- * #1877f2, black, and the console's own bevel floor #050607. No browns, no
- * computed tones, and no pointer-over rules: feedback is :active and
- * :focus-visible.
+ * #1877f2, black, the console's own bevel floor #050607 and the ground the
+ * console pages stand on #020305. Focus rings are the kit's own #8fd4ff (the
+ * ring SpadeConsole.css draws on its plates). No browns, no computed tones,
+ * and no pointer-over rules: feedback is :active and :focus-visible.
  *
  * 2026-09-20 (Create A Club phase 2): the brown preset chip, the #1a1a2e
  * fills, the #dc2626 reds and the dead delete-modal / back-btn / btn-delete
@@ -38,6 +39,12 @@
   overflow-x: clip;
   /* keep the in-flow footer above the fixed app bottom nav */
   padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  /* The form always prints on the console's black glass, in either room: the
+     Diamond Arena publishes html[data-arena-scheme='light'], which sets
+     color-scheme: light (club-engine.css), and a light scheme draws every
+     native part here (select arrows and popups, number spinners, radios,
+     date and time pickers) for a white page, dark on this dark field. */
+  color-scheme: dark;
 }
 
 /* HEADER */
@@ -106,7 +113,6 @@
 .config-name input:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 /* OPTIONS CONTAINER */
@@ -159,7 +165,7 @@
 }
 
 .config-help__button:focus-visible {
-  outline: 2px solid #45adff;
+  outline: 2px solid #8fd4ff;
   outline-offset: 3px;
 }
 
@@ -239,7 +245,7 @@
 }
 
 .table-config-switch__input:focus-visible + .table-config-switch__track {
-  outline: 2px solid #45adff;
+  outline: 2px solid #8fd4ff;
   outline-offset: 3px;
 }
 
@@ -433,7 +439,6 @@
 .config-textarea-input:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 /* DATETIME INPUT */
@@ -456,7 +461,10 @@
    brightness(0) flattens it to black first, so invert(1) lands on white from
    either starting colour. Precedent: PlayerStatisticsPage.css .ps-date.
    Harmless on anything that is not a native date/time input: a number field or
-   a select has no such pseudo-element. */
+   a select has no such pseudo-element. (2026-09-22: the Start Time picker is
+   two dropdowns now, and this class sits on controls.tsx NumberField's number
+   inputs, so today the rule only keeps their spin buttons dark. It stays for
+   the next native date or time input that carries the class.) */
 .config-datetime {
   color-scheme: dark;
 }
@@ -470,7 +478,6 @@
 .config-datetime:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 /* FOOTER ACTIONS.
@@ -563,7 +570,6 @@
 .template-dropdown:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 .template-dropdown option {
@@ -775,6 +781,35 @@
   box-shadow: none;
 }
 
+/* A native select sizes itself to its longest option, and as a flex item it
+   will not shrink below that: on a phone "Top 15% Of Field (Standard)" ran
+   the Payout Structure select past the glass and under the frame's rail. Let
+   the control shrink with its row (the UA clips its text inside the box and
+   keeps the arrow), and let the label wrap beside it. */
+.table-config-page .config-toggle > :is(select, input) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.table-config-page .config-toggle > .toggle-label {
+  min-width: 0;
+}
+
+/* Three actions share a phone's glass. At fixed 1rem gaps and 1.5rem pads
+   they needed about 350px where a 393px console has about 310px between its
+   rails, and Start ran 19px under the right rail. Gaps and pads follow the
+   console's width instead (cqw), floored at 0.5rem and capped at what they
+   were, and a label may wrap before its button leaves the glass. */
+.table-config-page .config-footer {
+  gap: clamp(0.5rem, 2cqw, 1rem);
+  padding-inline: clamp(0.5rem, 2cqw, 1rem);
+}
+
+.table-config-page .config-footer > button {
+  min-width: 0;
+  padding-inline: clamp(0.5rem, 2cqw, 1.5rem);
+}
+
 /* The actions read in order of weight: Start is the primary (white ink with
    the blue glow on a lit blue rule), Save is the lit blue word, Save As
    Template is muted. Pressed feedback is :active; there is no pointer-over
@@ -794,6 +829,6 @@
 }
 
 .table-config-page :is(button, input, select, textarea):focus-visible {
-  outline: 3px solid #45adff;
+  outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }

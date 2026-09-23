@@ -1,13 +1,18 @@
 /**
- * Create A Club, Phase 2 hardening (2026-09-20).
+ * Create A Club, Phase 2 hardening (2026-09-20, re-based 2026-09-22 onto the
+ * #4696 console render that main shipped in the meantime).
  *
  * Each block pins one repaired behavior and fails against the code it replaced:
- *   - the focus trap wrapped only the scroll body, so Tab could never reach the
- *     painted Close / Create Club plates;
- *   - the unsaved-changes guard was window.confirm;
+ *   - Tab has to reach the painted Close / Create Club plates (the trap once
+ *     wrapped only the scroll body; #4696 moved it, and these keep it there);
+ *   - the plates never scroll: the console's own body is the scroll region,
+ *     and the console narrows by height so short screens keep a body;
+ *   - the unsaved-changes guard was window.confirm; it is the kit's
+ *     ConfirmModal now;
  *   - the draft key was not scoped to an account;
  *   - the success toast named the text box, not the club the server returned;
- *   - Launch Settings were bare checkboxes;
+ *   - Launch Settings are switches that say On or Off, and the agreement shows
+ *     the kit's tick well;
  *   - Club Discovery invented a description and a game tag.
  */
 import { readFileSync } from 'node:fs';
@@ -15,6 +20,7 @@ import { resolve } from 'node:path';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sliceCssRule } from './helpers/sourceWindow';
 
 const state = vi.hoisted(() => ({
   user: { id: 'user-a' } as { id: string } | null,
@@ -86,6 +92,8 @@ async function makeCreatable(user: ReturnType<typeof userEvent.setup>, name: str
   await waitFor(() => expect(screen.getByRole('button', { name: 'Create Club' })).toBeEnabled());
 }
 
+const guardDialog = () => screen.queryByRole('dialog', { name: 'Close Create Club?' });
+
 describe('the focus trap holds the whole console, plates included', () => {
   it('tabs forward from the last form field onto the painted plates, then wraps', async () => {
     const user = userEvent.setup();
@@ -122,15 +130,50 @@ describe('the focus trap holds the whole console, plates included', () => {
   });
 
   it('keeps the invisible file input out of the tab order', () => {
+    // #4696 takes it out with display: none (Upload A Custom Logo is its
+    // keyboard route), which no browser can tab to.
     render(<CreateClubModal isOpen onClose={vi.fn()} />);
     const fileInput = document.querySelector('input[type="file"]');
-    expect(fileInput?.getAttribute('tabindex')).toBe('-1');
+    expect(fileInput).not.toBeNull();
+    expect(modalSource).toMatch(/type="file"[\s\S]{0,120}className=\{styles\.hiddenInput\}/);
+    expect(sliceCssRule(modalCss, '.hiddenInput')).toMatch(/display:\s*none/);
   });
 });
 
-describe('the unsaved-changes guard is an in-app console', () => {
+describe('the painted foot never scrolls', () => {
+  it('scrolls the console body between the head and the plates', () => {
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    const dialog = screen.getByRole('dialog', { name: 'Create A Club' });
+    const consoleEl = dialog.querySelector('.sc') as HTMLElement;
+    const part = (name: string) =>
+      Array.from(consoleEl.children).find((child) => child.classList.contains(name)) as HTMLElement;
+    const body = part('sc__body');
+    const foot = part('sc__foot');
+    const scroller = dialog.querySelector('[class*="scrollBody"]') as HTMLElement;
+
+    expect(scroller).not.toBeNull();
+    // The scroll region is the console's own body...
+    expect(scroller.parentElement).toBe(body);
+    expect(scroller.contains(screen.getByLabelText('Club Name'))).toBe(true);
+    // ...and both plates live in the painted foot, outside it.
+    expect(scroller.contains(foot)).toBe(false);
+    expect(within(foot).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(within(foot).getByRole('button', { name: 'Create Club' })).toBeInTheDocument();
+  });
+
+  it('gives the console the stage height and lets only the scroll body scroll', () => {
+    expect(sliceCssRule(modalCss, '.scrollBody')).toMatch(/overflow-y:\s*auto/);
+    expect(sliceCssRule(modalCss, '.scrollBody')).toMatch(/min-height:\s*0/);
+    expect(sliceCssRule(modalCss, '.console > :global(.sc__body)')).toMatch(/flex:\s*1 1 auto/);
+    expect(sliceCssRule(modalCss, '.stage')).toMatch(/overflow:\s*hidden/);
+    expect(sliceCssRule(modalCss, '.stage')).toMatch(/align-items:\s*stretch/);
+  });
+});
+
+describe('the unsaved-changes guard is the kit confirm, not a native dialog', () => {
   it('never calls window.confirm', () => {
     expect(modalSource).not.toMatch(/window\.confirm|\bconfirm\(/);
+    expect(modalSource).toContain("import { ConfirmModal } from '../common/ConfirmModal';");
   });
 
   it('guards Escape, keeps the page on Keep Editing, and closes on Close Now', async () => {
@@ -144,32 +187,51 @@ describe('the unsaved-changes guard is an in-app console', () => {
     await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
     await user.keyboard('{Escape}');
 
-    const guard = screen.getByRole('alertdialog', { name: 'Close Create Club?' });
+    const guard = guardDialog() as HTMLElement;
     expect(guard).toBeVisible();
     expect(guard.textContent).toContain('Stay Saved As A Draft On This Device');
+    expect(guard.querySelectorAll('.sc__foot .sc-plate')).toHaveLength(2);
     expect(nativeConfirm).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
 
-    // The safe answer holds focus, and Tab cannot leave the two plates.
+    // The safe answer takes focus, so Enter never closes by accident.
     const keepEditing = within(guard).getByRole('button', { name: 'Keep Editing' });
-    const closeNow = within(guard).getByRole('button', { name: 'Close Now' });
-    expect(document.activeElement).toBe(keepEditing);
-    await user.tab();
-    expect(document.activeElement).toBe(closeNow);
-    await user.tab();
-    expect(document.activeElement).toBe(keepEditing);
+    await waitFor(() => expect(document.activeElement).toBe(keepEditing));
 
-    // Escape answers the guard the way it answered the native one: cancel.
+    // Escape answers the guard the way it answered the native dialog: cancel.
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(guardDialog()).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Club Name')).toHaveValue('Alpha Room');
 
+    // A tap on the guard's backdrop cancels too, and never asks again.
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(document.querySelector('.confirm-modal-overlay') as HTMLElement);
+    expect(guardDialog()).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
     await user.click(screen.getByRole('button', { name: 'Close' }));
     await user.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Close Now' })
+      within(guardDialog() as HTMLElement).getByRole('button', { name: 'Close Now' })
     );
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(guardDialog()).not.toBeInTheDocument();
+  });
+
+  it('holds the focus trap on the guard while it is up', async () => {
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    const guard = guardDialog() as HTMLElement;
+    const keepEditing = within(guard).getByRole('button', { name: 'Keep Editing' });
+    await waitFor(() => expect(document.activeElement).toBe(keepEditing));
+
+    // Wherever Tab goes, it stays inside the guard's two plates.
+    for (const shift of [false, false, true]) {
+      await user.tab({ shift });
+      expect(guard.contains(document.activeElement)).toBe(true);
+    }
   });
 
   it('closes a pristine form at once, with no guard', async () => {
@@ -177,7 +239,7 @@ describe('the unsaved-changes guard is an in-app console', () => {
     const onClose = vi.fn();
     render(<CreateClubModal isOpen onClose={onClose} />);
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(guardDialog()).not.toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -196,7 +258,7 @@ describe('the unsaved-changes guard is an in-app console', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled());
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(guardDialog()).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
     expect(state.create).toHaveBeenCalledTimes(1);
 
@@ -286,14 +348,14 @@ describe('the server names the club that was created', () => {
     await user.click(screen.getByRole('button', { name: 'Create Club' }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('club-original'));
-    expect(state.toast.success).toHaveBeenCalledWith('Club "Original Room" Created Successfully!');
+    expect(state.toast.success).toHaveBeenCalledWith('Club "Original Room" created successfully!');
     expect(
       state.toast.success.mock.calls.some(([message]) => String(message).includes('Renamed Room'))
     ).toBe(false);
   });
 });
 
-describe('Launch Settings use the labeled On / Off switch', () => {
+describe('Launch Settings are switches that say On or Off', () => {
   it('prints On or Off and carries the choice into the create call', async () => {
     const user = userEvent.setup();
     state.create.mockResolvedValue({ id: 'club-1', name: 'Alpha Room' });
@@ -303,14 +365,15 @@ describe('Launch Settings use the labeled On / Off switch', () => {
     const review = screen.getByRole('switch', { name: 'Review Join Requests' });
     expect(discoverable).toBeChecked();
     expect(review).not.toBeChecked();
-    const settings = discoverable.closest('fieldset') as HTMLElement;
-    expect(within(settings).getByText('On')).toBeInTheDocument();
-    expect(within(settings).getByText('Off')).toBeInTheDocument();
+    expect(discoverable).toHaveTextContent(/On$/);
+    expect(review).toHaveTextContent(/Off$/);
 
     await user.click(discoverable);
     await user.click(review);
     expect(discoverable).not.toBeChecked();
     expect(review).toBeChecked();
+    expect(discoverable).toHaveTextContent(/Off$/);
+    expect(review).toHaveTextContent(/On$/);
 
     await makeCreatable(user, 'Alpha Room');
     await user.click(screen.getByRole('button', { name: 'Create Club' }));
@@ -321,34 +384,54 @@ describe('Launch Settings use the labeled On / Off switch', () => {
     });
   });
 
-  it('imports the shared Toggle, whose own stylesheet travels with it', () => {
-    expect(modalSource).toContain("import { Toggle } from '../table-config/controls';");
-    expect(read('src/components/table-config/controls.tsx')).toContain(
-      "import '../../pages/TableConfigPage.css';"
-    );
-    // The consent checkbox is the only native checkbox left in the modal.
-    expect(modalSource.match(/type="checkbox"/g) ?? []).toHaveLength(1);
+  it('shows the agreement as the kit tick well, and keeps no bare checkbox', async () => {
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    const agreement = screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ });
+    expect(agreement.classList.contains('sc-check')).toBe(true);
+    expect(agreement.querySelector('.sc-check__box')).not.toBeNull();
+    expect(agreement.classList.contains('sc-check--on')).toBe(false);
+    await user.click(agreement);
+    expect(agreement).toBeChecked();
+    expect(agreement.classList.contains('sc-check--on')).toBe(true);
+    // No native tick box is left for a setting or for the agreement.
+    expect(modalSource).not.toContain('type="checkbox"');
   });
 });
 
 describe('the console fits short and notched viewports', () => {
-  it('narrows the console by height and never raises the 1000px ceiling', () => {
-    expect(modalCss).toMatch(/--sc-max:\s*min\(\s*1000px,/);
-    expect(modalCss).toMatch(/--cc-shell-height:\s*calc\(100dvh - var\(--cc-inset-top\)/);
+  it('narrows the console by height and never raises the ceiling', () => {
+    const rule = sliceCssRule(modalCss, '.console.console');
+    expect(rule).toMatch(
+      /--sc-max:\s*min\(\s*560px,\s*max\(\s*340px,\s*calc\(\(100cqh - 220px\) \* 1\.6\)\)\)/
+    );
+    expect(rule).toMatch(/max-width:\s*var\(--sc-max\)/);
+    expect(sliceCssRule(modalCss, '.stage')).toMatch(/container-type:\s*size/);
+    // Nothing in the sheet may raise the console past the master's 1000px.
     expect(modalCss).not.toMatch(/--sc-max:\s*(?:1[0-9]{3}[1-9]|[2-9][0-9]{3})px/);
+    expect(modalCss).not.toMatch(
+      /max-width:\s*(?:100[1-9]|10[1-9][0-9]|1[1-9][0-9]{2}|[2-9][0-9]{3})px/
+    );
   });
 
-  it('keeps the safe area on a phone-width sheet', () => {
-    const phone = modalCss.slice(modalCss.indexOf('@media (max-width: 560px)'));
-    const block = phone.slice(0, phone.indexOf('@container'));
-    expect(block).toContain('--cc-inset-top: env(safe-area-inset-top, 0px)');
-    expect(block).toContain('--cc-inset-bottom: env(safe-area-inset-bottom, 0px)');
-    expect(block).not.toMatch(/padding:\s*0\s*;/);
+  it('keeps the safe area on every edge it touches', () => {
+    const stage = sliceCssRule(modalCss, '.stage');
+    expect(stage).toContain('env(safe-area-inset-top, 0px)');
+    expect(stage).toContain('env(safe-area-inset-left, 0px)');
+    expect(stage).toContain('env(safe-area-inset-right, 0px)');
+    expect(sliceCssRule(modalCss, '.pageFooter')).toContain('env(safe-area-inset-bottom)');
+    const short = modalCss.slice(modalCss.indexOf('@media (max-height: 480px)'));
+    expect(short.slice(0, short.indexOf('@keyframes'))).toContain(
+      'env(safe-area-inset-bottom, 0px)'
+    );
   });
 
-  it('uses schema inks for the placeholder and the bevel', () => {
-    expect(modalCss).not.toContain('#697581');
-    expect(modalCss).not.toContain('#5b626a');
+  it('uses schema inks for the placeholder and the caret', () => {
+    for (const offSchema of ['#697581', '#5b626a', '#6b7784', '#5bb8ff']) {
+      expect(modalCss).not.toContain(offSchema);
+    }
+    expect(modalCss).toMatch(/::placeholder\s*\{\s*color:\s*#9aa5b3;/);
+    expect(modalCss).toContain('caret-color: #45adff;');
   });
 
   it('offers a clean Title Case placeholder', () => {
@@ -363,7 +446,7 @@ describe('Club Discovery shows only what a club actually has', () => {
     expect(discoverySource).not.toContain('Texas Holdem');
   });
 
-  it('renders no description and no tags for a club that has none', async () => {
+  it('renders no description and no games for a club that has none', async () => {
     state.clubRows = [
       {
         id: 'club-bare',
@@ -378,8 +461,8 @@ describe('Club Discovery shows only what a club actually has', () => {
       {
         id: 'club-full',
         name: 'Full Room',
-        description: 'Nightly Mixed Games',
-        tags: ['Omaha'],
+        description: 'nightly mixed games',
+        tags: ['plo'],
         game_type: null,
         member_count: 9,
         table_count: 1,
@@ -391,9 +474,11 @@ describe('Club Discovery shows only what a club actually has', () => {
 
     expect(container.textContent).not.toContain('Welcome To Our Club');
     expect(container.textContent).not.toContain('Texas Holdem');
-    expect(container.querySelectorAll('.club-desc')).toHaveLength(1);
-    expect(container.querySelectorAll('.club-tags')).toHaveLength(1);
+    // One description and one Games row: the tagged, described club's only.
+    expect(container.querySelectorAll('.club-discovery__desc')).toHaveLength(1);
+    expect(screen.getAllByText('Games')).toHaveLength(1);
+    // Data is Title Cased where it prints, acronyms stay shouted.
     expect(screen.getByText('Nightly Mixed Games')).toBeInTheDocument();
-    expect(screen.getByText('Omaha')).toBeInTheDocument();
+    expect(screen.getByText('PLO')).toBeInTheDocument();
   });
 });

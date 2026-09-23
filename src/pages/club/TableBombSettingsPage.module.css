@@ -138,6 +138,38 @@
   box-shadow: 0 1px 0 rgb(69 173 255 / 45%);
 }
 
+/* A number the table will not use is refused in red on its own rule, focused
+   or not (this follows :focus on purpose). */
+.input[aria-invalid='true'] {
+  border-bottom-color: #ff5b6e;
+  box-shadow: 0 1px 0 rgb(255 91 110 / 45%);
+}
+
+/* ── The hand interval says what it means ────────────────────────────────
+   The row and the words that belong to it travel together, so the sentence
+   sits against its own field rather than a body gap away from it. Printed in
+   the kit's own prose (.sc-copy) on the glass: the plain sentence, and under
+   it the refusal in the kit's red while the box holds a number the table will
+   not use, muted once the box has snapped to the one it will. */
+.intervalGroup {
+  display: grid;
+  gap: 1.2cqw;
+}
+
+.hint {
+  display: grid;
+  gap: 0.6cqw;
+}
+
+.hint .sentence {
+  font-size: 3.3cqw;
+}
+
+.hint .refusal {
+  font-size: 3.1cqw;
+  font-weight: 700;
+}
+
 /* ── The trigger: lit words with their hints ────────────────────────────── */
 
 .modes {

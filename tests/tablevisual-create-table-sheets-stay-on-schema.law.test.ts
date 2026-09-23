@@ -41,7 +41,6 @@ const REMOVED = [
   '#72c4ff',
   '#65c5ff',
   '#79c5ff',
-  '#8fd4ff',
   '#8fc1ff',
   '#67c7ff',
   '#48b5f4',
@@ -94,7 +93,9 @@ describe('the New Cash Game flow draws nothing: the console is the frame', () =>
   });
 
   it('every colour is one of the console inks', () => {
-    const INKS = ['#e4e7ec', '#f4f7fb', '#45adff', '#9aa5b3', '#000'];
+    // The four console inks, black for the engraved cut, and the kit's own
+    // focus ring (SpadeConsole.css draws #8fd4ff on its plates).
+    const INKS = ['#e4e7ec', '#f4f7fb', '#45adff', '#9aa5b3', '#000', '#8fd4ff'];
     const hexes = [...new Set(css.toLowerCase().match(/#[0-9a-f]{3,8}\b/g) ?? [])];
     expect(hexes.filter((h) => !INKS.includes(h))).toEqual([]);
     // Alpha tones are an ink at reduced alpha over black, never a new colour:
@@ -105,6 +106,20 @@ describe('the New Cash Game flow draws nothing: the console is the frame', () =>
     // And it no longer borrows another authority's palette for a surface that
     // lives inside this one.
     expect(css).not.toMatch(/--realism-/);
+  });
+
+  it('the flow footer sits in flow: sticky inside .config-options only lifted it over the last step', () => {
+    expect(css).toMatch(/\.cash-create \.cash-create__footer\s*\{\s*position:\s*static;\s*\}/);
+  });
+
+  it('a promise row never squeezes its label under a long value', () => {
+    // "One Small Blind From Each Dealt In Player" once collapsed a grid label
+    // column to nothing and printed over "Ante".
+    expect(css).toMatch(
+      /\.cash-create__rule-readout__label\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/
+    );
+    expect(css).toMatch(/\.cash-create__rule-readout__value\s*\{[^}]*min-width:\s*0;/);
+    expect(css).not.toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*auto\)/);
   });
 
   it('a selected choice is told by ink on a lit rule', () => {
@@ -145,6 +160,17 @@ describe('the Table Config form', () => {
     expect(transparentList.join(' ')).not.toContain('.config-footer');
   });
 
+  it('the form declares a dark scheme, so native parts are drawn for the black glass in either room', () => {
+    const root = css.match(/\.table-config-page\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(root).toMatch(/color-scheme:\s*dark;/);
+  });
+
+  it('every focus ring is the kit ring', () => {
+    const rings = css.match(/outline:\s*\d+px solid #[0-9a-f]+;/gi) ?? [];
+    expect(rings.length).toBeGreaterThan(0);
+    expect(rings.filter((r) => !r.includes('#8fd4ff'))).toEqual([]);
+  });
+
   it('the native date and time picker glyph is white on the dark field', () => {
     expect(css).toMatch(/\.config-datetime\s*\{\s*color-scheme:\s*dark;\s*\}/);
     expect(css).toMatch(
@@ -155,12 +181,18 @@ describe('the Table Config form', () => {
 
 describe('the game type selector', () => {
   const tsx = read('src/pages/CreateTablePage.tsx');
-  it('its back control is a printed word with an accessible name, not a font glyph', () => {
-    const button = tsx.match(/<button[^>]*className="create-table-page__back"[\s\S]*?<\/button>/);
-    expect(button).not.toBeNull();
-    expect(button![0]).toContain('aria-label="Back To The Previous Page"');
-    expect(button![0]).toContain('type="button"');
-    expect(button![0]).toMatch(/>\s*Back\s*<\/button>/);
-    expect(button![0]).not.toMatch(/[‹›«»]/);
+  it('its back control is a printed word that names where it goes, never a font glyph', () => {
+    const buttons = [
+      ...tsx.matchAll(/<button[^>]*className="create-table-page__back"[\s\S]*?<\/button>/g),
+    ].map((m) => m[0]);
+    expect(buttons).toHaveLength(2);
+    // Literals, one per destination (skill 7.6: tests read the source).
+    expect(buttons.some((b) => b.includes('aria-label="Back To Table Management"'))).toBe(true);
+    expect(buttons.some((b) => b.includes('aria-label="Back To The Club"'))).toBe(true);
+    for (const b of buttons) {
+      expect(b).toContain('type="button"');
+      expect(b).toMatch(/>\s*Back\s*<\/button>/);
+      expect(b).not.toMatch(/[\u2039\u203a\u00ab\u00bb]/);
+    }
   });
 });

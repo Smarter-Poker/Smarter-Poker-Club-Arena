@@ -243,14 +243,18 @@ export function TableConnectionBanner({
   /* The bullet's ink, from the master's own palette. Blue while something is
      still being attempted on the player's behalf, red once the link is down.
      Two literal branches rather than one clever expression (#ClubArenaConsole
-     trap 7.6): the class names stay greppable in the source. */
-  const dotInk = status === 'failed' || status === 'auth_failed' ? 'sc-ink--red' : 'sc-ink--blue';
+     trap 7.6): the class names stay greppable in the source.
+     2026-09-20: an access verdict takes the red the kit keeps for refusals,
+     and TableConnectionBanner.css holds its bullet still - nothing is being
+     attempted, and a pulse would say that something is. */
+  const dotInk =
+    status === 'failed' || status === 'auth_failed' || status === 'access_refused'
+      ? 'sc-ink--red'
+      : 'sc-ink--blue';
 
   return (
     <div
-      // 'access_refused' wears the hard-failure tone that 'failed' already
-      // has in the stylesheet rather than a modifier no rule resolves.
-      className={`table-conn-banner table-conn-banner--${status === 'access_refused' ? 'failed' : status}`}
+      className={`table-conn-banner table-conn-banner--${status}`}
       // aria-live so a screen reader announces the drop without stealing focus
       // from the action buttons, which may still be mid-hand.
       role="status"

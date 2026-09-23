@@ -169,6 +169,37 @@ describe('opening checklist skip rules', () => {
   });
 });
 
+describe('opening checklist title', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('prints the club name, a database row, through titleCase', () => {
+    /* Skill 2 (2026-09-14): the Title Case gates read literals only, so a name
+       typed in lower case reached the head as typed. */
+    const { unmount } = render(
+      <ClubLaunchProgress
+        clubId="club-a"
+        viewerId="owner-a"
+        clubName="the river room"
+        openingBank={100_000}
+        tasks={[task('Wizard', { optional: false })]}
+      />
+    );
+    expect(screen.getByRole('heading', { name: 'Open The River Room' })).toBeTruthy();
+    unmount();
+
+    render(
+      <ClubLaunchProgress
+        clubId="club-a"
+        viewerId="owner-a"
+        clubName="ACES high"
+        openingBank={100_000}
+        tasks={[task('Wizard', { optional: false })]}
+      />
+    );
+    expect(screen.getByRole('heading', { name: 'Open ACES High' })).toBeTruthy();
+  });
+});
+
 describe('useClubLaunchSkips', () => {
   beforeEach(() => {
     localStorage.clear();

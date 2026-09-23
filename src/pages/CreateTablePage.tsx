@@ -152,20 +152,34 @@ export default function CreateTablePage({
 
   const selector = (
     <div className="create-table-page">
-      {/* Back. A printed word, not a font glyph: the kit paints no back
-          control, and the console standard forbids a generic glyph standing in
-          for one ("seat the icon in the painted art or remove it and use a
-          clear text label"). The double chevron it replaces also had no
+      {/* Back. A printed word, not a font glyph: the console standard
+          forbids a generic glyph standing in for a control ("seat the icon in
+          the painted art or remove it and use a clear text label"), and one
+          action on its own is a lit word on the glass, not a plate (the foot
+          paints two plates or none). The double chevron it replaces had no
           accessible name, so a screen reader announced it as "button". The
-          name starts with the visible word, so voice control can target it. */}
-      <button
-        type="button"
-        className="create-table-page__back"
-        onClick={handleBack}
-        aria-label="Back To The Previous Page"
-      >
-        Back
-      </button>
+          name says where Back goes, and starts with the visible word so voice
+          control can target it. Two literals, not a computed string: only
+          Table Management's creator deck passes onBack. */}
+      {onBack ? (
+        <button
+          type="button"
+          className="create-table-page__back"
+          onClick={handleBack}
+          aria-label="Back To Table Management"
+        >
+          Back
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="create-table-page__back"
+          onClick={handleBack}
+          aria-label="Back To The Club"
+        >
+          Back
+        </button>
+      )}
 
       {/* Game Type List */}
       <div className="create-table-page__list">

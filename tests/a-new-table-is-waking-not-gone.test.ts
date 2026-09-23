@@ -13,7 +13,9 @@
  *   B  three 4404s produced the closed-table toast without anyone asking the
  *      `tables` row. The rule the row is judged by is the engine's own
  *      (server/src/services/onDemandTableWake.ts), mirrored and pinned equal;
- *      a wakeable row gets a prompt reconnect through requestSnapshot().
+ *      a wakeable row gets a prompt reconnect through reconnectNow() - its
+ *      own verb since 2026-09-22, so requestSnapshot() is the purchase resync
+ *      it always was and never opens a socket.
  *   D  the engine's access verdicts (CLUB_MEMBERSHIP_REQUIRED,
  *      OBSERVERS_RESTRICTED) rode the generic ladder. They now end in
  *      'access_refused' with no timer armed.
@@ -22,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isWakeableCashTable } from '../server/src/services/onDemandTableWake';
+import { sliceBlockAfter } from './helpers/sourceWindow';
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -196,7 +199,7 @@ describe('C - a client that has never connected retries a 4404 on the fast end',
 });
 
 describe('B - a wakeable row earns a prompt reconnect, not an obituary', () => {
-  it('requestSnapshot() cuts a pending missing-table wait short, once, and keeps the ladder slow', async () => {
+  it('reconnectNow() cuts a pending missing-table wait short, once, and keeps the ladder slow', async () => {
     const { c } = await connectUnanswered();
     try {
       live()._frame({ type: 'SUBSCRIBED', tableId: TABLE });
@@ -205,12 +208,12 @@ describe('B - a wakeable row earns a prompt reconnect, not an obituary', () => {
       await tick(2_000);
       expect(subscribes()).toBe(1);
 
-      c.requestSnapshot();
+      c.reconnectNow();
       await tick(0);
       expect(subscribes()).toBe(2);
 
       // No pending wait now: a second call cannot start a second attempt.
-      c.requestSnapshot();
+      c.reconnectNow();
       await tick(0);
       expect(subscribes()).toBe(2);
 
@@ -220,6 +223,67 @@ describe('B - a wakeable row earns a prompt reconnect, not an obituary', () => {
       expect(subscribes()).toBe(2);
       await tickWithPings(5_000);
       expect(subscribes()).toBe(3);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('requestSnapshot() is the purchase resync again: it never opens a socket for a missing table', async () => {
+    const { c } = await connectUnanswered();
+    try {
+      live()._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+      await tick(0);
+      await refuse('TABLE_NOT_FOUND');
+      await tick(2_000);
+
+      // TablePage calls this after a confirmed buy-in. With the table missing
+      // there is no socket to resync on, and that is all it may conclude.
+      c.requestSnapshot();
+      await tick(0);
+      expect(subscribes()).toBe(1);
+
+      // The slow step it was on still stands, untouched.
+      await tickWithPings(25_000);
+      expect(subscribes()).toBe(1);
+      await tickWithPings(5_000);
+      expect(subscribes()).toBe(2);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('reconnectNow() only shortens a wait: a live socket, a verdict and a closed client are left alone', async () => {
+    // A live table: nothing is waiting, so nothing is started.
+    const first = await connectUnanswered();
+    try {
+      live()._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+      await tick(0);
+      const sockets = FakeWebSocket.instances.length;
+      first.c.reconnectNow();
+      await tick(0);
+      expect(subscribes()).toBe(1);
+      expect(FakeWebSocket.instances).toHaveLength(sockets);
+      expect(first.statuses.at(-1)).toBe('connected');
+
+      // A closed client: the owner has moved on.
+      first.c.disconnect();
+      first.c.reconnectNow();
+      await tickWithPings(60_000);
+      expect(subscribes()).toBe(1);
+    } finally {
+      // Always, or a failure here leaves 'online' listeners for the next test.
+      first.c.disconnect();
+    }
+  });
+
+  it('reconnectNow() does not retry an access verdict', async () => {
+    const { c, statuses } = await connectUnanswered();
+    try {
+      await refuse('CLUB_MEMBERSHIP_REQUIRED');
+      c.reconnectNow();
+      await tickWithPings(60_000);
+      expect(subscribes()).toBe(1);
+      expect(statuses.at(-1)).toBe('access_refused');
     } finally {
       c.disconnect();
     }
@@ -253,11 +317,9 @@ describe('B - a wakeable row earns a prompt reconnect, not an obituary', () => {
 
   it('TablePage asks the row before the toast, reports a failed read, and keeps the break check first', () => {
     const page = readFileSync(join(__dirname, '..', 'src/pages/TablePage.tsx'), 'utf8');
-    const start = page.indexOf('const notFoundCountRef = useRef(0);');
-    const end = page.indexOf('A RELOAD CANNOT FIX A SIGN-IN', start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const effect = page.slice(start, end);
+    // The 4404 branch of the effect, bounded by its own braces (see
+    // tests/helpers/sourceWindow.ts: a window is a structure, never a guess).
+    const effect = sliceBlockAfter(page, 'if (engineLastError.code === 4404) {');
 
     const breakCheck = effect.indexOf('await refreshMaintenanceBreak()');
     const rowRead = effect.indexOf(".from('tables')");
@@ -281,8 +343,11 @@ describe('B - a wakeable row earns a prompt reconnect, not an obituary', () => {
     const wakeable = effect.slice(verdict, toast);
     expect(wakeable).toContain('notFoundCountRef.current = 0;');
     expect(wakeable).toContain('tableClosedToastShownRef.current = false;');
-    expect(wakeable).toContain('requestEngineSnapshot();');
+    expect(wakeable).toContain('reconnectEngineNow();');
+    expect(wakeable).not.toContain('requestEngineSnapshot(');
     expect(wakeable).toContain('return;');
+    // And the verb comes from the hook, under its own name.
+    expect(page).toMatch(/reconnectNow: reconnectEngineNow,\s*\} = useEngineTableState\(/);
 
     // A failed read falls through to the toast: today's behaviour.
     const failed = effect.slice(effect.indexOf('if (tableRowError)'), verdict);

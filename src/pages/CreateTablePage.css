@@ -51,7 +51,7 @@
 }
 
 .create-table-page :is(button, a):focus-visible {
-  outline: 3px solid #45adff;
+  outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }
 

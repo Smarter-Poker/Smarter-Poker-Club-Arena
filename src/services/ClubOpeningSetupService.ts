@@ -1,4 +1,6 @@
 import { supabase } from '../lib/supabase';
+import { compactChips } from '../utils/format';
+import { titleCase } from '../utils/titleCase';
 
 export type OpeningPromotionType =
   | 'leaderboard'
@@ -73,6 +75,26 @@ export class ClubOpeningSetupError extends Error {
     this.definitive = definitive;
     this.code = code;
   }
+}
+
+const GENERIC_REFUSAL = 'Club Opening Setup Was Refused. Nothing Was Deducted';
+
+/**
+ * A server refusal, fit to print. The opening RPC's own refusals are Title Case
+ * but carry numeric(18,2) chip figures ("Club Bank Has 500.00 Chips But Setup
+ * Requires 600.00"), and a chip count never prints a decimal: every figure is
+ * floored to a whole chip with separators. A percentage keeps its decimal. A
+ * raw database message (lower-case, or naming a snake_case identifier) is
+ * replaced with a plain refusal rather than shown to the owner.
+ */
+export function presentOpeningSetupRefusal(message: string | null | undefined): string {
+  const text = String(message ?? '').trim();
+  if (!/^[A-Z]/.test(text) || /[A-Za-z0-9]_[A-Za-z0-9]/.test(text)) return GENERIC_REFUSAL;
+  return titleCase(
+    text.replace(/\d[\d,]*(?:\.\d+)?(?!\d|\.\d|\s*%)/g, (figure) =>
+      Math.floor(Number(figure.replace(/,/g, ''))).toLocaleString('en-US')
+    )
+  );
 }
 
 /** True when the server answered with a coded refusal, so nothing committed. */
@@ -150,7 +172,8 @@ export function openingLeaderboardFundingRefusal(input: OpeningLeaderboardFundin
   if (capacity < 100) {
     return `Paid Leaderboards Need A Promotion Budget Of At Least ${exact(budget)} Chips. Go Back And Create A Promotion, Or Choose Display Only`;
   }
-  return `Weekly Prize Budget Cannot Exceed The ${exact(capacity)} Chip Promotion Budget. Raise The Promotion Budget Or Lower The Prize Budget`;
+  // A cap may print compact: floored, it can only ask for less than the server allows.
+  return `Weekly Prize Budget Cannot Exceed The ${compactChips(capacity)} Chip Promotion Budget. Raise The Promotion Budget Or Lower The Prize Budget`;
 }
 
 export const clubOpeningSetupService = {
@@ -219,8 +242,8 @@ export const clubOpeningSetupService = {
     if (error) {
       const definitive = isDefinitiveOpeningSetupRefusal(error);
       throw new ClubOpeningSetupError(
-        definitive && error.message
-          ? error.message
+        definitive
+          ? presentOpeningSetupRefusal(error.message)
           : 'Club Opening Setup Could Not Be Confirmed. Check Your Connection And Try Again',
         definitive,
         typeof error.code === 'string' ? error.code : ''

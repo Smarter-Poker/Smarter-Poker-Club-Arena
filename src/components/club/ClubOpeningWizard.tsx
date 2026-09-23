@@ -14,9 +14,9 @@ import {
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { reportError } from '../../utils/errorReporter';
 import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { Toggle } from '../table-config/controls';
 import './ClubOpeningWizard.css';
 
 interface Props {
@@ -90,11 +90,21 @@ function FundingConfirmation({
   return (
     <div className="club-setup-wizard__confirm">
       <span className="club-setup-wizard__eyebrow">{title}</span>
-      <Toggle
-        label={`Transfer Exactly ${exactChips(amount)} Chips From The Club Bank Into ${destination}`}
-        value={confirmed}
-        onChange={onChange}
-      />
+      {/* An exact transfer is an agreement, so it is ticked, not switched: the
+          kit cuts the box into the glass (sc-check, SpadeConsole.css) and it
+          lights green once ticked. The amount prints in full, never compact. */}
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={confirmed}
+        className={`club-setup-wizard__tick sc-check ${
+          confirmed ? 'sc-check--on sc-ink--green' : 'sc-ink--muted'
+        }`}
+        onClick={() => onChange(!confirmed)}
+      >
+        <span className="sc-check__box" aria-hidden="true" />
+        <span>{`Transfer Exactly ${exactChips(amount)} Chips From The Club Bank Into ${destination}`}</span>
+      </button>
       {bankAfter < 0 ? (
         <small className="club-setup-wizard__shortfall">
           Transfers Chosen So Far Exceed The Club Bank By {shortfallChips(bankAfter)} Chips
@@ -134,7 +144,7 @@ export default function ClubOpeningWizard({
   const promoEnabled = promoAnswer === 'enabled';
   const [promoFundingConfirmed, setPromoFundingConfirmed] = useState(false);
   const [promoType, setPromoType] = useState<OpeningPromotionType>('high_hand');
-  const [promoName, setPromoName] = useState(`${clubName} Opening High Hand`);
+  const [promoName, setPromoName] = useState(`${titleCase(clubName)} Opening High Hand`);
   const [promoDescription, setPromoDescription] = useState(
     'Play During Our Opening Month And Chase The Featured High Hand.'
   );
@@ -157,6 +167,22 @@ export default function ClubOpeningWizard({
      a definitive server refusal, kept when the outcome is unknown. */
   const requestKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const dialogRef = useFocusTrap<HTMLDivElement>(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stepsRef = useRef<HTMLElement>(null);
+
+  /* A new step opens at its own top, not wherever the last one was scrolled
+     to, and its name is brought into view in the step rail, which is wider
+     than a phone and used to leave the current step off the right edge. The
+     rail scrolls sideways by itself only; nothing here moves the page. */
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    const rail = stepsRef.current;
+    const current = rail?.querySelector<HTMLElement>('[aria-current="step"]');
+    if (!rail || !current) return;
+    const railBox = rail.getBoundingClientRect();
+    const stepBox = current.getBoundingClientRect();
+    rail.scrollLeft += stepBox.left - railBox.left - (railBox.width - stepBox.width) / 2;
+  }, [step]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -213,7 +239,7 @@ export default function ClubOpeningWizard({
         return 'Confirm The Exact BBJ Seed Transfer Before Continuing';
       }
       if (index === 4 && spinsEnabled && spinSeed < spinCoverageMinimum) {
-        return `This Spin Board Requires At Least ${exactChips(spinCoverageMinimum)} Chips`;
+        return `This Spin Board Requires At Least ${compactChips(spinCoverageMinimum)} Chips`;
       }
       if (index === 4 && spinsEnabled && !spinFundingConfirmed) {
         return 'Confirm The Exact Spin Reserve Transfer Before Continuing';
@@ -373,7 +399,7 @@ export default function ClubOpeningWizard({
         as="div"
         className="club-setup-wizard__shell"
         eyebrow="Club Arena / Opening Pit Boss"
-        title={`Open ${clubName}`}
+        title={`Open ${titleCase(clubName)}`}
         titleId="club-setup-title"
         subtitle="Set Every System Before Opening"
         pill={`Step ${step + 1} Of ${STEPS.length}`}
@@ -388,12 +414,7 @@ export default function ClubOpeningWizard({
             'aria-label': step === 0 ? 'Close Opening Wizard' : 'Previous Opening Step',
           },
           primary: {
-            label:
-              step < STEPS.length - 1
-                ? 'Continue'
-                : saving
-                  ? 'Opening Club...'
-                  : 'Complete Opening Setup',
+            label: step < STEPS.length - 1 ? 'Continue' : saving ? 'Opening Club...' : 'Open Club',
             ink: 'white',
             onClick:
               step < STEPS.length - 1
@@ -401,609 +422,618 @@ export default function ClubOpeningWizard({
                 : finish,
             disabled: Boolean(stepError) || saving,
             'aria-label':
-              step < STEPS.length - 1 ? 'Continue Opening Setup' : 'Complete Opening Setup',
+              step < STEPS.length - 1
+                ? 'Continue Opening Setup'
+                : 'Open Club And Complete Opening Setup',
           },
         }}
       >
-        <div className="club-setup-wizard__command-row">
-          <div
-            className="club-setup-wizard__bank"
-            aria-label={`${compactChips(clubBank)} Chips In Club Bank`}
-          >
-            <span>Club Bank</span>
-            <strong>{compactChips(clubBank)}</strong>
-            <small>Opening Capital</small>
-          </div>
-          {/* Step one already carries Close on the painted plate; one way out
+        <div className="club-setup-wizard__scroll" ref={scrollRef}>
+          <div className="club-setup-wizard__command-row">
+            <div
+              className="club-setup-wizard__bank"
+              aria-label={`${compactChips(clubBank)} Chips In Club Bank`}
+            >
+              <span>Club Bank</span>
+              <strong>{compactChips(clubBank)}</strong>
+              <small>Opening Capital</small>
+            </div>
+            {/* Step one already carries Close on the painted plate; one way out
               per screen. From step two the plate becomes Back, so this is it. */}
-          {step > 0 && (
-            <button
-              type="button"
-              className="club-setup-wizard__close"
-              onClick={onClose}
-              disabled={saving}
-              aria-label="Close Opening Wizard"
-            >
-              Close Opening Wizard
-            </button>
-          )}
-        </div>
+            {step > 0 && (
+              <button
+                type="button"
+                className="club-setup-wizard__close"
+                onClick={onClose}
+                disabled={saving}
+                aria-label="Close Opening Wizard"
+              >
+                Close Opening Wizard
+              </button>
+            )}
+          </div>
 
-        <nav className="club-setup-wizard__steps" aria-label="Club Opening Steps">
-          {STEPS.map((label, index) => (
-            <button
-              key={label}
-              type="button"
-              className={index === step ? 'is-current' : index < step ? 'is-complete' : ''}
-              aria-current={index === step ? 'step' : undefined}
-              onClick={() => index < step && !saving && setStep(index)}
-              disabled={index > step || saving}
-            >
-              <span>{index < step ? 'Done' : String(index + 1).padStart(2, '0')}</span>
-              {label}
-            </button>
-          ))}
-        </nav>
+          <nav className="club-setup-wizard__steps" aria-label="Club Opening Steps" ref={stepsRef}>
+            {STEPS.map((label, index) => (
+              <button
+                key={label}
+                type="button"
+                className={index === step ? 'is-current' : index < step ? 'is-complete' : ''}
+                aria-current={index === step ? 'step' : undefined}
+                onClick={() => index < step && !saving && setStep(index)}
+                disabled={index > step || saving}
+              >
+                <span>{index < step ? 'Done' : String(index + 1).padStart(2, '0')}</span>
+                {label}
+              </button>
+            ))}
+          </nav>
 
-        <main className="club-setup-wizard__main">
-          {step === 0 && (
-            <section className="club-setup-wizard__panel club-setup-wizard__intro">
-              <span className="club-setup-wizard__eyebrow">Opening Capital Control</span>
-              <h2>Configure The Systems That Move Club Chips</h2>
-              <p>
-                This Guided Setup Configures Rake, Bad Beat Jackpot Funding, Spin Coverage, Your
-                First Promotion, And Leaderboard Rewards. Every Enabled Treasury Is Funded From The
-                Club Bank And Recorded In The Opening Ledger.
-              </p>
-              <div className="club-setup-wizard__assurances">
-                <article>
-                  <strong>100</strong>
-                  <span>Minimum BBJ Seed</span>
-                </article>
-                <article>
-                  <strong>100+</strong>
-                  <span>Minimum Spin Seed</span>
-                </article>
-                <article>
-                  <strong>One</strong>
-                  <span>Atomic Setup Commit</span>
-                </article>
-              </div>
-            </section>
-          )}
+          <main className="club-setup-wizard__main">
+            {step === 0 && (
+              <section className="club-setup-wizard__panel club-setup-wizard__intro">
+                <span className="club-setup-wizard__eyebrow">Opening Capital Control</span>
+                <h2 className="sc-ink--silver">Configure The Systems That Move Club Chips</h2>
+                <p>
+                  This Guided Setup Configures Rake, Bad Beat Jackpot Funding, Spin Coverage, Your
+                  First Promotion, And Leaderboard Rewards. Every Enabled Treasury Is Funded From
+                  The Club Bank And Recorded In The Opening Ledger.
+                </p>
+                <div className="club-setup-wizard__assurances">
+                  <article>
+                    <strong>100</strong>
+                    <span>Minimum BBJ Seed</span>
+                  </article>
+                  <article>
+                    <strong>100+</strong>
+                    <span>Minimum Spin Seed</span>
+                  </article>
+                  <article>
+                    <strong>One</strong>
+                    <span>Atomic Setup Commit</span>
+                  </article>
+                </div>
+              </section>
+            )}
 
-          {step === 1 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Club Voice</span>
-              <h2>Write A Tag Line That Belongs To {clubName}</h2>
-              <p>
-                This Is A New, Club-Specific Line. It Is Never Copied From Another Club And It Is
-                Kept Separate From The Longer Club Description.
-              </p>
-              <div className="club-setup-wizard__fields">
-                <label>
-                  Club Tag Line
-                  <input
-                    type="text"
-                    maxLength={72}
-                    value={tagline}
-                    onChange={(event) => setTagline(event.target.value)}
-                    placeholder="Write A Short, Original Club Tag Line"
-                    autoFocus
-                  />
-                  <small>{tagline.length} Of 72 Characters</small>
-                </label>
-              </div>
-            </section>
-          )}
-
-          {step === 2 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Revenue Schedule</span>
-              <h2>Choose Your Cash-Game Rake</h2>
-              <p>
-                The House Schedule Uses The Published 10% Rate And Stake-Specific Caps. A Custom
-                Schedule Applies Club-Wide Unless A Table Overrides It.
-              </p>
-              <div className="club-setup-wizard__choice-grid">
-                <button
-                  type="button"
-                  className={rakeMode === 'house' ? 'is-selected' : ''}
-                  aria-pressed={rakeMode === 'house'}
-                  onClick={() => setRakeMode('house')}
-                >
-                  <strong>Use House Schedule</strong>
-                  <span>Recommended Published Rate And Caps</span>
-                </button>
-                <button
-                  type="button"
-                  className={rakeMode === 'custom' ? 'is-selected' : ''}
-                  aria-pressed={rakeMode === 'custom'}
-                  onClick={() => setRakeMode('custom')}
-                >
-                  <strong>Use Custom Schedule</strong>
-                  <span>Set A Club Rate And Cap</span>
-                </button>
-              </div>
-              {rakeMode === 'custom' && (
-                <div className="club-setup-wizard__fields two-columns">
+            {step === 1 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Club Voice</span>
+                <h2 className="sc-ink--silver">
+                  Write A Tag Line That Belongs To {titleCase(clubName)}
+                </h2>
+                <p>
+                  This Is A New, Club-Specific Line. It Is Never Copied From Another Club And It Is
+                  Kept Separate From The Longer Club Description.
+                </p>
+                <div className="club-setup-wizard__fields">
                   <label>
-                    Rake Percent
+                    Club Tag Line
                     <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      step="0.5"
-                      value={rakePercent}
-                      onChange={(event) =>
-                        setRakePercent(Math.min(10, Math.max(0, Number(event.target.value))))
-                      }
+                      type="text"
+                      maxLength={72}
+                      value={tagline}
+                      onChange={(event) => setTagline(event.target.value)}
+                      placeholder="Write A Short, Original Club Tag Line"
+                      autoFocus
                     />
-                  </label>
-                  <label>
-                    Rake Cap In Big Blinds
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      step="0.5"
-                      value={rakeCap}
-                      onChange={(event) =>
-                        setRakeCap(Math.min(10, Math.max(0, Number(event.target.value))))
-                      }
-                    />
+                    <small>{tagline.length} Of 72 Characters</small>
                   </label>
                 </div>
-              )}
-            </section>
-          )}
+              </section>
+            )}
 
-          {step === 3 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Bad Beat Protection</span>
-              <h2>Do You Want A Bad Beat Jackpot?</h2>
-              <p>
-                Enabled Clubs Must Seed The Main Jackpot With At Least 100 Chips. Future BBJ Drops
-                Continue Funding The Main, Backup, And Promotional Banks.
-              </p>
-              <div className="club-setup-wizard__choice-grid">
-                <button
-                  type="button"
-                  className={bbjAnswer === 'enabled' ? 'is-selected' : ''}
-                  aria-pressed={bbjAnswer === 'enabled'}
-                  onClick={() => {
-                    if (bbjAnswer !== 'enabled') setBbjFundingConfirmed(false);
-                    setBbjAnswer('enabled');
-                  }}
-                >
-                  <strong>Enable BBJ</strong>
-                  <span>Seed And Begin Collecting</span>
-                </button>
-                <button
-                  type="button"
-                  className={bbjAnswer === 'not_now' ? 'is-selected' : ''}
-                  aria-pressed={bbjAnswer === 'not_now'}
-                  onClick={() => {
-                    setBbjAnswer('not_now');
-                    setBbjFundingConfirmed(false);
-                  }}
-                >
-                  <strong>Not Now</strong>
-                  <span>Record The Decision Without Funding</span>
-                </button>
-              </div>
-              {bbjEnabled && (
-                <>
-                  <div className="club-setup-wizard__fields">
-                    <label>
-                      BBJ Opening Seed
-                      <input
-                        type="number"
-                        min="100"
-                        step="100"
-                        value={bbjSeed}
-                        onChange={(event) => {
-                          setBbjFundingConfirmed(false);
-                          setBbjSeed(wholeChips(event.target.value));
-                        }}
-                      />
-                      <small>Minimum 100 Chips From The Club Bank</small>
-                    </label>
-                  </div>
-                  <FundingConfirmation
-                    title="BBJ Funding Confirmation"
-                    amount={bbjSeed}
-                    destination="The Bad Beat Jackpot Main Bank"
-                    confirmed={bbjFundingConfirmed}
-                    onChange={setBbjFundingConfirmed}
-                    bankAfter={remaining}
-                  />
-                </>
-              )}
-            </section>
-          )}
-
-          {step === 4 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Multiplier Coverage</span>
-              <h2>Do You Want To Offer Spins?</h2>
-              <p>
-                Spins Require Operator Capital To Cover Two Top-Tier Payouts At The Largest Buy-In
-                You Offer. The Minimum Is 100 Chips, And Higher Boards Require More Coverage.
-              </p>
-              <div className="club-setup-wizard__choice-grid">
-                <button
-                  type="button"
-                  className={spinsEnabled ? 'is-selected' : ''}
-                  aria-pressed={spinsEnabled}
-                  onClick={() => {
-                    setSpinsEnabled(true);
-                    setSpinFundingConfirmed(false);
-                    setSpinSeed((value) => Math.max(value, spinCoverageMinimum));
-                  }}
-                >
-                  <strong>Enable Spins</strong>
-                  <span>Fund The Reserve And Open The Board</span>
-                </button>
-                <button
-                  type="button"
-                  className={!spinsEnabled ? 'is-selected' : ''}
-                  aria-pressed={!spinsEnabled}
-                  onClick={() => {
-                    setSpinsEnabled(false);
-                    setSpinFundingConfirmed(false);
-                  }}
-                >
-                  <strong>Not Now</strong>
-                  <span>Keep Spins Closed For Launch</span>
-                </button>
-              </div>
-              {spinsEnabled && (
-                <div className="club-setup-wizard__fields two-columns">
-                  <label>
-                    Largest Spin Buy-In
-                    <select
-                      value={spinMaxStake}
-                      onChange={(event) => {
-                        const stake = Number(event.target.value);
-                        setSpinMaxStake(stake);
-                        setSpinFundingConfirmed(false);
-                        setSpinSeed((value) =>
-                          Math.max(value, Math.max(100, requiredSeedForStake(stake)))
-                        );
-                      }}
-                    >
-                      {SPIN_BOARD_STAKES.map((stake) => (
-                        <option key={stake} value={stake}>
-                          {stake} Chips
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Spin Reserve Seed
-                    <input
-                      type="number"
-                      min={spinCoverageMinimum}
-                      step="100"
-                      value={spinSeed}
-                      onChange={(event) => {
-                        setSpinFundingConfirmed(false);
-                        setSpinSeed(wholeChips(event.target.value));
-                      }}
-                    />
-                    <small>Coverage Minimum: {exactChips(spinCoverageMinimum)} Chips</small>
-                  </label>
+            {step === 2 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Revenue Schedule</span>
+                <h2 className="sc-ink--silver">Choose Your Cash-Game Rake</h2>
+                <p>
+                  The House Schedule Uses The Published 10% Rate And Stake-Specific Caps. A Custom
+                  Schedule Applies Club-Wide Unless A Table Overrides It.
+                </p>
+                <div className="club-setup-wizard__choice-grid">
+                  <button
+                    type="button"
+                    className={rakeMode === 'house' ? 'is-selected' : ''}
+                    aria-pressed={rakeMode === 'house'}
+                    onClick={() => setRakeMode('house')}
+                  >
+                    <strong>Use House Schedule</strong>
+                    <span>Recommended Published Rate And Caps</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={rakeMode === 'custom' ? 'is-selected' : ''}
+                    aria-pressed={rakeMode === 'custom'}
+                    onClick={() => setRakeMode('custom')}
+                  >
+                    <strong>Use Custom Schedule</strong>
+                    <span>Set A Club Rate And Cap</span>
+                  </button>
                 </div>
-              )}
-              {spinsEnabled && (
-                <FundingConfirmation
-                  title="Spin Funding Confirmation"
-                  amount={spinSeed}
-                  destination="The Spin Reserve"
-                  confirmed={spinFundingConfirmed}
-                  onChange={setSpinFundingConfirmed}
-                  bankAfter={remaining}
-                />
-              )}
-            </section>
-          )}
-
-          {step === 5 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Opening Campaign</span>
-              <h2>Set Up Your First Promotion</h2>
-              <p>
-                Create A 30-Day Opening Promotion And Reserve Its Prize Budget In The Club Promo
-                Wallet.
-              </p>
-              <div className="club-setup-wizard__choice-grid">
-                <button
-                  type="button"
-                  className={promoAnswer === 'enabled' ? 'is-selected' : ''}
-                  aria-pressed={promoAnswer === 'enabled'}
-                  onClick={() => {
-                    if (promoAnswer !== 'enabled') setPromoFundingConfirmed(false);
-                    setPromoAnswer('enabled');
-                  }}
-                >
-                  <strong>Create Promotion</strong>
-                  <span>Publish And Fund An Opening Campaign</span>
-                </button>
-                <button
-                  type="button"
-                  className={promoAnswer === 'not_now' ? 'is-selected' : ''}
-                  aria-pressed={promoAnswer === 'not_now'}
-                  onClick={() => {
-                    setPromoAnswer('not_now');
-                    setPromoFundingConfirmed(false);
-                  }}
-                >
-                  <strong>Not Now</strong>
-                  <span>Open Without A Campaign</span>
-                </button>
-              </div>
-              {promoEnabled && (
-                <div className="club-setup-wizard__fields two-columns">
-                  <label>
-                    Promotion Type
-                    <select
-                      value={promoType}
-                      onChange={(event) => setPromoType(event.target.value as OpeningPromotionType)}
-                    >
-                      {PROMOTION_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Prize Budget
-                    <input
-                      type="number"
-                      min="100"
-                      step="100"
-                      value={promoBudget}
-                      onChange={(event) => {
-                        setPromoFundingConfirmed(false);
-                        setLeaderboardFundingConfirmed(false);
-                        setPromoBudget(wholeChips(event.target.value));
-                      }}
-                    />
-                    <small>Moved Into The Club Promo Wallet</small>
-                  </label>
-                  <label className="full-width">
-                    Promotion Name
-                    <input
-                      maxLength={80}
-                      value={promoName}
-                      onChange={(event) => setPromoName(event.target.value)}
-                    />
-                  </label>
-                  <label className="full-width">
-                    Promotion Description
-                    <textarea
-                      maxLength={500}
-                      rows={4}
-                      value={promoDescription}
-                      onChange={(event) => setPromoDescription(event.target.value)}
-                    />
-                  </label>
-                </div>
-              )}
-              {promoEnabled && (
-                <FundingConfirmation
-                  title="Promotion Funding Confirmation"
-                  amount={promoBudget}
-                  destination="The Club Promo Wallet"
-                  confirmed={promoFundingConfirmed}
-                  onChange={setPromoFundingConfirmed}
-                  bankAfter={remaining}
-                />
-              )}
-            </section>
-          )}
-
-          {step === 6 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Player Rankings</span>
-              <h2>Will Leaderboards Be Display Only Or Pay Prizes?</h2>
-              <p>
-                Display Only Is Recommended For A New Club. Add Prizes After The Club Has Enough
-                Reliable Play Volume To Make Weekly Rankings Meaningful.
-              </p>
-              <div className="club-setup-wizard__choice-grid">
-                <button
-                  type="button"
-                  className={!leaderboardRewardsEnabled ? 'is-selected' : ''}
-                  aria-pressed={!leaderboardRewardsEnabled}
-                  onClick={() => {
-                    setLeaderboardRewardsEnabled(false);
-                    setLeaderboardFundingConfirmed(false);
-                  }}
-                >
-                  <strong>Display Only</strong>
-                  <span>Recommended For New Clubs</span>
-                </button>
-                <button
-                  type="button"
-                  className={leaderboardRewardsEnabled ? 'is-selected' : ''}
-                  aria-pressed={leaderboardRewardsEnabled}
-                  onClick={() => {
-                    if (!leaderboardRewardsEnabled) setLeaderboardFundingConfirmed(false);
-                    setLeaderboardRewardsEnabled(true);
-                  }}
-                >
-                  <strong>Pay Weekly Prizes</strong>
-                  <span>Fund A Ready-Made Top-Three Plan</span>
-                </button>
-              </div>
-              {leaderboardRewardsEnabled && (
-                <>
+                {rakeMode === 'custom' && (
                   <div className="club-setup-wizard__fields two-columns">
                     <label>
-                      Ranking Metric
-                      <select
-                        value={leaderboardMetric}
+                      Rake Percent
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={rakePercent}
                         onChange={(event) =>
-                          setLeaderboardMetric(event.target.value as typeof leaderboardMetric)
+                          setRakePercent(Math.min(10, Math.max(0, Number(event.target.value))))
                         }
+                      />
+                    </label>
+                    <label>
+                      Rake Cap In Big Blinds
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={rakeCap}
+                        onChange={(event) =>
+                          setRakeCap(Math.min(10, Math.max(0, Number(event.target.value))))
+                        }
+                      />
+                    </label>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {step === 3 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Bad Beat Protection</span>
+                <h2 className="sc-ink--silver">Do You Want A Bad Beat Jackpot?</h2>
+                <p>
+                  Enabled Clubs Must Seed The Main Jackpot With At Least 100 Chips. Future BBJ Drops
+                  Continue Funding The Main, Backup, And Promotional Banks.
+                </p>
+                <div className="club-setup-wizard__choice-grid">
+                  <button
+                    type="button"
+                    className={bbjAnswer === 'enabled' ? 'is-selected' : ''}
+                    aria-pressed={bbjAnswer === 'enabled'}
+                    onClick={() => {
+                      if (bbjAnswer !== 'enabled') setBbjFundingConfirmed(false);
+                      setBbjAnswer('enabled');
+                    }}
+                  >
+                    <strong>Enable BBJ</strong>
+                    <span>Seed And Begin Collecting</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={bbjAnswer === 'not_now' ? 'is-selected' : ''}
+                    aria-pressed={bbjAnswer === 'not_now'}
+                    onClick={() => {
+                      setBbjAnswer('not_now');
+                      setBbjFundingConfirmed(false);
+                    }}
+                  >
+                    <strong>Not Now</strong>
+                    <span>Record The Decision Without Funding</span>
+                  </button>
+                </div>
+                {bbjEnabled && (
+                  <>
+                    <div className="club-setup-wizard__fields">
+                      <label>
+                        BBJ Opening Seed
+                        <input
+                          type="number"
+                          min="100"
+                          step="100"
+                          value={bbjSeed}
+                          onChange={(event) => {
+                            setBbjFundingConfirmed(false);
+                            setBbjSeed(wholeChips(event.target.value));
+                          }}
+                        />
+                        <small>Minimum 100 Chips From The Club Bank</small>
+                      </label>
+                    </div>
+                    <FundingConfirmation
+                      title="BBJ Funding Confirmation"
+                      amount={bbjSeed}
+                      destination="The Bad Beat Jackpot Main Bank"
+                      confirmed={bbjFundingConfirmed}
+                      onChange={setBbjFundingConfirmed}
+                      bankAfter={remaining}
+                    />
+                  </>
+                )}
+              </section>
+            )}
+
+            {step === 4 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Multiplier Coverage</span>
+                <h2 className="sc-ink--silver">Do You Want To Offer Spins?</h2>
+                <p>
+                  Spins Require Operator Capital To Cover Two Top-Tier Payouts At The Largest Buy-In
+                  You Offer. The Minimum Is 100 Chips, And Higher Boards Require More Coverage.
+                </p>
+                <div className="club-setup-wizard__choice-grid">
+                  <button
+                    type="button"
+                    className={spinsEnabled ? 'is-selected' : ''}
+                    aria-pressed={spinsEnabled}
+                    onClick={() => {
+                      setSpinsEnabled(true);
+                      setSpinFundingConfirmed(false);
+                      setSpinSeed((value) => Math.max(value, spinCoverageMinimum));
+                    }}
+                  >
+                    <strong>Enable Spins</strong>
+                    <span>Fund The Reserve And Open The Board</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={!spinsEnabled ? 'is-selected' : ''}
+                    aria-pressed={!spinsEnabled}
+                    onClick={() => {
+                      setSpinsEnabled(false);
+                      setSpinFundingConfirmed(false);
+                    }}
+                  >
+                    <strong>Not Now</strong>
+                    <span>Keep Spins Closed For Launch</span>
+                  </button>
+                </div>
+                {spinsEnabled && (
+                  <div className="club-setup-wizard__fields two-columns">
+                    <label>
+                      Largest Spin Buy-In
+                      <select
+                        value={spinMaxStake}
+                        onChange={(event) => {
+                          const stake = Number(event.target.value);
+                          setSpinMaxStake(stake);
+                          setSpinFundingConfirmed(false);
+                          setSpinSeed((value) =>
+                            Math.max(value, Math.max(100, requiredSeedForStake(stake)))
+                          );
+                        }}
                       >
-                        <option value="profit">Profit</option>
-                        <option value="hands_played">Hands Played</option>
-                        <option value="tournaments_won">Tournaments Won</option>
-                        <option value="roi">Return On Investment</option>
+                        {SPIN_BOARD_STAKES.map((stake) => (
+                          <option key={stake} value={stake}>
+                            {stake} Chips
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label>
-                      Weekly Prize Budget
+                      Spin Reserve Seed
+                      <input
+                        type="number"
+                        min={spinCoverageMinimum}
+                        step="100"
+                        value={spinSeed}
+                        onChange={(event) => {
+                          setSpinFundingConfirmed(false);
+                          setSpinSeed(wholeChips(event.target.value));
+                        }}
+                      />
+                      <small>Coverage Minimum: {compactChips(spinCoverageMinimum)} Chips</small>
+                    </label>
+                  </div>
+                )}
+                {spinsEnabled && (
+                  <FundingConfirmation
+                    title="Spin Funding Confirmation"
+                    amount={spinSeed}
+                    destination="The Spin Reserve"
+                    confirmed={spinFundingConfirmed}
+                    onChange={setSpinFundingConfirmed}
+                    bankAfter={remaining}
+                  />
+                )}
+              </section>
+            )}
+
+            {step === 5 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Opening Campaign</span>
+                <h2 className="sc-ink--silver">Set Up Your First Promotion</h2>
+                <p>
+                  Create A 30-Day Opening Promotion And Move Its Prize Budget From The Club Bank
+                  Into The Club Promo Wallet.
+                </p>
+                <div className="club-setup-wizard__choice-grid">
+                  <button
+                    type="button"
+                    className={promoAnswer === 'enabled' ? 'is-selected' : ''}
+                    aria-pressed={promoAnswer === 'enabled'}
+                    onClick={() => {
+                      if (promoAnswer !== 'enabled') setPromoFundingConfirmed(false);
+                      setPromoAnswer('enabled');
+                    }}
+                  >
+                    <strong>Create Promotion</strong>
+                    <span>Publish And Fund An Opening Campaign</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={promoAnswer === 'not_now' ? 'is-selected' : ''}
+                    aria-pressed={promoAnswer === 'not_now'}
+                    onClick={() => {
+                      setPromoAnswer('not_now');
+                      setPromoFundingConfirmed(false);
+                    }}
+                  >
+                    <strong>Not Now</strong>
+                    <span>Open Without A Campaign</span>
+                  </button>
+                </div>
+                {promoEnabled && (
+                  <div className="club-setup-wizard__fields two-columns">
+                    <label>
+                      Promotion Type
+                      <select
+                        value={promoType}
+                        onChange={(event) =>
+                          setPromoType(event.target.value as OpeningPromotionType)
+                        }
+                      >
+                        {PROMOTION_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Prize Budget
                       <input
                         type="number"
                         min="100"
                         step="100"
-                        value={leaderboardPrizeBudget}
+                        value={promoBudget}
                         onChange={(event) => {
+                          setPromoFundingConfirmed(false);
                           setLeaderboardFundingConfirmed(false);
-                          setLeaderboardPrizeBudget(wholeChips(event.target.value));
+                          setPromoBudget(wholeChips(event.target.value));
                         }}
                       />
-                      <small>Held As The First-Round Prize Seed, Outside The Promo Wallet</small>
+                      <small>Moved Into The Club Promo Wallet</small>
+                    </label>
+                    <label className="full-width">
+                      Promotion Name
+                      <input
+                        maxLength={80}
+                        value={promoName}
+                        onChange={(event) => setPromoName(event.target.value)}
+                      />
+                    </label>
+                    <label className="full-width">
+                      Promotion Description
+                      <textarea
+                        maxLength={500}
+                        rows={4}
+                        value={promoDescription}
+                        onChange={(event) => setPromoDescription(event.target.value)}
+                      />
                     </label>
                   </div>
-                  <div
-                    className="club-setup-wizard__suggestions"
-                    aria-label="Suggested Leaderboard Prize Budgets"
-                  >
-                    <span>Suggested Budgets</span>
-                    {[100, 500, 1000].map((budget) => (
-                      <button
-                        key={budget}
-                        type="button"
-                        className={leaderboardPrizeBudget === budget ? 'is-selected' : ''}
-                        aria-pressed={leaderboardPrizeBudget === budget}
-                        /* A budget the server's funding gate would reject is
-                           shown but never selectable. */
-                        disabled={budget > leaderboardFundingCapacity}
-                        onClick={() => {
-                          setLeaderboardFundingConfirmed(false);
-                          setLeaderboardPrizeBudget(budget);
-                        }}
-                      >
-                        {compactChips(budget)} Chips
-                      </button>
-                    ))}
-                  </div>
-                  <p className="club-setup-wizard__commit-note">
-                    {leaderboardFundingCapacity >= 100
-                      ? `A Weekly Prize Budget Can Be At Most The ${exactChips(leaderboardFundingCapacity)} Chip Promotion Budget, Because Every Later Round Is Paid From The Promo Wallet.`
-                      : 'Paid Leaderboards Need A Funded Promotion Budget First, Because Every Later Round Is Paid From The Promo Wallet.'}
-                  </p>
-                  <div className="club-setup-wizard__prize-plan">
-                    <span>Suggested Balanced Plan</span>
-                    <strong>1st {compactChips(leaderboardPrizeSplit.first)}</strong>
-                    <strong>2nd {compactChips(leaderboardPrizeSplit.second)}</strong>
-                    <strong>3rd {compactChips(leaderboardPrizeSplit.third)}</strong>
-                  </div>
+                )}
+                {promoEnabled && (
                   <FundingConfirmation
-                    title="Leaderboard Funding Confirmation"
-                    amount={leaderboardPrizeBudget}
-                    destination="The Leaderboard First-Round Prize Seed"
-                    confirmed={leaderboardFundingConfirmed}
-                    onChange={setLeaderboardFundingConfirmed}
+                    title="Promotion Funding Confirmation"
+                    amount={promoBudget}
+                    destination="The Club Promo Wallet"
+                    confirmed={promoFundingConfirmed}
+                    onChange={setPromoFundingConfirmed}
                     bankAfter={remaining}
                   />
-                </>
-              )}
-            </section>
-          )}
+                )}
+              </section>
+            )}
 
-          {step === 7 && (
-            <section className="club-setup-wizard__panel">
-              <span className="club-setup-wizard__eyebrow">Opening Ledger Review</span>
-              <h2>Review Before Opening The Club</h2>
-              <div className="club-setup-wizard__ledger">
-                <div>
-                  <span>Rake Schedule</span>
-                  <strong>
-                    {rakeMode === 'house'
-                      ? 'House Schedule'
-                      : `${rakePercent}% / ${rakeCap} BB Cap`}
-                  </strong>
+            {step === 6 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Player Rankings</span>
+                <h2 className="sc-ink--silver">Will Leaderboards Be Display Only Or Pay Prizes?</h2>
+                <p>
+                  Display Only Is Recommended For A New Club. Add Prizes After The Club Has Enough
+                  Reliable Play Volume To Make Weekly Rankings Meaningful.
+                </p>
+                <div className="club-setup-wizard__choice-grid">
+                  <button
+                    type="button"
+                    className={!leaderboardRewardsEnabled ? 'is-selected' : ''}
+                    aria-pressed={!leaderboardRewardsEnabled}
+                    onClick={() => {
+                      setLeaderboardRewardsEnabled(false);
+                      setLeaderboardFundingConfirmed(false);
+                    }}
+                  >
+                    <strong>Display Only</strong>
+                    <span>Recommended For New Clubs</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={leaderboardRewardsEnabled ? 'is-selected' : ''}
+                    aria-pressed={leaderboardRewardsEnabled}
+                    onClick={() => {
+                      if (!leaderboardRewardsEnabled) setLeaderboardFundingConfirmed(false);
+                      setLeaderboardRewardsEnabled(true);
+                    }}
+                  >
+                    <strong>Pay Weekly Prizes</strong>
+                    <span>Fund A Ready-Made Top-Three Plan</span>
+                  </button>
                 </div>
-                <div>
-                  <span>Club Tag Line</span>
-                  <strong>{normalizedTagline}</strong>
-                </div>
-                <div>
-                  <span>Bad Beat Jackpot</span>
-                  <strong>{bbjEnabled ? `${compactChips(bbjSeed)} Chips` : 'Not Enabled'}</strong>
-                </div>
-                <div>
-                  <span>Spin Reserve</span>
-                  <strong>
-                    {spinsEnabled ? `${compactChips(spinSeed)} Chips` : 'Not Enabled'}
-                  </strong>
-                </div>
-                <div>
-                  <span>Promotion Budget</span>
-                  <strong>
-                    {promoEnabled ? `${compactChips(promoBudget)} Chips` : 'Not Enabled'}
-                  </strong>
-                </div>
-                <div>
-                  <span>Leaderboard Rewards</span>
-                  <strong>
-                    {leaderboardRewardsEnabled
-                      ? `${compactChips(leaderboardPrizeBudget)} Chips / Week, First Round Seeded`
-                      : 'Display Only'}
-                  </strong>
-                </div>
-                <div className="club-setup-wizard__ledger-total">
-                  <span>Total Opening Allocation</span>
-                  <strong>{compactChips(allocation)} Chips</strong>
+                {leaderboardRewardsEnabled && (
+                  <>
+                    <div className="club-setup-wizard__fields two-columns">
+                      <label>
+                        Ranking Metric
+                        <select
+                          value={leaderboardMetric}
+                          onChange={(event) =>
+                            setLeaderboardMetric(event.target.value as typeof leaderboardMetric)
+                          }
+                        >
+                          <option value="profit">Profit</option>
+                          <option value="hands_played">Hands Played</option>
+                          <option value="tournaments_won">Tournaments Won</option>
+                          <option value="roi">Return On Investment</option>
+                        </select>
+                      </label>
+                      <label>
+                        Weekly Prize Budget
+                        <input
+                          type="number"
+                          min="100"
+                          step="100"
+                          value={leaderboardPrizeBudget}
+                          onChange={(event) => {
+                            setLeaderboardFundingConfirmed(false);
+                            setLeaderboardPrizeBudget(wholeChips(event.target.value));
+                          }}
+                        />
+                        <small>Held As The First-Round Prize Seed, Outside The Promo Wallet</small>
+                      </label>
+                    </div>
+                    <div
+                      className="club-setup-wizard__suggestions"
+                      aria-label="Suggested Leaderboard Prize Budgets"
+                    >
+                      <span>Suggested Budgets</span>
+                      {[100, 500, 1000].map((budget) => (
+                        <button
+                          key={budget}
+                          type="button"
+                          className={leaderboardPrizeBudget === budget ? 'is-selected' : ''}
+                          aria-pressed={leaderboardPrizeBudget === budget}
+                          /* A budget the server's funding gate would reject is
+                           shown but never selectable. */
+                          disabled={budget > leaderboardFundingCapacity}
+                          onClick={() => {
+                            setLeaderboardFundingConfirmed(false);
+                            setLeaderboardPrizeBudget(budget);
+                          }}
+                        >
+                          {compactChips(budget)} Chips
+                        </button>
+                      ))}
+                    </div>
+                    <p className="club-setup-wizard__commit-note">
+                      {leaderboardFundingCapacity >= 100
+                        ? `A Weekly Prize Budget Can Be At Most The ${compactChips(leaderboardFundingCapacity)} Chip Promotion Budget, Because Every Later Round Is Paid From The Promo Wallet.`
+                        : 'Paid Leaderboards Need A Funded Promotion Budget First, Because Every Later Round Is Paid From The Promo Wallet.'}
+                    </p>
+                    <div className="club-setup-wizard__prize-plan">
+                      <span>Suggested Balanced Plan</span>
+                      <strong>1st {compactChips(leaderboardPrizeSplit.first)}</strong>
+                      <strong>2nd {compactChips(leaderboardPrizeSplit.second)}</strong>
+                      <strong>3rd {compactChips(leaderboardPrizeSplit.third)}</strong>
+                    </div>
+                    <FundingConfirmation
+                      title="Leaderboard Funding Confirmation"
+                      amount={leaderboardPrizeBudget}
+                      destination="The Leaderboard First-Round Prize Seed"
+                      confirmed={leaderboardFundingConfirmed}
+                      onChange={setLeaderboardFundingConfirmed}
+                      bankAfter={remaining}
+                    />
+                  </>
+                )}
+              </section>
+            )}
+
+            {step === 7 && (
+              <section className="club-setup-wizard__panel">
+                <span className="club-setup-wizard__eyebrow">Opening Ledger Review</span>
+                <h2 className="sc-ink--silver">Review Before Opening The Club</h2>
+                <div className="club-setup-wizard__ledger">
+                  <div>
+                    <span>Rake Schedule</span>
+                    <strong>
+                      {rakeMode === 'house'
+                        ? 'House Schedule'
+                        : `${rakePercent}% / ${rakeCap} BB Cap`}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Club Tag Line</span>
+                    <strong>{titleCase(normalizedTagline)}</strong>
+                  </div>
+                  <div>
+                    <span>Bad Beat Jackpot</span>
+                    <strong>{bbjEnabled ? `${compactChips(bbjSeed)} Chips` : 'Not Enabled'}</strong>
+                  </div>
+                  <div>
+                    <span>Spin Reserve</span>
+                    <strong>
+                      {spinsEnabled ? `${compactChips(spinSeed)} Chips` : 'Not Enabled'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Promotion Budget</span>
+                    <strong>
+                      {promoEnabled ? `${compactChips(promoBudget)} Chips` : 'Not Enabled'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Leaderboard Rewards</span>
+                    <strong>
+                      {leaderboardRewardsEnabled
+                        ? `${compactChips(leaderboardPrizeBudget)} Chips / Week, First Round Seeded`
+                        : 'Display Only'}
+                    </strong>
+                  </div>
+                  <div className="club-setup-wizard__ledger-total">
+                    <span>Total Opening Allocation</span>
+                    <strong>{compactChips(allocation)} Chips</strong>
+                  </div>
+                  {remaining < 0 ? (
+                    <div className="club-setup-wizard__ledger-balance is-short">
+                      <span>Club Bank After Setup</span>
+                      <strong>Short By {shortfallChips(remaining)} Chips</strong>
+                    </div>
+                  ) : (
+                    <div className="club-setup-wizard__ledger-balance">
+                      <span>Club Bank After Setup</span>
+                      <strong>{compactChips(remaining)} Chips</strong>
+                    </div>
+                  )}
                 </div>
                 {remaining < 0 ? (
-                  <div className="club-setup-wizard__ledger-balance is-short">
-                    <span>Club Bank After Setup</span>
-                    <strong>Short By {shortfallChips(remaining)} Chips</strong>
-                  </div>
+                  <p className="club-setup-wizard__shortfall">
+                    The Club Bank Cannot Cover This Setup. Go Back And Lower A Seed Or Budget By At
+                    Least {shortfallChips(remaining)} Chips.
+                  </p>
                 ) : (
-                  <div className="club-setup-wizard__ledger-balance">
-                    <span>Club Bank After Setup</span>
-                    <strong>{compactChips(remaining)} Chips</strong>
-                  </div>
+                  <p className="club-setup-wizard__commit-note">
+                    Completing Setup Transfers Exactly {exactChips(allocation)} Chips From The Club
+                    Bank.
+                  </p>
                 )}
-              </div>
-              {remaining < 0 ? (
-                <p className="club-setup-wizard__shortfall">
-                  This Setup Needs {exactChips(allocation)} Chips But The Club Bank Holds{' '}
-                  {exactChips(clubBank)}. Go Back And Lower A Seed Or Budget By At Least{' '}
-                  {shortfallChips(remaining)} Chips.
-                </p>
-              ) : (
                 <p className="club-setup-wizard__commit-note">
-                  Completing Setup Transfers Exactly {exactChips(allocation)} Chips From The Club
-                  Bank.
+                  Completing Setup Commits Every Enabled System In One Transaction. A Paid
+                  Leaderboard Holds Its First-Round Seed Outside The Promo Wallet. The First Round
+                  Is Paid From That Seed, Then From The Promo Wallet, And Any Unused Seed Moves Into
+                  The Promo Wallet. Every Later Round Is Paid Only From The Promo Wallet. If The
+                  Promo Wallet Cannot Cover A Round, That Round Stays Unpaid And Is Retried
+                  Automatically. No Round Is Ever Paid From The Club Bank. If Any Treasury,
+                  Permission, Or Promotion Step Fails, Nothing Is Deducted.
                 </p>
-              )}
-              <p className="club-setup-wizard__commit-note">
-                Completing Setup Commits Every Enabled System In One Transaction. A Paid Leaderboard
-                Holds Its First-Round Seed Outside The Promo Wallet. The First Round Is Paid From
-                That Seed, Then From The Promo Wallet, And Any Unused Seed Moves Into The Promo
-                Wallet. Every Later Round Is Paid Only From The Promo Wallet. If The Promo Wallet
-                Cannot Cover A Round, That Round Stays Unpaid And Is Retried Automatically. The Club
-                Bank Is Never Debited For Leaderboard Prizes. If Any Treasury, Permission, Or
-                Promotion Step Fails, Nothing Is Deducted.
-              </p>
-            </section>
-          )}
-          {stepError && (
-            <div className="club-setup-wizard__error" role="alert">
-              {stepError}
-            </div>
-          )}
-        </main>
+              </section>
+            )}
+          </main>
+        </div>
+        {/* Outside the scroll wrapper, so the reason Continue is blocked is always
+            on screen above the plates, however long the step. */}
+        {stepError && (
+          <div className="club-setup-wizard__error" role="alert">
+            {stepError}
+          </div>
+        )}
       </SpadeConsole>
     </div>
   );

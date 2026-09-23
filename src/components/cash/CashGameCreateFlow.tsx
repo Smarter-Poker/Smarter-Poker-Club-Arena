@@ -43,7 +43,11 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
-import { getTableState } from '../../services/GameServerAPI';
+import {
+  wakeTable,
+  type TableViewRefusal,
+  type TableWakeResult,
+} from '../../services/GameServerAPI';
 import { presetsFor, DEFAULT_BLINDS_INDEX } from '../../config/blindsPresets';
 import { isFixedLimitVariant, stakesLabel } from '../../lib/bettingStructure';
 import { getRakeConfig, RAKE_INHERIT } from '../../config/RakeConfig';
@@ -75,27 +79,46 @@ import './CashGameCreateFlow.css';
    "This Table Is No Longer Running" and the endless "Reconnecting To The
    Table" on a table thirty seconds old came from.
 
-   null now means "not awake yet". The wake is retried a bounded number of
-   times, awaited one after another INSIDE the one request the host started by
-   tapping Start (the double-tap guard and the busy label cover all of it). It
-   is not a background loop: it ends after WAKE_RETRY_DELAYS_MS.length + 1
-   reads, about four seconds, whatever the engine says. */
+   "Not awake" now means not awake yet. The wake is retried a bounded number
+   of times, awaited one after another INSIDE the one request the host started
+   by tapping Start (the double-tap guard and the busy label cover all of it).
+   It is not a background loop: it ends after WAKE_RETRY_DELAYS_MS.length + 1
+   reads, about four seconds, whatever the engine says.
+
+   2026-09-22: and "not you" is not "not yet". The engine may refuse to show
+   this table to the person who just created it - a union operator allowed to
+   CREATE a game is not always allowed to WATCH it (server TableViewerAccess:
+   seated players and active members of a club in scope). That verdict now
+   stops the wake at once (wakeTable in services/GameServerAPI tells it apart)
+   and the host is told who can watch, instead of four seconds of retries and
+   "The Table Is Still Starting". */
 export const WAKE_RETRY_DELAYS_MS = [700, 1300, 2000] as const;
 export const GAME_CREATED_STILL_STARTING = 'Game Created. The Table Is Still Starting';
+/* What a creator the engine will not let watch is told, one sentence per
+   verdict. The Record makes a new verdict a compile error until it has one. */
+export const GAME_CREATED_MEMBERS_ONLY = 'Game Created. Only Club Members Can Watch This Table';
+export const GAME_CREATED_SEATED_ONLY = 'Game Created. Only Seated Players Can Watch This Table';
+const GAME_CREATED_BUT_REFUSED: Record<TableViewRefusal, string> = {
+  CLUB_MEMBERSHIP_REQUIRED: GAME_CREATED_MEMBERS_ONLY,
+  OBSERVERS_RESTRICTED: GAME_CREATED_SEATED_ONLY,
+};
 
-async function wakeTableEngine(tableId: string): Promise<boolean> {
+async function wakeTableEngine(tableId: string): Promise<TableWakeResult> {
   for (let attempt = 0; attempt <= WAKE_RETRY_DELAYS_MS.length; attempt++) {
     if (attempt > 0) {
       const delay = WAKE_RETRY_DELAYS_MS[attempt - 1];
       await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
     }
     try {
-      if (await getTableState(tableId)) return true;
+      // Awake, or a verdict: either one is the answer, and retrying a verdict
+      // is not waiting for anything.
+      const answer = await wakeTable(tableId);
+      if (answer.status !== 'not_awake') return answer;
     } catch (err) {
       reportError(err, 'CashGameCreateFlow.engine_wake');
     }
   }
-  return false;
+  return { status: 'not_awake' };
 }
 
 interface Props {
@@ -327,15 +350,21 @@ export default function CashGameCreateFlow({
           // that provisions the table's engine before the felt loads. The
           // answer is READ now (see wakeTableEngine): only an engine that
           // answered is called started.
-          const awake = await wakeTableEngine(res.table_id);
-          if (awake) {
+          const wake = await wakeTableEngine(res.table_id);
+          if (wake.status === 'awake') {
             toast.success('Game Created And Started');
             navigate(`/table/${res.table_id}`);
           } else {
-            // The game row exists; the engine has not answered for it yet.
-            // Say exactly that and leave by the Save door: the club page,
-            // where the first viewer of the table wakes it on demand.
-            toast.info(GAME_CREATED_STILL_STARTING);
+            // The game row exists either way. Not awake: the engine has not
+            // answered for it yet. Refused: it answered, and this host may not
+            // watch it - the felt would only say so again. Say exactly which,
+            // and leave by the Save door: the club page, where a viewer the
+            // engine admits wakes the table on demand.
+            toast.info(
+              wake.status === 'refused'
+                ? GAME_CREATED_BUT_REFUSED[wake.code]
+                : GAME_CREATED_STILL_STARTING
+            );
             if (onSaved) onSaved();
             else navigate(`/clubs/${clubId}`);
           }

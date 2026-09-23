@@ -40,9 +40,22 @@
   min-width: 0;
 }
 
+/* The body itself does not scroll: its wrapper does, and the reason Continue is
+   blocked sits below the wrapper on the same glass, so it can never scroll out
+   of sight or be painted over the step's own content. */
 .club-setup-wizard__shell > .sc__body {
   min-height: 0;
+  overflow: hidden;
+}
+
+.club-setup-wizard__scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3cqw;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .club-setup-wizard button,
@@ -190,6 +203,7 @@
 
 .club-setup-wizard__main {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   min-height: 48cqw;
   padding-block: 2.8cqw 1cqw;
@@ -202,19 +216,15 @@
   min-width: 0;
 }
 
+/* Colour and bevel come from the kit's engraved silver (sc-ink--silver). */
 .club-setup-wizard__panel h2 {
   margin: 0;
-  color: #e4e7ec;
   font:
     800 5cqw/1.08 'Roboto Condensed',
     Inter,
     sans-serif;
   letter-spacing: 0.035em;
   text-transform: uppercase;
-  text-shadow:
-    0 -0.15cqw 0 rgb(255 255 255 / 44%),
-    0 0.28cqw 0 #9aa5b3,
-    0 0.52cqw 0 #020304;
 }
 
 .club-setup-wizard__panel > p,
@@ -413,8 +423,8 @@ p.club-setup-wizard__shortfall {
     sans-serif;
 }
 
-/* The exact-transfer confirmation: the kit's labeled On / Off switch, with the
-   amount printed in full in its label. */
+/* The exact-transfer confirmation: the kit's tick well, with the amount printed
+   in full in its label. */
 .club-setup-wizard__confirm {
   display: flex;
   flex-direction: column;
@@ -425,20 +435,31 @@ p.club-setup-wizard__shortfall {
   border-bottom: 1px solid #000;
 }
 
-.club-setup-wizard__confirm .config-toggle {
-  gap: 3cqw;
+/* The box and its lit core are the kit's (sc-check). This only switches off
+   the chassis metallic-popups.css paints on every dialog button, longhand by
+   longhand, and sets the label's type. The ink is the kit's: muted until
+   ticked, green once ticked. */
+.club-setup-wizard .club-setup-wizard__tick {
+  appearance: none;
   min-width: 0;
-  padding: 0.6cqw 0;
-  border-bottom: 0;
-}
-
-.club-setup-wizard__confirm .toggle-label {
-  min-width: 0;
-  color: #e4e7ec;
+  margin: 0;
+  padding: 1.2cqw 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
   font:
     700 3.1cqw/1.35 Inter,
     system-ui,
     sans-serif;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.club-setup-wizard .club-setup-wizard__tick:active {
+  filter: brightness(1.25);
 }
 
 .club-setup-wizard__confirm small {
@@ -457,14 +478,9 @@ p.club-setup-wizard__shortfall {
   font-size: 2.7cqw;
 }
 
-/* The reason Continue is blocked stays in view however long the step is: it
-   rides the bottom of the scroll region, on the same black as the glass. */
 .club-setup-wizard__error {
-  position: sticky;
-  z-index: 1;
-  bottom: 0;
-  margin-top: 2cqw;
-  background: #000;
+  flex: 0 0 auto;
+  margin: 0;
   padding-block: 1.8cqw;
   border-top: 1px solid #f02849;
   border-bottom: 1px solid #f02849;

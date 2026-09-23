@@ -14,7 +14,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
@@ -114,13 +114,21 @@ describe('the hand interval field', () => {
       expect(sentence()).toBe(words);
       expect(refusal()).toBe(why);
       expect(input.getAttribute('aria-invalid')).toBe('true');
+      // Refused in the kit's red while the box holds a number the table will
+      // not use.
+      expect(screen.getByTestId('bomb-interval-refusal').className).toContain('sc-ink--red');
       // The half-typed text is left alone while the host is still in the box.
       expect(input.value).toBe(typed);
 
       fireEvent.blur(input);
       expect(input.value).toBe(String(expected));
-      // The correction stays, so the snap is explained rather than silent.
+      // The correction stays, so the snap is explained rather than silent...
       expect(refusal()).toBe(why);
+      // ...but the box now holds the number in force, so it is no longer
+      // marked invalid and the note drops from red to muted ink.
+      expect(input.getAttribute('aria-invalid')).toBeNull();
+      expect(screen.getByTestId('bomb-interval-refusal').className).toContain('sc-ink--muted');
+      expect(sentence()).toBe(words);
 
       fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }));
       await waitFor(() => expect(mocks.rpc).toHaveBeenCalled());
@@ -198,10 +206,19 @@ describe('the sentence is true of the engine (read-only pin)', () => {
   });
 
   it('the RPC still reads the value through an integer cast, which is why the page must round', () => {
-    const SQL = readFileSync(
-      resolve(process.cwd(), 'supabase/migrations/20260829_a_host_can_change_a_running_table.sql'),
-      'utf8'
-    );
+    // The newest definition is the live one: migrations apply in version
+    // order, and the version is the digits before the first underscore.
+    const DIR = resolve(process.cwd(), 'supabase/migrations');
+    const defining = readdirSync(DIR)
+      .filter((f) => f.endsWith('.sql'))
+      .filter((f) =>
+        /CREATE OR REPLACE FUNCTION public\.fn_update_table_bomb_settings\(/.test(
+          readFileSync(resolve(DIR, f), 'utf8')
+        )
+      )
+      .sort((a, b) => Number(a.split('_')[0]) - Number(b.split('_')[0]));
+    expect(defining.length).toBeGreaterThan(0);
+    const SQL = readFileSync(resolve(DIR, defining[defining.length - 1]), 'utf8');
     expect(SQL).toMatch(/\(p_settings ->> 'bomb_pot_frequency'\)::int/);
   });
 });

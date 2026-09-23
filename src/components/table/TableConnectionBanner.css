@@ -103,6 +103,16 @@
   animation: table-conn-banner-pulse 1.1s ease-in-out infinite;
 }
 
+/* An access verdict (status 'access_refused', 2026-09-20) is not something the
+   client is working on: the engine has ruled on this viewer and nothing is
+   retried, so the bullet holds still instead of pulsing like a live attempt.
+   Its ink is the kit's refusal red, chosen in the component; this rule paints
+   nothing, it only stops the motion. */
+.table-conn-banner--access_refused .table-conn-banner__dot {
+  animation: none;
+  opacity: 1;
+}
+
 .table-conn-banner__label {
   min-width: 0;
   overflow: hidden;

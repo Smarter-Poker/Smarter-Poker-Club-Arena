@@ -82,11 +82,14 @@
 .club-launch__steps {
   /* THE STEP UNIT. Everything inside a step is sized in this, not in raw cqw.
      `cqw` measures the whole console, but above 760px the steps sit two to a
-     row, so a step is under half the console wide. At full console scale the
-     action column alone (27px type) filled a 395px step, the copy column
-     collapsed to between 0 and 36px, every label wrapped one letter to a line
-     and the eleven steps stood 11,700px tall. The single-column phone layout
-     sets the unit back to 1cqw, so it is unchanged. */
+     row, so a step is under half the console wide. Sized at full console
+     scale, and measured with the real fonts on a 1440x900 screen (a 1000px
+     console, 395px steps), the action column took nearly all of each step:
+     the copy column was 0 to 74px wide, two steps had no copy column at all,
+     labels broke a letter or two to a line, steps stood 474 to 2,892px tall
+     and the checklist 8,651px. At 0.6 the copy column is 133 to 259px and the
+     checklist about 1,400px. The single-column phone layout sets the unit
+     back to 1cqw, so phone type and spacing are unchanged. */
   --club-launch-unit: 0.6cqw;
 
   display: grid;

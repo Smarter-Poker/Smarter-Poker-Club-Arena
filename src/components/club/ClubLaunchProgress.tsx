@@ -7,6 +7,7 @@ import {
 } from '../../utils/clubOpeningEligibility';
 import { reportError } from '../../utils/errorReporter';
 import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubLaunchProgress.css';
 
@@ -142,7 +143,9 @@ export default function ClubLaunchProgress({
       className="club-launch"
       aria-labelledby="club-launch-title"
       eyebrow="New Club Opening Checklist"
-      title={`Open ${clubName}`}
+      /* The name is a database row, not a literal the Title Case gates can
+         read, so it is cased where it is printed (skill 2, 2026-09-14). */
+      title={`Open ${titleCase(clubName)}`}
       titleId="club-launch-title"
       subtitle={subtitle}
       pill={`${percent}%`}

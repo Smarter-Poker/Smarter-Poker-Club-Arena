@@ -16,15 +16,21 @@
    black glass: an engraved rule between rows, lit blue labels, silver values,
    muted notes, and the SELECTED choice told by ink (white with the blue glow,
    on a lit blue rule), never by a pill. Colours are the console's own inks and
-   nothing else: silver #e4e7ec, white #f4f7fb, blue #45adff, muted #9aa5b3.
+   nothing else: silver #e4e7ec, white #f4f7fb, blue #45adff, muted #9aa5b3,
+   and the kit's focus ring #8fd4ff.
    No pointer-over styling at all: feedback is :active and :focus-visible,
    because phones do not have a pointer to rest. */
 
+/* No reserve under the footer. The 5rem that used to sit here held room for
+   a footer at position: fixed; since the 2026-09-04 H-footer fix the footer is
+   in flow at the end of the flow, and the reserve was empty glass inside the
+   frame under Save and Start. Clearing the bottom nav is the page's job
+   (.table-config-page and the app shell), not this flow's. */
 .cash-create {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.5rem 0 5rem;
+  padding: 0.5rem 0;
 }
 
 /* One step. The rule under it is the console's engraved rule: a black cut
@@ -89,7 +95,7 @@
 }
 
 .cash-create__card:focus-visible {
-  outline: 3px solid #45adff;
+  outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }
 
@@ -160,7 +166,7 @@
 }
 
 .cash-create__chip:focus-visible {
-  outline: 3px solid #45adff;
+  outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }
 
@@ -229,7 +235,7 @@
 }
 
 .cash-create__link:focus-visible {
-  outline: 3px solid #45adff;
+  outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }
 
@@ -237,9 +243,22 @@
   padding: 0;
 }
 
-/* The footer is .config-footer's sticky one: it already clears the club
-   bottom nav (--bottom-nav-clearance). A fixed bottom:0 here sat UNDER that
-   nav on every viewport (2026-09-04 audit, H-footer). */
+/* THE FLOW'S FOOTER SITS IN FLOW, UNDER THE LAST STEP (2026-09-22).
+   It wears .config-footer, which is sticky with bottom: the nav's stack base.
+   A fixed bottom:0 here once sat UNDER the club nav (2026-09-04 audit,
+   H-footer), and sticky was the fix. But this footer's nearest scroll
+   container is .config-options (overflow-y: auto, never height-limited, so it
+   never scrolls), not the viewport: it could never stick to the screen. What
+   sticky DID do was hold the footer that far above .config-options' own
+   bottom edge, lifting it over the flow's last lines - measured 28px at 393
+   (over "6. Rules" and the run-it note) and 112px at 1440 (over the jackpot
+   and schedule lines); the 5rem reserve that used to sit under it only hid
+   that on a phone. Static puts Save and Start after the last line, where the
+   page's own padding and the app shell clear the nav. The extra ancestor is
+   specificity, so this wins whatever order the two sheets bundle in. */
+.cash-create .cash-create__footer {
+  position: static;
+}
 
 .cash-create__cards--two {
   grid-template-columns: 1fr;
@@ -287,9 +306,14 @@
   color: #9aa5b3;
 }
 
+/* Label on the left at its own width, never squeezed; the value takes the rest
+   of the line and wraps inside it, right-aligned; the note runs full width
+   under both. (A two-column grid let a long value, "One Small Blind From Each
+   Dealt In Player", collapse the label column to nothing and print over it.) */
 .cash-create__rule-readout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 3px 12px;
   align-items: baseline;
   padding: 10px 4px;
@@ -298,6 +322,8 @@
 }
 
 .cash-create__rule-readout__label {
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.78rem;
   font-weight: 700;
@@ -307,6 +333,8 @@
 }
 
 .cash-create__rule-readout__value {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 0.95rem;
   font-weight: 800;
   color: #e4e7ec;
@@ -318,7 +346,7 @@
 }
 
 .cash-create__rule-readout__note {
-  grid-column: 1 / -1;
+  flex: 1 0 100%;
   font-size: 0.72rem;
   line-height: 1.35;
   color: #9aa5b3;

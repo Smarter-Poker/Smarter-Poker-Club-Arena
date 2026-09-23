@@ -2174,6 +2174,7 @@ function LiveTablePage({
     lastError: engineLastError,
     lastUserEvent: engineLastUserEvent,
     requestSnapshot: requestEngineSnapshot,
+    reconnectNow: reconnectEngineNow,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
     /* The break's end, from the database, handed to the reconnect ladder so it
@@ -3813,7 +3814,7 @@ function LiveTablePage({
             } else if (isStillWakeableTableRow(tableRow)) {
               notFoundCountRef.current = 0;
               tableClosedToastShownRef.current = false;
-              requestEngineSnapshot();
+              reconnectEngineNow();
               return;
             }
           }
@@ -3823,10 +3824,10 @@ function LiveTablePage({
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-    // refreshMaintenanceBreak and requestEngineSnapshot are stable
-    // useCallbacks, so this still runs once per error rather than on every
-    // break countdown tick.
-  }, [engineLastError, refreshMaintenanceBreak, requestEngineSnapshot]);
+    // refreshMaintenanceBreak and reconnectEngineNow are stable useCallbacks,
+    // so this still runs once per error rather than on every break countdown
+    // tick.
+  }, [engineLastError, refreshMaintenanceBreak, reconnectEngineNow]);
   /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
      Why this flag has to exist at all: `auth_failed` is a status the client
      passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401

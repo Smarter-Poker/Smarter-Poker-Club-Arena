@@ -31,10 +31,12 @@ function mount(props: Partial<React.ComponentProps<typeof ClubOpeningWizard>> = 
 
 const primary = () =>
   (screen.queryByRole('button', { name: 'Continue Opening Setup' }) ??
-    screen.getByRole('button', { name: 'Complete Opening Setup' })) as HTMLButtonElement;
+    screen.getByRole('button', {
+      name: 'Open Club And Complete Opening Setup',
+    })) as HTMLButtonElement;
 const next = () => fireEvent.click(primary());
 const choose = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
-const confirmTransfer = () => fireEvent.click(screen.getByRole('switch'));
+const confirmTransfer = () => fireEvent.click(screen.getByRole('checkbox'));
 const alertText = () => screen.queryByRole('alert')?.textContent ?? '';
 
 /** Walks to Review. `paid` funds every system; otherwise every answer is Not Now. */
@@ -99,7 +101,7 @@ describe('no silent chip movement', () => {
     expect(alertText()).toBe('Confirm The Exact BBJ Seed Transfer Before Continuing');
     expect(primary()).toBeDisabled();
     expect(
-      screen.getByRole('switch', {
+      screen.getByRole('checkbox', {
         name: 'Transfer Exactly 100 Chips From The Club Bank Into The Bad Beat Jackpot Main Bank',
       })
     ).not.toBeChecked();
@@ -109,7 +111,7 @@ describe('no silent chip movement', () => {
     // Changing the amount withdraws the confirmation.
     fireEvent.change(screen.getByLabelText(/BBJ Opening Seed/), { target: { value: '12500.75' } });
     expect(
-      screen.getByRole('switch', {
+      screen.getByRole('checkbox', {
         name: 'Transfer Exactly 12,500 Chips From The Club Bank Into The Bad Beat Jackpot Main Bank',
       })
     ).not.toBeChecked();
@@ -122,7 +124,7 @@ describe('no silent chip movement', () => {
     choose(/^Create Promotion/);
     expect(alertText()).toBe('Confirm The Exact Promotion Budget Transfer Before Continuing');
     expect(
-      screen.getByRole('switch', {
+      screen.getByRole('checkbox', {
         name: 'Transfer Exactly 500 Chips From The Club Bank Into The Club Promo Wallet',
       })
     ).toBeInTheDocument();
@@ -266,7 +268,7 @@ describe('figures', () => {
     walkToReview({ paid: true });
     const container = document.body;
     const text = container.textContent ?? '';
-    expect(text).toContain('The Club Bank Is Never Debited For Leaderboard Prizes');
+    expect(text).toContain('No Round Is Ever Paid From The Club Bank');
     expect(text).toContain('That Round Stays Unpaid And Is Retried Automatically');
     expect(text).not.toContain('Covers Any Overlay');
     expect(text).not.toContain('—');
@@ -308,7 +310,7 @@ describe('request key, retries and an earlier setup', () => {
     mocks.rpc
       .mockResolvedValueOnce({
         data: null,
-        error: { message: 'Club Bank Has 50 Chips But Setup Requires 100.00', code: 'P0001' },
+        error: { message: 'Club Bank Has 50.75 Chips But Setup Requires 1100.00', code: 'P0001' },
       })
       .mockImplementationOnce((_name: string, args: { p_operation_id: string }) =>
         Promise.resolve(okReceipt(args.p_operation_id))
@@ -318,7 +320,7 @@ describe('request key, retries and an earlier setup', () => {
     await act(async () => next());
     await waitFor(() =>
       expect(mocks.toast.error).toHaveBeenCalledWith(
-        'Club Bank Has 50 Chips But Setup Requires 100.00'
+        'Club Bank Has 50 Chips But Setup Requires 1,100'
       )
     );
     await act(async () => next());
@@ -453,5 +455,149 @@ describe('dialog behavior and tag line', () => {
     next();
     expect(alertText()).toBe('That Tag Line Belongs To Shark Club');
     expect(primary()).toBeDisabled();
+  });
+});
+
+describe('round two: kit parts, data casing and figures', () => {
+  function toBbj() {
+    next();
+    fireEvent.change(screen.getByLabelText(/Club Tag Line/), { target: { value: 'A Real Line' } });
+    next();
+    next();
+  }
+
+  it('confirms an exact transfer with the kit tick well, not a settings switch', () => {
+    mount();
+    toBbj();
+    choose(/^Enable BBJ/);
+    expect(document.querySelector('[role="switch"]')).toBeNull();
+    const tick = screen.getByRole('checkbox', { name: /^Transfer Exactly 100 Chips/ });
+    expect(tick.tagName).toBe('BUTTON');
+    expect(tick).toHaveClass('club-setup-wizard__tick', 'sc-check', 'sc-ink--muted');
+    expect(tick).not.toHaveClass('sc-check--on');
+    expect(tick.querySelector('.sc-check__box')).toHaveAttribute('aria-hidden', 'true');
+    expect(tick).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(tick);
+    expect(tick).toHaveAttribute('aria-checked', 'true');
+    expect(tick).toHaveClass('sc-check--on', 'sc-ink--green');
+    fireEvent.click(tick);
+    expect(tick).toHaveAttribute('aria-checked', 'false');
+    expect(primary()).toBeDisabled();
+  });
+
+  it('prints the club name and tag line through titleCase and saves the owner text as typed', async () => {
+    mocks.rpc.mockImplementation((_name: string, args: { p_operation_id: string }) =>
+      Promise.resolve(okReceipt(args.p_operation_id))
+    );
+    mount({ clubName: 'river kings' });
+    expect(document.getElementById('club-setup-title')).toHaveTextContent('Open River Kings');
+    next();
+    expect(
+      screen.getByRole('heading', { name: 'Write A Tag Line That Belongs To River Kings' })
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Club Tag Line/), {
+      target: { value: '  where the   river always pays ' },
+    });
+    next();
+    next();
+    choose(/^Not Now/);
+    next();
+    next();
+    choose(/^Create Promotion/);
+    expect(screen.getByLabelText(/Promotion Name/)).toHaveValue('River Kings Opening High Hand');
+    confirmTransfer();
+    next();
+    next();
+    const ledger = document.querySelector('.club-setup-wizard__ledger');
+    expect(ledger).toHaveTextContent('Where The River Always Pays');
+    expect(ledger).not.toHaveTextContent('where the river always pays');
+    await act(async () => next());
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({
+      p_tagline: 'where the river always pays',
+      p_promo_name: 'River Kings Opening High Hand',
+    });
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ tagline: 'where the river always pays' })
+    );
+  });
+
+  it('keeps the reason Continue is blocked outside the scroll region, on the console body', () => {
+    mount();
+    toBbj();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Choose Enable BBJ Or Not Now Before Continuing');
+    expect(alert.closest('.club-setup-wizard__scroll')).toBeNull();
+    expect(alert.parentElement).toHaveClass('sc__body');
+    const scroll = document.querySelector('.club-setup-wizard__scroll');
+    expect(scroll?.parentElement).toHaveClass('sc__body');
+    expect(scroll?.querySelector('.club-setup-wizard__main')).not.toBeNull();
+  });
+
+  it('prints a minimum compact and the transfer it asks for in full', () => {
+    mount({ clubBank: 100000 });
+    toBbj();
+    choose(/^Not Now/);
+    next();
+    choose(/^Enable Spins/);
+    fireEvent.change(screen.getByLabelText(/Largest Spin Buy-In/), { target: { value: '100' } });
+    expect(screen.getByText('Coverage Minimum: 20K Chips')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Transfer Exactly 20,000 Chips From The Club Bank Into The Spin Reserve',
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Club Bank After Every Transfer Chosen So Far: 80K Chips/)
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Spin Reserve Seed/), { target: { value: '19999' } });
+    expect(alertText()).toBe('This Spin Board Requires At Least 20K Chips');
+    expect(primary()).toBeDisabled();
+  });
+
+  it('shows an over-allocation as a red shortfall on the spot, rounded up to the next whole chip', () => {
+    mount({ clubBank: 150.5 });
+    toBbj();
+    choose(/^Enable BBJ/);
+    fireEvent.change(screen.getByLabelText(/BBJ Opening Seed/), { target: { value: '200' } });
+    const shortfall = document.querySelector(
+      '.club-setup-wizard__confirm .club-setup-wizard__shortfall'
+    );
+    expect(shortfall).toHaveTextContent('Transfers Chosen So Far Exceed The Club Bank By 50 Chips');
+  });
+});
+
+describe('moving between steps', () => {
+  it('opens every step at its top and brings its name into view in the step rail', () => {
+    mount();
+    const scroller = document.querySelector('.club-setup-wizard__scroll') as HTMLElement;
+    const rail = document.querySelector('.club-setup-wizard__steps') as HTMLElement;
+    scroller.scrollTop = 400;
+    rail.scrollLeft = 0;
+    const current = () => rail.querySelector('[aria-current="step"]') as HTMLElement;
+    // Lay the rail out as a phone does: 300px wide, eight 140px steps side by side.
+    rail.getBoundingClientRect = () => ({ left: 0, width: 300, top: 0, height: 20 }) as DOMRect;
+    for (const [index, button] of Array.from(rail.querySelectorAll('button')).entries()) {
+      button.getBoundingClientRect = () =>
+        ({ left: index * 140 - rail.scrollLeft, width: 120, top: 0, height: 20 }) as DOMRect;
+    }
+    next();
+    expect(current()).toHaveTextContent('Club Tag Line');
+    expect(scroller.scrollTop).toBe(0);
+    // Step two starts at 140px; centring its 120px label in a 300px rail scrolls to 50.
+    expect(rail.scrollLeft).toBe(50);
+  });
+});
+
+describe('the final plate', () => {
+  it('prints a label short enough for the painted plate and names the whole action', () => {
+    mount();
+    walkToReview();
+    const finish = primary();
+    // "Complete Opening Setup" hit the fit floor on the plate face and was cut
+    // to "Complete Opening S" at 393px; the plate now prints the short verb
+    // and the accessible name starts with it.
+    expect(finish).toHaveTextContent(/^Open Club$/);
+    expect(finish).toHaveAccessibleName('Open Club And Complete Opening Setup');
   });
 });

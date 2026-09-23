@@ -1,7 +1,10 @@
 import type { WheelSegment, WheelSpinResult } from '../services/DiamondWheelService';
+import { WHEEL_V4_TOTAL } from './wheelV4Model';
 
 const gameNames = ['plinko', 'crash', 'crossing', 'mines'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The three cards a VIP is shown instead of a throwable, a time bank and a rabbit hunt. */
+const vipChipMultipliers: Readonly<Record<number, number>> = { 3: 0.2, 6: 0.25, 9: 0.3 };
 const fail = (): never => {
   throw new Error('The Wheel Award Could Not Be Confirmed. Recover The Same Spin');
 };
@@ -57,7 +60,16 @@ export function assertWheelUpgradeTable(
 /** A reveal must never invent a missing game, secondary result, or funded award. */
 export function assertWheelAward(receipt: WheelSpinResult): void {
   const { outcome, bonus, secondary } = receipt;
-  const versioned = receipt.contract_version === 2 || receipt.contract_version === 3;
+  const version = receipt.contract_version;
+  const versioned = version === 2 || version === 3 || version === 4;
+  // CONTRACT 4 (owner rulings 2026-09-21). Three things change shape here: the
+  // published table no longer has to be what this one spin drew from, because
+  // no prize may repeat (R12); the three item cards are chip cards for a VIP
+  // (R2); and Diamonds pays nothing at the spin, opening a sealed three-card
+  // game instead (R15). Contracts 2 and 3 keep every rule they had.
+  const v4 = version === 4;
+  const vip = v4 && receipt.vip === true;
+  if (v4 && (receipt.model !== 'wheel-v4' || typeof receipt.vip !== 'boolean')) fail();
   if (
     ![
       'nothing',
@@ -75,6 +87,8 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     const table = receipt.segments;
     const kinds = table?.map((s) => s.kind) ?? [];
     const games = table?.filter((s) => s.kind === 'bonus').map((s) => s.game) ?? [];
+    const weights = receipt.fairness.weights;
+    const drawn = v4 ? weights : undefined;
     if (
       receipt.fairness.domain !== `wheel-v${receipt.contract_version}` ||
       !table ||
@@ -83,10 +97,19 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
       kinds.filter((k) => k === 'bonus').length !== 4 ||
       new Set(games).size !== 4 ||
       gameNames.some((g) => !games.includes(g)) ||
-      kinds.filter((k) => k === 'chips').length !== 3 ||
-      ['upgrade', 'throwables', 'time_bank', 'rabbit_hunt', 'diamonds'].some(
-        (k) => kinds.filter((v) => v === k).length !== 1
-      ) ||
+      kinds.filter((k) => k === 'chips').length !== (vip ? 6 : 3) ||
+      (vip && kinds.some((k) => ['throwables', 'time_bank', 'rabbit_hunt'].includes(k))) ||
+      (!vip &&
+        ['throwables', 'time_bank', 'rabbit_hunt'].some(
+          (k) => kinds.filter((v) => v === k).length !== 1
+        )) ||
+      ['upgrade', 'diamonds'].some((k) => kinds.filter((v) => v === k).length !== 1) ||
+      (vip &&
+        Object.entries(vipChipMultipliers).some(
+          ([ord, multiplier]) =>
+            table.find((s) => s.ord === Number(ord))?.multiplier !== multiplier ||
+            table.find((s) => s.ord === Number(ord))?.kind !== 'chips'
+        )) ||
       table.some(
         (s) =>
           !Number.isSafeInteger(s.ord) ||
@@ -95,9 +118,22 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
           !Number.isSafeInteger(s.weight) ||
           s.weight <= 0
       ) ||
-      table.reduce((sum, s) => sum + s.weight, 0) !== receipt.fairness.weight_total ||
-      new Set(receipt.fairness.eligible_ords).size !== 12 ||
-      table.some((s) => !receipt.fairness.eligible_ords.includes(s.ord)) ||
+      // The published table keeps its base weights from contract 4 on; what the
+      // draw actually used is the separate `weights` row, which is what the
+      // total and the eligible list have to agree with.
+      (v4
+        ? !drawn ||
+          drawn.length !== 12 ||
+          drawn.some((w) => !Number.isSafeInteger(w) || w < 0) ||
+          table.reduce((sum, s) => sum + s.weight, 0) !== WHEEL_V4_TOTAL ||
+          drawn.reduce((sum, w) => sum + w, 0) !== receipt.fairness.weight_total ||
+          drawn.filter((w) => w > 0).length !== receipt.fairness.eligible_ords.length ||
+          drawn.some((w, i) => w > 0 !== receipt.fairness.eligible_ords.includes(i + 1)) ||
+          drawn[outcome.ord - 1] <= 0 ||
+          receipt.fairness.previous === undefined
+        : table.reduce((sum, s) => sum + s.weight, 0) !== receipt.fairness.weight_total ||
+          new Set(receipt.fairness.eligible_ords).size !== 12 ||
+          table.some((s) => !receipt.fairness.eligible_ords.includes(s.ord))) ||
       !Number.isSafeInteger(receipt.fairness.roll) ||
       receipt.fairness.roll < 0 ||
       receipt.fairness.roll >= 2 ** 48 ||
@@ -115,7 +151,26 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     )
       fail();
   }
+  // A Diamonds outcome under contract 4 is a sealed card game, never a payment:
+  // it names its award and what it risks, and it never carries the three values.
+  if (v4 && outcome.kind === 'diamonds') {
+    if (
+      !outcome.cards ||
+      !uuid.test(outcome.cards.award_id) ||
+      outcome.cards.status !== 'pending' ||
+      !Number.isSafeInteger(outcome.cards.risk_diamonds) ||
+      outcome.cards.risk_diamonds !== receipt.entry_value_diamonds ||
+      outcome.amount !== outcome.cards.risk_diamonds ||
+      Object.keys(outcome.cards).length !== 3
+    )
+      fail();
+    // Under contract 3 a Diamonds outcome PAID at the spin, and its own rules
+    // above already pin that. A `cards` block on an older receipt is a field a
+    // newer server added, not a game the browser may open, so it is ignored.
+  } else if (v4 && outcome.cards) fail();
   if (!Number.isFinite(outcome.amount) || outcome.amount < 0) fail();
+  if (vip && (['throwables', 'time_bank', 'rabbit_hunt'].includes(outcome.kind) || outcome.grants))
+    fail();
   if (versioned && ['throwables', 'time_bank', 'rabbit_hunt'].includes(outcome.kind)) {
     const feature = {
       throwables: 'throwable',
@@ -139,9 +194,9 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     return;
   }
   if (outcome.kind === 'upgrade') {
-    const count = receipt.contract_version === 3 ? 8 : 4;
+    const count = version === 3 || version === 4 ? 8 : 4;
     if (!secondary || secondary.segments.length !== count) return fail();
-    if (receipt.contract_version === 3) {
+    if (version === 3 || version === 4) {
       assertWheelUpgradeTable(
         secondary.segments,
         receipt.entry_value_diamonds!,
@@ -170,17 +225,30 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
       selected.kind !== secondary.outcome.kind ||
       selected.game !== secondary.outcome.game ||
       selected.multiplier !== secondary.outcome.multiplier ||
-      (receipt.contract_version === 3 &&
+      ((version === 3 || version === 4) &&
         (selected.amount !== secondary.outcome.amount ||
           selected.value_chips !== secondary.outcome.value_chips ||
           selected.weight !== secondary.outcome.weight ||
           selected.probability !== secondary.outcome.probability ||
           secondary.outcome.locked)) ||
-      new Set(secondary.fairness.eligible_ords).size !== count ||
-      secondary.segments.some((s) => !secondary.fairness.eligible_ords.includes(s.ord)) ||
       secondary.segments.some((s) => !Number.isSafeInteger(s.weight) || s.weight <= 0) ||
-      secondary.fairness.weight_total !==
-        secondary.segments.reduce((sum, s) => sum + s.weight, 0) ||
+      (v4
+        ? !secondary.fairness.weights ||
+          secondary.fairness.weights.length !== count ||
+          secondary.fairness.weights.some((w) => !Number.isSafeInteger(w) || w < 0) ||
+          secondary.segments.reduce((sum, s) => sum + s.weight, 0) !== WHEEL_V4_TOTAL ||
+          secondary.fairness.weights.reduce((sum, w) => sum + w, 0) !==
+            secondary.fairness.weight_total ||
+          secondary.fairness.weights.filter((w) => w > 0).length !==
+            secondary.fairness.eligible_ords.length ||
+          secondary.fairness.weights.some(
+            (w, i) => w > 0 !== secondary.fairness.eligible_ords.includes(i + 1)
+          ) ||
+          secondary.fairness.weights[secondary.outcome.ord - 1] <= 0
+        : new Set(secondary.fairness.eligible_ords).size !== count ||
+          secondary.segments.some((s) => !secondary.fairness.eligible_ords.includes(s.ord)) ||
+          secondary.fairness.weight_total !==
+            secondary.segments.reduce((sum, s) => sum + s.weight, 0)) ||
       !Number.isSafeInteger(secondary.fairness.roll) ||
       secondary.fairness.roll < 0 ||
       secondary.fairness.roll >= 2 ** 48 ||
@@ -195,7 +263,7 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     if (secondary.outcome.kind === 'chips') {
       // Instant chips are already credited by the spin transaction. They may
       // never masquerade as a funded game or require a second payout request.
-      if (receipt.contract_version !== 3 || bonus) fail();
+      if ((version !== 3 && version !== 4) || bonus) fail();
       return;
     }
   }

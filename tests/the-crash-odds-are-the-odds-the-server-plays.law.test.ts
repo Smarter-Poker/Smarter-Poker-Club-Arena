@@ -195,12 +195,20 @@ describe('the crash odds are the odds the server plays', () => {
     const probe = runner.indexOf('run_game_probe diamond-crash-round-is-sealed');
     expect(migration, `${RUNNER} loads the lock`).toBeGreaterThan(0);
     expect(probe, `${RUNNER} runs the probe`).toBeGreaterThan(migration);
-    // The real settlement and award-start paths run again on top of the lock.
+    /* The real settlement and award-start paths run again on top of the lock.
+       The game probe that does that is the one for the contract INSTALLED there:
+       owner ruling 2026-09-21 (R3, R6, R10, R11) replaced contract 3 with
+       migration 20260921203512, which lands before the lock, so
+       diamond-one-setting-super-guarantee - which describes contract 3's
+       Diamond table and its ten-drop rule - would be asserting a contract that
+       is no longer installed rather than testing the lock. Its successor,
+       diamond-first-step-and-paid-floor, starts every award and settles every
+       game the same way. */
     expect(
       runner.indexOf('run_game_probe diamond-crash-clicked-multiplier', migration)
     ).toBeGreaterThan(migration);
     expect(
-      runner.indexOf('run_game_probe diamond-one-setting-super-guarantee', migration)
+      runner.indexOf('run_game_probe diamond-first-step-and-paid-floor', migration)
     ).toBeGreaterThan(migration);
     const sealed = read('tests/sql/diamond-crash-round-is-sealed.sql');
     expect(sealed).toContain('A Sealed Crash Round Cannot Be Rewritten');

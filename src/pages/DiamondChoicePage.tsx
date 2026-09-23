@@ -8,12 +8,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
-import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
+import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
+import { useRefusedAward } from '../hooks/useRefusedAward';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -108,9 +108,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // The one setting. Nobody picks a difficulty; the payout carries it, and the
   // server refuses any other mode for a new round. A saved open round keeps its own.
   const mode = CHOICE_MODE[game];
-  const [selectedBudget, setBudget] = useBonusBudget(clubId, game);
+  const [selectedBudget, setBudget, offer] = useBonusBudget(clubId, game);
   const earned = useEarnedBonus(uuid, game, selectedBudget, mode);
   const budget = earned.budget;
+  // Screen one of a won game is the Double Your Diamonds decision; only the
+  // player's own tap on Start Round begins play (Dan 2026-09-21, R9).
+  const offerAnswered = budget.award ? offer.answered(budget.award.id) : true;
+  const step = bonusEntryStep(budget, offerAnswered);
   const state = (earned.gameState as ChoiceState | null) ?? legacyState;
   const bet = bonusTotal(budget);
   const [seed, setSeed] = useState(randomClientSeed);
@@ -140,10 +144,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // The server refused a ticket that could no longer open a round and charged
   // nothing, so the same wager goes again on a fresh ticket - once per press.
   const [restartOwed, setRestartOwed] = useState(false);
-  // The Double Down offer is a question about the player's own diamonds. A won
-  // game never starts itself over it; it is treated as open until the setup
-  // panel says otherwise.
-  const [offerOpen, setOfferOpen] = useState(true);
   // A game read or a ticket deal that failed is tried again by the page
   // itself, on the same schedule as a saved wager. Nobody is told to refresh.
   const [loadFailures, setLoadFailures] = useState(0);
@@ -199,7 +199,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                     ? next.open_round!.bet_diamonds / 2
                     : next.open_round!.bet_diamonds,
                 doubled: next.open_round!.bet_diamonds > 2500,
-                denomination: 1,
+                denomination: null,
               })
         );
         setTicket(null);
@@ -385,6 +385,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // the server changing its mind.
   const stateBlocked =
     !earned.ready ||
+    step !== 'setup' ||
     !validBonusBudget(budget) ||
     !state?.available ||
     state.frozen ||
@@ -681,25 +682,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // the button would have pressed. A finished round still on the scene keeps
   // the floor until its completion has taken the player back to the wheel.
   const finishedOnScene = Boolean(round && round.status !== 'open' && completionId === round.id);
-  const autoStartIn = useAwardAutoStart(
-    earned.award?.id,
-    !open &&
-      !uncertain &&
-      !busy &&
-      !sceneBusy &&
-      !blocked &&
-      Boolean(ticket) &&
-      !restartOwed &&
-      !offerOpen &&
-      !finishedOnScene &&
-      !refusal.refused,
-    // Typing still restarts the five seconds; an empty field is typing too,
-    // and start() deals the seed it sends.
-    `${bet}:${seed}:${refusal.opening}`,
-    () => void startRef.current()
-  );
-  // Presentation only. Every gate - the exit guard, the auto-start, the
-  // receipt, the round the scene is given - still reads `round` itself.
+  // Presentation only. Every gate - the exit guard, the receipt, the round the
+  // scene is given - still reads `round` itself.
   const view = printed ?? round;
   const viewOpen = view?.status === 'open';
   const picks = view?.picked.length ?? 0;
@@ -926,11 +910,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               awardLoading={earned.loading}
               awardError={earned.error}
               onChange={setBudget}
-              onOffer={setOfferOpen}
               diamonds={state?.diamonds ?? null}
               disabled={busy || uncertain || restartOwed}
               clubId={clubId ?? ''}
               leave={leave}
+              offerAnswered={offerAnswered}
+              onOfferAnswered={offer.answer}
             />
           )
         }
@@ -988,8 +973,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                   : 'Choose A Tile'
                 : waitSeconds > 0
                   ? `Ready In ${waitSeconds}s`
-                  : autoStartIn !== null
-                    ? `Starting In ${autoStartIn}s`
+                  : step === 'offer'
+                    ? 'Answer The Offer First'
                     : 'Start Round',
           'aria-label':
             pendingAction === 'cross' || crossable === null
@@ -1056,9 +1041,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           }}
           // Nothing is looking at the road: the Double Down offer stands over
           // an idle scene, or the receipt stands over a finished one. Never on
-          // offerOpen alone, which starts true and stays true for a resumed
+          // the unanswered offer alone, which is still unanswered for a resumed
           // open round, and would freeze that round's reveal for good.
-          paused={(phase === 'idle' && offerOpen && Boolean(earned.award)) || receiptShowing}
+          paused={(phase === 'idle' && step === 'offer' && Boolean(earned.award)) || receiptShowing}
           moving={moving}
           phase={phase}
           picked={sceneRound?.picked ?? []}
@@ -1123,17 +1108,19 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                   ? 'Loading Your Game'
                   : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
                     ? 'Checking Your Entry'
-                    : blocked
-                      ? state.frozen
-                        ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
-                        : state.diamonds < bonusWalletDebit(budget)
-                          ? 'Not Enough Diamonds For This Bet'
-                          : !state.is_member
-                            ? 'Join The Club To Play'
-                            : !state.available
-                              ? 'This Game Is Not Open Here Yet'
-                              : 'This Bet Is Not Available Right Now'
-                      : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+                    : step === 'offer'
+                      ? `${promise ? `${promise} ` : ''}Decide Whether To Double Your Diamonds, Then Start Your Round.`
+                      : blocked
+                        ? state.frozen
+                          ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
+                          : state.diamonds < bonusWalletDebit(budget)
+                            ? 'Not Enough Diamonds For This Bet'
+                            : !state.is_member
+                              ? 'Join The Club To Play'
+                              : !state.available
+                                ? 'This Game Is Not Open Here Yet'
+                                : 'This Bet Is Not Available Right Now'
+                        : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>
@@ -1237,6 +1224,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         <BonusCompletion
           key={round.id}
           clubId={clubId ?? ''}
+          clubUuid={uuid}
+          awardId={round.award_id ?? null}
           chips={round.payout_chips}
           // A crossing receipt never sings: the scene has already said what
           // happened, in its own beat. A lost Mines round is not a win either.

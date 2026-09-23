@@ -13,7 +13,7 @@ import {
   crashPointCentsFromRoll,
   plinkoBitsFromPathBits,
 } from '../utils/diamondGamesFairness';
-import { PLINKO_DROPS, plinkoDenomination } from '../utils/bonusGameBudget';
+import { plinkoAllocations } from '../utils/bonusGameBudget';
 import {
   PLINKO_TABLES,
   diamondBonusMinimum,
@@ -74,11 +74,15 @@ export default function DiamondTestPage() {
     // The guaranteed minimum, by the server's rule: a Super award keeps half its
     // doubled stake, which is the original spin; ordinary play keeps a tenth.
     minimum = diamondBonusMinimum(chips, boost);
-  // One table per stake kind and ten drops of a tenth of the entry. Nobody
-  // chooses either, exactly as the live game works.
+  // One table per stake kind. The live game lets the player choose the drop
+  // value (R6); this offline copy plays the ten-drop split when the stake
+  // offers it, else the fewest drops the stake allows.
   const tableVersion = plinkoTableVersion(boost);
   const table = PLINKO_TABLES[tableVersion];
-  const drop = plinkoDenomination(total) ?? total / PLINKO_DROPS;
+  const allocations = plinkoAllocations(total);
+  const allocation = allocations.find((a) => a.drops === 10) ?? allocations[allocations.length - 1];
+  const drop = allocation?.diamondsPerDrop ?? total;
+  const dropCount = allocation?.drops ?? 1;
   const open = phase === 'open';
   const active = open || (phase !== 'idle' && !settled);
   useLiveBonusGuard(active, () => setNotice('Finish This Test Round Before Leaving.'));
@@ -133,7 +137,7 @@ export default function DiamondTestPage() {
     setLiveCents(100);
     started.current = performance.now();
     if (game === 'plinko') {
-      const next = Array.from(crypto.getRandomValues(new Uint16Array(PLINKO_DROPS)));
+      const next = Array.from(crypto.getRandomValues(new Uint16Array(dropCount)));
       setPaths(next);
       const dropped = next.reduce(
         (sum, path) =>
@@ -244,7 +248,7 @@ export default function DiamondTestPage() {
               {total.toLocaleString()} Simulated Diamonds
               {upgraded ? ' Including The Super Bonus' : ''}
               {game === 'plinko'
-                ? `, ${PLINKO_DROPS} Drops Of ${drop.toLocaleString()} On The ${table.name} Table`
+                ? `, ${dropCount} Drops Of ${drop.toLocaleString()} On The ${table.name} Table`
                 : game === 'crossing'
                   ? `, ${ROAD.length} Streets`
                   : game === 'mines'
@@ -260,7 +264,7 @@ export default function DiamondTestPage() {
           { label: 'Bonus Entry', value: total.toLocaleString() },
           {
             label: game === 'plinko' ? 'Drops' : 'Choices',
-            value: game === 'plinko' ? `${landed}/${PLINKO_DROPS}` : String(picked.length),
+            value: game === 'plinko' ? `${landed}/${dropCount}` : String(picked.length),
           },
           {
             label: 'Guaranteed',

@@ -2160,6 +2160,66 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return false;
       }
     };
+    /* ═══ THE SAME THREE OUTCOMES, IN THE OTHER CAPTURE (2026-09-23) ═══
+
+       `physical()` has carried a three-way rule on
+       `terminalBoundaryPendingGenerations` since #5020 and #5021 merged, and
+       the comment above it sets out the whole argument. THIS capture, which
+       walks every table `physical()` does not, still demanded a flat zero. So
+       the release cleared the F06 permit refusal and stopped one require
+       later, on the same table, for the same reason: run 35927313976 refused
+       `captureEngine.engine_work_not_drained` on 9e432569 with
+       `boundary=1/false, permitPhase=attempted` - which is exactly the shape
+       `physical()` ADMITS. A fix that leaves the same trap one level up has
+       not landed (CLAUDE.md 10.86 rule 4).
+
+       The three outcomes, unchanged in substance from the other path:
+
+         an `attempted` permit on a dead engine -> ONE is allowed.
+           `beginTerminalBoundaryPersistence` has one call site and on an
+           engine holding a permit it runs inside `F06HandPermit.start`, one
+           line after the phase becomes `attempted`. The integer IS that
+           started, cut-off hand.
+         no permit at all on a dead engine      -> DEFERRED, never waved
+           through. With no permit there is no phase to reason from and no
+           outstanding hand, so nothing downstream of HAND_COMPLETE can ever
+           resolve the generation; `proveUnresolvableCustody` refuses unless
+           the rows prove the felt quiet, BEFORE anything is written.
+         anything else                          -> 0, exactly as before. A
+           permit in another phase is an engine we do not understand, and a
+           LIVE engine keeps the flat zero it has always had.
+
+       "Dead" here is `deadEngineCustody`'s conjunction and nothing wider, and
+       the shape is proved before the count: a set holding anything but
+       positive integers, or more of them than a table can hold, refuses
+       without a row read. */
+    const boundaryGenerationsAllowed = (tableId, engine) => {
+      try {
+        const collection = engine.terminalBoundaryPendingGenerations;
+        if (!(collection instanceof Set) || collection.size === 0) return 0;
+        const generations = [...collection];
+        if (
+          collection.size > maxEntriesPerTable ||
+          !generations.every((value) => Number.isSafeInteger(value) && value > 0) ||
+          engine.terminalBoundaryPersistenceFailed !== false ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.handController !== null ||
+          engine.f06RecoveryInFlight !== false ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0
+        )
+          return 0;
+        const phase = permitPhaseOf(engine);
+        if (phase === 'attempted') return 1;
+        if (phase !== 'none') return 0;
+        deferredUnresolvableCustody.set(tableId, `boundary${collection.size}`);
+        return collection.size;
+      } catch {
+        // Unreadable is never an allowance. It keeps the original zero.
+        return 0;
+      }
+    };
     const captureEngine = (tableId, engine) => {
       // The same condition, the same code and the same order as the
       // process-wide `require` it shadows at every call below; this one only
@@ -2268,7 +2328,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         engine.tournamentMoveOperations instanceof Set &&
         engine.tournamentMoveOperations.size === 0 &&
         engine.terminalBoundaryPendingGenerations instanceof Set &&
-        engine.terminalBoundaryPendingGenerations.size === 0 &&
+        engine.terminalBoundaryPendingGenerations.size <=
+          boundaryGenerationsAllowed(tableId, engine) &&
         engine.terminalBoundaryPersistenceFailed === false, 'engine_work_not_drained');
       require(Number.isSafeInteger(engine.handCount) &&
         engine.handCount >= 0 &&

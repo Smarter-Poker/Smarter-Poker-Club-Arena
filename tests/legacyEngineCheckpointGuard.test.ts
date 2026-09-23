@@ -715,6 +715,100 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(await f.run()).toMatchObject({ ok: false, reason: 'native_readiness_refused' });
   });
 
+  /* THE SAME THREE OUTCOMES, IN THE OTHER CAPTURE (2026-09-23).
+     `physical()` has carried a three-way rule on
+     `terminalBoundaryPendingGenerations` since #5020 and #5021. This capture,
+     which walks every table `physical()` does not, demanded a flat zero - so
+     run 35927313976 cleared the F06 permit refusal and stopped one require
+     later, on the same table, with `boundary=1/false, permitPhase=attempted`,
+     which is exactly the shape the other path ADMITS. */
+  const deadWithBoundary = (f: ReturnType<typeof fixture>, generations: unknown[]) => {
+    stopEmpty(f);
+    f.first.terminalBoundaryPendingGenerations = new Set(generations);
+  };
+
+  it('one boundary generation on a dead engine holding an attempted permit is admitted', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7]);
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    expect(await f.run()).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:attempted`,
+    });
+  });
+
+  it('two of them still refuse: the permit argument admits exactly one', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7, 8]);
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_work_not_drained',
+      failedTable: f.first.tableId,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a permit in any other phase keeps the flat zero', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7]);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('with no permit at all it is deferred and proved from rows, never waved through', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7, 8, 9]);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:boundary3`,
+    });
+    expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
+  });
+
+  it('a hand in the air on that table refuses the abandoned boundary too', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7]);
+    f.onSnapshots((ids) => ({
+      data: [
+        { table_id: ids[0], hand_number: 3, stage: 'turn', updated_at: new Date().toISOString() },
+      ],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a LIVE engine with a boundary generation keeps the flat zero', async () => {
+    const f = fixture(2, checkpoint758);
+    f.first.terminalBoundaryPendingGenerations = new Set([7]);
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a set holding anything but a positive integer refuses without a row read', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [0]);
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+  });
+
+  it('a failed boundary persistence is never an allowance', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7]);
+    f.first.terminalBoundaryPersistenceFailed = true;
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+  });
+
   it('a retained permit on a LIVE engine still refuses, and no row is read for it', async () => {
     const f = fixture(2, checkpoint758);
     f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };

@@ -739,6 +739,16 @@ BEGIN
 END;
 $function$;
 
+-- Same ACL-preservation gap as fn_ca_tournament_refund_plan below: a replace
+-- keeps the live grant, but the gate reads only this file. Every prior
+-- migration that touched atomic_cancel_tournament restated this same pair
+-- (20260902050100 through 20260910171843) - doing the same here, not a
+-- change of policy.
+REVOKE ALL ON FUNCTION public.atomic_cancel_tournament(uuid,uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.atomic_cancel_tournament(uuid,uuid)
+  TO service_role;
+
 CREATE OR REPLACE FUNCTION public.fn_ca_tournament_refund_plan(p_tournament_id uuid, p_user_id uuid)
  RETURNS TABLE(source_wallet_club_id uuid, gross_remaining numeric, prize_remaining numeric, bounty_remaining numeric, fee_remaining numeric, debit_count bigint)
  LANGUAGE plpgsql

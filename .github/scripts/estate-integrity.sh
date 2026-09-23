@@ -90,6 +90,9 @@ SHARED_FILES=(
 # Remove any unexpected bypass through a separately reviewed administration
 # change. The audit never mutates a ruleset itself.
 
+# sha256 of the empty string, truncated the same way the digests below are.
+EMPTY_SHA12='e3b0c44298fc'
+
 PROBLEMS=()
 NOTES=()
 add()  { PROBLEMS+=("$1"); }
@@ -204,6 +207,26 @@ for r in "${REPOS[@]}"; do
 done
 
 # ── 2. The shared guards are the same file everywhere ─────────────────────
+# WHICH REPO IS AHEAD, AND WHICH ARE BEHIND (2026-09-22).
+#
+# Until today this reported "N different versions" and listed a digest per
+# repo. That is the finding, but it is not the repair, and nobody could get
+# from one to the other: a digest does not say whether Club Arena drifted or
+# the other six are simply carrying last month's copy. Issue #3931 sat open
+# with eleven such files - measured today, Club Arena held the NEWEST copy of
+# nine of them and the STALEST of two - and no reader could tell those two
+# cases apart, so nobody acted on either.
+#
+# So each variant now carries the date of the last commit that touched that
+# path in that repo, and the newest one is named. That is strictly more
+# information: nothing that blocked before stops blocking, and a drift is
+# still a drift whichever way it points. It turns "eleven files disagree"
+# into "copy repo X's 2026-09-19 version into these five", which is a repair
+# somebody can carry out.
+#
+# The date is a WEAKER signal than the content and is labelled as such: a repo
+# can commit an older file later. It orders the variants; it does not certify
+# one. The rule remains "make the repos agree again", not "take the newest".
 for f in "${SHARED_FILES[@]}"; do
   DIGESTS=""
   PRESENT=0
@@ -213,7 +236,19 @@ for f in "${SHARED_FILES[@]}"; do
     if [ -z "$C" ]; then MISSING="$MISSING $r"; continue; fi
     PRESENT=$((PRESENT + 1))
     D=$(printf '%s' "$C" | base64 -d 2>/dev/null | shasum -a256 | cut -c1-12)
-    DIGESTS="$DIGESTS$D $r"$'\n'
+    # A date this cannot read is reported as `unknown`, never as an old one:
+    # an unreadable date must not make a current repo look stale (10.86 r2).
+    WHEN=$(gh_ro "repos/Smarter-Poker/$r/commits?path=$f&per_page=1" --jq '.[0].commit.committer.date // empty')
+    DIGESTS="$DIGESTS$D ${WHEN:-unknown} $r"$'\n'
+    # AN EMPTY FILE IS NOT A VERSION (2026-09-22). `e3b0c442...` is the sha256
+    # of nothing at all, and on this date two of Diamond-Arena's workflow files
+    # held it. Reported as "a different version" that reads as a drifted copy
+    # worth diffing; it is a zero-byte file, so that workflow does not exist
+    # and nothing in that repo queues or opens a pull request. Same bytes,
+    # completely different repair, so it gets its own sentence.
+    if [ "$D" = "$EMPTY_SHA12" ]; then
+      add "\`$f\` in **$r** is a ZERO-BYTE FILE. Not a drifted copy - there is nothing in it. Whatever it is supposed to do is not happening in that repo, and a digest comparison alone reads this as an ordinary difference."
+    fi
   done
   UNIQ=$(printf '%s' "$DIGESTS" | awk 'NF{print $1}' | sort -u | wc -l | tr -d ' ')
   if [ "$PRESENT" -eq 0 ]; then
@@ -221,9 +256,23 @@ for f in "${SHARED_FILES[@]}"; do
   elif [ -n "$MISSING" ]; then
     add "\`$f\` — missing from:$MISSING. It exists in $PRESENT of ${#REPOS[@]} repos, so the estate is not protected the same way everywhere."
   elif [ "$UNIQ" -gt 1 ]; then
-    VARIANTS=$(printf '%s' "$DIGESTS" | awk 'NF{print "    " $1 "  " $2}')
+    # The repo whose copy was committed most recently. Ties and unknowns keep
+    # the first entry, so the line is deterministic rather than empty.
+    NEWEST=$(printf '%s' "$DIGESTS" | awk 'NF && $2 != "unknown"' | sort -k2,2r | head -1)
+    NEWEST_REPO=$(printf '%s' "$NEWEST" | awk '{print $3}')
+    NEWEST_WHEN=$(printf '%s' "$NEWEST" | awk '{print $2}')
+    NEWEST_D=$(printf '%s' "$NEWEST" | awk '{print $1}')
+    if [ -n "$NEWEST_REPO" ]; then
+      BEHIND=$(printf '%s' "$DIGESTS" | awk -v d="$NEWEST_D" 'NF && $1 != d {printf "%s ", $3}')
+      LEAD="Most recently committed: **$NEWEST_REPO** ($NEWEST_WHEN, \`$NEWEST_D\`). Carrying something else: $BEHIND"
+    else
+      LEAD="Could not read a commit date for any variant, so this cannot say which is newest. Compare them by hand."
+    fi
+    VARIANTS=$(printf '%s' "$DIGESTS" | awk 'NF{printf "    %s  %-22s %s\n", $1, $2, $3}')
     add "\`$f\` — **$UNIQ different versions** across the estate. These are supposed to be byte-identical; a fix applied in one repo and not the others is how a guard becomes true in theory only.
-$VARIANTS"
+$VARIANTS
+  $LEAD
+  The date orders the variants, it does not certify one: a repo can commit an older file later. Make them agree; do not assume the newest is right."
   else
     note "$f: identical in all $PRESENT"
   fi

@@ -91,7 +91,33 @@ const installedAutoledgerDeclaration: InstalledOmission = {
   successorSha256: BOARD_GUARD_SUCCESSOR_SHA256,
   guard: 'fn_ca_autoledger',
 };
+/**
+ * 2026-09-23 (issue #5008). 20260917181100 redefined fn_ca_post_correction and
+ * did not declare it, so fn_ca_guard_defs_watch did its job: it observed a hash
+ * nobody had named and opened INFO notice 0fe56924 at 2026-09-17 19:25Z. The
+ * forward declaration was written and applied on 2026-09-21 by
+ * 20260921022420_declare_three_installed_guard_redefinitions, which names this
+ * exact migration and this exact guard, and production has carried it since:
+ *
+ *   public.ca_guard_defs WHERE proname='fn_ca_post_correction'
+ *     declared_ref names migration 20260917181100 and its recorder 20260921022420
+ *     declared_at  = 2026-09-21 02:25:53Z
+ *
+ * The original's own file was in the unrecorded-migration gap until today,
+ * which is the loop issue #5008 describes: the mechanism for recording an
+ * already-installed migration could not be reached from inside the gap it
+ * exists to close. The successor was already on main; only the original was
+ * missing. Both are bound below, as every other entry is.
+ */
+const installedPostCorrectionDeclaration: InstalledOmission = {
+  original: '20260917181100_union_weekly_accounting_atomic_activation_20260917.sql',
+  originalSha256: '89e6e7650022f1c3eb4b5dd575ae935e9110d90b329a29340159c1eff9004f70',
+  successor: '20260921022420_declare_three_installed_guard_redefinitions.sql',
+  successorSha256: '853cfe7fdc2aeac78b17226e97ce7271c660b4b6b91bdf4ecb935bfce6e24b1b',
+  guard: 'fn_ca_post_correction',
+};
 const installedOmissions: InstalledOmission[] = [
+  installedPostCorrectionDeclaration,
   installedFundingDeclaration,
   installedEscalationTickDeclaration,
   installedAutoledgerDeclaration,

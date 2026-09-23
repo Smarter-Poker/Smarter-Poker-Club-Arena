@@ -1579,18 +1579,33 @@ describe('every finished round verifies itself', () => {
     for (let i = 0; i < 50 && screen.queryByText(text) === null; i++) await settle();
     return screen.getByText(text);
   };
+  const detailText = () =>
+    screen.getByRole('dialog').querySelector('[data-detail]')?.textContent ?? '';
   const toTheReceipt = async () => {
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
-    return screen.getByRole('dialog').querySelector('[data-detail]')?.textContent ?? '';
+    return detailText();
+  };
+  /**
+   * The receipt's verdict line is waited for exactly as said() waits for the
+   * spoken one, and for the same reason: the check is real SHA-256 and HMAC on
+   * the event loop, so a fixed budget of turns is enough on an idle machine and
+   * not on a loaded one (CI shard 3, 2026-09-23). The last text read is
+   * returned either way, so a verdict that never arrives still fails on what
+   * the receipt actually said.
+   */
+  const detailSaying = async (text: string) => {
+    for (let i = 0; i < 50 && !detailText().includes(text); i++) await settle();
+    return detailText();
   };
 
   it('checks the round and says so on the receipt, with nothing pressed', async () => {
     await plays({});
-    const detail = await toTheReceipt();
+    await toTheReceipt();
+    const detail = await detailSaying('Sealed Before Play (f6c584df) And Verified On This Device.');
     expect(detail).toContain('Sealed Before Play (f6c584df) And Verified On This Device.');
     expect(vi.mocked(reportError)).not.toHaveBeenCalled();
     noCheckControl();
@@ -1600,7 +1615,10 @@ describe('every finished round verifies itself', () => {
 
   it('reports a round that does not verify, and never calls it verified', async () => {
     await plays({ payout_chips: 99 });
-    const detail = await toTheReceipt();
+    await toTheReceipt();
+    const detail = await detailSaying(
+      'This Round Did Not Verify On This Device And Has Been Reported.'
+    );
     expect(detail).toContain('This Round Did Not Verify On This Device And Has Been Reported.');
     expect(detail).not.toContain('Verified On This Device');
     expect(

@@ -225,6 +225,9 @@ const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPag
 const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
 const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
+// One marketplace (Dan, 2026-09-21): the route hands the web to the World Hub
+// marketplace and keeps MarketplacePage for the native app and checkout returns.
+const MarketplaceRoute = lazyWithRetry(() => import('./pages/MarketplaceRoute'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
@@ -2158,11 +2161,23 @@ function FullApp() {
                 <Route
                   path="marketplace"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Marketplace">
-                        <MarketplacePage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Marketplace">
+                      {/* THE SAME PAGES AS THE WORLD HUB MARKETPLACE (Dan,
+                          2026-09-21). On the web this opens the matching
+                          /hub/diamond-store, /hub/vip-membership or
+                          /hub/club-shop page, which a signed-out visitor may
+                          read as well - so the guard belongs on the in-app
+                          storefront, which is rendered in the native app and
+                          for the two addresses only it can finish (a card
+                          checkout return, and a top-up carrying ?next=). */}
+                      <MarketplaceRoute
+                        storefront={
+                          <AuthGuard>
+                            <MarketplacePage />
+                          </AuthGuard>
+                        }
+                      />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route

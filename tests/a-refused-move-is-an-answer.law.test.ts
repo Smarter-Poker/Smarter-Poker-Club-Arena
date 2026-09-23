@@ -14,9 +14,10 @@
  * reason down by itself.
  *
  * The console's second plate read "Refresh" whenever no win could be booked,
- * and pressing it re-read the game by hand. It is Book The Win, live only once
- * a win can be booked. Behaviour: DiamondChoiceMoveAnswers under
- * tests/components and diamondChoiceMoveAnswers under tests/unit.
+ * and pressing it re-read the game by hand. It is Book The Win - and the chips
+ * that press would book, once there are any to name - live only once a win can
+ * be booked. Behaviour: DiamondChoiceMoveAnswers under tests/components and
+ * diamondChoiceMoveAnswers under tests/unit.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -70,12 +71,15 @@ describe('a refused move is an answer', () => {
   it('the console offers no Refresh: its second plate books the win and nothing else', () => {
     const page = code(PAGE);
     expect(page).not.toMatch(/['"`]Refresh['"`]/);
+    expect(page).toMatch(/const cashLabel = bookable === null \? 'Book The Win' : /);
+    expect(page).toMatch(/const canBook = open && picks > 0 && !busy && !sceneBusy && !uncertain;/);
     const plate = page.slice(
       page.indexOf('secondary={{'),
       page.indexOf('}}', page.indexOf('secondary={{'))
     );
-    expect(plate).toMatch(/label: 'Book The Win'/);
-    expect(plate).toMatch(/onClick: \(\) => void act\('cashout', null\)/);
+    expect(plate).toMatch(/label: pendingAction === 'book' \? 'Booking Win' : cashLabel,/);
+    expect(plate).toMatch(/if \(!canBook\) return;/);
+    expect(plate).toMatch(/void act\('cashout', null\);/);
     expect(plate).not.toMatch(/refresh/);
   });
 });

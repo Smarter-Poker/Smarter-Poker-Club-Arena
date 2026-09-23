@@ -1198,7 +1198,10 @@ function DiamondCrashGame() {
             : open
               ? {
                   label: cashing ? 'Booking Win' : 'Book The Win',
-                  ink: 'green',
+                  // Gold is value on this panel: Get Diamonds already reads that
+                  // way, and booking a win is the same kind of act. Green was the
+                  // last plate painted a colour of its own.
+                  ink: 'gold',
                   onClick: handleCashOut,
                   disabled: cashing || !cashoutOpen,
                 }
@@ -1461,6 +1464,17 @@ function DiamondCrashGame() {
             clubId={routeClubId ?? ''}
             clubUuid={clubUuid}
             awardId={settledRound.award_id ?? null}
+            // The page already sang the cash-out at its own multiplier, and a
+            // crash says nothing. Either way the receipt adds no chord.
+            silent
+            // A crash is not a win. The receipt says what it is.
+            eyebrow={
+              settledRound.status === 'cashed'
+                ? undefined
+                : settledRound.outcome.payout_chips > 0
+                  ? 'Guarantee Paid'
+                  : 'Round Over'
+            }
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
           />

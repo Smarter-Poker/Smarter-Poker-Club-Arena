@@ -376,9 +376,11 @@ describe('an answer this browser cannot verify', () => {
     // ...the game is read again, and the status says the round is saved.
     expect(backend.state.mock.calls.length).toBeGreaterThan(reads);
     expect(backend.awardState.mock.calls.length).toBeGreaterThan(awardReads);
-    expect(screen.getAllByRole('status').some((node) => node.textContent === BONUS_SAVED)).toBe(
-      true
-    );
+    expect(
+      Array.from(document.querySelectorAll('[aria-live] p')).some(
+        (node) => node.textContent === BONUS_SAVED
+      )
+    ).toBe(true);
     expect(screen.queryByText('Settling')).toBeNull();
     // No ticket is dealt over it, and no new round is started on top of it.
     expect(backend.rpc.mock.calls.filter(([fn]) => fn === 'fn_diamond_game_commit')).toHaveLength(

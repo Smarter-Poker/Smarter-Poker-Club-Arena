@@ -206,8 +206,12 @@ export interface ChoiceProof {
   payout_version?: number;
 }
 
-export async function verifyChoiceProof(proof: ChoiceProof) {
-  if ((await sha256Hex(proof.server_seed)) !== proof.server_seed_hash) return false;
+/**
+ * The draw this server seed makes: the mine board, or the road roll. The seal
+ * itself is checked separately, so a published hash that does not match its
+ * seed fails one check rather than two.
+ */
+async function sealedDrawMatches(proof: ChoiceProof) {
   if (proof.game === 'mines') {
     const board =
       (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION
@@ -227,67 +231,107 @@ export async function verifyChoiceProof(proof: ChoiceProof) {
   return BigInt(`0x${hash.slice(0, 12)}`).toString() === proof.road_roll;
 }
 
-/** Checks the selected cells, the complete prize ladder, and the settled chip cents. */
-export async function verifyChoiceRound(
+/**
+ * WHAT A FINISHED ROUND PROVES, CHECK BY CHECK.
+ *
+ * `seal`    the revealed server seed is the one whose hash was published
+ *           before a single street was crossed;
+ * `draw`    the sealed draw (the road roll, or the mine board) is the one that
+ *           seed makes, and every pick was settled against it;
+ * `prizes`  every rung of the printed prize ladder is this stake's own;
+ * `payout`  the settled chips are what the sealed rounding draw decided.
+ *
+ * Each check is independent, so numbers impossible enough to throw fail their
+ * own check and still let the other three speak. Nothing here throws, and the
+ * caller never needs to know which formula went wrong to say so.
+ */
+export interface ChoiceVerdict {
+  seal: boolean;
+  draw: boolean;
+  prizes: boolean;
+  payout: boolean;
+}
+export const choiceRoundVerified = (verdict: ChoiceVerdict) =>
+  verdict.seal && verdict.draw && verdict.prizes && verdict.payout;
+const checked = async (run: () => boolean | Promise<boolean>) => {
+  try {
+    return await run();
+  } catch {
+    return false;
+  }
+};
+
+export async function verifyChoiceRoundDetailed(
   round: Omit<import('../services/DiamondChoiceService').ChoiceRound, 'payout_version'> & {
     payout_version?: number;
   }
-) {
+): Promise<ChoiceVerdict> {
   const proof = round.proof;
+  if (!proof || !round.picked.length)
+    return { seal: false, draw: false, prizes: false, payout: false };
+  // The round's own sealed contract picks the ladder, the board and the prizes
+  // (owner ruling 2026-09-21, R3): a round dealt before it verifies as it was.
   const version = round.payout_version ?? 0;
   const sealedV4 = version >= CHOICE_PAYOUT_VERSION;
-  if (!proof || !(await verifyChoiceProof(proof)) || !round.picked.length) return false;
-  // A contract-4 board was dealt around the first pick, and says so.
-  if (sealedV4 && round.game === 'mines' && proof.first_pick !== round.picked[0]) return false;
-  if (sealedV4 !== (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION) return false;
   const ladder = roadLadder(round.mode, version) as readonly number[];
-  if (round.game === 'crossing' && !ladder) return false;
-  const prize = (picks: number) =>
-    sealedV4
-      ? minePrizeV4(round.bet_chips, Number(round.mode), picks, round.minimum_payout_chips ?? 0)
-      : minePrize(round.bet_chips, Number(round.mode), picks, round.minimum_payout_chips ?? 0);
-  for (let i = 0; i < round.prizes.length; i++) {
-    const exact =
-      round.game === 'mines'
-        ? prize(i + 1)
-        : {
-            numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[i]),
-            denominator: 100n,
-          };
-    const chips = Number(exact.numerator) / Number(exact.denominator) / 100;
-    if (Math.abs(chips - round.prizes[i]) > Math.max(1, chips) * 1e-10) return false;
-  }
-  for (let i = 0; i < round.picked.length; i++) {
-    const safe =
-      round.game === 'mines'
-        ? !proof.mine_cells.includes(round.picked[i])
-        : round.picked[i] === i &&
-          roadSurvives(
-            BigInt(proof.road_roll),
-            ladder[i],
-            round.bet_chips,
-            round.minimum_payout_chips ?? 0
-          );
-    if (safe === (round.status === 'lost' && i === round.picked.length - 1)) return false;
-  }
-  if (round.status === 'lost') return round.payout_chips === (round.minimum_payout_chips ?? 0);
-  if (round.status !== 'cashed') return false;
-  const n = round.picked.length;
-  const rational =
+  const floor = round.minimum_payout_chips ?? 0;
+  const stake = () =>
     round.game === 'mines'
-      ? prize(n)
-      : {
-          numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[n - 1]),
+      ? (picks: number) =>
+          sealedV4
+            ? minePrizeV4(round.bet_chips, Number(round.mode), picks, floor)
+            : minePrize(round.bet_chips, Number(round.mode), picks, floor)
+      : (picks: number) => ({
+          numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[picks - 1]),
           denominator: 100n,
-        };
-  const hash = await hmacSha256Hex(
-    proof.server_seed,
-    `${round.client_seed}:${round.nonce}:rounding:${n}`
-  );
-  const cents = roundedMinePrize(
-    rational.numerator,
-    rational.denominator,
-    BigInt(`0x${hash.slice(0, 12)}`)
-  );
-  return Number(cents) === Math.round(round.payout_chips * 100);
+        });
+  return {
+    seal: await checked(
+      async () => (await sha256Hex(proof.server_seed)) === proof.server_seed_hash
+    ),
+    draw: await checked(async () => {
+      if (!(await sealedDrawMatches(proof))) return false;
+      for (let i = 0; i < round.picked.length; i++) {
+        const safe =
+          round.game === 'mines'
+            ? !proof.mine_cells.includes(round.picked[i])
+            : round.picked[i] === i &&
+              roadSurvives(BigInt(proof.road_roll), ladder[i], round.bet_chips, floor);
+        if (safe === (round.status === 'lost' && i === round.picked.length - 1)) return false;
+      }
+      return true;
+    }),
+    prizes: await checked(() => {
+      const exact = stake();
+      for (let i = 0; i < round.prizes.length; i++) {
+        const rational = exact(i + 1);
+        const chips = Number(rational.numerator) / Number(rational.denominator) / 100;
+        if (Math.abs(chips - round.prizes[i]) > Math.max(1, chips) * 1e-10) return false;
+      }
+      return true;
+    }),
+    payout: await checked(async () => {
+      if (round.status === 'lost') return round.payout_chips === floor;
+      if (round.status !== 'cashed') return false;
+      const n = round.picked.length;
+      const rational = stake()(n);
+      const hash = await hmacSha256Hex(
+        proof.server_seed,
+        `${round.client_seed}:${round.nonce}:rounding:${n}`
+      );
+      const cents = roundedMinePrize(
+        rational.numerator,
+        rational.denominator,
+        BigInt(`0x${hash.slice(0, 12)}`)
+      );
+      return Number(cents) === Math.round(round.payout_chips * 100);
+    }),
+  };
+}
+
+/** Checks the selected cells, the complete prize ladder, and the settled chip cents. */
+export async function verifyChoiceRound(
+  round: import('../services/DiamondChoiceService').ChoiceRound
+) {
+  return choiceRoundVerified(await verifyChoiceRoundDetailed(round));
 }

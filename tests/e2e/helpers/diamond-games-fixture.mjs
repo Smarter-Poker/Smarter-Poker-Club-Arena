@@ -28,7 +28,12 @@ export async function diamondGamesFixture() {
  import {bonusTotal,gameChips,plinkoBudget,plinkoDrops,validBonusBudget,type BonusBudget} from './src/utils/bonusGameBudget';
  import {PLINKO_TABLES,diamondBonusMinimum,plinkoTableVersion} from './src/utils/diamondBonusPayout';
  import {CHOICE_MODE,ROAD_LADDERS,minePrize} from './src/utils/diamondChoiceMath';
- import './src/pages/diamondGames.module.css';
+ import './src/styles/club-engine.css';import './src/pages/diamondGames.module.css';
+ // club-engine.css is where the --realism-* design tokens are DEFINED, and the
+ // console reads them for every surface it paints. A CSS fixture without it
+ // measures a console whose colours all fall back to nothing, which is not a
+ // console the app can ever render; main.tsx and src/diamond-test.tsx both load
+ // it, so this preview loads it too.
  // The one setting per game, read from the same constants the server mirrors:
  // the live ordinary board (never a deactivated one, and never a chooser), the
  // one road, and the dealt number of mines on the sample reveal.

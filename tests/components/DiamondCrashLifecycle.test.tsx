@@ -133,6 +133,25 @@ vi.mock('../../src/components/crash/CrashCurve', () => ({
       <button onClick={() => onTick?.(444)}>Tick 4.44x</button>
       <output aria-label="Frozen Figure">{tickerCents ?? ''}</output>
     </>
+vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
+  WheelWinReveal: ({
+    title,
+    detail,
+    onOpen,
+    eyebrow,
+    silent,
+  }: {
+    title: string;
+    detail: string;
+    onOpen: () => void;
+    eyebrow?: string;
+    silent?: boolean;
+  }) => (
+    <div role="dialog" aria-label={title} data-silent={String(Boolean(silent))}>
+      <span data-eyebrow>{eyebrow}</span>
+      {detail}
+      <button onClick={onOpen}>Finish Prize</button>
+    </div>
   ),
 }));
 vi.mock('../../src/services/DiamondWheelService', () => ({
@@ -314,6 +333,32 @@ describe('Crash settles one displayed round once', () => {
     expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
     expect(backend.start).not.toHaveBeenCalled();
     expect(backend.navigate).not.toHaveBeenCalled();
+  /**
+   * A CRASH SAYS NOTHING (review 2026-09-22). The page deliberately keeps
+   * silent when a flight crashes, and then the receipt mounted over it and
+   * played a major arpeggio and a success buzz anyway. A cashed round is not
+   * sung twice either: the page already sang it at its own multiplier.
+   */
+  it('never lets the receipt celebrate a crash, or sing a cash-out twice', async () => {
+    backend.crashSettle.mockResolvedValueOnce({
+      ...settled,
+      status: 'crashed',
+      outcome: { ...settled.outcome, status: 'crashed', payout_chips: 0.1 },
+    });
+    await mountOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    const receipt = screen.getByRole('dialog');
+    // The receipt is the painted console (owner ruling 2026-09-21, R1: it waits
+    // for a tap instead of returning by itself), so "silent" is the absence of
+    // the win chord rather than an attribute on a reveal.
+    expect(receipt).toHaveTextContent('Guarantee Paid');
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    cleanup();
+    backend.crashSettle.mockResolvedValueOnce(settled);
+    await mountOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('You Won');
+    expect(soundService.playWin).not.toHaveBeenCalled();
   });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });

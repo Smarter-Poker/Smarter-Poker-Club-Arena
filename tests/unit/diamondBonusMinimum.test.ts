@@ -23,8 +23,8 @@ import {
   ROAD_LADDERS_V4,
   roadLadder,
   roadSurvives,
-  verifyChoiceProof,
   verifyChoiceRound,
+  verifyChoiceRoundDetailed,
 } from '../../src/utils/diamondChoiceMath';
 import {
   crashCashoutFloorCents,
@@ -436,10 +436,15 @@ describe('contract 4: the first step never ruins a game, and the floor is what t
           expect(proof.mine_cells).not.toContain(proof.first_pick);
           // The board is bound to the first pick: dealt around another tile it does not verify.
           expect(
-            await verifyChoiceProof({
-              ...(proof as object),
-              first_pick: ((proof.first_pick as number) + 1) % 25,
-            } as never)
+            (
+              await verifyChoiceRoundDetailed({
+                ...(round as object),
+                proof: {
+                  ...(proof as object),
+                  first_pick: ((proof.first_pick as number) + 1) % 25,
+                },
+              } as never)
+            ).draw
           ).toBe(false);
         } else {
           // Street one paid 0.80x when banked, or was crossed for certain before the loss.

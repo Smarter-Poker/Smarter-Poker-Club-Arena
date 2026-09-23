@@ -22,6 +22,13 @@
  *   - Ownership = an UNREDEEMED club_shop_inventory row (consumables can be
  *     re-bought after redemption); inventory loads eagerly for that reason.
  *   - Non-admins deep-linking ?tab=manage get a notice instead of a blank page.
+ *
+ *  2026-09-21 ONE MARKETPLACE (Dan): "CLUB ARENA MARKETPLACE, SHOULD BE THE
+ *  EXACT SAME PAGES AS THE MARKETPLACE THAT EXISTS IN THE WORLD HUB." On the
+ *  web, /marketplace now opens the World Hub marketplace page that shows the
+ *  same thing (src/pages/MarketplaceRoute.tsx, src/utils/hubMarketplace.ts).
+ *  This storefront renders only in the native app, where StoreKit / Play
+ *  Billing must sell, and for a card checkout returning here to be verified.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 

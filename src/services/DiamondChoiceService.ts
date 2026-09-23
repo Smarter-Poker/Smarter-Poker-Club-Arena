@@ -25,7 +25,8 @@ export interface ChoiceRound {
   payout_chips: number;
   minimum_payout_chips?: number;
   /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half. */
-  payout_version?: 1 | 2 | 3;
+  /** 4 since the first step never ruins a game (owner ruling 2026-09-21, R3). */
+  payout_version?: 1 | 2 | 3 | 4;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;

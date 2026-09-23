@@ -18,7 +18,7 @@ const backend = vi.hoisted(() => ({
 }));
 vi.mock('../../src/utils/diamondChoiceMath', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/utils/diamondChoiceMath')>()),
-  verifyChoiceRound: backend.verify,
+  verifyChoiceRoundDetailed: backend.verify,
 }));
 vi.mock('../../src/services/DiamondChoiceService', () => ({
   DiamondChoiceService: { state: backend.state, act: backend.act },
@@ -163,7 +163,14 @@ beforeEach(() => {
     .mockResolvedValue({ enabled: false, award: null, gameState: null });
   backend.state.mockReset().mockResolvedValue(state);
   backend.start.mockReset().mockReturnValue(new Promise(() => {}));
-  backend.verify.mockReset();
+  // The page checks every finished round by itself now, so the verifier always
+  // answers unless a test deliberately holds its answer open.
+  backend.verify.mockReset().mockResolvedValue({
+    seal: true,
+    draw: true,
+    prizes: true,
+    payout: true,
+  });
   backend.rpc.mockResolvedValue({
     error: null,
     data: {
@@ -203,7 +210,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
       fireEvent.click(
-        screen.getByRole('button', { name: game === 'mines' ? 'Pick Tile' : 'Cross Street' })
+        screen.getByRole('button', { name: game === 'mines' ? 'Pick Tile' : /^Cross Street/ })
       );
       await act(async () => {});
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -230,7 +237,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
     render(<DiamondChoicePage game="crossing" />);
     await act(async () => {});
     expect(screen.getByRole('region', { name: 'Scene idle' })).toBeInTheDocument();
-    expect(screen.queryByText(/The Donkey Did Not Make/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your Guaranteed/)).not.toBeInTheDocument();
     expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('0.00');
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -269,7 +276,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
   );
 
   it('does not show a previous proof verdict while starting another round', async () => {
-    const proof = deferred<boolean>();
+    const proof = deferred<Record<string, boolean>>();
     backend.verify.mockReturnValue(proof.promise);
     backend.state
       .mockResolvedValueOnce({
@@ -283,11 +290,13 @@ describe('choice-game entry quotes belong to the selected settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick Tile' }));
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Verify Revealed Outcome' }));
-    expect(backend.verify).toHaveBeenCalledTimes(1);
+    // Twice: the page checks a finished round by itself, and the player can
+    // still press to run the same check again.
+    expect(backend.verify).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     expect(backend.start).toHaveBeenCalledTimes(1);
     await act(async () => {
-      proof.resolve(true);
+      proof.resolve({ seal: true, draw: true, prizes: true, payout: true });
     });
     expect(
       screen.queryByText('The Revealed Outcome And Chip Prize Match The Sealed Round.')
@@ -327,7 +336,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
         screen.getByText(
           game === 'mines'
             ? /6 Mines Hide Among 25 Tiles\. .*A Mine Ends The Round And Pays The Guaranteed Minimum\./
-            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Collision Ends The Round And Pays The Guaranteed Minimum\./
+            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Hit Ends The Round And Pays The Guaranteed Minimum\./
         )
       ).toBeInTheDocument();
       expect(screen.getByText(/Nobody Picks A Difficulty/)).toBeInTheDocument();
@@ -456,10 +465,12 @@ describe('choice games consume wheel-funded entry', () => {
         game === 'mines'
           ? 'Super Diamond Mines Pays At Least 1.00 Chips, Even If You Hit A Mine.'
           : 'Super Donkey Cross Pays At Least 1.00 Chips, Even If You Do Not Make It Across.';
-      const statusLines = screen
-        .getAllByRole('status')
-        .filter((line) => line.textContent?.includes(sentence));
-      expect(statusLines.some((line) => line.tagName === 'P')).toBe(true);
+      // The page says it in its one live region, not in a nested status.
+      expect(
+        Array.from(document.querySelectorAll('[aria-live] p')).some((line) =>
+          line.textContent?.includes(sentence)
+        )
+      ).toBe(true);
       // Screen one (R9): the offer holds Start Round until it is answered by a tap.
       expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
       answerOffer();
@@ -514,13 +525,9 @@ describe('choice games consume wheel-funded entry', () => {
       expect(guaranteed).toHaveTextContent('0.10 Chips');
       expect(guaranteed).not.toHaveAttribute('data-ink', 'gold');
       expect(
-        screen
-          .getAllByRole('status')
-          .some(
-            (line) =>
-              line.tagName === 'P' &&
-              line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
-          )
+        Array.from(document.querySelectorAll('[aria-live] p')).some((line) =>
+          line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
+        )
       ).toBe(true);
     }
   );
@@ -595,7 +602,7 @@ describe('choice games consume wheel-funded entry', () => {
     });
     render(<DiamondChoicePage game="crossing" />);
     await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
     // The saved round keeps its own road ('steady'); the lobby is still quoted the one setting.
     expect(backend.state.mock.calls.every((call) => call[2] === CHOICE_MODE.crossing)).toBe(true);

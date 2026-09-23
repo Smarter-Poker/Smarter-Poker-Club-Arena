@@ -30,6 +30,9 @@ export default function BonusCompletion({
   awardId,
   chips,
   detail,
+  eyebrow,
+  silent,
+  proof,
 }: {
   /** The route's club id, used for navigation. */
   clubId: string;
@@ -39,6 +42,16 @@ export default function BonusCompletion({
   awardId?: string | null;
   chips: number;
   detail: string;
+  /** What this receipt is, when the round was not won. */
+  eyebrow?: string;
+  /** The round was not a win, or its own scene already sang it. */
+  silent?: boolean;
+  /**
+   * What this browser made of the sealed round, in the sentence the player is
+   * already reading. Proving a round should not need a collapsed panel and a
+   * press inside the five seconds this receipt lasts.
+   */
+  proof?: string;
 }) {
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
@@ -52,11 +65,11 @@ export default function BonusCompletion({
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
   useEffect(() => {
-    if (!visible || sounded.current) return;
+    if (!visible || sounded.current || silent) return;
     sounded.current = true;
     soundService.playWin();
     triggerHaptic('success');
-  }, [visible]);
+  }, [visible, silent]);
   // One read of the wheel's waiting awards (C1 lists them as pending_awards).
   // A wheel state without the field, or a read that fails, simply offers no
   // next game: the wheel itself still shows every award when the player returns.
@@ -110,7 +123,7 @@ export default function BonusCompletion({
         }}
       >
         <SpadeConsole
-          eyebrow="You Won"
+          eyebrow={eyebrow ?? 'You Won'}
           title={title}
           pill="Paid"
           plates={
@@ -132,10 +145,10 @@ export default function BonusCompletion({
           </div>
           <p className="sc-copy sc-copy--center" role="status">
             {chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} {detail}
+            {proof ? ` ${proof}` : ''}
             {next ? ' Another Bonus Game Is Waiting For You.' : ''}
           </p>
         </SpadeConsole>
       </div>
-    </Modal>
-  );
+    </Modal>  );
 }

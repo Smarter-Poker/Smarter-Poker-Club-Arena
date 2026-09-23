@@ -27,6 +27,11 @@ const CASHIER_SURFACES: ReadonlyArray<{ tsx: string; css: string; consoles: numb
   },
   { tsx: 'src/pages/CashierPage.tsx', css: 'src/pages/CashierPage.module.css', consoles: 3 },
   {
+    tsx: 'src/pages/CashierStatementsPage.tsx',
+    css: 'src/pages/CashierStatementsPage.module.css',
+    consoles: 1,
+  },
+  {
     tsx: 'src/components/wallet/WalletCashierModal.tsx',
     css: 'src/components/wallet/WalletCashierModal.css',
     consoles: 2,
@@ -140,7 +145,11 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
   });
 
   it('gives every routed page console its legacy-flattening class, dialogs included', () => {
-    for (const tsx of ['src/pages/CashierTradePage.tsx', 'src/pages/CashierPage.tsx']) {
+    for (const tsx of [
+      'src/pages/CashierTradePage.tsx',
+      'src/pages/CashierPage.tsx',
+      'src/pages/CashierStatementsPage.tsx',
+    ]) {
       for (const tag of consoleTags(read(tsx))) {
         expect(tag, tsx).toContain('className={styles.console}');
       }
@@ -191,8 +200,10 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     const app = read('src/App.tsx');
     expect(app).toContain('path="clubs/:clubId/cashier"');
     expect(app).toContain('path="clubs/:clubId/cashier-classic"');
+    expect(app).toContain('path="clubs/:clubId/cashier/statements"');
     expect(read('src/pages/CashierTradePage.tsx')).toContain('title="Cashier"');
     expect(read('src/pages/CashierPage.tsx')).toContain('title="Cashier"');
+    expect(read('src/pages/CashierStatementsPage.tsx')).toContain('title="Cashier"');
   });
 
   it('puts every Trade Cashier dialog on the painted authority', () => {

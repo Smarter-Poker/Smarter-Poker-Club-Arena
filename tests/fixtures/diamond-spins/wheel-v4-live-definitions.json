@@ -1,0 +1,49 @@
+{
+  "_read": "public.pg_proc.prosrc on project kuklfnapbkmacvwxktbh (PRODUCTION), read-only through the Supabase MCP on 2026-09-23. Every body below is byte-exact: the md5 beside it is the md5 the live database reported for that function on that read, and the test recomputes it. This file is what the server RUNS, not what a migration file says it should run.",
+  "tables": {
+    "fn_wheel_v4_model(boolean)": {
+      "md5": "91a648f64756d9a3f6c2298ad1865f02",
+      "length": 1160,
+      "src": "\n SELECT o::smallint,\n        CASE WHEN p_vip THEN vl ELSE l END,\n        CASE WHEN p_vip THEN vk ELSE k END,\n        g,\n        CASE WHEN p_vip THEN vm ELSE m END,\n        CASE WHEN p_vip THEN vs ELSE s END,\n        w\n   FROM (VALUES\n (1,'Diamond Plinko','bonus','plinko',1,4.8,'Diamond Plinko','bonus',1,4.8,11950),\n (2,'1x Chips','chips',NULL,1,6,'1x Chips','chips',1,6,29600),\n (3,'Throwables','throwables',NULL,0.25,1.5,'0.2x Chips','chips',0.2,1.2,6667),\n (4,'Diamond Crash','bonus','crash',1,4.8,'Diamond Crash','bonus',1,4.8,11950),\n (5,'Diamonds','diamonds',NULL,1,11,'Diamonds','diamonds',1,11,1200),\n (6,'Time Bank','time_bank',NULL,0.25,1.5,'0.25x Chips','chips',0.25,1.5,6666),\n (7,'Donkey Cross','bonus','crossing',1,4.8,'Donkey Cross','bonus',1,4.8,11950),\n (8,'2x Chips','chips',NULL,2,12,'2x Chips','chips',2,12,240),\n (9,'Rabbit Hunt','rabbit_hunt',NULL,0.25,1.5,'0.3x Chips','chips',0.3,1.8,6667),\n (10,'Diamond Mines','bonus','mines',1,4.8,'Diamond Mines','bonus',1,4.8,11950),\n (11,'3x Chips','chips',NULL,3,18,'3x Chips','chips',3,18,160),\n (12,'Upgrade','upgrade',NULL,2,24,'Upgrade','upgrade',2,24,1000)\n ) x(o,l,k,g,m,s,vl,vk,vm,vs,w)\n"
+    },
+    "fn_wheel_v4_follow_model()": {
+      "md5": "f54361ce4b669db0f6119a9cb2862fff",
+      "length": 791,
+      "src": "\n SELECT r.p::smallint,c.ord::smallint,(ARRAY[r.w1,r.w2,r.w3,r.w4,r.w5,r.w6,r.w7,r.w8,r.w9,r.w10,r.w11,r.w12])[c.ord]\n   FROM (VALUES\n (1,0,5121,754,1429,129,754,1429,26,754,1429,17,108),\n (2,5121,0,2706,5121,464,2704,5121,90,2706,5121,61,385),\n (3,754,2706,0,754,69,398,754,14,398,754,9,57),\n (4,1429,5121,754,0,129,754,1429,26,754,1429,17,108),\n (5,129,464,69,129,0,69,129,2,68,129,2,10),\n (6,754,2704,398,754,69,0,754,14,399,754,9,57),\n (7,1429,5121,754,1429,129,754,0,26,754,1429,17,108),\n (8,26,90,14,26,2,14,26,0,14,26,1,1),\n (9,754,2706,398,754,68,399,754,14,0,754,9,57),\n (10,1429,5121,754,1429,129,754,1429,26,754,0,17,108),\n (11,17,61,9,17,2,9,17,1,9,17,0,1),\n (12,108,385,57,108,10,57,108,1,57,108,1,0)\n ) r(p,w1,w2,w3,w4,w5,w6,w7,w8,w9,w10,w11,w12), generate_series(1,12) c(ord)\n"
+    },
+    "fn_wheel_v3_upgrade_model()": {
+      "md5": "d1f56ecce9f6a48f90497b024611bbc0",
+      "length": 420,
+      "src": "\n SELECT o::smallint,l,k,g,m,w FROM (VALUES\n (1,'Super Plinko','bonus','plinko',2::numeric,20000),\n (2,'Super Crash','bonus','crash',2,20000),\n (3,'Super Donkey Cross','bonus','crossing',2,20000),\n (4,'Super Diamond Mines','bonus','mines',2,20000),\n (5,'5x Chips','chips',NULL,5,9600),\n (6,'10x Chips','chips',NULL,10,7400),\n (7,'25x Chips','chips',NULL,25,2000),\n (8,'100x Chips','chips',NULL,100,1000)) x(o,l,k,g,m,w)\n"
+    },
+    "fn_diamond_bonus_floor(numeric,integer,integer,integer)": {
+      "md5": "94450e800a016671ccf96119d0ad5e45",
+      "length": 174,
+      "src": "\n SELECT LEAST(\n  CASE WHEN p_boost=2 THEN GREATEST(ceil(p_bet*50)/100, ceil(p_paid_diamonds::numeric*100/p_rate)/100) ELSE ceil(p_bet*50)/100 END,\n  (ceil(p_bet*80)-1)/100)\n"
+    },
+    "fn_wheel_v4_segments(integer,integer,boolean,boolean)": {
+      "md5": "63f38431ed293cee2b4c931fb2d044c8",
+      "length": 574,
+      "src": "\n SELECT jsonb_agg(jsonb_build_object('ord',ord,'label',label,'kind',kind,'game',game,'multiplier',multiplier,\n 'amount',CASE WHEN kind='chips' THEN p_entry::numeric*multiplier/p_rate ELSE p_entry*multiplier END,\n 'value_chips',p_entry::numeric*multiplier/p_rate,'weight',weight,'probability',weight/100000::numeric,'locked',false) ORDER BY ord)\n FROM (SELECT ord,label,kind,game,multiplier,weight FROM public.fn_wheel_v4_model(p_vip) WHERE NOT p_secondary\n UNION ALL SELECT ord,label,kind,game,multiplier,weight FROM public.fn_wheel_v3_upgrade_model() WHERE p_secondary) q\n"
+    }
+  },
+  "doors": {
+    "fn_wheel_state_v2(p_club_id uuid, p_entry_diamonds integer)": {
+      "md5": "50de0aa9a783b7046b58b99eacdf980a",
+      "length": 7487,
+      "contract_lines": [
+        " IF NOT public.fn_wheel_v2_enabled() THEN RETURN jsonb_build_object('ok',true,'contract_version',4,'model_version','wheel-v4','enabled',false); END IF;",
+        " IF NOT FOUND THEN RETURN s||jsonb_build_object('contract_version',4,'model_version','wheel-v4','vip',vip,'enabled',true); END IF;",
+        " RETURN s||jsonb_build_object('contract_version',4,'model_version','wheel-v4','vip',vip,'enabled',true,'available',COALESCE(cfg.enabled,false) AND funded,'reason',reason,"
+      ]
+    },
+    "fn_wheel_spin_v2(p_club_id uuid, p_commit_id uuid, p_client_seed text, p_entry_diamonds integer, p_mode text, p_bonus_ticket_id uuid)": {
+      "md5": "b06c6e545c8ac445e75e17b0d5577d64",
+      "length": 38138,
+      "contract_lines": [
+        "  v_result:=jsonb_build_object('ok',true,'contract_version',4,'model','wheel-v4','vip',v_vip,'welcome',p_welcome,'daily_bonus',p_mode='daily','bonus_ticket_id',p_bonus_ticket_id,",
+        "   'spin_id',v_spin_id,'club_id',p_club_id,'host_id',v_host,'segment_version',4,'spin_price_diamonds',CASE WHEN p_welcome THEN 0 ELSE v_price END,"
+      ]
+    }
+  }
+}

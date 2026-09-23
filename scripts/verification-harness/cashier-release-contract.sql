@@ -24,7 +24,8 @@ BEGIN
       ('20260831235990'),
       ('20260831235991'),
       ('20260831235992'),
-      ('20260906093024')
+      ('20260906093024'),
+      ('20260923150831')
   ) AS required(version)
   WHERE NOT EXISTS (
     SELECT 1
@@ -79,6 +80,35 @@ BEGIN
     jsonb_build_object(
       'signature', 'public.fn_issue_tournament_ticket(uuid,uuid,numeric,text,text)',
       'hash', 'a8a8a18f4ee84e0b2e147ebdc380e5d1'
+    ),
+    -- Phase 5 cross-wallet statement doors, recorded version 20260923150831
+    -- (file 20260923131325_cashier_statements_read_every_wallet_in_one_keyset).
+    -- The private row query fn_cashier_statement_rows (md5
+    -- d6152f4bb944489aa4e1dfaf5417fc00) is not listed: this loop requires
+    -- browser EXECUTE, which that owner-only helper must never have.
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_statement_scope(uuid)',
+      'hash', '5c3180605b76db07957f261b39914f8d'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_statement_page(uuid,timestamptz,timestamptz,jsonb,jsonb,integer)',
+      'hash', '06493bb58a2199b8aaed0f950bafe2c2'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_statement_totals(uuid,timestamptz,timestamptz,jsonb)',
+      'hash', '5e50033127ded658f0bb4de87e0a10e6'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_statement_export_start(uuid,timestamptz,timestamptz,jsonb,uuid)',
+      'hash', '64d8ce9fac09f83bb04105cded1e6177'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_statement_export_page(uuid,integer,integer)',
+      'hash', '3ab1d903bbd15f1b8c97e6bc168bc466'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_statement_export_cancel(uuid)',
+      'hash', '7772e8238e42f490c20e2235d1358ce2'
     )
   );
 

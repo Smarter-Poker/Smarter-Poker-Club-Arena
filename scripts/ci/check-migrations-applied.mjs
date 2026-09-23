@@ -86,6 +86,7 @@ import {
   manifestIdentity,
 } from "./sql-manifest-identifiers.mjs";
 import { loadSchemaManifest, loadColumnsManifest } from "./schema-manifest.mjs";
+import { classifyMigration } from "./recording-only.mjs";
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, "scripts/ci/supabase-schema-manifest.json");
@@ -174,7 +175,20 @@ function changedMigrations(base) {
         } catch {
           return true; // unreadable: check it rather than skip it
         }
-        if (/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(head)) return false;
+        // 2026-09-23: the marker alone is no longer the answer. Below the
+        // freeze it still is (577 historical files, newest 20260914130826);
+        // at or after it a recording needs a verified row in
+        // scripts/ci/recorded-migrations.manifest.json, so the escape this
+        // header already called out - "a BACKFILLED marker on a file that was
+        // not backfilled" - is closed for everything written from here on.
+        const recording = classifyMigration(f, { repo: REPO });
+        if (recording.state === "recorded") return false;
+        if (recording.state === "unknown") {
+          console.error(
+            `[check-migrations-applied] COULD NOT TELL whether ${f} is a recording ` +
+              `(${recording.reason}); checking it as new work.`,
+          );
+        }
         const superseded = head.match(/^--\s*SUPERSEDED BY\s+(\d{14})\b/m);
         if (superseded) {
           const named = migrationFileFor(superseded[1]);

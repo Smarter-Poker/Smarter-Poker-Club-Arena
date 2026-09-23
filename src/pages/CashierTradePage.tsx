@@ -2906,6 +2906,13 @@ export default function CashierTradePage() {
                       : 'Load 50 Older Entries'}
                   </button>
                 )}
+                <button
+                  type="button"
+                  className={styles.classicLink}
+                  onClick={() => navigate(`/clubs/${clubParam}/cashier/statements`)}
+                >
+                  Full Statement
+                </button>
               </div>
             </section>
           )}

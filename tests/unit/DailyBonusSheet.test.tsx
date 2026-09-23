@@ -199,9 +199,13 @@ describe('DailyBonusSheet', () => {
     expect(container.querySelector('.sc.sc--crest-diamond .sc__head')).toBeTruthy();
     expect(container.querySelector('.sc__foot')).toBeTruthy();
     expect(container.querySelectorAll('[class*="shark"], .dbs-plaque, .dbs-btn')).toHaveLength(0);
-    // The head prints the sheet's words in the master's zones.
-    expect(container.querySelector('.sc__title')?.textContent).toBe('Daily Bonus');
-    expect(container.querySelector('.sc__pill')?.textContent).toBe('Day 2');
+    // The head prints the sheet's words in the master's zones. A zone closes
+    // its own text with a space (2026-09-23) so the head's four zones, which
+    // are absolutely positioned and so adjacent in the DOM with nothing
+    // between them, do not read as one run-on word. The printed line is the
+    // fitted span; the zone's own text carries that separator.
+    expect(container.querySelector('.sc__title > span')?.textContent).toBe('Daily Bonus');
+    expect(container.querySelector('.sc__pill > span')?.textContent).toBe('Day 2');
     // Every icon is a painted render; no line icons anywhere on the sheet.
     const srcs = Array.from(
       container.querySelectorAll<HTMLImageElement>('.dbs-row__render img')
@@ -438,7 +442,8 @@ describe('DailyBonusSheet', () => {
     expect(screen.getByText('Shield Covered Yesterday')).toBeTruthy();
     expect(screen.getByText('Chest')).toBeTruthy();
     const pill = container.querySelector('.sc__pill');
-    expect(pill?.textContent).toBe('Day 14');
+    // The fitted span is the line that prints; see the zone separator note above.
+    expect(pill?.querySelector('span')?.textContent).toBe('Day 14');
     expect(pill?.className).toContain('sc-ink--gold');
     expect(screen.getByText(/One Shield Held/)).toBeTruthy();
   });

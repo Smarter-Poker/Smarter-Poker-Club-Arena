@@ -121,54 +121,8 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
     </section>
   ),
 }));
-vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
-  WheelWinReveal: ({
-    title,
-    detail,
-    eyebrow,
-    silent,
-  }: {
-    title: string;
-    detail: string;
-    eyebrow?: string;
-    silent?: boolean;
-  }) => (
-    <div role="dialog" aria-label={title} data-silent={String(Boolean(silent))}>
-      <span data-eyebrow>{eyebrow}</span>
-      <span data-detail>{detail}</span>
-    </div>
-  ),
-}));
-vi.mock('../../src/components/games/BonusCompletion', () => ({
-  /* The receipt a finished round shows. Since owner ruling 2026-09-21 R1 it is
-     its own console rather than a WheelWinReveal with a five-second return, so
-     its props - not the reveal's - are what this file reads. `proof` is part of
-     the sentence the player reads, exactly as the page hands it over. */
-  default: ({
-    chips,
-    detail,
-    eyebrow,
-    silent,
-    proof,
-  }: {
-    chips: number;
-    detail: string;
-    eyebrow?: string;
-    silent?: boolean;
-    proof?: string;
-  }) => (
-    <div
-      role="dialog"
-      aria-label={`${chips.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Chips`}
-      data-silent={String(Boolean(silent))}
-    >
-      <span data-eyebrow>{eyebrow}</span>
-      <span data-detail>
-        {chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} {detail}
-        {proof ? ` ${proof}` : ''}
-      </span>
-    </div>
-  ),
+vi.mock('../../src/services/DiamondWheelService', () => ({
+  default: { getStateV2: () => Promise.resolve({ pending_awards: [] }) },
 }));
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
@@ -270,6 +224,11 @@ const pill = () => document.querySelector('header span')?.textContent ?? '';
 const spoken = () => Array.from(document.querySelectorAll('[aria-live] p'));
 const statusLine = (text: string) => spoken().some((line) => line.textContent === text);
 /** Let every answered request land, without moving the clock. */
+/** The receipt on screen, read where the player reads it. */
+const receiptCopy = () =>
+  screen.getByRole('dialog').querySelector('p.sc-copy')?.textContent?.trim() ?? '';
+const receiptEyebrow = () =>
+  screen.getByRole('dialog').querySelector('.sc__eyebrow')?.textContent?.trim() ?? '';
 const settle = async () => {
   for (let i = 0; i < 5; i++)
     await act(async () => {
@@ -595,7 +554,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     await answerOffer();
-    // R1: the round starts on the player's own press, never on a clock.
+    // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
@@ -645,7 +604,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     await answerOffer();
-    // R1: the round starts on the player's own press, never on a clock.
+    // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     // One region for the whole console (the scene, mocked here, adds none),
@@ -688,7 +647,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     await answerOffer();
-    // R1: the round starts on the player's own press, never on a clock.
+    // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     const said = () => document.querySelector('[aria-live]')?.textContent ?? '';
@@ -999,7 +958,7 @@ describe('each street settles on its own answer', () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     await answerOffer();
-    // R1: the round starts on the player's own press, never on a clock.
+    // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     return backend.state.mock.calls.length;
@@ -1086,13 +1045,13 @@ describe('each street settles on its own answer', () => {
 
 /**
  * A BLANK SEED IS NOT A REFUSAL (review 2026-09-22). "Your Seed" is a free text
- * field inside Round Proof. Emptying it used to break two owner rules at once:
- * the auto-start required seed.trim() !== '', so a won game never started
- * itself and showed no countdown, while useLiveBonusGuard still held every
- * exit for the award; and pressing Start made DiamondBonusService throw
- * BonusRefusal('Enter A Seed With 1 To 64 Characters') before anything was
- * sent, which start()'s catch treats exactly like a refusal from the server -
- * the ticket dropped and the countdown off until the server's reasons change.
+ * field inside Round Proof. Emptying it used to strand the award: pressing
+ * Start made DiamondBonusService throw BonusRefusal('Enter A Seed With 1 To 64
+ * Characters') before anything was sent, which start()'s catch treats exactly
+ * like a refusal from the server - the ticket dropped, and useLiveBonusGuard
+ * held every exit for an award that would not start. The page deals itself a
+ * seed and writes back the one the round was sent with. Nothing here starts by
+ * itself: games can never auto start (owner ruling 2026-09-21, R1).
  */
 describe('a blank seed never stalls a won game', () => {
   const seedField = () => screen.getByLabelText('Your Seed') as HTMLInputElement;
@@ -1103,14 +1062,16 @@ describe('a blank seed never stalls a won game', () => {
     return settles(input);
   };
 
-  it('starts with a seed of its own when the player has cleared the field', async () => {
+  it('never starts a cleared-seed game by itself, and deals its own seed when pressed', async () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     await answerOffer();
     fireEvent.change(seedField(), { target: { value: '' } });
-    // An empty field is not a reason to refuse the press: start() deals one.
+    // An emptied field is not a press: two idle minutes still send nothing.
     expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
     expect(guardHolds()).toBe(true);
+    await advance(120000);
+    expect(backend.start).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     expect(backend.start).toHaveBeenCalledTimes(1);
@@ -1178,7 +1139,7 @@ describe('focus stays on the plate from street to street', () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     await answerOffer();
-    // R1: the round starts on the player's own press, never on a clock.
+    // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     const plate = screen.getByRole('button', { name: /^Cross Street/ });
@@ -1325,12 +1286,11 @@ describe('every choice names its chips, and every outcome has one name', () => {
     const said = (spoken().at(-1)?.textContent ?? '').trim();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
-    const receipt = screen.getByRole('dialog');
-    const printed = receipt.querySelector('[data-detail]')?.textContent ?? '';
+    const printed = receiptCopy();
     return {
       pill: pill(),
       said,
-      eyebrow: receipt.querySelector('[data-eyebrow]')?.textContent ?? '',
+      eyebrow: receiptEyebrow(),
       // The verdict sentence is this receipt's too, and has its own tests.
       detail: printed.replace(VERDICT_SENTENCE, ''),
       proof: printed.match(VERDICT_SENTENCE)?.[1] ?? '',
@@ -1379,7 +1339,7 @@ describe('every choice names its chips, and every outcome has one name', () => {
     });
     expect(status).toBe('Win Booked');
     expect(said).toBe('Booked At Street 2 At 1.45x. Street 3 Was The Crash.');
-    expect(eyebrow).toBe('');
+    expect(eyebrow).toBe('You Won');
     expect(detail).toBe('Your Prize Is Booked. Street 2 At 1.45x; Street 3 Was The Crash.');
   });
 
@@ -1497,8 +1457,9 @@ describe('the scene owns the sound and the buzz', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     // The receipt does not sing over it either.
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalledWith('success');
   });
 
   it('sings a booked win at the multiplier it was booked at', async () => {
@@ -1514,7 +1475,8 @@ describe('the scene owns the sound and the buzz', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     // The scene already sang it: the receipt does not sing it again.
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(soundService.playWin).not.toHaveBeenCalled();
   });
 
   it('leaves Mines its own buzz, which lands when its grid reveals', async () => {
@@ -1534,7 +1496,8 @@ describe('the scene owns the sound and the buzz', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     // A lost Mines round is not sung over either.
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(soundService.playWin).not.toHaveBeenCalled();
   });
 });
 
@@ -1579,33 +1542,30 @@ describe('every finished round verifies itself', () => {
     for (let i = 0; i < 50 && screen.queryByText(text) === null; i++) await settle();
     return screen.getByText(text);
   };
-  const detailText = () =>
-    screen.getByRole('dialog').querySelector('[data-detail]')?.textContent ?? '';
+  /**
+   * THE RECEIPT IS READ ONCE THE AUTOMATIC CHECK HAS LANDED. Same reason as
+   * said() above, one step earlier. The page's own check of the round answers
+   * on the event loop, not on the fake clock, so the fixed settle() budget was
+   * enough on an idle machine and not on a loaded one: the receipt still read
+   * "Your Prize Is Booked", and 'reports a round that does not verify' went
+   * red in CI and nowhere else, including on branches that had touched none of
+   * this. Both verdicts, the pass and the failure, name this device, so
+   * turning the loop until the receipt says so waits for the verdict without
+   * assuming which one it is. Every caller plays a round that ends with one.
+   */
   const toTheReceipt = async () => {
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
-    return detailText();
-  };
-  /**
-   * The receipt's verdict line is waited for exactly as said() waits for the
-   * spoken one, and for the same reason: the check is real SHA-256 and HMAC on
-   * the event loop, so a fixed budget of turns is enough on an idle machine and
-   * not on a loaded one (CI shard 3, 2026-09-23). The last text read is
-   * returned either way, so a verdict that never arrives still fails on what
-   * the receipt actually said.
-   */
-  const detailSaying = async (text: string) => {
-    for (let i = 0; i < 50 && !detailText().includes(text); i++) await settle();
-    return detailText();
+    for (let i = 0; i < 50 && !receiptCopy().includes('On This Device'); i++) await settle();
+    return receiptCopy();
   };
 
   it('checks the round and says so on the receipt, with nothing pressed', async () => {
     await plays({});
-    await toTheReceipt();
-    const detail = await detailSaying('Sealed Before Play (f6c584df) And Verified On This Device.');
+    const detail = await toTheReceipt();
     expect(detail).toContain('Sealed Before Play (f6c584df) And Verified On This Device.');
     expect(vi.mocked(reportError)).not.toHaveBeenCalled();
     noCheckControl();
@@ -1615,10 +1575,7 @@ describe('every finished round verifies itself', () => {
 
   it('reports a round that does not verify, and never calls it verified', async () => {
     await plays({ payout_chips: 99 });
-    await toTheReceipt();
-    const detail = await detailSaying(
-      'This Round Did Not Verify On This Device And Has Been Reported.'
-    );
+    const detail = await toTheReceipt();
     expect(detail).toContain('This Round Did Not Verify On This Device And Has Been Reported.');
     expect(detail).not.toContain('Verified On This Device');
     expect(

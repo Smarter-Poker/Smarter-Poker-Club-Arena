@@ -629,6 +629,33 @@ export async function cleanupTemporaryCustomizationAccount(
   return withCleanupRetries(() => cleanupTemporaryCustomizationAccountOnce(environment, account));
 }
 
+/**
+ * An AggregateError prints its title and keeps its causes to itself.
+ *
+ * MEASURED 2026-09-22, Post-Deploy E2E run 35794208383: the commerce
+ * certification journey passed and its teardown did not, and the only thing
+ * that reached the log was the line
+ * `AggregateError: Customization Commerce Certification Cleanup Failed.`
+ * Every `cleanupTemporaryCustomizationAccountOnce` failure carries the table
+ * and the refusal that produced it - `Guarded certification cleanup refused
+ * <id>: platform_is_frozen`, `<table>: N rows remain` - and none of it was
+ * printed, so the run could be read only as "cleanup failed, cause unknown".
+ * That is 10.86 rule 1: a signal that answers without saying what it knows.
+ *
+ * Fold the causes into the title so the reader gets the reason in the same
+ * line. The `errors` array is still attached and unchanged.
+ */
+export function withCauses(title: string, causes: readonly unknown[]): string {
+  const reasons = causes.map((cause, index) => {
+    const text =
+      cause instanceof Error
+        ? `${cause.name}: ${cause.message}`
+        : String((cause as { message?: string })?.message ?? cause);
+    return `[${index + 1}] ${text}`;
+  });
+  return reasons.length ? `${title} ${reasons.join(' ;; ')}` : title;
+}
+
 export function expectedUnlockForFeature(feature: string): string | null {
   if (feature.startsWith('card_back_')) {
     return `cards_id:${feature.slice('card_back_'.length)}`;

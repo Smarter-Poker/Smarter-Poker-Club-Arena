@@ -122,16 +122,22 @@ test.describe('Cashier Statements - authenticated production route', () => {
 
       // (d) Totals reach a terminal state once their RPC has settled: four
       // figures, or the Unavailable word. Never Calculating.
+      //
+      // Read text CONTENT, not innerText: the console's CSS uppercases the
+      // rendering, so innerText returns "UNAVAILABLE FOR THIS RANGE" and the
+      // word as written in CashierStatementsPage never matches. That is what
+      // the page really said in run 35886655700.
       await totalsRpc;
       const totalsWord = totals.getByRole('status');
+      const asText = (value: string | null) => (value ?? '').replace(/\s+/g, ' ').trim();
       await expect
         .poll(
           async () => {
             const word =
-              (await totalsWord.count()) > 0 ? (await totalsWord.innerText()).trim() : '';
+              (await totalsWord.count()) > 0 ? asText(await totalsWord.textContent()) : '';
             if (word === 'Unavailable For This Range') return 'unavailable';
             if (word === 'Calculating') return 'calculating';
-            const figures = (await totals.locator('strong').allInnerTexts()).map((f) => f.trim());
+            const figures = (await totals.locator('strong').allTextContents()).map(asText);
             return figures.length === 4 && figures.every((figure) => FIGURE.test(figure))
               ? 'figures'
               : `pending:${figures.join('|')}`;

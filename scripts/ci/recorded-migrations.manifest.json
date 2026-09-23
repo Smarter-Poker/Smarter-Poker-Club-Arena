@@ -1,0 +1,126 @@
+{
+  "_read_this_first": "Every row here is a migration file that RECORDS SQL production had already executed, recovered byte-exact from supabase_migrations.schema_migrations.statements. A row is not a pardon and it is not a bypass flag: scripts/ci/recording-only.mjs accepts it only when the file on disk hashes to `md5`, and scripts/ci/check-recorded-migrations-evidence.mjs then asks production whether that same md5 is what public.fn_ca_migration_text(version) returns for that version and whether each finding the file-text guards raised is still true of the live schema. A genuinely new migration cannot be made to hash to a version production already has, which is what stops this file being used to get new work past a guard. Adding a row without the live evidence turns the `Applied Migrations Are Recorded` workflow red and files an issue.",
+  "_how_to_add_a_row": "1. Recover the file: SELECT array_to_string(statements, chr(10)) FROM supabase_migrations.schema_migrations WHERE version='<v>'. Write those bytes and NOTHING else: no header, and no newline the database does not already have. 2. Prove it: md5 of the file must equal the md5 column of public.fn_ca_migration_text('<v>'). 3. Read every finding the guards raise against PRODUCTION and write what you found in `liveVerdict` - the grants, the register row, the register entry - not what you expect. 4. If a finding is still TRUE of production, fix production first. The recording is not the place to settle it.",
+  "recordings": [
+    {
+      "version": "20260916111614",
+      "name": "owner_operational_notification_destination",
+      "file": "supabase/migrations/20260916111614_owner_operational_notification_destination.sql",
+      "md5": "4a98307f443c466e1cef2f4f33afedc1",
+      "appliedToProductionAt": "2026-09-16T11:16:14Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_notification_has_personal_destination(uuid,uuid) WAS genuinely reachable without an account: this migration wrote GRANT EXECUTE ... TO anon,authenticated,service_role, it is SECURITY DEFINER, and it never calls auth.uid(). Closed in production on 2026-09-19 07:13:57Z by migration 20260919071357 anon_grant_from_public_is_the_one_that_mattered, so the exposure ran 2 days 19 hours 58 minutes. Read live 2026-09-23: proacl is {postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}, has_function_privilege('anon',...) is false. It is STABLE and read-only, takes two uuids the caller must already know, and is the qual of RLS policy personal_notification_destination on public.notifications, so EXECUTE for authenticated must stay: revoking it would deny every SELECT on notifications to every logged-in player."
+    },
+    {
+      "version": "20260917034153",
+      "name": "production_alert_duplicate_structure_record_evidence",
+      "file": "supabase/migrations/20260917034153_production_alert_duplicate_structure_record_evidence.sql",
+      "md5": "2b425f9584369ae55a69411632329567",
+      "appliedToProductionAt": "2026-09-17T03:41:53Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_ca_duplicate_structure_payout_check is CREATE OR REPLACE of a function first declared on 2026-09-01 (20260901123807) and already revoked there. A replace PRESERVES grants; the gate reads file text and assumes silence means open, which its own header records as the wrong reading for a replace. Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; anon, authenticated and public all false."
+    },
+    {
+      "version": "20260917034226",
+      "name": "production_alert_spin_repair_evidence",
+      "file": "supabase/migrations/20260917034226_production_alert_spin_repair_evidence.sql",
+      "md5": "9a2a7f432622a804e9c0dc74ef0eea4f",
+      "appliedToProductionAt": "2026-09-17T03:42:26Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_spin_repair_missing_multiplier is CREATE OR REPLACE of a function first declared on 2026-08-22 (20260822181651). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. It is also already existing debt in scripts/ci/band-aid.allowlist.json (TIER 1 #9)."
+    },
+    {
+      "version": "20260917044635",
+      "name": "class4_hand_outcome_evidence",
+      "file": "supabase/migrations/20260917044635_class4_hand_outcome_evidence.sql",
+      "md5": "b09dcb0731f968606ec9ae7d8813f242",
+      "appliedToProductionAt": "2026-09-17T04:46:35Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_resolve_settled_financial_alerts is CREATE OR REPLACE of a function first declared on 2026-09-03 (20260903013806). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE."
+    },
+    {
+      "version": "20260917054616",
+      "name": "cash_pot_check_evidence_and_failed_run_intake",
+      "file": "supabase/migrations/20260917054616_cash_pot_check_evidence_and_failed_run_intake.sql",
+      "md5": "872abda31949a0a4be346df3bbe6c018",
+      "appliedToProductionAt": "2026-09-17T05:46:16Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_cash_pot_conservation_check is CREATE OR REPLACE of a function first declared on 2026-09-01 (20260901190656). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. The three functions this file does create new - fn_ca_cash_pot_evidence_append_only, fn_ca_cash_failed_run_outcome_immutable, fn_ca_cash_failed_run_intake - each carry their own REVOKE ALL FROM PUBLIC,anon,authenticated,service_role in the same file."
+    },
+    {
+      "version": "20260917062322",
+      "name": "direct_operational_source_intake",
+      "file": "supabase/migrations/20260917062322_direct_operational_source_intake.sql",
+      "md5": "7c91135f0acb046efa28c42ece2f16fb",
+      "appliedToProductionAt": "2026-09-17T06:23:22Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_record_engine_alerts is CREATE OR REPLACE of a function first declared on 2026-09-13 (20260913170312). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. Every function this file creates in the new operational_source_intake schema carries REVOKE ALL FROM PUBLIC,anon,authenticated,service_role in the same file."
+    },
+    {
+      "version": "20260920070556",
+      "name": "the_minutely_reconciler_stops_rewriting_a_column_a_trigger_owns",
+      "file": "supabase/migrations/20260920070556_the_minutely_reconciler_stops_rewriting_a_column_a_trigger_owns.sql",
+      "md5": "a50df03b23ed292c0ff7fac8ac94a7da",
+      "appliedToProductionAt": "2026-09-20T07:05:56Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-no-new-band-aids",
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "This migration is 10.12 being OBEYED: it REMOVES the branch of the minutely fn_reconcile_tournament_denormals that rewrote public.tables.stakes, because the root fix - trigger zzzzzz_tables_stakes_follows_its_own_blinds, live since 2026-09-19 - now owns that column. The band-aid gate refused it because the name is repair-shaped and the function is not in scripts/ci/band-aid.allowlist.json; the function was first declared on 2026-08-24 (20260824034344) and is existing debt with a row in docs/BAND-AIDS-REGISTER.md. Adding it to the allowlist would have GROWN a list that tests/no-band-aids.law.test.ts requires to shrink, which is why a recording is a category and not an allowlist entry. Live grants: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role."
+    },
+    {
+      "version": "20260922162135",
+      "name": "an_unfinished_finish_is_alerted_per_tournament",
+      "file": "supabase/migrations/20260922162135_an_unfinished_finish_is_alerted_per_tournament.sql",
+      "md5": "160c7cc3bcf24d957887200f99aa3fe1",
+      "appliedToProductionAt": "2026-09-22T16:21:35Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule"
+      ],
+      "liveVerdict": "fn_ca_tournament_finished_but_not_completed is CREATE OR REPLACE of a function first declared on 2026-09-07 (20260907045424). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. The one function this file creates new, fn_ca_finished_not_completed_open_alert(uuid), carries its own REVOKE ALL ... FROM PUBLIC,anon,authenticated and GRANT EXECUTE ... TO service_role in the same file."
+    }
+  ]
+}

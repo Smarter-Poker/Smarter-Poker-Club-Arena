@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/cowork/feat/create-club-console-phase2 (dbchecklist) -- 20260923143542_the_opening_checklist_latch_and_its_skips_live_on_the_server.sql. Applied to production from this branch's own bytes by apply-merged-migration.yml; the readback confirming the table and all three functions is recorded in the PR.",
+  "tables": ["club_opening_checklists"],
+  "functions": [
+    "fn_club_opening_checklist_state",
+    "fn_club_opening_checklist_skip",
+    "fn_club_opening_checklist_complete"
+  ],
+  "columns": {}
+}

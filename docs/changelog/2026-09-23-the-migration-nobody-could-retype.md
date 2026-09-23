@@ -139,3 +139,77 @@ call resolves, and there were **0** existing `ca_commerce_*` relations or
 functions to collide with. Its own closing `DO $assertions$` block refuses to
 commit unless the catalog is whole and **no purchase or trial exists** - so
 the install moves no money by construction.
+
+## What happened when the engine was taken through the lane
+
+The migration was applied at 17:06 UTC by
+`Apply Merged Migration` run 35893325790: `committed in 678ms`, recorded
+`version=20260922143541 name=club_and_union_diamond_commerce`. Verified from
+rows, not from the log: the three doors are 3 of 3 in `pg_proc`, 14
+`ca_commerce_*` tables and 35 functions exist, 16 products and 9 published
+prices, **0 purchases and 0 trials**, and `feature_pricing` went 69 to 68 with
+`club_creation` gone. The probe had predicted `total_after=68`; that is what
+committed.
+
+**The doors gate then passed.** `auto-deploy-hetzner` run 35869125718 was
+re-run with the root cause fixed. Its target `a867a14e76` (#5119) carries a
+server tree byte-identical to current `origin/main` (`ade256d2d7`), so this
+was current engine code, not a stale request. **Prove The Exact Engine Has
+Every Production Door: success** - the check that had refused thirty
+consecutive runs.
+
+The release then requested an **event-owned recovery window** (the September
+17 owner update, `engine-recovery-window-v1`), froze the platform, drained
+`handsInFlightTotal` to 0 and counted down. It did not cut over, and the run
+failed at **Dispatch the staged SHA through the durable Hetzner intake**. The
+platform thawed correctly: maintenance returned to `idle` and the fleet
+resumed dealing (145 hands in flight within a minute).
+
+### Two different F06 refusals, and only one of them is about a dead table
+
+`/health` during the window said the restart certificate was held shut by
+`unparkedReasons: { f06_preparation_unresolved: 1 }`. That one IS a dead
+table: `6da98abe`, tournament `05c8bb91` ("2 Chip Deep Stack Spin PLO6"), and
+it is **closed, COMPLETED since 2026-09-22 14:10, 0 seats, 0 chips, and it
+holds no `engine_tournament_leases` row at all**. There is no durable F06
+state for it anywhere in the database, so there is **no platform path to
+clear it**: the permit exists only in the running engine's memory.
+
+The bounded gate that would make this self-healing already exists on main -
+`MaintenanceBreak.F06_UNRESOLVED_GATE_MS = 10 minutes` - but it arrived in
+`f85e90aa6b` (#5003), which is **not an ancestor of the running engine**
+`8825af51` (2026-09-18 16:16). The fix for the wedge is behind the wedge, and
+it stays there until some release gets through.
+
+**The release did not actually die on that one.** The legacy checkpoint guard
+refused first, and thanks to #5119 it named its phase:
+
+```
+reason: f06_custody_not_drained   retryAllowed: false
+failedTable: 9e432569-5ebc-467a-9972-e450dfc0b296
+tournament:  7c6277e7-921d-4651-91bc-15071a3884be
+stopped=true terminal=true seats=6 banks=0 metaSeatedWithoutBank=6
+permitPhase=attempted   fleetF06=38
+```
+
+That table is a different animal and **must not be cleared as terminal**.
+Read from rows: `tables.status = 'running'`, tournament `7c6277e7`
+("Morning Free Buy (NLH)") `status = 'RUNNING'`, **6 seats still open holding
+124,007 chips**, untouched since **2026-09-19 14:27**, and **no
+`engine_tournament_leases` row**. A RUNNING tournament with six seated stacks
+and no engine driving it is a stranded event, not a drained one, and
+`banks=0 / metaSeatedWithoutBank=6` says its custody was never banked.
+
+So the 10.9 test fails on the evidence for this table: chips ARE at stake.
+Clearing this permit to unblock a deploy would be settling six players'
+stacks by side effect, which is the opposite of what 10.9 authorizes. It
+needs its own settlement - finishing order, prize pool and payouts read and
+decided - and that is a separate piece of work, not a step in a release.
+
+### Where this leaves the engine
+
+Production still runs `8825af51817f379c4261658ca29ecc9d8d81932d`. The
+migration blocker is gone for good and the doors gate is green; what now
+refuses the release is `f06_custody_not_drained` on `9e432569`, with
+`retryAllowed: false` and the guard's own instruction not to retry. Run
+35869125718 is the evidence.

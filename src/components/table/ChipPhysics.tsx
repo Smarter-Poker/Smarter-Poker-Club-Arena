@@ -29,7 +29,11 @@
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
-import { visualChipStacks, type ChipStackVisual } from '../../lib/chipDenominations';
+import {
+  visualChipStacks,
+  CHIP_DENOMINATIONS,
+  type ChipStackVisual,
+} from '../../lib/chipDenominations';
 import './ChipPhysics.css';
 import { formatTableChips } from '../../utils/format';
 
@@ -41,9 +45,38 @@ import { formatTableChips } from '../../utils/format';
 
 /**
  * In front of a seat there is room for a short row of short stacks; the pot in
- * the middle of the felt can carry a taller pile. Neither cap ever changes the
- * VALUE drawn — a clamped stack reports `truncated` and prints its real count
- * beside itself, which is exactly what the old local breakdown failed to do.
+ * the middle of the felt can carry a taller pile.
+ *
+ * ═══ maxStacks IS NOT A CLAMP, IT IS A SLICE (2026-09-23) ══════════════════
+ *
+ * The line above this one used to read "Neither cap ever changes the VALUE
+ * drawn - a clamped stack reports `truncated` and prints its real count beside
+ * itself". That is true of `maxPerStack` and of `maxTotal`. It was never true
+ * of `maxStacks`, which is `chips.slice(0, maxStacks)` in chipDenominations.ts:
+ * a group it slices off takes its value with it, reports nothing, and prints no
+ * badge. The seat drew chips that did not add up to the bet, silently.
+ *
+ * Dan's ladder has eleven denominations. These layouts asked for four and five.
+ * Swept through the shipped functions over every integer amount:
+ *
+ *     range          maxStacks: 4      maxStacks: 5
+ *     1 - 200          0.0%              0.0%        <- why nobody caught it
+ *     1 - 2,000       39.2%              9.6%
+ *     1 - 20,000      74.7%             42.2%
+ *     1 - 200,000     88.3%             65.2%        <- of amounts drawn wrong
+ *
+ * A 7,432 bet drew 5000 + 1000x2 + 100x4 + 25 = 7,425. Seven short, in front of
+ * a player, with no indication anything was missing.
+ *
+ * So `maxStacks` now gets the WHOLE ladder and stops being a cap at all.
+ * `maxTotal` is the cap, and it is the honest one: it clamps the DISCS and the
+ * group it shortens keeps its true `count` with `truncated` set, so the tower
+ * still adds up. Measured cost at 393px against the shipped stylesheet: the
+ * compact tower goes 55.9px -> 62.9px at mid stakes and 69.9px at deep stakes,
+ * and the full tower does not move at all below 200,000. `.seat__bet-chips` is
+ * absolutely positioned and centred on its anchor with no height and no
+ * clipping, so the extra discs grow symmetrically into open felt and cannot
+ * reflow anything.
  */
 /*
  * maxTotal is the height of the TOWER, in discs. Dan 2026-08-24 asked for one
@@ -52,8 +85,16 @@ import { formatTableChips } from '../../utils/format';
  * chipDenominations.ts for how the budget is spent (bottom-up, largest chips
  * first) and why it never changes the value drawn.
  */
-const COMPACT_LAYOUT = { maxStacks: 4, maxPerStack: 6, maxTotal: 6 };
-const FULL_LAYOUT = { maxStacks: 5, maxPerStack: 10, maxTotal: 10 };
+const COMPACT_LAYOUT = {
+  maxStacks: CHIP_DENOMINATIONS.length,
+  maxPerStack: 6,
+  maxTotal: 6,
+};
+const FULL_LAYOUT = {
+  maxStacks: CHIP_DENOMINATIONS.length,
+  maxPerStack: 10,
+  maxTotal: 10,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

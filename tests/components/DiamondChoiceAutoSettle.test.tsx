@@ -632,6 +632,93 @@ describe('the exit guard holds money in flight, not a won game that cannot start
   });
 
   /**
+   * A SAFE STREET KEEPS ITS SECRET TOO. The hit above is the loud case, and it
+   * is the one the reveal was written for; a safe crossing is confirmed just
+   * as early, and the street count, both plates, the prize bays, the tick and
+   * the buzz must all stay on the street the donkey is standing on until the
+   * scene says it landed on the next one.
+   */
+  it('keeps every surface on the street the donkey stands on until a safe crossing lands', async () => {
+    backend.start.mockImplementationOnce(async (input: { game: Game }) => ({
+      ...opened(input.game),
+      picked: [0],
+    }));
+    backend.act.mockResolvedValue({
+      ...fixtures.receipts.crossing,
+      status: 'open',
+      picked: [0, 1],
+      payout_chips: 0,
+      award_id: AWARD.id,
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    const said = () => document.querySelector('[aria-live]')?.textContent ?? '';
+    const bay = (label: string) => screen.getByText(label).nextElementSibling;
+    /** The light buzz belongs to the landing; the start fires one of its own. */
+    const landings = () =>
+      vi.mocked(triggerHaptic).mock.calls.filter(([kind]) => kind === 'light').length;
+    expect(bay('Street')).toHaveTextContent('1');
+    const plate = screen.getByRole('button', { name: /^Cross Street 2 For/ });
+    const booked = screen.getByRole('button', { name: /^Book The Win For/ });
+    const landed = landings();
+    fireEvent.click(plate);
+    await settle();
+    // The server has confirmed street two. Nothing on the console has moved:
+    // the pill, the count, both plates and the one spoken line are all still
+    // on street one, and neither the tick nor the buzz has played.
+    expect(pill()).toBe('Crossing');
+    expect(bay('Street')).toHaveTextContent('1');
+    expect(said()).toContain('Street 1 Crossed.');
+    expect(said()).not.toContain('Street 2 Crossed.');
+    expect(plate).toHaveAccessibleName('Crossing');
+    expect(booked).toHaveAccessibleName(/^Book The Win For/);
+    expect(soundService.playSpinTick).not.toHaveBeenCalled();
+    expect(landings()).toBe(landed);
+    // The donkey lands: every surface moves to street two on that one beat.
+    fireEvent.click(screen.getByRole('button', { name: 'Present Landing' }));
+    expect(pill()).toBe('In Play');
+    expect(bay('Street')).toHaveTextContent('2');
+    expect(said()).toContain('Street 2 Crossed.');
+    expect(soundService.playSpinTick).toHaveBeenCalledTimes(1);
+    expect(landings()).toBe(landed + 1);
+  });
+
+  /**
+   * MINES IS ANNOUNCED BY ITS OWN BOARD, ONCE. The console keeps one polite
+   * region for the whole page, and Diamond Mines turns its tile over on the
+   * server's own answer - so the region has to stay empty while a Mines round
+   * is in play, or every tile would be read out twice: once by the board's own
+   * status beside it, and again by the console around it.
+   */
+  it('leaves the console region silent while a Mines board announces its own picks', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.state.mockResolvedValue({
+      ...state,
+      open_round: { ...opened('mines'), game: 'mines' },
+    });
+    backend.act.mockResolvedValue({
+      ...opened('mines'),
+      game: 'mines',
+      picked: [4],
+    });
+    render(<DiamondChoicePage game="mines" />);
+    await settle();
+    const regions = () => Array.from(document.querySelectorAll('[aria-live]'));
+    // One region for the whole console, and an open Mines round puts nothing
+    // in it: the board beside it is the only thing that speaks.
+    expect(regions()).toHaveLength(1);
+    expect(regions()[0].textContent).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Tile' }));
+    await settle();
+    // The tile is turned over and counted. The console still says nothing.
+    expect(screen.getByText('Revealed').nextElementSibling).toHaveTextContent('1');
+    expect(regions()).toHaveLength(1);
+    expect(regions()[0].textContent).toBe('');
+  });
+
+  /**
    * WHAT THE SCENE IS FOR. Nothing is looking at the road behind the Double
    * Down offer or under the receipt, and 60 frames a second of traffic there
    * is heat and battery for nobody. Pausing on offerOpen alone would be worse
@@ -1433,6 +1520,21 @@ describe('every finished round verifies itself', () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
   };
+  /**
+   * A CHECK THE PLAYER PRESSED IS WAITED FOR, NOT ASSUMED. Verifying a round is
+   * real SHA-256 and HMAC over four checks, so it answers on the event loop
+   * rather than on the fake clock, and it races the page's own automatic check
+   * of the same round. settle() spends a fixed budget of turns, which was
+   * enough on an idle machine and not on a loaded one, so this assertion went
+   * red in CI and nowhere else. It turns the loop until the verdict is on
+   * screen instead, and falls back to getByText for the readable failure when
+   * a verdict genuinely never arrives. findByText cannot do this job here:
+   * its clock is faked, and it times out against real time.
+   */
+  const said = async (text: string) => {
+    for (let i = 0; i < 50 && screen.queryByText(text) === null; i++) await settle();
+    return screen.getByText(text);
+  };
   const toTheReceipt = async () => {
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
@@ -1508,11 +1610,8 @@ describe('every finished round verifies itself', () => {
     await plays({ payout_chips: 99 });
     await toTheReceipt();
     fireEvent.click(screen.getByRole('button', { name: 'Verify Revealed Outcome' }));
-    await settle();
     expect(
-      screen.getByText(
-        'The Outcome Could Not Be Verified. Seal Ok, Draw Ok, Ladder Ok, Chips Differs.'
-      )
+      await said('The Outcome Could Not Be Verified. Seal Ok, Draw Ok, Ladder Ok, Chips Differs.')
     ).toBeInTheDocument();
   });
 });

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 153274,
-      "sha256": "1c435a38efff0654c84947d8849b5aaa2b9f30bf4ebe34350ffda3a54d68585e"
+      "bytes": 153481,
+      "sha256": "a271c1277f6870d4013515089e694754627b819b66ef85e339526f52659637ce"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 22326,
-      "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed"
+      "bytes": 22345,
+      "sha256": "c837b1ce4fa0ea85370f7dc994118c81721f586ec673762ac6bea3eab2cbbdb2"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 90321,
-      "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      "bytes": 90375,
+      "sha256": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7"
     }
   },
   "nativePgCron": {
@@ -228,6 +228,23 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
         "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      }
+    }
+  },
+  "cashierStatementsIntegration": {
+    "reason": "Phase 5 cashier statements: ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner (additive only). Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 153274,
+        "sha256": "1c435a38efff0654c84947d8849b5aaa2b9f30bf4ebe34350ffda3a54d68585e"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 22326,
+        "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 90321,
+        "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
       }
     }
   }

@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+    "scripts/ci/classify-ci-changes.mjs": "c837b1ce4fa0ea85370f7dc994118c81721f586ec673762ac6bea3eab2cbbdb2",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
@@ -89,6 +89,13 @@
       "to": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
       "on": "2026-09-21",
       "why": "Restamped 2026-09-21: the native accounting cluster now declares LC_ALL=C/LANG=C for its own initdb and pg_ctl lifecycle commands, because an inherited UTF-8 locale made the macOS postmaster refuse to start ('postmaster became multithreaded during startup') and the runner died before its first assertion. No financial function, fixture body, assertion or captured definition changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+      "to": "c837b1ce4fa0ea85370f7dc994118c81721f586ec673762ac6bea3eab2cbbdb2",
+      "on": "2026-09-23",
+      "why": "Restamped 2026-09-23 (branch feat/cashier-phase5-statements, see cashier_statements_rebinding_20260923 in tests/fixtures/full-weekly-accounting/source-binding.json): tests/fixtures/cashier-statements/ joins the accounting fixture-directory alternation, so a change under it selects the PostgreSQL accounting job and its routing tests. One alternative is added to one selector; no branch is removed or narrowed, and no financial function, fixture body, assertion or captured definition of this fixture changed."
     }
   ]
 }

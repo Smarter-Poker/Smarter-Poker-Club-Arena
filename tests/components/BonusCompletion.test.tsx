@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import BonusCompletion, { bonusGameRoute } from '../../src/components/games/BonusCompletion';
 import MinesGrid from '../../src/components/games/MinesGrid';
+import { soundService } from '../../src/services/SoundService';
+import { triggerHaptic } from '../../src/services/HapticService';
 
 const navigate = vi.hoisted(() => vi.fn());
 const wheel = vi.hoisted(() => ({ getStateV2: vi.fn() }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
-vi.mock('../../src/services/SoundService', () => ({ soundService: { playWin: vi.fn() } }));
+vi.mock('../../src/services/SoundService', () => ({
+  soundService: { playWin: vi.fn(), playBigWin: vi.fn() },
+}));
 vi.mock('../../src/services/DiamondWheelService', () => ({ default: wheel }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 const CLUB = '00000000-0000-0000-0000-000000000003';
@@ -118,6 +122,29 @@ describe('bonus completion presentation', () => {
     render(<BonusCompletion clubId="shark-club" chips={1} detail="Done." />);
     await act(async () => {});
     expect(wheel.getStateV2).not.toHaveBeenCalled();
+  });
+  it('carries what the round was onto the receipt, and heads a win the usual way', () => {
+    const { unmount } = render(
+      <BonusCompletion
+        clubId="shark-club"
+        chips={0.1}
+        detail="Hit At Street 3."
+        eyebrow="Guarantee Paid"
+      />
+    );
+    expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toHaveTextContent('Guarantee Paid');
+    expect(screen.queryByText('You Won')).toBeNull();
+    unmount();
+    render(<BonusCompletion clubId="shark-club" chips={5} detail="Round Complete." />);
+    expect(screen.getByRole('dialog', { name: '5.00 Chips' })).toHaveTextContent('You Won');
+  });
+  it('passes the page request for silence through to the receipt', () => {
+    render(<BonusCompletion clubId="shark-club" chips={0.1} detail="Hit At Street 3." silent />);
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalled();
+    cleanup();
+    render(<BonusCompletion clubId="shark-club" chips={5} detail="Round Complete." />);
+    expect(soundService.playWin).toHaveBeenCalledTimes(1);
   });
   it('reveals all mines before signaling completion and ignores a child gem animation', () => {
     const onSettled = vi.fn();

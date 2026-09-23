@@ -301,7 +301,9 @@ export default function DiamondTestPage() {
             : phase === 'idle'
               ? 'Start Test'
               : 'Play Again',
-          disabled: sceneBusy || (open ? game === 'mines' || game === 'plinko' : active),
+          // The scene is still playing the move out: the plate keeps its focus.
+          disabled: open ? game === 'mines' || game === 'plinko' : active,
+          'aria-disabled': sceneBusy || undefined,
           onClick: () =>
             open
               ? game === 'crash'
@@ -313,7 +315,8 @@ export default function DiamondTestPage() {
         }}
         secondary={{
           label: 'Book The Win',
-          disabled: sceneBusy || !open || game === 'plinko' || (!picked.length && game !== 'crash'),
+          disabled: !open || game === 'plinko' || (!picked.length && game !== 'crash'),
+          'aria-disabled': sceneBusy || undefined,
           onClick: cash,
         }}
       >

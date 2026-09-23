@@ -18,6 +18,8 @@
  * chunks in the background without blocking the main thread.
  */
 
+import { IS_NATIVE_BUILD } from '../lib/appBase';
+
 // Track whether preloading has already been triggered this session
 let preloaded = false;
 
@@ -159,7 +161,14 @@ const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
   // cashier. It uses this intent-only key so a hover/hold warms the exact
   // chunk navigation will render without pretending it is a public route.
   '/cashier/trade': () => import('../pages/CashierTradePage'),
-  '/marketplace': () => import('../pages/MarketplacePage'),
+  // The route, not the storefront: on the web /marketplace opens the World Hub
+  // marketplace, so warming the whole in-app storefront would be wasted bytes.
+  // In the app the storefront is what the route renders, and IS_NATIVE_BUILD is
+  // a build constant, so the web bundle does not carry this branch at all.
+  '/marketplace': () => {
+    if (IS_NATIVE_BUILD) void import('../pages/MarketplacePage').catch(() => {});
+    return import('../pages/MarketplaceRoute');
+  },
   '/notifications': () => import('../pages/NotificationsPage'),
   '/messages': () => import('../pages/NavigateToMessenger'),
   '/leaderboard': () => import('../pages/LeaderboardPage'),

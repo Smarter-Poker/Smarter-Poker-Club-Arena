@@ -104,6 +104,15 @@ const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
 /** The displayed hundredth from which Book The Win is offered: the same floor crashSettle enforces. */
 const CASHOUT_OPENS_CENTS = 101;
+/** How often the page asks about a round the platform has paused. The crash
+ * point is sealed and the clock is the server's own wall clock, so nothing
+ * about the outcome depends on how often this tab asks: only the reveal waits,
+ * and it waits at most this long past the end of the break. */
+const BREAK_POLL_MS = 2000;
+/** What the page says about a round it can no longer follow. Never the
+ * server's own words, and never a claim about money the page cannot see. */
+const ROUND_UNREACHABLE =
+  'This Round Cannot Be Followed Right Now. The Server Settles It Without This Page';
 /** The pause between a settled round and the next of a run, so the result can be read. */
 const AUTO_PAUSE_MS = 1500;
 /** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
@@ -223,6 +232,9 @@ function DiamondCrashGame() {
   autoRunRef.current = autoRun;
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollGeneration = useRef(0);
+  // Declared here because the poll (adopt, below) reaches it, and it is built
+  // further down, after the auto-play run it has to stop.
+  const loseRoundRef = useRef<() => void>(() => {});
   const lastFinishedRound = useRef<string | null>(null);
   const busyRef = useRef(false);
   const roundRef = useRef<CrashRound | null>(null);
@@ -383,24 +395,37 @@ function DiamondCrashGame() {
         pollGeneration.current === generation &&
         roundRef.current?.round_id === open.round_id &&
         roundRef.current.status === 'open';
+      // Said once per break, not once per ask. A break that ends and begins
+      // again is a new break, and is said again.
+      let onBreak = false;
       const tick = async () => {
         if (!current()) return;
         try {
           const next = await DiamondGamesService.crashSettle(open.round_id, false, open);
           if (!current()) return;
-          if (next.ok && next.round_id !== open.round_id)
+          if (!next.ok) {
+            // The three answers the server repeats for this round however
+            // often it is asked: the session is gone, the round is not there,
+            // or it is not this player's. Asking again cannot change any of
+            // them, so the page stops asking and hands itself back.
+            loseRoundRef.current();
+            return;
+          }
+          if (next.round_id !== open.round_id)
             throw new Error('The Crash Response Belongs To A Different Round');
-          if (next.ok && next.status !== 'open') {
+          if (next.status !== 'open') {
             finish(next);
             return;
           }
-          if (next.frozen) {
+          // Nothing is decided while the platform is paused, so the page says
+          // so once and then asks far less often until the break is over.
+          if (next.frozen && !onBreak)
             toast.info('The Platform Is In Its Maintenance Break. The Round Waits');
-          }
+          onBreak = Boolean(next.frozen);
         } catch (err) {
           reportError(err, 'DiamondCrashPage.tick');
         }
-        if (current()) pollRef.current = setTimeout(tick, POLL_MS);
+        if (current()) pollRef.current = setTimeout(tick, onBreak ? BREAK_POLL_MS : POLL_MS);
       };
       pollRef.current = setTimeout(tick, POLL_MS);
     },
@@ -633,6 +658,27 @@ function DiamondCrashGame() {
     [toast]
   );
 
+  /** A round the server will not discuss with this tab. Nothing is in flight
+   * from here, so nothing is replayed and nothing is sent again: the round is
+   * the server's, its sealed crash point and its auto cash-out are honoured
+   * without this tab, and a Start while it is still open returns that same
+   * round rather than opening a second one. The page stops asking, says so
+   * once, drops the spent ticket and reads the game again. */
+  const loseRound = useCallback(() => {
+    stopPolling();
+    roundRef.current = null;
+    setRound(null);
+    setPhase('idle');
+    setStartedAtLocal(null);
+    endRun('Auto Play Stopped');
+    toast.error(ROUND_UNREACHABLE);
+    setCommit(null);
+    void freshCommit().catch((error) => reportError(error, 'DiamondCrashPage.lostTicket'));
+    if (clubUuid)
+      void loadState(clubUuid).catch((error) => reportError(error, 'DiamondCrashPage.lost'));
+  }, [stopPolling, endRun, toast, freshCommit, loadState, clubUuid]);
+  loseRoundRef.current = loseRound;
+
   /** Starts the round the plate shows, or - given `resend` - re-sends exactly the
    * wager the server refused for its ticket, on the ticket now in hand. */
   const handleStart = useCallback(
@@ -654,7 +700,12 @@ function DiamondCrashGame() {
       soundService.playSpinStart();
       triggerHaptic('medium');
       try {
+        // An emptied "Your Client Seed" is not a decision the player made
+        // about this round. The page deals itself a seed and shows the one the
+        // round was sent with, so the proof panel still names what was
+        // actually used. A resend keeps its own seed: it is the same wager.
         const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
+        if (!resend && seed !== clientSeed) setClientSeed(seed);
         const request: BonusStart = resend
           ? { ...resend, commitId: commit.id, serverSeedHash: commit.hash }
           : {
@@ -1198,7 +1249,10 @@ function DiamondCrashGame() {
             : open
               ? {
                   label: cashing ? 'Booking Win' : 'Book The Win',
-                  ink: 'green',
+                  // Gold is value on this panel: Get Diamonds already reads that
+                  // way, and booking a win is the same kind of act. Green was the
+                  // last plate painted a colour of its own.
+                  ink: 'gold',
                   onClick: handleCashOut,
                   disabled: cashing || !cashoutOpen,
                 }
@@ -1352,6 +1406,9 @@ function DiamondCrashGame() {
             value={clientSeed}
             maxLength={MAX_CLIENT_SEED}
             onChange={(e) => setClientSeed(e.target.value)}
+            onBlur={(e) => {
+              if (!e.target.value.trim()) setClientSeed(randomClientSeed());
+            }}
             disabled={open}
             spellCheck={false}
           />
@@ -1461,6 +1518,17 @@ function DiamondCrashGame() {
             clubId={routeClubId ?? ''}
             clubUuid={clubUuid}
             awardId={settledRound.award_id ?? null}
+            // The page already sang the cash-out at its own multiplier, and a
+            // crash says nothing. Either way the receipt adds no chord.
+            silent
+            // A crash is not a win. The receipt says what it is.
+            eyebrow={
+              settledRound.status === 'cashed'
+                ? undefined
+                : settledRound.outcome.payout_chips > 0
+                  ? 'Guarantee Paid'
+                  : 'Round Over'
+            }
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
           />

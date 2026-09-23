@@ -23,8 +23,8 @@ import {
   ROAD_LADDERS_V4,
   roadLadder,
   roadSurvives,
-  verifyChoiceProof,
   verifyChoiceRound,
+  verifyChoiceRoundDetailed,
 } from '../../src/utils/diamondChoiceMath';
 import {
   crashCashoutFloorCents,
@@ -434,13 +434,13 @@ describe('contract 4: the first step never ruins a game, and the floor is what t
         if (sample.game === 'mines') {
           expect(proof.first_pick).toBe((value.picked as number[])[0]);
           expect(proof.mine_cells).not.toContain(proof.first_pick);
-          // The board is bound to the first pick: dealt around another tile it does not verify.
-          expect(
-            await verifyChoiceProof({
-              ...(proof as object),
-              first_pick: ((proof.first_pick as number) + 1) % 25,
-            } as never)
-          ).toBe(false);
+          // The board is bound to the first pick: dealt around another tile the
+          // sealed draw is not the one this seed makes, and the round says so.
+          const rebound = await verifyChoiceRoundDetailed({
+            ...round,
+            proof: { ...proof, first_pick: ((proof.first_pick as number) + 1) % 25 },
+          } as never);
+          expect(rebound.draw).toBe(false);
         } else {
           // Street one paid 0.80x when banked, or was crossed for certain before the loss.
           expect((value.prizes as number[])[0]).toBe(betChips * 0.8);

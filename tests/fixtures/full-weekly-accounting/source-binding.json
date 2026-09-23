@@ -148,7 +148,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
-    "tests/unit/CashoutRequestModal.test.tsx": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+    "tests/unit/CashoutRequestModal.test.tsx": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -1772,6 +1772,20 @@
       "to": "42689b235e97b42eb80d4c18635096c2e753a5ae46c2e260ab26594b7b8ad561",
       "on": "2026-09-22",
       "why": "Restamped 2026-09-22 in the same change as the classifier above: this binding also pins the two bindings that carry the classifier's own hash, so restamping it there moves these two files by exactly one line each plus their audit entry. Nothing else in either file changed."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+      "to": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561",
+      "on": "2026-09-22",
+      "why": "PR fix/cashier-console-compliance-current: the src/components/wallet/ChipMintModal.tsx baseline goes 3 -> 2. The ratchet only turns one way and this turn tightens it: Chip Mint now binds the error of its diamond-balance read and prints Unavailable instead of 0 when that read fails; the test requires the lower number in the same commit."
+    },
+    {
+      "file": "tests/unit/CashoutRequestModal.test.tsx",
+      "from": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+      "to": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
+      "on": "2026-09-22",
+      "why": "PR fix/cashier-console-compliance-current: one pinned string changes case. The cashout status a receipt row carries now prints through titleCase() at the print site (Dan 2026-09-14: the first letter of every word a player reads is capitalised, data included), so the expected text moves from 'This Cashout Is Already approved.' to 'This Cashout Is Already Approved.'. No assertion is removed; no money, escrow, scope or idempotency expectation moves."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -1848,5 +1862,25 @@
     ],
     "reason": "PR #5046 lowers this file's baseline for src/pages/tournament/TournamentLobbyPage.tsx from 3 to 0. That is the ratchet TIGHTENING - it now permits fewer discarded error reads for that file than before, never more - and the test itself asks for the lower number in the same commit, which is what turned it red here. All three reads were the shape this ratchet exists to kill: a PostgREST call that RESOLVES with { error } read as an empty result. The player's own registration list became \"registered for nothing\", so a board of live Register (buy-in) buttons was shown to a player already entered in every event and pressing one is a second entry attempt against real money; union membership became \"standalone\"; and the union scope read became \"no union\", silently dropping every union game off the board. The two union reads keep the outcome they always had (fail open on the Create Tournament affordance, fail closed on scope) and now report instead of guessing. No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture or accounting assertion is touched.",
     "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit. Every other repository binding and every captured fixture was re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The diff is exactly this one hash plus this block."
+  },
+  "cashier_console_ratchet_rebinding_20260922": {
+    "base_commit": "e4ff8ae72be09654cbd4b853810c16cbc52017a2",
+    "prior_binding_sha256": "d6ae4c72b1fbdd1f32c7c058cbf0a0b40b90be99baed8105a6e322cea307407b",
+    "supersedes": "lobby_read_ratchet_rebinding_20260921",
+    "source_branch": "fix/cashier-console-compliance-current",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+        "sha256": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561"
+      },
+      {
+        "path": "tests/unit/CashoutRequestModal.test.tsx",
+        "previous_sha256": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+        "sha256": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed"
+      }
+    ],
+    "reason": "The Cashier #ClubArenaConsole release lowers this file's baseline for src/components/wallet/ChipMintModal.tsx from 3 to 2. That is the ratchet TIGHTENING - it permits fewer discarded error reads for that file than before, never more - and the test itself asks for the lower number in the same commit, which is what turned it red here. The read that is now bound is the profiles.diamonds balance read behind the Chip Mint: a FAILED read used to print 0 diamonds and enable nothing, and now reports through reportError, prints Unavailable and keeps every preset disabled until a read succeeds. No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture or accounting assertion is touched. The same release also restamps tests/unit/CashoutRequestModal.test.tsx: its one pinned success string changes case because the cashout status from the receipt row now prints through titleCase(); the assertion count and every escrow, scope and idempotency expectation in that file are unchanged.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit. Every other repository binding and every captured fixture was re-verified with scripts/ci/verify-source-bindings.py (hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation) and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The diff is exactly these two hashes, two restamp_audit rows and this block."
   }
 }

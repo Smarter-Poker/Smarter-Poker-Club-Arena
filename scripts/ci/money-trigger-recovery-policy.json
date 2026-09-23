@@ -24,5 +24,24 @@
         "note": "Reviewed September 13: unchanged table and seat mirrors in an accepted hand keep the shared tournament lane. Identity, status and custody changes retain exclusive lane and receipt checks. Native concurrency, rollback and full financial-path probes passed."
       }
     ]
+  },
+  {
+    "path": "supabase/migrations/20260917181100_union_weekly_accounting_atomic_activation_20260917.sql",
+    "review": "issue-5008-recorded-migration-recovery-review-20260923: the file records, byte for byte, the SQL production applied as 20260917181100 on 2026-09-17 18:11:00Z. Of the 25 findings check-money-trigger-declared raised against it, 24 were text inside a $catalog$ JSON literal the migration passes to jsonb_array_elements() in order to ASSERT an existing catalogue, which the dollar-quote fix in the same change removes. The one real CREATE TRIGGER on a watched table is bound below: a refusal-only BEFORE DELETE OR UPDATE guard on chip_ledger that writes nothing, declared in public.ca_declared_money_triggers on 2026-09-18 04:18:09Z by migration 20260918041452, whose file is already on main. fn_undeclared_money_triggers() returns zero rows platform-wide.",
+    "originalVersion": "20260917181100",
+    "originalName": "union_weekly_accounting_atomic_activation_20260917",
+    "originalSha256": "89e6e7650022f1c3eb4b5dd575ae935e9110d90b329a29340159c1eff9004f70",
+    "declarationVersion": "20260918041452",
+    "declarationName": "declare_the_recognized_bank_receipt_guard",
+    "declarationSha256": "7258b208c51d888e901b6e7c156ac77fffa42bdbbe076508702f58c8bb6ed25b",
+    "triggers": [
+      {
+        "table": "chip_ledger",
+        "trigger": "accounting_tournament_recognized_bank_immutable",
+        "definitionSha256": "458145e7d0036c00bed60b6cfb05e5334d16a38479232743a5724b3cd1bc8165",
+        "functionSha256": "bf4d6fea9f6ba5126085c87475661225ebbabd95f3e9c0e6bc8a743567f2b0fb",
+        "note": "Refusal-only guard: BEFORE DELETE OR UPDATE, raises recognized_tournament_fee_bank_receipt_is_immutable when the row is the bank_journal_id of a recorded accounting_tournament_fee_recognitions row, and returns OLD/NEW unchanged otherwise. No monetary mutation. Shipped by the accounting release without its declaration; reviewed and declared 2026-09-18 against its exact trigger definition and a proof that its function contains no write statement."
+      }
+    ]
   }
 ]

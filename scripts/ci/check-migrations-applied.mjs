@@ -30,8 +30,50 @@
  * manifest is stale (regenerate it in the same PR). Both are things the author
  * must do; neither is something to discover a day later.
  *
+ * A FRAGMENT IS A PROMISE, NOT AN OBSERVATION (2026-09-22).
+ *
+ * The manifest this gate reads is the nightly base snapshot UNION every
+ * scripts/ci/schema-manifest.d/*.json fragment. The base is generated FROM the
+ * live schema, so a name in it was seen in production. A fragment is a line the
+ * branch author typed. Unioned, they are indistinguishable, and this gate then
+ * answered a question it had not asked: on 2026-09-22 it printed
+ *
+ *     3 changed migration(s); 0 unapplied object(s).
+ *     OK - every object these migrations declare exists in the live schema.
+ *
+ * about `20260922143541_club_and_union_diamond_commerce.sql`, whose fourteen
+ * tables and thirty-five functions production had never heard of. The fragment
+ * even said "Applied as 20260922143541" in its own _owner field. It had not
+ * been. The merge landed, and because the engine build calls three of those
+ * functions, `Prove The Exact Engine Has Every Production Door` then refused
+ * every engine release - which is the correct behaviour of that gate and the
+ * first true thing anybody was told.
+ *
+ * This is CLAUDE.md 10.86 rule 2 exactly: an answer that could not be read was
+ * coerced into a good one. So the two sources are now kept apart:
+ *
+ *   OBSERVED  - in the base snapshot. Production was asked. Silent, as before.
+ *   PROMISED  - present only because a fragment says so. Reported BY NAME, and
+ *               never described as existing in the live schema.
+ *   ABSENT    - in neither. Unapplied. Exit 1, exactly as before.
+ *
+ * PROMISED does not block, and that is deliberate. The fragment mechanism
+ * exists precisely so a branch can reference an object it HAS applied before
+ * the nightly base regenerates, and 75 tables and 214 functions are legitimately
+ * mid-promise on main as this is written. A guard that can wedge every
+ * migration author is worse than the staleness it reports - the same ruling
+ * CLAUDE.md 10.87 makes about the freshness guard. What PROMISED does is stop
+ * this gate from CLAIMING the object is live, and name the file whose author is
+ * the one person who can say whether it is.
+ *
+ * WHERE A CREDENTIAL EXISTS, IT ASKS PRODUCTION INSTEAD OF GUESSING. If
+ * SUPABASE_DB_URL or DATABASE_URL is set, the promised names are looked up in
+ * the live catalog and an absent one is a hard failure with the true reason. A
+ * URL that is set but unreadable is exit 2, COULD NOT TELL - never green. This
+ * script never contains, derives or writes a credential (CLAUDE.md 10.84).
+ *
  * Usage:  node scripts/ci/check-migrations-applied.mjs [baseRef]
- * Exit:   0 clean · 1 an unapplied object · 2 script error
+ * Exit:   0 clean · 1 an unapplied object · 2 script error or could-not-tell
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
@@ -458,6 +500,57 @@ function declaredAtBase(base, file) {
   };
 }
 
+/**
+ * ASK PRODUCTION ABOUT THE NAMES A FRAGMENT PROMISED.
+ *
+ * Only runs when the environment already carries a connection string, the same
+ * way scripts/ci/check-anon-definer-grants.mjs does it. This file never holds,
+ * derives, prints or writes a credential (CLAUDE.md 10.84).
+ *
+ * Three outcomes, never two (CLAUDE.md 10.86 rule 1):
+ *   { asked: false }               no credential here - caller must SAY so
+ *   { asked: true, absent: [] }    production really has them
+ *   { asked: true, absent: [...] } production does not - a hard failure
+ *
+ * A URL that is present but unreadable exits 2. An unreadable answer is not an
+ * empty one (10.86 rule 2), and an environment that deliberately supplied a
+ * credential is one where silence would be a lie.
+ */
+function verifyPromises(promises) {
+  const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+  if (!url) return { asked: false, absent: [] };
+
+  const wantedTables = [...new Set(promises.filter((p) => p[1] !== "function").map((p) => p[2]))];
+  const wantedFns = [...new Set(promises.filter((p) => p[1] === "function").map((p) => p[2]))];
+  const lit = (xs) => (xs.length ? xs.map((x) => `'${x.replace(/'/g, "''")}'`).join(",") : "''");
+  const query =
+    `SELECT 't:'||c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace ` +
+    `WHERE n.nspname='public' AND c.relname IN (${lit(wantedTables)}) ` +
+    `UNION ALL ` +
+    `SELECT 'f:'||p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace ` +
+    `WHERE n.nspname='public' AND p.proname IN (${lit(wantedFns)});`;
+
+  let out;
+  try {
+    out = execFileSync("psql", [url, "-At", "-c", query], {
+      encoding: "utf8",
+      timeout: 60_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    console.error("[check-migrations-applied] COULD NOT ASK THE DATABASE.");
+    console.error(`   ${err?.message || err}`);
+    console.error("   A connection string was set, so silence here would be a lie. This is not a pass.");
+    process.exit(2);
+  }
+
+  const seen = new Set(out.split("\n").map((l) => l.trim()).filter(Boolean));
+  const absent = promises.filter(([, kind, name]) =>
+    kind === "function" ? !seen.has(`f:${name}`) : !seen.has(`t:${name}`),
+  );
+  return { asked: true, absent };
+}
+
 function main() {
   if (!existsSync(MANIFEST)) {
     console.error(
@@ -477,6 +570,9 @@ function main() {
   }
   const liveFns = new Set(manifest.functions || []);
   const liveTables = new Set(manifest.tables || []);
+  /* Only a fragment vouches for these; nothing has asked production. */
+  const promisedFns = new Set(manifest.promisedFunctions || []);
+  const promisedTables = new Set(manifest.promisedTables || []);
 
   /* The column manifest is a separate snapshot ({table: [columns]}) and the
      phantom-column gate already depends on it. If it is absent this checks
@@ -496,6 +592,7 @@ function main() {
   const retiredLater = retirementLookup();
 
   const problems = [];
+  const promises = [];
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
     const sql = readFileSync(join(REPO, file), "utf8");
@@ -532,6 +629,8 @@ function main() {
         !retiredLater(file, "fns", fn)
       ) {
         problems.push([file, "function", fn]);
+      } else if (isNew("fns", fn) && promisedFns.has(fn)) {
+        promises.push([file, "function", fn]);
       }
     }
     for (const t of now.tables) {
@@ -541,6 +640,8 @@ function main() {
         !retiredLater(file, "tables", t)
       ) {
         problems.push([file, "table/view", t]);
+      } else if (isNew("tables", t) && promisedTables.has(t)) {
+        promises.push([file, "table/view", t]);
       }
     }
     if (liveColumns) {
@@ -559,12 +660,54 @@ function main() {
   }
 
   console.log(
-    `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ${problems.length} unapplied object(s).`,
+    `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ` +
+      `${problems.length} unapplied object(s); ${promises.length} declared by a fragment only.`,
   );
+
+  /* A promise this branch made about its own new objects. Ask production if we
+     can; say so plainly if we cannot. Never call it "exists in the live schema". */
+  if (promises.length) {
+    const verdict = verifyPromises(promises);
+    if (verdict.absent.length) {
+      console.error(
+        "\nTHE LIVE DATABASE DOES NOT HAVE WHAT THIS BRANCH'S FRAGMENT PROMISED:\n",
+      );
+      for (const [file, kind, name] of verdict.absent)
+        console.error(`  ${file}\n    ${kind} ${name}`);
+      console.error(
+        "\nA fragment in scripts/ci/schema-manifest.d/ is a note that an object is" +
+          "\nalready applied and the nightly base has not caught up yet. It is not a" +
+          "\nway to declare one that has never run. Apply the migration with the" +
+          "\nSupabase MCP `apply_migration`, which is the only sanctioned path.",
+      );
+      process.exit(1);
+    }
+    if (verdict.asked) {
+      console.log(
+        `[check-migrations-applied] asked production: all ${promises.length} fragment-declared object(s) are really there.`,
+      );
+    } else {
+      console.warn(
+        `\n[check-migrations-applied] ${promises.length} object(s) below are in the manifest ONLY because` +
+          "\nthis branch's own fragment says so. NOTHING HAS ASKED PRODUCTION, so this" +
+          "\ngate cannot tell whether they are live:\n",
+      );
+      for (const [file, kind, name] of promises)
+        console.warn(`  ${file}\n    ${kind} ${name}`);
+      console.warn(
+        "\nIf you have already applied the migration, this is the expected note and" +
+          "\nthe nightly schema-manifest refresh will absorb the fragment. If you have" +
+          "\nnot, apply it now with the Supabase MCP `apply_migration`: a merged" +
+          "\nmigration that never ran strands every engine release that calls it.",
+      );
+    }
+  }
 
   if (problems.length === 0) {
     console.log(
-      "OK — every object these migrations declare exists in the live schema.",
+      promises.length
+        ? "OK — nothing this branch declares is missing from the manifest."
+        : "OK — every object these migrations declare exists in the live schema.",
     );
     return;
   }

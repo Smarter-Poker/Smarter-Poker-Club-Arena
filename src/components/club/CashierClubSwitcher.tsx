@@ -207,14 +207,13 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
   // Nothing useful to show: no name resolved and nothing to switch to
   if (!displayName && !hasSwitch) return null;
 
-  const logo = (club: QuickLinkClub | null, name: string) =>
+  /* A club's own logo when it has one. When it has none there is nothing
+     here: the name is printed right beside it, and an initial in a tile is a
+     placeholder box the master does not contain. */
+  const logo = (club: QuickLinkClub | null) =>
     club?.logo_url ? (
       <img src={club.logo_url} alt="" className={styles.logo} loading="lazy" />
-    ) : (
-      <span className={styles.logoFallback} aria-hidden="true">
-        {(name || '?').charAt(0).toUpperCase()}
-      </span>
-    );
+    ) : null;
 
   return (
     <div className={styles.bar}>
@@ -233,10 +232,10 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
           aria-label={`Switch Club Cashier. Current Club: ${displayName || 'Unknown'}`}
           title={displayName || undefined}
         >
-          {logo(currentClub, displayName)}
+          {logo(currentClub)}
           <span className={styles.name}>{displayName || 'Select Club'}</span>
-          <span className={styles.chevron} aria-hidden="true">
-            {'▾'}
+          <span className={styles.choose} aria-hidden="true">
+            Choose
           </span>
         </button>
       ) : (
@@ -244,7 +243,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
           className={`${styles.trigger} ${styles.triggerStatic}`}
           title={displayName || undefined}
         >
-          {logo(currentClub, displayName)}
+          {logo(currentClub)}
           <span className={styles.name}>{displayName}</span>
         </span>
       )}
@@ -271,12 +270,15 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                 title={club.name || undefined}
                 onClick={() => handleSelect(club)}
               >
-                {logo(club, club.name || '')}
+                {logo(club)}
                 <span className={styles.itemText}>
                   <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
                   {visibleBalances?.has(club.id) && (
                     <span className={styles.itemBalance}>
-                      {(visibleBalances.get(club.id) as number).toLocaleString()} Chips
+                      {(visibleBalances.get(club.id) as number).toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      Chips
                     </span>
                   )}
                 </span>

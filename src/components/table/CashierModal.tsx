@@ -223,7 +223,7 @@ export function CashierModal({
     } catch (error) {
       reportError(error, 'CashierModal.Cashier_error');
       setSubmitError(
-        safeErrorMessage(error, 'Something went wrong. Nothing was moved - please try again.')
+        safeErrorMessage(error, 'Something Went Wrong. Nothing Was Moved - Please Try Again.')
       );
     } finally {
       busyRef.current = false;

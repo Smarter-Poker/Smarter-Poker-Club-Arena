@@ -345,6 +345,14 @@ function DiamondPlinkoGame() {
     setBusy(true);
     setError(null);
     setVerified(null);
+    // An emptied "Your Seed" is not a decision the player made about this
+    // batch: the service refuses a blank seed before anything is sent, and
+    // that refusal reads to the page exactly like the server's own. The page
+    // deals itself a seed instead, and shows the one the drops were sent with,
+    // so Bonus Proof still names what was actually used. A resend keeps its
+    // own seed, because it is the same wager going again.
+    const sent = seed.trim() ? seed : randomClientSeed();
+    if (!resend && sent !== seed) setSeed(sent);
     const request: BonusStart = resend
       ? { ...resend, commitId: ticket.id, serverSeedHash: ticket.hash }
       : {
@@ -353,7 +361,7 @@ function DiamondPlinkoGame() {
           budget: { ...budget },
           commitId: ticket.id,
           serverSeedHash: ticket.hash,
-          seed,
+          seed: sent,
           tableVersion: table!.version,
         };
     held.current = request;
@@ -431,10 +439,17 @@ function DiamondPlinkoGame() {
           settleRefusal(e, refused);
         } else if (e instanceof BonusUnreadable && e.final) {
           keepForNextVisit(uuid);
-        } else {
+        } else if (held.current) {
           // Not an answer: the page tries again on its own schedule.
           setSettleAttempts((count) => count + 1);
           setError('Settling Your Bonus');
+        } else {
+          // The replay above answered and accept() let the wager go; what
+          // failed is the entry read that follows it, which counts itself and
+          // is read again on the quote's own schedule. Nothing is in flight,
+          // so the page must not say it is settling over a booked receipt.
+          setSettleAttempts(0);
+          setError(CHECKING_ENTRY);
         }
       }
     } finally {
@@ -773,6 +788,9 @@ function DiamondPlinkoGame() {
             maxLength={64}
             disabled={busy || animating || uncertain}
             onChange={(e) => setSeed(e.target.value)}
+            onBlur={(e) => {
+              if (!e.target.value.trim()) setSeed(randomClientSeed());
+            }}
           />
         </label>
         {result && !animating && (

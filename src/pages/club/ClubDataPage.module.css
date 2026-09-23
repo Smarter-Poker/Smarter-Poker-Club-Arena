@@ -50,6 +50,15 @@
   appearance: none;
   margin: 0;
   padding: 1.6cqw 1.2cqw;
+  /* The touch floor applies to each axis, not just the tall one (2026-09-22).
+     min-height alone left every short label under the 44px floor at 390px:
+     DAY 32.7, ALL 31.7, MID 31.7, and the two period arrows 33.5, because the
+     width came only from padding around three or four condensed characters.
+     Fifty-two visible controls on this page measured 44 tall and as narrow as
+     31.7, which is what club-data-deep.spec.ts:150 reported on every
+     Post-Deploy run. The two floors live on this one rule, so a word added later
+     cannot fall under either of them. */
+  min-width: 44px;
   min-height: 44px;
   border: 0;
   background: transparent;

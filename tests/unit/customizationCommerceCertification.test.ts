@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   callServiceRpc,
+  withCauses,
   type CustomizationCertificationEnvironment,
 } from '../e2e/support/temporaryCustomizationAccount';
 
@@ -69,6 +70,44 @@ describe('customization commerce certification', () => {
     expect(spec).toContain('expect(leakedUnlocks).toEqual([])');
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
     expect(spec).toContain('await Promise.allSettled(');
+  });
+
+  /**
+   * Post-Deploy E2E run 35794208383 printed one line for a teardown failure -
+   * `AggregateError: Customization Commerce Certification Cleanup Failed.` -
+   * and kept every cause to itself, so the run could only be read as "cleanup
+   * failed, reason unknown". 10.86 rule 1: the signal answered without saying
+   * what it knew.
+   */
+  it('folds every teardown cause into the message a reader actually sees', () => {
+    const first = new Error('Guarded certification cleanup refused abc: platform_is_frozen');
+    const second = new Error('feature_purchases: 61 rows remain');
+
+    const message = withCauses('Cleanup Failed.', [first, second]);
+    expect(message).toContain('Cleanup Failed.');
+    expect(message).toContain('platform_is_frozen');
+    expect(message).toContain('feature_purchases: 61 rows remain');
+    expect(message).toContain('[1]');
+    expect(message).toContain('[2]');
+
+    expect(withCauses('Nothing went wrong.', [])).toBe('Nothing went wrong.');
+    expect(withCauses('Opaque.', ['a plain string'])).toContain('a plain string');
+  });
+
+  it('carries the causes on both certification specs, not only the combined branch', () => {
+    for (const path of [
+      'tests/e2e/production-customization-commerce.spec.ts',
+      'tests/e2e/production-customization-realtime.spec.ts',
+    ]) {
+      const body = source(path);
+      const titles = [...body.matchAll(/new AggregateError\(([\s\S]{0,400}?)\n\s*\);/g)];
+      expect(titles.length, `${path} no longer throws an AggregateError`).toBeGreaterThan(0);
+      for (const [block] of titles) {
+        expect(block, `${path} throws an AggregateError whose title drops its causes`).toContain(
+          'withCauses('
+        );
+      }
+    }
   });
 
   it('runs the isolated certification after every successful production publish', () => {

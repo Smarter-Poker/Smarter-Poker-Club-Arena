@@ -1,5 +1,5 @@
 {
-  "_owner": "feat/club-and-union-diamond-commerce (CA-DIAMOND-COMMERCE-2026-09-22 R2: club and union diamond commerce). Applied as 20260922143541.",
+  "_owner": "feat/club-and-union-diamond-commerce (CA-DIAMOND-COMMERCE-2026-09-22 R2: club and union diamond commerce). Declares supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql. CORRECTED 2026-09-22: this field previously read \"Applied as 20260922143541\" and that was not true - none of these objects were in production, which is why Production Integrity Audit reported the migration merged-but-not-live and why the engine door check refused every release that calls fn_ca_commerce_claim_due_renewals. The owning task applies the migration with the Supabase MCP apply_migration; this fragment is redeemed when the nightly schema-manifest refresh absorbs it.",
   "tables": [
     "ca_commerce_entitlements",
     "ca_commerce_events",

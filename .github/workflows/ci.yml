@@ -1372,6 +1372,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Cashier statements follow the trade ledger scope and export what is on screen
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cashier-statements.sh
       - name: Accounting agreement changes preserve immutable observed history
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

@@ -1,4 +1,0 @@
-{
-  "_owner": "PostgresSyncHooks is already in the entry chunk - it is the account-wide realtime mirror that has to be subscribed before first paint, or a change made on another device arrives after the page has already painted the old one. realtimeFieldEcho is the decision it makes on every event, so it goes where its only caller goes. It is 113 lines of pure functions with ZERO imports of its own, so it pulls nothing in behind it: the entry chunk measured 153kB gz against a 161kB baseline on this branch, 8kB SMALLER, because the same commit deletes the inline comparison loops it replaces. Making it a dynamic import would mean an await on the hot path of every mirrored row change to save a module that costs less than the code it removed.",
-  "modules": ["src/services/realtimeFieldEcho.ts"]
-}

@@ -177,29 +177,33 @@ export function declaredSegmentCount(src, fnName, where) {
   return Number(m[1]);
 }
 
-/** The estate's own convention: a client mirror of a server rule says which
- *  server function it mirrors, in its doc comment. src/utils/clubLevels.ts,
- *  src/utils/diamondChoiceMath.ts and src/utils/diamondBonusPayout.ts all do
- *  it. That declaration is what makes "which floor rule does the client
- *  implement" a readable fact instead of a guess about arithmetic. */
-export function declaredMirror(src, exportName, where) {
-  const at = src.indexOf(`export function ${exportName}`);
-  if (at === -1)
-    throw new CannotTell(`${where} no longer exports ${exportName}; the floor rule is unreadable.`);
-  const all = [...src.slice(0, at).matchAll(/[Mm]irrors\s+public\.(fn_[a-z0-9_]+)\s*\(([^)]*)\)/g)];
-  if (all.length === 0)
+/**
+ * THE FLOOR RULES THE CLIENT SAYS IT MIRRORS.
+ *
+ * The estate's own convention: a client mirror of a server rule names the
+ * server function it mirrors, in its doc comment. src/utils/clubLevels.ts,
+ * src/utils/diamondChoiceMath.ts and src/utils/diamondBonusPayout.ts all do it.
+ * That declaration is what makes "which floor rule does the client implement" a
+ * readable fact instead of a guess about arithmetic in two languages.
+ *
+ * A SET, NOT A NAME, and that is not a detail. When the floor changed on
+ * 2026-09-23 the correct client kept diamondBonusMinimum for receipts sealed
+ * under the old rule and added the new one beside it, because a receipt keeps
+ * the rule it was sealed under. A scalar reading of this file would have read
+ * the first declaration, decided the client still only knew the retired rule,
+ * and failed the very pull request that ends the outage. Every fn_diamond_bonus_*
+ * this file declares it mirrors is a rule the client can read.
+ */
+export function declaredMirrors(src, where) {
+  const fns = [
+    ...String(src).matchAll(/[Mm]irrors\s+public\.(fn_diamond_bonus_[a-z0-9_]+)\s*\(/g),
+  ].map((m) => m[1]);
+  if (fns.length === 0)
     throw new CannotTell(
-      `${where}: ${exportName} no longer declares "Mirrors public.fn_<name>(...)" above it. ` +
-        `That line is how this check knows which live rule the client implements.`
+      `${where} no longer declares "Mirrors public.fn_diamond_bonus_<name>(...)" anywhere. ` +
+        `That line is how this check knows which live floor rules the client implements.`
     );
-  const last = all[all.length - 1];
-  return {
-    fn: last[1],
-    params: last[2]
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
-  };
+  return [...new Set(fns)].sort();
 }
 
 /** Every `payout_version?: 1 | 2 | 3;` the receipt types declare, unioned. */
@@ -245,7 +249,7 @@ export function clientContract(read) {
     bonus_games: [...new Set(typeUnion(service, 'WheelBonusGame', CLIENT_FILES.service).map(String))].sort(),
     segment_count: declaredSegmentCount(award, 'assertWheelAward', CLIENT_FILES.award),
     upgrade_segment_count: declaredSegmentCount(award, 'assertWheelUpgradeTable', CLIENT_FILES.award),
-    bonus_floor_fn: declaredMirror(floor, 'diamondBonusMinimum', CLIENT_FILES.floor).fn,
+    bonus_floor_fns: declaredMirrors(floor, CLIENT_FILES.floor),
     payout_versions: declaredPayoutVersions(read),
   };
 }
@@ -496,12 +500,13 @@ export function disagreements(live, client) {
         `${client.upgrade_segment_count}, so the Upgrade draw is rejected.`
     );
 
-  if (!live.bonus_floor_fns.includes(client.bonus_floor_fn))
+  const floors = missing(live.bonus_floor_fns, client.bonus_floor_fns);
+  if (floors.length)
     out.push(
-      `no live round opener reaches for public.${client.bonus_floor_fn} any more - they seal against ` +
-        `${list(live.bonus_floor_fns.map((f) => `public.${f}`))} - and ${CLIENT_FILES.floor} still declares ` +
-        `that it mirrors public.${client.bonus_floor_fn}, so the guaranteed minimum the page shows is ` +
-        `computed from a rule production stopped using.`
+      `every live bonus round is opened against ${list(floors.map((f) => `public.${f}`))} and ` +
+        `${CLIENT_FILES.floor} declares that it mirrors only ` +
+        `${list(client.bonus_floor_fns.map((f) => `public.${f}`))}, so the guaranteed minimum the page ` +
+        `shows is computed from a rule production stopped using.`
     );
 
   const topClientReceipt = Math.max(...client.payout_versions);
@@ -682,13 +687,13 @@ export function sourceVerdict(base, head, migrations) {
           `${list(head.payout_versions)}. Widen the payout_version unions in ` +
           `${CLIENT_FILES.receipts.join(', ')} in this same branch.`
       );
-    const moved = f.declared_bonus_fns.filter((n) => n !== head.bonus_floor_fn);
-    if (moved.length && sql.includes(head.bonus_floor_fn))
+    const moved = f.declared_bonus_fns.filter((n) => !head.bonus_floor_fns.includes(n));
+    if (moved.length && head.bonus_floor_fns.some((m) => sql.includes(m)))
       problems.push(
-        `${file} installs ${list(moved.map((x) => `public.${x}`))} where public.${head.bonus_floor_fn} is ` +
-          `today, and ${CLIENT_FILES.floor} still says it mirrors public.${head.bonus_floor_fn}. Move the ` +
-          `client's mirror onto the rule this branch seals with, or the page shows a minimum production ` +
-          `will not pay.`
+        `${file} installs ${list(moved.map((x) => `public.${x}`))} where ` +
+          `${list(head.bonus_floor_fns.map((x) => `public.${x}`))} is today, and ${CLIENT_FILES.floor} ` +
+          `mirrors none of what it installs. Add the new rule to the client's mirrors in this same ` +
+          `branch, or the page shows a minimum production will not pay.`
       );
   }
 
@@ -702,7 +707,8 @@ export function sourceVerdict(base, head, migrations) {
     ['draw domain', base.draw_domains, head.draw_domains, (v) => v.replace(/-upgrade$/, ''), CLIENT_FILES.service],
     ['prize kind', base.prize_kinds, head.prize_kinds, (v) => v, CLIENT_FILES.service],
     ['bonus game', base.bonus_games, head.bonus_games, (v) => v, CLIENT_FILES.service],
-    ['receipt payout_version', base.payout_versions, head.payout_versions, (v) => `payout_version`, CLIENT_FILES.receipts.join(', ')],
+    ['receipt payout_version', base.payout_versions, head.payout_versions, () => `payout_version`, CLIENT_FILES.receipts.join(', ')],
+    ['mirrored floor rule', base.bonus_floor_fns, head.bonus_floor_fns, (v) => v, CLIENT_FILES.floor],
   ];
   for (const [label, was, now, needleOf, where] of narrowings)
     for (const v of was.filter((x) => !now.includes(x)))
@@ -712,15 +718,6 @@ export function sourceVerdict(base, head, migrations) {
             `retires it, so production may still be speaking it. Land the migration that retires it in ` +
             `this same branch, or keep reading it.`
         );
-
-  if (
-    base.bonus_floor_fn !== head.bonus_floor_fn &&
-    !migrations.some(({ sql }) => String(sql).includes(head.bonus_floor_fn))
-  )
-    problems.push(
-      `this branch moves ${CLIENT_FILES.floor} onto public.${head.bonus_floor_fn} and carries no ` +
-        `migration that declares it, so the client would mirror a rule production does not have.`
-    );
 
   for (const [label, was, now] of [
     ['segments', base.segment_count, head.segment_count],
@@ -740,7 +737,7 @@ function report(title, client, extra = []) {
   console.log(`${TAG} ${title}`);
   console.log(`   client accepts: contract_version ${list(client.contract_versions)} | draw domains ` +
     `${list(client.draw_domains)} | ${client.segment_count} segments (+${client.upgrade_segment_count} upgrade) | ` +
-    `kinds ${list(client.prize_kinds)} | floor public.${client.bonus_floor_fn} | payout_version ` +
+    `kinds ${list(client.prize_kinds)} | floor ${list(client.bonus_floor_fns.map((f) => `public.${f}`))} | payout_version ` +
     `${list(client.payout_versions)}`);
   for (const line of extra) console.log(`   ${line}`);
 }

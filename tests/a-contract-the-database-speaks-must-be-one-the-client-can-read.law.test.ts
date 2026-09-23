@@ -61,6 +61,7 @@ import {
   CannotTell,
   clientContract,
   contractFactsInSql,
+  declaredMirrors,
   disagreements,
   liveContract,
   scrub,
@@ -191,7 +192,8 @@ describe('a contract the database speaks must be one the client can read', () =>
     expect(client.bonus_games.sort()).toEqual(['crash', 'crossing', 'mines', 'plinko']);
     expect(Number.isInteger(client.segment_count)).toBe(true);
     expect(Number.isInteger(client.upgrade_segment_count)).toBe(true);
-    expect(client.bonus_floor_fn).toMatch(/^fn_diamond_bonus_/);
+    expect(client.bonus_floor_fns.length).toBeGreaterThan(0);
+    for (const fn of client.bonus_floor_fns) expect(fn).toMatch(/^fn_diamond_bonus_/);
     expect(client.payout_versions.length).toBeGreaterThan(0);
     // And the files it reads are the ones it names in every message.
     for (const p of [
@@ -237,7 +239,7 @@ describe('a contract the database speaks must be one the client can read', () =>
       bonus_games: [...new Set([...client.bonus_games, ...LIVE_2026_09_23.bonus_games])],
       segment_count: LIVE_2026_09_23.segment_count,
       upgrade_segment_count: LIVE_2026_09_23.upgrade_segment_count,
-      bonus_floor_fn: 'fn_diamond_bonus_floor',
+      bonus_floor_fns: [...new Set([...client.bonus_floor_fns, 'fn_diamond_bonus_floor'])],
       payout_versions: [...client.payout_versions, 4],
     };
     expect(disagreements(LIVE_2026_09_23, matching)).toEqual([]);
@@ -273,7 +275,7 @@ describe('a contract the database speaks must be one the client can read', () =>
       ).contract_versions
     ).toEqual([]);
     // Adding a sibling to the bonus family is not moving the floor: the
-    // verdict needs the migration to name the rule the client mirrors too.
+    // verdict needs the migration to name a rule the client mirrors too.
     const sibling = `CREATE FUNCTION public.fn_diamond_bonus_share(p uuid) RETURNS void AS $$ SELECT 1 $$ LANGUAGE sql;`;
     const client = clientContract(readOrNull);
     expect(
@@ -284,11 +286,36 @@ describe('a contract the database speaks must be one the client can read', () =>
         {
           file: 'supabase/migrations/20260923033010_the_floor.sql',
           sql:
-            `CREATE FUNCTION public.fn_diamond_bonus_floor(p numeric) RETURNS numeric AS $$ SELECT 1 $$ LANGUAGE sql;\n` +
-            `DO $$ BEGIN EXECUTE replace(x,'public.${'fn_diamond_bonus_minimum'}(a,b)','public.fn_diamond_bonus_floor(a,b,c,d)'); END $$;`,
+            `CREATE FUNCTION public.fn_diamond_bonus_unheard_of(p numeric) RETURNS numeric AS $$ SELECT 1 $$ LANGUAGE sql;\n` +
+            `DO $$ BEGIN EXECUTE replace(x,'public.${client.bonus_floor_fns[0]}(a,b)','public.fn_diamond_bonus_unheard_of(a,b,c,d)'); END $$;`,
         },
       ]).join('\n')
-    ).toContain('fn_diamond_bonus_floor');
+    ).toContain('fn_diamond_bonus_unheard_of');
+  });
+
+  it('the mirrors are a set, because a receipt keeps the rule it was sealed under', () => {
+    // THE ONE THAT WOULD HAVE BLOCKED THE FIX. The correct client for the
+    // 2026-09-23 change keeps diamondBonusMinimum for receipts sealed under
+    // the old rule and adds the new one beside it. Read as a single name, this
+    // guard would have seen only the retired rule and failed the very pull
+    // request that ends the outage.
+    const both =
+      `/** Mirrors public.fn_diamond_bonus_minimum(p_bet, p_boost). Kept for old receipts. */\n` +
+      `export function diamondBonusMinimum() {}\n` +
+      `/** Mirrors public.fn_diamond_bonus_floor(p_bet, p_boost, p_paid_diamonds, p_rate). */\n` +
+      `export function diamondBonusFloor() {}\n`;
+    expect(declaredMirrors(both, 'x.ts')).toEqual([
+      'fn_diamond_bonus_floor',
+      'fn_diamond_bonus_minimum',
+    ]);
+    const client = clientContract(readOrNull);
+    const live = { ...LIVE_2026_09_23, bonus_floor_fns: ['fn_diamond_bonus_floor'] };
+    const caughtUp = { ...client, bonus_floor_fns: declaredMirrors(both, 'x.ts') };
+    expect(disagreements(live, caughtUp).join('\n')).not.toContain('fn_diamond_bonus');
+    // A mirror the client drops while production still opens rounds with it is
+    // the same outage from the other end, and is still refused.
+    const dropped = { ...client, bonus_floor_fns: ['fn_diamond_bonus_minimum'] };
+    expect(disagreements(live, dropped).join('\n')).toContain('fn_diamond_bonus_floor');
   });
 
   it('accuses no migration on main: a gate with a false-positive rate gets switched off', () => {

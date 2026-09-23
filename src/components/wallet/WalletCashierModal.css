@@ -748,3 +748,212 @@
 .cbc-tx--in {
   border-left: 2px solid rgba(0, 180, 230, 0.55);
 }
+
+/* #ClubArenaConsole owns the Cashier shell. The old cbc selectors remain for
+   non-Cashier wallet readers, while a bank Cashier renders only the approved
+   painted master and live text printed on its black glass. */
+.cbc-panel:has(> .cbc-console) {
+  width: min(100%, 1000px);
+  max-width: 1000px;
+  max-height: calc(100dvh - 12px);
+  padding: 0;
+  overflow-y: auto;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.cbc-console :where(div, section, nav, button, input, select, textarea)::before,
+.cbc-console :where(div, section, nav, button, input, select, textarea)::after {
+  content: none;
+}
+
+.cbc-console :where(div, section, nav, button, input, select, textarea) {
+  border-radius: 0;
+}
+
+.cbc-console :where(button) {
+  min-height: 44px;
+  padding: 1.2cqw 1.8cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #45adff;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
+}
+
+.cbc-console :where(button:active) {
+  transform: none;
+  filter: brightness(1.25);
+}
+
+.cbc-console :where(button:disabled) {
+  opacity: 0.45;
+}
+
+.cbc-console :where(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 1.6cqw 0;
+  border: 0 !important;
+  border-block-end: 1px solid #526071;
+  border-radius: 0 !important;
+  outline: 0;
+  color: #f4f7fb;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font-size: max(16px, 3.5cqw);
+}
+
+.cbc-console :where(input, select, textarea):focus-visible {
+  border-block-end-color: #45adff;
+  outline: 0;
+  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
+}
+
+.cbc-console .cbc-head,
+.cbc-console .cbc-bank,
+.cbc-console .cbc-tabs,
+.cbc-console .cbc-source,
+.cbc-console .cbc-seg,
+.cbc-console .cbc-actions,
+.cbc-console .cbc-tx-top,
+.cbc-console .cbc-tx-mid,
+.cbc-console .cbc-tx-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5cqw;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.cbc-console .cbc-title {
+  display: none;
+}
+
+.cbc-console .cbc-bank {
+  align-items: flex-end;
+}
+
+.cbc-console .cbc-bank > span,
+.cbc-console .cbc-label,
+.cbc-console .cbc-tx-when,
+.cbc-console .cbc-member-id,
+.cbc-console .cbc-member-role {
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cbc-console .cbc-bank > strong,
+.cbc-console .cbc-tx-amount,
+.cbc-console .cbc-member-balance {
+  color: #ffd700;
+  font-size: 4cqw;
+  font-weight: 800;
+}
+
+.cbc-console .cbc-body,
+.cbc-console .cbc-list,
+.cbc-console .cbc-ledger,
+.cbc-console .cbc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.cbc-console .cbc-tab,
+.cbc-console .cbc-seg button,
+.cbc-console .cbc-source button {
+  flex: 1 1 28%;
+  color: #9aa5b3;
+}
+
+.cbc-console .cbc-tab--on,
+.cbc-console .cbc-seg-on,
+.cbc-console .cbc-source-on {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 75%),
+    0 0 2cqw rgb(49 168 255 / 30%);
+}
+
+.cbc-console .cbc-member,
+.cbc-console .cbc-tx,
+.cbc-console .cbc-row {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  min-width: 0;
+  padding: 2cqw 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cbc-console .cbc-member-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cbc-console .cbc-member-name,
+.cbc-console .cbc-tx-type {
+  color: #f4f7fb;
+  font-size: 3.5cqw;
+  font-weight: 700;
+}
+
+.cbc-console .cbc-empty,
+.cbc-console .cbc-note,
+.cbc-console .cbc-blurb,
+.cbc-console .cbc-denied {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  font-size: 2.9cqw;
+  line-height: 1.45;
+}
+
+.cbc-console .cbc-empty--bad,
+.cbc-console .cbc-note--bad,
+.cbc-console .cbc-tx-rev {
+  color: #ff5b6e;
+}
+
+@media (max-width: 560px) {
+  .cbc-console .cbc-member,
+  .cbc-console .cbc-tx,
+  .cbc-console .cbc-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

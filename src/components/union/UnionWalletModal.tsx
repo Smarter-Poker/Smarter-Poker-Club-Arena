@@ -61,6 +61,7 @@ import {
 } from './unionWalletRoutes';
 import '../wallet/WalletCashierModal.css';
 import './UnionWalletModal.css';
+import CashierConsoleSurface from '../cashier/CashierConsoleSurface';
 
 // Keep this union explicit at the UI boundary. Static release certification
 // verifies that the reserve wallet remains a first-class, read-only modal key.
@@ -654,388 +655,411 @@ export function UnionWalletModal({
       onClick={requestClose}
     >
       <div className="cbc-panel uwm-panel" onClick={(e) => e.stopPropagation()}>
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="cbc-head">
-          <div>
-            <div className="cbc-title">{walletLabel}</div>
-            <p className="uwm-sub">
-              {readOnly ? (
-                <>
-                  The Capital Every Spin Bonus Pool Is Seeded From, And Every Spin Prize Is Paid Out
-                  Of. It Is Not A Send Source: Add Funds With Fund Spin Reserve On The Wallet Tab.
-                </>
-              ) : isPromo ? (
-                <>
-                  Promo Chips For The Union. To A Club They Land In The Club Promo Wallet. To A
-                  Player They Are As Good As Cash. To An Agent They Top Up Their Promo Float.
-                </>
-              ) : (
-                <>
-                  Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
-                  {walletKey === 'bbj' &&
-                    ' BBJ Funds Are Reserved For Jackpots, So Chips Sent Here Draw On The Main Bank.'}
-                </>
-              )}
-            </p>
-          </div>
-          <button className="cbc-x" onClick={requestClose} aria-label="Close" disabled={busy}>
-            &times;
-          </button>
-        </div>
-
-        <div className="cbc-bank">
-          <span>{walletLabel} Balance</span>
-          <strong aria-live="polite">{money(liveBalance)}</strong>
-          <em className="cbc-bank-sub">Union Wallet</em>
-        </div>
-
-        {!readOnly && (
-          <div className="cbc-tabs" role="tablist">
-            {(['send', 'pull', 'ledger'] as Mode[]).map((m) => (
-              <button
-                key={m}
-                role="tab"
-                aria-selected={mode === m}
-                className={mode === m ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
-                onClick={() => {
-                  setMode(m);
-                  setTarget(null);
-                  setNotice(null);
-                }}
-              >
-                {m === 'send' ? 'Send' : m === 'pull' ? 'Pull (Clawback)' : 'Ledger'}
+        <CashierConsoleSurface
+          eyebrow="Union Cashier"
+          title={walletLabel}
+          subtitle={readOnly ? 'Reserve Ledger' : 'Union Wallet'}
+          pill={busy ? 'Processing' : readOnly ? 'Read Only' : 'Live'}
+          pillInk={busy ? 'gold' : readOnly ? 'muted' : 'green'}
+          crest="vip"
+          className="cbc-console uwm-console"
+          actions={
+            !readOnly && mode !== 'ledger'
+              ? {
+                  secondary: {
+                    label: 'Close',
+                    disabled: busy,
+                    onClick: requestClose,
+                  },
+                  primary: {
+                    label: busy
+                      ? mode === 'send'
+                        ? 'Sending'
+                        : 'Pulling'
+                      : !target
+                        ? 'Pick A ' + 'Member Or Club'
+                        : mode === 'send'
+                          ? `Send To ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
+                          : `Pull From ${target.type === 'club' ? target.data.name : 'Target'}`,
+                    ink: mode === 'pull' ? 'gold' : 'blue',
+                    disabled: sendDisabled,
+                    onClick: () => void send(),
+                  },
+                }
+              : undefined
+          }
+        >
+          {/* ── Header ─────────────────────────────────────────────────────── */}
+          <div className="cbc-head">
+            <div>
+              <div className="cbc-title">{walletLabel}</div>
+              <p className="uwm-sub">
+                {readOnly ? (
+                  <>
+                    The Capital Every Spin Bonus Pool Is Seeded From, And Every Spin Prize Is Paid
+                    Out Of. It Is Not A Send Source: Add Funds With Fund Spin Reserve On The Wallet
+                    Tab.
+                  </>
+                ) : isPromo ? (
+                  <>
+                    Promo Chips For The Union. To A Club They Land In The Club Promo Wallet. To A
+                    Player They Are As Good As Cash. To An Agent They Top Up Their Promo Float.
+                  </>
+                ) : (
+                  <>
+                    Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
+                    {walletKey === 'bbj' &&
+                      ' BBJ Funds Are Reserved For Jackpots, So Chips Sent Here Draw On The Main Bank.'}
+                  </>
+                )}
+              </p>
+            </div>
+            {(readOnly || mode === 'ledger') && (
+              <button className="cbc-x" onClick={requestClose} aria-label="Close" disabled={busy}>
+                Close
               </button>
-            ))}
+            )}
           </div>
-        )}
 
-        <div className="cbc-body">
-          {/* Two guards on the outbound flow, both on readOnly: the spin
+          <div className="cbc-bank">
+            <span>{walletLabel} Balance</span>
+            <strong aria-live="polite">{money(liveBalance)}</strong>
+            <em className="cbc-bank-sub">Union Wallet</em>
+          </div>
+
+          {!readOnly && (
+            <div className="cbc-tabs" role="tablist">
+              {(['send', 'pull', 'ledger'] as Mode[]).map((m) => (
+                <button
+                  key={m}
+                  role="tab"
+                  aria-selected={mode === m}
+                  className={mode === m ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
+                  onClick={() => {
+                    setMode(m);
+                    setTarget(null);
+                    setNotice(null);
+                  }}
+                >
+                  {m === 'send' ? 'Send' : m === 'pull' ? 'Pull (Clawback)' : 'Ledger'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="cbc-body">
+            {/* Two guards on the outbound flow, both on readOnly: the spin
               reserve is not a send source and must never grow a picker or a
               send button (tests/config/spinReserveWalletView.test.ts). */}
-          {!readOnly && (
-            <>
-              {mode !== 'ledger' && (
-                <>
-                  {mode === 'send' && (
-                    <div className="cbc-field">
-                      <label className="cbc-label">Send</label>
-                      <div className="cbc-seg">
-                        {(['chips', 'diamonds', 'promo'] as SendKind[]).map((k) => (
-                          <button
-                            key={k}
-                            className={kind === k ? 'cbc-seg-on' : ''}
-                            aria-pressed={kind === k}
-                            onClick={() => setKind(k)}
-                          >
-                            {k === 'chips' ? 'Chips' : k === 'diamonds' ? 'Diamonds' : 'Promo'}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="cbc-blurb">
-                        {kind === 'promo'
-                          ? 'Promo Chips. A Club Receives Them In Its Promo Wallet; A Player As Cash; An Agent In Their Promo Float.'
-                          : kind === 'diamonds'
-                            ? 'Diamonds Go To A Member. A Club Has No Diamond Wallet.'
-                            : isPromo
-                              ? 'Chips Drawn From The Promo Wallet. A Player Receives Them As Cash.'
-                              : walletKey === 'rake'
-                                ? 'Chips Drawn From The Rake Wallet, To A Member Only.'
-                                : 'Chips Drawn From The Union Bank. A Club Receives Them In Its Club Bank.'}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="cbc-field">
-                    <label className="cbc-label" htmlFor="uwm-search">
-                      {mode === 'pull' ? 'Pull From Club' : 'Recipient'}
-                    </label>
-                    <input
-                      id="uwm-search"
-                      className="cbc-input"
-                      placeholder="Search Clubs Or Members…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      aria-label="Search Clubs Or Members"
-                    />
-                    <div className="cbc-list uwm-list">
-                      {loading ? (
-                        <div className="cbc-empty">Loading Directory…</div>
-                      ) : directoryError ? (
-                        <div className="cbc-empty cbc-empty--bad" role="alert">
-                          {directoryError}
-                          <button
-                            type="button"
-                            className="cbc-more"
-                            onClick={() => setDirectoryReload((value) => value + 1)}
-                          >
-                            Retry Directory
-                          </button>
+            {!readOnly && (
+              <>
+                {mode !== 'ledger' && (
+                  <>
+                    {mode === 'send' && (
+                      <div className="cbc-field">
+                        <label className="cbc-label">Send</label>
+                        <div className="cbc-seg">
+                          {(['chips', 'diamonds', 'promo'] as SendKind[]).map((k) => (
+                            <button
+                              key={k}
+                              className={kind === k ? 'cbc-seg-on' : ''}
+                              aria-pressed={kind === k}
+                              onClick={() => setKind(k)}
+                            >
+                              {k === 'chips' ? 'Chips' : k === 'diamonds' ? 'Diamonds' : 'Promo'}
+                            </button>
+                          ))}
                         </div>
-                      ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
-                        <div className="cbc-empty">No Targets Match.</div>
-                      ) : (
-                        <>
-                          {filtered.clubs.map((c) => {
-                            const on = target?.type === 'club' && target.data.id === c.id;
-                            const blocked =
-                              (mode === 'send' && route.kind === 'refused') ||
-                              (mode === 'pull' && pullRoute.kind === 'refused');
-                            return (
-                              <button
-                                key={`club-${c.id}`}
-                                onClick={() => !blocked && setTarget({ type: 'club', data: c })}
-                                aria-pressed={on}
-                                aria-disabled={blocked ? true : undefined}
-                                title={blocked ? (clubRefusal ?? undefined) : undefined}
-                                className={
-                                  blocked
-                                    ? 'cbc-member cbc-member--blocked'
-                                    : on
-                                      ? mode === 'pull'
-                                        ? 'cbc-member cbc-member--on uwm-member--pull'
-                                        : 'cbc-member cbc-member--on'
-                                      : 'cbc-member'
-                                }
-                              >
-                                <div className="cbc-member-info">
-                                  <span className="cbc-member-name">{c.name}</span>
-                                  <span className="cbc-member-id">
-                                    {mode === 'pull'
-                                      ? pullRoute.kind === 'promo'
-                                        ? 'Pull From The Club Promo Wallet'
-                                        : pullRoute.kind === 'bank'
-                                          ? 'Pull From The Club Bank'
-                                          : 'Not Available From Here'
-                                      : route.kind === 'promo'
-                                        ? 'Into The Club Promo Wallet'
-                                        : route.kind === 'bank'
-                                          ? 'Into The Club Bank'
-                                          : 'Not Available From Here'}
-                                  </span>
-                                </div>
-                                <span className="uwm-club-tag">
-                                  {(mode === 'send' && route.kind === 'promo') ||
-                                  (mode === 'pull' && pullRoute.kind === 'promo')
-                                    ? 'CLUB PROMO WALLET'
-                                    : 'CLUB BANK'}
-                                </span>
-                              </button>
-                            );
-                          })}
-                          {filtered.roster.slice(0, 200).map((r) => {
-                            const isDisabled = mode === 'pull';
-                            const on =
-                              target?.type === 'member' && target.data.user_id === r.user_id;
-                            return (
-                              <button
-                                key={`${r.user_id}-${r.club_id}`}
-                                onClick={() =>
-                                  !isDisabled && setTarget({ type: 'member', data: r })
-                                }
-                                disabled={isDisabled}
-                                title={
-                                  isDisabled
-                                    ? 'Member Clawbacks Must Be Performed By The Club Owner.'
-                                    : undefined
-                                }
-                                aria-pressed={on}
-                                className={
-                                  isDisabled
-                                    ? 'cbc-member cbc-member--blocked'
-                                    : on
-                                      ? 'cbc-member cbc-member--on'
-                                      : 'cbc-member'
-                                }
-                              >
-                                <div
-                                  className="cbc-member-avatar"
-                                  style={{ backgroundImage: `url(${r.avatar_url || ''})` }}
-                                />
-                                <div className="cbc-member-info">
-                                  <span className="cbc-member-name">
-                                    {r.display_name || r.username || r.user_id.slice(0, 8)}
-                                  </span>
-                                  <span className="cbc-member-id">{r.club_name || ''}</span>
-                                </div>
-                                <span
-                                  className={`cbc-member-role uwm-role uwm-role--${r.member_role || 'member'}`}
+                        <div className="cbc-blurb">
+                          {kind === 'promo'
+                            ? 'Promo Chips. A Club Receives Them In Its Promo Wallet; A Player As Cash; An Agent In Their Promo Float.'
+                            : kind === 'diamonds'
+                              ? 'Diamonds Go To A Member. A Club Has No Diamond Wallet.'
+                              : isPromo
+                                ? 'Chips Drawn From The Promo Wallet. A Player Receives Them As Cash.'
+                                : walletKey === 'rake'
+                                  ? 'Chips Drawn From The Rake Wallet, To A Member Only.'
+                                  : 'Chips Drawn From The Union Bank. A Club Receives Them In Its Club Bank.'}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="cbc-field">
+                      <label className="cbc-label" htmlFor="uwm-search">
+                        {mode === 'pull' ? 'Pull From Club' : 'Recipient'}
+                      </label>
+                      <input
+                        id="uwm-search"
+                        className="cbc-input"
+                        placeholder="Search Clubs Or Members…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        aria-label="Search Clubs Or Members"
+                      />
+                      <div className="cbc-list uwm-list">
+                        {loading ? (
+                          <div className="cbc-empty">Loading Directory…</div>
+                        ) : directoryError ? (
+                          <div className="cbc-empty cbc-empty--bad" role="alert">
+                            {directoryError}
+                            <button
+                              type="button"
+                              className="cbc-more"
+                              onClick={() => setDirectoryReload((value) => value + 1)}
+                            >
+                              Retry Directory
+                            </button>
+                          </div>
+                        ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
+                          <div className="cbc-empty">No Targets Match.</div>
+                        ) : (
+                          <>
+                            {filtered.clubs.map((c) => {
+                              const on = target?.type === 'club' && target.data.id === c.id;
+                              const blocked =
+                                (mode === 'send' && route.kind === 'refused') ||
+                                (mode === 'pull' && pullRoute.kind === 'refused');
+                              return (
+                                <button
+                                  key={`club-${c.id}`}
+                                  onClick={() => !blocked && setTarget({ type: 'club', data: c })}
+                                  aria-pressed={on}
+                                  aria-disabled={blocked ? true : undefined}
+                                  title={blocked ? (clubRefusal ?? undefined) : undefined}
+                                  className={
+                                    blocked
+                                      ? 'cbc-member cbc-member--blocked'
+                                      : on
+                                        ? mode === 'pull'
+                                          ? 'cbc-member cbc-member--on uwm-member--pull'
+                                          : 'cbc-member cbc-member--on'
+                                        : 'cbc-member'
+                                  }
                                 >
-                                  {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </>
+                                  <div className="cbc-member-info">
+                                    <span className="cbc-member-name">{c.name}</span>
+                                    <span className="cbc-member-id">
+                                      {mode === 'pull'
+                                        ? pullRoute.kind === 'promo'
+                                          ? 'Pull From The Club Promo Wallet'
+                                          : pullRoute.kind === 'bank'
+                                            ? 'Pull From The Club Bank'
+                                            : 'Not Available From Here'
+                                        : route.kind === 'promo'
+                                          ? 'Into The Club Promo Wallet'
+                                          : route.kind === 'bank'
+                                            ? 'Into The Club Bank'
+                                            : 'Not Available From Here'}
+                                    </span>
+                                  </div>
+                                  <span className="uwm-club-tag">
+                                    {(mode === 'send' && route.kind === 'promo') ||
+                                    (mode === 'pull' && pullRoute.kind === 'promo')
+                                      ? 'CLUB PROMO WALLET'
+                                      : 'CLUB BANK'}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                            {filtered.roster.slice(0, 200).map((r) => {
+                              const isDisabled = mode === 'pull';
+                              const on =
+                                target?.type === 'member' && target.data.user_id === r.user_id;
+                              return (
+                                <button
+                                  key={`${r.user_id}-${r.club_id}`}
+                                  onClick={() =>
+                                    !isDisabled && setTarget({ type: 'member', data: r })
+                                  }
+                                  disabled={isDisabled}
+                                  title={
+                                    isDisabled
+                                      ? 'Member Clawbacks Must Be Performed By The Club Owner.'
+                                      : undefined
+                                  }
+                                  aria-pressed={on}
+                                  className={
+                                    isDisabled
+                                      ? 'cbc-member cbc-member--blocked'
+                                      : on
+                                        ? 'cbc-member cbc-member--on'
+                                        : 'cbc-member'
+                                  }
+                                >
+                                  <div
+                                    className="cbc-member-avatar"
+                                    style={{ backgroundImage: `url(${r.avatar_url || ''})` }}
+                                  />
+                                  <div className="cbc-member-info">
+                                    <span className="cbc-member-name">
+                                      {r.display_name || r.username || r.user_id.slice(0, 8)}
+                                    </span>
+                                    <span className="cbc-member-id">{r.club_name || ''}</span>
+                                  </div>
+                                  <span
+                                    className={`cbc-member-role uwm-role uwm-role--${r.member_role || 'member'}`}
+                                  >
+                                    {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
+                      </div>
+                      {clubRefusal && filtered.clubs.length > 0 && (
+                        <div className="cbc-blurb">{clubRefusal}</div>
                       )}
                     </div>
-                    {clubRefusal && filtered.clubs.length > 0 && (
-                      <div className="cbc-blurb">{clubRefusal}</div>
-                    )}
-                  </div>
 
-                  <div className="cbc-field">
-                    <label className="cbc-label" htmlFor="uwm-amount">
-                      Amount
-                    </label>
-                    <div className="uwm-amount-row">
-                      <input
-                        id="uwm-amount"
-                        className="cbc-input"
-                        type="number"
-                        inputMode="decimal"
-                        min="1"
-                        placeholder="Amount"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        aria-label={mode === 'pull' ? 'Chips To Pull Back' : 'Amount To Send'}
-                      />
-                      <button
-                        className={
-                          mode === 'pull' ? 'cbc-confirm uwm-confirm--pull' : 'cbc-confirm'
-                        }
-                        disabled={sendDisabled}
-                        onClick={() => void send()}
-                      >
-                        {busy
-                          ? mode === 'send'
-                            ? 'Sending...'
-                            : 'Pulling...'
-                          : !target
-                            ? 'Pick A Member Or Club'
-                            : mode === 'send'
-                              ? `Send To ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
-                              : `Pull From ${target.type === 'club' ? target.data.name : 'Target'}`}
-                      </button>
-                    </div>
-                    {Number(amount) > 0 && target && (
-                      <div className="cbc-blurb">
-                        {mode === 'pull'
-                          ? `Pulling ${money(Number(amount))}. This Wallet Would Hold ${money(liveBalance + Number(amount))} Afterwards.`
-                          : kind === 'diamonds'
-                            ? `Sending ${fmt(Number(amount))} Diamonds.`
-                            : `Sending ${money(Number(amount))}. This Wallet Would Hold ${money(liveBalance - Number(amount))} Afterwards.`}
+                    <div className="cbc-field">
+                      <label className="cbc-label" htmlFor="uwm-amount">
+                        Amount
+                      </label>
+                      <div className="uwm-amount-row">
+                        <input
+                          id="uwm-amount"
+                          className="cbc-input"
+                          type="number"
+                          inputMode="decimal"
+                          min="1"
+                          placeholder="Amount"
+                          value={amount}
+                          onChange={(e) => setAmount(e.target.value)}
+                          aria-label={mode === 'pull' ? 'Chips To Pull Back' : 'Amount To Send'}
+                        />
                       </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {mode === 'ledger' && (
-                <>
-                  {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
-                  {!ledgerError && ledgerTotals && (
-                    <div className="cbc-totals">
-                      <div>
-                        <span>Received</span>
-                        <strong className="cbc-in">{money(ledgerTotals.in)}</strong>
-                      </div>
-                      <div>
-                        <span>Sent Out</span>
-                        <strong className="cbc-out">{money(ledgerTotals.out)}</strong>
-                      </div>
-                      <div>
-                        <span>Net</span>
-                        <strong>{money(ledgerTotals.net)}</strong>
-                      </div>
-                    </div>
-                  )}
-                  {!ledgerError && (
-                    <div className="cbc-ledger-head">
-                      <span>
-                        {ledgerTotal.toLocaleString('en-US')} Entries · {walletLabel}
-                      </span>
-                    </div>
-                  )}
-                  {!ledgerError &&
-                    ledger.map((r) => {
-                      const inbound = r.direction === 'in';
-                      const other = r.counterparty_name || null;
-                      return (
-                        <div key={r.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
-                          <div className="cbc-tx-top">
-                            <span className="cbc-tx-type">{titleCase(r.category)}</span>
-                            <span
-                              className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
-                            >
-                              {`${inbound ? '+' : '-'}${money(r.amount)}`}
-                            </span>
-                          </div>
-                          <div className="cbc-tx-mid">
-                            <span>
-                              {other ? (inbound ? `From ${other}` : `To ${other}`) : walletLabel}
-                            </span>
-                            <span className="cbc-tx-when">{when(r.created_at)}</span>
-                          </div>
-                          <div className="cbc-tx-foot">
-                            {r.notes && <span>{r.notes}</span>}
-                            {r.actor_name && <span>By {r.actor_name}</span>}
-                            {r.balance_after != null && (
-                              <span>Wallet After {money(Number(r.balance_after))}</span>
-                            )}
-                          </div>
+                      {Number(amount) > 0 && target && (
+                        <div className="cbc-blurb">
+                          {mode === 'pull'
+                            ? `Pulling ${money(Number(amount))}. This Wallet Would Hold ${money(liveBalance + Number(amount))} Afterwards.`
+                            : kind === 'diamonds'
+                              ? `Sending ${fmt(Number(amount))} Diamonds.`
+                              : `Sending ${money(Number(amount))}. This Wallet Would Hold ${money(liveBalance - Number(amount))} Afterwards.`}
                         </div>
-                      );
-                    })}
-                  {!ledgerError && !ledgerLoading && ledger.length === 0 && (
-                    <div className="cbc-empty">
-                      Nothing Has Moved Through This Wallet Yet. Every Send, Sweep And Settlement
-                      Writes A Row Here.
+                      )}
                     </div>
-                  )}
-                  {ledgerLoading && <div className="cbc-empty">Loading Ledger…</div>}
-                  {!ledgerError && !ledgerLoading && ledger.length < ledgerTotal && (
-                    <button className="cbc-more" onClick={() => void loadLedger(ledger.length)}>
-                      Load More
-                    </button>
-                  )}
-                </>
-              )}
-            </>
-          )}
-          {readOnly && (
-            <div>
-              <div className="cbc-label" style={{ marginBottom: 6 }}>
-                RESERVE LEDGER
-              </div>
-              {reserveLedger.length === 0 ? (
-                <div className="cbc-empty">
-                  Nothing Has Moved Through This Wallet Yet. Seeding A Pool Or Funding The Reserve
-                  Writes A Row Here.
-                </div>
-              ) : (
-                reserveLedger.map((r) => {
-                  const inbound = r.direction === 'credit';
-                  return (
-                    <div key={r.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
-                      <div className="cbc-tx-top">
-                        <span className="cbc-tx-type">{r.notes || titleCase(r.tx_type)}</span>
-                        <span
-                          className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
-                        >
-                          {`${inbound ? '+' : '-'}${money(r.amount)}`}
+                  </>
+                )}
+
+                {mode === 'ledger' && (
+                  <>
+                    {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
+                    {!ledgerError && ledgerTotals && (
+                      <div className="cbc-totals">
+                        <div>
+                          <span>Received</span>
+                          <strong className="cbc-in">{money(ledgerTotals.in)}</strong>
+                        </div>
+                        <div>
+                          <span>Sent Out</span>
+                          <strong className="cbc-out">{money(ledgerTotals.out)}</strong>
+                        </div>
+                        <div>
+                          <span>Net</span>
+                          <strong>{money(ledgerTotals.net)}</strong>
+                        </div>
+                      </div>
+                    )}
+                    {!ledgerError && (
+                      <div className="cbc-ledger-head">
+                        <span>
+                          {ledgerTotal.toLocaleString('en-US')} Entries · {walletLabel}
                         </span>
                       </div>
-                      <div className="cbc-tx-mid">
-                        <span className="cbc-tx-when">{when(r.created_at)}</span>
-                        {r.balance_after != null && <span>Balance {money(r.balance_after)}</span>}
+                    )}
+                    {!ledgerError &&
+                      ledger.map((r) => {
+                        const inbound = r.direction === 'in';
+                        const other = r.counterparty_name || null;
+                        return (
+                          <div key={r.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                            <div className="cbc-tx-top">
+                              <span className="cbc-tx-type">{titleCase(r.category)}</span>
+                              <span
+                                className={
+                                  inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'
+                                }
+                              >
+                                {`${inbound ? '+' : '-'}${money(r.amount)}`}
+                              </span>
+                            </div>
+                            <div className="cbc-tx-mid">
+                              <span>
+                                {other ? (inbound ? `From ${other}` : `To ${other}`) : walletLabel}
+                              </span>
+                              <span className="cbc-tx-when">{when(r.created_at)}</span>
+                            </div>
+                            <div className="cbc-tx-foot">
+                              {r.notes && <span>{r.notes}</span>}
+                              {r.actor_name && <span>By {r.actor_name}</span>}
+                              {r.balance_after != null && (
+                                <span>Wallet After {money(Number(r.balance_after))}</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    {!ledgerError && !ledgerLoading && ledger.length === 0 && (
+                      <div className="cbc-empty">
+                        Nothing Has Moved Through This Wallet Yet. Every Send, Sweep And Settlement
+                        Writes A Row Here.
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
+                    )}
+                    {ledgerLoading && <div className="cbc-empty">Loading Ledger…</div>}
+                    {!ledgerError && !ledgerLoading && ledger.length < ledgerTotal && (
+                      <button className="cbc-more" onClick={() => void loadLedger(ledger.length)}>
+                        Load More
+                      </button>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {readOnly && (
+              <div>
+                <div className="cbc-label" style={{ marginBottom: 6 }}>
+                  RESERVE LEDGER
+                </div>
+                {reserveLedger.length === 0 ? (
+                  <div className="cbc-empty">
+                    Nothing Has Moved Through This Wallet Yet. Seeding A Pool Or Funding The Reserve
+                    Writes A Row Here.
+                  </div>
+                ) : (
+                  reserveLedger.map((r) => {
+                    const inbound = r.direction === 'credit';
+                    return (
+                      <div key={r.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                        <div className="cbc-tx-top">
+                          <span className="cbc-tx-type">{r.notes || titleCase(r.tx_type)}</span>
+                          <span
+                            className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
+                          >
+                            {`${inbound ? '+' : '-'}${money(r.amount)}`}
+                          </span>
+                        </div>
+                        <div className="cbc-tx-mid">
+                          <span className="cbc-tx-when">{when(r.created_at)}</span>
+                          {r.balance_after != null && <span>Balance {money(r.balance_after)}</span>}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
-          {notice && (
-            <div
-              role={notice.ok ? 'status' : 'alert'}
-              className={notice.ok ? 'uwm-notice uwm-notice--ok' : 'uwm-notice uwm-notice--bad'}
-            >
-              {notice.text}
-            </div>
-          )}
-        </div>
+            {notice && (
+              <div
+                role={notice.ok ? 'status' : 'alert'}
+                className={notice.ok ? 'uwm-notice uwm-notice--ok' : 'uwm-notice uwm-notice--bad'}
+              >
+                {notice.text}
+              </div>
+            )}
+          </div>
+        </CashierConsoleSurface>
       </div>
     </div>
   );

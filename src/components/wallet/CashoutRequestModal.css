@@ -484,3 +484,144 @@
     font-size: 8px;
   }
 }
+
+/* #ClubArenaConsole: one painted master, with live request data on the glass. */
+.cashout-modal:has(> .cashout-console) {
+  width: min(100%, 1000px);
+  max-width: 1000px;
+  max-height: calc(100dvh - 12px);
+  padding: 0;
+  overflow-y: auto;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.cashout-console :where(div, section, button, input, textarea)::before,
+.cashout-console :where(div, section, button, input, textarea)::after {
+  content: none;
+}
+
+.cashout-console :where(div, section, button, input, textarea) {
+  border-radius: 0;
+}
+
+.cashout-console :where(button:not(.sc-plate)) {
+  min-height: 44px;
+  padding: 1.2cqw 1.8cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #45adff;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
+}
+
+.cashout-console input,
+.cashout-console textarea {
+  appearance: textfield;
+  width: 100%;
+  min-height: 44px;
+  padding: 1.6cqw 0;
+  border: 0 !important;
+  border-block-end: 1px solid #526071;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  color: #f4f7fb;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font-size: max(16px, 3.5cqw);
+}
+
+.cashout-console .amount-input-wrapper,
+.cashout-console .amount-input-wrapper:focus-within {
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cashout-console input::-webkit-inner-spin-button,
+.cashout-console input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.cashout-console .modal-body,
+.cashout-console .cashout-form,
+.cashout-console .pending-list,
+.cashout-console .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.cashout-console .balance-display,
+.cashout-console .pending-item,
+.cashout-console .pending-info,
+.cashout-console .quick-amounts,
+.cashout-console .cashout-step-tracker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5cqw;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.cashout-console .label,
+.cashout-console label,
+.cashout-console .pending-time,
+.cashout-console .step-label {
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cashout-console .value,
+.cashout-console .pending-amount {
+  color: #ffd700;
+  font-size: 4cqw;
+  font-weight: 800;
+}
+
+.cashout-console .info-note,
+.cashout-console .pending-note,
+.cashout-console .pending-loading {
+  color: #9aa5b3;
+  font-size: 2.9cqw;
+  line-height: 1.45;
+}
+
+.cashout-console .success-message {
+  color: #c8ffd2;
+}
+
+.cashout-console .error-message {
+  color: #ff5b6e;
+}
+
+.cashout-console .step-dot,
+.cashout-console .step-line,
+.cashout-console .chip-label {
+  display: none;
+}

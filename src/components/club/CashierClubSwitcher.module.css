@@ -27,18 +27,18 @@
   gap: 8px;
   min-width: 0;
   max-width: 260px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(111, 220, 255, 0.25);
-  background: rgba(19, 27, 40, 0.6);
+  min-height: 44px;
+  padding: 6px 0;
+  border: 0;
+  border-block-end: 1px solid #526071;
+  border-radius: 0;
+  background: transparent;
   color: #e8eaf0;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
+  transition: none;
 }
 
 .trigger:focus-visible {
@@ -57,16 +57,18 @@
   min-width: 0;
 }
 
-.chevron {
-  font-size: 10px;
-  color: #8892a4;
+.choose {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #45adff;
   flex-shrink: 0;
 }
 
 .logo {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 0;
   object-fit: cover;
   flex-shrink: 0;
 }
@@ -74,8 +76,8 @@
 .logoFallback {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
-  background: rgba(111, 220, 255, 0.15);
+  border-radius: 0;
+  background: transparent;
   color: #6fdcff;
   font-size: 10px;
   font-weight: 700;
@@ -101,10 +103,11 @@
   max-width: 300px;
   max-height: 280px;
   overflow-y: auto;
-  background: linear-gradient(160deg, rgba(26, 36, 54, 0.98) 0%, rgba(13, 17, 32, 0.98) 100%);
-  border: 1px solid rgba(111, 220, 255, 0.25);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  background: rgb(0 0 0 / 96%);
+  border: 0;
+  border-block: 1px solid #526071;
+  border-radius: 0;
+  box-shadow: none;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -132,7 +135,7 @@
   font-weight: 600;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   min-width: 0;
 }
@@ -144,7 +147,8 @@
 
 .itemActive {
   color: #6fdcff;
-  background: rgba(111, 220, 255, 0.08);
+  background: transparent;
+  border-inline-start: 2px solid #45adff;
 }
 
 .itemText {

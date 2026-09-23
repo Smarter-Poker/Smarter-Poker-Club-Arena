@@ -169,6 +169,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let bankDisposition = null;
   let unstartedReplacements = 0;
   let unstartedDepartures = 0;
+  // Observability only: which tables held an F06 permit that no process could
+  // ever resolve, and the phase each permit was in when the rows proved the
+  // felt quiet. Never read by a decision.
+  let unresolvableCustody = null;
   const refuse = (code) => {
     if (reason === null) reason = code;
     throw new Error('legacy_checkpoint_refused');
@@ -282,6 +286,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ...(refusalDetail === null ? {} : refusalDetail),
     ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
     ...(bankDisposition === null ? {} : { bankDisposition }),
+    ...(unresolvableCustody === null ? {} : { unresolvableCustody }),
   });
 
   try {
@@ -354,6 +359,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // and `proveAbandonedBoundaries` refuses unless the database says the felt
     // is quiet for each one, before any original is retired.
     const deferredAbandonedBoundaries = new Map();
+    // Tables whose ONLY unfinished item is an F06 permit held by an engine that
+    // is stopped and terminal - an engine that will never run again, so no
+    // process can ever resolve that permit. Same discipline as the boundary
+    // deferral above: `captureEngine` is synchronous and may not read a row, so
+    // it DEFERS them, and `proveUnresolvableCustody` refuses unless the
+    // database says the felt is quiet for each one, before anything is written.
+    const deferredUnresolvableCustody = new Map();
+    // The subset of the above that the rows actually answered for. A deferral
+    // is not a proof, and only a proof may be read by the readiness decision.
+    const provenUnresolvableCustody = new Set();
     const retainedManagers = [];
     let checkRetained = () => {};
     const engines = new Set();
@@ -1611,6 +1626,95 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       return retained;
     }
 
+    // Prove, PER TABLE and from rows, that every deferred unresolvable custody
+    // is a dead process's permit rather than a hand in the air. Nothing is
+    // written until this has answered for all of them.
+    //
+    // It is the SAME predicate, the SAME three outcomes and the SAME refusal
+    // discipline as the boundary proof below it, deliberately and for the same
+    // reason: a second, differently-tuned definition of "a hand is in the air"
+    // is how a gate ends up disagreeing with itself. Zero fresh incomplete
+    // snapshot rows is QUIET. Any fresh row is A HAND IN THE AIR. An error, a
+    // non-array body or a page that filled is COULD NOT TELL, and it refuses -
+    // never folded into "no rows" (CLAUDE.md 10.86 rules 1-2). There is no
+    // flag, option or argument that turns this refusal into permission.
+    async function proveUnresolvableCustody(checkAll) {
+      if (deferredUnresolvableCustody.size === 0) return;
+      const ids = [...deferredUnresolvableCustody.keys()].sort();
+      require(ids.length <= maxTables, 'f06_custody_unresolvable_unproven');
+      const since = new Date(Date.now() - inflightWindowMs).toISOString();
+      for (let offset = 0; offset < ids.length; offset += readPageSize) {
+        const page = ids.slice(offset, offset + readPageSize);
+        checkAll();
+        const { data, error } = await modules.client.supabase
+          .from('hand_state_snapshots')
+          .select('table_id,hand_number,stage,updated_at')
+          .in('table_id', page)
+          .eq('is_complete', false)
+          .gte('updated_at', since)
+          .limit(page.length + 1);
+        checkAll();
+        // `error` first, every time: `(await res).data` on a failed read is not
+        // an empty result, and `undefined || []` reads as good news.
+        require(!error && Array.isArray(data) && data.length === 0,
+          'f06_custody_unresolvable_unproven');
+        for (const id of page) provenUnresolvableCustody.add(id);
+      }
+      checkAll();
+      unresolvableCustody = `tables=${ids.length} ${ids
+        .map((id) => `${id}:${deferredUnresolvableCustody.get(id)}`)
+        .join(' ')}`.slice(0, 512);
+    }
+
+    /**
+     * Is the restart certificate shut ONLY by permits no process can resolve?
+     *
+     * The engine's own `readyForRestart()` is the authority and is asked first;
+     * this is consulted only when it says no. At that exact point the ONLY
+     * thing that can be keeping it shut is the unparked count: `checkMaintenance`
+     * has already pinned `phase === 'counting_down'` and `durableConfirmed`, and
+     * `insufficient_reserve` has already required `remainingMs >= reserveMs`,
+     * which is well past the engine's own minimum. That is the same argument
+     * `maintenance_certificate` in engine-release-transaction.sh makes, and this
+     * uses the same ALLOW-LIST, never a deny-list: a reason string this guard
+     * does not recognise keeps the gate shut, as do `cards_in_air`, every bank
+     * durability class, and anything a future engine invents.
+     *
+     * Three witnesses, all required. The engine's own reason counts must name
+     * nothing but an unresolved F06 preparation; every table this guard can see
+     * holding such a preparation must be one the rows PROVED quiet above; and
+     * the engine must not be counting more blockers than this guard could
+     * identify, which is what the count equality says. A blocker the guard
+     * cannot put a table id to is COULD NOT TELL, and it refuses.
+     */
+    const restartHeldOnlyByProvenUnresolvableCustody = () => {
+      try {
+        const reasons = maintenance.unparkedReasonCounts;
+        if (!record(reasons)) return false;
+        const names = Object.keys(reasons);
+        if (names.length === 0) return false;
+        let counted = 0;
+        for (const name of names) {
+          if (name !== 'f06_preparation_unresolved' && name !== 'f06_preparation_stuck')
+            return false;
+          const value = reasons[name];
+          if (!Number.isSafeInteger(value) || value < 0) return false;
+          counted += value;
+        }
+        if (counted === 0) return false;
+        const blockers = [];
+        for (const [tableId, engine] of tableMap) {
+          if (engine?.hasUnresolvedF06Preparation?.() === true) blockers.push(tableId);
+        }
+        return (
+          blockers.length === counted &&
+          blockers.every((tableId) => provenUnresolvableCustody.has(tableId))
+        );
+      } catch {
+        return false;
+      }
+    };
+
     // Prove, PER TABLE and from rows, that every deferred boundary generation
     // is abandoned rather than in flight. Nothing is retired and no custody RPC
     // is sent until this has answered for all of them.
@@ -2000,6 +2104,62 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           .slice(0, 512),
       };
     };
+    /* ═══ A PERMIT ON AN ENGINE THAT WILL NEVER RUN AGAIN (2026-09-23) ═══
+
+       An F06 permit is PROCESS-LOCAL. It is resolved by the engine that holds
+       it - settlement finishes an `attempted` one, `cancelPreparedHand` or
+       `drainNeverStarted` finish the others - and by nothing else. An engine
+       that is STOPPED and TERMINAL has run its teardown and will never deal
+       again, so the permit it still holds cannot be resolved by waiting. The
+       only thing that clears it is replacing the process.
+
+       Until today this capture refused ANY retained permit, on any engine,
+       with no bound. That is the same fail-closed shape, on the same shared
+       resource, that `MaintenanceBreak` bounded on 2026-09-21 after one such
+       permit held the restart certificate shut for seventy consecutive breaks
+       (`F06_UNRESOLVED_GATE_MS`, and the comment above it), and that
+       `engine-release-transaction.sh` bounded for the health gate in #5003.
+       Here it held the checkpoint shut instead: the refusal prevented the
+       replacement that is the permit's only resolution, so the fix for the
+       wedge sat behind the wedge. Measured on run 35897820986:
+       `captureEngine.f06_custody_not_drained`, `retryAllowed:false`,
+       `stopped=true terminal=true banks=0 permitPhase=attempted`.
+
+       THIS IS NOT A RELAXATION OF "A HAND MIGHT BE IN THE AIR". A hand in the
+       air still refuses, from rows, in `proveUnresolvableCustody`. What is
+       bounded is only the case where waiting cannot help.
+
+       The conjunction here is deliberately NARROW and deliberately does NOT
+       repeat the conditions every captured engine must satisfy a few lines
+       below anyway - `stopped_engine_not_released` (terminal teardown joined,
+       no dealing loop, no read continuations, process ownership released, no
+       hand controller), `engine_work_not_drained` (no settlement, no post-hand
+       tasks, no move operations, no pending or failed boundary) and
+       `native_accounting_not_drained` (the native debit registry drained and
+       unconfirmed false). A table that fails one of those still refuses the
+       whole checkpoint, exactly as before; deferring it here changes nothing
+       about that. What IS asserted here is what those checks do not cover: a
+       permit is present, no recovery is in flight that could still resolve it,
+       the engine is stopped and terminal, and it holds no live time bank. */
+    const deadEngineCustody = (tableId, engine) => {
+      try {
+        if (
+          engine.f06CurrentPermit === null ||
+          engine.f06RecoveryInFlight !== false ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.handController !== null ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0
+        )
+          return false;
+        deferredUnresolvableCustody.set(tableId, permitPhaseOf(engine));
+        return true;
+      } catch {
+        // Unreadable is never "dead". It keeps the original refusal.
+        return false;
+      }
+    };
     const captureEngine = (tableId, engine) => {
       // The same condition, the same code and the same order as the
       // process-wide `require` it shadows at every call below; this one only
@@ -2021,8 +2181,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           engine.timeBankAccountingUnconfirmed === false &&
           Number.isSafeInteger(engine.maintenanceCheckpointGeneration) &&
           engine.maintenanceCheckpointGeneration >= 0, 'native_accounting_not_drained');
-        require(engine.f06CurrentPermit === null &&
-          engine.f06RecoveryInFlight === false, 'f06_custody_not_drained');
+        require(engine.f06RecoveryInFlight === false &&
+          (engine.f06CurrentPermit === null ||
+            deadEngineCustody(tableId, engine)), 'f06_custody_not_drained');
       }
       const stopped = engine.running === false;
       const methodNames = [
@@ -2620,7 +2781,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ), 'previous_native_work_unconfirmed');
     checkAll();
     // Order is load-bearing: the rows prove that the residue and the disposed
-    // banks hold nothing BEFORE any presence or bank row is written.
+    // banks hold nothing, and that no deferred unresolvable permit has a hand
+    // in the air, BEFORE any presence or bank row is written.
+    await proveUnresolvableCustody(checkAll);
     if (retained8825) await proveBanksHeldNothing(checkAll);
     bankCount = captures.reduce((sum, capture) => sum + Object.keys(capture.banks).length, 0);
     uninitializedSeats = captures.reduce((sum, capture) => sum + capture.uninitialized, 0);
@@ -2707,8 +2870,19 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     }
     verifyFiles();
     checkAll();
-    require(captures.every(({ engine }) => engine.isMaintenanceStateDurable() === true) &&
-      maintenance.readyForRestart() === true, 'native_readiness_refused');
+    require(captures.every(({ engine }) =>
+      engine.isMaintenanceStateDurable() === true), 'native_readiness_refused');
+    /* THE SAME TRAP, ONE LEVEL UP (CLAUDE.md 10.86 rule 4). The engine's own
+       `readyForRestart()` is asked first and is still the authority. On a
+       predecessor whose `unparkedTables()` has no bound - 8825af51 is one, and
+       it is what production runs - a single unresolved preparation holds that
+       boolean false for ever, so admitting the permit in `captureEngine` and
+       then refusing on the same fact here would have moved the wedge rather
+       than removed it. The fallback below is the identical three-witness rule
+       the release transaction already applies to the same boolean, and it can
+       only be satisfied by tables the rows proved quiet above. */
+    require(maintenance.readyForRestart() === true ||
+      restartHeldOnlyByProvenUnresolvableCustody(), 'native_readiness_refused');
     const remaining = checkAll();
     stage = 'complete';
     return result(true, remaining);

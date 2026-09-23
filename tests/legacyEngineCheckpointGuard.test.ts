@@ -72,7 +72,13 @@ function fixture(count = 1, predecessor = release) {
   let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
   const moveReads: { ids: string[] }[] = [];
   let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
+  // Opt-in: model a predecessor whose `unparkedTables()` has no bound, so one
+  // unresolved F06 preparation holds `readyForRestart()` false for ever.
+  // 8825af51 is exactly that engine and it is what production runs.
+  let gateOnPreparations = false;
+  let gateReasons: Record<string, number> | null = null;
   class Maintenance {
+    unparkedReasonCounts: Record<string, number> = {};
     phase = 'counting_down';
     announcedAt = Date.now() - 120000;
     breakStartedAt = this.announcedAt + 120000;
@@ -99,6 +105,14 @@ function fixture(count = 1, predecessor = release) {
       return remaining;
     }
     readyForRestart() {
+      if (gateOnPreparations) {
+        const blockers = [...server.tableEngines.values()].filter((e: any) =>
+          e.hasUnresolvedF06Preparation()
+        );
+        this.unparkedReasonCounts =
+          gateReasons ?? (blockers.length ? { f06_preparation_unresolved: blockers.length } : {});
+        if (blockers.length > 0 || gateReasons) return false;
+      }
       return [...server.tableEngines.values()].every(
         (e) =>
           e.isMaintenanceStateDurable() && (predecessor !== checkpoint8825 || !e.f06CurrentPermit)
@@ -182,6 +196,12 @@ function fixture(count = 1, predecessor = release) {
     }
     hasReleasedProcessOwnership() {
       return !this.running && this.terminal;
+    }
+    // ServerTableEngineBase.hasUnresolvedF06Preparation, verbatim: `attempted`
+    // is deliberately absent from it on every profile.
+    hasUnresolvedF06Preparation() {
+      const phase = (this.f06CurrentPermit as any)?.recoveryState?.();
+      return phase === 'unknown' || phase === 'reserved' || phase === 'terminated';
     }
     async persistPresenceForRestart(when: string) {
       const previous = this.presenceSave;
@@ -406,6 +426,10 @@ function fixture(count = 1, predecessor = release) {
     onMoves: (hook: typeof onMoves) => {
       onMoves = hook;
     },
+    holdGate: (reasons?: Record<string, number>) => {
+      gateOnPreparations = true;
+      gateReasons = reasons ?? null;
+    },
     remaining: (value: number) => {
       remaining = value;
     },
@@ -562,16 +586,146 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     f.first.seatedPlayers = [];
   };
 
-  it('does not drop retained758 F06 custody from an otherwise empty stopped engine', async () => {
+  /* ═══ A PERMIT ON AN ENGINE THAT WILL NEVER RUN AGAIN (2026-09-23) ═══
+
+     This case used to refuse outright and for ever, and that refusal is what
+     held every engine release on the platform shut: an F06 permit is resolved
+     by the process that holds it and by nothing else, so a permit on a STOPPED,
+     TERMINAL engine can only be cleared by replacing the process - which is
+     exactly what the refusal prevented. Run 35897820986 is the measurement
+     (`captureEngine.f06_custody_not_drained`, `retryAllowed:false`,
+     `stopped=true terminal=true banks=0 permitPhase=attempted`).
+
+     It is now DEFERRED and proved from rows, by the same predicate, the same
+     three outcomes and the same refusal discipline the boundary deferral
+     already uses. A hand in the air still refuses. "Could not tell" still
+     refuses. A permit on a LIVE engine still refuses. Only the case where
+     waiting cannot help is bounded, and it is NAMED when it is stepped over. */
+  it('a retained permit on a stopped, terminal engine is proved from rows and named', async () => {
     const f = fixture(2, checkpoint758);
     stopEmpty(f);
-    f.first.f06CurrentPermit = {};
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:attempted`,
+    });
+    // It asked the database, per table, with the one predicate this file has.
+    expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
+    // And it survives the publisher's carrier, like every other observation.
+    expect(result.unresolvableCustody).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(result.unresolvableCustody.length).toBeLessThanOrEqual(512);
+  });
+
+  it('a fresh incomplete snapshot for that table is a hand in the air, and refuses', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    f.onSnapshots((ids) => ({
+      data: [
+        {
+          table_id: ids[0],
+          hand_number: 9,
+          stage: 'flop',
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a read the guard could not make is not an empty answer, and refuses', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    f.onSnapshots(() => ({ data: null, error: { message: 'statement timeout' } }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a stopped engine that still holds a live bank keeps the original refusal', async () => {
+    const f = fixture(2, checkpoint758);
+    Object.assign(f.first, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+      maintenancePaused: false,
+      holdBeforeNextHand: false,
+      handForHandResolve: null,
+    });
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
     expect(await f.run()).toMatchObject({
       ok: false,
       attemptedTables: 0,
       reason: 'f06_custody_not_drained',
       paidAccountingQualification: 'native_pending_registry_unqualified',
     });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  /* THE SAME TRAP, ONE LEVEL UP (CLAUDE.md 10.86 rule 4). Admitting the permit
+     in the capture and then refusing on the same fact at the final readiness
+     check would have moved the wedge rather than removed it: on a predecessor
+     whose `unparkedTables()` has no bound - 8825af51, which is what production
+     runs - one unresolved preparation holds `readyForRestart()` false for ever.
+     The fallback is the identical three-witness rule the release transaction
+     already applies to the same boolean, and nothing else may satisfy it. */
+  it('readiness accepts a gate held shut only by permits the rows proved quiet', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    f.holdGate();
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:reserved`,
+    });
+  });
+
+  it('readiness refuses when the engine names any reason outside the allow-list', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    // An ALLOW-list, never a deny-list: cards in the air, every bank-durability
+    // class and anything a future engine invents all keep the gate shut. The
+    // count here MATCHES the one preparation this guard can identify, so the
+    // allow-list is the only thing that can refuse it.
+    f.holdGate({ cards_in_air: 1 });
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'native_readiness_refused' });
+  });
+
+  it('readiness refuses a blocker the guard cannot put a proved table id to', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    // The engine counts two; this guard can identify one. The second is COULD
+    // NOT TELL, and it refuses rather than assuming it is the same kind.
+    f.holdGate({ f06_preparation_unresolved: 2 });
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'native_readiness_refused' });
+  });
+
+  it('a retained permit on a LIVE engine still refuses, and no row is read for it', async () => {
+    const f = fixture(2, checkpoint758);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      attemptedTables: 0,
+      reason: 'f06_custody_not_drained',
+      failedCheck: 'captureEngine.f06_custody_not_drained',
+      failedTable: f.first.tableId,
+    });
+    expect(f.snapshotReads).toEqual([]);
     expect(f.calls).toEqual([]);
   });
 
@@ -590,7 +744,11 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
      every pin below keeps the code, the order and the empty call list. */
   const refusedPermit = async (permit: unknown) => {
     const f = fixture(2, checkpoint758);
-    stopEmpty(f);
+    // A LIVE engine since 2026-09-23: a permit on a stopped, terminal one is
+    // now deferred and proved from rows (see the block above), so the phase
+    // observability this law was written for is pinned where the refusal that
+    // needs it still happens. The refusal, its code, its order and the empty
+    // call list are unchanged.
     f.first.f06CurrentPermit = permit as object;
     const result: any = await f.run();
     expect(result).toMatchObject({
@@ -626,7 +784,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
       expect.arrayContaining(['f06=true/false', 'permitPhase=unreadable'])
     );
     // One token pays for the throw; the rest of the record still arrives.
-    expect(terms(result)).toEqual(expect.arrayContaining(['stopped=true', 'fleet=2']));
+    expect(terms(result)).toEqual(expect.arrayContaining(['stopped=false', 'fleet=2']));
     carried(result);
   });
 

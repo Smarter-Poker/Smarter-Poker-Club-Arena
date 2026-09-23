@@ -25,17 +25,27 @@ import { WheelCabinet, WheelEntry, WheelPrizeGallery } from '../components/wheel
 import { validSpinAmount } from '../utils/bonusGameBudget';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import DiamondWheelService, {
+  CARD_NOT_PICKED,
   WheelReceiptUnverified,
+  clearWheelPendingCard,
+  readWheelPendingCard,
+  saveWheelPendingCard,
   type WheelWelcomeState,
   type WheelDailyBonusState,
   type WheelSegment,
   type WheelSpinResult,
   type WheelState,
   type WheelBonusAward,
+  type WheelCardAward,
+  type WheelCardPick,
+  type WheelPendingCard,
 } from '../services/DiamondWheelService';
+import { WheelCardTable, type WheelCardSlot } from '../components/wheel/WheelCardTable';
 import {
   randomClientSeed,
+  verifyWheelCardPick,
   verifyWheelReceiptFairness,
+  type WheelCardVerdict,
   type WheelFairnessVerdict,
 } from '../utils/wheelFairness';
 import { compactChips } from '../utils/format';
@@ -234,6 +244,27 @@ export default function DiamondWheelPage() {
   const [history, setHistory] = useState<WheelSpinResult[]>([]);
   const [verdict, setVerdict] = useState<WheelFairnessVerdict | null>(null);
   const [verifying, setVerifying] = useState(false);
+  /**
+   * THE THREE CARDS (owner ruling 2026-09-21, R15). A Diamonds outcome pays
+   * nothing at the spin: it seals three cards worth half, double and triple
+   * the diamonds risked and leaves a PENDING award that only a pick can
+   * settle. `cardAward` is the award this page has open, `cardPick` the reveal
+   * the server answered with, and `cardSending` the pick this browser saved
+   * before sending, which is what goes again when an answer never arrives.
+   */
+  const [cardAward, setCardAward] = useState<WheelCardAward | null>(null);
+  const [cardPick, setCardPick] = useState<WheelCardPick | null>(null);
+  const [cardSending, setCardSending] = useState<WheelPendingCard | null>(null);
+  const [cardPriorSend, setCardPriorSend] = useState(false);
+  const [cardFailures, setCardFailures] = useState(0);
+  const [cardVerdict, setCardVerdict] = useState<WheelCardVerdict | null>(null);
+  const [cardVerifying, setCardVerifying] = useState(false);
+  const cardBusyRef = useRef(false);
+  /* Sent as often as a spin is, and then held: the same bytes will not verify
+     on a later send, so the page stops, lets the player go, and sends the
+     saved pick again the next time the wheel opens. The award stays pending at
+     the server the whole time, so nothing is lost by waiting. */
+  const cardHeld = cardPriorSend && cardFailures >= RECEIPT_TRIES;
   const [waitSeconds, setWaitSeconds] = useState(0);
   const busyRef = useRef(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -389,6 +420,13 @@ export default function DiamondWheelPage() {
         setPending(null);
         setSpinning(false);
         setLastResult(null);
+        setCardAward(null);
+        setCardPick(null);
+        setCardVerdict(null);
+        setCardSending(null);
+        setCardPriorSend(false);
+        setCardFailures(0);
+        cardBusyRef.current = false;
         const [next, onTheHouse, bonus] = await Promise.all([
           loadState(uuid),
           loadWelcome(uuid),
@@ -410,6 +448,20 @@ export default function DiamondWheelPage() {
           setCommit({ id: saved.commitId, hash: saved.commitHash });
           setClientSeed(saved.clientSeed);
         } else if (next.available) await freshCommit();
+        /* A pick this browser sent and never heard the answer to. Its award is
+           the one the server still lists, so the SAME pick goes again on the
+           page's own schedule; a saved pick whose award is no longer pending
+           was already paid, so its slot is cleared rather than replayed. */
+        const savedCard = readWheelPendingCard(user.id, uuid);
+        if (savedCard) {
+          if (next.pending_cards?.some((card) => card.award_id === savedCard.awardId)) {
+            setCardSending(savedCard);
+            setCardPriorSend(true);
+          } else {
+            clearWheelPendingCard(savedCard);
+            toastRef.current.info('Your Diamond Card Was Already Paid');
+          }
+        }
         void loadHistory(uuid);
         setLoadFailures(0);
       } catch (err) {
@@ -441,6 +493,15 @@ export default function DiamondWheelPage() {
     setLoadTry((count) => count + 1);
     return true;
   });
+
+  /* THE SERVER'S OWN LIST IS WHAT REOPENS A CARD GAME. A reload, a second tab
+     and a return visit all find the pending award here, and a run that ended
+     with one deals it as soon as its summary is closed. An award already open
+     is never replaced, so a state read mid-pick cannot move the table. */
+  useEffect(() => {
+    const open = state?.pending_cards?.[0];
+    if (open) setCardAward((current) => current ?? open);
+  }, [state?.pending_cards]);
 
   useEffect(() => {
     if (waitSeconds <= 0) return;
@@ -541,6 +602,10 @@ export default function DiamondWheelPage() {
        or end, and a game won by hand is played before another spin. */
     if (!running && state.auto_run) return 'Resume Or End Your Run Below';
     if (!running && state.pending_awards?.length) return 'Play Your Bonus Game Before Another Spin';
+    /* The same refusal fn_wheel_spin_v2 gives, in the same words, so the plate
+       and the server never disagree about why the wheel will not turn. */
+    if (!running && state.pending_cards?.length)
+      return 'Pick Your Diamond Card Before Another Spin';
     if (preparationError) return preparationError;
     if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
     if (
@@ -616,11 +681,13 @@ export default function DiamondWheelPage() {
       runBusyRef.current = true;
       setRunBusy('end');
       let games = run.games;
+      let cards: WheelCardAward[] = [];
       try {
         const closed = await DiamondWheelService.runEnd(run.runId);
         if (!live() || scopeRef.current !== scope) return;
         if (closed.ok) {
           games = closed.pending_awards;
+          cards = closed.pending_cards;
           setCloseOwed(null);
           setCloseFailures(0);
         } else toast.error(closed.error || 'The Run Could Not Be Closed');
@@ -642,8 +709,8 @@ export default function DiamondWheelPage() {
       if (!live() || scopeRef.current !== scope) return;
       runBusyRef.current = false;
       setRunBusy(false);
-      if (why || run.prizes.length || games.length || run.done > 0)
-        setRunSummary({ total: run.total, done: run.done, why, prizes: run.prizes, games });
+      if (why || run.prizes.length || games.length || cards.length || run.done > 0)
+        setRunSummary({ total: run.total, done: run.done, why, prizes: run.prizes, games, cards });
       else if (why === null) toast.info('Auto Spin Stopped');
     },
     [clubUuid, live, loadState, toast]
@@ -939,7 +1006,10 @@ export default function DiamondWheelPage() {
   // Money in flight holds the page. A saved spin the page has stopped sending
   // does not: it waits for the next visit, and the player is free to go.
   const releaseNavigation = useLiveBonusGuard(
-    spinning || Boolean(pending) || (Boolean(recovery) && !recoveryStopped),
+    spinning ||
+      Boolean(pending) ||
+      (Boolean(recovery) && !recoveryStopped) ||
+      (Boolean(cardSending) && !cardHeld),
     () => toast.error('Wait For Your Spin To Finish.')
   );
 
@@ -985,6 +1055,10 @@ export default function DiamondWheelPage() {
       releaseNavigation();
       openBonus(result.bonus);
     }
+    /* A card game won by hand opens now, on the plate the player just pressed.
+       One won inside a run waits in the server's list until the run closes,
+       exactly as a bonus game does (R9, R18). */
+    if (result.outcome.cards && !autoRunRef.current) setCardAward(result.outcome.cards);
   }, [
     releaseNavigation,
     openBonus,
@@ -997,6 +1071,117 @@ export default function DiamondWheelPage() {
     refreshFloor,
     prepareNextSpin,
   ]);
+
+  /**
+   * SEND ONE PICK, AND NEVER A SECOND, DIFFERENT ONE.
+   *
+   * The pick is saved before it leaves, so an answer that never arrives is
+   * sent again with the identity the player chose. `fn_wheel_diamond_cards_pick`
+   * is idempotent on the award, so a send that already landed answers with its
+   * own reveal instead of taking another card: the replay pays nothing twice.
+   *
+   * A refusal the database ANSWERED is final, and the player never reads its
+   * words. The page says one thing of its own and reads the wheel again; if
+   * the award is still pending the table is still there, and if it is not, the
+   * state that comes back says so.
+   */
+  const sendCardPick = useCallback(
+    async (attempt: WheelPendingCard, resend: boolean) => {
+      if (cardBusyRef.current) return;
+      const scope = scopeRef.current;
+      cardBusyRef.current = true;
+      let sent = false;
+      try {
+        if (!resend) saveWheelPendingCard(attempt);
+        setCardSending(attempt);
+        setCardPriorSend(resend);
+        sent = true;
+        triggerHaptic('medium');
+        const answer = await DiamondWheelService.pickCard(attempt.awardId, attempt.card);
+        if (!live() || scopeRef.current !== scope) return;
+        clearWheelPendingCard(attempt);
+        setCardSending(null);
+        setCardPriorSend(false);
+        setCardFailures(0);
+        if (!answer.ok) {
+          toast.error(CARD_NOT_PICKED);
+          if (clubUuid) await loadState(clubUuid);
+          return;
+        }
+        setCardPick(answer.pick);
+        triggerHaptic(answer.pick.paid_diamonds >= answer.pick.risk_diamonds ? 'success' : 'light');
+        // The award is settled and the diamonds are in the wallet. Both are
+        // read again when the table closes; this keeps the plate and the bay
+        // honest in the meantime, so neither offers a spin the server refuses.
+        setState((current) =>
+          current
+            ? {
+                ...current,
+                pending_cards: (current.pending_cards ?? []).filter(
+                  (card) => card.award_id !== attempt.awardId
+                ),
+                ...(current.player
+                  ? { player: { ...current.player, diamonds: answer.pick.balances.diamonds } }
+                  : {}),
+              }
+            : current
+        );
+      } catch (err) {
+        reportError(err, 'DiamondWheelPage.cardPick');
+        if (!live() || scopeRef.current !== scope) return;
+        if (!sent && !resend) {
+          // Nothing left this browser, so there is nothing to recover.
+          setCardSending(null);
+          toast.error('This Device Could Not Save The Pick, So It Was Not Sent');
+          return;
+        }
+        setCardPriorSend(true);
+        setCardFailures((count) => count + 1);
+      } finally {
+        if (scopeRef.current === scope) cardBusyRef.current = false;
+      }
+    },
+    [live, toast, clubUuid, loadState]
+  );
+
+  const pickCard = useCallback(
+    (card: WheelCardSlot) => {
+      if (!user?.id || !clubUuid || !cardAward || cardPick || cardSending) return;
+      void sendCardPick(
+        { userId: user.id, clubId: clubUuid, awardId: cardAward.award_id, card },
+        false
+      );
+    },
+    [user?.id, clubUuid, cardAward, cardPick, cardSending, sendCardPick]
+  );
+
+  /** The three values and the card that paid were sealed before the player chose. */
+  const verifyCards = useCallback(async () => {
+    if (!cardPick) return;
+    setCardVerifying(true);
+    try {
+      const checked = await verifyWheelCardPick(cardPick);
+      if (!live()) return;
+      setCardVerdict(checked);
+      if (checked.fair) toast.success('These Cards Verify');
+      else toast.warning('These Cards Did Not Verify. Please Report It');
+    } catch (err) {
+      reportError(err, 'DiamondWheelPage.cardVerify');
+      if (live()) toast.error('The Check Could Not Run In This Browser');
+    } finally {
+      if (live()) setCardVerifying(false);
+    }
+  }, [cardPick, live, toast]);
+
+  /** Closing the table is the end of the card game: the wheel is read again. */
+  const closeCards = useCallback(() => {
+    setCardAward(null);
+    setCardPick(null);
+    setCardVerdict(null);
+    if (!clubUuid) return;
+    void prepareNextSpin(clubUuid);
+    void loadHistory(clubUuid);
+  }, [clubUuid, prepareNextSpin, loadHistory]);
 
   /* The runner. It presses Spin when the page would let a thumb press it: a
      fresh commit in hand, the pause between spins served, nothing blocking. It
@@ -1071,6 +1256,20 @@ export default function DiamondWheelPage() {
         reportError(err, 'DiamondWheelPage.runEndRetry');
         setCloseFailures((count) => count + 1);
       }
+      return true;
+    }
+  );
+  /* A PICK WHOSE ANSWER NEVER ARRIVED SETTLES ITSELF (the law a saved round
+     settles itself). Nobody is told to check anything: the exact saved pick is
+     sent again on useAutoSettle's schedule until its reveal lands, the server
+     refuses it, or the page has sent it as often as it will. */
+  useAutoSettle(
+    Boolean(cardSending) && cardPriorSend && !cardHeld && !spinning && !pending && !loading,
+    cardFailures,
+    async () => {
+      const attempt = cardSending;
+      if (!attempt || cardBusyRef.current || busyRef.current) return false;
+      await sendCardPick(attempt, true);
       return true;
     }
   );
@@ -1399,6 +1598,20 @@ export default function DiamondWheelPage() {
           />
         </div>
       </WheelCabinet>
+
+      {cardAward && !runSummary && !spinning && !pending && (
+        <WheelCardTable
+          award={cardAward}
+          pick={cardPick}
+          sending={cardSending ? cardSending.card : null}
+          held={cardHeld}
+          verdict={cardVerdict}
+          verifying={cardVerifying}
+          onPick={pickCard}
+          onVerify={() => void verifyCards()}
+          onClose={closeCards}
+        />
+      )}
 
       {runSummary && (
         <WheelRunSummary

@@ -1,4 +1,4 @@
-import type { WheelBonusAward } from '../../services/DiamondWheelService';
+import type { WheelBonusAward, WheelCardAward } from '../../services/DiamondWheelService';
 import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { diamondGameTitle } from '../../utils/diamondGameTitles';
@@ -110,6 +110,13 @@ export interface WheelRunSummaryData {
   why: string | null;
   prizes: WheelRunPrize[];
   games: WheelBonusAward[];
+  /**
+   * Three-card games the run won and left sealed. They are not played from
+   * here: the wheel deals them itself the moment this summary closes, and the
+   * server refuses another spin until they are picked. Naming them is what
+   * stops "Run Complete" from reading as though nothing were left.
+   */
+  cards?: WheelCardAward[];
 }
 
 function prizeWorth(prize: WheelRunPrize): string {
@@ -195,6 +202,19 @@ export function WheelRunSummary({
                 </li>
               ))}
             </ul>
+          )}
+          {(summary.cards?.length ?? 0) > 0 && (
+            <>
+              <h3 className={styles.summaryHeading}>
+                {summary.cards!.length === 1
+                  ? 'One Diamond Card Game To Pick'
+                  : `${summary.cards!.length} Diamond Card Games To Pick`}
+              </h3>
+              <p className="sc-copy sc-copy--center">
+                Three Cards Are Sealed On {summary.cards!.length === 1 ? 'It' : 'Each'}. The Table
+                Opens As Soon As You Close This.
+              </p>
+            </>
           )}
           {next && (
             <p className="sc-copy sc-copy--center">

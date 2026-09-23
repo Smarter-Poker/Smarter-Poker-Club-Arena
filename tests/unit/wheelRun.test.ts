@@ -108,6 +108,7 @@ describe('fn_wheel_run_begin and fn_wheel_run_end', () => {
       run_id: RUN,
       spins_done: 4,
       pending_awards: [award],
+      pending_cards: [],
     });
     expect(rpc).toHaveBeenCalledWith('fn_wheel_run_end', { p_run_id: RUN });
   });
@@ -119,6 +120,7 @@ describe('fn_wheel_run_begin and fn_wheel_run_end', () => {
       run_id: RUN,
       spins_done: 10,
       pending_awards: [],
+      pending_cards: [],
     });
     rpc.mockResolvedValueOnce({ data: { ok: false, error: 'No Open Run' }, error: null });
     await expect(service.runEnd(RUN)).resolves.toMatchObject({ ok: false, error: 'No Open Run' });
@@ -205,6 +207,17 @@ describe('fields a newer server adds are tolerated', () => {
     expect(state.segments).toHaveLength(12);
     expect(state.auto_run).toEqual({ run_id: RUN, spins: 10, spins_done: 2 });
     expect(state.pending_awards).toEqual([award]);
+    // The unpicked card game is carried, not dropped: it is the only way back
+    // to the three cards after a reload (owner ruling 2026-09-21, R15).
+    expect(state.pending_cards).toEqual([
+      {
+        award_id: card.id,
+        risk_diamonds: 100,
+        status: 'pending',
+        spin_id: card.spin_id,
+        created_at: card.created_at,
+      },
+    ]);
   });
 
   it('run replies carrying more than the contract names still confirm the run', async () => {
@@ -241,6 +254,15 @@ describe('fields a newer server adds are tolerated', () => {
       run_id: RUN,
       spins_done: 25,
       pending_awards: [award],
+      pending_cards: [
+        {
+          award_id: card.id,
+          risk_diamonds: 100,
+          status: 'pending',
+          spin_id: card.spin_id,
+          created_at: card.created_at,
+        },
+      ],
     });
   });
 

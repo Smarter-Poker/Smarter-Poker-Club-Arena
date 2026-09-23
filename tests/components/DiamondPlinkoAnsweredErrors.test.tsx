@@ -183,6 +183,9 @@ describe('an error the database answered is an answer', () => {
     startAnswer = () => failure('23503');
     render(<DiamondPlinkoPage />);
     await advance();
+    // Screen two (R6): the player chooses what each drop plays, then drops.
+    fireEvent.click(screen.getByRole('button', { name: '10 Diamonds Per Drop, 10 Drops' }));
+    await advance();
     fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
     await advance();
     expect(starts()).toHaveLength(1);
@@ -262,9 +265,9 @@ describe('an answer this browser cannot verify', () => {
     expect(backend.awardState.mock.calls.length).toBeGreaterThan(reads);
     expect(statusLine()).toHaveTextContent(BONUS_SAVED);
     expect(screen.queryByText('Settling')).toBeNull();
-    // Nothing is dealt or dropped over it.
+    // Nothing is dealt or dropped over it: the plate is still screen one's.
     expect(backend.commit).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
     noCheckControl();
   });
 });

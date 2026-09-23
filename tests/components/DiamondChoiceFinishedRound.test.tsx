@@ -172,13 +172,15 @@ const advance = async (ms: number) => {
 };
 const text = () => document.body.textContent ?? '';
 const bay = (label: string) => screen.getByText(label).nextElementSibling as HTMLElement;
-/** Keeps the bonus in the Double Down offer, and lets the won game start itself. */
+/** Answers the offer with Play Without, then presses Start: the two taps a
+ *  won game takes (R1, R9). */
 const keepAndStart = async () => {
-  const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
   fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
   await settle();
-  await advance(5000);
+  fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
+  await settle();
   expect(backend.start).toHaveBeenCalledTimes(1);
 };
 /** Plays the losing move: the mine on tile 8, or the first street. */
@@ -200,7 +202,7 @@ const revealEnds = async () => {
   await settle();
 };
 const setupOnScreen = () =>
-  ['Spin The Wheel', 'Buy More', 'Earn Diamonds', 'Double Down Your Bonus'].filter(
+  ['Spin The Wheel', 'Buy More', 'Earn Diamonds', 'Playing Without Extra Diamonds: Change'].filter(
     (name) => screen.queryByRole('button', { name }) !== null
   );
 
@@ -269,7 +271,7 @@ describe.each(['mines', 'crossing'] as const)('%s: the round that just finished'
   it("never opens a next award's Double Down offer over the reveal", async () => {
     await play(true);
     await advance(10_000);
-    expect(screen.queryByRole('dialog', { name: 'Double Down Your Bonus' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
     expect(setupOnScreen()).toEqual([]);
     expect(bay('Guaranteed').textContent).toBe('0.10 Chips');
     // Nothing starts over the finished round either.
@@ -306,8 +308,12 @@ describe('a finished round reopened from its wheel link', () => {
     fireEvent.animationEnd(screen.getByLabelText('Diamond Mines Board'));
     await settle();
     const receipt = screen.getByRole('dialog', { name: '0.10 Chips' });
-    expect(receipt).toHaveTextContent('Returning To Diamond Spins.');
-    fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+    // The receipt stays until the player taps: it no longer returns on a clock
+    // (owner ruling 2026-09-21, R1).
+    expect(receipt).toHaveTextContent('Your Prize Is Booked.');
+    fireEvent.animationEnd(receipt.querySelector('[data-motion="keep"]')!);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Back To The Wheel' }));
     expect(backend.navigate).toHaveBeenCalledWith(`/clubs/${CLUB}/wheel`, { replace: true });
     expect(backend.start).not.toHaveBeenCalled();
   });

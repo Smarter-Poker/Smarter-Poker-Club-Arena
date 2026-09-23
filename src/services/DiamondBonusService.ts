@@ -8,7 +8,7 @@ import {
   earnedReceiptBudget,
   type BonusBudget,
 } from '../utils/bonusGameBudget';
-import { validSpinAmount, PLINKO_DROPS, plinkoDenomination } from '../utils/bonusGameBudget';
+import { validSpinAmount, PLINKO_MAX_DROPS, PLINKO_MIN_DROPS } from '../utils/bonusGameBudget';
 import { parseChoiceRound } from './DiamondChoiceService';
 import { validateCrashSettlement } from '../utils/crashReceipt';
 import { diamondBonusMinimum, plinkoTableVersion } from '../utils/diamondBonusPayout';
@@ -202,13 +202,13 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
     v.diamonds_per_drop < 1 ||
     v.bet_diamonds % v.diamonds_per_drop !== 0 ||
     !Array.isArray(v.drops) ||
+    // Drops x value = stake, whatever value the player chose (Dan 2026-09-21,
+    // R6). A batch sealed under the current rule (it carries payout_version)
+    // plays between PLINKO_MIN_DROPS and PLINKO_MAX_DROPS drops; older receipts
+    // keep the count they were dealt.
     v.drops.length !== v.bet_diamonds / v.diamonds_per_drop ||
-    // A batch sealed since ten drops became the one setting (it carries
-    // payout_version) is ten drops of a tenth of the entry. Older receipts keep
-    // the drop value they were dealt.
     (v.payout_version !== undefined &&
-      (v.drops.length !== PLINKO_DROPS ||
-        v.diamonds_per_drop !== plinkoDenomination(v.bet_diamonds))) ||
+      (v.drops.length < PLINKO_MIN_DROPS || v.drops.length > PLINKO_MAX_DROPS)) ||
     !Array.isArray(v.multipliers_cents) ||
     v.multipliers_cents.length !== 17 ||
     !v.multipliers_cents.every((m) => Number.isSafeInteger(m) && m >= 0) ||
@@ -278,10 +278,12 @@ export const DiamondBonusService = {
       !uuid.test(input.clubId) ||
       !uuid.test(input.commitId) ||
       !['plinko', 'crash', 'crossing', 'mines'].includes(input.game) ||
-      // The server owns the ten-drop rule; a saved request from before it is sent as
-      // it was, so a completed game replays its receipt instead of being refused here.
+      // The server owns the drop-value list; a saved request from an older rule is
+      // sent as it was, so a completed game replays its receipt instead of being
+      // refused here. A request with no chosen value never leaves this client.
       (input.game === 'plinko' &&
-        (!Number.isSafeInteger(input.budget.denomination) ||
+        (typeof input.budget.denomination !== 'number' ||
+          !Number.isSafeInteger(input.budget.denomination) ||
           input.budget.denomination < 1 ||
           bonusTotal(input.budget) % input.budget.denomination !== 0)) ||
       (input.serverSeedHash !== undefined && !/^[a-f0-9]{64}$/.test(input.serverSeedHash))

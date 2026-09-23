@@ -1943,6 +1943,25 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return ['fleet=unreadable'];
       }
     };
+    // Observability only, by the same rule as `permitPhase` on the mixed-original
+    // boundary field above: the F06 refusal in this capture turns on WHICH phase
+    // the retained permit is in, so a refusal here is unreadable without it.
+    // `attempted` is a hand that may have started; `terminated` and
+    // `number_refused` provably never dealt; `new`, `reserved` and `unknown` are
+    // a preparation whose fate the database, not this guard, decides. The boolean
+    // pair below says only that a permit exists, which is every one of those six.
+    // Its own try/catch keeps a throwing accessor costing this ONE token instead
+    // of blanking the whole record through `noteRefusal`, and `describe` holds it
+    // to the same identifier-only character class as every other field here.
+    const permitPhaseOf = (engine) => {
+      try {
+        const permit = engine?.f06CurrentPermit;
+        if (permit === null || permit === undefined) return 'none';
+        return describe(permit.recoveryState?.());
+      } catch {
+        return 'unreadable';
+      }
+    };
     const engineRefusalDetail = (tableId, engine, code) => {
       const shape = bankShape(tableId, engine);
       const tournament = engine?.engineLeaseTournamentId;
@@ -1966,6 +1985,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // an F06 permit or recovery, work in flight, a boundary generation,
           // and the accounting registry.
           `f06=${engine?.f06CurrentPermit != null}/${engine?.f06RecoveryInFlight === true}`,
+          // Placed here, beside `f06=`, and never appended after the fleet census:
+          // this list is truncated to 512 characters, so a token added at the end
+          // is the first thing a long refusal drops.
+          `permitPhase=${permitPhaseOf(engine)}`,
           `settling=${sizeOf(engine?.settlementInFlight)}`,
           `postTasks=${engine?.postHandTasksPromise != null}`,
           `moves=${sizeOf(engine?.tournamentMoveOperations)}`,

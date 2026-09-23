@@ -209,56 +209,175 @@ done
 # ── 2. The shared guards are the same file everywhere ─────────────────────
 # WHICH REPO IS AHEAD, AND WHICH ARE BEHIND (2026-09-22).
 #
-# Until today this reported "N different versions" and listed a digest per
+# Until 2026-09-22 this reported "N different versions" and listed a digest per
 # repo. That is the finding, but it is not the repair, and nobody could get
 # from one to the other: a digest does not say whether Club Arena drifted or
 # the other six are simply carrying last month's copy. Issue #3931 sat open
-# with eleven such files - measured today, Club Arena held the NEWEST copy of
-# nine of them and the STALEST of two - and no reader could tell those two
-# cases apart, so nobody acted on either.
+# with eleven such files - Club Arena held the NEWEST copy of nine of them and
+# a DIFFERENT copy of two - and no reader could tell those two cases apart, so
+# nobody acted on either.
 #
 # So each variant now carries the date of the last commit that touched that
 # path in that repo, and the newest one is named. That is strictly more
 # information: nothing that blocked before stops blocking, and a drift is
-# still a drift whichever way it points. It turns "eleven files disagree"
-# into "copy repo X's 2026-09-19 version into these five", which is a repair
-# somebody can carry out.
+# still a drift whichever way it points.
 #
 # The date is a WEAKER signal than the content and is labelled as such: a repo
 # can commit an older file later. It orders the variants; it does not certify
 # one. The rule remains "make the repos agree again", not "take the newest".
+#
+# FOUR OUTCOMES, NOT ONE (2026-09-23). CLAUDE.md 10.86 rules 1 and 2.
+#
+# `gh api .../contents/<path> --jq .content` does NOT go quiet on a 404. It
+# exits 1 and prints the ERROR BODY on stdout:
+#
+#   {"message":"Not Found","documentation_url":"...","status":"404"}
+#
+# The previous code tested only `[ -z "$C" ]`, so that 127-byte error counted
+# as a PRESENT file, `base64 -d` refused it and wrote nothing, and the digest
+# came out `e3b0c442...`, the sha256 of the empty string. The audit then
+# announced "is a ZERO-BYTE FILE" about a path that does not exist at all.
+#
+# Measured 2026-09-23: both of Diamond-Arena's reported zero-byte workflows
+# were DELETED, deliberately, by that repo's own PR #64 (d70fcbcd1928,
+# 2026-09-18), which in the same commit added tests/deployment-controls.test.mjs
+# there to keep them retired. Restoring them would turn that repo's own test
+# red. "Deleted on purpose", "emptied by accident" and "could not ask" are
+# three different facts, with three different owners and three different
+# repairs, and they had one name between them.
+#
+# Worse, the absent sentinel then joined the "most recently committed" ranking
+# and WON it for agent-open-pr.yml, because `commits?path=` still returns a
+# date for a deleted path: the date of the deletion. The report therefore told
+# every reader that the newest authoritative copy of the estate's pull-request
+# opener was nothing at all, and named the six repos that do have a working one
+# as "carrying something else". Nothing that reads only digests can catch that.
+#
+# So: present, empty, absent and unreadable are four separate outcomes; only a
+# real byte-carrying variant with a readable date may be ranked; and a
+# deliberate difference is RECORDED below with its reason, exactly as the issue
+# body instructs, so it is visible on every run instead of being re-raised for
+# ever until people stop reading the report (10.83).
+
+# DELIBERATE, OWNER-MERGED ABSENCES. A recorded path is expected NOT to exist
+# in that repo. If it comes back, that IS a finding, because the record says it
+# should be gone - the exemption cannot quietly become cover for a revert.
+RETIRED_PATHS=(
+  ".github/workflows/agent-autopilot.yml|Smarter-Poker-Diamond-Arena|deleted, together with .github/workflows/agent-open-pr.yml, by that repo's own PR #64 (d70fcbcd1928, 2026-09-18), which added tests/deployment-controls.test.mjs there to reject both files returning. Diamond-Arena is a parked repository with no active publisher, and Club Arena has no authority over it (CLAUDE.md 1.2)."
+  ".github/workflows/agent-open-pr.yml|Smarter-Poker-Diamond-Arena|deleted, together with .github/workflows/agent-autopilot.yml, by that repo's own PR #64 (d70fcbcd1928, 2026-09-18), which added tests/deployment-controls.test.mjs there to reject both files returning. Diamond-Arena is a parked repository with no active publisher, and Club Arena has no authority over it (CLAUDE.md 1.2)."
+)
+
+# DELIBERATE DIVERGENCES. These do NOT suppress the drift finding - the other
+# repos still have to agree with each other, and that repair still belongs to
+# their owners. What this adds is the one thing a digest cannot say: WHICH
+# variant must not be "corrected", so the next reader does not copy a
+# newer-dated file into the one repo whose own tests forbid it.
+DELIBERATE_VARIANTS=(
+  ".husky/reference-transaction|Smarter-Poker-Club-Arena|Club Arena's copy is preventive and read-only ON PURPOSE. CLAUDE.md 10.12 forbids recovery machinery, and tests/unit/resetGuardCannotSaveTheWorktree.test.ts fails on any \`git update-ref\` or \`refs/wip\` inside this hook. The newer World Hub variant writes rescue refs and adds an AGENT_REF_GUARD_OK bypass, which CLAUDE.md 12 rule 3 separately forbids here. Do not copy it into Club Arena; it would ship a red test and a banned band-aid."
+  ".github/workflows/agent-open-pr.yml|Smarter-Poker-Club-Arena|Club Arena moved to the split-privilege design in PR #4189 (2026-09-11): an unprivileged \`Agent Branch Proposal\` signal plus this trusted \`workflow_run\` consumer, which mints a short-lived GitHub App token and never holds a PAT. The other repos still carry the older create/push opener with a GH_PAT fallback. Converging means they adopt this one, not that Club Arena goes back."
+)
+
+# Both records are <path>|<repo>|<reason>. Kept as plain arrays rather than
+# associative ones so this runs the same on the bash the runners ship and the
+# bash 3.2 on a Mac.
+retired_reason() {
+  local path="$1" repo="$2" e rest
+  for e in "${RETIRED_PATHS[@]}"; do
+    [ "${e%%|*}" = "$path" ] || continue
+    rest="${e#*|}"
+    [ "${rest%%|*}" = "$repo" ] || continue
+    printf '%s' "${rest#*|}"
+    return 0
+  done
+  return 1
+}
+
+deliberate_notes_for() {
+  local path="$1" e rest repo
+  for e in "${DELIBERATE_VARIANTS[@]}"; do
+    [ "${e%%|*}" = "$path" ] || continue
+    rest="${e#*|}"
+    repo="${rest%%|*}"
+    printf '  Recorded deliberate variant: **%s** - %s\n' "$repo" "${rest#*|}"
+  done
+}
+
+# One shared file, one repo, ONE of four answers. Prints "<state>TAB<payload>";
+# payload is the base64 content when present, and the first line of the error
+# when unreadable. `present` with an empty payload is a real zero-byte file:
+# GitHub returns `"content": ""` for one, which is not the same as a 404.
+read_shared_file() {
+  local repo="$1" path="$2" body rc
+  body=$(gh api "repos/Smarter-Poker/$repo/contents/$path" --jq '.content' 2>/dev/null)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf 'present\t%s' "$body"
+    return 0
+  fi
+  case "$body" in
+    *'"status":"404"'*|*'"message":"Not Found"'*) printf 'absent\t'; return 0 ;;
+  esac
+  printf 'unreadable\t%s' "$(printf '%s' "$body" | tr '\n' ' ' | cut -c1-160)"
+}
+
 for f in "${SHARED_FILES[@]}"; do
   DIGESTS=""
   PRESENT=0
   MISSING=""
+  RETIRED_SEEN=""
   for r in "${REPOS[@]}"; do
-    C=$(gh_ro "repos/Smarter-Poker/$r/contents/$f" --jq '.content')
-    if [ -z "$C" ]; then MISSING="$MISSING $r"; continue; fi
+    RESULT=$(read_shared_file "$r" "$f")
+    STATE="${RESULT%%$'\t'*}"
+    PAYLOAD="${RESULT#*$'\t'}"
+
+    if [ "$STATE" = "unreadable" ]; then
+      add "\`$f\` in **$r** — COULD NOT TELL. The contents read failed and did not say Not Found, so this path is neither confirmed present nor confirmed absent and nothing about it is verified here: \`$PAYLOAD\`"
+      continue
+    fi
+
+    if [ "$STATE" = "absent" ]; then
+      if RETIRED_WHY=$(retired_reason "$f" "$r"); then
+        note "$f: absent from $r - recorded deliberate retirement, not drift"
+        RETIRED_SEEN="$RETIRED_SEEN $r"
+      else
+        MISSING="$MISSING $r"
+      fi
+      continue
+    fi
+
+    if RETIRED_WHY=$(retired_reason "$f" "$r"); then
+      add "\`$f\` is RECORDED AS RETIRED in **$r**, and it is back. Either the retirement was reversed there, or this record is now stale and belongs in the same pull request that restored the file. Reason on file: $RETIRED_WHY"
+    fi
+
     PRESENT=$((PRESENT + 1))
-    D=$(printf '%s' "$C" | base64 -d 2>/dev/null | shasum -a256 | cut -c1-12)
+    if [ -z "$PAYLOAD" ]; then
+      add "\`$f\` in **$r** exists and is EMPTY - zero bytes. Not a drifted copy and not a deletion: the path is there and there is nothing in it, so whatever it is supposed to do is not happening in that repo. That is a third repair, distinct from copying a stale file forward and from restoring a deleted one."
+      D="$EMPTY_SHA12"
+    else
+      D=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | shasum -a256 | cut -c1-12)
+    fi
     # A date this cannot read is reported as `unknown`, never as an old one:
     # an unreadable date must not make a current repo look stale (10.86 r2).
     WHEN=$(gh_ro "repos/Smarter-Poker/$r/commits?path=$f&per_page=1" --jq '.[0].commit.committer.date // empty')
     DIGESTS="$DIGESTS$D ${WHEN:-unknown} $r"$'\n'
-    # AN EMPTY FILE IS NOT A VERSION (2026-09-22). `e3b0c442...` is the sha256
-    # of nothing at all, and on this date two of Diamond-Arena's workflow files
-    # held it. Reported as "a different version" that reads as a drifted copy
-    # worth diffing; it is a zero-byte file, so that workflow does not exist
-    # and nothing in that repo queues or opens a pull request. Same bytes,
-    # completely different repair, so it gets its own sentence.
-    if [ "$D" = "$EMPTY_SHA12" ]; then
-      add "\`$f\` in **$r** is a ZERO-BYTE FILE. Not a drifted copy - there is nothing in it. Whatever it is supposed to do is not happening in that repo, and a digest comparison alone reads this as an ordinary difference."
-    fi
   done
+
   UNIQ=$(printf '%s' "$DIGESTS" | awk 'NF{print $1}' | sort -u | wc -l | tr -d ' ')
+  N_RETIRED=$(printf '%s' "$RETIRED_SEEN" | wc -w | tr -d ' ')
+  EXPECTED_REPOS=$(( ${#REPOS[@]} - N_RETIRED ))
+  DELIB=$(deliberate_notes_for "$f")
   if [ "$PRESENT" -eq 0 ]; then
-    add "\`$f\` — **missing from every repo**. A guard nobody has is a guard nobody runs."
+    add "\`$f\` — **missing from every repo that should carry it**. A guard nobody has is a guard nobody runs."
   elif [ -n "$MISSING" ]; then
-    add "\`$f\` — missing from:$MISSING. It exists in $PRESENT of ${#REPOS[@]} repos, so the estate is not protected the same way everywhere."
+    add "\`$f\` — missing from:$MISSING. It exists in $PRESENT of the $EXPECTED_REPOS repos that should carry it, so the estate is not protected the same way everywhere. These are absent, not empty: the path is gone. If one of them was deleted on purpose, record it in \`RETIRED_PATHS\` in this script with the pull request that did it.${DELIB:+
+$DELIB}"
   elif [ "$UNIQ" -gt 1 ]; then
-    # The repo whose copy was committed most recently. Ties and unknowns keep
-    # the first entry, so the line is deterministic rather than empty.
-    NEWEST=$(printf '%s' "$DIGESTS" | awk 'NF && $2 != "unknown"' | sort -k2,2r | head -1)
+    # ONLY A REAL VARIANT MAY BE RANKED. An empty file is not a version, and a
+    # deleted one is not a version either; letting either win this sort is how
+    # the report came to name "nothing at all" as the newest content of the
+    # estate's pull-request opener, and to list the six working copies as the
+    # ones that were behind.
+    NEWEST=$(printf '%s' "$DIGESTS" | awk -v empty="$EMPTY_SHA12" 'NF && $2 != "unknown" && $1 != empty' | sort -k2,2r | head -1)
     NEWEST_REPO=$(printf '%s' "$NEWEST" | awk '{print $3}')
     NEWEST_WHEN=$(printf '%s' "$NEWEST" | awk '{print $2}')
     NEWEST_D=$(printf '%s' "$NEWEST" | awk '{print $1}')
@@ -266,13 +385,14 @@ for f in "${SHARED_FILES[@]}"; do
       BEHIND=$(printf '%s' "$DIGESTS" | awk -v d="$NEWEST_D" 'NF && $1 != d {printf "%s ", $3}')
       LEAD="Most recently committed: **$NEWEST_REPO** ($NEWEST_WHEN, \`$NEWEST_D\`). Carrying something else: $BEHIND"
     else
-      LEAD="Could not read a commit date for any variant, so this cannot say which is newest. Compare them by hand."
+      LEAD="No variant carried both content and a readable commit date, so this cannot say which is newest. Compare them by hand."
     fi
     VARIANTS=$(printf '%s' "$DIGESTS" | awk 'NF{printf "    %s  %-22s %s\n", $1, $2, $3}')
     add "\`$f\` — **$UNIQ different versions** across the estate. These are supposed to be byte-identical; a fix applied in one repo and not the others is how a guard becomes true in theory only.
 $VARIANTS
   $LEAD
-  The date orders the variants, it does not certify one: a repo can commit an older file later. Make them agree; do not assume the newest is right."
+  The date orders the variants, it does not certify one: a repo can commit an older file later. Make them agree; do not assume the newest is right.${DELIB:+
+$DELIB}"
   else
     note "$f: identical in all $PRESENT"
   fi
@@ -280,6 +400,16 @@ done
 
 # ── 3. Autopilot is alive ─────────────────────────────────────────────────
 for r in "${REPOS[@]}"; do
+  # A DELETED WORKFLOW IS NOT A LIVE ONE (2026-09-23). `gh run list` happily
+  # returns the last historical run of a workflow file that no longer exists,
+  # so Diamond-Arena read `autopilot completed/success` on every run after its
+  # own PR #64 deleted the file. "The last run succeeded" and "it still runs"
+  # are not the same claim, and only the second one is what this section is
+  # asserting.
+  if RETIRED_WHY=$(retired_reason ".github/workflows/agent-autopilot.yml" "$r"); then
+    note "$r: autopilot retired in that repo (recorded), so no liveness is claimed for it"
+    continue
+  fi
   C=$(gh run list --repo "Smarter-Poker/$r" --workflow agent-autopilot.yml --limit 1 \
         --json conclusion,status --jq '"\(.[0].status)/\(.[0].conclusion // "-")"' 2>/dev/null || echo "")
   case "$C" in

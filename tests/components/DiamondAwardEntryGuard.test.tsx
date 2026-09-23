@@ -106,8 +106,8 @@ const tick = async (ms: number) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
-const answer = async (name: 'Keep My Bonus' | 'Add Diamonds') => {
-  const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+const answer = async (name: 'Play Without' | 'Add The Diamonds') => {
+  const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
   fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
   fireEvent.click(screen.getByRole('button', { name }));
   await act(async () => {});
@@ -131,86 +131,33 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
-describe('a won game starts itself', () => {
-  it('never starts over the Double Down offer; unanswered, the offer keeps the bonus and the game still starts', async () => {
-    render(<DiamondPlinkoPage />);
-    await act(async () => {});
-    const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
-    fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-    // Eight seconds to answer. Nothing counts down underneath the question.
-    await tick(7_000);
-    expect(screen.getByRole('dialog', { name: 'Double Down Your Bonus' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeInTheDocument();
-    expect(backend.start).not.toHaveBeenCalled();
-    await tick(1_100);
-    // It answered itself with the choice that costs nothing.
-    expect(screen.queryByRole('dialog', { name: 'Double Down Your Bonus' })).toBeNull();
-    expect(backend.start).not.toHaveBeenCalled();
-    await tick(5_100);
-    expect(backend.start).toHaveBeenCalledTimes(1);
-    expect(backend.start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        budget: expect.objectContaining({ base: 200, doubled: false }),
-      }),
-      'player-a'
-    );
-  });
-
-  it('counts five visible seconds after the answer, then drops without a press', async () => {
-    render(<DiamondPlinkoPage />);
-    await act(async () => {});
-    await answer('Keep My Bonus');
-    expect(screen.getByRole('button', { name: 'Dropping In 5s' })).toBeEnabled();
-    await tick(4_000);
-    expect(screen.getByRole('button', { name: 'Dropping In 1s' })).toBeEnabled();
-    expect(backend.start).not.toHaveBeenCalled();
-    await tick(1_100);
-    expect(backend.start).toHaveBeenCalledTimes(1);
-    expect(backend.start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        budget: expect.objectContaining({ base: 200, doubled: false }),
-      }),
-      'player-a'
-    );
-  });
-
-  it('starts the window again when the player changes their Double Down answer', async () => {
-    render(<DiamondPlinkoPage />);
-    await act(async () => {});
-    await answer('Keep My Bonus');
-    await tick(3_000);
-    // Reopening the offer stops the clock; the new answer is a new entry.
-    fireEvent.click(screen.getByRole('button', { name: 'Double Down Your Bonus' }));
-    await act(async () => {});
-    await tick(10_000);
-    expect(backend.start).not.toHaveBeenCalled();
-    await answer('Add Diamonds');
-    expect(screen.getByRole('button', { name: 'Dropping In 5s' })).toBeEnabled();
-    await tick(4_500);
-    expect(backend.start).not.toHaveBeenCalled();
-    await tick(600);
-    expect(backend.start).toHaveBeenCalledTimes(1);
-    expect(backend.start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        budget: expect.objectContaining({ base: 200, doubled: true }),
-      }),
-      'player-a'
-    );
-  });
-
-  it('does not press Start twice when the player presses first', async () => {
-    render(<DiamondPlinkoPage />);
-    await act(async () => {});
-    await answer('Keep My Bonus');
-    fireEvent.click(screen.getByRole('button', { name: 'Dropping In 5s' }));
-    await tick(10_000);
-    expect(backend.start).toHaveBeenCalledTimes(1);
-  });
-
+/*
+ * WHAT HOLDS A WON GAME, AND WHAT LETS IT GO.
+ *
+ * This file was DiamondAwardAutoStart.test.tsx: four of its cases pinned a
+ * five-second countdown that pressed Start on a won game (#5043). Owner ruling
+ * 2026-09-21, R1 and R9, removed that countdown ("Games can NEVER auto start";
+ * "the won game must stay on screen until the user selects Play Game"), so
+ * those four are gone and the entry flow's own regressions live where the flow
+ * does: the offer and the selector are pinned by DiamondPlinkoAwardEntry and
+ * DiamondChoiceQuotes, and "two idle minutes start nothing" by
+ * tests/diamond-spins-never-start-themselves.law.tsx.
+ *
+ * What is left is the half that was never about starting anything, and still
+ * binds: the exit guard holds a page only while its won game can actually
+ * start, so an award the server will not take today never traps the player;
+ * and a ticket deal that fails is dealt again by the page, never by a press.
+ */
+describe('a won game holds the page only while it can be played', () => {
   it('holds the page on a won game that can start, and lets go of one that cannot', async () => {
     render(<DiamondPlinkoPage />);
     await act(async () => {});
-    await answer('Keep My Bonus');
+    await answer('Play Without');
+    // Screen two: the game cannot start until the player has chosen a drop
+    // value (R6), so the hold begins with the choice, not with the award.
+    expect(held()).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
+    await act(async () => {});
     expect(held()).toBe(true);
     cleanup();
     // Today's limit is reached: the award stays pending server-side and the

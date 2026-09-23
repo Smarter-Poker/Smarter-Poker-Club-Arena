@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 153481,
-      "sha256": "a271c1277f6870d4013515089e694754627b819b66ef85e339526f52659637ce"
+      "bytes": 155650,
+      "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 22345,
-      "sha256": "c837b1ce4fa0ea85370f7dc994118c81721f586ec673762ac6bea3eab2cbbdb2"
+      "bytes": 22380,
+      "sha256": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -235,12 +235,12 @@
     "reason": "Phase 5 cashier statements: ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner (additive only). Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 153274,
-        "sha256": "1c435a38efff0654c84947d8849b5aaa2b9f30bf4ebe34350ffda3a54d68585e"
+        "bytes": 155443,
+        "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 22326,
-        "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed"
+        "bytes": 22361,
+        "sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,

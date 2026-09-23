@@ -126,7 +126,7 @@ const mount = async (game: Game) => {
   );
   await settle();
 };
-const offer = () => screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+const offer = () => screen.getByRole('dialog', { name: 'Double Your Diamonds' });
 const revealOffer = () => fireEvent.animationEnd(offer().querySelector('[data-motion="keep"]')!);
 
 beforeEach(() => {
@@ -163,7 +163,7 @@ describe.each(['mines', 'crossing'] as const)(
       await mount(game);
       revealOffer();
       expect(
-        within(offer()).getByText(/You Need 60 More Diamonds To Double Down/)
+        within(offer()).getByText(/You Need 60 More Diamonds To Add Them/)
       ).toBeInTheDocument();
       fireEvent.click(within(offer()).getByRole('button', { name: 'Buy More' }));
       await settle();
@@ -175,18 +175,18 @@ describe.each(['mines', 'crossing'] as const)(
     it.each([
       ['Buy More', 'Marketplace Page'],
       ['Earn Diamonds', 'Earn Diamonds Page'],
-    ])('leaves by %s while the answered award counts down to its start', async (exit, page) => {
+    ])('leaves by %s while the answered award waits on its plate', async (exit, page) => {
       won(game, 10000);
       await mount(game);
       revealOffer();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Keep My Bonus' }));
+      fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
       await advance(1000);
-      // The won game is on its way to starting itself: the hold is armed.
-      expect(screen.getByRole('button', { name: /^Starting In \ds$/ })).toBeInTheDocument();
+      // The offer is answered, so the hold is armed and Start is the player's.
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       fireEvent.click(screen.getByRole('button', { name: exit }));
       await settle();
       expect(screen.getByRole('heading', { name: page })).toBeInTheDocument();
-      // Gone before the countdown ran out: nothing started behind the player.
+      // Gone without pressing Start: nothing ran behind the player.
       await advance(10000);
       expect(backend.start).not.toHaveBeenCalled();
     });
@@ -198,10 +198,12 @@ describe('money in flight keeps the exits shut', () => {
     won('mines', 10000);
     await mount('mines');
     revealOffer();
-    fireEvent.click(within(offer()).getByRole('button', { name: 'Keep My Bonus' }));
-    await advance(5000);
+    fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
+    await settle();
     expect(backend.start).toHaveBeenCalledTimes(1);
-    for (const exit of ['Buy More', 'Earn Diamonds', 'Double Down Your Bonus'])
+    for (const exit of ['Buy More', 'Earn Diamonds', 'Playing Without Extra Diamonds: Change'])
       expect(screen.getByRole('button', { name: exit })).toBeDisabled();
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Diamond Spins/ }));

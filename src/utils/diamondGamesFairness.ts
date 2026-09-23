@@ -15,8 +15,13 @@
  *   CRASH: the first six bytes as a 48-bit integer r, u = (r + 1) / 2^48, and
  *   the guaranteed minimum the round seals as a share of its own stake,
  *   L = minimum_payout_chips / bet_chips. The crash point is
- *   X = max(1.00x, L + (0.8 - L) / u), in cents floor(100 * X), so for any
- *   target x above 1.00x, P(X >= x) = (0.8 - L) / (x - L).
+ *   X = max(floor, L + (0.8 - L) / u), in cents floor(100 * X), so for any
+ *   target x above the floor, P(X >= x) = (0.8 - L) / (x - L).
+ *   CONTRACT 4 (Dan, 2026-09-21, R3): that floor is 110 (1.10x) and cash out
+ *   opens at 1.11x, where it was 100 before. For any x above 1.10,
+ *   max(raw, 110) >= x iff raw >= x, so every cash-out target still returns
+ *   exactly 0.80B; the ship can never explode until after 1.10x. A receipt
+ *   says which floor it was sealed under through payout_version.
  *
  * THE MINIMUM COMES OUT OF THE ODDS (migration 20260919034436, and the reason
  * the header above used to be wrong). Every live round funds a minimum - a
@@ -28,9 +33,10 @@
  * minimum disagrees with four of six award rounds, so the bet and the minimum
  * are required inputs here, never defaulted.
  *
- * Byte for byte the mapping of supabase/migrations/20260908010241 and the
- * minimum of 20260919034436 (fn_crash_point_cents(roll, bet, minimum)). The
- * unit tests pin this file to vectors computed by production Postgres.
+ * Byte for byte the mapping of supabase/migrations/20260908010241, the minimum
+ * of 20260919034436 (fn_crash_point_cents(roll, bet, minimum)) and the 1.10x
+ * floor of 20260921203512. The unit tests pin this file to vectors computed by
+ * production Postgres.
  */
 
 import { hmacSha256Hex, rollFromHmacHex, sha256Hex } from './wheelFairness';
@@ -38,6 +44,19 @@ import { diamondBonusMinimum } from './diamondBonusPayout';
 import { MAX_DIAMOND_SPIN, MIN_DIAMOND_SPIN } from './bonusGameBudget';
 
 const EIGHTY_TIMES_TWO_48 = 22517998136852480n; // 80 * 2^48
+
+/** The contract every crash round sealed since 2026-09-21 carries. */
+export const CRASH_PAYOUT_VERSION = 4;
+/** The lowest crash point a round of this contract can seal: 1.00x before
+ * contract 4, 1.10x from it. Mirrors GREATEST(100|110, ...) in fn_crash_point_cents. */
+export function crashPointFloorCents(payoutVersion?: number): number {
+  return (payoutVersion ?? 0) >= CRASH_PAYOUT_VERSION ? 110 : 100;
+}
+/** The first multiplier a round of this contract may cash out at: 1.01x before
+ * contract 4, 1.11x from it. Mirrors fn_crash_decide and fn_crash_cashout. */
+export function crashCashoutFloorCents(payoutVersion?: number): number {
+  return (payoutVersion ?? 0) >= CRASH_PAYOUT_VERSION ? 111 : 101;
+}
 
 export interface PlinkoPath {
   /** One entry per row, 0 = left, 1 = right, row 0 first. */
@@ -74,16 +93,18 @@ export function plinkoBitsFromPathBits(pathBits: number, rows = 16): number[] {
 
 /**
  * The sealed crash point in cents: floor(100 * (L + (0.8 - L) * 2^48 / (roll + 1))),
- * floored at 1.00x, for a stake and the minimum sealed with it. Exact BigInt
- * arithmetic, the same integer division as fn_crash_point_cents(roll, bet, minimum).
- * Both are required: a round that funds a minimum does not recompute without it,
- * and a defaulted zero is how a third-party check came to disagree with four of
- * six award rounds (fairness audit 2026-09-22).
+ * floored at the contract's own floor (1.00x, or 1.10x under contract 4), for a
+ * stake and the minimum sealed with it. Exact BigInt arithmetic, the same
+ * integer division as fn_crash_point_cents(roll, bet, minimum). The bet and the
+ * minimum are required: a round that funds a minimum does not recompute without
+ * it, and a defaulted zero is how a third-party check came to disagree with four
+ * of six award rounds (fairness audit 2026-09-22).
  */
 export function crashPointCentsFromRoll(
   roll: number | bigint,
   betChips: number,
-  minimumPayoutChips: number
+  minimumPayoutChips: number,
+  pointFloorCents = 100
 ): number {
   if (!Number.isFinite(betChips) || !Number.isFinite(minimumPayoutChips))
     throw new Error('A Crash Round Is Checked With Its Bet And Its Minimum');
@@ -100,7 +121,9 @@ export function crashPointCentsFromRoll(
       : (100n *
           (5n * minimumCents * (r + 1n) + (4n * betCents - 5n * minimumCents) * 281474976710656n)) /
         (5n * betCents * (r + 1n));
-  return cents < 100n ? 100 : Number(cents);
+  if (!Number.isInteger(pointFloorCents) || pointFloorCents < 100)
+    throw new Error('Invalid Crash Outcome');
+  return cents < BigInt(pointFloorCents) ? pointFloorCents : Number(cents);
 }
 
 /** The curve: floor(e^(k t) * 100) cents, clamped at the cap. t in milliseconds. */
@@ -256,6 +279,8 @@ export interface CrashFairnessInput {
   betChips: number;
   /** The minimum sealed into the round (minimum_payout_chips); 0 only before 20260919034436. */
   minimumPayoutChips: number;
+  /** The contract the round was sealed under; absent before 2026-09-19. */
+  payoutVersion?: number;
 }
 
 export interface CrashFairnessVerdict {
@@ -275,7 +300,8 @@ export async function verifyCrashRound(input: CrashFairnessInput): Promise<Crash
   const computedCrashCents = crashPointCentsFromRoll(
     computedRoll,
     input.betChips,
-    input.minimumPayoutChips
+    input.minimumPayoutChips,
+    crashPointFloorCents(input.payoutVersion)
   );
   const hashMatches = computedHash === input.serverSeedHash.toLowerCase();
   const rollMatches = computedRoll === input.roll;

@@ -140,7 +140,10 @@ test.describe('Cashier Statements - authenticated production route', () => {
         )
         .toMatch(/^(figures|unavailable)$/);
       await expect(totals).not.toContainText('Calculating');
-      await expect(pill).toHaveText(/^(?:\d+(?:\.\d)?[KMB]? (?:Entry|Entries)|Live Ledger)$/);
+      // The pill zone's textContent ends on a deliberate word-boundary space
+      // (SpadeConsole ZoneText, 2026-09-23); a regex toHaveText does not
+      // normalise it, so the anchor tolerates trailing whitespace.
+      await expect(pill).toHaveText(/^(?:\d+(?:\.\d)?[KMB]? (?:Entry|Entries)|Live Ledger)\s*$/);
 
       // (e) The Export word is present. It is enabled exactly when the range
       // holds entries (the page disables it on an empty range), and it is

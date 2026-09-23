@@ -334,7 +334,21 @@ export function ZoneText({
   const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio);
   return (
     <Tag className={`sc-zone ${className}`.trim()} id={id} style={style}>
-      <span ref={ref}>{text}</span>
+      {/* A ZONE'S TEXT ENDS ON A WORD BOUNDARY (2026-09-23).
+          Every zone is absolutely positioned, so a head's eyebrow, title,
+          subtitle and pill print inches apart on the art while sitting
+          immediately adjacent in the DOM. Nothing separated them, so the
+          tournament lobby's head - eyebrow "Tournament" over title "Lobby" -
+          had a text content of "TournamentLobby": a panel that reads
+          "TOURNAMENT / LOBBY" on screen announced itself as one nonsense word
+          to anything that reads text rather than pixels, which is every screen
+          reader, every crawler and every end to end check.
+          The trailing space costs nothing. .sc-zone is `display: grid`, and a
+          grid container does not render a child text run that is only white
+          space, so the separator is in the DOM, where text is read, and in no
+          box, so it moves no pixel. useFitText measures the span below, never
+          this. */}
+      <span ref={ref}>{text}</span>{' '}
     </Tag>
   );
 }

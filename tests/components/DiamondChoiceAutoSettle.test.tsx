@@ -1542,12 +1542,24 @@ describe('every finished round verifies itself', () => {
     for (let i = 0; i < 50 && screen.queryByText(text) === null; i++) await settle();
     return screen.getByText(text);
   };
+  /**
+   * THE RECEIPT IS READ ONCE THE AUTOMATIC CHECK HAS LANDED. Same reason as
+   * said() above, one step earlier. The page's own check of the round answers
+   * on the event loop, not on the fake clock, so the fixed settle() budget was
+   * enough on an idle machine and not on a loaded one: the receipt still read
+   * "Your Prize Is Booked", and 'reports a round that does not verify' went
+   * red in CI and nowhere else, including on branches that had touched none of
+   * this. Both verdicts, the pass and the failure, name this device, so
+   * turning the loop until the receipt says so waits for the verdict without
+   * assuming which one it is. Every caller plays a round that ends with one.
+   */
   const toTheReceipt = async () => {
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
+    for (let i = 0; i < 50 && !receiptCopy().includes('On This Device'); i++) await settle();
     return receiptCopy();
   };
 

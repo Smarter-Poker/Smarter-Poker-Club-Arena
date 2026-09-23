@@ -145,7 +145,7 @@
 }
 
 .cmm-input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff !important;
+  outline: 0.6cqw solid #45adff !important;
   outline-offset: -0.6cqw;
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 9%),
@@ -226,7 +226,7 @@
 
 .cmm-quick-word:focus-visible,
 .cmm-close-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: -1cqw;
 }
 

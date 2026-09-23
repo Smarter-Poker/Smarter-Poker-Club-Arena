@@ -204,7 +204,7 @@
 }
 
 .cro-cancel:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: -0.8cqw;
 }
 
@@ -280,7 +280,7 @@
 /* !important: the popup chassis rings every focused dialog field in its own
    translucent blue at 0,1,0 !important. */
 .cro-input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff !important;
+  outline: 0.6cqw solid #45adff !important;
   outline-offset: -0.6cqw;
 }
 
@@ -345,7 +345,7 @@
 }
 
 .cro-preset:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: 0.4cqw;
 }
 
@@ -422,7 +422,7 @@
 }
 
 .cro-receipts button:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: -0.8cqw;
 }
 

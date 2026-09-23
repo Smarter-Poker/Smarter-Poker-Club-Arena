@@ -498,7 +498,7 @@
 .cbc-actions button:focus-visible,
 .cbc-source button:focus-visible,
 .cbc-member:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: -0.6cqw;
 }
 
@@ -584,7 +584,7 @@
 }
 
 .cbc-input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff !important;
+  outline: 0.6cqw solid #45adff !important;
   outline-offset: -0.6cqw;
 }
 

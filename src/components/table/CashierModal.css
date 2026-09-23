@@ -179,7 +179,7 @@
 }
 
 .cashier-quick__word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: 0.2cqw;
 }
 

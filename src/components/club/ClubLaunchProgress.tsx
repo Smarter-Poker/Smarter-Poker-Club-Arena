@@ -1,4 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import {
+  clubLaunchSkipStorageKey,
+  readClubLaunchSkips,
+  resolveClubLaunchTasks,
+  writeClubLaunchSkips,
+} from '../../utils/clubOpeningEligibility';
+import { reportError } from '../../utils/errorReporter';
 import { compactChips } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubLaunchProgress.css';
@@ -8,12 +15,20 @@ export interface ClubLaunchTask {
   label: string;
   detail: string;
   complete: boolean;
+  /** Only an optional step draws Skip. A required step can never be skipped. */
+  optional?: boolean;
   skipped?: boolean;
   actionLabel: string;
   onAction: () => void;
   disabled?: boolean;
   disabledLabel?: string;
-  onSkip?: () => void;
+}
+
+/** The skip state for one club and one viewer, and the two ways to change it. */
+export interface ClubLaunchSkips {
+  skippedIds: string[];
+  skip: (taskId: string) => void;
+  undoSkip: (taskId: string) => void;
 }
 
 interface Props {
@@ -22,17 +37,70 @@ interface Props {
   clubName: string;
   openingBank: number;
   tasks: ClubLaunchTask[];
+  /**
+   * The lobby owns the skip state so that the checklist, the
+   * `data-opening-checklist` attribute and the desktop scroll layout all
+   * resolve from one value in one render. Omitted by standalone callers, which
+   * then keep their own copy of the same stored state.
+   */
+  skips?: ClubLaunchSkips;
 }
 
-function readSkippedIds(storageKey: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === 'string')
-      : [];
-  } catch {
-    return [];
+interface SkipState {
+  storageKey: string | null;
+  skippedIds: string[];
+}
+
+function loadSkipState(storageKey: string | null): SkipState {
+  return {
+    storageKey,
+    skippedIds: storageKey ? readClubLaunchSkips(storageKey, reportError) : [],
+  };
+}
+
+/**
+ * Skips are stored per club AND per viewer in this browser. A server-side
+ * store is a later database change; until then the storage is wrapped, every
+ * failure is reported, and a failed write still resolves the step for the
+ * current session. Pass an empty club id while the club is unknown.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useClubLaunchSkips(clubId: string, viewerId: string): ClubLaunchSkips {
+  const storageKey = clubId ? clubLaunchSkipStorageKey(clubId, viewerId) : null;
+  const [state, setState] = useState<SkipState>(() => loadSkipState(storageKey));
+  let current = state;
+  if (state.storageKey !== storageKey) {
+    /* Route-param navigation keeps this hook mounted while the club changes.
+       Re-derive during render so one club's skips are never applied to the
+       next club, not even for a frame. */
+    current = loadSkipState(storageKey);
+    setState(current);
   }
+
+  const commit = useCallback(
+    (next: string[]) => {
+      if (!storageKey) return;
+      setState({ storageKey, skippedIds: next });
+      writeClubLaunchSkips(storageKey, next, reportError);
+    },
+    [storageKey]
+  );
+
+  const { skippedIds } = current;
+  const skip = useCallback(
+    (taskId: string) => {
+      if (!skippedIds.includes(taskId)) commit([...skippedIds, taskId]);
+    },
+    [skippedIds, commit]
+  );
+  const undoSkip = useCallback(
+    (taskId: string) => {
+      if (skippedIds.includes(taskId)) commit(skippedIds.filter((id) => id !== taskId));
+    },
+    [skippedIds, commit]
+  );
+
+  return { skippedIds, skip, undoSkip };
 }
 
 export default function ClubLaunchProgress({
@@ -41,25 +109,32 @@ export default function ClubLaunchProgress({
   clubName,
   openingBank,
   tasks,
+  skips,
 }: Props) {
-  /* IDs, never display names: two clubs may share a name, a club may be
-     renamed, and two operators can use the same browser. The parent keys this
-     component by the same identity tuple so React cannot carry one club's
-     in-memory skips into another club during route-param navigation. */
-  const storageKey = `club-launch-skips:${clubId}:${viewerId}`;
-  const [skippedIds, setSkippedIds] = useState<string[]>(() => readSkippedIds(storageKey));
-  const resolvedTasks = tasks.map((task) => ({
-    ...task,
-    skipped: !task.complete && skippedIds.includes(task.id),
-  }));
-  const completed = resolvedTasks.filter((task) => task.complete || task.skipped).length;
-  const allTasksResolved = completed === resolvedTasks.length;
+  /* The parent keys this component by the same club and viewer tuple so React
+     cannot carry one club's in-memory state into another club during
+     route-param navigation. When the lobby supplies `skips`, the local copy is
+     read but never used, so there is still exactly one source of truth. */
+  const ownSkips = useClubLaunchSkips(skips ? '' : clubId, viewerId);
+  const { skippedIds, skip, undoSkip } = skips ?? ownSkips;
+  const resolvedTasks = resolveClubLaunchTasks(tasks, skippedIds);
+  const completedCount = resolvedTasks.filter((task) => task.complete).length;
+  const skippedCount = resolvedTasks.filter((task) => task.skipped).length;
+  const allTasksResolved = completedCount + skippedCount === resolvedTasks.length;
+  /* The meter counts finished work only. A skipped step is resolved, not done,
+     so it never moves the bar; 100 is unreachable while the panel is drawn. */
   const percent = allTasksResolved
     ? 100
-    : Math.min(99, Math.round((completed / resolvedTasks.length) * 100));
+    : Math.min(99, Math.round((completedCount / resolvedTasks.length) * 100));
   const [expanded, setExpanded] = useState(percent < 100);
 
   if (allTasksResolved) return null;
+
+  const progressLine = `${completedCount} Of ${tasks.length} Steps Complete`;
+  const subtitle =
+    skippedCount > 0
+      ? `${progressLine} · ${skippedCount} Skipped`
+      : `Prepare For Play · ${progressLine}`;
 
   return (
     <SpadeConsole
@@ -69,7 +144,7 @@ export default function ClubLaunchProgress({
       eyebrow="New Club Opening Checklist"
       title={`Open ${clubName}`}
       titleId="club-launch-title"
-      subtitle={`Prepare For Play · ${completed} Of ${tasks.length} Steps Complete`}
+      subtitle={subtitle}
       pill={`${percent}%`}
       pillInk={percent >= 75 ? 'green' : percent >= 40 ? 'gold' : 'blue'}
       crest="diamond"
@@ -118,42 +193,49 @@ export default function ClubLaunchProgress({
               </span>
               <div className="club-launch__step-copy">
                 <strong>{task.label}</strong>
-                <span>{task.complete ? 'Complete' : task.skipped ? 'Skipped' : task.detail}</span>
+                <span>
+                  {task.complete
+                    ? 'Complete'
+                    : task.skipped
+                      ? 'Skipped'
+                      : task.optional
+                        ? task.detail
+                        : `Required · ${task.detail}`}
+                </span>
               </div>
               <div className="club-launch__step-actions">
-                {!task.complete && !task.skipped && (
+                {task.optional && !task.complete && !task.skipped && (
                   <button
                     type="button"
                     className="is-skip"
-                    onClick={() =>
-                      setSkippedIds((current) => {
-                        const next = current.includes(task.id) ? current : [...current, task.id];
-                        try {
-                          localStorage.setItem(storageKey, JSON.stringify(next));
-                        } catch {
-                          /* Storage can be disabled or full. The current
-                             session still resolves the step; persistence is
-                             best effort and must never crash the checklist. */
-                        }
-                        return next;
-                      })
-                    }
+                    aria-label={`Skip ${task.label}`}
+                    onClick={() => skip(task.id)}
                   >
                     Skip
                   </button>
                 )}
+                {task.skipped && (
+                  <button
+                    type="button"
+                    className="is-skip"
+                    aria-label={`Undo Skip ${task.label}`}
+                    onClick={() => undoSkip(task.id)}
+                  >
+                    Undo Skip
+                  </button>
+                )}
+                {/* A skipped step keeps its real action: skipping is "not
+                    now", never "locked out". */}
                 <button
                   type="button"
                   onClick={task.onAction}
-                  disabled={task.complete || task.skipped || task.disabled}
+                  disabled={task.complete || task.disabled}
                 >
                   {task.complete
                     ? 'Done'
-                    : task.skipped
-                      ? 'Skipped'
-                      : task.disabled
-                        ? task.disabledLabel || 'Owner Required'
-                        : task.actionLabel}
+                    : task.disabled
+                      ? task.disabledLabel || 'Owner Required'
+                      : task.actionLabel}
                 </button>
               </div>
             </article>

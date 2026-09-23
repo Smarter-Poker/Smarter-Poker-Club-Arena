@@ -1,24 +1,37 @@
 .club-setup-wizard {
+  --csw-pad-top: max(8px, env(safe-area-inset-top, 0px));
+  --csw-pad-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  --csw-height: calc(100dvh - var(--csw-pad-top) - var(--csw-pad-bottom));
   position: fixed;
   z-index: 10050;
   inset: 0;
+  min-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: contain;
-  padding-block: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-bottom));
+  padding-block: var(--csw-pad-top) var(--csw-pad-bottom);
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   background: #000;
   color: #e4e7ec;
 }
 
+/* THE CONSOLE NARROWS BY HEIGHT, NOT ONLY BY WIDTH. The painted head and foot
+   are (348 + 277) / 1000 = 62.5% of the console's WIDTH tall, so a console as
+   wide as a short screen allows left almost nothing to scroll: measured on
+   1366x768, 127px of body, and on an 852x393 landscape phone the plates sat
+   below the screen. Capping the width at 88% of the usable height keeps the
+   painted chrome to 55% of that height and leaves the other 45% to the body,
+   at the art's native ratio. --sc-max only ever narrows; it never passes the
+   master's own 1000px. */
 .club-setup-wizard__shell {
-  --sc-max: 1000px;
+  --sc-max: min(1000px, max(300px, calc(var(--csw-height) * 0.88)));
   display: grid;
   width: 100%;
-  max-width: 1000px;
+  max-width: var(--sc-max);
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
-  height: calc(100dvh - 16px);
-  min-height: calc(100dvh - 16px);
+  height: var(--csw-height);
+  min-height: var(--csw-height);
 }
 
 .club-setup-wizard__shell > .sc__head,
@@ -52,7 +65,7 @@
 .club-setup-wizard input:focus-visible,
 .club-setup-wizard select:focus-visible,
 .club-setup-wizard textarea:focus-visible {
-  outline: 0.4cqw solid #8fd4ff;
+  outline: 0.4cqw solid #45adff;
   outline-offset: 0.7cqw;
 }
 
@@ -154,7 +167,7 @@
   align-items: center;
   gap: 1cqw;
   flex: 0 0 auto;
-  color: #75818d !important;
+  color: #9aa5b3 !important;
   font-size: 2.4cqw;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -200,14 +213,14 @@
   text-transform: uppercase;
   text-shadow:
     0 -0.15cqw 0 rgb(255 255 255 / 44%),
-    0 0.28cqw 0 #606871,
+    0 0.28cqw 0 #9aa5b3,
     0 0.52cqw 0 #020304;
 }
 
 .club-setup-wizard__panel > p,
 .club-setup-wizard__commit-note {
   margin: 0;
-  color: #d7dee7;
+  color: #e4e7ec;
   font:
     500 3.2cqw/1.5 Inter,
     system-ui,
@@ -385,14 +398,73 @@
   color: #c8ffd2;
 }
 
+.club-setup-wizard__ledger-balance.is-short strong,
+.club-setup-wizard__shortfall {
+  color: #ff5b6e;
+  text-shadow: 0 0 0.8cqw rgb(240 40 73 / 58%);
+}
+
+p.club-setup-wizard__shortfall {
+  margin: 0;
+  padding-block: 2cqw 0;
+  font:
+    700 2.8cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+}
+
+/* The exact-transfer confirmation: the kit's labeled On / Off switch, with the
+   amount printed in full in its label. */
+.club-setup-wizard__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2cqw;
+  min-width: 0;
+  padding-block: 2.2cqw;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+}
+
+.club-setup-wizard__confirm .config-toggle {
+  gap: 3cqw;
+  min-width: 0;
+  padding: 0.6cqw 0;
+  border-bottom: 0;
+}
+
+.club-setup-wizard__confirm .toggle-label {
+  min-width: 0;
+  color: #e4e7ec;
+  font:
+    700 3.1cqw/1.35 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.club-setup-wizard__confirm small {
+  color: #9aa5b3;
+  font-size: 2.4cqw;
+  letter-spacing: 0.04em;
+}
+
+.club-setup-wizard__confirm small.club-setup-wizard__shortfall {
+  color: #ff5b6e;
+}
+
 .club-setup-wizard__commit-note {
   padding-block: 2cqw;
   color: #9aa5b3;
   font-size: 2.7cqw;
 }
 
+/* The reason Continue is blocked stays in view however long the step is: it
+   rides the bottom of the scroll region, on the same black as the glass. */
 .club-setup-wizard__error {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
   margin-top: 2cqw;
+  background: #000;
   padding-block: 1.8cqw;
   border-top: 1px solid #f02849;
   border-bottom: 1px solid #f02849;
@@ -403,16 +475,17 @@
   text-shadow: 0 0 0.8cqw rgb(240 40 73 / 58%);
 }
 
+/* Phones run edge to edge, but never under the notch or the home bar. */
 @media (max-width: 560px) {
   .club-setup-wizard {
-    padding: 0;
+    --csw-pad-top: env(safe-area-inset-top, 0px);
+    --csw-pad-bottom: env(safe-area-inset-bottom, 0px);
   }
+}
 
-  .club-setup-wizard__shell {
-    height: 100dvh;
-    min-height: 100dvh;
-  }
-
+/* The grids follow the CONSOLE's width, not the screen's: a landscape phone is
+   a wide screen holding a narrow console. */
+@container (max-width: 560px) {
   .club-setup-wizard__assurances,
   .club-setup-wizard__choice-grid,
   .club-setup-wizard__fields.two-columns {

@@ -43,10 +43,18 @@ import haptic from '../services/HapticService';
 import GameCreationActions, {
   type GameCreationTarget,
 } from '../components/club/GameCreationActions';
-import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
+import ClubLaunchProgress, {
+  type ClubLaunchTask,
+  useClubLaunchSkips,
+} from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
-import { hasNewClubOpeningChecklist } from '../utils/clubOpeningEligibility';
+import {
+  hasNewClubOpeningChecklist,
+  hasOwnClubPicture,
+  resolveClubLaunchTasks,
+  resolveClubUnionScope,
+} from '../utils/clubOpeningEligibility';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
    Selecting a row NEVER joins or spends; every commit action goes through the
@@ -471,6 +479,35 @@ const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
  * rows only the previous list knew about are kept and appended rather than
  * vanishing, so a row the RPC's own limit clipped does not blink out.
  */
+/**
+ * Where the member count behind a club level came from on one load.
+ *   'live'         this club's own realtime count
+ *   'union-total'  a union's summed count across its clubs
+ *   'row'          the club row, by design (a club inside a union)
+ *   'fallback'     a live read failed or came back empty, so the number is
+ *                  whatever was left over from the club row
+ */
+export type ClubMemberCountSource = 'live' | 'union-total' | 'row' | 'fallback';
+
+/**
+ * A level-up is celebrated only when two loads measured the same thing. A
+ * union's total falls back to the club's own, much smaller, count when its
+ * scope or sum read fails; the next good load then "jumps" several levels on a
+ * number that never changed. Any transition that touches a fallback, or that
+ * crosses from one kind of count to another, is not a level-up.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldCelebrateClubLevelUp(
+  previous: { level: number; source: ClubMemberCountSource | null } | null,
+  next: { level: number; source: ClubMemberCountSource }
+): boolean {
+  if (!previous || previous.level <= 0 || next.level <= previous.level) return false;
+  if (!previous.source || previous.source === 'fallback' || next.source === 'fallback') {
+    return false;
+  }
+  return previous.source === next.source;
+}
+
 export function mergeFastRows<T extends { id?: string | number }>(
   previous: readonly T[],
   incoming: readonly T[]
@@ -563,6 +600,20 @@ const CREATE_TARGET_FOR_TAB: Record<GameType, GameCreationTarget | null> = {
      because if a Mixed board is ever surfaced, no button is the honest
      starting point - somebody chooses what it creates, deliberately. */
   MIXED: null,
+};
+
+/**
+ * The cash variant each cash tab creates, as a CreateTablePage game type id.
+ * Table Management accepts it as `?create=table&game=<id>` and opens that
+ * variant's config form, which keeps a Back To Game Types control for the
+ * tab's other variants (PLO5, Short Deck, FLO8 and so on). Each id sorts back
+ * into its own tab through cashKind(), so the table an operator builds from
+ * the NLH tab lands on the NLH tab.
+ */
+const CREATE_TABLE_GAME_FOR_TAB: Partial<Record<GameType, string>> = {
+  HOLDEM: 'nlh',
+  OMAHA: 'plo4',
+  LIMIT: 'flh',
 };
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -732,7 +783,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      the same server entitlement, and the same label while it is off. */
   const arenaRegistrationClosedLabel =
     isAutomaticArena && arenaAccess?.tournamentsEnabled !== true ? 'Not Open Yet' : undefined;
-  useVisibilityRefresh(() => loadClubData());
+  /* A failed read of the opening setup state is retried once immediately (see
+     the effect below) and, if that also fails, once more on the page's next
+     natural refresh. No timer and no loop: the flag is consumed when used. */
+  const openingSetupReadFailedRef = useRef(false);
+  const [openingSetupReadRevision, setOpeningSetupReadRevision] = useState(0);
+  useVisibilityRefresh(() => {
+    if (openingSetupReadFailedRef.current) {
+      openingSetupReadFailedRef.current = false;
+      setOpeningSetupReadRevision((revision) => revision + 1);
+    }
+    return loadClubData();
+  });
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
   /**
@@ -917,6 +979,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      this rather than against the `prev` handed to a state updater, because an
      updater can be called more than once for one real change. */
   const clubLevelRef = useRef<typeof clubLevel>(null);
+  /* What the committed level's member count was measured from. */
+  const clubLevelSourceRef = useRef<ClubMemberCountSource | null>(null);
   useEffect(() => {
     clubLevelRef.current = clubLevel;
   }, [clubLevel]);
@@ -932,6 +996,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     () => useUserStore.getState().user?.id ?? null
   );
   const openingChecklistEligible = hasNewClubOpeningChecklist(club, unionIdForCreate);
+  /* Owned here, not inside the checklist, so the checklist, the
+     data-opening-checklist attribute and the desktop scroll layout all drop in
+     the same render the last step resolves. */
+  const launchSkips = useClubLaunchSkips(club?.id ?? '', currentUserId || 'unknown');
   const toast = useToast();
   useEffect(() => {
     if (
@@ -944,19 +1012,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       return;
     }
     let cancelled = false;
-    void clubOpeningSetupService
-      .getState(club.id)
-      .then((setup) => {
-        if (!cancelled) setOpeningSetupComplete(Boolean(setup?.completed_at));
-      })
-      .catch((error) => {
-        if (!cancelled) setOpeningSetupComplete(false);
-        reportError(error, 'ClubHomePage.Opening_setup_state');
-      });
+    const setupClubId = club.id;
+    const readSetupState = (attempt: 1 | 2): Promise<void> =>
+      clubOpeningSetupService
+        .getState(setupClubId)
+        .then((setup) => {
+          if (cancelled) return;
+          openingSetupReadFailedRef.current = false;
+          setOpeningSetupComplete(Boolean(setup?.completed_at));
+        })
+        .catch((error) => {
+          reportError(error, 'ClubHomePage.Opening_setup_state', { attempt });
+          if (cancelled) return;
+          /* One immediate retry. After that the task reads incomplete, and
+             the next natural refresh of this page asks once more. */
+          if (attempt === 1) return readSetupState(2);
+          setOpeningSetupComplete(false);
+          openingSetupReadFailedRef.current = true;
+        });
+    void readSetupState(1);
     return () => {
       cancelled = true;
     };
-  }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible]);
+  }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible, openingSetupReadRevision]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
       setConfiguredAgentUserId(null);
@@ -1060,6 +1138,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setOpeningSetupComplete(false);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
+    clubLevelSourceRef.current = null;
+    openingSetupReadFailedRef.current = false;
     setJackpotAmount(0);
     /* A playing count belongs to exactly one club scope. Leaving this state
        intact during a route-param switch painted the previous club's live
@@ -2588,6 +2668,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // Check if this club is inside a union
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
+      /* What clubData.member_count ends up measured from on THIS load; the
+         level-up celebration refuses to compare across a failed read. */
+      let memberCountSource: ClubMemberCountSource = 'row';
       let tournamentScopeConfirmed = false;
       try {
         const { data: ucRow, error: ucErr } = await unionRowPromise;
@@ -2749,6 +2832,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               // The level badge is derived from clubData further down; keep the
               // two from disagreeing the way the header and the record did.
               clubData.member_count = unionMembers;
+              memberCountSource = 'union-total';
+            } else {
+              memberCountSource = 'fallback';
             }
           }
 
@@ -2795,10 +2881,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             setClub((prev) => (prev ? { ...prev, member_count: liveCount } : prev));
             // Also update clubData so the level calculation below uses the live count
             clubData.member_count = liveCount;
+            memberCountSource = 'live';
+          } else {
+            memberCountSource = 'fallback';
           }
         } catch (e) {
           reportError(e, 'ClubHomePage.setClub');
           // Fall back to denormalized clubs.member_count
+          memberCountSource = 'fallback';
         }
       }
 
@@ -3079,7 +3169,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          level, which is the honest thing to compare against.
          Title Case and no em dash, per the popup rule. */
       const previousLevel = clubLevelRef.current;
-      if (previousLevel && previousLevel.level > 0 && levelInfo.level > previousLevel.level) {
+      const celebrateLevelUp = shouldCelebrateClubLevelUp(
+        previousLevel ? { level: previousLevel.level, source: clubLevelSourceRef.current } : null,
+        { level: levelInfo.level, source: memberCountSource }
+      );
+      clubLevelSourceRef.current = memberCountSource;
+      if (celebrateLevelUp) {
         toast.success(`Level Up: Your Club Reached Lv.${levelInfo.level}, ${levelInfo.tierLabel}`);
         haptic.success();
       }
@@ -4555,18 +4650,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* Staff may edit the club notice. Derived once so the markup, the keyboard
      path and the visibility test cannot drift apart. */
   const noticeEditable = isOwner || isClubStaff(userRole);
-  const unionManagedClub = Boolean(club.is_union || club.union_id || unionIdForCreate);
-  const canCreateClubGames = noticeEditable && !unionManagedClub;
+  /* FAIL CLOSED. `unionIdForCreate` is undefined until the union lookup gives
+     an authoritative answer, and stays undefined for the whole session when
+     that lookup errors with nothing to fall back on. Only a positive
+     'standalone' may show create controls; 'unresolved' shows none. */
+  const clubUnionScope = resolveClubUnionScope(club, unionIdForCreate);
+  const canCreateClubGames = noticeEditable && clubUnionScope === 'standalone';
 
   const openCreationFor = (target: GameType) => {
     if (!canCreateClubGames) {
-      toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
+      toast.info(
+        clubUnionScope === 'union'
+          ? 'This Club Is Managed By A Union. Create Games From The Union Console.'
+          : 'Club Setup Is Still Loading. Try Again In A Moment.'
+      );
       return;
     }
     haptic.selection();
     const create =
       target === 'MTT' ? 'event' : target === 'SPIN' ? 'spin' : target === 'SNG' ? 'sng' : 'table';
-    navigate(`/clubs/${clubId}/table-management?create=${create}`);
+    const tableGame = create === 'table' ? CREATE_TABLE_GAME_FOR_TAB[target] : undefined;
+    navigate(
+      `/clubs/${clubId}/table-management?create=${create}${tableGame ? `&game=${tableGame}` : ''}`
+    );
   };
 
   const hasCashCategory = (category: 'HOLDEM' | 'OMAHA' | 'LIMIT') =>
@@ -4574,7 +4680,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const tournamentKinds = tournaments.map((tournament) =>
     classifyTournament(tournament as unknown as LobbyTournamentRow)
   );
-  const launchTasks: ClubLaunchTask[] = [
+  /* The opening setup wizard is the one REQUIRED step: it cannot be skipped.
+     Every other step is optional, may be skipped, and a skip can be undone. */
+  const launchTaskList: ClubLaunchTask[] = [
     {
       id: 'opening-setup',
       label: 'Complete The Opening Setup Wizard',
@@ -4589,7 +4697,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'identity',
       label: 'Choose A Club Profile Picture',
       detail: 'Add A Recognizable Club Mark',
-      complete: Boolean(club.logo_url || club.avatar_url),
+      /* Creation always stores a logo, usually a built-in placeholder crest.
+         Only a picture of the club's own finishes this step. */
+      complete: hasOwnClubPicture(club),
+      optional: true,
       actionLabel: 'Add Picture',
       onAction: () => navigate(`/clubs/${clubId}/settings`),
     },
@@ -4598,6 +4709,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Write A Club Tag Line',
       detail: 'Tell Players What Makes This Club Special',
       complete: Boolean(club.tagline?.trim()),
+      optional: true,
       actionLabel: 'Add Tag Line',
       onAction: () =>
         openingSetupComplete ? navigate(`/clubs/${clubId}/settings`) : setShowOpeningWizard(true),
@@ -4609,6 +4721,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Open Your First NLH Table',
       detail: 'Create A No-Limit Hold’em Cash Game',
       complete: hasCashCategory('HOLDEM'),
+      optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('HOLDEM'),
     },
@@ -4617,6 +4730,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Open Your First PLO Table',
       detail: 'Create A Pot-Limit Omaha Cash Game',
       complete: hasCashCategory('OMAHA'),
+      optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('OMAHA'),
     },
@@ -4625,6 +4739,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Open Your First Limit Table',
       detail: 'Create A Fixed-Limit Cash Game',
       complete: hasCashCategory('LIMIT'),
+      optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('LIMIT'),
     },
@@ -4633,6 +4748,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Schedule Your First MTT',
       detail: 'Publish A Multi-Table Tournament',
       complete: tournamentKinds.includes('mtt'),
+      optional: true,
       actionLabel: 'Create MTT',
       onAction: () => openCreationFor('MTT'),
     },
@@ -4643,6 +4759,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         ? 'Create A Three-Player Spin Event'
         : 'Enable And Fund Spins First',
       complete: tournamentKinds.includes('spin'),
+      optional: true,
       actionLabel: club.spins_enabled ? 'Create Spin' : 'Set Up Spins',
       onAction: () => (club.spins_enabled ? openCreationFor('SPIN') : setShowOpeningWizard(true)),
     },
@@ -4651,6 +4768,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Launch Your First Heads Up Game',
       detail: 'Create A Two-Player Duel',
       complete: tournamentKinds.includes('sng'),
+      optional: true,
       actionLabel: 'Create Heads Up',
       onAction: () => openCreationFor('SNG'),
     },
@@ -4659,6 +4777,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Invite Your First Player',
       detail: 'Share Your Club Link And Build The Room',
       complete: Number(club.member_count || 0) > 1,
+      optional: true,
       actionLabel: 'Invite Player',
       onAction: () => bounceToInvite(true),
     },
@@ -4667,6 +4786,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       label: 'Configure Your First Agent',
       detail: 'Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback',
       complete: Boolean(configuredAgentUserId),
+      optional: true,
       actionLabel: Number(club.member_count || 0) > 1 ? 'Choose Player' : 'Invite Player First',
       onAction: () =>
         configuredAgentUserId
@@ -4678,9 +4798,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       disabledLabel: 'Owner Required',
     },
   ];
+  const launchTasks = resolveClubLaunchTasks(launchTaskList, launchSkips.skippedIds);
+  /* THE OWNER'S OPENING JOURNEY, SHOWN TO THE OWNER. The wizard state and the
+     agent state are read for the owner alone, so a staff viewer could never
+     finish the list and was left with a permanent Owner Required row. */
   const showLaunchChecklist =
     openingChecklistEligible &&
-    noticeEditable &&
+    isOwner &&
     launchTasks.some((task) => !task.complete && !task.skipped);
 
   return (
@@ -5155,6 +5279,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       managementPath={`/clubs/${clubId}/table-management`}
                       compact
                       only={CREATE_TARGET_FOR_TAB[gameType]}
+                      tableGame={CREATE_TABLE_GAME_FOR_TAB[gameType]}
                       desktopOnly
                       onNavigate={(path) => navigate(path)}
                     />
@@ -5366,6 +5491,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}
             tasks={launchTasks}
+            skips={launchSkips}
           />
         )}
 
@@ -5775,6 +5901,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           clubId={club.id}
           clubName={club.name}
           clubBank={Number(club.chip_treasury) || 0}
+          initialTagline={club.tagline ?? null}
           onClose={() => setShowOpeningWizard(false)}
           onComplete={({ clubBankAfter, spinsEnabled, tagline }) => {
             setClub((previous) =>

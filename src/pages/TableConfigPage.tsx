@@ -31,7 +31,33 @@ import {
 import { maxSeatsForVariant, maxSeatsTheDeckAllows } from '../config/tableSeating';
 
 import { tournamentService } from '../services/TournamentService';
-import { buildTournamentConfig } from '../lib/tournamentFromTableConfig';
+import {
+  buildTournamentConfig,
+  entryRulesForDraft,
+  prizeStyleForDraft,
+  MTT_ENTRY_RULES,
+  MTT_PRIZE_STYLES,
+  type MttEntryRules,
+  type MttPrizeStyle,
+} from '../lib/tournamentFromTableConfig';
+import {
+  clockLabel12,
+  isCompleteLocalStart,
+  joinLocalStart,
+  quarterHourOptions,
+  splitLocalStart,
+  upcomingDateOptions,
+} from '../lib/quarterHourStartSelect';
+import {
+  DAYS_OF_MONTH,
+  REPEAT_CHOICES,
+  clampDayOfMonth,
+  recurrenceForSave,
+  repeatChoiceFor,
+  shortMonthHint,
+  type RecurrenceCadence,
+  type RepeatChoice,
+} from '../lib/tableConfigRecurrence';
 import {
   canRunAsTournament as gameTypeCanRunAsTournament,
   canRunAsSpin as gameTypeCanRunAsSpin,
@@ -202,6 +228,12 @@ interface TableConfig {
   customAddOn: boolean;
   addOnBreakLengthMinutes: number;
   koBounty: boolean;
+  /* The two axes of an MTT (2026-09-20): how a player may come back, and how
+     the prize money is shaped. Separate controls, separate fields; changing
+     one never touches the other. `koBounty` is kept in step with prizeStyle
+     only so a template saved today still reads correctly to older code. */
+  entryRules: MttEntryRules;
+  prizeStyle: MttPrizeStyle;
   gtdPrizePool: boolean;
   finalTableDeal: boolean;
   bigBlindAnte: boolean;
@@ -234,6 +266,10 @@ interface TableConfig {
   scheduleTimes: string[];
   scheduleMode: 'times' | 'interval';
   scheduleIntervalMinutes: number;
+  /* 2026-09-20: the Repeat control. `tournamentSchedule` above is still the
+     on/off half (older templates carry only that, and mean weekly). */
+  scheduleCadence: RecurrenceCadence;
+  scheduleDayOfMonth: number;
 
   // Security Settings
   //
@@ -377,6 +413,9 @@ const DEFAULT_CONFIG: TableConfig = {
   customAddOn: false,
   addOnBreakLengthMinutes: 1,
   koBounty: false,
+  // Rebuy, because the rebuy count below has always defaulted to 3.
+  entryRules: 'rebuy',
+  prizeStyle: 'regular',
   gtdPrizePool: false,
   finalTableDeal: false,
   bigBlindAnte: false,
@@ -407,6 +446,8 @@ const DEFAULT_CONFIG: TableConfig = {
   scheduleTimes: ['18:00'],
   scheduleMode: 'times',
   scheduleIntervalMinutes: 60,
+  scheduleCadence: 'weekly',
+  scheduleDayOfMonth: 1,
 
   // Security Settings.
   // OFF by default. The column default was `true`, so all 56,053 existing
@@ -476,6 +517,10 @@ export default function TableConfigPage({
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [savingTemplate, setSavingTemplate] = useState(false);
+  /* The payout depth the loaded template was saved with. A new MTT is offered
+     10 to 15 percent only; a template saved at 20 keeps 20 on its own list, so
+     loading it never changes it and the owner can put it back. */
+  const [savedPayoutChoice, setSavedPayoutChoice] = useState<string | undefined>(undefined);
   // Next Step (Satellite): upcoming non-satellite tournaments in this club
   // that a satellite here can feed seats into.
   const [satelliteTargets, setSatelliteTargets] = useState<{ id: string; name: string }[]>([]);
@@ -730,6 +775,7 @@ export default function TableConfigPage({
   const loadTemplate = (templateId: string) => {
     if (!templateId) {
       setSelectedTemplateId('');
+      setSavedPayoutChoice(undefined);
       return;
     }
     const template = templates.find((t) => t.id === templateId);
@@ -752,10 +798,28 @@ export default function TableConfigPage({
       return;
     }
 
-    setConfig(restored.config);
+    /* A template saved before 2026-09-20 has no Entry Rules or Prize Style.
+       Read them from what it DID save (its rebuy count and its KO Bounty
+       switch) instead of letting the form defaults answer for it. */
+    const savedConfig = (template.config ?? {}) as Partial<TableConfig>;
+    const restoredConfig: TableConfig = {
+      ...restored.config,
+      entryRules: entryRulesForDraft({
+        entryRules: savedConfig.entryRules,
+        numberOfRebuysReentries: restored.config.numberOfRebuysReentries,
+      }),
+      prizeStyle: prizeStyleForDraft({
+        prizeStyle: savedConfig.prizeStyle,
+        koBounty: restored.config.koBounty,
+      }),
+    };
+    setConfig(restoredConfig);
+    setSavedPayoutChoice(
+      restoredConfig.gameMode === 'mtt' ? restoredConfig.payoutStructure : undefined
+    );
     // The restored name is OURS, so the blinds keep renaming the table until
     // the owner types over it.
-    autoNameRef.current = restored.config.name;
+    autoNameRef.current = restoredConfig.name;
     setSelectedTemplateId(templateId);
     toast.success(`Loaded Template: ${template.name}`);
     restored.notices.forEach((notice) => toast.info(notice));
@@ -909,12 +973,19 @@ export default function TableConfigPage({
    * toasted); throws on RPC failure so callers surface the server's reason.
    */
   const saveTournamentSchedule = async (): Promise<boolean> => {
-    const scheduleValue = {
-      daysOfWeek: config.scheduleDays,
-      startTimesUtc: config.scheduleTimes.filter((t) => t.trim() !== ''),
-      mode: config.scheduleMode,
-      intervalMinutes: config.scheduleIntervalMinutes,
-    };
+    // Daily and Monthly are saved as set times on all seven days, with the
+    // cadence keys the spawner reads. See lib/tableConfigRecurrence.
+    const recurrence = recurrenceForSave({
+      cadence: config.scheduleCadence,
+      dayOfMonth: config.scheduleDayOfMonth,
+      schedule: {
+        daysOfWeek: config.scheduleDays,
+        startTimesUtc: config.scheduleTimes,
+        mode: config.scheduleMode,
+        intervalMinutes: config.scheduleIntervalMinutes,
+      },
+    });
+    const scheduleValue = recurrence.schedule;
     const problem = validateWeeklySchedule(scheduleValue);
     if (problem) {
       toast.error(problem);
@@ -923,6 +994,7 @@ export default function TableConfigPage({
     const resolvedId = await resolveClubUUID(clubId || '');
     const rpcConfig = tournamentService.buildRpcConfig(buildTournamentConfig(config, gameType));
     delete rpcConfig.startTime;
+    Object.assign(rpcConfig, recurrence.configKeys);
     await tournamentScheduleService.upsert({
       clubId: resolvedId,
       unionId: null,
@@ -947,6 +1019,17 @@ export default function TableConfigPage({
         return;
       }
 
+      // A start is a date AND a time. Half of one would parse as no start at
+      // all and the event would quietly take the service default instead.
+      if (
+        config.gameMode === 'mtt' &&
+        config.startTime &&
+        !isCompleteLocalStart(config.startTime)
+      ) {
+        toast.error('Choose Both A Start Date And A Start Time, Or Clear Both.');
+        return;
+      }
+
       const tournamentConfig = buildTournamentConfig(config, gameType);
 
       // ── Tournament Schedule (2026-08-22): with the toggle ON, save a
@@ -960,7 +1043,11 @@ export default function TableConfigPage({
       }
 
       // "Save the Start Time": remember the picked time for next visit.
-      if (config.gameMode === 'mtt' && config.saveStartTime && config.startTime) {
+      if (
+        config.gameMode === 'mtt' &&
+        config.saveStartTime &&
+        isCompleteLocalStart(config.startTime)
+      ) {
         try {
           localStorage.setItem(`ca_saved_start_time_${clubId}`, config.startTime);
         } catch {
@@ -1033,6 +1120,29 @@ export default function TableConfigPage({
     }
   };
 
+  /* START DATE AND START TIME (2026-09-20). `config.startTime` is still the one
+     local `YYYY-MM-DDTHH:MM` string buildTournamentConfig parses; the two
+     dropdowns below only read and write its halves. A saved value that is off
+     the quarter-hour grid, or a saved date outside the offered year, stays in
+     its list and stays selected. */
+  const startParts = splitLocalStart(config.startTime);
+  const startDateOptions = useMemo(
+    () => upcomingDateOptions(new Date(), startParts.date),
+    [startParts.date]
+  );
+  const startTimeOptions = useMemo(
+    () => quarterHourOptions(startParts.time, clockLabel12),
+    [startParts.time]
+  );
+
+  const repeatChoice = repeatChoiceFor(config);
+  const monthlyHint = shortMonthHint(config.scheduleDayOfMonth);
+  /* A satellite pays seats and a freeroll has no buy-in to cut a bounty from,
+     so both run as Regular whatever Prize Style holds (buildTournamentConfig
+     applies the same rule). The stored choice is left alone and comes back the
+     moment the lock lifts. */
+  const prizeStyleLocked = isFreeBuy || config.nextStepSatellite;
+
   const content = (
     <div className="table-config-page">
       {/* Header */}
@@ -1045,8 +1155,10 @@ export default function TableConfigPage({
           can actually deal. HandController maps an unknown variant to 2 cards
           and a full deck, so offering a Limit Hold'em or Mixed tournament would
           silently run No Limit Hold'em instead. */}
-      <div className="mode-tabs">
+      <div className="mode-tabs" role="group" aria-label="Game Format">
         <button
+          type="button"
+          aria-pressed={config.gameMode === 'regular'}
           className={`mode-tab ${config.gameMode === 'regular' ? 'active' : ''}`}
           onClick={() => updateConfig('gameMode', 'regular')}
         >
@@ -1055,12 +1167,16 @@ export default function TableConfigPage({
         {canRunAsTournament && (
           <>
             <button
+              type="button"
+              aria-pressed={config.gameMode === 'sng'}
               className={`mode-tab ${config.gameMode === 'sng' ? 'active' : ''}`}
               onClick={() => updateConfig('gameMode', 'sng')}
             >
               SNG
             </button>
             <button
+              type="button"
+              aria-pressed={config.gameMode === 'mtt'}
               className={`mode-tab ${config.gameMode === 'mtt' ? 'active' : ''}`}
               onClick={() => updateConfig('gameMode', 'mtt')}
             >
@@ -1175,6 +1291,7 @@ export default function TableConfigPage({
               label="VIP Only"
               value={config.isVipOnly}
               onChange={(v) => updateConfig('isVipOnly', v)}
+              tooltip="Only VIP Members And This Club's Owner, Admins And Agents Can Register"
             />
             <div className="config-textarea">
               <span className="textarea-label">Short Description</span>
@@ -1186,12 +1303,27 @@ export default function TableConfigPage({
                 onChange={(e) => updateConfig('shortDescription', e.target.value)}
               />
             </div>
-            <Toggle
-              label="Ban Chat"
-              value={config.banChat}
-              onChange={(v) => updateConfig('banChat', v)}
-              tooltip="Table Chat Is Disabled For Players In This Tournament"
-            />
+            {/* MTT CHAT IS BANNED BY DEFAULT (owner requirement, 2026-09-20).
+                On the MTT tab the rule is shown locked On, the way the club
+                tournament modal shows it, and buildTournamentConfig sends
+                banChat true whatever the draft held. A Sit And Go keeps its
+                own switch. */}
+            {config.gameMode === 'mtt' ? (
+              <Toggle
+                label="Ban Chat"
+                value={true}
+                onChange={() => {}}
+                disabled
+                tooltip="Table Chat Is Always Off In A Multi-Table Tournament. This Rule Is Locked."
+              />
+            ) : (
+              <Toggle
+                label="Ban Chat"
+                value={config.banChat}
+                onChange={(v) => updateConfig('banChat', v)}
+                tooltip="Table Chat Is Disabled For Players In This Tournament"
+              />
+            )}
             <Toggle
               label="All-In Or Fold"
               value={config.allInOrFold}
@@ -1214,6 +1346,7 @@ export default function TableConfigPage({
               label="Hide Club Name"
               value={config.hideClubName}
               onChange={(v) => updateConfig('hideClubName', v)}
+              tooltip="Lobby Listings Outside Your Club Do Not Show Which Club Is Hosting This Tournament"
             />
             <Slider
               label="Table Size"
@@ -1222,6 +1355,7 @@ export default function TableConfigPage({
               min={2}
               max={sngSeatCap}
               suffix=" seats"
+              tooltip="The Most Players Seated At One Table. The Field Is Spread Across As Many Tables As It Needs."
             />
             <Slider
               label="Action Time"
@@ -1234,6 +1368,7 @@ export default function TableConfigPage({
               min={10}
               max={60}
               suffix=" sec"
+              tooltip="Seconds Each Player Has To Act On Their Turn"
             />
             {/* Fee is the HOUSE RULE cut OUT of the buy-in — read-only,
                 recomputed server-side in fn_create_tournament, which charges
@@ -1278,6 +1413,7 @@ export default function TableConfigPage({
                 min={10}
                 max={1000}
                 step={10}
+                tooltip="The Total A Player Pays To Enter, In Whole Chips. The Fee Comes Out Of This Amount."
               />
             )}
             {isFreeBuy && (
@@ -1347,7 +1483,10 @@ export default function TableConfigPage({
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
               >
                 {config.gameMode === 'mtt' ? (
-                  <MttPayoutDepthOptions currentChoice={config.payoutStructure} />
+                  <MttPayoutDepthOptions
+                    currentChoice={config.payoutStructure}
+                    savedChoice={savedPayoutChoice}
+                  />
                 ) : (
                   <>
                     {config.payoutStructure === 'payout20' && (
@@ -1371,6 +1510,7 @@ export default function TableConfigPage({
               min={500}
               max={10000}
               step={100}
+              tooltip="The Stack Every Player Starts With. Rebuys And Re-Entries Give The Same Stack."
             />
 
             <Slider
@@ -1380,6 +1520,7 @@ export default function TableConfigPage({
               min={1}
               max={15}
               suffix=" min"
+              tooltip="Minutes Each Blind Level Lasts Before The Blinds Go Up"
             />
 
             <MttCreationStructurePreview config={config} gameType={gameType} />
@@ -1428,6 +1569,7 @@ export default function TableConfigPage({
                   value={FREE_BUY_REBUY_COST}
                   onChange={() => {}}
                   disabled
+                  tooltip="A Free Buy Rebuy Always Costs 1 Chip. This Is Locked."
                 />
                 <Toggle label="Add-On" value={true} onChange={() => {}} disabled />
                 <NumberField
@@ -1435,6 +1577,7 @@ export default function TableConfigPage({
                   value={FREE_BUY_ADDON_COST}
                   onChange={() => {}}
                   disabled
+                  tooltip="A Free Buy Add-On Always Costs 1 Chip. This Is Locked."
                 />
                 <p className="config-free-buy__text">{FREE_BUY_HELPER}</p>
                 <Slider
@@ -1444,19 +1587,58 @@ export default function TableConfigPage({
                   min={1}
                   max={10}
                   suffix=" min"
+                  tooltip="On A Free Buy The Add-On Stays Open From The Start Through Late Registration, Then For This Many More Minutes"
                 />
               </div>
             ) : (
               <>
-                <Slider
-                  label="Number Of Rebuys/Re-Entries"
-                  value={config.numberOfRebuysReentries}
-                  onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
-                  min={0}
-                  max={10}
-                />
-                {config.numberOfRebuysReentries > 0 && (
+                {/* ENTRY RULES (2026-09-20): the lifecycle axis, on its own
+                    control. It used to be implied by one rebuy count that
+                    switched rebuys AND re-entries on together. It never
+                    touches Prize Style. */}
+                <div className="config-toggle">
+                  <span className="toggle-label">
+                    Entry Rules
+                    <HelpPopover label="Entry Rules">
+                      Freezeout: One Entry, And A Player Who Busts Is Out. Rebuy: A Player Who Busts
+                      May Pay For A New Stack. Re-Entry: A Player Who Busts May Pay To Enter Again.
+                      Both Close When Late Registration Closes.
+                    </HelpPopover>
+                  </span>
+                  <select
+                    className="config-select"
+                    aria-label="Entry Rules"
+                    value={config.entryRules}
+                    onChange={(e) => updateConfig('entryRules', e.target.value as MttEntryRules)}
+                  >
+                    {MTT_ENTRY_RULES.map((rule) => (
+                      <option key={rule.value} value={rule.value}>
+                        {rule.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {config.entryRules !== 'freezeout' && (
                   <>
+                    {config.entryRules === 'rebuy' ? (
+                      <Slider
+                        label="Number Of Rebuys"
+                        value={Math.max(1, config.numberOfRebuysReentries)}
+                        onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
+                        min={1}
+                        max={10}
+                        tooltip="The Most Times One Player May Rebuy In This Tournament"
+                      />
+                    ) : (
+                      <Slider
+                        label="Number Of Re-Entries"
+                        value={Math.max(1, config.numberOfRebuysReentries)}
+                        onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
+                        min={1}
+                        max={10}
+                        tooltip="The Most Times One Player May Re-Enter This Tournament"
+                      />
+                    )}
                     <Toggle
                       label="Custom Rebuy/Re-Entry Cost"
                       value={config.customRebuyReentryCost}
@@ -1503,25 +1685,51 @@ export default function TableConfigPage({
                         tooltip="Whole Chips Only. 0 = Same As The Buy-In."
                       />
                     )}
-                    <Slider
-                      label="Add-On Break Length"
-                      value={config.addOnBreakLengthMinutes}
-                      onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
-                      min={1}
-                      max={10}
-                      suffix=" min"
-                    />
+                    {/* No Add-On Break Length here (2026-09-20). A paid event's
+                        add-on window is always 60 seconds in the engine, so a
+                        1 to 10 minute slider promised something that never
+                        happened. buildTournamentConfig sends 1. */}
                   </>
                 )}
               </>
             )}
 
             {/* Tournament Features */}
-            <Toggle
-              label="KO Bounty"
-              value={config.koBounty}
-              onChange={(v) => updateConfig('koBounty', v)}
-            />
+            {/* PRIZE STYLE (2026-09-20): the prize axis, on its own control.
+                It replaces the KO Bounty switch, which could only say fixed
+                bounty or none, and it never touches Entry Rules. */}
+            <div className={`config-toggle${prizeStyleLocked ? ' is-locked' : ''}`}>
+              <span className="toggle-label">
+                Prize Style
+                <HelpPopover label="Prize Style">
+                  Regular: The Whole Prize Pool Pays Finishing Places. Bounty: About Half Of Each
+                  Buy-In Is A Fixed Bounty Paid For Every Knockout. Progressive Bounty: Half Of A
+                  Knockout Bounty Is Paid And Half Is Added To The Winner's Own Bounty. Mystery
+                  Bounty: Knockouts Open Random Bounty Prizes Once The Money Is Reached. Free Buy
+                  Events And Satellites Always Run As Regular.
+                </HelpPopover>
+              </span>
+              <select
+                className="config-select"
+                aria-label="Prize Style"
+                value={prizeStyleLocked ? 'regular' : config.prizeStyle}
+                disabled={prizeStyleLocked}
+                onChange={(e) => {
+                  const next = e.target.value as MttPrizeStyle;
+                  setConfig((prev) => ({
+                    ...prev,
+                    prizeStyle: next,
+                    koBounty: next !== 'regular',
+                  }));
+                }}
+              >
+                {MTT_PRIZE_STYLES.map((style) => (
+                  <option key={style.value} value={style.value}>
+                    {style.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Toggle
               label="GTD Prize Pool"
               value={config.gtdPrizePool}
@@ -1558,6 +1766,7 @@ export default function TableConfigPage({
               min={0}
               max={20}
               suffix=" level"
+              tooltip="Players May Still Register During This Many Blind Levels After The Start. 0 Closes Registration When Play Starts."
             />
             <Toggle
               label="Early Bird Registration"
@@ -1638,15 +1847,55 @@ export default function TableConfigPage({
               tooltip="Minimum Registrations Needed To Start. Tournament Entries Are Unlimited."
             />
 
-            {/* Start Time */}
+            {/* Start Date and Start Time: two dropdowns (owner requirement,
+                2026-09-20), never a native date-time picker. Both halves write
+                the same local `YYYY-MM-DDTHH:MM` string the picker used to. */}
             <div className="config-toggle">
-              <span className="toggle-label">Start Time</span>
-              <input
-                type="datetime-local"
-                className="config-datetime"
-                value={config.startTime}
-                onChange={(e) => updateConfig('startTime', e.target.value)}
-              />
+              <span className="toggle-label">
+                Start Date
+                <HelpPopover label="Start Date">
+                  The Day This Tournament Starts, In Your Local Time. With No Date And No Time, It
+                  Starts Once The Minimum Players Have Registered.
+                </HelpPopover>
+              </span>
+              <select
+                className="config-select"
+                aria-label="Start Date"
+                value={startParts.date}
+                onChange={(e) =>
+                  updateConfig('startTime', joinLocalStart(e.target.value, startParts.time))
+                }
+              >
+                <option value="">No Date</option>
+                {startDateOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="config-toggle">
+              <span className="toggle-label">
+                Start Time
+                <HelpPopover label="Start Time">
+                  The Time Of Day This Tournament Starts, In Your Local Time, In 15 Minute Steps.
+                </HelpPopover>
+              </span>
+              <select
+                className="config-select"
+                aria-label="Start Time"
+                value={startParts.time}
+                onChange={(e) =>
+                  updateConfig('startTime', joinLocalStart(startParts.date, e.target.value))
+                }
+              >
+                <option value="">No Time</option>
+                {startTimeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             {/* "Save the Start Time" (2026-08-22): table_templates snapshots
                 the whole config including startTime, but a saved datetime goes
@@ -1675,21 +1924,85 @@ export default function TableConfigPage({
                 max={1440}
                 step={5}
                 suffix=" min"
+                tooltip="When This Tournament Ends, A Copy Opens And Starts This Many Minutes After The Finish"
               />
             )}
 
-            {/* Tournament Schedule: weekly recurrence. Saving with this ON
-                writes a tournament_schedules row via
-                fn_upsert_tournament_schedule; the engine's spawner creates the
-                tournaments from it. */}
-            <Toggle
-              label="Tournament Schedule"
-              value={config.tournamentSchedule}
-              onChange={(v) => updateConfig('tournamentSchedule', v)}
-              tooltip="Repeat This Tournament Weekly. With No Start Time Picked, Only The Schedule Is Created."
-            />
-            {config.tournamentSchedule && (
+            {/* REPEAT (2026-09-20): one control, last on the form. Does Not
+                Repeat, Daily, Weekly or Monthly. Saving with it on writes a
+                tournament_schedules row via fn_upsert_tournament_schedule,
+                carrying the same recurrenceCadence / recurrenceDayOfMonth keys
+                the club tournament modal sends; the engine's spawner creates
+                the tournaments from it. It replaces the weekly-only
+                Tournament Schedule switch. */}
+            <div className="config-toggle">
+              <span className="toggle-label">
+                Repeat
+                <HelpPopover label="Repeat">
+                  Repeat This Tournament Daily, Weekly Or Monthly With These Settings. With No Start
+                  Date And Time Picked, Only The Repeating Schedule Is Created.
+                </HelpPopover>
+              </span>
+              <select
+                className="config-select"
+                aria-label="Repeat"
+                value={repeatChoice}
+                onChange={(e) => {
+                  const next = e.target.value as RepeatChoice;
+                  setConfig((prev) =>
+                    next === 'none'
+                      ? { ...prev, tournamentSchedule: false }
+                      : { ...prev, tournamentSchedule: true, scheduleCadence: next }
+                  );
+                }}
+              >
+                {REPEAT_CHOICES.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {repeatChoice === 'monthly' && (
+              <>
+                <div className="config-toggle">
+                  <span className="toggle-label">
+                    Day Of Month
+                    <HelpPopover label="Day Of Month">
+                      The Day Of The Month This Tournament Runs, Counted In UTC Like The Start Times
+                      Below. A Month That Does Not Have This Day Is Skipped.
+                    </HelpPopover>
+                  </span>
+                  <select
+                    className="config-select"
+                    aria-label="Day Of Month"
+                    value={clampDayOfMonth(config.scheduleDayOfMonth)}
+                    onChange={(e) =>
+                      updateConfig('scheduleDayOfMonth', clampDayOfMonth(e.target.value))
+                    }
+                  >
+                    {DAYS_OF_MONTH.map((day) => (
+                      <option key={day} value={day}>
+                        {day.toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {monthlyHint && (
+                  <p
+                    className="config-free-buy__text"
+                    role="note"
+                    style={{ padding: '0.35rem 0.5rem 0.6rem' }}
+                  >
+                    {monthlyHint}
+                  </p>
+                )}
+              </>
+            )}
+            {repeatChoice !== 'none' && (
               <WeeklyScheduleEditor
+                hideDays={repeatChoice !== 'weekly'}
+                hideInterval={repeatChoice !== 'weekly'}
                 value={{
                   daysOfWeek: config.scheduleDays,
                   startTimesUtc: config.scheduleTimes,

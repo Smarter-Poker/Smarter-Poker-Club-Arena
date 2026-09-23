@@ -18,15 +18,22 @@
   z-index: 2;
   min-width: 52px;
   min-height: 44px;
-  padding: 0;
+  padding: 0 10px;
   border: 0;
   border-bottom: 1px solid #45adff;
   color: #45adff;
   background: transparent;
   font:
-    800 24px/1 'Roboto Condensed',
+    800 14px/1 'Roboto Condensed',
     sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+.create-table-page__back:active {
+  opacity: 0.72;
 }
 
 .create-table-page__list {
@@ -39,16 +46,12 @@
   width: 100%;
 }
 
-.create-table-page__footer,
-.create-table-page__background,
-.template-button,
-.template-icon,
-.unlock-hint {
+.create-table-page__background {
   display: none;
 }
 
 .create-table-page :is(button, a):focus-visible {
-  outline: 3px solid #8fd4ff;
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 

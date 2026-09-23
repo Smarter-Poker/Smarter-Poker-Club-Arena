@@ -1,19 +1,32 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { requiredSeedForStake, SPIN_BOARD_STAKES } from '../../services/SpinActivationService';
 import {
   clubOpeningSetupService,
+  isDefinitiveOpeningSetupRefusal,
+  openingLeaderboardBudgetSplitsEvenly,
+  openingLeaderboardFundingCapacity,
+  openingLeaderboardFundingRefusal,
+  openingLeaderboardPrizeSplit,
+  type ClubOpeningSetupInput,
   type OpeningPromotionType,
 } from '../../services/ClubOpeningSetupService';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { reportError } from '../../utils/errorReporter';
+import { compactChips } from '../../utils/format';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { Toggle } from '../table-config/controls';
 import './ClubOpeningWizard.css';
 
 interface Props {
   clubId: string;
   clubName: string;
   clubBank: number;
+  /** The club's saved tag line, so finishing setup never replaces it by accident. */
+  initialTagline?: string | null;
+  /** Promo Wallet chips the club already holds. A new club holds none. */
+  clubPromoBalance?: number | null;
   onClose: () => void;
   onComplete: (result: { clubBankAfter: number; spinsEnabled: boolean; tagline: string }) => void;
 }
@@ -36,33 +49,90 @@ const PROMOTION_TYPES: { value: OpeningPromotionType; label: string }[] = [
   { value: 'mystery', label: 'Mystery Reward' },
 ];
 
-function chips(value: number) {
-  return Math.max(0, Number(value) || 0).toLocaleString(undefined, {
-    maximumFractionDigits: 2,
-  });
+/** Null until the owner answers. A chip transfer is never a default answer. */
+type OpeningAnswer = 'enabled' | 'not_now' | null;
+
+/**
+ * An exact money figure: the whole integer with thousands separators and no
+ * decimals. Used only where the owner confirms or must type an exact amount
+ * (a transfer confirmation, a minimum, a shortfall). Every other figure on
+ * this surface is compactChips().
+ */
+function exactChips(value: number) {
+  return Math.floor(Math.abs(Number(value) || 0)).toLocaleString('en-US');
+}
+
+/** A shortfall rounds UP to the next whole chip, so lowering by it always clears it. */
+function shortfallChips(remaining: number) {
+  return Math.ceil(Math.abs(Math.min(0, Number(remaining) || 0))).toLocaleString('en-US');
+}
+
+/** Chip inputs accept whole chips only; chip counts never carry decimals. */
+function wholeChips(raw: string) {
+  return Math.max(0, Math.floor(Number(raw) || 0));
+}
+
+function FundingConfirmation({
+  title,
+  amount,
+  destination,
+  confirmed,
+  onChange,
+  bankAfter,
+}: {
+  title: string;
+  amount: number;
+  destination: string;
+  confirmed: boolean;
+  onChange: (value: boolean) => void;
+  bankAfter: number;
+}) {
+  return (
+    <div className="club-setup-wizard__confirm">
+      <span className="club-setup-wizard__eyebrow">{title}</span>
+      <Toggle
+        label={`Transfer Exactly ${exactChips(amount)} Chips From The Club Bank Into ${destination}`}
+        value={confirmed}
+        onChange={onChange}
+      />
+      {bankAfter < 0 ? (
+        <small className="club-setup-wizard__shortfall">
+          Transfers Chosen So Far Exceed The Club Bank By {shortfallChips(bankAfter)} Chips
+        </small>
+      ) : (
+        <small>Club Bank After Every Transfer Chosen So Far: {compactChips(bankAfter)} Chips</small>
+      )}
+    </div>
+  );
 }
 
 export default function ClubOpeningWizard({
   clubId,
   clubName,
   clubBank,
+  initialTagline,
+  clubPromoBalance,
   onClose,
   onComplete,
 }: Props) {
   const toast = useToast();
   const [step, setStep] = useState(0);
-  const [tagline, setTagline] = useState('');
+  const [tagline, setTagline] = useState(() => (initialTagline ?? '').trim().slice(0, 72));
   const [rakeMode, setRakeMode] = useState<'house' | 'custom'>('house');
   const [rakePercent, setRakePercent] = useState(10);
   const [rakeCap, setRakeCap] = useState(3);
-  const [bbjEnabled, setBbjEnabled] = useState(true);
+  const [bbjAnswer, setBbjAnswer] = useState<OpeningAnswer>(null);
+  const bbjEnabled = bbjAnswer === 'enabled';
   const [bbjSeed, setBbjSeed] = useState(100);
+  const [bbjFundingConfirmed, setBbjFundingConfirmed] = useState(false);
   const [spinsEnabled, setSpinsEnabled] = useState(false);
   const [spinFundingConfirmed, setSpinFundingConfirmed] = useState(false);
   const [spinMaxStake, setSpinMaxStake] = useState(1);
   const spinCoverageMinimum = Math.max(100, requiredSeedForStake(spinMaxStake));
   const [spinSeed, setSpinSeed] = useState(requiredSeedForStake(1));
-  const [promoEnabled, setPromoEnabled] = useState(true);
+  const [promoAnswer, setPromoAnswer] = useState<OpeningAnswer>(null);
+  const promoEnabled = promoAnswer === 'enabled';
+  const [promoFundingConfirmed, setPromoFundingConfirmed] = useState(false);
   const [promoType, setPromoType] = useState<OpeningPromotionType>('high_hand');
   const [promoName, setPromoName] = useState(`${clubName} Opening High Hand`);
   const [promoDescription, setPromoDescription] = useState(
@@ -74,7 +144,29 @@ export default function ClubOpeningWizard({
     'profit' | 'hands_played' | 'tournaments_won' | 'roi'
   >('profit');
   const [leaderboardPrizeBudget, setLeaderboardPrizeBudget] = useState(500);
+  const [leaderboardFundingConfirmed, setLeaderboardFundingConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
+  /* In-flight protection that does not wait for a render: a double tap on the
+     painted plate lands before `saving` has re-rendered it disabled. */
+  const savingRef = useRef(false);
+  /* ONE KEY PER SUBMISSION, HELD ACROSS RETRIES. The key used to be minted
+     inside the service on every call, so a setup that committed while its
+     response was lost could not be told apart from somebody else's earlier
+     setup. Keyed on the exact answers being submitted, so a genuinely
+     different submission gets its own key. Retired on a definitive success or
+     a definitive server refusal, kept when the outcome is unknown. */
+  const requestKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || savingRef.current) return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   const allocation = useMemo(
     () =>
@@ -95,90 +187,183 @@ export default function ClubOpeningWizard({
   );
   const remaining = clubBank - allocation;
 
+  const leaderboardFundingCapacity = openingLeaderboardFundingCapacity({
+    promoEnabled,
+    promoBudget,
+    existingPromoBalance: clubPromoBalance,
+  });
+  const leaderboardPrizeSplit = openingLeaderboardPrizeSplit(leaderboardPrizeBudget);
+  const normalizedTagline = tagline.trim().replace(/\s+/g, ' ');
+
   const stepError = useMemo(() => {
-    if (step === 1 && tagline.trim().length < 3) return 'Write A Custom Club Tag Line';
-    if (
-      step === 1 &&
-      /all fish of all shapes and sizes are welcome/i.test(tagline) &&
-      !/^shark club$/i.test(clubName.trim())
-    ) {
-      return 'That Tag Line Belongs To Shark Club';
+    const errorForStep = (index: number) => {
+      if (index === 1 && normalizedTagline.length < 3) return 'Write A Custom Club Tag Line';
+      if (
+        index === 1 &&
+        /all fish of all shapes and sizes are welcome/i.test(tagline) &&
+        !/^shark club$/i.test(clubName.trim())
+      ) {
+        return 'That Tag Line Belongs To Shark Club';
+      }
+      if (index === 3 && bbjAnswer === null) {
+        return 'Choose Enable BBJ Or Not Now Before Continuing';
+      }
+      if (index === 3 && bbjEnabled && bbjSeed < 100) return 'BBJ Seed Must Be At Least 100 Chips';
+      if (index === 3 && bbjEnabled && !bbjFundingConfirmed) {
+        return 'Confirm The Exact BBJ Seed Transfer Before Continuing';
+      }
+      if (index === 4 && spinsEnabled && spinSeed < spinCoverageMinimum) {
+        return `This Spin Board Requires At Least ${exactChips(spinCoverageMinimum)} Chips`;
+      }
+      if (index === 4 && spinsEnabled && !spinFundingConfirmed) {
+        return 'Confirm The Exact Spin Reserve Transfer Before Continuing';
+      }
+      if (index === 5 && promoAnswer === null) {
+        return 'Choose Create Promotion Or Not Now Before Continuing';
+      }
+      if (index === 5 && promoEnabled) {
+        if (promoName.trim().length < 3) return 'Promotion Name Must Be At Least 3 Characters';
+        if (promoBudget < 100) return 'Promotion Budget Must Be At Least 100 Chips';
+        if (!promoFundingConfirmed) {
+          return 'Confirm The Exact Promotion Budget Transfer Before Continuing';
+        }
+      }
+      if (index === 6 && leaderboardRewardsEnabled) {
+        if (leaderboardPrizeBudget < 100) {
+          return 'Leaderboard Prize Budget Must Be At Least 100 Chips';
+        }
+        if (!openingLeaderboardBudgetSplitsEvenly(leaderboardPrizeBudget)) {
+          return 'Leaderboard Prize Budget Must Be A Multiple Of 10 Chips So Every Prize Is A Whole Chip Amount';
+        }
+        const fundingRefusal = openingLeaderboardFundingRefusal({
+          promoEnabled,
+          promoBudget,
+          leaderboardPrizeBudget,
+          existingPromoBalance: clubPromoBalance,
+        });
+        if (fundingRefusal) return fundingRefusal;
+        if (!leaderboardFundingConfirmed) {
+          return 'Confirm The Exact Leaderboard Prize Seed Transfer Before Continuing';
+        }
+      }
+      return '';
+    };
+    if (step < STEPS.length - 1) return errorForStep(step);
+    /* Review re-checks every answer, so an edit made after stepping back can
+       never reach the server through a step that was valid when it was left. */
+    for (let index = 1; index < STEPS.length - 1; index += 1) {
+      const error = errorForStep(index);
+      if (error) return error;
     }
-    if (step === 3 && bbjEnabled && bbjSeed < 100) return 'BBJ Seed Must Be At Least 100 Chips';
-    if (step === 4 && spinsEnabled && spinSeed < spinCoverageMinimum) {
-      return `This Spin Board Requires At Least ${chips(spinCoverageMinimum)} Chips`;
-    }
-    if (step === 4 && spinsEnabled && !spinFundingConfirmed) {
-      return 'Confirm The Exact Spin Reserve Transfer Before Continuing';
-    }
-    if (step === 5 && promoEnabled) {
-      if (promoName.trim().length < 3) return 'Promotion Name Must Be At Least 3 Characters';
-      if (promoBudget < 100) return 'Promotion Budget Must Be At Least 100 Chips';
-    }
-    if (step === 6 && leaderboardRewardsEnabled && leaderboardPrizeBudget < 100) {
-      return 'Leaderboard Prize Budget Must Be At Least 100 Chips';
-    }
-    if (step === 7 && remaining < 0) return 'Setup Allocation Exceeds The Club Bank';
+    if (remaining < 0) return 'Setup Allocation Exceeds The Club Bank';
     return '';
   }, [
     step,
     tagline,
+    normalizedTagline,
     clubName,
+    bbjAnswer,
     bbjEnabled,
     bbjSeed,
+    bbjFundingConfirmed,
     spinsEnabled,
     spinSeed,
     spinCoverageMinimum,
     spinFundingConfirmed,
+    promoAnswer,
     promoEnabled,
     promoName,
     promoBudget,
+    promoFundingConfirmed,
     leaderboardRewardsEnabled,
     leaderboardPrizeBudget,
+    leaderboardFundingConfirmed,
+    clubPromoBalance,
     remaining,
   ]);
 
   const finish = async () => {
-    if (stepError || saving) return;
+    if (stepError || saving || savingRef.current) return;
+    const input: ClubOpeningSetupInput = {
+      clubId,
+      tagline: normalizedTagline,
+      rakePercent: rakeMode === 'house' ? -1 : rakePercent,
+      rakeCapBB: rakeMode === 'house' ? -1 : rakeCap,
+      bbjEnabled,
+      bbjSeed,
+      spinsEnabled,
+      spinSeed,
+      spinMaxStake,
+      promoEnabled,
+      promoType,
+      promoName: promoName.trim(),
+      promoDescription: promoDescription.trim(),
+      promoBudget,
+      leaderboardRewardsEnabled,
+      leaderboardMetric,
+      leaderboardPrizeBudget,
+    };
+    const fingerprint = JSON.stringify(input);
+    if (!requestKeyRef.current || requestKeyRef.current.fingerprint !== fingerprint) {
+      requestKeyRef.current = { fingerprint, key: crypto.randomUUID() };
+    }
+    const operationId = requestKeyRef.current.key;
+    savingRef.current = true;
     setSaving(true);
     try {
-      const result = await clubOpeningSetupService.complete({
-        clubId,
-        tagline: tagline.trim(),
-        rakePercent: rakeMode === 'house' ? -1 : rakePercent,
-        rakeCapBB: rakeMode === 'house' ? -1 : rakeCap,
-        bbjEnabled,
-        bbjSeed,
-        spinsEnabled,
-        spinSeed,
-        spinMaxStake,
-        promoEnabled,
-        promoType,
-        promoName: promoName.trim(),
-        promoDescription: promoDescription.trim(),
-        promoBudget,
-        leaderboardRewardsEnabled,
-        leaderboardMetric,
-        leaderboardPrizeBudget,
-      });
+      const result = await clubOpeningSetupService.complete(input, operationId);
+      requestKeyRef.current = null;
+      if (result.already_completed && result.operation_id !== operationId) {
+        /* A DIFFERENT, EARLIER SETUP OWNS THIS CLUB. Nothing typed here was
+           applied, so none of it is reported as applied: the page is handed
+           what the server holds, or nothing at all. */
+        let applied = null;
+        try {
+          applied = await clubOpeningSetupService.getAppliedState(clubId);
+        } catch (readError) {
+          reportError(readError, 'ClubOpeningWizard.appliedState');
+        }
+        if (applied) {
+          toast.info(
+            'Opening Setup Was Already Completed For This Club. Your New Answers Were Not Applied'
+          );
+          onComplete({
+            clubBankAfter: Number(result.club_bank_after),
+            spinsEnabled: applied.spinsEnabled,
+            tagline: applied.tagline,
+          });
+        } else {
+          toast.warning(
+            'Opening Setup Was Already Completed For This Club. Reload To See The Saved Setup'
+          );
+          onClose();
+        }
+        return;
+      }
+      /* Either a fresh commit, or the server echoing THIS submission's key
+         after an earlier response was lost. Both mean these answers are the
+         ones the server applied. */
       toast.success('Club Opening Setup Completed');
       onComplete({
         clubBankAfter: Number(result.club_bank_after),
         spinsEnabled,
-        tagline: tagline.trim(),
+        tagline: normalizedTagline,
       });
     } catch (error) {
       reportError(error, 'ClubOpeningWizard.complete');
+      if (isDefinitiveOpeningSetupRefusal(error)) requestKeyRef.current = null;
       toast.error(
         error instanceof Error ? error.message : 'Club Opening Setup Could Not Be Completed'
       );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const body = (
     <div
+      ref={dialogRef}
       className="club-setup-wizard"
       role="dialog"
       aria-modal="true"
@@ -223,20 +408,25 @@ export default function ClubOpeningWizard({
         <div className="club-setup-wizard__command-row">
           <div
             className="club-setup-wizard__bank"
-            aria-label={`${chips(clubBank)} Chips In Club Bank`}
+            aria-label={`${compactChips(clubBank)} Chips In Club Bank`}
           >
             <span>Club Bank</span>
-            <strong>{chips(clubBank)}</strong>
+            <strong>{compactChips(clubBank)}</strong>
             <small>Opening Capital</small>
           </div>
-          <button
-            type="button"
-            className="club-setup-wizard__close"
-            onClick={onClose}
-            aria-label="Close Opening Wizard"
-          >
-            Close Opening Wizard
-          </button>
+          {/* Step one already carries Close on the painted plate; one way out
+              per screen. From step two the plate becomes Back, so this is it. */}
+          {step > 0 && (
+            <button
+              type="button"
+              className="club-setup-wizard__close"
+              onClick={onClose}
+              disabled={saving}
+              aria-label="Close Opening Wizard"
+            >
+              Close Opening Wizard
+            </button>
+          )}
         </div>
 
         <nav className="club-setup-wizard__steps" aria-label="Club Opening Steps">
@@ -246,8 +436,8 @@ export default function ClubOpeningWizard({
               type="button"
               className={index === step ? 'is-current' : index < step ? 'is-complete' : ''}
               aria-current={index === step ? 'step' : undefined}
-              onClick={() => index < step && setStep(index)}
-              disabled={index > step}
+              onClick={() => index < step && !saving && setStep(index)}
+              disabled={index > step || saving}
             >
               <span>{index < step ? 'Done' : String(index + 1).padStart(2, '0')}</span>
               {label}
@@ -319,6 +509,7 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={rakeMode === 'house' ? 'is-selected' : ''}
+                  aria-pressed={rakeMode === 'house'}
                   onClick={() => setRakeMode('house')}
                 >
                   <strong>Use House Schedule</strong>
@@ -327,6 +518,7 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={rakeMode === 'custom' ? 'is-selected' : ''}
+                  aria-pressed={rakeMode === 'custom'}
                   onClick={() => setRakeMode('custom')}
                 >
                   <strong>Use Custom Schedule</strong>
@@ -377,35 +569,56 @@ export default function ClubOpeningWizard({
               <div className="club-setup-wizard__choice-grid">
                 <button
                   type="button"
-                  className={bbjEnabled ? 'is-selected' : ''}
-                  onClick={() => setBbjEnabled(true)}
+                  className={bbjAnswer === 'enabled' ? 'is-selected' : ''}
+                  aria-pressed={bbjAnswer === 'enabled'}
+                  onClick={() => {
+                    if (bbjAnswer !== 'enabled') setBbjFundingConfirmed(false);
+                    setBbjAnswer('enabled');
+                  }}
                 >
                   <strong>Enable BBJ</strong>
                   <span>Seed And Begin Collecting</span>
                 </button>
                 <button
                   type="button"
-                  className={!bbjEnabled ? 'is-selected' : ''}
-                  onClick={() => setBbjEnabled(false)}
+                  className={bbjAnswer === 'not_now' ? 'is-selected' : ''}
+                  aria-pressed={bbjAnswer === 'not_now'}
+                  onClick={() => {
+                    setBbjAnswer('not_now');
+                    setBbjFundingConfirmed(false);
+                  }}
                 >
                   <strong>Not Now</strong>
                   <span>Record The Decision Without Funding</span>
                 </button>
               </div>
               {bbjEnabled && (
-                <div className="club-setup-wizard__fields">
-                  <label>
-                    BBJ Opening Seed
-                    <input
-                      type="number"
-                      min="100"
-                      step="100"
-                      value={bbjSeed}
-                      onChange={(event) => setBbjSeed(Math.max(0, Number(event.target.value)))}
-                    />
-                    <small>Minimum 100 Chips From The Club Bank</small>
-                  </label>
-                </div>
+                <>
+                  <div className="club-setup-wizard__fields">
+                    <label>
+                      BBJ Opening Seed
+                      <input
+                        type="number"
+                        min="100"
+                        step="100"
+                        value={bbjSeed}
+                        onChange={(event) => {
+                          setBbjFundingConfirmed(false);
+                          setBbjSeed(wholeChips(event.target.value));
+                        }}
+                      />
+                      <small>Minimum 100 Chips From The Club Bank</small>
+                    </label>
+                  </div>
+                  <FundingConfirmation
+                    title="BBJ Funding Confirmation"
+                    amount={bbjSeed}
+                    destination="The Bad Beat Jackpot Main Bank"
+                    confirmed={bbjFundingConfirmed}
+                    onChange={setBbjFundingConfirmed}
+                    bankAfter={remaining}
+                  />
+                </>
               )}
             </section>
           )}
@@ -422,6 +635,7 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={spinsEnabled ? 'is-selected' : ''}
+                  aria-pressed={spinsEnabled}
                   onClick={() => {
                     setSpinsEnabled(true);
                     setSpinFundingConfirmed(false);
@@ -434,6 +648,7 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={!spinsEnabled ? 'is-selected' : ''}
+                  aria-pressed={!spinsEnabled}
                   onClick={() => {
                     setSpinsEnabled(false);
                     setSpinFundingConfirmed(false);
@@ -474,27 +689,22 @@ export default function ClubOpeningWizard({
                       value={spinSeed}
                       onChange={(event) => {
                         setSpinFundingConfirmed(false);
-                        setSpinSeed(Math.max(0, Number(event.target.value)));
+                        setSpinSeed(wholeChips(event.target.value));
                       }}
                     />
-                    <small>Coverage Minimum: {chips(spinCoverageMinimum)} Chips</small>
-                  </label>
-                  <label>
-                    <span>Spin Funding Confirmation</span>
-                    <span>
-                      <input
-                        type="checkbox"
-                        checked={spinFundingConfirmed}
-                        onChange={(event) => setSpinFundingConfirmed(event.target.checked)}
-                      />{' '}
-                      Transfer Exactly {chips(spinSeed)} Chips From The Club Bank Into The Spin
-                      Reserve
-                    </span>
-                    <small>
-                      Club Bank After This Spin Transfer: {chips(clubBank - spinSeed)} Chips
-                    </small>
+                    <small>Coverage Minimum: {exactChips(spinCoverageMinimum)} Chips</small>
                   </label>
                 </div>
+              )}
+              {spinsEnabled && (
+                <FundingConfirmation
+                  title="Spin Funding Confirmation"
+                  amount={spinSeed}
+                  destination="The Spin Reserve"
+                  confirmed={spinFundingConfirmed}
+                  onChange={setSpinFundingConfirmed}
+                  bankAfter={remaining}
+                />
               )}
             </section>
           )}
@@ -510,16 +720,24 @@ export default function ClubOpeningWizard({
               <div className="club-setup-wizard__choice-grid">
                 <button
                   type="button"
-                  className={promoEnabled ? 'is-selected' : ''}
-                  onClick={() => setPromoEnabled(true)}
+                  className={promoAnswer === 'enabled' ? 'is-selected' : ''}
+                  aria-pressed={promoAnswer === 'enabled'}
+                  onClick={() => {
+                    if (promoAnswer !== 'enabled') setPromoFundingConfirmed(false);
+                    setPromoAnswer('enabled');
+                  }}
                 >
                   <strong>Create Promotion</strong>
                   <span>Publish And Fund An Opening Campaign</span>
                 </button>
                 <button
                   type="button"
-                  className={!promoEnabled ? 'is-selected' : ''}
-                  onClick={() => setPromoEnabled(false)}
+                  className={promoAnswer === 'not_now' ? 'is-selected' : ''}
+                  aria-pressed={promoAnswer === 'not_now'}
+                  onClick={() => {
+                    setPromoAnswer('not_now');
+                    setPromoFundingConfirmed(false);
+                  }}
                 >
                   <strong>Not Now</strong>
                   <span>Open Without A Campaign</span>
@@ -547,9 +765,13 @@ export default function ClubOpeningWizard({
                       min="100"
                       step="100"
                       value={promoBudget}
-                      onChange={(event) => setPromoBudget(Math.max(0, Number(event.target.value)))}
+                      onChange={(event) => {
+                        setPromoFundingConfirmed(false);
+                        setLeaderboardFundingConfirmed(false);
+                        setPromoBudget(wholeChips(event.target.value));
+                      }}
                     />
-                    <small>Reserved In The Promo Wallet</small>
+                    <small>Moved Into The Club Promo Wallet</small>
                   </label>
                   <label className="full-width">
                     Promotion Name
@@ -570,6 +792,16 @@ export default function ClubOpeningWizard({
                   </label>
                 </div>
               )}
+              {promoEnabled && (
+                <FundingConfirmation
+                  title="Promotion Funding Confirmation"
+                  amount={promoBudget}
+                  destination="The Club Promo Wallet"
+                  confirmed={promoFundingConfirmed}
+                  onChange={setPromoFundingConfirmed}
+                  bankAfter={remaining}
+                />
+              )}
             </section>
           )}
 
@@ -585,7 +817,11 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={!leaderboardRewardsEnabled ? 'is-selected' : ''}
-                  onClick={() => setLeaderboardRewardsEnabled(false)}
+                  aria-pressed={!leaderboardRewardsEnabled}
+                  onClick={() => {
+                    setLeaderboardRewardsEnabled(false);
+                    setLeaderboardFundingConfirmed(false);
+                  }}
                 >
                   <strong>Display Only</strong>
                   <span>Recommended For New Clubs</span>
@@ -593,7 +829,11 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={leaderboardRewardsEnabled ? 'is-selected' : ''}
-                  onClick={() => setLeaderboardRewardsEnabled(true)}
+                  aria-pressed={leaderboardRewardsEnabled}
+                  onClick={() => {
+                    if (!leaderboardRewardsEnabled) setLeaderboardFundingConfirmed(false);
+                    setLeaderboardRewardsEnabled(true);
+                  }}
                 >
                   <strong>Pay Weekly Prizes</strong>
                   <span>Fund A Ready-Made Top-Three Plan</span>
@@ -623,11 +863,12 @@ export default function ClubOpeningWizard({
                         min="100"
                         step="100"
                         value={leaderboardPrizeBudget}
-                        onChange={(event) =>
-                          setLeaderboardPrizeBudget(Math.max(0, Number(event.target.value)))
-                        }
+                        onChange={(event) => {
+                          setLeaderboardFundingConfirmed(false);
+                          setLeaderboardPrizeBudget(wholeChips(event.target.value));
+                        }}
                       />
-                      <small>Reserved In The Promo Wallet</small>
+                      <small>Held As The First-Round Prize Seed, Outside The Promo Wallet</small>
                     </label>
                   </div>
                   <div
@@ -640,18 +881,38 @@ export default function ClubOpeningWizard({
                         key={budget}
                         type="button"
                         className={leaderboardPrizeBudget === budget ? 'is-selected' : ''}
-                        onClick={() => setLeaderboardPrizeBudget(budget)}
+                        aria-pressed={leaderboardPrizeBudget === budget}
+                        /* A budget the server's funding gate would reject is
+                           shown but never selectable. */
+                        disabled={budget > leaderboardFundingCapacity}
+                        onClick={() => {
+                          setLeaderboardFundingConfirmed(false);
+                          setLeaderboardPrizeBudget(budget);
+                        }}
                       >
-                        {chips(budget)} Chips
+                        {compactChips(budget)} Chips
                       </button>
                     ))}
                   </div>
+                  <p className="club-setup-wizard__commit-note">
+                    {leaderboardFundingCapacity >= 100
+                      ? `A Weekly Prize Budget Can Be At Most The ${exactChips(leaderboardFundingCapacity)} Chip Promotion Budget, Because Every Later Round Is Paid From The Promo Wallet.`
+                      : 'Paid Leaderboards Need A Funded Promotion Budget First, Because Every Later Round Is Paid From The Promo Wallet.'}
+                  </p>
                   <div className="club-setup-wizard__prize-plan">
                     <span>Suggested Balanced Plan</span>
-                    <strong>1st {chips(leaderboardPrizeBudget * 0.5)}</strong>
-                    <strong>2nd {chips(leaderboardPrizeBudget * 0.3)}</strong>
-                    <strong>3rd {chips(leaderboardPrizeBudget * 0.2)}</strong>
+                    <strong>1st {compactChips(leaderboardPrizeSplit.first)}</strong>
+                    <strong>2nd {compactChips(leaderboardPrizeSplit.second)}</strong>
+                    <strong>3rd {compactChips(leaderboardPrizeSplit.third)}</strong>
                   </div>
+                  <FundingConfirmation
+                    title="Leaderboard Funding Confirmation"
+                    amount={leaderboardPrizeBudget}
+                    destination="The Leaderboard First-Round Prize Seed"
+                    confirmed={leaderboardFundingConfirmed}
+                    onChange={setLeaderboardFundingConfirmed}
+                    bankAfter={remaining}
+                  />
                 </>
               )}
             </section>
@@ -672,42 +933,68 @@ export default function ClubOpeningWizard({
                 </div>
                 <div>
                   <span>Club Tag Line</span>
-                  <strong>{tagline.trim()}</strong>
+                  <strong>{normalizedTagline}</strong>
                 </div>
                 <div>
                   <span>Bad Beat Jackpot</span>
-                  <strong>{bbjEnabled ? `${chips(bbjSeed)} Chips` : 'Not Enabled'}</strong>
+                  <strong>{bbjEnabled ? `${compactChips(bbjSeed)} Chips` : 'Not Enabled'}</strong>
                 </div>
                 <div>
                   <span>Spin Reserve</span>
-                  <strong>{spinsEnabled ? `${chips(spinSeed)} Chips` : 'Not Enabled'}</strong>
+                  <strong>
+                    {spinsEnabled ? `${compactChips(spinSeed)} Chips` : 'Not Enabled'}
+                  </strong>
                 </div>
                 <div>
                   <span>Promotion Budget</span>
-                  <strong>{promoEnabled ? `${chips(promoBudget)} Chips` : 'Not Enabled'}</strong>
+                  <strong>
+                    {promoEnabled ? `${compactChips(promoBudget)} Chips` : 'Not Enabled'}
+                  </strong>
                 </div>
                 <div>
                   <span>Leaderboard Rewards</span>
                   <strong>
                     {leaderboardRewardsEnabled
-                      ? `${chips(leaderboardPrizeBudget)} Chips / Week, First Round Seeded`
+                      ? `${compactChips(leaderboardPrizeBudget)} Chips / Week, First Round Seeded`
                       : 'Display Only'}
                   </strong>
                 </div>
                 <div className="club-setup-wizard__ledger-total">
                   <span>Total Opening Allocation</span>
-                  <strong>{chips(allocation)} Chips</strong>
+                  <strong>{compactChips(allocation)} Chips</strong>
                 </div>
-                <div className="club-setup-wizard__ledger-balance">
-                  <span>Club Bank After Setup</span>
-                  <strong>{chips(remaining)} Chips</strong>
-                </div>
+                {remaining < 0 ? (
+                  <div className="club-setup-wizard__ledger-balance is-short">
+                    <span>Club Bank After Setup</span>
+                    <strong>Short By {shortfallChips(remaining)} Chips</strong>
+                  </div>
+                ) : (
+                  <div className="club-setup-wizard__ledger-balance">
+                    <span>Club Bank After Setup</span>
+                    <strong>{compactChips(remaining)} Chips</strong>
+                  </div>
+                )}
               </div>
+              {remaining < 0 ? (
+                <p className="club-setup-wizard__shortfall">
+                  This Setup Needs {exactChips(allocation)} Chips But The Club Bank Holds{' '}
+                  {exactChips(clubBank)}. Go Back And Lower A Seed Or Budget By At Least{' '}
+                  {shortfallChips(remaining)} Chips.
+                </p>
+              ) : (
+                <p className="club-setup-wizard__commit-note">
+                  Completing Setup Transfers Exactly {exactChips(allocation)} Chips From The Club
+                  Bank.
+                </p>
+              )}
               <p className="club-setup-wizard__commit-note">
-                Completing Setup Commits Every Enabled System In One Transaction. Paid Leaderboards
-                Seed Their First Round Now; Later Rounds Use Promo Funds First And The Club Bank
-                Covers Any Overlay. If Any Treasury, Permission, Or Promotion Step Fails, Nothing Is
-                Deducted.
+                Completing Setup Commits Every Enabled System In One Transaction. A Paid Leaderboard
+                Holds Its First-Round Seed Outside The Promo Wallet. The First Round Is Paid From
+                That Seed, Then From The Promo Wallet, And Any Unused Seed Moves Into The Promo
+                Wallet. Every Later Round Is Paid Only From The Promo Wallet. If The Promo Wallet
+                Cannot Cover A Round, That Round Stays Unpaid And Is Retried Automatically. The Club
+                Bank Is Never Debited For Leaderboard Prizes. If Any Treasury, Permission, Or
+                Promotion Step Fails, Nothing Is Deducted.
               </p>
             </section>
           )}

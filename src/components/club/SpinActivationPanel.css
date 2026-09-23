@@ -1,0 +1,274 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE OWNER'S SPIN PANEL - ITS OWN SHEET (2026-09-20)
+
+   This panel had no stylesheet. It borrowed .settings-section, .toggle-btn,
+   .form-hint and .btn-primary, which are declared in ClubSettingsPage.css and
+   imported by that page alone. The same component is also mounted in the
+   lobby's Spins Wallet popup and on the Union Dashboard, where those names
+   resolve to nothing (or to whatever another sheet happens to mean by them),
+   so it rendered as bare browser defaults there: a white native button, serif
+   fallbacks, labels run into their values.
+
+   It is HOSTED: a settings page, an admin card, a popup. So it draws no frame
+   of its own (a frame on a frame) and no cards, pills, fills or gradients. It
+   prints rows on whatever glass it is given - label in lit blue on the left,
+   value in silver on the right, an engraved rule between them - in the schema
+   inks and nothing else. Every rule is scoped under .sap, and the ones a
+   dialog host would repaint (metallic-popups.css recolours every button and
+   select inside [role='dialog'] with !important) are restated longhand so the
+   panel is the same picture in all three hosts. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sap {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: #e4e7ec;
+  font-family: Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: left;
+}
+
+.sap .sap-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #e4e7ec;
+  font:
+    800 20px/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 40%),
+    0 1px 0 #050607,
+    0 2px 3px rgb(0 0 0 / 90%);
+}
+
+/* Rows on the glass. The engraved rule is a black line with a hairline of
+   light under it, the same one the console prints between its rows. */
+.sap .sap-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 8%);
+}
+
+.sap .sap-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 11px 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.sap .sap-label {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  color: #45adff;
+  font:
+    700 12px/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 6px rgb(49 168 255 / 55%),
+    0 1px 2px rgb(0 0 0 / 85%);
+}
+
+.sap .sap-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    800 17px/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.03em;
+  text-align: right;
+  overflow-wrap: anywhere;
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 35%),
+    0 1px 0 #050607,
+    0 2px 3px rgb(0 0 0 / 90%);
+}
+
+/* State is lit text, not a control: green while Spins runs, muted while off. */
+.sap .sap-value--on {
+  color: #c8ffd2;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 8px rgb(53 217 90 / 70%),
+    0 1px 0 rgb(0 0 0 / 70%);
+}
+
+.sap .sap-value--off {
+  color: #9aa5b3;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+
+/* Chips held or about to be committed: gold, the schema's ink for held money. */
+.sap .sap-value--held {
+  color: #ffd700;
+  text-shadow:
+    0 0 8px rgb(255 215 0 / 45%),
+    0 1px 0 rgb(0 0 0 / 70%);
+}
+
+.sap .sap-note {
+  display: block;
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    500 13px/1.55 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sap .sap-error {
+  margin: 0;
+  padding: 11px 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ff5b6e;
+  font:
+    600 13px/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0 8px rgb(240 40 73 / 45%);
+}
+
+.sap .sap-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.sap .sap-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* A field is a line on the glass, not a well. 16px keeps iOS from zooming. */
+.sap .sap-select {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 0;
+  border: 0 !important;
+  border-bottom: 1px solid #45adff !important;
+  border-radius: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #e4e7ec !important;
+  color-scheme: dark;
+  font:
+    600 16px/1.3 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.sap .sap-select:disabled {
+  border-bottom-color: #9aa5b3 !important;
+  color: #9aa5b3 !important;
+  cursor: not-allowed;
+}
+
+.sap .sap-select:focus-visible {
+  outline: 2px solid #45adff !important;
+  outline-offset: 3px;
+  box-shadow: none !important;
+}
+
+/* The only two controls: a lit word on the glass between engraved rules, the
+   control the console uses wherever the art paints no plate. */
+.sap .sap-action {
+  appearance: none;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 48px;
+  margin: 0;
+  padding: 12px 0;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  transform: none !important;
+  cursor: pointer;
+  touch-action: manipulation;
+  font:
+    800 15px/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.sap .sap-action--on {
+  color: #45adff !important;
+  text-shadow:
+    0 0 8px rgb(49 168 255 / 70%),
+    0 1px 2px rgb(0 0 0 / 85%);
+}
+
+.sap .sap-action--off {
+  color: #ff5b6e !important;
+  text-shadow:
+    0 0 8px rgb(240 40 73 / 55%),
+    0 1px 0 rgb(0 0 0 / 70%);
+}
+
+.sap .sap-action:active:not(:disabled) {
+  filter: brightness(1.3);
+}
+
+.sap .sap-action:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
+}
+
+.sap .sap-action:disabled {
+  color: #9aa5b3 !important;
+  text-shadow: none;
+  cursor: not-allowed;
+}
+
+@container (max-width: 420px) {
+  .sap .sap-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

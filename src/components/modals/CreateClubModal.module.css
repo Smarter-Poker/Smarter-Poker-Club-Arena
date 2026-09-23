@@ -1,17 +1,41 @@
 .overlay {
+  /* The page's own block insets. The shell height and the console width are
+     both derived from them, so the safe area is subtracted exactly once. */
+  --cc-inset-top: max(8px, env(safe-area-inset-top, 0px));
+  --cc-inset-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+
   position: fixed;
   z-index: 10020;
   inset: 0;
+  /* The visible viewport, not the layout one: a phone's collapsing browser
+     bars must never put the painted foot under the fold. */
+  height: 100dvh;
   overflow: hidden;
   overscroll-behavior: contain;
-  padding: max(8px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+  padding: var(--cc-inset-top) 0 var(--cc-inset-bottom);
   background: #000;
 }
 
-.consoleShell {
-  --sc-max: 1000px;
-  height: calc(100dvh - max(16px, env(safe-area-inset-top)));
-  min-height: calc(100dvh - max(16px, env(safe-area-inset-top)));
+/* ── THE CONSOLE NARROWS BY HEIGHT, NEVER GROWS ────────────────────────
+   The painted head and foot are fixed fractions of the console WIDTH:
+   (348 + 277) / 1000 = 62.5%. At the full 1000px that is 625px of chrome, so
+   a 768px laptop kept about 127px of form and a landscape phone lost the
+   plates off the bottom of the screen. The shell is exactly as tall as the
+   viewport, so the width that leaves a 220px scroll body is
+   (shell - 220px) / 0.625 = (shell - 220px) * 1.6. The standard allows
+   narrowing --sc-max and never raising it: the ceiling stays the master's own
+   1000px, and the 340px floor keeps the fitted type legible on a viewport too
+   short to grant the full 220px.
+
+   Two classes, on purpose: SpadeConsole.css sets `--sc-max: 1000px` on `.sc` at
+   one class and loads AFTER this module, so a one-class rule here loses the
+   cascade and the console silently stays 1000px wide. */
+.overlay > .consoleShell {
+  --cc-shell-height: calc(100dvh - var(--cc-inset-top) - var(--cc-inset-bottom));
+  --sc-max: min(1000px, max(340px, calc((var(--cc-shell-height) - 220px) * 1.6)));
+
+  height: calc(100dvh - var(--cc-inset-top) - var(--cc-inset-bottom));
+  min-height: calc(100dvh - var(--cc-inset-top) - var(--cc-inset-bottom));
 }
 
 .consoleShell > :global(.sc__body) {
@@ -94,13 +118,12 @@
 
 .clubNameInput::placeholder,
 .descriptionInput::placeholder {
-  color: #697581;
+  color: #9aa5b3;
   opacity: 1;
 }
 
 .clubNameInput:focus-visible,
 .descriptionInput:focus-visible,
-.accessSettings input:focus-visible,
 .termsCheckbox:focus-visible,
 .crestOption:focus-visible,
 .uploadLogoBtn:focus-visible,
@@ -197,7 +220,7 @@
   text-transform: uppercase;
   text-shadow:
     0 -0.14cqw 0 rgb(255 255 255 / 40%),
-    0 0.25cqw 0 #5b626a,
+    0 0.25cqw 0 #6d747c,
     0 0.5cqw 0 #030405;
 }
 
@@ -309,13 +332,13 @@
   text-shadow: 0 0 0.8cqw rgb(53 217 90 / 55%);
 }
 
+/* Rows on the glass: label left, switch right, an engraved rule under each. */
 .accessSettings {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2.4cqw;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
-.accessSettings label,
 .termsLabel {
   display: flex;
   align-items: center;
@@ -328,13 +351,107 @@
     sans-serif;
 }
 
-.accessSettings input,
 .termsCheckbox {
   width: 4.2cqw;
   height: 4.2cqw;
   margin: 0;
   flex: 0 0 auto;
   accent-color: #1877f2;
+}
+
+/* ── Launch Settings: the shared labeled On / Off switch ───────────────
+   The control is the Toggle from table-config/controls.tsx, which loads its
+   own stylesheet (pages/TableConfigPage.css). That sheet sizes it in px and
+   colours its label only inside .table-config-page, so the dress for this
+   glass is restated here: cqw sizing, schema inks, engraved rules. */
+.accessSettings :global(.config-toggle) {
+  gap: 2.4cqw;
+  min-width: 0;
+  min-height: 10cqw;
+  padding: 1.4cqw 0;
+  border-bottom: 1px solid #000;
+}
+
+.accessSettings :global(.toggle-label) {
+  min-width: 0;
+  color: #d7dee7;
+  font:
+    600 2.8cqw/1.35 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.accessSettings :global(.table-config-switch) {
+  --cc-switch-height: max(28px, 5cqw);
+  --cc-switch-width: calc(var(--cc-switch-height) * 13 / 7);
+  --cc-switch-gap: calc(var(--cc-switch-height) * 3 / 28);
+  --cc-switch-thumb: calc(var(--cc-switch-height) - 2px - var(--cc-switch-gap) * 2);
+
+  gap: 1.8cqw;
+  min-width: 0;
+  min-height: max(44px, 8cqw);
+}
+
+.accessSettings :global(.table-config-switch__track) {
+  flex: 0 0 var(--cc-switch-width);
+  width: var(--cc-switch-width);
+  height: var(--cc-switch-height);
+  border: 1px solid rgb(154 165 179 / 56%);
+  background: #050607;
+  box-shadow: none !important;
+}
+
+.accessSettings :global(.table-config-switch__thumb) {
+  top: var(--cc-switch-gap);
+  left: var(--cc-switch-gap);
+  width: var(--cc-switch-thumb);
+  height: var(--cc-switch-thumb);
+  background: #e4e7ec;
+  box-shadow: none !important;
+}
+
+.accessSettings
+  :global(.table-config-switch__input):checked
+  + :global(.table-config-switch__track) {
+  border-color: #45adff;
+  background: rgb(69 173 255 / 32%);
+  box-shadow: none !important;
+}
+
+.accessSettings
+  :global(.table-config-switch__input):checked
+  + :global(.table-config-switch__track)
+  :global(.table-config-switch__thumb) {
+  transform: translateX(
+    calc(var(--cc-switch-width) - 2px - var(--cc-switch-gap) * 2 - var(--cc-switch-thumb))
+  );
+}
+
+.accessSettings
+  :global(.table-config-switch__input):focus-visible
+  + :global(.table-config-switch__track) {
+  outline: 0.4cqw solid #8fd4ff;
+  outline-offset: 0.7cqw;
+}
+
+.accessSettings :global(.table-config-switch__status) {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 3ch;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 3cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.accessSettings :global(.table-config-switch__status):global(.is-on) {
+  color: #45adff;
+  text-shadow: 0 0 0.9cqw rgb(69 173 255 / 65%);
+}
+
+.accessSettings :global(.table-config-switch__status):global(.is-off) {
+  color: #9aa5b3;
 }
 
 .termsLabel {
@@ -363,16 +480,53 @@
   opacity: 1;
 }
 
+/* ── The close guard: its own page of black glass, one small console ───
+   Opaque, so the guard is never art laid over the creation console's art.
+   Its width is narrowed by height too: head + foot + copy is about 0.9 of the
+   console width, so 88dvh of width can never outgrow the viewport. */
+.leaveGuard {
+  position: fixed;
+  z-index: 10021;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px))
+    max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+  background: #000;
+}
+
+.leaveGuard > .leaveGuardConsole {
+  --sc-max: min(560px, 88dvh);
+}
+
+.leaveGuardCopy {
+  margin: 0;
+  padding-block: 1cqw 2cqw;
+  color: #d7dee7;
+  font:
+    500 3.7cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-align: center;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+/* A phone-width sheet runs edge to edge, but it still clears the notch and
+   the home indicator: only the 8px cosmetic margin goes, never the safe area. */
 @media (max-width: 560px) {
   .overlay {
-    padding: 0;
+    --cc-inset-top: env(safe-area-inset-top, 0px);
+    --cc-inset-bottom: env(safe-area-inset-bottom, 0px);
   }
+}
 
-  .consoleShell {
-    height: 100dvh;
-    min-height: 100dvh;
-  }
-
+/* The phone LAYOUT follows the console's width, not the window's: a landscape
+   phone is 852px wide but its height-narrowed console is phone sized, and the
+   five-column desktop vault is unreadable inside it. */
+@container (max-width: 560px) {
   .scrollBody {
     padding-inline: 0;
   }
@@ -400,8 +554,12 @@
     font-size: 2.8cqw;
   }
 
-  .accessSettings {
-    grid-template-columns: 1fr;
+  .accessSettings :global(.toggle-label) {
+    font-size: 3.4cqw;
+  }
+
+  .accessSettings :global(.table-config-switch__status) {
+    font-size: 3.4cqw;
   }
 }
 

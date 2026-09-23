@@ -90,14 +90,19 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         slug: c.slug,
         name: c.name,
         logo: c.logo_url || c.avatar_url,
-        description: c.description || 'Welcome To Our Club!',
+        // A blank description stays blank. The grid used to print a welcome
+        // line the owner never wrote, as if it were the club's own copy.
+        description: typeof c.description === 'string' ? c.description.trim() : '',
         memberCount: c.member_count || 0,
         activeTableCount: c.table_count || 0,
         // No minStakes/maxStakes: clubs has no such columns, so every card
         // showed the fallback "1/2 - 5/10" as if it were real. Fabricated
         // data is worse than no data — the stake filter built on it is gone
         // for the same reason.
-        tags: c.tags || (c.game_type ? [c.game_type] : ['Texas Holdem']),
+        // Same law for tags: a club with no tags and no game type shows none.
+        // The old fallback labelled every untagged club with a game it may not run.
+        tags:
+          Array.isArray(c.tags) && c.tags.length > 0 ? c.tags : c.game_type ? [c.game_type] : [],
         isPrivate: c.requires_approval || !c.is_public,
         rating: c.average_rating || c.rating || 0,
         levelInfo: getClubLevel({
@@ -292,14 +297,16 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                   {club.isPrivate && <span className="private-badge">◈</span>}
                 </div>
               </div>
-              <p className="club-desc">{club.description}</p>
-              <div className="club-tags">
-                {club.tags.slice(0, 3).map((tag) => (
-                  <span key={tag} className="tag">
-                    {tag}
-                  </span>
-                ))}
-              </div>
+              {club.description && <p className="club-desc">{club.description}</p>}
+              {club.tags.length > 0 && (
+                <div className="club-tags">
+                  {club.tags.slice(0, 3).map((tag) => (
+                    <span key={tag} className="tag">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="club-stats">
                 <span> {club.memberCount}</span>
                 <span> {club.activeTableCount} Tables</span>

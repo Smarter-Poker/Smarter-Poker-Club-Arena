@@ -2,15 +2,23 @@
    controls themselves reuse TableConfigPage.css (config-toggle, config-slider,
    config-preset-chip, config-footer).
 
-   MATERIAL (2026-09-09 must-move audit, lane I). This sheet used to carry its
-   own amber palette - rgba(38,24,8) wells, #ff9e2c rims, #d9c9a8 and #b8a888
-   copy - which is the brown ramp Dan's colour law forbids ("ALWAYS USE
-   SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS") and the ninth
-   private palette tests/realism-is-one-vocabulary.law.test.ts exists to stop.
-   Every colour here now comes from the --realism-* tokens club-engine.css
-   defines once: gunmetal edges, a lit top bevel over a dark cavity, chrome
-   labels, cyan for the live selection, blue for the house. No :hover -
-   feedback is :active and :focus-visible, because phones do not hover. */
+   MATERIAL (2026-09-20, Create A Club phase 2). This flow prints INSIDE the
+   painted SpadeConsole that TableConfigPage and Game Management wrap it in, so
+   the art is already the frame. It used to draw its own: template cards, chips
+   and the promise panel were each a border-radius + linear-gradient +
+   box-shadow plate (first in a brown ramp, then on 2026-09-09 in the
+   --realism-* tokens, as a stopgap the must-move audit recorded because the
+   console kit had not merged yet). A CSS card inside a painted card is a frame
+   on a frame, which Dan's law forbids ("FRAMES SHOULD NEVER SIT ON TOP OF
+   FRAMES").
+
+   So nothing here is drawn any more. Every choice is a row printed on the
+   black glass: an engraved rule between rows, lit blue labels, silver values,
+   muted notes, and the SELECTED choice told by ink (white with the blue glow,
+   on a lit blue rule), never by a pill. Colours are the console's own inks and
+   nothing else: silver #e4e7ec, white #f4f7fb, blue #45adff, muted #9aa5b3.
+   No pointer-over styling at all: feedback is :active and :focus-visible,
+   because phones do not have a pointer to rest. */
 
 .cash-create {
   display: flex;
@@ -19,9 +27,12 @@
   padding: 0.5rem 0 5rem;
 }
 
+/* One step. The rule under it is the console's engraved rule: a black cut
+   with a lit lip, not a drawn divider. */
 .cash-create__step {
   padding: 0.75rem 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
   transition: opacity 0.2s ease;
 }
 
@@ -32,8 +43,8 @@
 
 .cash-create__title {
   margin: 0 0 0.5rem;
-  color: var(--realism-cyan, #00d4ff);
-  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -43,7 +54,7 @@
 .cash-create__cards {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.5rem;
+  gap: 0 0.75rem;
 }
 
 @media (min-width: 640px) {
@@ -52,95 +63,115 @@
   }
 }
 
-/* A template card is a machined plate: gunmetal edge, lit top, dark cavity. */
+/* A template (or a table mode) is a ROW on the glass, not a plate: no corner
+   radius, no fill, no shadow. The rule under it is muted ink at reduced alpha
+   over black; the selected row lights that same rule blue. */
 .cash-create__card {
+  appearance: none;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-height: 44px;
   text-align: left;
-  padding: 0.75rem;
-  border-radius: var(--realism-radius, 8px);
-  border: 1px solid var(--realism-gunmetal, #27313c);
-  background: linear-gradient(
-    180deg,
-    var(--realism-panel-raised, #111925) 0%,
-    var(--realism-panel, #0b1017) 100%
-  );
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-  color: var(--realism-chrome-hot, #e6edf3);
+  padding: 0.7rem 0.25rem;
+  border: 0;
+  border-bottom: 2px solid rgb(154 165 179 / 24%);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #e4e7ec;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .cash-create__card:active:not(:disabled) {
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
-  filter: brightness(0.94);
+  opacity: 0.72;
 }
 
 .cash-create__card:focus-visible {
-  outline: 2px solid var(--realism-cyan, #00d4ff);
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 
 .cash-create__card.is-selected {
-  border-color: var(--realism-cyan, #00d4ff);
-  background: linear-gradient(180deg, #13263a 0%, var(--realism-panel-raised, #111925) 100%);
-  box-shadow:
-    var(--realism-bevel),
-    var(--realism-cavity),
-    0 0 0 1px rgba(0, 212, 255, 0.35) inset;
+  border-bottom-color: #45adff;
+  color: #f4f7fb;
 }
 
+/* Engraved silver: a solid ink plus a bevel shadow, never a clipped gradient. */
 .cash-create__card-title {
-  font-family: var(--realism-font-display, 'Rajdhani', 'Roboto Condensed', Inter, sans-serif);
-  font-weight: 700;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
   font-size: 1.05rem;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  text-shadow:
+    0 1px 0 #000,
+    0 -1px 0 rgb(255 255 255 / 14%);
+}
+
+.cash-create__card.is-selected .cash-create__card-title {
+  text-shadow: 0 0 10px rgb(69 173 255 / 58%);
 }
 
 .cash-create__card-blurb {
+  font-family: Inter, system-ui, sans-serif;
   font-size: 0.8rem;
-  color: var(--realism-chrome, #b8c3cd);
+  line-height: 1.4;
+  color: #9aa5b3;
+}
+
+.cash-create__card.is-selected .cash-create__card-blurb {
+  color: #e4e7ec;
 }
 
 .cash-create__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.25rem 0.5rem;
   align-items: center;
 }
 
-/* The chip's shape is TableConfigPage.css's preset chip; its ink is ours, so
-   the shared tournament chip keeps its own dress. The extra ancestor is
-   specificity, so this wins whatever order the two sheets bundle in. */
-.cash-create__chips .cash-create__chip {
-  border-color: var(--realism-gunmetal-lit, #3a4756);
-  background: linear-gradient(
-    180deg,
-    var(--realism-panel-raised, #111925) 0%,
-    var(--realism-panel, #0b1017) 100%
-  );
-  box-shadow: var(--realism-bevel);
-  color: var(--realism-chrome, #b8c3cd);
+/* A chip is a printed word on a rule. TableConfigPage.css gives the shared
+   preset chip its console dress (no border but the rule, transparent, Roboto
+   Condensed caps); the ink for THIS flow's unselected, selected, taken and
+   unavailable states is ours. The extra ancestors are specificity, so this
+   wins whatever order the two sheets bundle in. */
+.cash-create .cash-create__chips .cash-create__chip {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid rgb(154 165 179 / 24%);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #9aa5b3;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  touch-action: manipulation;
 }
 
-.cash-create__chips .cash-create__chip:active:not(:disabled) {
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7);
+.cash-create .cash-create__chips .cash-create__chip:active:not(:disabled) {
+  opacity: 0.72;
 }
 
 .cash-create__chip:focus-visible {
-  outline: 2px solid var(--realism-cyan, #00d4ff);
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 
-.cash-create__chips .cash-create__chip.is-selected {
-  background: linear-gradient(180deg, #13263a 0%, var(--realism-panel-raised, #111925) 100%);
-  border-color: var(--realism-cyan, #00d4ff);
-  color: var(--realism-chrome-hot, #e6edf3);
+.cash-create .cash-create__chips .cash-create__chip.is-selected {
+  border-bottom-color: #45adff;
+  color: #f4f7fb;
+  text-shadow: 0 0 10px rgb(69 173 255 / 58%);
 }
 
-.cash-create__chips .cash-create__chip:disabled,
-.cash-create__chips .cash-create__chip.is-unavailable {
+.cash-create .cash-create__chips .cash-create__chip:disabled,
+.cash-create .cash-create__chips .cash-create__chip.is-unavailable {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -148,10 +179,10 @@
 /* A rung the club already holds (one game per blind band, or one must-move
    game per exact stakes). Struck through rather than merely dimmed, so it
    reads as "taken", not "not yet". */
-.cash-create__chips .cash-create__chip.is-taken {
+.cash-create .cash-create__chips .cash-create__chip.is-taken {
   text-decoration: line-through;
-  text-decoration-color: var(--realism-muted, #7f8c9b);
-  border-style: dashed;
+  text-decoration-color: #9aa5b3;
+  border-bottom-style: dashed;
 }
 
 /* The reasons rungs are struck: visible copy, not a tooltip. Indented under
@@ -160,7 +191,7 @@
 .cash-create__taken {
   margin-top: 0.4rem;
   padding-left: 0.6rem;
-  border-left: 2px solid var(--realism-gunmetal-lit, #3a4756);
+  border-left: 2px solid rgb(154 165 179 / 40%);
 }
 
 .cash-create__taken .cash-create__note {
@@ -169,23 +200,36 @@
 
 .cash-create__note {
   margin: 0.4rem 0 0;
-  color: var(--realism-muted, #7f8c9b);
+  color: #9aa5b3;
   font-size: 0.8rem;
   line-height: 1.4;
 }
 
+/* One way out printed as a lit word on the glass, the control Club Rules uses
+   for Copy and Retry. */
 .cash-create__link {
+  min-height: 44px;
   margin-top: 0.5rem;
+  padding: 0 0.25rem;
   background: none;
   border: none;
-  color: var(--realism-cyan, #00d4ff);
-  text-decoration: underline;
-  cursor: pointer;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.cash-create__link:active {
+  opacity: 0.72;
 }
 
 .cash-create__link:focus-visible {
-  outline: 2px solid var(--realism-cyan, #00d4ff);
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 
@@ -221,67 +265,61 @@
    radio and the bomb-pot switch (docs/changelog/2026-09-09-a-classic-game-has-
    no-antes-and-no-bombs.md): fn_cash_game_create takes all four from the
    template. So the group below prints the template's promise - Ante, VPIP
-   Floor, Bomb Pots - as engraved rows on the glass: lit label, chrome value,
-   muted note, a rule between them. Nothing here is a control.
+   Floor, Bomb Pots - as engraved rows on the glass: lit blue label on the
+   left, silver value on the right, muted note under them, a rule between
+   rows. Nothing here is a control, and nothing here is a panel: the console
+   is the frame.
    ───────────────────────────────────────────────────────────────────────────── */
 .cash-create__promise {
   display: flex;
   flex-direction: column;
   gap: 0;
   margin: 0.5rem 0;
-  border-radius: var(--realism-radius, 8px);
-  border: 1px solid var(--realism-gunmetal, #27313c);
-  background: linear-gradient(
-    180deg,
-    var(--realism-panel-raised, #111925) 0%,
-    var(--realism-panel, #0b1017) 100%
-  );
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-  overflow: hidden;
 }
 
 .cash-create__promise-title {
-  padding: 8px 12px;
-  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
+  padding: 8px 4px;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--realism-cyan, #00d4ff);
-  border-bottom: 1px solid #000;
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  color: #9aa5b3;
 }
 
 .cash-create__rule-readout {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
-}
-
-.cash-create__promise .cash-create__rule-readout + .cash-create__rule-readout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  gap: 3px 12px;
+  align-items: baseline;
+  padding: 10px 4px;
   border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .cash-create__rule-readout__label {
-  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
-  font-size: 0.7rem;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--realism-chrome, #b8c3cd);
+  color: #45adff;
 }
 
 .cash-create__rule-readout__value {
   font-size: 0.95rem;
   font-weight: 800;
-  color: var(--realism-chrome-hot, #e6edf3);
+  color: #e4e7ec;
+  text-align: right;
+  text-shadow:
+    0 1px 0 #000,
+    0 -1px 0 rgb(255 255 255 / 14%);
   font-variant-numeric: tabular-nums;
 }
 
 .cash-create__rule-readout__note {
+  grid-column: 1 / -1;
   font-size: 0.72rem;
   line-height: 1.35;
-  color: var(--realism-muted, #7f8c9b);
+  color: #9aa5b3;
 }

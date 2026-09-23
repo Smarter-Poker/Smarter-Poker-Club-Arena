@@ -30,6 +30,7 @@ import WeeklyScheduleEditor, {
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
+import { Toggle } from '../table-config/controls';
 import {
   manualTournamentBlindPreset,
   newTournamentPlayingLevels,
@@ -82,6 +83,10 @@ interface Props {
  */
 type MttEntryRules = 'freezeout' | 'rebuy' | 'reentry' | 'free_buy';
 type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
+/** The one recurrence control at the foot of the form. */
+type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
+const EVERY_DAY_OF_WEEK = [0, 1, 2, 3, 4, 5, 6];
+const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
 
 const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
   { value: 'NLH', label: "No-Limit Hold'em" },
@@ -147,7 +152,11 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('6');
-  const [payoutPercent, setPayoutPercent] = useState<10 | 15 | 20>(10);
+  /* PAID PLACES ARE 10 TO 15 PERCENT OF THE FINAL FIELD (owner requirement,
+     2026-09-20). The database contract still accepts 20 for events that
+     already carry it; this creator only makes new events and no longer offers
+     it. There is no edit or clone path through this modal. */
+  const [payoutPercent, setPayoutPercent] = useState<10 | 15>(10);
   const isSngOrSpin = format === 'sng' || format === 'spin';
   const fieldCap = isSngOrSpin ? fieldCapFor(maxPlayers) : null;
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
@@ -296,11 +305,21 @@ export default function CreateTournamentModal({
    * by the spawner rather than by hand, so this week's occurrence is never
    * made twice.
    */
-  const [repeatsWeekly, setRepeatsWeekly] = useState(false);
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  /* ONE RECURRENCE CONTROL (owner requirement, 2026-09-20): Does Not Repeat /
+     Daily / Weekly / Monthly. It replaces two competing checkboxes ("Repeats
+     Weekly" and "Recurring Tournament") that hid the cadence choice. The three
+     values the submit path has always read are now DERIVED from it, so the
+     tournament_schedules payload is unchanged:
+       - Weekly + "Use This Event's Day And Time" is the old Repeats Weekly.
+       - Every other repeating choice is the old Recurring Tournament editor. */
+  const [recurrence, setRecurrence] = useState<Recurrence>('none');
+  const [weeklyMatchesStart, setWeeklyMatchesStart] = useState(true);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
-  const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
+  const repeatsWeekly = recurrence === 'weekly' && weeklyMatchesStart;
+  const scheduleEnabled = recurrence !== 'none' && !repeatsWeekly;
+  const scheduleCadence: 'daily' | 'weekly' | 'monthly' =
+    recurrence === 'none' ? 'weekly' : recurrence;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -314,6 +333,28 @@ export default function CreateTournamentModal({
     const at = Number.isFinite(when.getTime()) ? when : new Date(Date.now() + 10 * 60 * 1000);
     return { daysOfWeek: [at.getUTCDay()], startTimesUtc: [at.toISOString().slice(11, 16)] };
   }, [startTimeMode, scheduledDate, scheduledTime]);
+
+  /* INTERVAL MODE BELONGS TO WEEKLY ONLY. The spawner's interval loop
+     (ScheduledTournamentService.processIntervalSchedule) never reads the
+     cadence, so "Repeat Every N Minutes" saved under Monthly or Daily respawned
+     all month. Leaving Weekly therefore normalises the schedule to set times on
+     every day, and the editor is told not to offer the interval at all. */
+  const applyRecurrence = (next: Recurrence, matchesStart: boolean = weeklyMatchesStart) => {
+    const nextRepeatsWeekly = next === 'weekly' && matchesStart;
+    const nextScheduleEnabled = next !== 'none' && !nextRepeatsWeekly;
+    setRecurrence(next);
+    setWeeklyMatchesStart(matchesStart);
+    if (nextRepeatsWeekly) {
+      setSchedule((current) => ({ ...current, mode: 'times', ...weeklySlotFromStart() }));
+    } else if (next === 'daily' || next === 'monthly') {
+      setSchedule((current) => ({ ...current, mode: 'times', daysOfWeek: EVERY_DAY_OF_WEEK }));
+    }
+    if (nextScheduleEnabled) {
+      if (!scheduleEnabled) setStartTimeMode('schedule_only');
+    } else if (startTimeMode === 'schedule_only') {
+      setStartTimeMode('now');
+    }
+  };
 
   // ── The buy-in, split ──
   // total = what the player pays (the typed whole number)
@@ -425,6 +466,8 @@ export default function CreateTournamentModal({
   const blindsValid = Array.isArray(effectiveBlinds) && effectiveBlinds.length > 0;
 
   const isSatellite = format === 'satellite';
+  /** Heads Up, Spin and Satellite carry no entry-rules or prize-style axes. */
+  const isFixedCategory = format === 'sng' || format === 'spin' || isSatellite;
 
   // Load candidate target tournaments (upcoming, non-satellite in this club) once
   // the satellite format is chosen, so the organiser can pick what seats feed into.
@@ -528,7 +571,24 @@ export default function CreateTournamentModal({
       ? format
       : 'regular';
 
+  /* ENTRY RULES AND PRIZE STYLE ARE INDEPENDENT AXES. `format` carries the
+     prize style (and, for a Regular event, the entry rules as well), so both
+     handlers resolve a Regular format through this ONE map. The prize-style
+     handler used to have no Free Buy branch: choosing Regular while Entry Rules
+     was Free Buy wrote 'mtt_freezeout' while freeBuy:true was still sent. */
+  const regularFormatFor = (rules: MttEntryRules): TournamentFormat =>
+    rules === 'free_buy'
+      ? 'mtt_free_buy'
+      : rules === 'rebuy'
+        ? 'mtt_rebuy'
+        : rules === 'reentry'
+          ? 'mtt_reentry'
+          : 'mtt_freezeout';
+
   const applyMttEntryRules = (rules: MttEntryRules) => {
+    // A bounty is funded out of the buy-in; a Free Buy's buy-in is 0. The
+    // option is disabled, and this refuses the same pair for any other caller.
+    if (rules === 'free_buy' && mttPrizeStyle !== 'regular') return;
     setMttEntryRules(rules);
     setLateRegLevels('8');
     setAddOnAvailable(rules !== 'freezeout');
@@ -547,28 +607,13 @@ export default function CreateTournamentModal({
       setRebuyChips('3000');
       setGuaranteedPrize('250');
     }
-    if (mttPrizeStyle === 'regular') {
-      setFormat(
-        rules === 'free_buy'
-          ? 'mtt_free_buy'
-          : rules === 'rebuy'
-            ? 'mtt_rebuy'
-            : rules === 'reentry'
-              ? 'mtt_reentry'
-              : 'mtt_freezeout'
-      );
-    }
+    if (mttPrizeStyle === 'regular') setFormat(regularFormatFor(rules));
   };
 
   const applyMttPrizeStyle = (style: MttPrizeStyle) => {
+    if (style !== 'regular' && mttEntryRules === 'free_buy') return;
     if (style === 'regular') {
-      setFormat(
-        mttEntryRules === 'rebuy'
-          ? 'mtt_rebuy'
-          : mttEntryRules === 'reentry'
-            ? 'mtt_reentry'
-            : 'mtt_freezeout'
-      );
+      setFormat(regularFormatFor(mttEntryRules));
       return;
     }
     setFormat(style);
@@ -604,7 +649,6 @@ export default function CreateTournamentModal({
       // payout, defeating the point (winners should earn seats). ──
       if (isSatellite && !satelliteTargetId) {
         toast.error('Pick The Target Tournament This Satellite Awards Seats Into');
-        submittingRef.current = false;
         submittingRef.current = false;
         setIsSubmitting(false);
         return;
@@ -710,7 +754,11 @@ export default function CreateTournamentModal({
             intervalMinutes: schedule.intervalMinutes,
             ...weeklySlotFromStart(),
           }
-        : schedule;
+        : scheduleCadence === 'weekly'
+          ? schedule
+          : // Daily and Monthly run at set times on every day; the monthly
+            // day filter is the spawner's. An interval can never ride along.
+            { ...schedule, mode: 'times', daysOfWeek: EVERY_DAY_OF_WEEK };
       const effectiveScheduleEnabled = scheduleEnabled || repeatsWeekly;
       const effectiveCadence: 'daily' | 'weekly' | 'monthly' = repeatsWeekly
         ? 'weekly'
@@ -991,13 +1039,15 @@ export default function CreateTournamentModal({
     };
   }, [onClose, isSubmitting]);
 
+  // Whole numbers only — no decimal buy-ins on any tournament or SNG.
+  // A Free Buy is the one event whose entry price is legitimately 0, so the
+  // field border and the summary ask the same question coreValid asks.
+  const buyInValid =
+    mttEntryRules === 'free_buy' ? buyIn.trim() !== '' && Number(buyIn) === 0 : isWholeBuyIn(buyIn);
+
   const coreValid = (() => {
     if (!name.trim()) return false;
-    // Whole numbers only — no decimal buy-ins on any tournament or SNG.
-    // A Free Buy is the one event whose entry price is legitimately 0.
-    if (mttEntryRules === 'free_buy') {
-      if (Number(buyIn) !== 0) return false;
-    } else if (!isWholeBuyIn(buyIn)) return false;
+    if (!buyInValid) return false;
     if (isNaN(parseInt(startingChips)) || parseInt(startingChips) <= 0) return false;
     if (isSngOrSpin && (!Number.isFinite(parseInt(maxPlayers)) || parseInt(maxPlayers) < 2)) {
       return false;
@@ -1036,6 +1086,7 @@ export default function CreateTournamentModal({
             subtitle="Configure, Validate, Then Publish"
             pill={format === 'spin' ? 'Spins' : format === 'sng' ? 'Sit N Go' : 'Event'}
             crest="club"
+            className={styles.consoleShell}
             plates={{
               secondary: {
                 label: 'Cancel',
@@ -1053,61 +1104,88 @@ export default function CreateTournamentModal({
           >
             <div className={styles.formGroup}>
               <label>
-                Tournament Name <span style={{ color: '#ef4444' }}>*</span>
+                Tournament Name <span className={styles.required}>*</span>
               </label>
               <input
-                className={styles.input}
+                className={`${styles.input}${!name.trim() ? ` ${styles.invalid}` : ''}`}
+                aria-invalid={!name.trim()}
                 value={name}
                 maxLength={44}
                 onChange={(e) => setName(e.target.value.slice(0, 44))}
                 placeholder="E.G. Saturday Night Turbo"
                 required
-                style={!name.trim() ? { borderColor: '#ef4444' } : undefined}
               />
             </div>
 
+            {/* THE CATEGORY IS ALWAYS REACHABLE (2026-09-20). This select used to
+                render only when the format was ALREADY a Heads Up, Spin or
+                Satellite, so an Event opened from the tournament page or a
+                union (no initialFormat) could never become a Satellite: the
+                target picker, seat award and their tests were all live code
+                with no way in. Same four options, same handler. */}
+            <div className={styles.formGroup}>
+              <label htmlFor="tournament-category">Tournament Category</label>
+              <select
+                id="tournament-category"
+                className={styles.select}
+                value={isFixedCategory ? format : 'mtt_freezeout'}
+                onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
+              >
+                <option value="mtt_freezeout">Multi-Table Tournament</option>
+                <option value="satellite">Satellite</option>
+                <option value="sng">Heads Up</option>
+                <option value="spin">Spin & Go</option>
+              </select>
+            </div>
+
             {/* Entry rules and prize style are independent tournament axes. */}
-            {format === 'sng' || format === 'spin' || format === 'satellite' ? (
-              <div className={styles.formGroup}>
-                <label>Tournament Category</label>
-                <select
-                  className={styles.select}
-                  value={format}
-                  onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
-                >
-                  <option value="sng">Heads Up</option>
-                  <option value="spin">Spin & Go</option>
-                  <option value="satellite">Satellite</option>
-                  <option value="mtt_freezeout">Multi-Table Tournament</option>
-                </select>
-              </div>
-            ) : (
+            {!isFixedCategory && (
               <div className={styles.formatAxes}>
                 <div className={styles.formGroup}>
-                  <label>Entry Rules</label>
+                  <label htmlFor="tournament-entry-rules">Entry Rules</label>
                   <select
+                    id="tournament-entry-rules"
                     className={styles.select}
                     value={mttEntryRules}
                     onChange={(e) => applyMttEntryRules(e.target.value as MttEntryRules)}
                   >
                     <option value="freezeout">Freezeout</option>
-                    <option value="free_buy">Free Buy (First Entry Free)</option>
+                    {/* A bounty is funded out of the buy-in and a Free Buy's
+                        buy-in is 0, so that pair can never be created. It is
+                        refused HERE, on both axes, instead of one axis
+                        silently rewriting the other. */}
+                    <option value="free_buy" disabled={mttPrizeStyle !== 'regular'}>
+                      Free Buy (First Entry Free)
+                    </option>
                     <option value="rebuy">Rebuy (Same Seat)</option>
                     <option value="reentry">Re-Entry (New Seat)</option>
                   </select>
                 </div>
                 <div className={styles.formGroup}>
-                  <label>Prize Style</label>
+                  <label htmlFor="tournament-prize-style">Prize Style</label>
                   <select
+                    id="tournament-prize-style"
                     className={styles.select}
                     value={mttPrizeStyle}
                     onChange={(e) => applyMttPrizeStyle(e.target.value as MttPrizeStyle)}
                   >
                     <option value="regular">Regular Tournament</option>
-                    <option value="bounty">Knockout Bounty</option>
-                    <option value="progressive_bounty">Progressive Knockout (PKO)</option>
-                    <option value="mystery_bounty">Mystery Bounty</option>
+                    <option value="bounty" disabled={mttEntryRules === 'free_buy'}>
+                      Knockout Bounty
+                    </option>
+                    <option value="progressive_bounty" disabled={mttEntryRules === 'free_buy'}>
+                      Progressive Knockout (PKO)
+                    </option>
+                    <option value="mystery_bounty" disabled={mttEntryRules === 'free_buy'}>
+                      Mystery Bounty
+                    </option>
                   </select>
+                  {mttEntryRules === 'free_buy' && (
+                    <span className={styles.helperText}>
+                      Bounties Are Funded From The Buy-In, So A Free Buy Is Always A Regular
+                      Tournament.
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -1115,7 +1193,7 @@ export default function CreateTournamentModal({
             {/* Game Variant Selection */}
             <div className={styles.formGroup}>
               <label>
-                Game <span style={{ color: '#ef4444' }}>*</span>
+                Game <span className={styles.required}>*</span>
               </label>
               <select
                 className={styles.select}
@@ -1181,7 +1259,7 @@ export default function CreateTournamentModal({
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
                     <label>
-                      Max Players <span style={{ color: '#ef4444' }}>*</span>
+                      Max Players <span className={styles.required}>*</span>
                     </label>
                     <select
                       className={styles.select}
@@ -1201,7 +1279,7 @@ export default function CreateTournamentModal({
                   {isSngOrSpin ? (
                     <>
                       <label>
-                        Speed <span style={{ color: '#ef4444' }}>*</span>
+                        Speed <span className={styles.required}>*</span>
                       </label>
                       <select
                         className={styles.select}
@@ -1294,20 +1372,20 @@ export default function CreateTournamentModal({
               <div className={styles.col}>
                 <div className={styles.formGroup}>
                   <label>
-                    Buy-In <span style={{ color: '#ef4444' }}>*</span>
+                    Buy-In <span className={styles.required}>*</span>
                   </label>
                   {/* WHOLE NUMBERS ONLY (Dan 2026-08-20). step/min/inputMode set
                     the browser and the mobile keypad, and digitsOnly stops a
                     decimal point being typed or pasted at all. */}
                   <input
                     type="number"
-                    className={styles.input}
+                    className={`${styles.input}${!buyInValid ? ` ${styles.invalid}` : ''}`}
+                    aria-invalid={!buyInValid}
                     value={buyIn}
                     onChange={(e) => setBuyIn(digitsOnly(e.target.value))}
                     min={1}
                     step={1}
                     inputMode="numeric"
-                    style={!isWholeBuyIn(buyIn) ? { borderColor: '#ef4444' } : undefined}
                   />
                   <span className={styles.helperText}>
                     Whole Chips Only. This Is The Total The Player Pays.
@@ -1351,7 +1429,7 @@ export default function CreateTournamentModal({
               <div className={styles.col}>
                 <div className={styles.formGroup}>
                   <label htmlFor="tournament-starting-chips">
-                    Starting Chips <span style={{ color: '#ef4444' }}>*</span>
+                    Starting Chips <span className={styles.required}>*</span>
                   </label>
                   <input
                     id="tournament-starting-chips"
@@ -1518,11 +1596,10 @@ export default function CreateTournamentModal({
                   id="mtt-paid-field"
                   className={styles.select}
                   value={payoutPercent}
-                  onChange={(e) => setPayoutPercent(Number(e.target.value) as 10 | 15 | 20)}
+                  onChange={(e) => setPayoutPercent(Number(e.target.value) === 15 ? 15 : 10)}
                 >
                   <option value={10}>Top 10 Percent</option>
                   <option value={15}>Top 15 Percent</option>
-                  <option value={20}>Top 20 Percent</option>
                 </select>
                 <span className={styles.helperText}>
                   Paid Places Follow Actual Entries When Registration Closes, Rounded Up.
@@ -1540,7 +1617,7 @@ export default function CreateTournamentModal({
                       ? 'PKO'
                       : 'Mystery Bounty'}{' '}
                   Settings
-                  <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>
+                  <span className={styles.required}>*</span>
                 </span>
                 <div className={styles.row}>
                   <div className={styles.col}>
@@ -1549,18 +1626,18 @@ export default function CreateTournamentModal({
                         {format === 'mystery_bounty'
                           ? 'Base Bounty (Chips)'
                           : 'Bounty Per KO (Chips)'}{' '}
-                        <span style={{ color: '#ef4444' }}>*</span>
+                        <span className={styles.required}>*</span>
                       </label>
                       <input
                         type="number"
-                        className={styles.input}
+                        className={`${styles.input}${!isWholeBuyIn(bountyAmount) ? ` ${styles.invalid}` : ''}`}
+                        aria-invalid={!isWholeBuyIn(bountyAmount)}
                         value={bountyAmount}
                         onChange={(e) => setBountyAmount(digitsOnly(e.target.value))}
                         min={1}
                         step={1}
                         inputMode="numeric"
                         required
-                        style={!isWholeBuyIn(bountyAmount) ? { borderColor: '#ef4444' } : undefined}
                       />
                       <span className={styles.helperText}>
                         {format === 'mystery_bounty'
@@ -1678,39 +1755,32 @@ export default function CreateTournamentModal({
                   </span>
                 )}
                 {bountySplit && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.10)',
-                      fontSize: '0.75rem',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    <strong style={{ color: '#ffd700' }}>
-                      Each {money(bountySplit.buyIn)} Entry Splits:
-                    </strong>
-                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
-                      <span>
-                        Bounty Pool <strong>{money(bountySplit.bounty)}</strong>
-                      </span>
-                      <span>
-                        Rake <strong>{money(bountySplit.rake)}</strong>
-                      </span>
-                      <span style={{ color: bountySplit.prize < 0 ? '#ef4444' : undefined }}>
-                        Prize Pool <strong>{money(bountySplit.prize)}</strong>
-                      </span>
+                  <div className={styles.splitRows} role="group" aria-label="Bounty Entry Split">
+                    <span className={styles.sectionLabel}>
+                      Each {money(bountySplit.buyIn)} Entry Splits
+                    </span>
+                    <div className={styles.splitRow}>
+                      <span>Bounty Pool</span>
+                      <strong>{money(bountySplit.bounty)}</strong>
                     </div>
-                    <span style={{ opacity: 0.65 }}>
+                    <div className={styles.splitRow}>
+                      <span>Rake</span>
+                      <strong>{money(bountySplit.rake)}</strong>
+                    </div>
+                    <div
+                      className={`${styles.splitRow}${bountySplit.prize < 0 ? ` ${styles.splitRowShort}` : ''}`}
+                    >
+                      <span>Prize Pool</span>
+                      <strong>{money(bountySplit.prize)}</strong>
+                    </div>
+                    <span className={styles.helperText}>
                       Bounty And Prize Pools Are Tracked Separately; Unclaimed Bounty Money Goes To
                       The Champion.
                     </span>
                   </div>
                 )}
                 {!bountyValid && (
-                  <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
+                  <p className={styles.errorText}>
                     {!isWholeBuyIn(bountyAmount)
                       ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
                       : bountySplit && bountySplit.prize < 0
@@ -1727,53 +1797,44 @@ export default function CreateTournamentModal({
                 <span className={styles.sectionLabel}>Rebuy / Re-Entry / Add-On</span>
                 <div className={styles.row}>
                   <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.toggleLabel}>
-                        <input
-                          type="checkbox"
-                          checked={isRebuy || isFreeBuy}
-                          disabled
-                          className={styles.checkbox}
-                        />
-                        Allow Rebuys (Same Seat)
-                      </label>
+                    <div className={styles.toggleRow}>
+                      {/* Locked: Entry Rules owns this. The switch reports it. */}
+                      <Toggle
+                        label="Allow Rebuys (Same Seat)"
+                        value={isRebuy || isFreeBuy}
+                        onChange={() => {}}
+                        disabled
+                      />
                       {!isRebuy && !isFreeBuy && (
                         <span className={styles.helperText}>
-                          Select "MTT (Rebuy)" Format To Enable
+                          Set Entry Rules To Rebuy To Turn This On
                         </span>
                       )}
                     </div>
                   </div>
                   <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.toggleLabel}>
-                        <input
-                          type="checkbox"
-                          checked={isReentry || isFreeBuy}
-                          disabled
-                          className={styles.checkbox}
-                        />
-                        Allow Re-Entry (New Seat)
-                      </label>
+                    <div className={styles.toggleRow}>
+                      <Toggle
+                        label="Allow Re-Entry (New Seat)"
+                        value={isReentry || isFreeBuy}
+                        onChange={() => {}}
+                        disabled
+                      />
                       {!isReentry && !isFreeBuy && (
                         <span className={styles.helperText}>
-                          Select "MTT (Re-Entry)" Format To Enable
+                          Set Entry Rules To Re-Entry To Turn This On
                         </span>
                       )}
                     </div>
                   </div>
                   <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.toggleLabel}>
-                        <input
-                          type="checkbox"
-                          checked={addOnAvailable || isFreeBuy}
-                          disabled={isFreeBuy}
-                          onChange={(e) => setAddOnAvailable(e.target.checked)}
-                          className={styles.checkbox}
-                        />
-                        Allow Add-Ons
-                      </label>
+                    <div className={styles.toggleRow}>
+                      <Toggle
+                        label="Allow Add-Ons"
+                        value={addOnAvailable || isFreeBuy}
+                        onChange={setAddOnAvailable}
+                        disabled={isFreeBuy}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1878,11 +1939,12 @@ export default function CreateTournamentModal({
                         <div className={styles.readOnlyRule}>
                           {isFreeBuy
                             ? 'From Seating Until The Add-On Window Closes'
-                            : '1 Minute After Rebuy Period'}
+                            : 'One 60-Second Period When The Rebuy Period Closes'}
                         </div>
                         <span className={styles.helperText}>
-                          Play Pauses For 60 Seconds. The Full Add-On Cost Goes To The Prize Pool
-                          With No Rake.
+                          {isFreeBuy
+                            ? 'Play Pauses After The Current Hand For The Final 60 Seconds. The Full Add-On Cost Goes To The Prize Pool With No Rake.'
+                            : 'It Opens Once, The Moment Late Registration, Rebuys And Re-Entries Close. Play Pauses After The Current Hand. The Full Add-On Cost Goes To The Prize Pool With No Rake.'}
                         </span>
                       </div>
                     </div>
@@ -1905,19 +1967,14 @@ export default function CreateTournamentModal({
             {!isSatellite && !isBountyFormat && format !== 'spin' && (
               <div className={styles.row}>
                 <div className={styles.col} style={{ flex: '1 1 100%' }}>
-                  <div
-                    className={styles.formGroup}
-                    style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
-                  >
-                    <label style={{ fontWeight: 700, color: '#60a5fa' }}>
-                      <input
-                        type="checkbox"
-                        checked={generateSatellites}
-                        onChange={(e) => setGenerateSatellites(e.target.checked)}
-                        className={styles.checkbox}
+                  <div className={`${styles.formGroup} ${styles.engravedTop}`}>
+                    <div className={styles.toggleRow}>
+                      <Toggle
+                        label="Generate Satellites To This Event"
+                        value={generateSatellites}
+                        onChange={setGenerateSatellites}
                       />
-                      Generate Satellites To This Event?
-                    </label>
+                    </div>
                     {generateSatellites && (
                       <div
                         style={{
@@ -1980,21 +2037,19 @@ export default function CreateTournamentModal({
             )}
 
             {/* ── Advanced Options (PokerBros parity, 2026-08-22) ── */}
-            <div
-              className={styles.sectionDivider}
-              style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
-            >
+            <div className={styles.sectionDivider}>
               <button
                 type="button"
-                className={styles.select}
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', fontWeight: 700 }}
+                className={styles.litWord}
+                aria-expanded={showAdvanced}
+                aria-controls="tournament-advanced-options"
                 onClick={() => setShowAdvanced((v) => !v)}
               >
-                {showAdvanced ? '- Hide Advanced Options' : '+ Advanced Options'}
+                {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
               </button>
 
               {showAdvanced && (
-                <>
+                <div id="tournament-advanced-options">
                   <div className={styles.formGroup} style={{ marginTop: 8 }}>
                     <label>Short Description</label>
                     <input
@@ -2006,7 +2061,7 @@ export default function CreateTournamentModal({
                     />
                   </div>
 
-                  <div className={styles.row}>
+                  <div className={styles.toggleGrid}>
                     {(
                       [
                         ['VIP Only', isVipOnly, setIsVipOnly],
@@ -2022,18 +2077,8 @@ export default function CreateTournamentModal({
                         ['Final Table Deal', finalTableDeal, setFinalTableDeal],
                       ] as Array<[string, boolean, (v: boolean) => void]>
                     ).map(([label, value, setter]) => (
-                      <div className={styles.col} key={label} style={{ minWidth: '45%' }}>
-                        <div className={styles.formGroup}>
-                          <label className={styles.toggleLabel}>
-                            <input
-                              type="checkbox"
-                              checked={value}
-                              onChange={(e) => setter(e.target.checked)}
-                              className={styles.checkbox}
-                            />
-                            {label}
-                          </label>
-                        </div>
+                      <div className={styles.toggleRow} key={label}>
+                        <Toggle label={label} value={value} onChange={setter} />
                       </div>
                     ))}
                   </div>
@@ -2080,16 +2125,12 @@ export default function CreateTournamentModal({
 
                   <div className={styles.row}>
                     <div className={styles.col}>
-                      <div className={styles.formGroup}>
-                        <label className={styles.toggleLabel}>
-                          <input
-                            type="checkbox"
-                            checked={earlyBirdEnabled}
-                            onChange={(e) => setEarlyBirdEnabled(e.target.checked)}
-                            className={styles.checkbox}
-                          />
-                          Early Bird Registration
-                        </label>
+                      <div className={styles.toggleRow}>
+                        <Toggle
+                          label="Early Bird Registration"
+                          value={earlyBirdEnabled}
+                          onChange={setEarlyBirdEnabled}
+                        />
                       </div>
                     </div>
                     {earlyBirdEnabled && (
@@ -2151,113 +2192,93 @@ export default function CreateTournamentModal({
                       </div>
                     )}
                   </div>
-                </>
+                </div>
               )}
             </div>
 
-            {/* ── Recurring Schedule ── */}
+            {/* ── Recurrence: ONE control, last thing on the form ── */}
             {!isSngOrSpin && (
               <div className={styles.sectionDivider}>
+                <span className={styles.sectionLabel}>Recurrence</span>
                 <div className={styles.formGroup}>
-                  <label className={styles.toggleLabel}>
-                    <input
-                      type="checkbox"
-                      checked={repeatsWeekly}
-                      onChange={(e) => {
-                        setRepeatsWeekly(e.target.checked);
-                        if (e.target.checked) {
-                          setScheduleEnabled(false);
-                          setScheduleCadence('weekly');
-                          setSchedule((current) => ({
-                            ...current,
-                            mode: 'times',
-                            ...weeklySlotFromStart(),
-                          }));
-                        }
-                      }}
-                      className={styles.checkbox}
-                    />
-                    Repeats Weekly
-                  </label>
+                  <label htmlFor="tournament-recurrence">Repeat</label>
+                  <select
+                    id="tournament-recurrence"
+                    className={styles.select}
+                    value={recurrence}
+                    onChange={(e) => applyRecurrence(e.target.value as Recurrence)}
+                  >
+                    <option value="none">Does Not Repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
                   <span className={styles.helperText}>
-                    Same Day And Time Every Week, With This Configuration. Next Week's Event Is
-                    Published As Soon As This One Is Created.
+                    {recurrence === 'none'
+                      ? 'This Event Runs Once.'
+                      : recurrence === 'daily'
+                        ? 'Runs Every Day At The Start Times Below, With This Configuration.'
+                        : recurrence === 'monthly'
+                          ? 'Runs Once A Month On The Day Below, With This Configuration.'
+                          : 'Runs Every Week With This Configuration.'}
                   </span>
                 </div>
-                {!repeatsWeekly && (
-                  <div className={styles.formGroup}>
-                    <label className={styles.toggleLabel}>
-                      <input
-                        type="checkbox"
-                        checked={scheduleEnabled}
-                        onChange={(e) => {
-                          setScheduleEnabled(e.target.checked);
-                          if (e.target.checked) setStartTimeMode('schedule_only');
-                          else if (startTimeMode === 'schedule_only') setStartTimeMode('now');
-                        }}
-                        className={styles.checkbox}
-                      />
-                      Recurring Tournament
-                    </label>
+                {recurrence === 'weekly' && (
+                  <div className={styles.toggleRow}>
+                    <Toggle
+                      label="Use This Event's Day And Time"
+                      value={weeklyMatchesStart}
+                      onChange={(matches) => applyRecurrence('weekly', matches)}
+                    />
                     <span className={styles.helperText}>
-                      Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
+                      {weeklyMatchesStart
+                        ? "Same Day And Time Every Week. Next Week's Event Is Published As Soon As This One Is Created."
+                        : 'Pick The Days And Start Times Below.'}
                     </span>
                   </div>
                 )}
-                {scheduleEnabled && !repeatsWeekly && (
-                  <>
-                    <div className={styles.choiceGrid}>
-                      {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (
-                        <button
-                          key={cadence}
-                          type="button"
-                          className={scheduleCadence === cadence ? styles.selected : ''}
-                          onClick={() => {
-                            setScheduleCadence(cadence);
-                            if (cadence !== 'weekly')
-                              setSchedule((current) => ({
-                                ...current,
-                                daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
-                              }));
-                          }}
-                        >
-                          {cadence === 'daily'
-                            ? 'Daily'
-                            : cadence === 'weekly'
-                              ? 'Weekly'
-                              : 'Monthly'}
-                        </button>
+                {recurrence === 'monthly' && (
+                  <div className={styles.formGroup}>
+                    <label htmlFor="tournament-recurrence-day">Day Of Month</label>
+                    <select
+                      id="tournament-recurrence-day"
+                      className={styles.select}
+                      value={scheduleDayOfMonth}
+                      onChange={(event) =>
+                        setScheduleDayOfMonth(
+                          Math.min(31, Math.max(1, Number(event.target.value) || 1))
+                        )
+                      }
+                    >
+                      {DAYS_OF_MONTH.map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
                       ))}
-                    </div>
-                    {scheduleCadence === 'monthly' && (
-                      <label className={styles.formGroup}>
-                        Day Of Month
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          value={scheduleDayOfMonth}
-                          onChange={(event) =>
-                            setScheduleDayOfMonth(
-                              Math.min(31, Math.max(1, Number(event.target.value) || 1))
-                            )
-                          }
-                        />
-                      </label>
-                    )}
-                    <WeeklyScheduleEditor
-                      value={schedule}
-                      onChange={setSchedule}
-                      hideDays={scheduleCadence !== 'weekly'}
-                    />
-                  </>
+                    </select>
+                    <span className={styles.helperText}>
+                      {scheduleDayOfMonth >= 29
+                        ? `Counted In UTC. A Month With No Day ${scheduleDayOfMonth} Is Skipped.`
+                        : 'Counted In UTC, Like The Start Times.'}
+                    </span>
+                  </div>
+                )}
+                {scheduleEnabled && (
+                  <WeeklyScheduleEditor
+                    value={schedule}
+                    onChange={(next) =>
+                      setSchedule(scheduleCadence === 'weekly' ? next : { ...next, mode: 'times' })
+                    }
+                    hideDays={scheduleCadence !== 'weekly'}
+                    hideInterval={scheduleCadence !== 'weekly'}
+                  />
                 )}
               </div>
             )}
 
             {/* ── Validation Summary ── */}
             {!canSubmit && !isSubmitting && (
-              <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
+              <div className={styles.errorSummary} aria-label="What Still Needs Fixing">
                 {!name.trim() && <p>Tournament Name Is Required</p>}
                 {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
                 {!payoutsValid && (
@@ -2265,8 +2286,12 @@ export default function CreateTournamentModal({
                     Payouts Must Total 100 Percent. They Currently Total {payoutsTotal.toFixed(1)}
                   </p>
                 )}
-                {!isWholeBuyIn(buyIn) && (
-                  <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>
+                {!buyInValid && (
+                  <p>
+                    {mttEntryRules === 'free_buy'
+                      ? 'A Free Buy Entry Is Always 0 Chips'
+                      : 'Buy-In Must Be A Whole Number Of Chips Greater Than 0'}
+                  </p>
                 )}
                 {/* `NaN <= 0` is FALSE, so clearing the field disabled Create with
                   no explanation at all - the one field most likely to be

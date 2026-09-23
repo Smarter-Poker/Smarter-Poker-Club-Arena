@@ -9,8 +9,22 @@
  * more HH:MM (24h, UTC) start times, and an alternative "repeat every N
  * minutes" mode. Days are required in BOTH modes — that is what
  * fn_upsert_tournament_schedule enforces.
+ *
+ * 2026-09-20. Start times are chosen from a dropdown of quarter-hour slots
+ * (owner requirement: schedule dates and times are dropdowns, never a native
+ * time picker). A saved time that is off the grid, 19:05 for example, stays in
+ * the list and stays selected: the editor never rewrites a value nobody
+ * touched. `hideInterval` removes the "Repeat Every N Minutes" mode for hosts
+ * whose cadence cannot use it (the spawner reads a daily or monthly cadence
+ * only from timed schedules); the editor then presents and emits 'times'.
+ *
+ * The rows print straight onto the console glass with engraved rules between
+ * them. There is no card here on purpose: every host already sits inside a
+ * painted frame, and a frame never sits on a frame.
  */
 
+import { useEffect, useId } from 'react';
+import { quarterHourOptions } from '../../lib/quarterHourStartSelect';
 import './WeeklyScheduleEditor.css';
 
 export interface WeeklyScheduleValue {
@@ -54,14 +68,36 @@ export default function WeeklyScheduleEditor({
   value,
   onChange,
   hideDays = false,
+  hideInterval = false,
 }: {
   value: WeeklyScheduleValue;
   onChange: (next: WeeklyScheduleValue) => void;
   hideDays?: boolean;
+  /**
+   * When true the "Repeat Every N Minutes" mode is not offered and the editor
+   * works in 'times' mode only. A value that arrives in interval mode is shown
+   * as its start times and handed back as 'times'. Default false.
+   */
+  hideInterval?: boolean;
 }) {
+  const modeGroupName = useId();
+  const mode: WeeklyScheduleValue['mode'] = hideInterval ? 'times' : value.mode;
+
+  /** Every change leaves through here, so a times-only host never receives 'interval'. */
+  const emit = (next: WeeklyScheduleValue) =>
+    onChange(hideInterval && next.mode !== 'times' ? { ...next, mode: 'times' } : next);
+
+  // A times-only host that handed over an interval value gets it back as
+  // 'times' once, so what it saves is what this editor is showing. Settles in
+  // one pass: after the parent stores 'times' the condition is false.
+  useEffect(() => {
+    if (hideInterval && value.mode !== 'times') onChange({ ...value, mode: 'times' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideInterval, value.mode]);
+
   const toggleDay = (day: number) => {
     const has = value.daysOfWeek.includes(day);
-    onChange({
+    emit({
       ...value,
       daysOfWeek: has ? value.daysOfWeek.filter((d) => d !== day) : [...value.daysOfWeek, day],
     });
@@ -70,18 +106,19 @@ export default function WeeklyScheduleEditor({
   const setTime = (index: number, time: string) => {
     const next = value.startTimesUtc.slice();
     next[index] = time;
-    onChange({ ...value, startTimesUtc: next });
+    emit({ ...value, startTimesUtc: next });
   };
 
   return (
     <div className="weekly-schedule-editor">
       {!hideDays && (
-        <div className="wse-days">
+        <div className="wse-days" role="group" aria-label="Days Of The Week">
           {DAY_LABELS.map((label, day) => (
             <button
               key={day}
               type="button"
-              title={DAY_NAMES[day]}
+              aria-label={DAY_NAMES[day]}
+              aria-pressed={value.daysOfWeek.includes(day)}
               className={`wse-day-chip ${value.daysOfWeek.includes(day) ? 'active' : ''}`}
               onClick={() => toggleDay(day)}
             >
@@ -91,48 +128,66 @@ export default function WeeklyScheduleEditor({
         </div>
       )}
 
-      <div className="wse-mode-row">
-        <label className="wse-mode-option">
-          <input
-            type="radio"
-            checked={value.mode === 'times'}
-            onChange={() => onChange({ ...value, mode: 'times' })}
-          />
-          <span>At Set Times (UTC)</span>
-        </label>
-        <label className="wse-mode-option">
-          <input
-            type="radio"
-            checked={value.mode === 'interval'}
-            onChange={() => onChange({ ...value, mode: 'interval' })}
-          />
-          <span>Repeat Every N Minutes</span>
-        </label>
-      </div>
+      {!hideInterval && (
+        <div className="wse-mode-row" role="radiogroup" aria-label="How This Schedule Repeats">
+          <label className="wse-mode-option">
+            <input
+              type="radio"
+              className="wse-mode-input"
+              name={modeGroupName}
+              checked={mode === 'times'}
+              onChange={() => emit({ ...value, mode: 'times' })}
+            />
+            <span className="wse-mode-text">At Set Times (UTC)</span>
+          </label>
+          <label className="wse-mode-option">
+            <input
+              type="radio"
+              className="wse-mode-input"
+              name={modeGroupName}
+              checked={mode === 'interval'}
+              onChange={() => emit({ ...value, mode: 'interval' })}
+            />
+            <span className="wse-mode-text">Repeat Every N Minutes</span>
+          </label>
+        </div>
+      )}
 
-      {value.mode === 'times' ? (
+      {mode === 'times' ? (
         <div className="wse-times">
           {value.startTimesUtc.map((time, i) => (
             <div key={i} className="wse-time-row">
-              <input
-                type="time"
+              <span className="wse-row-label">Start Time {(i + 1).toLocaleString()}</span>
+              <select
                 className="wse-time-input"
+                aria-label={`Start Time ${(i + 1).toLocaleString()} (UTC)`}
                 value={time}
                 onChange={(e) => setTime(i, e.target.value)}
-              />
+              >
+                {time.trim() === '' && (
+                  <option value={time} disabled>
+                    Choose A Time
+                  </option>
+                )}
+                {quarterHourOptions(time.trim() === '' ? '' : time).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               {value.startTimesUtc.length > 1 && (
                 <button
                   type="button"
                   className="wse-remove-time"
                   aria-label="Remove This Start Time"
                   onClick={() =>
-                    onChange({
+                    emit({
                       ...value,
                       startTimesUtc: value.startTimesUtc.filter((_, j) => j !== i),
                     })
                   }
                 >
-                  &times;
+                  Remove
                 </button>
               )}
             </div>
@@ -140,9 +195,9 @@ export default function WeeklyScheduleEditor({
           <button
             type="button"
             className="wse-add-time"
-            onClick={() => onChange({ ...value, startTimesUtc: [...value.startTimesUtc, '20:00'] })}
+            onClick={() => emit({ ...value, startTimesUtc: [...value.startTimesUtc, '20:00'] })}
           >
-            + Add Time
+            Add Time
           </button>
         </div>
       ) : (
@@ -156,8 +211,9 @@ export default function WeeklyScheduleEditor({
             step={5}
             inputMode="numeric"
             value={value.intervalMinutes}
+            aria-label="Repeat Interval In Minutes"
             onChange={(e) =>
-              onChange({ ...value, intervalMinutes: Math.round(Number(e.target.value) || 0) })
+              emit({ ...value, intervalMinutes: Math.round(Number(e.target.value) || 0) })
             }
           />
           <span className="wse-interval-label">Minutes (5 - 1440)</span>
@@ -167,20 +223,23 @@ export default function WeeklyScheduleEditor({
       <p className="wse-hint">
         Days And Times Are In UTC.{' '}
         {hideDays ? 'Choose At Least One Start Time' : 'Pick At Least One Day'}
-        {value.mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
+        {mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
       </p>
     </div>
   );
 }
 
-/** Validation shared by both hosts. Returns a message to toast, or null if valid. */
+/**
+ * Validation shared by both hosts. Returns a message to toast, or null if
+ * valid. Title Case in the source: a toast prints exactly what it is handed.
+ */
 export function validateWeeklySchedule(value: WeeklyScheduleValue): string | null {
-  if (value.daysOfWeek.length === 0) return 'Pick at least one day of the week.';
+  if (value.daysOfWeek.length === 0) return 'Pick At Least One Day Of The Week.';
   if (value.mode === 'times') {
     const times = value.startTimesUtc.filter((t) => t.trim() !== '');
-    if (times.length === 0) return 'Add at least one start time.';
+    if (times.length === 0) return 'Add At Least One Start Time.';
     for (const t of times) {
-      if (!TIME_UTC_PATTERN.test(t)) return 'Start times must be HH:MM, 24-hour.';
+      if (!TIME_UTC_PATTERN.test(t)) return 'Start Times Must Be HH:MM, 24-Hour.';
     }
     return null;
   }
@@ -189,7 +248,7 @@ export function validateWeeklySchedule(value: WeeklyScheduleValue): string | nul
     value.intervalMinutes < 5 ||
     value.intervalMinutes > 1440
   ) {
-    return 'The repeat interval must be 5 to 1440 minutes.';
+    return 'The Repeat Interval Must Be 5 To 1440 Minutes.';
   }
   return null;
 }

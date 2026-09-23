@@ -80,6 +80,15 @@
 }
 
 .club-launch__steps {
+  /* THE STEP UNIT. Everything inside a step is sized in this, not in raw cqw.
+     `cqw` measures the whole console, but above 760px the steps sit two to a
+     row, so a step is under half the console wide. At full console scale the
+     action column alone (27px type) filled a 395px step, the copy column
+     collapsed to between 0 and 36px, every label wrapped one letter to a line
+     and the eleven steps stood 11,700px tall. The single-column phone layout
+     sets the unit back to 1cqw, so it is unchanged. */
+  --club-launch-unit: 0.6cqw;
+
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   border-top: 1px solid #000;
@@ -88,12 +97,16 @@
 .club-launch__step {
   min-width: 0;
   display: grid;
-  grid-template-columns: 8cqw minmax(0, 1fr) auto;
+  grid-template-columns: calc(var(--club-launch-unit) * 8) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1.8cqw;
-  min-height: 12cqw;
-  padding: 2cqw;
+  gap: calc(var(--club-launch-unit) * 1.8);
+  min-height: calc(var(--club-launch-unit) * 12);
+  padding: calc(var(--club-launch-unit) * 2);
   border-bottom: 1px solid #000;
+}
+
+.club-launch__step button {
+  font-size: calc(var(--club-launch-unit) * 2.7);
 }
 
 .club-launch__step:nth-child(odd) {
@@ -102,7 +115,7 @@
 
 .club-launch__step-number {
   color: #45adff;
-  font-size: 2.4cqw;
+  font-size: calc(var(--club-launch-unit) * 2.4);
   font-weight: 800;
   letter-spacing: 0.05em;
   text-align: center;
@@ -117,7 +130,9 @@
 
 .club-launch__step.is-skipped .club-launch__step-number,
 .club-launch__step.is-skipped .club-launch__step-copy span {
-  color: #ffd700;
+  /* Brass, the schema's warm accent. Brand gold is reserved for gold things
+     (the bank figure above); a skipped step is not one. */
+  color: #d6ad52;
 }
 
 .club-launch__step-copy {
@@ -132,14 +147,14 @@
 
 .club-launch__step-copy strong {
   color: #e4e7ec;
-  font-size: 2.8cqw;
+  font-size: calc(var(--club-launch-unit) * 2.8);
   letter-spacing: 0.025em;
 }
 
 .club-launch__step-copy span {
-  margin-top: 0.7cqw;
+  margin-top: calc(var(--club-launch-unit) * 0.7);
   color: #9aa5b3;
-  font-size: 2.1cqw;
+  font-size: calc(var(--club-launch-unit) * 2.1);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -149,12 +164,12 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 1.2cqw;
+  gap: calc(var(--club-launch-unit) * 1.2);
 }
 
 .club-launch__step-actions .is-skip {
-  color: #ffd700;
-  text-shadow: 0 0 0.7cqw rgb(255 215 0 / 48%);
+  color: #d6ad52;
+  text-shadow: 0 0 0.7cqw rgb(214 173 82 / 48%);
 }
 
 .club-launch__step button:disabled {
@@ -169,6 +184,8 @@
   }
 
   .club-launch__steps {
+    --club-launch-unit: 1cqw;
+
     grid-template-columns: 1fr;
   }
 
@@ -179,6 +196,21 @@
   .club-launch__step {
     grid-template-columns: 9cqw minmax(0, 1fr) auto;
     min-height: 16cqw;
+  }
+
+  /* Skip now sits directly above a step's real action, and both were 12px
+     tall. A phone tap target is 44px: the words keep their size and the
+     buttons grow around them, so a thumb cannot skip a step it meant to open. */
+  .club-launch__step-actions {
+    gap: 0;
+  }
+
+  .club-launch__step button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

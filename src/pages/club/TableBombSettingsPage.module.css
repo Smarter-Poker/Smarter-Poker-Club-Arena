@@ -102,6 +102,7 @@
 }
 
 .field input[type='number'],
+.field input[type='text'],
 .field select {
   background: var(--bg-tertiary, #21262d);
   border: 1px solid var(--border, #30363d);
@@ -119,6 +120,42 @@
   width: auto;
   min-width: 132px;
   text-align: left;
+}
+
+/* A field and the words that belong to it: the plain sentence that says what
+   the number means, and the refusal when the number typed is not the number
+   the table will use. The group carries the bottom margin so the words sit
+   against their field, not against the next one. */
+.fieldGroup {
+  margin-bottom: 10px;
+}
+
+.fieldGroup .field {
+  margin-bottom: 6px;
+}
+
+.fieldHint {
+  padding: 0 14px;
+}
+
+.sentence {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #45adff;
+}
+
+.refusal {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #ff5b6e;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: #ff5b6e;
 }
 
 /* The trigger picker. Four options, each with the sentence that explains it —

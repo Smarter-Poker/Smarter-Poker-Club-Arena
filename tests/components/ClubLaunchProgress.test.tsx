@@ -4,11 +4,15 @@ import ClubLaunchProgress, {
   type ClubLaunchTask,
 } from '../../src/components/club/ClubLaunchProgress';
 
-const makeTask = (id: string, complete: boolean): ClubLaunchTask => ({
+/* Phase 2 (2026-09-20): only an OPTIONAL step can be skipped, so the fixtures
+   that exercise skipping now say which steps are optional. A step with no flag
+   is required, exactly like the opening setup wizard. */
+const makeTask = (id: string, complete: boolean, optional = false): ClubLaunchTask => ({
   id,
   label: `Task ${id}`,
   detail: `Finish Task ${id}`,
   complete,
+  optional,
   actionLabel: `Start Task ${id}`,
   onAction: vi.fn(),
 });
@@ -55,7 +59,7 @@ describe('ClubLaunchProgress Completion Visibility', () => {
         viewerId="owner-a"
         clubName="Shark Club"
         openingBank={100_000}
-        tasks={[makeTask('One', true), makeTask('Two', false)]}
+        tasks={[makeTask('One', true), makeTask('Two', false, true)]}
       />
     );
 
@@ -84,7 +88,7 @@ describe('ClubLaunchProgress Completion Visibility', () => {
   it('does not leak skips between same-named clubs or different operators', () => {
     localStorage.setItem('club-launch-skips:club-a:owner-a', JSON.stringify(['Two']));
 
-    const tasks = [makeTask('One', true), makeTask('Two', false)];
+    const tasks = [makeTask('One', true), makeTask('Two', false, true)];
     const { container, rerender } = render(
       <ClubLaunchProgress
         key="club-a:owner-a"

@@ -152,9 +152,19 @@ export default function CreateTablePage({
 
   const selector = (
     <div className="create-table-page">
-      {/* Back Button */}
-      <button className="create-table-page__back" onClick={handleBack}>
-        ‹‹
+      {/* Back. A printed word, not a font glyph: the kit paints no back
+          control, and the console standard forbids a generic glyph standing in
+          for one ("seat the icon in the painted art or remove it and use a
+          clear text label"). The double chevron it replaces also had no
+          accessible name, so a screen reader announced it as "button". The
+          name starts with the visible word, so voice control can target it. */}
+      <button
+        type="button"
+        className="create-table-page__back"
+        onClick={handleBack}
+        aria-label="Back To The Previous Page"
+      >
+        Back
       </button>
 
       {/* Game Type List */}

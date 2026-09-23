@@ -67,6 +67,37 @@ import {
 import { Slider, Toggle } from '../table-config/controls';
 import './CashGameCreateFlow.css';
 
+/* ═══ THE WAKE HAS AN ANSWER, AND START READS IT (2026-09-20) ═══════════════
+   getTableState never throws: it answers null for every non-OK response (403,
+   404, 503) and for a network failure. Start used to await it inside a
+   try/catch that could therefore never fire, toast "Game Created And Started"
+   and send the host to a felt whose engine had not woken - which is where
+   "This Table Is No Longer Running" and the endless "Reconnecting To The
+   Table" on a table thirty seconds old came from.
+
+   null now means "not awake yet". The wake is retried a bounded number of
+   times, awaited one after another INSIDE the one request the host started by
+   tapping Start (the double-tap guard and the busy label cover all of it). It
+   is not a background loop: it ends after WAKE_RETRY_DELAYS_MS.length + 1
+   reads, about four seconds, whatever the engine says. */
+export const WAKE_RETRY_DELAYS_MS = [700, 1300, 2000] as const;
+export const GAME_CREATED_STILL_STARTING = 'Game Created. The Table Is Still Starting';
+
+async function wakeTableEngine(tableId: string): Promise<boolean> {
+  for (let attempt = 0; attempt <= WAKE_RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      const delay = WAKE_RETRY_DELAYS_MS[attempt - 1];
+      await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+    }
+    try {
+      if (await getTableState(tableId)) return true;
+    } catch (err) {
+      reportError(err, 'CashGameCreateFlow.engine_wake');
+    }
+  }
+  return false;
+}
+
 interface Props {
   clubId: string;
   /** The variant the previous screen was opened for; still changeable here. */
@@ -293,14 +324,21 @@ export default function CashGameCreateFlow({
 
         if (mode === 'start') {
           // Same wake the old Start button used: an authenticated engine read
-          // that provisions the table's engine before the felt loads.
-          try {
-            await getTableState(res.table_id);
-          } catch (err) {
-            reportError(err, 'CashGameCreateFlow.engine_wake');
+          // that provisions the table's engine before the felt loads. The
+          // answer is READ now (see wakeTableEngine): only an engine that
+          // answered is called started.
+          const awake = await wakeTableEngine(res.table_id);
+          if (awake) {
+            toast.success('Game Created And Started');
+            navigate(`/table/${res.table_id}`);
+          } else {
+            // The game row exists; the engine has not answered for it yet.
+            // Say exactly that and leave by the Save door: the club page,
+            // where the first viewer of the table wakes it on demand.
+            toast.info(GAME_CREATED_STILL_STARTING);
+            if (onSaved) onSaved();
+            else navigate(`/clubs/${clubId}`);
           }
-          toast.success('Game Created And Started');
-          navigate(`/table/${res.table_id}`);
         } else {
           toast.success('Game Created');
           if (onSaved) onSaved();
@@ -338,6 +376,7 @@ export default function CashGameCreateFlow({
       tableMode,
       navigate,
       toast,
+      onSaved,
     ]
   );
 
@@ -590,6 +629,7 @@ export default function CashGameCreateFlow({
               max={400}
               step={10}
               format={(v) => `${v} BB (${stakesLabelChips(stakes.bb * v)})`}
+              tooltip="The Smallest Stack A Player May Sit Down With, In Big Blinds. It Cannot Be Set Above The Maximum Buy In."
             />
             <Slider
               label="Maximum Buy In"
@@ -599,6 +639,7 @@ export default function CashGameCreateFlow({
               max={1000}
               step={10}
               format={(v) => `${v} BB (${stakesLabelChips(stakes.bb * v)})`}
+              tooltip="The Largest Stack A Player May Buy In For, In Big Blinds. It Cannot Be Set Below The Minimum Buy In."
             />
 
             {/* ═══ THE TEMPLATE'S PROMISE IS PRINTED, NOT OFFERED ═════════════
@@ -664,21 +705,25 @@ export default function CashGameCreateFlow({
               label="Private Game"
               value={overrides.options.is_private}
               onChange={(v) => setOverride('options', { ...overrides.options, is_private: v })}
+              tooltip="Visible Only Inside Your Club, Never In The Union Lobby"
             />
             <Toggle
               label="VIP Only"
               value={overrides.options.is_vip_only}
               onChange={(v) => setOverride('options', { ...overrides.options, is_vip_only: v })}
+              tooltip="Only VIP Members And Club Staff May Take A Seat"
             />
             <Toggle
               label="Anonymous Seats"
               value={overrides.options.is_anonymous}
               onChange={(v) => setOverride('options', { ...overrides.options, is_anonymous: v })}
+              tooltip="Every Seat Shows As Player And Its Seat Number. Names, Avatars, Frames And Auras Are Hidden From Everyone, Including You."
             />
             <Toggle
               label="Ban Chat"
               value={overrides.options.ban_chat}
               onChange={(v) => setOverride('options', { ...overrides.options, ban_chat: v })}
+              tooltip="Players Cannot Send Chat Messages At This Table"
             />
             <Toggle
               label="Insurance"
@@ -686,6 +731,7 @@ export default function CashGameCreateFlow({
               onChange={(v) =>
                 setOverride('options', { ...overrides.options, insurance_enabled: v })
               }
+              tooltip="When Players Are All In, The Player Who Is Ahead May Buy Insurance Against Losing The Pot"
             />
             {variant === 'nlh' && (
               <Toggle
@@ -694,6 +740,7 @@ export default function CashGameCreateFlow({
                 onChange={(v) =>
                   setOverride('options', { ...overrides.options, seven_deuce_enabled: v })
                 }
+                tooltip="Win A Pot That Saw A Flop While Holding A Seven And A Deuce, And Every Other Player Dealt In Pays You Two Big Blinds"
               />
             )}
             <Slider
@@ -706,6 +753,7 @@ export default function CashGameCreateFlow({
               max={60}
               step={5}
               suffix=" Seconds"
+              tooltip="How Many Seconds A Player Has To Act On Each Decision"
             />
             {/*
               WHAT THIS TABLE WILL ACTUALLY CHARGE (carried over from the old

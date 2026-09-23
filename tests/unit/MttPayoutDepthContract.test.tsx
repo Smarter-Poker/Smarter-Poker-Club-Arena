@@ -98,7 +98,11 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
   ] as const)(
     'selecting %s persists %i percent through the actual mapper and serializer',
     (choice, percent, label) => {
-      render(<Form />);
+      /* 2026-09-20, owner requirement: a NEW MTT pays 10 to 15 percent of the
+         field, so 20 percent is offered only to an event already saved with it.
+         The 20 percent row therefore starts from a saved 20; the engine
+         contract it pins (payoutPercent 20 reaches the payload) is unchanged. */
+      render(<Form initial={choice === 'payout20' ? 'payout20' : undefined} />);
       expect(screen.getByRole('option', { name: label })).toBeTruthy();
       fireEvent.change(screen.getByRole('combobox'), { target: { value: choice } });
       fireEvent.click(screen.getByRole('button'));

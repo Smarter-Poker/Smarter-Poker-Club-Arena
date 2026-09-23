@@ -28,6 +28,8 @@ import {
   isMuxEnabled,
   CLOSE_MUX_SUPERSEDED,
   engineSocketUrl,
+  accessRefusalFromClose,
+  type MuxAccessRefusalCode,
 } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
@@ -358,7 +360,64 @@ export type EngineConnectionStatus =
   | 'connected'
   | 'reconnecting'
   | 'failed'
-  | 'auth_failed';
+  | 'auth_failed'
+  /**
+   * 2026-09-20: the engine has ruled that this viewer may not watch this
+   * table (CLUB_MEMBERSHIP_REQUIRED / OBSERVERS_RESTRICTED). TERMINAL for the
+   * ladder: no timer is armed from here, because retrying a verdict is not
+   * recovery. Reached only from a mux access refusal; see the onclose branch.
+   */
+  | 'access_refused';
+
+/**
+ * ═══ A TABLE THAT HAS NEVER ANSWERED MAY SIMPLY BE WAKING (2026-09-20) ═════
+ *
+ * A 4404 sends the ladder straight to its slow end (~30s), which is right for
+ * a table this client HAS been connected to: the engine is rehydrating after a
+ * restart, or the table closed, and neither is improved by hammering it.
+ *
+ * It is wrong for a client that has never once connected. That is the host
+ * who tapped Start on a table created two seconds ago: the engine builds it on
+ * first demand (GameServer.ensureCashTableEngine) and a SUBSCRIBE that loses
+ * that race is told TABLE_NOT_FOUND. Thirty seconds of blank felt for a table
+ * that was ready after one is how "This Table Is No Longer Running" reached a
+ * host looking at their own brand-new game.
+ *
+ * So the first few 4404s of a client that has NEVER opened stay on the fast
+ * end of the same ladder (1s, then 2s steps, plus the usual jitter). After
+ * this many, or the moment the client has ever opened, it is today's
+ * behaviour exactly.
+ */
+export const NEVER_CONNECTED_FAST_NOT_FOUND_RETRIES = 3;
+
+/**
+ * Mirrors server/src/services/onDemandTableWake.ts (isWakeableCashTable), the
+ * rule the engine applies before it will build a table on first demand: a
+ * durable, non-deleted cash table whose lifecycle still says it is open.
+ *
+ * The felt reads the `tables` row with this before it tells anybody "This
+ * Table Is No Longer Running" - a row that still passes is a table the engine
+ * WILL wake, so the honest move is another attempt, not an obituary. Pure, so
+ * the parity with the server's copy is pinned by a test rather than by hope.
+ */
+export interface WakeableTableRow {
+  tournament_id?: string | null;
+  status?: string | null;
+  game_type?: string | null;
+  is_deleted?: boolean | null;
+}
+export function isStillWakeableTableRow(table: WakeableTableRow | null | undefined): boolean {
+  return Boolean(
+    table &&
+    table.tournament_id == null &&
+    table.is_deleted !== true &&
+    ['waiting', 'running', 'active'].includes(String(table.status).toLowerCase()) &&
+    String(table.game_type ?? 'cash').toLowerCase() === 'cash'
+  );
+}
+
+export { accessRefusalFromClose };
+export type { MuxAccessRefusalCode };
 
 export interface EngineStateClientOptions {
   /** Base URL, e.g. https://engine.smarter.poker. Scheme is rewritten to ws(s). */
@@ -407,6 +466,15 @@ export class EngineStateClient {
    * 'reconnecting' - see scheduleReconnect and openOnceInner. Cleared on open.
    */
   private tableMissing = false;
+  /** 2026-09-20: has THIS client ever reached OPEN? Never reset. */
+  private everOpened = false;
+  /** 2026-09-20: 4404s answered on the fast ladder (never-connected only). */
+  private fastNotFoundRetries = 0;
+  /**
+   * 2026-09-20: the engine's access verdict, while status is
+   * 'access_refused'. Cleared by a socket that opens.
+   */
+  private accessRefusal: MuxAccessRefusalCode | null = null;
   /**
    * 2026-09-05 (Phase 4): epoch ms until which a dead socket is EXPECTED,
    * because the engine announced a scheduled restart on the maintenance frame.
@@ -669,7 +737,9 @@ export class EngineStateClient {
   }
 
   private async openOnceInner(generation: number): Promise<void> {
-    if (!this.tableMissing) {
+    // An attempt made from 'access_refused' (a wake event, never a timer) says
+    // nothing until it has an answer: the verdict stands until a socket opens.
+    if (!this.tableMissing && this.accessRefusal === null) {
       this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     }
     // 2026-08-22: getToken (supabase.auth.getSession) can REJECT — network
@@ -757,6 +827,8 @@ export class EngineStateClient {
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
       this.tableMissing = false;
+      this.everOpened = true;
+      this.accessRefusal = null;
       // 2026-09-04: read BEFORE resetInbox(), which zeroes `seq`. Read after
       // it, the `seq > 0` test below was always false and the RESYNC on
       // reconnect had been dead code since 2026-08-25 - harmless only
@@ -832,6 +904,32 @@ export class EngineStateClient {
         return;
       }
 
+      /* 2026-09-20: THE ENGINE RULED ON ACCESS. People allowed to CREATE a
+         table (union owners and admins) are not always allowed to WATCH it
+         (server TableViewerAccess admits a seated player or an active member
+         of a club in scope). The mux delivers that verdict as 4400 with the
+         engine's code in the reason, and until today it fell through to the
+         generic ladder: "Reconnecting To The Table", then "Connection Lost",
+         for a refusal that no number of retries can change.
+
+         Terminal for the LADDER: no timer is armed. The wake listeners stay
+         attached, so coming back to the tab or regaining the network asks once
+         more - a membership granted in another tab is honoured without a
+         reload, and one question per foreground is not a storm. */
+      const accessRefusal = accessRefusalFromClose(e.code, e.reason);
+      if (accessRefusal) {
+        this.accessRefusal = accessRefusal;
+        this.tableMissing = false;
+        this.stopWatchdog();
+        if (this.reconnectTimer !== null) {
+          window.clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.setStatus('access_refused');
+        this.opts.onError({ code: e.code, reason: e.reason });
+        return;
+      }
+
       // 2026-08-22: 4404 used to be TERMINAL — but the engine returns it for
       // ~2 minutes after every restart while tables rehydrate, and for a
       // first player at an empty table. Giving up permanently turned every
@@ -851,7 +949,15 @@ export class EngineStateClient {
         this.tableMissing = true;
         this.setStatus('idle');
         this.opts.onError({ code: e.code, reason: e.reason });
-        this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
+        if (!this.everOpened && this.fastNotFoundRetries < NEVER_CONNECTED_FAST_NOT_FOUND_RETRIES) {
+          // Never connected: this may be a brand-new table the engine is still
+          // building. Stay on the fast end (1s, then 2s) for a few attempts -
+          // see NEVER_CONNECTED_FAST_NOT_FOUND_RETRIES.
+          this.fastNotFoundRetries++;
+          this.retryCount = Math.min(this.retryCount, 1);
+        } else {
+          this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
+        }
         this.scheduleReconnect();
         return;
       }
@@ -1273,9 +1379,36 @@ export class EngineStateClient {
     this.requestResync();
   }
 
-  /** Refresh authoritative state after a confirmed server purchase. */
+  /**
+   * Refresh authoritative state after a confirmed server purchase.
+   *
+   * 2026-09-20: while the table is MISSING (4404, slow ladder) there is no
+   * socket to resync on, and the caller is saying "I have reason to believe
+   * there is state to be had" - TablePage does exactly that after re-reading
+   * the `tables` row and finding it still wakeable. So the pending slow-ladder
+   * wait is cut short and one attempt is made now. retryCount is untouched: if
+   * the engine says 4404 again the ladder resumes where it was, so this cannot
+   * be turned into a fast loop by calling it repeatedly (no pending timer, no
+   * effect; openOnce is single-flight).
+   */
   requestSnapshot(): void {
+    if (
+      this.tableMissing &&
+      !this.intentionalClose &&
+      this.reconnectTimer !== null &&
+      (this.ws === null || this.ws.readyState > 1)
+    ) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      void this.openOnce();
+      return;
+    }
     this.requestResync();
+  }
+
+  /** The engine's access verdict while status is 'access_refused', else null. */
+  getAccessRefusal(): MuxAccessRefusalCode | null {
+    return this.accessRefusal;
   }
 
   private requestResync(): void {

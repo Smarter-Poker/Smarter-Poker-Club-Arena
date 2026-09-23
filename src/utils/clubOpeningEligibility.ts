@@ -27,3 +27,113 @@ export function hasNewClubOpeningChecklist(
     !resolvedUnionId
   );
 }
+
+/**
+ * Whether this club may create its own games from the club lobby.
+ *
+ * THREE answers, never two. The union lookup is asynchronous and can fail, and
+ * a club attached only through `union_clubs` carries neither `clubs.is_union`
+ * nor `clubs.union_id`. Reading "not resolved yet" or "the lookup errored" as
+ * "standalone" showed staff the create controls of a union-managed club until
+ * the lookup landed, and for the whole session when it never did.
+ *
+ *   'union'       any source names a union
+ *   'standalone'  the lookup positively resolved to `null` AND the club row
+ *                 names no union
+ *   'unresolved'  anything else; callers must fail closed
+ */
+export type ClubUnionScope = 'standalone' | 'union' | 'unresolved';
+
+export function resolveClubUnionScope(
+  club: Pick<ClubOpeningEligibility, 'is_union' | 'union_id'> | null | undefined,
+  resolvedUnionId: string | null | undefined
+): ClubUnionScope {
+  if (!club) return 'unresolved';
+  if (club.is_union === true || club.union_id || resolvedUnionId) return 'union';
+  return resolvedUnionId === null ? 'standalone' : 'unresolved';
+}
+
+/**
+ * Club creation always stores a logo: a custom upload, or one of the built-in
+ * placeholder crests (`club-logos/preset-NN.webp`, served from the media base
+ * or from the app origin). A placeholder is not the owner's own picture, so the
+ * "Choose A Club Profile Picture" step stays open, and skippable, until a real
+ * image replaces it. Uploaded logos are named by club or owner id plus a
+ * timestamp or request id, so they never match the preset file pattern.
+ */
+const PRESET_CLUB_LOGO_PATH = /(?:^|\/)club-logos\/preset-\d+\.(?:webp|png|jpe?g)$/i;
+
+export function isPresetClubLogo(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const path = url.trim().split(/[?#]/)[0];
+  return PRESET_CLUB_LOGO_PATH.test(path);
+}
+
+export function hasOwnClubPicture(
+  club: { logo_url?: string | null; avatar_url?: string | null } | null | undefined
+): boolean {
+  if (!club) return false;
+  return [club.logo_url, club.avatar_url].some(
+    (url) => Boolean(url && url.trim()) && !isPresetClubLogo(url)
+  );
+}
+
+/* ── Opening checklist skips ────────────────────────────────────────────────
+   One definition of "skipped", shared by the lobby (which decides whether the
+   checklist and its desktop layout exist at all) and the checklist itself.
+   Only an OPTIONAL, unfinished step can be skipped: a required step that an
+   older build allowed to be skipped is simply open again. */
+export interface ClubLaunchSkipCandidate {
+  id: string;
+  complete: boolean;
+  optional?: boolean;
+}
+
+export function resolveClubLaunchTasks<T extends ClubLaunchSkipCandidate>(
+  tasks: readonly T[],
+  skippedIds: readonly string[]
+): Array<T & { skipped: boolean }> {
+  return tasks.map((task) => ({
+    ...task,
+    skipped: task.optional === true && !task.complete && skippedIds.includes(task.id),
+  }));
+}
+
+export function clubLaunchSkipStorageKey(clubId: string, viewerId: string): string {
+  /* IDs, never display names: two clubs may share a name, a club may be
+     renamed, and two operators can use the same browser. */
+  return `club-launch-skips:${clubId}:${viewerId}`;
+}
+
+export type ClubLaunchSkipReporter = (error: unknown, context: string) => void;
+
+export function readClubLaunchSkips(storageKey: string, report: ClubLaunchSkipReporter): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string')
+      : [];
+  } catch (error) {
+    /* Storage can be disabled and a stored value can be corrupt. Neither may
+       crash the lobby, and neither is silent: an owner whose skips never
+       persist is otherwise unexplainable. */
+    report(error, 'ClubLaunchSkips.read_failed');
+    return [];
+  }
+}
+
+export function writeClubLaunchSkips(
+  storageKey: string,
+  skippedIds: readonly string[],
+  report: ClubLaunchSkipReporter
+): boolean {
+  try {
+    if (skippedIds.length === 0) localStorage.removeItem(storageKey);
+    else localStorage.setItem(storageKey, JSON.stringify(skippedIds));
+    return true;
+  } catch (error) {
+    /* Disabled or full storage. The step still resolves for this session. */
+    report(error, 'ClubLaunchSkips.write_failed');
+    return false;
+  }
+}

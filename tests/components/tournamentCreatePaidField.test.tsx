@@ -110,7 +110,23 @@ afterEach(() => {
 });
 
 describe('MTT creation publishes a selected paid field', () => {
-  it.each([10, 15, 20])('submits %i percent with a bounded provisional ladder', async (depth) => {
+  // Owner requirement 2026-09-20: paid places are 10 to 15 percent of the final
+  // field, so this creator no longer offers 20 (it was it.each([10, 15, 20])).
+  it('offers 10 and 15 percent only for a new event', () => {
+    render(
+      <CreateTournamentModal
+        clubId="synthetic-club"
+        initialFormat="mtt_freezeout"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+    const options = within(screen.getByLabelText('Field Paid')).getAllByRole('option');
+    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(['10', '15']);
+    expect(screen.queryByRole('option', { name: /20 Percent/ })).toBeNull();
+  });
+
+  it.each([10, 15])('submits %i percent with a bounded provisional ladder', async (depth) => {
     const { container } = render(
       <CreateTournamentModal
         clubId="synthetic-club"
@@ -369,7 +385,9 @@ describe('club profile selection preserves operator terms', () => {
     } as never);
     const { container } = mountDraft();
     chooseProfile('hyper');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Repeats Weekly' }));
+    // The one recurrence control replaced the "Repeats Weekly" checkbox; Weekly
+    // on this event's own day and time sends the same schedule it sent.
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'weekly' } });
     fireEvent.submit(container.querySelector('form')!);
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith('fn_upsert_tournament_schedule', expect.any(Object))
@@ -397,8 +415,16 @@ describe('new drafts only advertise supported tournament breaks', () => {
     expect(screen.queryByRole('checkbox', { name: /Auto-Insert Breaks/ })).toBeNull();
     expect(screen.queryByTitle('Insert Break After')).toBeNull();
     expect(screen.queryByText('Levels Are Sent Exactly As Shown, Breaks Included.')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '+ Advanced Options' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Synchronized Breaks' }));
+    // A lit word with aria-expanded replaced the "+ Advanced Options" glyph
+    // button, and the labeled On / Off switch replaced the native checkbox.
+    const advanced = screen.getByRole('button', { name: 'Show Advanced Options' });
+    expect(advanced).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(advanced);
+    expect(screen.getByRole('button', { name: 'Hide Advanced Options' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('switch', { name: 'Synchronized Breaks' }));
     expect(screen.getByLabelText('Tournament Break Policy')).toHaveTextContent(
       'No Scheduled Tournament Breaks'
     );
@@ -474,7 +500,9 @@ describe('creator controls describe the committed purchase and mystery contracts
         mysteryBountyPoolPercent: 65,
       });
     }
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Repeats Weekly' }));
+    // The one recurrence control replaced the "Repeats Weekly" checkbox; Weekly
+    // on this event's own day and time sends the same schedule it sent.
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'weekly' } });
     fireEvent.submit(container.querySelector('form')!);
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith('fn_upsert_tournament_schedule', expect.any(Object))
@@ -497,10 +525,10 @@ describe('creator controls describe the committed purchase and mystery contracts
     selectFreeBuy();
     chooseProfile('deep');
     for (const name of ['Allow Rebuys (Same Seat)', 'Allow Re-Entry (New Seat)', 'Allow Add-Ons']) {
-      expect(screen.getByRole('checkbox', { name })).toBeChecked();
-      expect(screen.getByRole('checkbox', { name })).toBeDisabled();
+      expect(screen.getByRole('switch', { name })).toBeChecked();
+      expect(screen.getByRole('switch', { name })).toBeDisabled();
     }
-    expect(screen.queryByText(/Select "MTT [(]Rebuy[)]" Format To Enable/)).toBeNull();
+    expect(screen.queryByText(/Set Entry Rules To Rebuy To Turn This On/)).toBeNull();
     expect(purchaseField('Rebuy / Re-Entry Cost')).toHaveValue(1);
     expect(purchaseField('Rebuy / Re-Entry Cost')).toBeDisabled();
     expect(purchaseField('Rebuy / Re-Entry Chips')).toHaveValue(6000);
@@ -510,7 +538,7 @@ describe('creator controls describe the committed purchase and mystery contracts
     expect(purchaseField('Add-On Chips')).not.toBeDisabled();
     fireEvent.change(purchaseField('Add-On Chips'), { target: { value: '12000' } });
     expect(screen.getByText('From Seating Until The Add-On Window Closes')).toBeVisible();
-    expect(screen.queryByText('1 Minute After Rebuy Period')).toBeNull();
+    expect(screen.queryByText('One 60-Second Period When The Rebuy Period Closes')).toBeNull();
     const raw = await submitDraft(container);
     expect(raw.rebuyChips).toBeUndefined();
     expect(raw.rebuyLevels).toBeUndefined();
@@ -538,8 +566,8 @@ describe('creator controls describe the committed purchase and mystery contracts
       expect(purchaseField(label)).not.toBeDisabled();
       fireEvent.change(purchaseField(label), { target: { value } });
     }
-    expect(screen.getByRole('checkbox', { name: 'Allow Add-Ons' })).not.toBeDisabled();
-    expect(screen.getByText('1 Minute After Rebuy Period')).toBeVisible();
+    expect(screen.getByRole('switch', { name: 'Allow Add-Ons' })).not.toBeDisabled();
+    expect(screen.getByText('One 60-Second Period When The Rebuy Period Closes')).toBeVisible();
     const config = tournamentService.buildRpcConfig(await submitDraft(container));
     expect(config).toMatchObject({
       buyIn: 10,

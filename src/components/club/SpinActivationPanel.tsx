@@ -31,6 +31,8 @@ import {
   type SpinOwnerState,
 } from '../../services/SpinActivationService';
 import { useToast } from '../common/Toast';
+import { compactChips } from '../../utils/format';
+import './SpinActivationPanel.css';
 
 interface Props {
   /**
@@ -47,8 +49,25 @@ function walletLabel(kind: string | undefined, wallet: string | null | undefined
   return list.find((w) => w.value === wallet)?.label ?? 'The Funding Wallet';
 }
 
+/**
+ * TWO WAYS TO PRINT CHIPS, AND WHICH ONE IS NOT A MATTER OF TASTE (2026-09-20).
+ *
+ * `chips` is for a figure the owner is committing to or being promised: the
+ * seed the button will move, the bar, the repayment thresholds and the next
+ * instalment. It is the whole number with thousands separators, never
+ * abbreviated and never with decimals, and it rounds UP, because a quote that
+ * understates a charge is the one direction a quote may never be wrong in.
+ * It used to allow two decimals.
+ *
+ * `compactChips` (utils/format) is for the glance figures - balances and
+ * running totals - and rounds down, so a balance is never overstated.
+ */
 const chips = (n: number | null | undefined) =>
-  Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  Math.ceil(Number(n ?? 0) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+/** Chips coming BACK to the owner: whole, unabbreviated, rounded down. */
+const chipsReturned = (n: number | null | undefined) =>
+  Math.floor(Number(n ?? 0) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 
 export default function SpinActivationPanel({ clubId }: Props) {
   const toast = useToast();
@@ -59,6 +78,12 @@ export default function SpinActivationPanel({ clubId }: Props) {
   const [wallet, setWallet] = useState<string>('chip_treasury');
   /** What the ROUTE says about this viewer. Null until the first read lands. */
   const [routeCanManage, setRouteCanManage] = useState<boolean | null>(null);
+  /**
+   * The last refusal, kept on the panel. A toast is gone in a few seconds; an
+   * owner whose funding wallet cannot cover the seed needs the reason to still
+   * be there when they look back at the form. Cleared on the next attempt.
+   */
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -119,6 +144,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
 
   const activate = async () => {
     setBusy(true);
+    setActionError(null);
     try {
       if (
         !activateKeyRef.current ||
@@ -142,7 +168,9 @@ export default function SpinActivationPanel({ clubId }: Props) {
       toast.success(`Spins Activated With A Seed Of ${chips(stillNeeded)} Chips`);
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could Not Activate Spins');
+      const message = err instanceof Error ? err.message : 'Could Not Activate Spins';
+      setActionError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -150,6 +178,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
 
   const deactivate = async () => {
     setBusy(true);
+    setActionError(null);
     try {
       if (!deactivateKeyRef.current) deactivateKeyRef.current = crypto.randomUUID();
       const response = await spinActivationApi.deactivate(clubId, deactivateKeyRef.current);
@@ -157,12 +186,14 @@ export default function SpinActivationPanel({ clubId }: Props) {
       const returned = Number(response.result.seed_returned ?? 0);
       toast.success(
         returned > 0
-          ? `Spins Deactivated. ${chips(returned)} Seed Chips Returned To ${walletLabel(state?.owner_kind, state?.seed_source_wallet)}.`
+          ? `Spins Deactivated. ${chipsReturned(returned)} Seed Chips Returned To ${walletLabel(state?.owner_kind, state?.seed_source_wallet)}.`
           : 'Spins Deactivated. The Reserve Remains Locked Until Every Live Spin Is Settled.'
       );
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could Not Deactivate Spins');
+      const message = err instanceof Error ? err.message : 'Could Not Deactivate Spins';
+      setActionError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -170,122 +201,127 @@ export default function SpinActivationPanel({ clubId }: Props) {
 
   if (loading) {
     return (
-      <section className="settings-section">
-        <h3>Spins</h3>
-        <small className="form-hint">Loading</small>
+      <section className="sap" aria-label="Spins">
+        <h3 className="sap-title">Spins</h3>
+        <p className="sap-note">Loading</p>
       </section>
     );
   }
 
   if (!state) {
     return (
-      <section className="settings-section">
-        <h3>Spins</h3>
-        <small className="form-hint">Spin Settings Are Not Available For This Club</small>
+      <section className="sap" aria-label="Spins">
+        <h3 className="sap-title">Spins</h3>
+        <p className="sap-note">Spin Settings Are Not Available For This Club</p>
       </section>
     );
   }
 
   return (
-    <section className="settings-section">
-      <h3>Spins</h3>
+    <section className="sap" aria-label="Spins">
+      <h3 className="sap-title">Spins</h3>
 
       {isUnionOwned && !canAct && (
-        <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+        <p className="sap-note">
           This Club Belongs To A Union, So The Spin Wallet Belongs To The Union. Only The Union Lead
           Can Change It.
-        </small>
+        </p>
       )}
 
-      <div className="toggle-row">
-        <div>
-          <label>Status</label>
-          <small className="form-hint">
-            {state.is_active ? 'Spins Are Running' : 'Spins Are Off'}
-          </small>
+      {/* STATE IS TEXT, ACTIONS ARE BUTTONS. This was a span dressed as the
+          page's On / Off toggle button with pointer-events switched off: it
+          looked pressable and was not, right above the real control. The state
+          now prints as a plain lit line and the only things that look like
+          controls are the two that are. */}
+      <dl className="sap-rows">
+        <div className="sap-row">
+          <dt className="sap-label">Status</dt>
+          {state.is_active ? (
+            <dd className="sap-value sap-value--on">Spins Are On</dd>
+          ) : (
+            <dd className="sap-value sap-value--off">Spins Are Off</dd>
+          )}
         </div>
-        <span
-          className={`toggle-btn ${state.is_active ? 'on' : ''}`}
-          style={{ pointerEvents: 'none' }}
-        >
-          {state.is_active ? 'ON' : 'OFF'}
-        </span>
-      </div>
+      </dl>
 
       {!state.is_active && state.seeded_amount > 0 && (
-        <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+        <p className="sap-note">
           Seed Of {chips(state.seeded_amount)} Is Still In This Wallet From Before.{' '}
           {state.seed_is_repayable
             ? 'It Counts Toward What You Need, So Turning Spins Back On Will Not Charge You For It Again.'
             : 'It Has No Recorded Source Wallet, So It Cannot Be Returned Automatically.'}
-        </small>
+        </p>
       )}
 
       {state.is_active ? (
         <>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Wallet Balance</label>
-              <strong>{chips(state.balance)}</strong>
+          <dl className="sap-rows">
+            <div className="sap-row">
+              <dt className="sap-label">Wallet Balance</dt>
+              <dd className="sap-value">{compactChips(state.balance)}</dd>
             </div>
-            <div className="form-group">
-              <label>Largest Stake Offered</label>
-              <strong>{chips(state.offered_max_stake)}</strong>
+            <div className="sap-row">
+              <dt className="sap-label">Largest Stake Offered</dt>
+              <dd className="sap-value">{compactChips(state.offered_max_stake)}</dd>
             </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Collected From Play</label>
-              <strong>{chips(state.collected_from_play)}</strong>
+            <div className="sap-row">
+              <dt className="sap-label">Collected From Play</dt>
+              <dd className="sap-value">{compactChips(state.collected_from_play)}</dd>
             </div>
-            <div className="form-group">
-              <label>Paid Out As Multipliers</label>
-              <strong>{chips(state.total_drawn)}</strong>
+            <div className="sap-row">
+              <dt className="sap-label">Paid Out As Multipliers</dt>
+              <dd className="sap-value">{compactChips(state.total_drawn)}</dd>
             </div>
-          </div>
+            {state.seeded_amount > 0 && state.seed_is_repayable && (
+              <>
+                <div className="sap-row">
+                  <dt className="sap-label">Seed Still Owed</dt>
+                  <dd className="sap-value sap-value--held">{compactChips(state.seeded_amount)}</dd>
+                </div>
+                <div className="sap-row">
+                  <dt className="sap-label">Returned So Far</dt>
+                  <dd className="sap-value">{compactChips(state.seed_returned_amount)}</dd>
+                </div>
+              </>
+            )}
+          </dl>
 
           {state.seeded_amount > 0 && !state.seed_is_repayable ? (
-            <small className="form-hint" style={{ display: 'block' }}>
+            <p className="sap-note">
               Seed Outstanding {chips(state.seeded_amount)}. It Has No Recorded Source Wallet, So It
               Cannot Be Returned Automatically.
-            </small>
+            </p>
           ) : state.seeded_amount > 0 ? (
             <>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Seed Still Owed</label>
-                  <strong>{chips(state.seeded_amount)}</strong>
-                </div>
-                <div className="form-group">
-                  <label>Returned So Far</label>
-                  <strong>{chips(state.seed_returned_amount)}</strong>
-                </div>
-              </div>
-              <small className="form-hint" style={{ display: 'block' }}>
+              <p className="sap-note">
                 Repayment Plan. Half Of Everything Above {chips(state.repay_floor)} Returns To{' '}
                 {walletLabel(state.owner_kind, state.seed_source_wallet)} Each Time The Wallet
                 Reaches {chips(state.repay_trigger_at)}, Until The Seed Is Square. The Floor Stays
                 Behind So The Top Multiplier Is Always Payable.
-              </small>
-              <small className="form-hint" style={{ display: 'block' }}>
+              </p>
+              <p className="sap-note">
                 {state.next_instalment > 0
-                  ? `Next Instalment ${chips(state.next_instalment)}, Due On The Next Spin.`
+                  ? `Next Instalment ${chipsReturned(state.next_instalment)}, Due On The Next Spin.`
                   : `Next Instalment Once The Wallet Climbs Another ${chips(state.seed_repayable_in)}.`}
-              </small>
+              </p>
             </>
           ) : (
-            <small className="form-hint" style={{ display: 'block' }}>
-              Seed Of {chips(state.seed_returned_amount)} Has Been Returned. Every Chip Collected
-              Now Stays Here To Fund Multipliers.
-            </small>
+            <p className="sap-note">
+              Seed Of {chipsReturned(state.seed_returned_amount)} Has Been Returned. Every Chip
+              Collected Now Stays Here To Fund Multipliers.
+            </p>
+          )}
+
+          {actionError && (
+            <p className="sap-error" role="alert">
+              {actionError}
+            </p>
           )}
 
           {canAct && (
             <button
               type="button"
-              className="btn-secondary"
-              style={{ marginTop: 12 }}
+              className="sap-action sap-action--off"
               onClick={deactivate}
               disabled={busy}
             >
@@ -295,17 +331,20 @@ export default function SpinActivationPanel({ clubId }: Props) {
         </>
       ) : (
         <>
-          <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+          <p className="sap-note">
             Seed The Wallet To Open Spins. The Seed Is A Loan, Not A Fee. It Comes Back Once Play
             Has Collected As Much On Its Own. Turning Spins Off Also Returns Any Outstanding Seed As
             Soon As Every Live Spin Is Settled. Net Spin Proceeds Stay Here To Pay Multipliers.
-          </small>
+          </p>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="spin-max-stake">Largest Stake To Offer</label>
+          <div className="sap-fields">
+            <div className="sap-field">
+              <label className="sap-label" htmlFor="spin-max-stake">
+                Largest Stake To Offer
+              </label>
               <select
                 id="spin-max-stake"
+                className="sap-select"
                 value={maxStake}
                 onChange={(e) => setMaxStake(Number(e.target.value))}
                 disabled={!canAct || busy}
@@ -317,10 +356,13 @@ export default function SpinActivationPanel({ clubId }: Props) {
                 ))}
               </select>
             </div>
-            <div className="form-group">
-              <label htmlFor="spin-seed-source">Seed From</label>
+            <div className="sap-field">
+              <label className="sap-label" htmlFor="spin-seed-source">
+                Seed From
+              </label>
               <select
                 id="spin-seed-source"
+                className="sap-select"
                 value={wallet}
                 onChange={(e) => setWallet(e.target.value)}
                 disabled={!canAct || busy}
@@ -334,24 +376,46 @@ export default function SpinActivationPanel({ clubId }: Props) {
             </div>
           </div>
 
-          <small className="form-hint" style={{ display: 'block', marginBottom: 6 }}>
+          <dl className="sap-rows">
+            <div className="sap-row">
+              <dt className="sap-label">Required Seed</dt>
+              <dd className="sap-value">{chips(required)} Chips</dd>
+            </div>
+            {stillNeeded < required && (
+              <div className="sap-row">
+                <dt className="sap-label">Already In This Wallet</dt>
+                <dd className="sap-value">{chipsReturned(required - stillNeeded)} Chips</dd>
+              </div>
+            )}
+            <div className="sap-row">
+              <dt className="sap-label">You Pay Now</dt>
+              <dd className="sap-value sap-value--held">{chips(stillNeeded)} Chips</dd>
+            </div>
+          </dl>
+
+          <p className="sap-note">
             How It Comes Back. Once The Wallet Reaches{' '}
             {chips(requiredSeedForStake(maxStake) * 1.25)}, Half Of Everything Above{' '}
             {chips(required)} Returns To Your Wallet On Each Spin, Until The Seed Is Repaid. Then
             Every Chip Stays In The Pool To Fund Multipliers.
-          </small>
-          <small className="form-hint" style={{ display: 'block' }}>
+          </p>
+          <p className="sap-note">
             Required Seed {chips(required)} Chips. That Is Two Top Multiplier Jackpots At A Stake Of{' '}
             {maxStake}, So The Wallet Can Always Pay The Biggest Prize It Offers.
             {stillNeeded < required &&
-              ` You Only Pay ${chips(stillNeeded)} Because ${chips(required - stillNeeded)} Is Already Here.`}
-          </small>
+              ` You Only Pay ${chips(stillNeeded)} Because ${chipsReturned(required - stillNeeded)} Is Already Here.`}
+          </p>
+
+          {actionError && (
+            <p className="sap-error" role="alert">
+              {actionError}
+            </p>
+          )}
 
           {canAct && (
             <button
               type="button"
-              className="btn-primary"
-              style={{ marginTop: 12 }}
+              className="sap-action sap-action--on"
               onClick={activate}
               disabled={busy}
             >

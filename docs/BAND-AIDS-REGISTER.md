@@ -49,6 +49,47 @@ BBJ repair entries remain because those database repair functions and schedules
 were not safely retired in this pass; removing only their CI names would hide
 debt rather than remove it.
 
+## 2026-09-22 engine fee repair loops retired
+
+The precondition named above is met. Re-measured on production through the
+Supabase MCP on 2026-09-24, each figure at the time given: 57,377 raked cash
+hands in the preceding 24 hours, every one with an atomic commit and none with
+a null envelope (03:46 UTC); 173,098 cash rake records in the preceding 3 days,
+none banked more than five minutes after its hand, worst lag 2m04s, and no
+raked cash hand without one (03:46 and 03:21 UTC); no rake claim queued since
+2026-09-08 17:30 UTC and no `pending_fee_distributions` row open of any kind
+(03:17 UTC). Every candidate set below was read the same morning and was empty.
+So the engine no longer runs:
+
+- the hourly `requeueUnbankedCashRake(6, 10, 200)` (`fn_requeue_unbanked_cash_rake`).
+  It filed an equal-split claim after ten minutes without looking at the
+  envelope, so against a merely late envelope it won `atomic_distribute_rake`'s
+  first write and replaced the hand's weighted attribution for good;
+- the 30-minute `fn_requeue_unbanked_fees` pass in `discoverTournaments`;
+- the five-minute drain's rake and BBJ-drop re-drive. The drain now reads
+  `bbj_payout` claims only and leaves any other row untouched;
+- the hourly BBJ self-heal (`fn_bbj_repair_unbanked`), whose candidate set
+  excludes every enveloped hand and was empty;
+- the hourly bomb-pot award-unit backfill (`fn_backfill_bomb_pot_award_units`).
+  The `zz_ca_bomb_hand_keeps_its_award_units` constraint trigger closed that gap
+  at the source, and no bomb hand in retention lacks its units.
+
+`server/src/services/noEngineTimerReDrivesAFeeTheHandOwes.law.test.ts` pins the
+two source guarantees and refuses a repair-shaped RPC anywhere in engine runtime
+code. The database functions and their pg_cron jobs belong to the database
+workstream and are not changed here. This is engine source only: it takes
+effect with the next certified engine release, not before.
+
+**Still open, and why.** The five-minute jackpot claim drain
+(`reconcilePendingFees`, `bbj_payout` only). A jackpot payout is claimed on disk
+before it is attempted, and the claim stays open when the maintenance freeze
+defers the payout or the process dies before paying; this drain is the only
+thing that completes it. The split above still applies: complete the claim from
+`onMaintenanceThaw` (an event since 2026-09-21) and from one bounded boot drain,
+then delete the interval. The drain completed nothing in the 14 days before this
+change: all 41 claims written in that window were settled by their own payout
+within 12 seconds.
+
 ---
 
 ## What this costs today, measured

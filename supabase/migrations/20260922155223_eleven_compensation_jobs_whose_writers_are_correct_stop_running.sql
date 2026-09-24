@@ -233,10 +233,12 @@
 -- ===========================================================================
 -- WHAT THIS CHANGES
 --
--- Eleven rows leave cron.job: 132 -> 121 active, 134 -> 123 in total. The two
--- retained-inactive rows (the bust sweeps 20260910073355 restored disabled)
--- are unchanged. All 134 rows belong to postgres, so the counts below are the
--- whole roster as the applying role reads it.
+-- Eleven rows leave cron.job: 133 -> 122 active, 135 -> 124 in total (see
+-- the re-measurement note below; when this was first written the roster was
+-- one job smaller). The two retained-inactive rows (the bust sweeps
+-- 20260910073355 restored disabled) are unchanged. All 135 rows belong to
+-- postgres, so the counts below are the whole roster as the applying role
+-- reads it.
 --
 -- No DDL, so PostgREST reloads nothing. No function is created, replaced or
 -- dropped. No money row is written. One transaction; it refuses rather than
@@ -437,8 +439,9 @@ BEGIN
     RAISE EXCEPTION 'failed: still scheduled: %', v_names;
   END IF;
 
-  -- Exactly 121 active remain, 123 rows in total, and the two inactive rows
-  -- are the bust sweeps 20260910073355 restored disabled.
+  -- Exactly 122 active remain, 124 rows in total, and the two inactive rows
+  -- are the bust sweeps 20260910073355 restored disabled. The migration
+  -- immediately after this one takes the roster on to 121 of 123.
   SELECT count(*) FILTER (WHERE active), count(*),
          coalesce(string_agg(jobname, ', ' ORDER BY jobname) FILTER (WHERE NOT active), '')
     INTO v_active, v_total, v_inactive

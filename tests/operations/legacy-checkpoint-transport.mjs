@@ -61,7 +61,7 @@ try {
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
-      "  if(process.argv[2]==='hang')return new Promise(()=>{});",
+      "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
       "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
       "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
       "  return {ok:true,completedCalls:1,privatePayload:'synthetic-secret-must-not-export'};",
@@ -315,7 +315,21 @@ try {
       });
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
-    if (scenario === 'timeout') assert.equal(result.reason, 'inspector operation outcome unknown');
+    if (scenario === 'timeout') {
+      assert.equal(result.reason, 'inspector operation outcome unknown');
+      // An unknown outcome says how far the guard got (2026-09-24): the
+      // record it left on the target's global object, held to its shape, and
+      // nothing else that was on it.
+      assert.deepEqual(result.progress, {
+        elapsedMs: 123,
+        attemptedTables: 0,
+        completedCalls: 0,
+        verifiedTables: 0,
+        stage: 'preflight',
+        note: 'joinPreviousWork',
+      });
+      assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
+    }
     if (['success', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)) {
       assert.equal(clientCloseWhileOpen, 0, 'client must not race the native inspector close');
       assert.equal(clientCloseCalls, 0, 'scheduled native shutdown owns the close handshake');

@@ -60,6 +60,25 @@ function remoteValue(response) {
   return response?.result;
 }
 
+/** The guard's own progress record, read back from the predecessor's global
+ *  object when the call's outcome is unknown (see the guard's `progress`).
+ *  Observability only: a fixed set of keys, each held to its shape, or absent. */
+function progressSummary(value) {
+  if (!value || typeof value !== 'object' || value.schema !== 'legacy-engine-checkpoint-progress/v1')
+    return null;
+  const out = {};
+  for (const key of ['elapsedMs', 'attemptedTables', 'completedCalls', 'verifiedTables']) {
+    const item = value[key];
+    if (Number.isSafeInteger(item) && item >= 0) out[key] = item;
+  }
+  for (const key of ['stage', 'note', 'reason']) {
+    const item = value[key];
+    if (typeof item === 'string' && item.length <= 64 && /^[A-Za-z][A-Za-z0-9_]*$/.test(item))
+      out[key] = item;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function checkpointSummary(value) {
   const keys = [
     'schema',
@@ -292,7 +311,8 @@ export async function runLegacyEngineCheckpoint({
     failure;
   let checkpointInvoked = false,
     inspectorClosed = false,
-    cleanupConnections = 0;
+    cleanupConnections = 0,
+    progress = null;
   const verifyPid = async (owned, until) => {
     const identity = remoteValue(
       await owned.request(
@@ -416,6 +436,27 @@ export async function runLegacyEngineCheckpoint({
         }
         if (!inspectorClosed) {
           await verifyPid(connection, cleanupDeadline);
+          // AN UNKNOWN OUTCOME SAYS HOW FAR IT GOT (2026-09-24, run 36041108119).
+          // One read of the guard's own progress record, only when the call's
+          // result never came back, on the cleanup connection this path
+          // already holds. It changes no outcome: `failure` stays what it was.
+          if (checkpointInvoked && !result && /outcome unknown/.test(failure ?? '')) {
+            try {
+              const read = remoteValue(
+                await connection.request(
+                  'Runtime.evaluate',
+                  {
+                    expression: 'globalThis.__legacyEngineCheckpointProgress ?? null',
+                    returnByValue: true,
+                  },
+                  cleanupDeadline
+                )
+              );
+              progress = progressSummary(read?.value);
+            } catch {
+              // The record is a courtesy to the reader, never a condition.
+            }
+          }
           await connection.request(
             'Runtime.releaseObjectGroup',
             { objectGroup: 'legacy-checkpoint' },
@@ -480,6 +521,8 @@ export async function runLegacyEngineCheckpoint({
       // Preserve only the validated guard summary. Cleanup failure remains the
       // outer refusal and must not erase the original checkpoint observation.
       ...(result ? { checkpoint: result } : {}),
+      // Where the guard had got to when the outcome was lost, if it said.
+      ...(progress ? { progress } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,

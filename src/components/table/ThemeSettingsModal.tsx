@@ -1957,6 +1957,7 @@ export function ThemeSettingsModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Player Table Studio"
           title="Make The Table Yours"
           titleId="theme-studio-title"
@@ -2650,6 +2651,7 @@ export function ThemeSettingsModal({
                   it did on the upgrade button, even though the steel plate
                   comes first in the DOM. */}
               <SpadeConsole
+                onClose={onClose}
                 eyebrow="Table Studio"
                 title={`Unlock ${pendingAssetPurchase.name}`}
                 titleId="theme-purchase-title"

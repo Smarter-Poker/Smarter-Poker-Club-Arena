@@ -45,6 +45,7 @@ import {
   BUTTON_FELT_MARGIN_WIDTH_PCT,
   BUTTON_RAIL_RATIO,
   CHIP_COLLECT_FRACTION,
+  POT_ANCHOR_PCT,
   CHIP_POD_GAP_WIDTH_PCT,
   CHIP_RAIL_WIDTH_PCT,
   FELT_MARKER_MARGIN_WIDTH_PCT,
@@ -353,7 +354,9 @@ describe('the chip rail', () => {
   });
 
   it('collects every seat to the same point, wherever its chips started', () => {
-    const c = feltCenter();
+    /* The point is the POT (POT_ANCHOR_PCT), not the middle of the felt
+       (Dan 2026-09-23). See theSweepLandsInThePot for the mirror to the CSS. */
+    const c = POT_ANCHOR_PCT;
     for (const table of TABLES) {
       for (const seat of SEATS) {
         const rest = betChipOffsetPx(seat, table);

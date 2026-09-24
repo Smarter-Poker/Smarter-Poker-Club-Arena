@@ -1383,6 +1383,7 @@ export default function WalletCashierModal({
       >
         <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
+            onClose={onClose}
             as="div"
             eyebrow={clubName || 'Club Arena'}
             title={cashierTitle}
@@ -1421,6 +1422,7 @@ export default function WalletCashierModal({
       >
         <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
+            onClose={onClose}
             as="div"
             /* The club in the header well's eyebrow, the account engraved
                beneath it, and the viewer's own standing in the well's painted

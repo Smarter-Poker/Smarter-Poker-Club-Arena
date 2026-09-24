@@ -329,6 +329,7 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
             One action (Close), so the foot is the flat cap and Close is a lit
             word at the bottom of the glass. The spade is the default crest. */}
         <SpadeConsole
+          onClose={onClose}
           as="div"
           eyebrow="Player Cashier"
           title="Player Wallet"

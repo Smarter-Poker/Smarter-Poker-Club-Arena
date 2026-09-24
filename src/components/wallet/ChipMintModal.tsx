@@ -307,6 +307,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     >
       <div className="cmm-panel" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={onClose}
           as="div"
           eyebrow="Club Bank"
           title="Chip Mint"

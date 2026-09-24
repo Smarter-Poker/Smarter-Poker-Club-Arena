@@ -30,6 +30,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { mediaUrl } from '../../utils/mediaBase';
 import type { CashTemplate } from '../../config/cashGames';
+import { killRuleLinePart, type KillTableRule } from '../../utils/killPot';
 import './CashGameCard.css';
 
 export type CashGameStatus = 'running' | 'waiting' | 'dormant';
@@ -256,6 +257,8 @@ export function rulesLineFor(snapshot: {
   regular_ante?: 'none' | 'sb' | 'bb';
   vpip_floor?: number;
   bombs?: { enabled?: boolean; trigger?: string | null; boards?: number | null };
+  /** KILL POTS (kill-v1): the chosen kill rule on a fixed-limit game, or null. */
+  kill?: KillTableRule | null;
 }): string {
   const parts: string[] = [];
   const choices = snapshot.seat_choices ?? [];
@@ -281,6 +284,7 @@ export function rulesLineFor(snapshot: {
   } else {
     parts.push('No Bomb Pots');
   }
+  if (snapshot.kill) parts.push(killRuleLinePart(snapshot.kill));
   if (snapshot.min_buyin_bb && snapshot.max_buyin_bb && !snapshot.bombs?.enabled) {
     parts.push(`Buy-In ${snapshot.min_buyin_bb}-${snapshot.max_buyin_bb} BB`);
   }

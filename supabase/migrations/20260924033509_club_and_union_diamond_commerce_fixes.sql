@@ -1156,6 +1156,34 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
+-- The installed ACL, restated for every function replaced above, so this
+-- file alone says who can call what (CREATE OR REPLACE keeps the ACL, but a
+-- reader and the definer gate should not have to know that). Identical to
+-- 20260922143541: internal helpers stay private; browser doors stay
+-- authenticated plus service_role; the renewal consumer stays service_role.
+-- ---------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION
+  public.fn_ca_commerce_catalog_version(), public.fn_ca_commerce_lot_snapshot(uuid),
+  public.fn_ca_commerce_scope_status(text, uuid),
+  public.fn_ca_commerce_quote_impl(uuid, uuid, text, uuid, jsonb, uuid, integer, text),
+  public.fn_ca_commerce_receipt_json(public.ca_commerce_purchases, boolean),
+  public.fn_ca_commerce_purchase_impl(uuid, uuid, text, text),
+  public.fn_ca_commerce_set_renewal(uuid, boolean, integer, text, integer),
+  public.fn_ca_commerce_execute_renewal(uuid, uuid),
+  public.fn_ca_commerce_sponsorship_set(uuid, uuid, integer, integer, timestamptz, uuid, boolean),
+  public.fn_ca_commerce_refund(uuid, integer, integer, text, text),
+  public.fn_ca_commerce_price_publish(uuid, timestamptz)
+FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION
+  public.fn_ca_commerce_scope_status(text, uuid),
+  public.fn_ca_commerce_set_renewal(uuid, boolean, integer, text, integer),
+  public.fn_ca_commerce_sponsorship_set(uuid, uuid, integer, integer, timestamptz, uuid, boolean),
+  public.fn_ca_commerce_refund(uuid, integer, integer, text, text),
+  public.fn_ca_commerce_price_publish(uuid, timestamptz)
+TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_commerce_execute_renewal(uuid, uuid) TO service_role;
+
+-- ---------------------------------------------------------------------------
 -- Post-conditions.
 -- ---------------------------------------------------------------------------
 DO $assertions$
@@ -1171,6 +1199,10 @@ BEGIN
   IF has_function_privilege('authenticated', 'public.fn_ca_commerce_execute_renewal(uuid,uuid)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.fn_ca_commerce_purchase_impl(uuid,uuid,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'commerce internal doors must stay private';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'fn_ca_commerce%'
+              AND has_function_privilege('anon', p.oid, 'EXECUTE')) THEN
+    RAISE EXCEPTION 'no commerce function is reachable without an account';
   END IF;
 END $assertions$;
 

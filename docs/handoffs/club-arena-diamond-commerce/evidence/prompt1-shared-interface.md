@@ -1,6 +1,6 @@
 # Shared Interface With Prompt 1 (R2 Section 1.6, Line 1011)
 
-Version 2, 2026-09-24. The small versioned contract between the diamond
+Version 3, 2026-09-24. The small versioned contract between the diamond
 commerce boundary (this assignment, the consumer) and Prompt 1's technical
 platform (the owner of capabilities and accepted events). Prompt 1's side is
 `docs/handoffs/club-arena-product-completion/CAPABILITY-CONTRACT.md` and
@@ -10,7 +10,9 @@ behaviour the code does not have.
 
 Version 1 (earlier the same day) was written before Prompt 1's registry
 existed and named only commerce's own product keys. Version 2 maps them onto
-the registry and adds the accepted-event reference.
+the registry and adds the accepted-event reference. Version 3 (migration
+`20260924182605`) adds the readiness fields the catalog now returns and the
+private capacity products written quotes create.
 
 ## 1. Two kinds of id, and how they meet
 
@@ -31,6 +33,11 @@ it in `ca_commerce_products.platform_capability_id` (migration
 | `club.report_export`, `club.report_pack` | club  | `report_export_7d`, `report_pack_30d` | none                          | no (`unsupported-offerings.md`)                |
 | `club.asset.*`                           | club  | the five `asset_*` SKUs               | none                          | no                                             |
 
+A written quote above 2,500 members creates a private `club.capacity` product
+(`capacity_wq_<hex>`, `private_scope_kind`/`private_scope_id` naming the one
+club, `written_quote_id` naming the quote). It sells no platform capability
+and is visible and quotable only for that club and platform staff.
+
 `club.membership_cap` (Prompt 1) is the per-player limit on how many clubs one
 account may join. It is not club capacity and commerce never sells it.
 `variant.ofc` is excluded and never sold, listed or bundled.
@@ -43,6 +50,9 @@ account may join. It is not club capacity and commerce never sells it.
   meeting it stops at `needs_attention` without a charge.
 - `fn_ca_commerce_product_support(sku, true)` refuses `capability_unavailable`
   for such a product.
+- `fn_ca_commerce_catalog` returns, per product, `platform_capability_id` and
+  `platform_available` (the answer of `fn_capability_available`), so the
+  owner page offers the insurance module only while it is available.
 - Commerce never writes readiness. A capability moves only through
   `fn_set_capability_readiness`.
 
@@ -114,7 +124,7 @@ never change.
 
 ## Versioning
 
-This file is version 2. A change to any function signature, action name,
+This file is version 3. A change to any function signature, action name,
 capability key or mapping above is a new version of this file in the same pull
 request as the change, and a change on Prompt 1's side is read from
 `CAPABILITY-CONTRACT.md`, never assumed.

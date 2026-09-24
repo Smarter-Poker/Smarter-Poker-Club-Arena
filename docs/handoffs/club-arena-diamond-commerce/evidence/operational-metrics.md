@@ -266,3 +266,9 @@ A refused decision on the raising cash door is rolled back together with the ref
 | **Excluding controlled fixtures** (D77)                                                          | No flag exists (see "How to run these queries").                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 Closing any of these needs a new durable write outside the rolled-back transaction, for example through the existing application diagnostics path (R2 line 931). No such write exists in M1 to M4.
+
+## 9. The staff metrics read (M6, `20260924183529`)
+
+`fn_ca_commerce_metrics(p_days)` answers the questions in sections 1 to 7 in one staff-only read, shown on the Commerce Desk Metrics tab: payments (receipts, net paid, zero-net receipts, purchases, upgrades, renewals, sponsor-paid, waived), quotes (priced, proposed not paid, bought, open, expired, withdrawn), free months, refunds (committed, returned, applied to debt, awaiting and their oldest age, owed), renewals (authorized, due, oldest overdue, needing attention, renewed, not completed), sponsorships, notices (due and undelivered, oldest, suppressed), and the replays, retries and postcondition failures the renewal and refund consumers record.
+
+Section 8 still holds for the owner's own purchase: a purchase replay and a purchase that fails a postcondition roll back whole and leave no record, and the read says "Not Recorded" for both rather than showing a zero it cannot know. Qualified by `tests/sql/run-diamond-club-commerce-metrics.py` (52 checks, exact numbers).

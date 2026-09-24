@@ -132,22 +132,22 @@ WHERE effective` plus the overlap predicate under the scope lock (D32).
 
 ## Phase state
 
-Updated 2026-09-24 14:20 UTC, after the backend half shipped (#5196).
+Updated 2026-09-24 19:40 UTC, after #5193 was published and the remaining scope was integrated (`feat/diamond-commerce-operator-completion`).
 
-| Phase                            | State                                                                                                                                                                                                                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0 Discovery, authority, baseline | Done                                                                                                                                                                                                                                                                                                   |
-| 1 Contracts and schema           | Installed and read back: `20260922143541`, `20260924033509`, `20260924102040` (14:15 UTC) and `20260924102056` (14:16 UTC). All 65 commerce and door function bodies are md5-identical to the qualified build.                                                                                         |
-| 2 Trial                          | Implemented, Tested. Launch cohort now refuses until the consumer heartbeat is under 10 minutes old and records a launch notice per owner (refunds runner).                                                                                                                                            |
-| 3 Quotes, checkout, exactly-once | Implemented, Tested. Withdrawing a product withdraws its open quotes (D06).                                                                                                                                                                                                                            |
-| 4 Renewals, upgrades, lifecycle  | Implemented, Tested. Sponsors authorize renewals of what they paid for; price-increase and short-balance notices go out before the due date; mandates record terms and ceiling text versions.                                                                                                          |
-| 5 Sponsorship                    | Implemented, Tested for the sponsor's own session (union page Buy For A Covered Club, sponsor renewals).                                                                                                                                                                                               |
-| 6 Reports, assets, refunds       | Refunds: owner request under versioned policy v1, staff decision on the Commerce Desk, execution by the consumer in service context, owed state visible. Reports and assets: not for sale, per-SKU reasons in `evidence/unsupported-offerings.md`.                                                     |
-| 7 Operator UI and catalog admin  | Service layer published (`113059a9`). The owner page growth and the staff Commerce Desk are in #5193, blocked on the whole-app bundle ceiling (decision 8). Built:                                                                                                                                     | Owner page (refund requests, policy, balance breakdown, sponsor renewals, former-owner receipts, truthful access copy) and staff Commerce Desk at `/commerce-desk` (refund queue, price lifecycle, product support, settings, comparison evidence). |
-| 8 Qualification                  | 159 + 135 + 30 isolated checks (Prompt 1's registry installed first) on the production migration order; unit contract tests pin every RPC key and refusal copy against the SQL.                                                                                                                        |
-| 9 Readiness                      | `evidence/` holds the C.1 wiring map, traceability register, activation matrix, state diagrams, compatibility/recovery matrix, D80 per-SKU map, economic model, operational metrics; competitor register in `competitor-evidence-2026-09-24.md` (no comparison claim is supportable; badge stays off). |
-| 10 Install, rollout, release     | See the changelog delivery records. Engine releases have failed estate-wide since 2026-09-21 (release workstream, #5161); the consumer ships with the first successful one.                                                                                                                            |
-| 11 Final evidence                | `evidence/` and the changelogs dated 2026-09-24.                                                                                                                                                                                                                                                       |
+| Phase                            | State                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Discovery, authority, baseline | Done                                                                                                                                                                                                                                                                                                                                                                              |
+| 1 Contracts and schema           | Installed and read back: `20260922143541`, `20260924033509`, `20260924102040` (14:15 UTC) and `20260924102056` (14:16 UTC). All 65 commerce and door function bodies are md5-identical to the qualified build.                                                                                                                                                                    |
+| 2 Trial                          | Implemented, Tested. Launch cohort now refuses until the consumer heartbeat is under 10 minutes old and records a launch notice per owner (refunds runner).                                                                                                                                                                                                                       |
+| 3 Quotes, checkout, exactly-once | Implemented, Tested. Withdrawing a product withdraws its open quotes (D06).                                                                                                                                                                                                                                                                                                       |
+| 4 Renewals, upgrades, lifecycle  | Implemented, Tested. Sponsors authorize renewals of what they paid for; price-increase and short-balance notices go out before the due date; mandates record terms and ceiling text versions.                                                                                                                                                                                     |
+| 5 Sponsorship                    | Implemented, Tested for the sponsor's own session (union page Buy For A Covered Club, sponsor renewals).                                                                                                                                                                                                                                                                          |
+| 6 Reports, assets, refunds       | Refunds: owner request under versioned policy v1, staff decision on the Commerce Desk, execution by the consumer in service context, owed state visible. Reports and assets: not for sale, per-SKU reasons in `evidence/unsupported-offerings.md`.                                                                                                                                |
+| 7 Operator UI and catalog admin  | Published: #5193 merged (`8b12b96f`, whole-app ceiling raised to 2,840 kB gz with the owner's approval), live in `4c1aa6e0` at both build-info endpoints. The remaining scope (written quotes, free month reviews, staff metrics, catalog switch, service terms, settled earnings) is in the operator-completion pull request, rendered at 393px.                                 |
+| 8 Qualification                  | Seven private-cluster runners on the production migration order, all registered in the accounting job: base 159, refunds 135, admission 30, completion 17 (RED then GREEN for 7 scenarios, plus the 159 base scenarios re-run with the migration on top), metrics 52, earnings 9, recovery 36 (D75, D79). Unit contract tests pin every RPC key and refusal copy against the SQL. |
+| 9 Readiness                      | `evidence/` holds the C.1 wiring map, traceability register, activation matrix, state diagrams, compatibility/recovery matrix, D80 per-SKU map, economic model, operational metrics; competitor register in `competitor-evidence-2026-09-24.md` (no comparison claim is supportable; badge stays off).                                                                            |
+| 10 Install, rollout, release     | See the changelog delivery records. Engine releases have failed estate-wide since 2026-09-21 (release workstream, #5161); the consumer ships with the first successful one.                                                                                                                                                                                                       |
+| 11 Final evidence                | `evidence/` and the changelogs dated 2026-09-24.                                                                                                                                                                                                                                                                                                                                  |
 
 ## D-series applicability
 
@@ -210,37 +210,69 @@ wallet ceiling path (D64) rather than the reserve path itself.
    nothing. Re-enabled when the union tools door exists.
 8. Comparison claims: none shown; the competitor register supports no global
    claim and no per-SKU claim from a primary source for the low tiers.
+9. Free month before paying: the quote tells the page the payer has never
+   had a free month and the page offers it first, but paying is not refused.
+   Refusing would stop an owner who wants to pay now, and nothing is lost by
+   paying: the free month stays available for the operator's first scope.
+10. The bundle ceiling (decision 5) was raised to 2,840 kB gz with the
+    owner's explicit approval, and #5193 shipped whole.
 
 ## Remaining scope
 
-Refused by the session's safety check when delegated ("Auto-Mode Bypass"),
-therefore not built in this pass: checkout gated until the free month exists,
-catalog_visible honoured by catalog and quote, terms version on trials and
-purchases, quote/purchase rate limits, roster vs concurrent capacity
-publication, written quotes above 2,500 members, the trial review path,
-named-club union coverage with history, union insurance covering club
-insurance and the overlap credit, sponsor purchase of club insurance. Also
-open: trial waiver value recorded on the trial right, settled-earnings
-coverage readout, durable metrics for replays and failed checks (R2 1301),
-tests D75 and D79, the shared Prompt 1 interface (`evidence/prompt1-shared-interface.md`
-describes what exists).
+Built in the operator-completion pull request (migrations `20260924182605`,
+`20260924183529`, `20260924183657`; owner page; Commerce Desk tabs):
+
+- The Catalog Visible switch is honoured by the catalog and the quote
+  (`catalog_not_visible`); staff and renewals are unaffected.
+- Service terms v1, recorded on every trial and purchase (`terms_version`).
+- The trial waiver is recorded on each trial (reason, catalog version, the
+  prices waived).
+- Quotes are rate limited (120 per 10 minutes per person, `rate_limited`),
+  which bounds the only path to a charge.
+- A quote says `free_month_available` and the confirm step offers the free
+  month first. Decision 9 below: this is an offer, not a refusal.
+- Roster capacity is published as roster capacity (the capacity line and the
+  service terms both say it is not a limit on tables or seats).
+- Written quotes above 2,500 members: owner request, staff offer (a private
+  product priced through the normal price doors) or decline, owner buys
+  through the normal order.
+- Free month review for a genuinely new independent operator: owner
+  statement, staff approve (a 30-day `review_granted` trial for that one
+  scope) or decline.
+- Sponsor purchase of club insurance, confirmed end to end in isolation.
+- Settled earnings readout (Diamond Spins daily settlement, receipt-matched,
+  owner-wide) beside what the owner paid for the scope.
+- Staff metrics (`fn_ca_commerce_metrics`): payments, quotes, free months,
+  refunds, renewals, sponsorships, notices, and the replays, retries and
+  postcondition failures the consumers record. A purchase replay and an
+  owner purchase that fails a postcondition leave no record (the whole
+  transaction rolls back), and the metric says so rather than inventing a
+  counter.
+- D75 and D79 qualified (recovery runner).
+
+Not built, with the reason:
+
+- Named-club union coverage with history, union insurance covering club
+  insurance, and the overlap credit: the union SKUs are withdrawn (decision 7) until a union admission point exists, so these would price rights that
+  grant nothing.
+- A club admin spending a union budget from their own session: needs the
+  trusted World Hub API route (R2 1.2 forbids a definer wrapper).
+- Reports and artwork: decision 6.
 
 ## Next actions
 
-1. Done 2026-09-24: #5196 merged (`113059a9`), published (run 36009651551,
-   both build-info endpoints serve `113059a9`, the served Diamond Costs chunk
-   carries the new service), `20260924102040` installed (run 36011338391) and
-   `20260924102056` installed (run 36011474185), read back, and
-   `union_back_office` and `union_insurance_module` withdrawn from sale
-   through `fn_ca_commerce_product_support` (0 open quotes withdrawn).
-   Delivery record: `docs/changelog/2026-09-24-diamond-commerce-backend-delivery.md`.
-2. Owner call: the whole-app bundle ceiling for #5193 (the staff Commerce
-   Desk and the owner page growth, +22 kB gz measured, no duplicated vendor).
-   Once decided, merge #5193 and verify its publication.
-3. After the first successful engine release (release workstream; the engine
-   is still `8825af51`, and the 14:03 UTC deployment-recovery window ended
-   without a new engine): verify `/health`, the consumer heartbeat, then run
-   the launch cohort and record it.
-4. Before enforcement: read the Admission tab; move the two remaining
+1. Done 2026-09-24: #5196 merged (`113059a9`), published, `20260924102040`
+   and `20260924102056` installed and read back, union SKUs withdrawn
+   (`docs/changelog/2026-09-24-diamond-commerce-backend-delivery.md`).
+2. Done 2026-09-24: #5193 merged (`8b12b96f`); both build-info endpoints
+   serve `4c1aa6e0`, which contains it, and the served Commerce Desk chunk
+   carries the admission report.
+3. The operator-completion pull request: merge, publish, install
+   `20260924182605`, `20260924183529`, `20260924183657` in that order and
+   read them back (`docs/changelog/2026-09-24-diamond-commerce-operator-completion.md`).
+4. After the first successful engine release (release workstream): verify
+   `/health` and the consumer heartbeat, then run the launch cohort and
+   record it.
+5. Before enforcement: read the Admission tab; move the two remaining
    browser-insert privileges (`Users can join clubs`,
    `tables_insert_owner_or_admin`) behind the doors.

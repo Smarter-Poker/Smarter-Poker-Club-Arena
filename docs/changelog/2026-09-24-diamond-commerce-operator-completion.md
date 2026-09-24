@@ -73,6 +73,30 @@ unchanged. tsc clean; the commerce unit and render tests pass.
 
 ## Delivery record
 
-Filled in after merge: pull request, merge commit, publish run, the three
-installs (in order, outside :50 to :03 UTC and outside a thaw) and their
-md5 readback.
+- Pull request #5212, merged 2026-09-24 20:22 UTC as
+  `1f4e87fd8b59011c89f2f5bb9a333cde5a558577`. The accounting job ran all
+  seven commerce runners on PostgreSQL 17 (completion 177, metrics 53,
+  earnings 10, recovery 37 PASS lines). Production Build first failed on a
+  Google Fonts fetch (`self-host-fonts: fetch failed`) and passed on one
+  re-run of that job.
+- Published by run 36054424398; both
+  `https://ca-static.smarter.poker/build-info.json` and
+  `https://smarter.poker/hub/club-arena/build-info.json` serve `1f4e87fd`.
+  The served Commerce Desk chunk calls `fn_ca_commerce_metrics`,
+  `fn_ca_commerce_written_quote_offer` and `fn_ca_commerce_trial_review_decide`;
+  the served Diamond Costs chunk calls `fn_ca_commerce_earnings_coverage`,
+  `fn_ca_commerce_written_quote_request` and
+  `fn_ca_commerce_trial_review_request` and carries the new copy.
+- Installed through Apply Merged Migration, in order, with the platform not
+  frozen: `20260924182605` (run 36054810926, 20:25 UTC, 504 ms),
+  `20260924183529` (run 36054926079, 20:26 UTC, 118 ms), `20260924183657`
+  (run 36055047142, 20:28 UTC). A first dispatch (run 36054669422) was
+  refused by the workflow before touching the database because the input
+  carried the directory; the input is the bare filename.
+- Readback: all three versions are recorded. Every commerce function body in
+  production is md5-identical to the isolated build of the same migration
+  order (65 commerce functions; the admission doors were read back
+  identical at 14:16). `service_terms` v1 exists; the written-quote and
+  review tables are empty; the new browser doors are executable by
+  `authenticated` and not by `anon`; the waiver trigger function is callable
+  by neither.

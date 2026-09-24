@@ -267,12 +267,16 @@ Not built, with the reason:
 2. Done 2026-09-24: #5193 merged (`8b12b96f`); both build-info endpoints
    serve `4c1aa6e0`, which contains it, and the served Commerce Desk chunk
    carries the admission report.
-3. The operator-completion pull request: merge, publish, install
-   `20260924182605`, `20260924183529`, `20260924183657` in that order and
-   read them back (`docs/changelog/2026-09-24-diamond-commerce-operator-completion.md`).
+3. Done 2026-09-24: #5212 merged (`1f4e87fd`), published (run 36054424398,
+   both endpoints serve `1f4e87fd`), `20260924182605`, `20260924183529` and
+   `20260924183657` installed in order (20:25 to 20:28 UTC) and read back
+   (`docs/changelog/2026-09-24-diamond-commerce-operator-completion.md`).
 4. After the first successful engine release (release workstream): verify
    `/health` and the consumer heartbeat, then run the launch cohort and
-   record it.
+   record it. At 20:30 UTC the engine is still `8825af51` (release run
+   36042895085 refused at the legacy checkpoint: "inspector operation
+   outcome unknown"), and `consumer_heartbeat_at` is null, so the cohort
+   function would refuse `consumer_not_running`.
 5. Before enforcement: read the Admission tab; move the two remaining
    browser-insert privileges (`Users can join clubs`,
    `tables_insert_owner_or_admin`) behind the doors.

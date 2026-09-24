@@ -2647,6 +2647,17 @@
   color: #94a3b8;
 }
 
+/* KILL POTS (kill-v1): the killer's marker, the position badge's twin on the
+   opposite corner so a killer in a blind keeps both. The gold is the felt's
+   own marker ink (the bomb pill and run badge), not a new colour; the word is
+   what carries the meaning. */
+.seat__kill-badge {
+  right: auto;
+  left: -4px;
+  color: var(--sp-text-bright);
+  border-color: rgba(255, 215, 0, 0.55);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN BADGE
    ═══════════════════════════════════════════════════════════════════════════════ */

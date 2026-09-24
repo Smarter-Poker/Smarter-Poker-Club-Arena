@@ -55,6 +55,7 @@ import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { CASH_TEMPLATES } from '../../config/cashGames';
+import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 /* Extends CashFeatureSource so the medallion columns travel on the same row
@@ -468,6 +469,12 @@ export interface CashFeatureSource {
   /** Lobby ante disclosure (spec §15.1): BB multiple and fixed override. */
   bomb_pot_ante_multiplier?: number | null;
   bomb_pot_ante_fixed?: number | null;
+  /* KILL POTS (rule manifest kill-v1): 'off' | 'half' | 'full', and the scoop
+     threshold in base big blinds. The engine honours them at a fixed-limit
+     cash table only, so the medallion needs the variant beside them. */
+  kill_mode?: string | null;
+  kill_threshold_bb?: number | null;
+  game_variant?: string | null;
   ante_enabled?: boolean | null;
   big_blind_ante_enabled?: boolean | null;
   ante?: number | null;
@@ -634,6 +641,23 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     };
     const b = byMode[bombMode] ?? byMode.every_n_hands;
     rules.push({ key: 'bomb', label: b.label, detail: b.detail, tip: b.tip });
+  }
+
+  /* KILL POTS (kill-v1). ServerTableEngineBase.killSettingsFromTable reads
+     kill_mode and kill_threshold_bb and honours them at an flh / flo8 cash
+     table only, and the database accepts a mode other than 'off' only while
+     the capability is live. So the medallion is the row's own column, on a
+     fixed-limit card, and nothing else: a row that did not carry the column
+     says nothing rather than guessing. */
+  const kill = killTableRuleOf(row);
+  if (kill && isKillVariant(row.game_variant)) {
+    const full = kill.mode === 'full';
+    rules.push({
+      key: 'kill',
+      label: full ? 'KILL' : 'HALF KILL',
+      detail: `${kill.thresholdBb}BB`,
+      tip: `Win every pot of a hand worth ${kill.thresholdBb} big blinds or more and you post a kill blind; the next hand plays at ${full ? 'double' : 'one and a half times the'} limits`,
+    });
   }
 
   if (col(row.ante_enabled) ?? on(s, 'ante_enabled')) {

@@ -47,6 +47,11 @@ export const HAND_HISTORY_COLUMNS = [
   'showdown',
   'pots',
   'bomb_pot',
+  /* KILL POTS (rule manifest kill-v1): the kill this hand played, set or
+     cancelled. Written by the engine only on hands with kill facts; null on
+     every other row. The column arrives with the kill-pots migration, which
+     must be installed before this list ships. */
+  'kill_pot',
 ].join(', ');
 
 /**

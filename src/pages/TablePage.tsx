@@ -23195,6 +23195,9 @@ function LiveTablePage({
               <TournamentHUD
                 tournamentId={tableState.tournamentId}
                 spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
+                /* A background slot stays mounted (PersistentTableLayer), so
+                   its bar must know it is off screen and stop asking. */
+                hidden={!isVisible}
                 onOpen={() => setShowTournamentLobby(true)}
               />
             )}

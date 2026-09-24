@@ -1947,8 +1947,19 @@ class TournamentService {
    */
   /**
    * Get current blind level state with high precision
+   *
+   * `nowMs` is the instant the countdown is measured at. It defaults to this
+   * device's clock, which is what every existing caller has always had.
+   * `level_started_at` is stamped by the ENGINE, so a surface that shows a
+   * live countdown passes `serverNow()` (utils/serverClock) instead: a phone
+   * running thirty seconds fast otherwise shows a level thirty seconds
+   * shorter than the one being played, the exact cross-clock subtraction
+   * that module was written to remove from the turn ring.
    */
-  getCurrentLevelState(tournament: Tournament): {
+  getCurrentLevelState(
+    tournament: Tournament,
+    nowMs: number = Date.now()
+  ): {
     currentLevel: BlindLevel | null;
     nextLevel: BlindLevel | null;
     timeRemainingSeconds: number;
@@ -2085,7 +2096,7 @@ class TournamentService {
       // the full level duration as an upper bound.
       let remaining = durationSec;
       if (serverT.level_started_at) {
-        const elapsedSec = (Date.now() - new Date(serverT.level_started_at).getTime()) / 1000;
+        const elapsedSec = (nowMs - new Date(serverT.level_started_at).getTime()) / 1000;
         // An old canonical anchor is overdue, not permission to reset the display.
         if (Number.isFinite(elapsedSec) && elapsedSec >= 0) {
           remaining = Math.max(0, Math.floor(durationSec - elapsedSec));
@@ -2099,7 +2110,7 @@ class TournamentService {
       };
     }
 
-    const elapsedMs = new Date().getTime() - new Date(tournament.started_at).getTime();
+    const elapsedMs = nowMs - new Date(tournament.started_at).getTime();
     let accumulatedMs = 0;
 
     for (let i = 0; i < blinds.length; i++) {

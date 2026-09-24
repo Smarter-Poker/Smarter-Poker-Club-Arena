@@ -2825,10 +2825,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // A5 FIX (2026-08-08): the retries are exhausted, but the rake is
             // ALREADY out of the pot. Reporting an error and moving on destroyed
             // those chips — nothing on disk said they were owed. Queue the exact
-            // arguments so the FeeReconciler can re-drive them. Re-driving is
-            // safe: atomic_distribute_rake is gated on the hand
-            // (uq_rake_records_hand_id), so an entry that actually did land is a
-            // no-op rather than a double-bank.
+            // arguments so the owed fee is on disk. This is the protocol-1
+            // compatibility path (no verified lease, no envelope), which
+            // production refuses at fn_ca_commit_hand_settlement; since
+            // 2026-09-22 no engine timer re-drives the claim (FeeReconciler.ts).
             await queueUnbankedFee('rake', {
               tableId: this.tableId,
               clubId: this.tableInfo?.club_id,

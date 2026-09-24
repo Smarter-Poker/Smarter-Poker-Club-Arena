@@ -64,10 +64,12 @@ import ChoiceScene, {
   streetHazard,
   streetMultiplier,
 } from '../../src/components/games/ChoiceScene';
-import { CHOICE_MODE, ROAD_LADDERS } from '../../src/utils/diamondChoiceMath';
+import { CHOICE_MODE, ROAD_LADDERS_V4 } from '../../src/utils/diamondChoiceMath';
 import { DONKEY_SCALE, streetCenter, STREET_WIDTH } from '../../src/utils/crossingScene';
 
-const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+/** The road a new round is dealt: contract 4's ladder, where street one is
+ *  certain and pays 0.80x. It was 1.10x under the contract before it. */
+const ROAD = ROAD_LADDERS_V4[CHOICE_MODE.crossing];
 const sheet = readFileSync(
   join(__dirname, '../../src/components/games/ChoiceScene.module.css'),
   'utf8'
@@ -234,19 +236,19 @@ describe('the scene waits for its programs instead of compiling them in frame on
 });
 
 describe('every street prints what it pays', () => {
-  it('lists the twelve streets of the one road, 1.10x up to 20.00x, in the strip', () => {
+  it('lists the twelve streets of the one road, 0.80x up to 20.00x, in the strip', () => {
     mountScene({ phase: 'open', picked: [0, 1] });
     const streets = screen.getAllByRole('listitem');
     expect(streets).toHaveLength(ROAD.length);
     expect(streets.map((s) => s.querySelector('strong')?.textContent)).toEqual(
       ROAD.map(streetMultiplier)
     );
-    expect(streets[0]).toHaveTextContent('1.10x');
+    expect(streets[0]).toHaveTextContent('0.80x');
     expect(streets[ROAD.length - 1]).toHaveTextContent('20.00x');
     // The prize for reaching a street is on the street too, in chips.
     // ...and the state the scene is showing, so the strip reads aloud the way
     // it is painted.
-    expect(streets[0]).toHaveAccessibleName('Street 1 Pays 1.10x, 2.17 Chips, Crossed');
+    expect(streets[0]).toHaveAccessibleName('Street 1 Pays 0.80x, 2.17 Chips, Crossed');
     expect(streets[1]).toHaveAccessibleName('Street 2 Pays 1.45x, 5.33 Chips');
     expect(streets[2]).toHaveAccessibleName('Street 3 Pays 1.85x, 15.20 Chips, Next');
   });
@@ -256,7 +258,7 @@ describe('every street prints what it pays', () => {
     const printed = fillText.mock.calls.map((call) => call[0]);
     expect(printed).toContain('START');
     expect(printed).toContain('STREET 1');
-    expect(printed).toContain('1.10x');
+    expect(printed).toContain('0.80x');
     expect(printed).toContain('STREET 12');
     expect(printed).toContain('20.00x');
     expect(printed).not.toContain('STREET 13');
@@ -302,7 +304,7 @@ describe('the cash-out value is the loudest number', () => {
   it('shows what the first street pays and the reach of the road before Start', () => {
     mountScene();
     expect(screen.getByText('First Street Pays').nextElementSibling).toHaveTextContent(
-      '2.17 Chips At 1.10x'
+      '2.17 Chips At 0.80x'
     );
     expect(screen.getByText('12 Streets Up To 20.00x')).toBeInTheDocument();
   });

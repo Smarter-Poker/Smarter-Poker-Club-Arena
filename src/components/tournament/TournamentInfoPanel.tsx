@@ -323,6 +323,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         aria-label="Tournament Information"
       >
         <SpadeConsole
+          onClose={onClose}
           as="div"
           className="tip__console"
           eyebrow={t?.name || 'Tournament'}

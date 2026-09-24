@@ -7,7 +7,16 @@
  * and never presses past a refusal.
  */
 import { describe, expect, it } from 'vitest';
-import { AUTO_RUN_SIZES, autoRunVerdict, cycleRunSize } from '../../src/utils/autoRun';
+import {
+  AUTO_RUN_SIZES,
+  WHEEL_RUN_SIZES,
+  autoRunVerdict,
+  cycleRunSize,
+  tallyWheelRun,
+  wheelRunSoFar,
+  type WheelRun,
+} from '../../src/utils/autoRun';
+import type { WheelSpinResult } from '../../src/services/DiamondWheelService';
 
 const ready = { busy: false, blocker: null, ready: true };
 
@@ -61,5 +70,149 @@ describe('the plate cycles Off, 5, 10, 25, 50, Off', () => {
 
   it('an unknown size goes back to the first run', () => {
     expect(cycleRunSize(7)).toBe(0);
+  });
+});
+
+/**
+ * THE WHEEL'S RUN ACCUMULATES (owner ruling 2026-09-21, R18). A landed spin is
+ * counted and its prize or game recorded on the run; nothing is awarded here,
+ * the receipt already carries the server's settlement.
+ */
+describe('the wheel run tallies what each spin landed on', () => {
+  const run: WheelRun = { runId: 'run', total: 5, done: 0, prizes: [], games: [] };
+  const title = (o: WheelSpinResult['outcome']) => `${o.amount} ${o.kind}`;
+  const spin = (over: Record<string, unknown>) =>
+    ({
+      spin_id: `spin-${Math.random()}`,
+      outcome: { ord: 1, kind: 'chips', amount: 2, value_chips: 2, label: 'x' },
+      ...over,
+    }) as unknown as WheelSpinResult;
+
+  it('offers the wheel 5, 10 and 25, never 50', () => {
+    expect(WHEEL_RUN_SIZES).toEqual([0, 5, 10, 25]);
+    expect(cycleRunSize(25, WHEEL_RUN_SIZES)).toBe(0);
+    expect(cycleRunSize(0, WHEEL_RUN_SIZES)).toBe(5);
+  });
+
+  it('records an instant prize, counts a spin that won nothing, and queues a game', () => {
+    let r = tallyWheelRun(run, spin({}), title);
+    expect(r.done).toBe(1);
+    expect(r.prizes).toEqual([
+      {
+        spinId: expect.any(String),
+        kind: 'chips',
+        title: '2 chips',
+        valueChips: 2,
+        upgraded: false,
+      },
+    ]);
+    r = tallyWheelRun(
+      r,
+      spin({ outcome: { ord: 2, kind: 'nothing', amount: 0, value_chips: 0, label: 'n' } }),
+      title
+    );
+    expect(r.done).toBe(2);
+    expect(r.prizes).toHaveLength(1);
+    const award = {
+      id: 'a',
+      game: 'mines',
+      base_diamonds: 100,
+      boost_multiplier: 1,
+      entry_diamonds: 100,
+    };
+    r = tallyWheelRun(
+      r,
+      spin({
+        outcome: { ord: 3, kind: 'bonus', game: 'mines', amount: 100, value_chips: 1, label: 'm' },
+        bonus: award,
+      }),
+      title
+    );
+    expect(r.done).toBe(3);
+    expect(r.prizes).toHaveLength(1);
+    expect(r.games).toEqual([award]);
+    expect(run.done).toBe(0); // never mutated
+  });
+
+  it('an upgrade records what the ring landed on, marked as upgraded', () => {
+    const chips = tallyWheelRun(
+      run,
+      spin({
+        outcome: { ord: 12, kind: 'upgrade', amount: 200, value_chips: 2, label: 'u' },
+        secondary: { outcome: { ord: 5, kind: 'chips', amount: 25, value_chips: 25, label: 'c' } },
+      }),
+      title
+    );
+    expect(chips.prizes).toEqual([
+      {
+        spinId: expect.any(String),
+        kind: 'chips',
+        title: '25 chips',
+        valueChips: 25,
+        upgraded: true,
+      },
+    ]);
+    const award = {
+      id: 'b',
+      game: 'plinko',
+      base_diamonds: 200,
+      boost_multiplier: 2,
+      entry_diamonds: 100,
+    };
+    const game = tallyWheelRun(
+      run,
+      spin({
+        outcome: { ord: 12, kind: 'upgrade', amount: 200, value_chips: 2, label: 'u' },
+        secondary: {
+          outcome: {
+            ord: 1,
+            kind: 'bonus',
+            game: 'plinko',
+            amount: 200,
+            value_chips: 2,
+            label: 'p',
+          },
+        },
+        bonus: award,
+      }),
+      title
+    );
+    expect(game.prizes).toEqual([]);
+    expect(game.games).toEqual([award]);
+  });
+
+  it('prints the running total in one line', () => {
+    expect(wheelRunSoFar(run)).toBe('Nothing Yet');
+    let r = tallyWheelRun(run, spin({}), title);
+    r = tallyWheelRun(
+      r,
+      spin({ outcome: { ord: 1, kind: 'chips', amount: 0.5, value_chips: 0.5, label: 'x' } }),
+      title
+    );
+    r = tallyWheelRun(
+      r,
+      spin({ outcome: { ord: 5, kind: 'diamonds', amount: 50, value_chips: 0.5, label: 'd' } }),
+      title
+    );
+    r = tallyWheelRun(
+      r,
+      spin({ outcome: { ord: 9, kind: 'throwables', amount: 3, value_chips: 1, label: 't' } }),
+      title
+    );
+    r = tallyWheelRun(
+      r,
+      spin({
+        outcome: { ord: 3, kind: 'bonus', game: 'crash', amount: 100, value_chips: 1, label: 'c' },
+        bonus: {
+          id: 'c',
+          game: 'crash',
+          base_diamonds: 100,
+          boost_multiplier: 1,
+          entry_diamonds: 100,
+        },
+      }),
+      title
+    );
+    expect(wheelRunSoFar(r)).toBe('2.5 Chips, 1 Diamond Prize, 1 Reward, 1 Bonus Game');
   });
 });

@@ -204,7 +204,10 @@ test.describe('real Table Studio browser flows', () => {
     await expect(liveState).toHaveAttribute('data-table-theme', 'carbon_red');
     await expect(secondStudio.locator('.studio-game-preview')).toHaveAttribute(
       'data-table-theme',
-      'carbon_red'
+      'carbon_red',
+      // The SECOND TAB, so this waits on a broadcast rather than on the click
+      // that caused it. Same bounded readiness budget as the writes below.
+      { timeout: 20_000 }
     );
 
     await tapReadyControl(studio.getByRole('tab', { name: 'Buttons' }));
@@ -225,11 +228,21 @@ test.describe('real Table Studio browser flows', () => {
        three flat is a race the suite loses intermittently. It lost on
        2026-09-05 with background_id still reading its default 'midnight'
        against an expected 'emerald_room' - a red check on a branch that had not
-       touched Table Studio at all. */
-    await expect.poll(() => server.saved.table_id).toBe('carbon_red');
-    await expect.poll(() => server.saved.button_id).toBe('red-d-gear');
-    await expect.poll(() => server.saved.background_id).toBe('emerald_room');
-    await expect.poll(() => server.saved.cards_id).toBe('royal');
+       touched Table Studio at all.
+
+       It lost again on 2026-09-20, the same way, on background_id, on a branch
+       that had only touched the pot's chip pile. Polling all four fixed the
+       ORDER; it never fixed the BUDGET. These are debounced writes and the
+       default poll deadline is five seconds, while the purchase flow below -
+       which waits on the same kind of persisted outcome - has carried an
+       explicit 20s ever since the native CI trace showed a save landing after
+       the old five-second dialog deadline. All four carry that budget now.
+       This gate is required on every PR in the repository, so an unbudgeted
+       wait here is a tax on everybody else's delivery. */
+    await expect.poll(() => server.saved.table_id, { timeout: 20_000 }).toBe('carbon_red');
+    await expect.poll(() => server.saved.button_id, { timeout: 20_000 }).toBe('red-d-gear');
+    await expect.poll(() => server.saved.background_id, { timeout: 20_000 }).toBe('emerald_room');
+    await expect.poll(() => server.saved.cards_id, { timeout: 20_000 }).toBe('royal');
 
     await tapReadyControl(studio.getByRole('button', { name: 'Final Table' }));
     await expect(preview).toHaveAttribute('data-table-theme', 'final_table');

@@ -125,7 +125,7 @@ afterEach(() => {
 });
 
 describe('a won Plinko game on a board that cannot draw', () => {
-  it('lands the booked batch by itself, lets the player go and shows the result, with no press', async () => {
+  it('lands every released drop, lets the player go and shows the result', async () => {
     backend.start.mockResolvedValueOnce({
       ...fixtures.receipts.plinko,
       table_version: 4,
@@ -134,15 +134,20 @@ describe('a won Plinko game on a board that cannot draw', () => {
     render(<DiamondPlinkoPage />);
     await advance();
     expect(screen.getByText(/The 3D Scene Is Unavailable/)).toBeInTheDocument();
-    const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
     fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
     await advance();
-    // The won game starts itself...
-    await advance(5000);
+    // The player chooses their drops and presses Drop (R1, R6)...
+    fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
+    await advance();
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    await advance();
     expect(backend.start).toHaveBeenCalledTimes(1);
-    // ...and the booked batch lands at once: nothing is left to press and
-    // nothing holds the player.
+    // ...releases the rest, and the booked batch lands with no renderer at all:
+    // nothing is left to press and nothing holds the player.
+    fireEvent.click(screen.getByRole('button', { name: 'Drop All' }));
+    await advance(5000);
     expect(screen.queryByRole('button', { name: 'Show Results' })).not.toBeInTheDocument();
     expect(holding()).toBe(false);
     expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument();

@@ -512,6 +512,7 @@ export default function DepositWithdrawModal({
     >
       <div className={styles.modal} ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={handleClose}
           as="div"
           /* "Funds" was the wrong noun and the wrong claim. What moves here is
              chips, and the welcome disclaimer the player accepted on the way in

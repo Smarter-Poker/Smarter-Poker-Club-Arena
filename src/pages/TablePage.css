@@ -886,9 +886,20 @@
      read by both, overridden per seat count at the foot of this rule. */
   --sp-table-ar-w: 605;
   --sp-table-ar-h: 1000;
+  /* The short-ring drop (2..6 seats, set at the foot of this rule's seat
+     overrides) is subtracted from the height budget in every rule that
+     derives a size from --sp-table-h, so margin plus box always equals the
+     space the container reserved. 0px for 7, 8 and 9. */
+  --sp-short-table-drop: 0px;
   width: min(
     100%,
-    max(200px, calc(var(--sp-table-h, 100dvh) * var(--sp-table-ar-w) / var(--sp-table-ar-h)))
+    max(
+      200px,
+      calc(
+        (var(--sp-table-h, 100dvh) - var(--sp-short-table-drop, 0px)) * var(--sp-table-ar-w) /
+          var(--sp-table-ar-h)
+      )
+    )
   );
   /* Dan 2026-08-17 (audit): 320px read small once the backdrop stopped
      faking a giant table. 360px lets the painted rail span nearly the full
@@ -964,6 +975,41 @@
 .table-page[data-seats='5'] .table-scaler,
 .table-page[data-seats='6'] .table-scaler {
   --sp-table-ar-h: 960;
+
+  /* ── THE SHORTER TABLE SITS LOWER (Dan 2026-09-23) ────────────────────────
+     "6 MAX GAMES THE TABLE SHOULD BE LOWER BY ABOUT 15-20. THERE IS TOO MUCH
+     SPACE ON THE BOTTOM AND NOT ENOUGH ON THE TOP."
+
+     The container pins the scaler to its top edge (align-items: flex-start),
+     so a 960-tall canvas leaves its whole 4% of saved length as empty page
+     UNDER the felt, while the top seat still presses against the BBJ plate.
+     The oval slides down by --sp-short-table-drop instead.
+
+     The drop is paid for in every rule that derives a size from the height
+     budget, so it can never push the hero's plate into the action bar:
+       phones (<=768px, the fill rule at the foot of this file): the box is
+                    the shorter of 0.96 x budget and budget - 18px, so on any
+                    phone taller than 450px the 4% the 960 canvas gives back
+                    covers the whole drop and the width the roundness cap
+                    derives is untouched (measured: 386px on an iPhone
+                    12/13/14 with real insets, against 390 for a 9-max).
+       aspect-locked (desktop, landscape): the width is derived from a height
+                    that is --sp-table-h LESS the drop, so margin plus box is
+                    exactly the space the container reserved.
+     Nothing else in this rule changes; 7, 8 and 9 keep the full canvas and
+     stay where they are. */
+  --sp-short-table-drop: 18px;
+  margin-top: var(--sp-short-table-drop);
+  /* NO `width` HERE (2026-09-24). The first cut of this rule re-derived the
+     width from the reduced height, and at 0,3,0 that declaration outranked
+     the <=768px fill rule (0,1,0) at the foot of this file - the rule that
+     exists because "THE ASPECT LOCK IS THE THING STARVING THE WIDTH" on a
+     notched phone - and the landscape rule's `width: auto`. On an iPhone
+     12/13/14 with real insets a 6-max felt came out 347px wide against the
+     382px the fill rule gives a 9-max on the same phone. The drop is paid
+     where each rule derives its own height instead: the base width, the
+     phone height and width, and the landscape height budget all subtract
+     `--sp-short-table-drop`, which is 0px everywhere but here. */
 }
 
 /* Table Felt (Vertical Oval) */
@@ -1173,8 +1219,27 @@
      Paired with .community-area moving 42.5% -> 40.5%; see the note there for
      why both halves are needed rather than either alone — the identity line
      can now wrap, so the brand block is taller than the arithmetic that set
-     58% assumed, and it grows upward into the board from its centred anchor. */
-  --sp-brand-top: 62%;
+     58% assumed, and it grows upward into the board from its centred anchor.
+
+     ── THE ANCHOR IS THE TOP EDGE NOW (Dan 2026-09-23) ──────────────────────
+     "THE BOARD CARDS SHOULD NEVER EVER BE OVERLAPPING 'SMARTER.POKER' ON THE
+     FELT, ALWAYS ABOVE." His screenshot: a 2/5 table with the club name
+     wrapped, a hand number and a bomb-pot line - six rows under the wordmark
+     - and the board's bottom edge across the wordmark. The 62% above was the
+     block's CENTRE, so every extra row pushed the wordmark half a row UP into
+     the board; the sentence above says as much. No centred anchor can keep a
+     block of variable height out of a fixed band.
+
+     So this is the block's TOP now (`.table-brand` translates -50% on X only)
+     and it only ever grows downward, into felt nothing else prints on. 56%
+     is where a three-row masthead's top already sat under the 62% centre,
+     so the common case does not move; and the board's bottom edge is at
+     49.3% of this surface at its largest (a 375px phone: 67.1px cards on a
+     497.7px surface, centred at 42.5%), which leaves 6.7% of felt between
+     them at any row count. The connection banners hang their bottom edge
+     0.5% above this line and fit in that band. The multi-board overrides
+     below are re-derived the same way from each stack's bottom edge. */
+  --sp-brand-top: 56%;
   position: absolute;
   /* Dan 2026-08-17: the felt window of the canonical skin composites after
      the scaler's cover-crop (source felt x 20.3-79.6% / y 8.9-89.2%, crop
@@ -1252,9 +1317,12 @@
      the board stack - on exactly the tables where losing the connection costs
      the most. One property, both elements, and the multi-board overrides now
      move both by moving it. */
-  top: var(--sp-brand-top, 62%);
+  top: var(--sp-brand-top, 56%);
   left: 50%;
-  transform: translate(-50%, -50%);
+  /* X only. The Y anchor is the block's top edge, so a taller block (a
+     wrapped club name, a hand number, a bomb-pot clock) grows down the felt
+     and never up into the board. See --sp-brand-top on .table-surface. */
+  transform: translate(-50%, 0);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1592,6 +1660,16 @@
    reads as club-then-union rather than as two unrelated labels. */
 .table-brand__union {
   color: rgba(214, 226, 244, 0.5);
+}
+
+/* THE CLUB'S NAME NEVER BREAKS INSIDE ITSELF (Dan 2026-09-23). The identity
+   row is allowed to wrap (7A, above) so that no name is ever ellipsized, but
+   the union span is nowrap and used to carry the " · " separator, which left
+   the space inside "Shark Club" as the row's only break opportunity: the felt
+   read "SHARK" over "CLUB · MIDWAY UNION". Both names are now unbreakable
+   units and the single breakable space on the row is the one between them. */
+.table-brand__club-name {
+  white-space: nowrap;
 }
 
 @media (max-width: 380px) {
@@ -2014,12 +2092,18 @@
 }
 /* Set the SHARED anchor, not the wordmark's own `top`: the connection banner
    rides just above it and has to come along. See `--sp-brand-top` on
-   `.table-surface`. */
+   `.table-surface`.
+
+   Top edges (2026-09-23), derived from each stack's bottom: the stack is
+   anchored 40% of its own height above the 40% line, at 68% width; on a 375px
+   phone that is 47.4px cards, so two boards plus the 6px gap end at 52.2% and
+   three at 57.9%. Each anchor leaves the same clear band the single board
+   keeps, and the banner still fits above the wordmark. */
 .table-page[data-boards='2'] .table-surface {
-  --sp-brand-top: 72%;
+  --sp-brand-top: 59%;
 }
 .table-page[data-boards='3'] .table-surface {
-  --sp-brand-top: 84%;
+  --sp-brand-top: 64%;
 }
 
 /* ── BOARD SIZING ON THE PORTRAIT TABLE (Dan 2026-07-28) ────────────────────
@@ -3499,7 +3583,9 @@
        the felt area is ~56vw minus 8px left padding.
        Both constraints are set; aspect-ratio picks the binding one. */
     --sp-ls-table-w: calc(56vw - 8px);
-    --sp-ls-table-h: calc(100svh - 40px - env(safe-area-inset-bottom, 0px));
+    --sp-ls-table-h: calc(
+      100svh - 40px - env(safe-area-inset-bottom, 0px) - var(--sp-short-table-drop, 0px)
+    );
     max-width: var(--sp-ls-table-w);
     max-height: var(--sp-ls-table-h);
     width: auto;
@@ -4773,8 +4859,22 @@ button.post-bb-overlay-button {
        and the roundness cap is applied to the height the table actually takes,
        so both halves keep meaning what they meant. */
     --sp-seat-h-scale: calc(var(--sp-table-ar-h, 1000) / 1000);
-    height: calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale));
-    width: min(100%, calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale) * 0.7));
+    /* The 2..6 seat drop (see `[data-seats]`) is paid out of the 4% of
+       height the 960 canvas already gives back: the box is the shorter of
+       the scaled budget and the budget less the drop, so on any phone taller
+       than 450px the drop costs the oval nothing (0.96H + 18px still fits in
+       H) and the width the 0.7 cap derives from the height is untouched. On
+       a budget too short for that (landscape) the box gives up the
+       difference rather than crossing the container's bottom edge. Measured
+       2026-09-24, iPhone 12/13/14 with real insets, 6-max: 350.7px wide when
+       the seat rule set its own width, 374px with the drop subtracted here,
+       390px (the 9-max width) with this min(). */
+    --sp-phone-box-h: min(
+      calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale)),
+      calc(var(--sp-table-h, 100svh) - var(--sp-short-table-drop, 0px))
+    );
+    height: var(--sp-phone-box-h);
+    width: min(100%, calc(var(--sp-phone-box-h) * 0.7));
     aspect-ratio: auto;
   }
 

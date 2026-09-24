@@ -161,8 +161,20 @@
 }
 .primary {
   background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  position: relative;
+  isolation: isolate;
 }
-.primary:not(:disabled) {
+/* The primary plate breathes through an opacity-only overlay of its own lit
+   art (behind the label, above the plate), so the pulse never re-filters the
+   button every frame. */
+.primary:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: inherit;
+  filter: brightness(1.2);
+  opacity: 0;
   animation: control-light calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
 }
 .controls button:active {
@@ -179,10 +191,10 @@
 @keyframes control-light {
   0%,
   100% {
-    filter: brightness(1);
+    opacity: 0;
   }
   50% {
-    filter: brightness(1.2);
+    opacity: 1;
   }
 }
 .entry {

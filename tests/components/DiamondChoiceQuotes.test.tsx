@@ -1,6 +1,6 @@
 vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import { CHOICE_MODE } from '../../src/utils/diamondChoiceMath';
@@ -63,36 +63,44 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
     </section>
   ),
 }));
-vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
-  WheelWinReveal: ({
-    title,
-    detail,
-    onOpen,
-  }: {
-    title: string;
-    detail: string;
-    onOpen: () => void;
-  }) => (
-    <div role="dialog" aria-label={title}>
-      {detail}
-      <button onClick={onOpen}>Finish Prize</button>
-    </div>
-  ),
+vi.mock('../../src/services/DiamondWheelService', () => ({
+  default: { getStateV2: () => Promise.resolve({ pending_awards: [] }) },
 }));
+vi.mock('../../src/services/SoundService', () => ({ soundService: { playWin: vi.fn() } }));
+/** Screen one of a won game (R9): the offer is answered by the player's own tap. */
+const answerOffer = (choice: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
+  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
+  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
+  fireEvent.click(within(offer).getByRole('button', { name: choice }));
+};
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
-// The console the offer is built on is mocked away in this file, so the offer
-// is reduced to the one thing these tests need from it: the player's answer.
-vi.mock('../../src/components/games/DoubleDownOffer', () => ({
-  default: ({ onChoose }: { onChoose: (doubled: boolean) => void }) => (
-    <div role="dialog" aria-label="Double Down Your Bonus">
-      <button onClick={() => onChoose(false)}>Keep My Bonus</button>
-    </div>
-  ),
-}));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
-  SpadeConsole: ({ children }: { children?: ReactNode }) => <section>{children}</section>,
+  SpadeConsole: ({
+    children,
+    plates,
+  }: {
+    children?: ReactNode;
+    plates?: {
+      primary?: { label: string; disabled?: boolean; onClick?: () => void };
+      secondary?: { label: string; disabled?: boolean; onClick?: () => void };
+    };
+  }) => (
+    <section>
+      {children}
+      {plates?.secondary && (
+        <button disabled={plates.secondary.disabled} onClick={plates.secondary.onClick}>
+          {plates.secondary.label}
+        </button>
+      )}
+      {plates?.primary && (
+        <button disabled={plates.primary.disabled} onClick={plates.primary.onClick}>
+          {plates.primary.label}
+        </button>
+      )}
+    </section>
+  ),
 }));
 vi.mock('../../src/components/console/DeckConsole', () => ({
   DeckConsole: ({
@@ -173,7 +181,10 @@ beforeEach(() => {
   });
   sessionStorage.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('choice-game entry quotes belong to the selected settings', () => {
   it.each([
@@ -204,10 +215,14 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       await act(async () => {});
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
-      expect(screen.getByRole('dialog', { name: `${amount.toFixed(2)} Chips` })).toHaveTextContent(
+      const receipt = screen.getByRole('dialog', { name: `${amount.toFixed(2)} Chips` });
+      expect(receipt).toHaveTextContent(
         amount ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+      // The receipt stays until the player taps (R1); nothing leaves by itself.
+      expect(backend.navigate).not.toHaveBeenCalled();
+      fireEvent.animationEnd(receipt.querySelector('[data-motion="keep"]')!);
+      fireEvent.click(within(receipt).getByRole('button', { name: 'Back To The Wheel' }));
       expect(backend.navigate).toHaveBeenCalledWith(
         '/clubs/00000000-0000-0000-0000-000000000003/wheel',
         { replace: true }
@@ -321,7 +336,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
         screen.getByText(
           game === 'mines'
             ? /6 Mines Hide Among 25 Tiles\. .*A Mine Ends The Round And Pays The Guaranteed Minimum\./
-            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Hit Ends The Round And Pays The Guaranteed Minimum\./
+            : /12 Streets Pay 0\.80x Up To 20\.00x\. .*Book The Win After Any Street\. A Hit Ends The Round And Pays The Guaranteed Minimum\./
         )
       ).toBeInTheDocument();
       expect(screen.getByText(/Nobody Picks A Difficulty/)).toBeInTheDocument();
@@ -330,12 +345,13 @@ describe('choice-game entry quotes belong to the selected settings', () => {
     }
   );
   it.each(['mines', 'crossing'] as const)(
-    'shows the standard tenth floor as the %s guarantee for ordinary play before Start',
+    'shows the standard half floor as the %s guarantee for ordinary play before Start',
     async (game) => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
-      // 100 diamonds at 100 per chip is a 1.00 chip stake; the server keeps a tenth.
-      expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('0.10 Chips');
+      // 100 diamonds at 100 per chip is a 1.00 chip stake, and ordinary play
+      // pays for all of it, so contract 4 keeps HALF. It kept a tenth before.
+      expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('0.50 Chips');
       expect(screen.getByText('Guaranteed').nextElementSibling).not.toHaveAttribute(
         'data-ink',
         'gold'
@@ -456,6 +472,10 @@ describe('choice games consume wheel-funded entry', () => {
           line.textContent?.includes(sentence)
         )
       ).toBe(true);
+      // Screen one (R9): the offer holds Start Round until it is answered by a tap.
+      expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+      answerOffer();
+      await act(async () => {});
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
@@ -472,56 +492,6 @@ describe('choice games consume wheel-funded entry', () => {
         }),
         'player-a'
       );
-    }
-  );
-  it.each(['mines', 'crossing'] as const)(
-    'starts a won %s round by itself five seconds after the Double Down answer',
-    async (game) => {
-      vi.useFakeTimers();
-      try {
-        const award = {
-          id: '00000000-0000-0000-0000-000000000079',
-          game,
-          base_diamonds: 200,
-          entry_diamonds: 100,
-          boost_multiplier: 2,
-          status: 'pending',
-        };
-        backend.state.mockResolvedValue({ ...state, diamonds: 0, max_steps: 0, prizes: [] });
-        backend.awardState.mockResolvedValue({
-          enabled: true,
-          award,
-          gameState: { ...state, diamonds: 0, max_steps: 3, prizes: [2.2, 2.7, 3.4] },
-          quote: {
-            guarantee: 'super',
-            minimumPayoutChips: 1,
-            mode: CHOICE_MODE[game],
-            plinkoTable: 4,
-          },
-        });
-        backend.start.mockReturnValue(new Promise(() => {}));
-        render(<DiamondChoicePage game={game} />);
-        await act(async () => {});
-        // The offer spends the player's own diamonds, so nothing starts over it.
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(20_000);
-        });
-        expect(backend.start).not.toHaveBeenCalled();
-        expect(screen.getByRole('dialog', { name: 'Double Down Your Bonus' })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
-        await act(async () => {});
-        expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(4_500);
-        });
-        expect(backend.start).not.toHaveBeenCalled();
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(600);
-        });
-        expect(backend.start).toHaveBeenCalledTimes(1);
-      } finally {
-        vi.useRealTimers();
-      }
     }
   );
   it.each(['mines', 'crossing'] as const)(
@@ -560,6 +530,50 @@ describe('choice games consume wheel-funded entry', () => {
           line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
         )
       ).toBe(true);
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
+    'never starts a %s round by itself: two idle minutes on each entry screen start nothing (R1)',
+    async (game) => {
+      // Dan 2026-09-21, R1: "Games can NEVER auto start." Screen one is the
+      // offer and screen two is the Start plate; neither moves on a clock.
+      vi.useFakeTimers();
+      backend.awardState.mockResolvedValue({
+        enabled: true,
+        award: {
+          id: '00000000-0000-0000-0000-000000000077',
+          game,
+          base_diamonds: 200,
+          entry_diamonds: 100,
+          boost_multiplier: 2,
+          status: 'pending',
+        },
+        gameState: { ...state, diamonds: 10000, max_steps: 3, prizes: [2.2, 2.7, 3.4] },
+        quote: {
+          guarantee: 'super',
+          minimumPayoutChips: 1,
+          mode: CHOICE_MODE[game],
+          plinkoTable: 4,
+        },
+      });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+      expect(backend.start).not.toHaveBeenCalled();
+      expect(backend.navigate).not.toHaveBeenCalled();
+      answerOffer();
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(backend.start).not.toHaveBeenCalled();
+      expect(backend.navigate).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
     }
   );
   it.each(['mines', 'crossing'] as const)(

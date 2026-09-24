@@ -352,6 +352,7 @@ export default function FindPlayerModal({
       >
         <div className={styles.scrollBody}>
           <SpadeConsole
+            onClose={handleClose}
             as="div"
             className={styles.console}
             eyebrow="Network Locator"

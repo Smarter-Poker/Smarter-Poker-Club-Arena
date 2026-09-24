@@ -368,6 +368,7 @@ export function LeaderboardPrizeWizard({
         aria-labelledby="lb-prize-wizard-title"
       >
         <SpadeConsole
+          onClose={saving ? undefined : dismiss}
           crest="flat"
           eyebrow="Prize Program"
           title="Leaderboard Prize Setup"

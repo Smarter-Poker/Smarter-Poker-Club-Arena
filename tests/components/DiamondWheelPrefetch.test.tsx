@@ -146,13 +146,19 @@ const spin = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Spin 100', exact: true }));
   await tick(0);
 };
-/** The wheel lands and its reveal plays out, which is what opens the game. */
+/** The wheel lands on its reveal, and the player's own Play Game opens the
+ *  game (owner ruling 2026-09-21, R9: the reveal never dismisses itself). */
 const land = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Land Wheel' }));
   await act(async () =>
     fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!)
   );
   await tick(0);
+  const play = screen.queryByRole('button', { name: 'Play Game' });
+  if (play) {
+    fireEvent.click(play);
+    await tick(0);
+  }
 };
 
 beforeEach(() => {

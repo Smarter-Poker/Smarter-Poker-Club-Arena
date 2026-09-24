@@ -55,17 +55,20 @@ vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }))
 const CLUB = '00000000-0000-0000-0000-000000000003';
 const SAVED_KEY = `diamond-spins-pending:player-a:${CLUB}:plinko`;
 const AWARD_ID = '00000000-0000-0000-0000-000000000077';
+/** The two boards production has open since 2026-09-21: Super (4) carries
+ *  every half-the-stake floor, Super Double (6) the two thirds a Super award
+ *  with the add-on paid. Diamond (5) is closed and is never offered. */
 const TABLES = [
-  {
-    name: 'Diamond',
-    version: 5,
-    multipliers_cents: PLINKO_TABLES[5].multipliersCents,
-    max_multiplier_cents: 2000,
-  },
   {
     name: 'Super',
     version: 4,
     multipliers_cents: PLINKO_TABLES[4].multipliersCents,
+    max_multiplier_cents: 2000,
+  },
+  {
+    name: 'Super Double',
+    version: 6,
+    multipliers_cents: PLINKO_TABLES[6].multipliersCents,
     max_multiplier_cents: 2000,
   },
 ];
@@ -74,7 +77,7 @@ const state = {
   frozen: false,
   tables: TABLES,
   bets: [{ bet_diamonds: 200, cap_cents: 2000, playable: true }],
-  config: { max_rounds_per_player_per_day: 500 },
+  config: { max_rounds_per_player_per_day: 500, diamonds_per_chip: 100 },
   player: { spendable: 0, is_member: true, rounds_today: 0, seconds_until_next: 0 },
 };
 const award = {
@@ -183,6 +186,9 @@ describe('an error the database answered is an answer', () => {
     startAnswer = () => failure('23503');
     render(<DiamondPlinkoPage />);
     await advance();
+    // Screen two (R6): the player chooses what each drop plays, then drops.
+    fireEvent.click(screen.getByRole('button', { name: '10 Diamonds Per Drop, 10 Drops' }));
+    await advance();
     fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
     await advance();
     expect(starts()).toHaveLength(1);
@@ -262,9 +268,9 @@ describe('an answer this browser cannot verify', () => {
     expect(backend.awardState.mock.calls.length).toBeGreaterThan(reads);
     expect(statusLine()).toHaveTextContent(BONUS_SAVED);
     expect(screen.queryByText('Settling')).toBeNull();
-    // Nothing is dealt or dropped over it.
+    // Nothing is dealt or dropped over it: the plate is still screen one's.
     expect(backend.commit).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
     noCheckControl();
   });
 });

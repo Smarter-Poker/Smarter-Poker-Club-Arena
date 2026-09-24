@@ -1,0 +1,92 @@
+# Apply one merged-but-unapplied migration, from its own bytes.
+#
+# check-migrations-are-live.mjs finds migrations that merged to main and never
+# reached the database. Its remediation line says to apply them with the
+# Supabase MCP apply_migration, which takes the SQL as a call argument - so the
+# applier has to reproduce the file by hand. A 126 KB money migration cannot be
+# retyped safely, and on 2026-09-23 exactly that left the engine unable to ship
+# for five days with 65 stalled tables (see scripts/ci/apply-recorded-migration.mjs).
+#
+# This job reads the file off the checkout and sends it once, in its own single
+# transaction, through the same DATABASE_URL credential boundary the
+# auto-deploy doors gate already uses. Nothing is transcribed.
+#
+# It is DISPATCH ONLY. It has no schedule, no push trigger, and it never
+# discovers work for itself: one run applies exactly the one file it is given.
+# It is not a repair job (CLAUDE.md 10.12) - it writes no money and retries
+# nothing. THE READER is the person who dispatches it: the run's own conclusion
+# is the answer, and the job summary states it.
+name: Apply Merged Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration:
+        description: 'Migration filename under supabase/migrations (e.g. 20260922143541_club_and_union_diamond_commerce.sql)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Read and check only; send nothing'
+        required: false
+        default: false
+        type: boolean
+
+# One applier at a time. Two concurrent DDL transactions would each take their
+# own PostgREST schema reload (~28s on this database).
+concurrency:
+  group: apply-merged-migration
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply ${{ inputs.migration }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the Postgres client library
+        run: npm i pg@8 --no-save --no-audit --no-fund
+
+      - name: Apply the migration
+        id: apply
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -uo pipefail
+          node scripts/ci/apply-recorded-migration.mjs \
+            --migration "${{ inputs.migration }}" \
+            ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Say what happened
+        if: always()
+        run: |
+          set -eu
+          code="${{ steps.apply.outputs.code }}"
+          {
+            echo "### Apply Merged Migration"
+            echo ""
+            echo "- file: \`${{ inputs.migration }}\`"
+            echo "- dry run: \`${{ inputs.dry_run }}\`"
+            case "$code" in
+              0) echo "- result: **APPLIED or ALREADY-APPLIED** (see the log line)";;
+              1) echo "- result: **REFUSED** - nothing committed, or the reason is in the log";;
+              3) echo "- result: **UNKNOWN** - the state could not be read; NOTHING was sent";;
+              *) echo "- result: **UNEXPECTED exit $code**";;
+            esac
+            echo ""
+            echo '```'
+            tail -40 /tmp/apply.log 2>/dev/null || echo "(no log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$code" = "0"

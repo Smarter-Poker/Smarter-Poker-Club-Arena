@@ -38,7 +38,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { mediaUrl } from '../../utils/mediaBase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { ClubsService } from '../../services/ClubsService';
+import { ClubsService, type ClubCreationEligibility } from '../../services/ClubsService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
@@ -87,6 +87,51 @@ const NAME_STATUS_INK = {
   error: 'sc-ink--gold',
 } as const;
 
+/**
+ * What the allowance line says, derived entirely from the server preflight
+ * (fn_get_club_creation_eligibility): its cap, its count and its reason. The
+ * modal holds no number of its own, so it cannot disagree with the create.
+ */
+function allowanceLine(allowance: ClubCreationEligibility): {
+  text: string;
+  ink: string;
+  /** The popup for a refused Create press, or null when creation is allowed. */
+  refusal: string | null;
+} {
+  if (allowance.reason === 'creation_unavailable' || allowance.creationOpen === false) {
+    return {
+      text: 'Club Creation Is Temporarily Unavailable',
+      ink: 'sc-ink--gold',
+      refusal: 'Club Creation Is Temporarily Unavailable. Please Try Again Soon.',
+    };
+  }
+  const atCap =
+    allowance.reason === 'membership_cap' ||
+    (!allowance.canCreate &&
+      allowance.maxClubs !== null &&
+      allowance.membershipCount >= allowance.maxClubs);
+  if (atCap && allowance.maxClubs !== null) {
+    const text = `Membership Limit Reached: You Belong To ${allowance.membershipCount.toLocaleString()} Of ${allowance.maxClubs.toLocaleString()} Clubs`;
+    return {
+      text,
+      ink: 'sc-ink--red',
+      refusal: `${text}. Leave A Club Before Creating Another.`,
+    };
+  }
+  if (!allowance.canCreate) {
+    const text = 'Club Creation Is Not Available Right Now';
+    return { text, ink: 'sc-ink--gold', refusal: `${text}.` };
+  }
+  if (allowance.remaining === null) {
+    return { text: 'Unlimited Club Slots Remaining', ink: 'sc-ink--blue', refusal: null };
+  }
+  return {
+    text: `${allowance.remaining.toLocaleString()} ${allowance.remaining === 1 ? 'Club Slot' : 'Club Slots'} Remaining`,
+    ink: 'sc-ink--blue',
+    refusal: null,
+  };
+}
+
 interface CreateClubModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -113,12 +158,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const [nameStatus, setNameStatus] = useState<
     'idle' | 'checking' | 'available' | 'taken' | 'error'
   >('idle');
-  const [allowance, setAllowance] = useState<{
-    canCreate: boolean;
-    membershipCount: number;
-    maxClubs: number | null;
-    remaining: number | null;
-  } | null>(null);
+  const [allowance, setAllowance] = useState<ClubCreationEligibility | null>(null);
   const [allowanceError, setAllowanceError] = useState(false);
   const [allowanceRetry, setAllowanceRetry] = useState(0);
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
@@ -289,7 +329,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       return;
     }
     if (!allowance?.canCreate) {
-      toast.error('Your four-club allowance is full. Leave a club before creating another.');
+      toast.error(
+        (allowance && allowanceLine(allowance).refusal) ||
+          'Your Club Allowance Is Not Verified Yet. Please Try Again.'
+      );
       return;
     }
     setIsCreating(true);
@@ -374,6 +417,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     !!logoPreview &&
     nameStatus === 'available' &&
     allowance?.canCreate === true;
+  const allowanceStatus = allowance ? allowanceLine(allowance) : null;
 
   return (
     <div className={styles.overlay} onClick={requestClose}>
@@ -387,6 +431,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       >
         <div className={styles.scrollBody}>
           <SpadeConsole
+            onClose={requestClose}
             as="div"
             className={styles.console}
             eyebrow="Club Arena"
@@ -598,10 +643,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             can never scroll out of sight while the name is being typed. */}
         <footer className={styles.pageFooter}>
           <p className={`sc-label ${styles.status}`} aria-live="polite">
-            {allowance ? (
-              <span className="sc-ink--blue">
-                {`${allowance.remaining ?? 'Unlimited'} Club Slots Remaining`}
-              </span>
+            {allowanceStatus ? (
+              <span className={allowanceStatus.ink}>{allowanceStatus.text}</span>
             ) : allowanceError ? (
               <button
                 type="button"

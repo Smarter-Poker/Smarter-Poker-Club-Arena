@@ -426,11 +426,13 @@ export function SignUpHost() {
             itself, and `.btn`'s `justify-content: center` stops the plate's
             grid track from stretching, which collapsed the label's face to a
             fraction of the text and clipped CANCEL and CONFIRM (measured
-            2026-09-13: a 25.8px face under a 36.9px word). The X in the corner is
-            gone: Cancel, Escape and the backdrop all settle FALSE, and a third
-            control on a foot that paints exactly two plates reads as bolted
-            on. */}
+            2026-09-13: a 25.8px face under a 36.9px word). The X in the corner
+            is the console's own painted close zone (Dan 2026-09-23: "an X in
+            the top right of every popup"), and it settles FALSE exactly as
+            Cancel, Escape and the backdrop do - it is not a third foot
+            control. */}
         <SpadeConsole
+          onClose={() => settle(id, false)}
           as="div"
           className="signup-console"
           eyebrow={o.name}

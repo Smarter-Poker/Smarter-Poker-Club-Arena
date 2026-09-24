@@ -140,9 +140,9 @@ const apiNote = (s: string) => s.replace(/[;'"\\]/g, '').slice(0, 500);
 const definitiveRefusal = (message: string): Error & { definitive: true } =>
   Object.assign(new Error(message), { definitive: true as const });
 
-/** Ledger money, always to the hundredth: 5,000.00, never 5,000 beside 32,482.58. */
+/** Ledger money: whole chips print whole (5,000), cents print only when held (32,482.58). */
 const money = (n: number | null | undefined) =>
-  Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString('en-US', {
@@ -708,6 +708,7 @@ export function UnionWalletModal({
     >
       <div className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={requestClose}
           className="uwm-console"
           family="riveted"
           eyebrow={walletLabel}

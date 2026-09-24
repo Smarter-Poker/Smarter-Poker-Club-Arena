@@ -66,10 +66,6 @@ export interface ClubSettings {
   spins_wallet_funding: string;
 }
 
-export interface ClubWithDistance extends Club {
-  distance_km: number;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  UNIONS (Club Networks)
 // ═══════════════════════════════════════════════════════════════════════════════

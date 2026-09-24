@@ -129,6 +129,11 @@ function checkpointSummary(value) {
     // record of what a release stepped over, so a refusal that never happened
     // is still legible afterwards. Carried verbatim; nothing reads it.
     'unresolvableCustody',
+    // Which tables the capture walk refused and under which code, across the
+    // whole fleet rather than the first table alone. One refused release costs
+    // a maintenance break; this is what makes one break read the whole
+    // blocking set. Carried verbatim; nothing reads it.
+    'refusalCensus',
   ]) {
     const item = value?.[key];
     if (

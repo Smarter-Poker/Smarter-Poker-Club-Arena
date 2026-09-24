@@ -1754,7 +1754,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       ? fixedLimitStreetBounds(
           state.actionHistory,
           state.stage,
-          fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage),
+          // KILL POT (kill-v1): the hand's effective small bet.
+          fixedLimitBetSize(
+            this.handController?.getFixedLimitSmallBet?.() ?? this.tableInfo?.big_blind ?? 2,
+            state.stage
+          ),
           state.currentBet
         ).raiseSize
       : 0;
@@ -1889,7 +1893,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       currentBet: state.currentBet,
       playerBet: player.bet,
       playerStack: player.stack,
-      bigBlind: this.tableInfo?.big_blind ?? 2,
+      // The minimum bet unit: a fixed-limit hand's effective small bet (a kill
+      // hand's is raised), otherwise the table's big blind.
+      bigBlind: this.handController?.getFixedLimitSmallBet?.() ?? this.tableInfo?.big_blind ?? 2,
       minRaise: state.minRaise,
       pot: state.pot,
       canCheck: toCall === 0,
@@ -3036,6 +3042,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       maxRaiseTo: boundedActions.maxRaiseTo,
       bettingStructure: boundedActions.structure,
       fixedBetSize: boundedActions.fixedBetSize,
+      // KILL POT (kill-v1): the hand's effective fixed-limit small bet, so the
+      // policy sizes a kill hand exactly as the controller does. Null off limit.
+      fixedLimitSmallBet: handControllerRef.getFixedLimitSmallBet?.() ?? null,
       wagersCapped: boundedActions.wagersCapped,
       commitmentCapRemaining: boundedActions.commitmentCapRemaining,
       pots: handControllerRef

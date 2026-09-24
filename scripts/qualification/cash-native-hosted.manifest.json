@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 155650,
-      "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+      "bytes": 155847,
+      "sha256": "836ea0bd0c34bda8808a700f4933835d22ee99e601db35657b542c1b8846a6f5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -245,6 +245,15 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,
         "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      }
+    }
+  },
+  "killPotTableSettingsIntegration": {
+    "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155650,
+        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
       }
     }
   }

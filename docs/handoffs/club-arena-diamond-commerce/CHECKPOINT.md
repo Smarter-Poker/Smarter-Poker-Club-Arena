@@ -132,19 +132,19 @@ WHERE effective` plus the overlap predicate under the scope lock (D32).
 
 ## Phase state
 
-Updated 2026-09-24, completion pass (branch `feat/diamond-commerce-completion`).
+Updated 2026-09-24 14:20 UTC, after the backend half shipped (#5196).
 
 | Phase                            | State                                                                                                                                                                                                                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0 Discovery, authority, baseline | Done                                                                                                                                                                                                                                                                                                   |
-| 1 Contracts and schema           | Installed: `20260922143541`, `20260924033509`. This branch adds `20260924102040` (refunds, notices, catalog lifecycle, staff reads) and `20260924102056` (admission in shadow), each pinning the live md5 of every function it replaces.                                                               |
+| 1 Contracts and schema           | Installed and read back: `20260922143541`, `20260924033509`, `20260924102040` (14:15 UTC) and `20260924102056` (14:16 UTC). All 65 commerce and door function bodies are md5-identical to the qualified build.                                                                                         |
 | 2 Trial                          | Implemented, Tested. Launch cohort now refuses until the consumer heartbeat is under 10 minutes old and records a launch notice per owner (refunds runner).                                                                                                                                            |
 | 3 Quotes, checkout, exactly-once | Implemented, Tested. Withdrawing a product withdraws its open quotes (D06).                                                                                                                                                                                                                            |
 | 4 Renewals, upgrades, lifecycle  | Implemented, Tested. Sponsors authorize renewals of what they paid for; price-increase and short-balance notices go out before the due date; mandates record terms and ceiling text versions.                                                                                                          |
 | 5 Sponsorship                    | Implemented, Tested for the sponsor's own session (union page Buy For A Covered Club, sponsor renewals).                                                                                                                                                                                               |
 | 6 Reports, assets, refunds       | Refunds: owner request under versioned policy v1, staff decision on the Commerce Desk, execution by the consumer in service context, owed state visible. Reports and assets: not for sale, per-SKU reasons in `evidence/unsupported-offerings.md`.                                                     |
-| 7 Operator UI and catalog admin  | Owner page (refund requests, policy, balance breakdown, sponsor renewals, former-owner receipts, truthful access copy) and staff Commerce Desk at `/commerce-desk` (refund queue, price lifecycle, product support, settings, comparison evidence).                                                    |
-| 8 Qualification                  | 155 + 135 + 24 isolated checks on the production migration order; unit contract tests pin every RPC key and refusal copy against the SQL.                                                                                                                                                              |
+| 7 Operator UI and catalog admin  | Service layer published (`113059a9`). The owner page growth and the staff Commerce Desk are in #5193, blocked on the whole-app bundle ceiling (decision 8). Built:                                                                                                                                     | Owner page (refund requests, policy, balance breakdown, sponsor renewals, former-owner receipts, truthful access copy) and staff Commerce Desk at `/commerce-desk` (refund queue, price lifecycle, product support, settings, comparison evidence). |
+| 8 Qualification                  | 159 + 135 + 30 isolated checks (Prompt 1's registry installed first) on the production migration order; unit contract tests pin every RPC key and refusal copy against the SQL.                                                                                                                        |
 | 9 Readiness                      | `evidence/` holds the C.1 wiring map, traceability register, activation matrix, state diagrams, compatibility/recovery matrix, D80 per-SKU map, economic model, operational metrics; competitor register in `competitor-evidence-2026-09-24.md` (no comparison claim is supportable; badge stays off). |
 | 10 Install, rollout, release     | See the changelog delivery records. Engine releases have failed estate-wide since 2026-09-21 (release workstream, #5161); the consumer ships with the first successful one.                                                                                                                            |
 | 11 Final evidence                | `evidence/` and the changelogs dated 2026-09-24.                                                                                                                                                                                                                                                       |
@@ -227,10 +227,20 @@ describes what exists).
 
 ## Next actions
 
-1. Merge the completion PR; install `20260924102040` then `20260924102056`
-   through Apply Merged Migration; read back every function body against the
-   qualified build.
-2. Withdraw `union_back_office` and `union_insurance_module` from sale
-   (decision 5) and record it.
-3. After the first successful engine release: verify `/health`, the
-   heartbeat, then run the launch cohort and record it.
+1. Done 2026-09-24: #5196 merged (`113059a9`), published (run 36009651551,
+   both build-info endpoints serve `113059a9`, the served Diamond Costs chunk
+   carries the new service), `20260924102040` installed (run 36011338391) and
+   `20260924102056` installed (run 36011474185), read back, and
+   `union_back_office` and `union_insurance_module` withdrawn from sale
+   through `fn_ca_commerce_product_support` (0 open quotes withdrawn).
+   Delivery record: `docs/changelog/2026-09-24-diamond-commerce-backend-delivery.md`.
+2. Owner call: the whole-app bundle ceiling for #5193 (the staff Commerce
+   Desk and the owner page growth, +22 kB gz measured, no duplicated vendor).
+   Once decided, merge #5193 and verify its publication.
+3. After the first successful engine release (release workstream; the engine
+   is still `8825af51`, and the 14:03 UTC deployment-recovery window ended
+   without a new engine): verify `/health`, the consumer heartbeat, then run
+   the launch cohort and record it.
+4. Before enforcement: read the Admission tab; move the two remaining
+   browser-insert privileges (`Users can join clubs`,
+   `tables_insert_owner_or_admin`) behind the doors.

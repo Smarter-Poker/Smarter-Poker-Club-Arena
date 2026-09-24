@@ -53,6 +53,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // and the band between is empty. Do not invent a second predicate here: two
   // definitions of the same fact is how a gate ends up disagreeing with itself.
   const inflightWindowMs = 120000;
+  // How long the successor still reads a parked row's PRESENCE back
+  // (`loadPresenceFromPark`, `PARKED_PRESENCE_FRESH_MS` in
+  // server/src/services/supabase/snapshots.ts). A row older than this is read
+  // for its banks only, which is exactly what a stopped engine's own park
+  // write would have left it with.
+  const parkedPresenceFreshMs = 20 * 60000;
   const filePins = retained8825
     ? [
         [
@@ -211,6 +217,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // ever resolve, and the phase each permit was in when the rows proved the
   // felt quiet. Never read by a decision.
   let unresolvableCustody = null;
+  // Observability only: which dead engines' park rows were PROVED from the
+  // row they had read rather than written again, with what each row held.
+  // Never read by a decision.
+  let provedRows = null;
   const refuse = (code) => {
     if (reason === null) reason = code;
     progress('refused');
@@ -359,6 +369,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ...(unresolvableCustody === null ? {} : { unresolvableCustody }),
     ...(nativeWorkMembers === null ? {} : { nativeWorkMembers }),
     ...(refusalCensus === null ? {} : { refusalCensus }),
+    ...(provedRows === null ? {} : { provedRows }),
   });
 
   try {
@@ -3695,6 +3706,178 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     if (retained8825) await proveBanksHeldNothing(checkAll);
     bankCount = captures.reduce((sum, capture) => sum + Object.keys(capture.banks).length, 0);
     uninitializedSeats = captures.reduce((sum, capture) => sum + capture.uninitialized, 0);
+    /* ═══ A DEAD GENERATION PROVES ITS PARK FROM THE ROW IT READ (2026-09-24) ═══
+
+       Run 36061780372 (the 21:36 recovery window) is the measurement: the
+       first release since 2026-09-22 to clear every capture refusal, every row
+       proof and the previous-work join, and then refuse
+       `native_checkpoint_unconfirmed` after all 83 park writes returned. The
+       Supabase edge logs for those thirteen seconds hold 22 `POST 403
+       engine_presence_parked`, and the Postgres logs hold the same 22 as
+       `TOURNAMENT_MANAGER_FENCED: lease generation is no longer current`,
+       raised by `smarter_private.fn_smarter_data_api_pre_request`. Eleven
+       tables, each written once and once more five seconds on (8825's own
+       `parkWriteRetryMs`), and every one of them a `parkedNoRoster` deferral:
+       a STOPPED, TERMINAL tournament engine whose lease heartbeat stopped on
+       2026-09-22, holding the banks it had read from `engine_presence_parked`
+       at `start()` and never seated anybody to claim. Its
+       `persistPresenceForRestart` is bound to that dead generation
+       (`bindTournamentDataAuthority`), the request carries it, and the
+       database refuses it - CORRECTLY. A generation that is no longer current
+       must not write tournament data; that fence is the platform's own rule
+       and this guard does not argue with it. `savePresenceAtPark` returns
+       false, `parkedBankSaveComplete` stays false, and the whole release
+       refused for a write the database was right to refuse.
+
+       THE WRITE WAS NEVER NEEDED. The deferral above (`deadParkedBanksDeferred`)
+       already says why: 8825's `captureParkedTimeBanks` starts from
+       `{ ...this.parkedTimeBanks }` and this engine seats nobody, so the row
+       the checkpoint would write is the row the engine READ, at the same
+       `handNumber` - on 8825 `parkedTimeBanks` is filled from nowhere but
+       `loadTimeBanksFromPark`, and only when `snapshot.handNumber ===
+       this.handCount`. Writing it again changes nothing the successor will
+       read, and on a dead generation cannot be done at all.
+
+       So the row is asked FIRST, before anything is written. A `parkedNoRoster`
+       capture whose row still says what the engine holds - a snapshot of the
+       shape `loadTimeBanksFromPark` accepts, at the captured hand, every bank
+       the engine holds in it byte for byte, any other entry one the loader
+       would skip as unrestorable, and no presence the successor would still
+       read (`PARKED_PRESENCE_FRESH_MS`) - is NOT written: the row is its
+       proof. A capture whose row does NOT say that stays on the write path
+       exactly as before - a cash engine, or one whose lease is still current,
+       gets its row rewritten and read back inside its own write window; one
+       whose generation is dead gets the same fenced refusal as today, now
+       naming the table, the deferral and which check the row failed. Nothing
+       is admitted on "could not tell": an unreadable row is simply not a
+       proof, and the write path answers instead.
+
+       THIS IS NOT "A DEAD ENGINE IS EXCUSED FROM THE CHECKPOINT". Nothing in
+       the capture walk moves: the engine still has to be stopped, terminal,
+       released, drained, holding no live bank, no metadata and no roster, and
+       the rows still have to prove its felt quiet before anything is written
+       for anyone. A live engine, or a dead one that seats a player, still
+       writes and is still read back inside its own write window, exactly as
+       before. What changes is only that a row the engine cannot rewrite, and
+       need not, is held to the standard the write would have been. */
+    const rowProvedCustody = new Set();
+    const rowUnproven = new Map();
+    const provedDetail = [];
+    {
+      const candidates = captures.filter((capture) =>
+        capture.requiresRow &&
+        /(^|\+)parkedNoRoster:/.test(String(deferredUnresolvableCustody.get(capture.tableId)))
+      );
+      if (candidates.length > 0) progress('proveParkedRows');
+      for (let offset = 0; offset < candidates.length; offset += readPageSize) {
+        checkAll();
+        const page = candidates.slice(offset, offset + readPageSize);
+        const { data, error } = await modules.client.supabase
+          .from('engine_presence_parked')
+          .select('table_id,engine_instance,parked_at,time_bank_snapshot,disconnect_states')
+          .in(
+            'table_id',
+            page.map((capture) => capture.tableId)
+          )
+          .limit(page.length + 1);
+        checkAll();
+        const byId = new Map();
+        const readable = !error && Array.isArray(data) && data.length <= page.length;
+        if (readable) {
+          for (const row of data) {
+            if (record(row) && uuid(row.table_id) && !byId.has(row.table_id))
+              byId.set(row.table_id, row);
+          }
+        }
+        const now = Date.now();
+        for (const captured of page) {
+          const row = readable ? byId.get(captured.tableId) : undefined;
+          const snapshot = row?.time_bank_snapshot;
+          const parkedAt = typeof row?.parked_at === 'string' ? Date.parse(row.parked_at) : NaN;
+          const players = record(snapshot) && record(snapshot.players) ? snapshot.players : {};
+          // What `loadTimeBanksFromPark` keeps: a uuid key and a restorable bank.
+          // Anything else it skipped when this engine read the row, and the
+          // successor will skip it again; an entry it would KEEP that this
+          // engine does not hold is a bank the engine lost, and is not proof.
+          const restorable = (userId, bank) =>
+            uuid(userId) &&
+            validBank(bank) &&
+            (bank.unlimitedActivations === undefined ||
+              typeof bank.unlimitedActivations === 'boolean');
+          const extra = Object.keys(players).filter(
+            (userId) => !Object.hasOwn(captured.banks, userId)
+          );
+          const moved = Object.keys(captured.banks).find(
+            (userId) => canonical(players[userId]) !== canonical(captured.banks[userId])
+          );
+          const kept = extra.find((userId) => restorable(userId, players[userId]));
+          const checks = [
+            ['read', () => readable],
+            ['row.present', () => record(row)],
+            ['row.parked_at', () => Number.isFinite(parkedAt) && parkedAt <= now],
+            ['snapshot.shape', () =>
+              record(snapshot) &&
+              Object.keys(snapshot).sort().join(',') === 'handNumber,parkedAt,players,version' &&
+              snapshot.version === 1 &&
+              typeof snapshot.parkedAt === 'string' &&
+              Date.parse(snapshot.parkedAt) === parkedAt &&
+              record(snapshot.players)],
+            ['snapshot.handNumber', () => snapshot.handNumber === captured.handNumber],
+            ['snapshot.players', () => moved === undefined],
+            ['snapshot.extraPlayers', () => kept === undefined],
+            ['row.disconnect_states', () =>
+              record(row.disconnect_states) &&
+              Object.values(row.disconnect_states).every(record)],
+            // The write would have left an EMPTY presence for a stopped engine.
+            // The row may keep one only if the successor will not read it.
+            ['row.presence', () =>
+              Object.keys(row.disconnect_states).length === 0 ||
+              now - parkedAt > parkedPresenceFreshMs],
+          ];
+          let failed = null;
+          for (const [name, evaluate] of checks) {
+            let holds = false;
+            try {
+              holds = evaluate() === true;
+            } catch {
+              holds = false;
+            }
+            if (!holds) {
+              failed = name;
+              break;
+            }
+          }
+          if (failed === null) {
+            rowProvedCustody.add(captured.tableId);
+            provedDetail.push(
+              `${String(captured.tableId).slice(0, 8)}:${describe(
+                captured.engine.engineLeaseScope
+              )}:banks=${Object.keys(captured.banks).length}:extra=${extra.length}:states=${
+                Object.keys(row.disconnect_states).length
+              }:age=${Math.round((now - parkedAt) / 60000)}m`
+            );
+          } else {
+            rowUnproven.set(captured.tableId, failed);
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        const scopes = new Map();
+        for (const capture of candidates) {
+          if (!rowProvedCustody.has(capture.tableId)) continue;
+          const scope = describe(capture.engine.engineLeaseScope);
+          scopes.set(scope, (scopes.get(scope) ?? 0) + 1);
+        }
+        provedRows = `tables=${rowProvedCustody.size}/${candidates.length} ${[...scopes]
+          .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+          .map(([scope, count]) => `${scope}=${count}`)
+          .join(' ')} ${[...rowUnproven]
+          .map(([tableId, failed]) => `${String(tableId).slice(0, 8)}:unproven=${failed}`)
+          .join(' ')} ${provedDetail.join(' ')}`
+          .replace(/ {2,}/g, ' ')
+          .slice(0, 512);
+      }
+    }
     stage = 'checkpoint';
     progress('checkpoint');
     let next = 0;
@@ -3705,6 +3888,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           checkMaintenance();
           checkEngine(captured);
           if (!captured.requiresRow) continue;
+          if (rowProvedCustody.has(captured.tableId)) continue;
           captured.writeStartedAt = Date.now();
           attemptedTables++;
           progress();
@@ -3718,7 +3902,25 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           captured.writeEndedAt = Date.now();
           checkMaintenance();
           checkEngine(captured);
-          require(captured.engine.parkedBankSaveComplete === true, 'native_checkpoint_unconfirmed');
+          // The same condition and the same code as before; this names the
+          // table whose write the engine did not confirm, which the process-wide
+          // require never did (run 36061780372 refused 83 tables and named none).
+          witness(
+            'native_checkpoint_unconfirmed',
+            [['engine.parkedBankSaveComplete', () => captured.engine.parkedBankSaveComplete === true]],
+            () => ({
+              failedTable: captured.tableId,
+              observedDetail: [
+                `stopped=${captured.stopped}`,
+                `scope=${describe(captured.engine.engineLeaseScope)}`,
+                `banks=${Object.keys(captured.banks).length}`,
+                `states=${Object.keys(captured.states).length}`,
+                `deferred=${String(deferredUnresolvableCustody.get(captured.tableId) ?? 'none')}`,
+                `rowProof=${rowUnproven.get(captured.tableId) ?? 'not_asked'}`,
+                `durability=${describe(captured.engine.maintenanceDurabilityReason?.() ?? 'unknown')}`,
+              ].join(','),
+            })
+          );
         } catch {
           if (reason === null) reason = 'native_checkpoint_failed';
         }
@@ -3730,7 +3932,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
 
     stage = 'readback';
     progress('readback');
-    const written = captures.filter((capture) => capture.requiresRow);
+    const written = captures.filter(
+      (capture) => capture.requiresRow && !rowProvedCustody.has(capture.tableId)
+    );
     for (let offset = 0; offset < written.length; offset += readPageSize) {
       checkAll();
       const page = written.slice(offset, offset + readPageSize);
@@ -3787,8 +3991,39 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     }
     verifyFiles();
     checkAll();
-    require(captures.every(({ engine }) =>
-      engine.isMaintenanceStateDurable() === true), 'native_readiness_refused');
+    /* The same condition and the same code as the process-wide require this
+       replaces, per table, naming the table and the engine's own reason. A
+       dead generation whose row was proved above is the ONE admitted
+       exception, and only for the ONE reason its unwritten park produces on
+       8825 (`maintenanceDurabilityReason`: `parkedTimeBanks` non-empty and
+       `parkedBankSaveComplete` false -> `bank_park_write_incomplete`). Every
+       other reason, on every other table, refuses exactly as before; the
+       process's own `readyForRestart()` never counted a stopped engine's
+       durability at all (8825 `unparkedTables`: `if (!engine.isRunning())
+       continue`), so nothing this admits is something the engine refused. */
+    for (const captured of captures) {
+      const durable = captured.engine.isMaintenanceStateDurable() === true;
+      if (durable) continue;
+      const durability = captured.engine.maintenanceDurabilityReason?.() ?? 'unknown';
+      witness(
+        'native_readiness_refused',
+        [['engine.isMaintenanceStateDurable', () =>
+          rowProvedCustody.has(captured.tableId) &&
+          captured.stopped === true &&
+          durability === 'bank_park_write_incomplete']],
+        () => ({
+          failedTable: captured.tableId,
+          observedDetail: [
+            `durability=${describe(durability)}`,
+            `stopped=${captured.stopped}`,
+            `scope=${describe(captured.engine.engineLeaseScope)}`,
+            `banks=${Object.keys(captured.banks).length}`,
+            `rowProved=${rowProvedCustody.has(captured.tableId)}`,
+            `deferred=${String(deferredUnresolvableCustody.get(captured.tableId) ?? 'none')}`,
+          ].join(','),
+        })
+      );
+    }
     /* THE SAME TRAP, ONE LEVEL UP (CLAUDE.md 10.86 rule 4). The engine's own
        `readyForRestart()` is asked first and is still the authority. On a
        predecessor whose `unparkedTables()` has no bound - 8825af51 is one, and

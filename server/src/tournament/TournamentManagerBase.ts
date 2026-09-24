@@ -148,6 +148,11 @@ import {
 } from '../observability/liveTableFormat.js';
 import { launchStacksMeetFundingFloor } from './tournamentLaunchStackProof.js';
 import { isUuidShape } from '../lib/uuidShape.js';
+import {
+  AbandonedGenerationRefusedError,
+  abandonedPermitGeneration,
+  closeAbandonedGeneration,
+} from './abandonedGenerationDoor.js';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -5438,6 +5443,165 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * The adoption that already asked the abandoned-generation door. Its own
+   * second pass, which starts again from the event row, does not ask again.
+   */
+  private abandonedGenerationsAskedFor: TournamentLifecycleToken | null = null;
+  /** Tables read at once while an adoption looks for dead generations. */
+  static readonly ABANDONED_GENERATION_READ_CONCURRENCY = 4;
+  /**
+   * How often one adoption asks the door about one dead generation when the
+   * answer says nothing about the hand (a lane it would not wait for, a lost
+   * connection), and the pause before asking again. A rule the door names
+   * is never asked twice.
+   */
+  static readonly ABANDONED_GENERATION_ATTEMPTS = 3;
+  static readonly ABANDONED_GENERATION_RETRY_MS = 1_000;
+
+  /**
+   * Find every earlier generation of this event that left a reserved hand on
+   * one of these tables, and ask the abandoned-generation door to decide it.
+   * Returns true when the door answered with a decision (made now, replayed,
+   * or made by another receipt since the tables were read): the event row
+   * may have moved, and the caller must read it again before adopting it.
+   */
+  private async decideAbandonedGenerations(
+    lifecycle: TournamentLifecycleToken,
+    tableIds: readonly string[]
+  ): Promise<boolean> {
+    const leaseGeneration = this.tournamentLeaseGeneration;
+    if (!leaseGeneration || tableIds.length === 0) return false;
+    const blocked = new Map<string, string[]>();
+    let next = 0;
+    const readTables = async (): Promise<void> => {
+      while (next < tableIds.length && this.lifecycleIsCurrent(lifecycle)) {
+        const tableId = tableIds[next++];
+        let state: unknown = null;
+        try {
+          const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {
+            p_tournament_id: this.tournamentId,
+            p_lease_generation: leaseGeneration,
+            p_table_id: tableId,
+          });
+          if (!error) state = data;
+        } catch {
+          // Unread is not decided: the table's own admission reads it again
+          // and refuses exactly as it did before.
+        }
+        const generation = abandonedPermitGeneration(
+          state,
+          this.tournamentId,
+          tableId,
+          leaseGeneration
+        );
+        if (generation) blocked.set(generation, [...(blocked.get(generation) ?? []), tableId]);
+      }
+    };
+    await Promise.all(
+      Array.from(
+        {
+          length: Math.min(
+            TournamentManagerBase.ABANDONED_GENERATION_READ_CONCURRENCY,
+            tableIds.length
+          ),
+        },
+        readTables
+      )
+    );
+    this.assertLifecycleCurrent(lifecycle);
+    let decided = false;
+    for (const [generation, tables] of blocked) {
+      if (await this.decideAbandonedGeneration(lifecycle, generation, tables, leaseGeneration))
+        decided = true;
+    }
+    return decided;
+  }
+
+  private async decideAbandonedGeneration(
+    lifecycle: TournamentLifecycleToken,
+    generation: string,
+    tables: readonly string[],
+    leaseGeneration: string
+  ): Promise<boolean> {
+    let retainedFinished = false;
+    let attempt = 0;
+    for (;;) {
+      this.assertLifecycleCurrent(lifecycle);
+      // The door refuses while the platform is frozen, and an adoption must
+      // never wait on the freeze: it would hold every healthy table of this
+      // event, and a resume slot, until the thaw. The table stays exactly as
+      // blocked as it was before this door existed; the next adoption asks.
+      if (isMaintenanceFrozen()) {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
+            `left a reserved hand on ${tables.length} table(s) - not asked during the maintenance freeze`
+        );
+        return false;
+      }
+      attempt += 1;
+      try {
+        const outcome = await closeAbandonedGeneration(
+          async (_door, args) => {
+            const { data, error } = await supabase.rpc('fn_f06_abort_abandoned_generation', args);
+            return { data, error };
+          },
+          this.tournamentId,
+          generation,
+          leaseGeneration
+        );
+        this.assertLifecycleCurrent(lifecycle);
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
+            `left a reserved hand on ${tables.length} table(s) - ${outcome}`
+        );
+        return true;
+      } catch (error) {
+        this.assertLifecycleCurrent(lifecycle);
+        const refused = error instanceof AbandonedGenerationRefusedError ? error : null;
+        if (refused?.refusal === 'retained_submission' && !retainedFinished) {
+          // The hand has an original the table's admission finishes first.
+          // Finish it the same way now, then ask once more.
+          retainedFinished = true;
+          for (const tableId of tables) {
+            try {
+              await resumeRetainedHandSubmission(tableId, INSTANCE_ID, leaseGeneration);
+            } catch {
+              // Pending or unreadable: the door refuses again and the
+              // table's own admission handles it exactly as before.
+            }
+            this.assertLifecycleCurrent(lifecycle);
+          }
+          continue;
+        }
+        if (
+          refused?.refusal === 'transient' &&
+          attempt < TournamentManagerBase.ABANDONED_GENERATION_ATTEMPTS
+        ) {
+          await new Promise<void>((resolve) => {
+            const pause = setTimeout(
+              resolve,
+              TournamentManagerBase.ABANDONED_GENERATION_RETRY_MS * attempt
+            );
+            pause.unref?.();
+          });
+          continue;
+        }
+        // Whatever went wrong, adoption goes on: this table stays exactly as
+        // blocked as it was before this door existed, and the next adoption
+        // asks again.
+        reportError(error, 'Tournament.abandoned_generation_refused', {
+          tournamentId: this.tournamentId,
+          generation,
+          tables,
+          code: refused?.code ?? 'unexpected',
+          refusal: refused?.refusal ?? 'unexpected',
+        });
+        return false;
+      }
+    }
+  }
+
   async resume(): Promise<void> {
     if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
@@ -5524,6 +5688,31 @@ export abstract class TournamentManagerBase {
         throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
       if (!Array.isArray(tables))
         throw new Error('Tournament resume table inventory was unreadable');
+
+      /**
+       * A DEAD GENERATION'S HAND IS DECIDED BEFORE THIS ONE ADOPTS THE CLOCK
+       * (2026-09-22). A table where an earlier generation of this event left
+       * a reserved hand refused every dealer this generation admitted, for
+       * the rest of its life (tournament/abandonedGenerationDoor.ts). The
+       * abandoned-generation door decides that hand, and in the same
+       * transaction may return the event's blind level to where play
+       * stopped and re-stake every table. So it is asked here, before any
+       * dealer exists, and when it decided anything this adoption starts
+       * again from the event row: the clock, the blinds and the inventory
+       * are then the ones the door left, never the ones read before it.
+       */
+      if (this.abandonedGenerationsAskedFor !== lifecycle) {
+        this.abandonedGenerationsAskedFor = lifecycle;
+        if (
+          await this.decideAbandonedGenerations(
+            lifecycle,
+            tables.map((table) => String(table.id))
+          )
+        ) {
+          await this.resumeLifecycle(lifecycle);
+          return;
+        }
+      }
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.

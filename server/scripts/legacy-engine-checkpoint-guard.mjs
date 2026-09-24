@@ -267,6 +267,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // outcome moves, and the walk that fills it is followed immediately by the
   // same throw the first refusal raised, so nothing is captured, proved or
   // written after it.
+  // Observability only: WHAT is inside the rejections the previous-work join
+  // meets, whether it refuses on them or steps over them. Never read by a
+  // decision.
+  let nativeWorkMembers = null;
   let refusalCensus = null;
   const censusByCode = new Map();
   const censusTables = [];
@@ -314,6 +318,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
     ...(bankDisposition === null ? {} : { bankDisposition }),
     ...(unresolvableCustody === null ? {} : { unresolvableCustody }),
+    ...(nativeWorkMembers === null ? {} : { nativeWorkMembers }),
     ...(refusalCensus === null ? {} : { refusalCensus }),
   });
 
@@ -3196,13 +3201,114 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return false;
       }
     };
-    const unfulfilled = previousWork
+    /* ═══ WHAT IS ACTUALLY INSIDE THE REJECTION (2026-09-24) ═══
+
+       #5198 named the eight tables whose teardown did not come back and the
+       sentence each engine wrote. #5201 read `performStop` and bounded them,
+       on the argument that the AggregateError it throws collects from exactly
+       three places and that none of the three can hide an unwritten money
+       fact on 8825. That argument is made from SOURCE. Nothing in the record
+       says what the members of those eight aggregates actually were, so
+       nothing confirms it from the running fleet, and a release that steps
+       over a rejection leaves no account of what it stepped over.
+
+       This is that account, and it covers BOTH sets: the joins that still
+       refuse, and the teardowns the deferral above admitted. The second set
+       is the more important one, by the rule the guard already applies to
+       `unresolvableCustody` - the record of a refusal that did not happen
+       still has to reach a reader - so this is emitted on the path that
+       proceeds as well as the path that refuses.
+
+       Observability only. It reads rejections `Promise.allSettled` has
+       already settled, in the order the filter above visited them; nothing is
+       joined twice, no promise is created, `deadTeardownFailureDeferred` is
+       called exactly once per teardown rejection exactly as before, and no
+       condition, code or order moves.
+
+       WHAT TRAVELS. A member's TYPE and its structured CODE are written by
+       the runtime, not by a player: `AggregateError`, `PostgrestError`,
+       `23505`, `PGRST116`, an HTTP status. Both are held to an identifier
+       character class and a length, so a type-shaped or code-shaped value
+       that is not one reduces to `unknown` or `none` rather than carrying
+       what it holds. A member's MESSAGE goes through the same `words`
+       reduction as the aggregate's: letters, spaces and underscores only, so
+       no user id, table id, hand number, amount, card or token can travel
+       through it. Signatures and sentences are counted and de-duplicated, so
+       eight copies of one failure cost one. */
+    const memberName = (value) => {
+      try {
+        if (value === null || value === undefined) return describe(value);
+        const name = typeof value.name === 'string' ? value.name : value.constructor?.name;
+        return typeof name === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(name)
+          ? name
+          : 'unknown';
+      } catch {
+        return 'unreadable';
+      }
+    };
+    const memberCode = (value) => {
+      try {
+        const code = value?.code ?? value?.status ?? null;
+        if (typeof code === 'number' && Number.isSafeInteger(code) && code >= 0) return String(code);
+        return typeof code === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(code) ? code : 'none';
+      } catch {
+        return 'unreadable';
+      }
+    };
+    // An `AggregateError`'s members, or the rejection itself when it carries
+    // none. A member that is itself an aggregate is NOT unwrapped further: one
+    // level is what `performStop` builds, and an unbounded walk is not.
+    const membersOf = (reason) => {
+      try {
+        if (Array.isArray(reason?.errors)) return reason.errors.slice(0, maxEntriesPerTable);
+        return reason === null || reason === undefined ? [] : [reason];
+      } catch {
+        return [];
+      }
+    };
+    const rejected = previousWork
       .map((entry, index) => ({ entry, ...previousJoins[index] }))
-      .filter(
-        ({ entry, capture, join }) =>
-          entry.status !== 'fulfilled' &&
-          !(join === 'teardown' && deadTeardownFailureDeferred(capture, entry.reason))
-      );
+      .filter(({ entry }) => entry.status !== 'fulfilled');
+    const unfulfilled = rejected.filter(
+      ({ entry, capture, join }) =>
+        !(join === 'teardown' && deadTeardownFailureDeferred(capture, entry.reason))
+    );
+    if (rejected.length > 0) {
+      try {
+        const signatures = new Map();
+        const sentences = new Map();
+        const refusing = new Set(unfulfilled);
+        let members = 0;
+        for (const item of rejected) {
+          const prefix = refusing.has(item) ? 'r' : 'd';
+          for (const member of membersOf(item.entry.reason)) {
+            members++;
+            const signature = `${prefix}.${memberName(member)}(${memberCode(member)})`;
+            signatures.set(signature, (signatures.get(signature) ?? 0) + 1);
+            const sentence = words(member?.message).slice(0, 48);
+            sentences.set(sentence, (sentences.get(sentence) ?? 0) + 1);
+          }
+        }
+        const ranked = (entries) =>
+          [...entries].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+        nativeWorkMembers = [
+          `joins=${rejected.length}`,
+          `deferredJoins=${rejected.length - unfulfilled.length}`,
+          `refusingJoins=${unfulfilled.length}`,
+          `members=${members}`,
+          ...ranked(signatures).map(([signature, count]) => `${signature}=${count}`),
+          `words=${ranked(sentences)
+            .slice(0, 6)
+            .map(([sentence]) => sentence)
+            .join('/')}`,
+        ]
+          .join(' ')
+          .slice(0, 512);
+      } catch {
+        // An unreadable witness is never a decision, and never a blank record.
+        nativeWorkMembers = 'members=unreadable';
+      }
+    }
     if (unfulfilled.length > 0) {
       const first = unfulfilled[0];
       const counted = (join) => unfulfilled.filter((item) => item.join === join).length;
@@ -3228,6 +3334,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               : 'none'
           }`,
           `reason=${words(first.entry.reason?.message)}`,
+          `members=${membersOf(first.entry.reason).length}`,
           `tables=${unfulfilled
             .slice(0, 12)
             .map((item) => `${String(item.capture.tableId).slice(0, 8)}:${item.join}`)

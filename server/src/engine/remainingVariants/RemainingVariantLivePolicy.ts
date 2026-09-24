@@ -176,7 +176,9 @@ export function evaluateRemainingVariantPolicy(
   )
     return finish('invalid_wager_geometry');
   const limit = pack.structure === 'fixed_limit';
-  const fixedSize = s.bigBlind * (['turn', 'river'].includes(s.stage) ? 2 : 1);
+  // KILL POT (kill-v1): a kill hand is sized from its effective small bet.
+  const fixedSize =
+    (s.fixedLimitSmallBet ?? s.bigBlind) * (['turn', 'river'].includes(s.stage) ? 2 : 1);
   const fixedRaise = limit
     ? fixedLimitStreetBounds(s.actionHistory ?? [], s.stage, fixedSize, s.currentBet).raiseSize
     : 0;

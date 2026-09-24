@@ -16,6 +16,7 @@ import {
 } from './RemainingVariantSampler.js';
 import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
 import { HorseLogic } from '../HorseLogic.js';
+import { calculatePots, calculateContestablePot } from '../PokerEngine.js';
 
 const variants = ['short_deck', 'pineapple', 'flh', 'flo8'] as const;
 describe('remaining variant first-round core', () => {
@@ -217,6 +218,38 @@ describe('remaining variant first-round core', () => {
         evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'candidate', () => 0)
           .receipt.fired
       ).toBe(false);
+    }
+  );
+  it.each(['flh', 'flo8'] as const)(
+    "%s kill hand (kill-v1): geometry is sized from the hand's effective small bet",
+    (variant) => {
+      // The flop of a FULL kill hand at a 2 big blind: the small bet is 4, the
+      // villain bet 4, and the controller offers exactly one raise, to 8.
+      const s = remainingVariantSpot(variant, 'flop');
+      const villain = s.state.players[1];
+      villain.bet = 4;
+      villain.totalInvested = 24;
+      s.state.actionHistory![s.state.actionHistory!.length - 1].amount = 4;
+      s.state.currentBet = 4;
+      s.state.minRaise = 4;
+      s.state.lastRaise = 4;
+      s.state.pot = s.state.players.reduce((n, p) => n + p.totalInvested, 0);
+      s.state.pots = calculatePots(s.state.players);
+      s.state.contestablePot = calculateContestablePot(s.state.players, 'hero', 4);
+      s.state.toCall = 4;
+      s.state.fixedBetSize = 4;
+      s.state.minRaiseTo = 8;
+      s.state.maxRaiseTo = 8;
+      s.state.fixedLimitSmallBet = 4;
+      const run = () =>
+        evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0).receipt
+          .reason;
+      expect(run()).not.toBe('fixed_limit_geometry_unavailable');
+      // Sized from the table's big blind instead, the same hand is refused:
+      // that was the horse's view of a kill hand before the effective size
+      // travelled with the state.
+      delete s.state.fixedLimitSmallBet;
+      expect(run()).toBe('fixed_limit_geometry_unavailable');
     }
   );
   it('binds Pineapple discard choices to only the flop and validates all three card choices', () => {

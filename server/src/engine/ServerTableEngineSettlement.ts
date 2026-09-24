@@ -1444,6 +1444,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // the barrier, so chain it - the loop may deal only when BOTH the rest of
     // this method and every post-hand task are done reading this hand's
     // capture fields.
+    // KILL POT (kill-v1): the trigger is evaluated once, here, from this hand's
+    // authoritative settlement, and its record rides into the hand's own row.
+    this.settleKillPot();
     const priorBarrier = this.postHandTasksPromise;
     const postTasks = this.postHandTasks(players, persistenceGeneration).catch((err) => {
       this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
@@ -1585,6 +1588,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       communityCards2: [...this.currentHandCommunityCards2],
       communityCards3: [...this.currentHandCommunityCards3],
       bombPot: this.currentHandBombPot,
+      // KILL POT: this hand's kill_pot record (kill hand, next kill, cancellation).
+      killPot: this.currentHandKillRecord,
       ritExtraBoards: this.currentHandRitExtraBoards,
       ritBoards: this.currentHandRitBoards,
       startedAt: this.currentHandStartedAt,
@@ -1970,6 +1975,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        `rake_records`, `rake_attributions` or `bbj_contributions`, so the
        booking and history land together under exactly this id. */
     const v_handId = randomUUID();
+    // KILL POT: a kill this hand triggers is keyed to the row it is written in.
+    const killPotRecord = this.killSchedule.bindTriggerHandId(
+      snap.handNumber,
+      v_handId,
+      snap.killPot
+    );
     // A response-body timeout may replay the exact RPC. Time is part of the
     // accepted-hand payload hash, so freeze it once; recomputing Date.now()
     // on retry turns a committed hand into a deterministic payload conflict.
@@ -2282,6 +2293,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // (trigger reason, ante, board count - spec §20).
             communityCards3: snap.communityCards3,
             bombPot: snap.bombPot,
+            // KILL POT (kill-v1): null on a hand that neither played, set nor
+            // cancelled a kill. The atomic insert names only real columns.
+            killPot: killPotRecord,
             // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
             // rit_board_N pseudo-actions in `actions` stay for old readers.
             ritBoards: snap.ritExtraBoards,

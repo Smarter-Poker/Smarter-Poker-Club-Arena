@@ -914,8 +914,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             'false'
           );
           const terminalBoundaryPersistenceFailed = engine.terminalBoundaryPersistenceFailed;
+          // Every other conjunct of "dead" was refused on above, and a failed
+          // boundary on such an engine is deferred to the row proof rather than
+          // refused for ever (see `failedBoundaryOnDeadEngine`). `true` on any
+          // engine that is not dead, and anything that is not a boolean, keep
+          // this refusal exactly as it was.
+          const failedBoundaryDeferred =
+            terminalBoundaryPersistenceFailed === true &&
+            failedBoundaryOnDeadEngine(tableId, engine);
           drained(
-            terminalBoundaryPersistenceFailed === false,
+            terminalBoundaryPersistenceFailed === false || failedBoundaryDeferred,
             'engine.terminalBoundaryPersistenceFailed',
             terminalBoundaryPersistenceFailed,
             'false'
@@ -1100,7 +1108,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // exists to hand over, not work still draining - every other drain
           // predicate above has already proved nothing is in flight, and a
           // boundary that was attempted and lost would have set
-          // `terminalBoundaryPersistenceFailed`, which is refused above.
+          // `terminalBoundaryPersistenceFailed`, which is refused above unless
+          // the engine is dead, and then only after the rows prove the felt
+          // quiet in `proveUnresolvableCustody`, before anything is written.
           //
           // The phase that holds it is `attempted`, and only `attempted`.
           // `beginTerminalBoundaryPersistence` has exactly one call site,
@@ -1207,8 +1217,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                   f06HandPreparation === null &&
                   f06RecoveryInFlight === false &&
                   // "Did not succeed" is a different claim, checked one step
-                  // earlier. An abandoned boundary never asserts it.
-                  terminalBoundaryPersistenceFailed === false,
+                  // earlier: on this dead engine it is deferred to the same
+                  // row proof, and anything else refused there.
+                  (terminalBoundaryPersistenceFailed === false || failedBoundaryDeferred),
                 'engineCollection.abandonedShape',
                 size,
                 'an unreachable generation on a fenced, fully drained engine',
@@ -2160,6 +2171,56 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return false;
       }
     };
+    /* ═══ A FAILED BOUNDARY ON AN ENGINE THAT WILL NEVER RUN AGAIN (2026-09-23) ═══
+
+       `terminalBoundaryPersistenceFailed` is set by the engine when a hand
+       fails to start or to settle its boundary, and it is cleared only by that
+       same engine completing a later boundary. On build 8825af51, which is what
+       production runs, a STOPPED, TERMINAL engine never deals again, so the
+       flag can never clear. Every release was refused on it with
+       `captureEngine.engine_work_not_drained` and the detail
+       `stopped=true,terminal=true,seats=3,banks=0,f06=true/false,
+       permitPhase=attempted,settling=0,postTasks=false,moves=0,boundary=0/true,
+       accounting=0`: the only term that failed was this flag, the only thing
+       that can clear it is replacing the process, and the refusal prevented
+       exactly that replacement. The same fail-closed-for-ever shape, on the
+       same shared resource, that `deadEngineCustody` bounds for a permit.
+
+       What the flag says is "a boundary for some hand may not have been
+       recorded". That is a question about a hand in the air, and it is
+       answered the one way this file answers it: from rows. The table is
+       DEFERRED into `deferredUnresolvableCustody`, and `proveUnresolvableCustody`
+       refuses the whole checkpoint unless the database shows no fresh
+       incomplete hand for it, BEFORE anything is written.
+
+       "Dead" is the conjunction `boundaryGenerationsAllowed` already applies
+       and `deadEngineCustody` shares - stopped, terminal, no hand controller,
+       no recovery in flight, a readable empty live bank map - and nothing
+       wider. It says nothing about a permit, because the flag is independent
+       of one; the F06 require above has already refused any permit it does
+       not own. Every other drain term in each caller still refuses on its own:
+       settlement, post-hand tasks, move operations, accounting, a live engine
+       and a stopped one that has not released. A flag that is not exactly
+       `true` or `false` is unreadable and keeps the original refusal. */
+    const failedBoundaryOnDeadEngine = (tableId, engine) => {
+      try {
+        if (
+          engine.terminalBoundaryPersistenceFailed !== true ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.handController !== null ||
+          engine.f06RecoveryInFlight !== false ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0
+        )
+          return false;
+        deferredUnresolvableCustody.set(tableId, `${permitPhaseOf(engine)}/boundaryFailed`);
+        return true;
+      } catch {
+        // Unreadable is never "dead". It keeps the original refusal.
+        return false;
+      }
+    };
     /* ═══ THE SAME THREE OUTCOMES, IN THE OTHER CAPTURE (2026-09-23) ═══
 
        `physical()` has carried a three-way rule on
@@ -2201,7 +2262,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         if (
           collection.size > maxEntriesPerTable ||
           !generations.every((value) => Number.isSafeInteger(value) && value > 0) ||
-          engine.terminalBoundaryPersistenceFailed !== false ||
+          (engine.terminalBoundaryPersistenceFailed !== false &&
+            !failedBoundaryOnDeadEngine(tableId, engine)) ||
           engine.running !== false ||
           engine.terminal !== true ||
           engine.handController !== null ||
@@ -2330,7 +2392,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         engine.terminalBoundaryPendingGenerations instanceof Set &&
         engine.terminalBoundaryPendingGenerations.size <=
           boundaryGenerationsAllowed(tableId, engine) &&
-        engine.terminalBoundaryPersistenceFailed === false, 'engine_work_not_drained');
+        (engine.terminalBoundaryPersistenceFailed === false ||
+          failedBoundaryOnDeadEngine(tableId, engine)), 'engine_work_not_drained');
       require(Number.isSafeInteger(engine.handCount) &&
         engine.handCount >= 0 &&
         Array.isArray(engine.seatedPlayers) &&

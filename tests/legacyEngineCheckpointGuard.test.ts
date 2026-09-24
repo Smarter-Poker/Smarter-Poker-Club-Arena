@@ -800,11 +800,55 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.snapshotReads).toEqual([]);
   });
 
-  it('a failed boundary persistence is never an allowance', async () => {
+  // A failed boundary persistence is never waved through. On a DEAD engine it
+  // is deferred to the row proof (2026-09-23, see the 8825 cases below); on a
+  // live one it keeps the flat refusal it has always had.
+  it('a failed boundary persistence on a dead engine is proved from rows, never waved through', async () => {
     const f = fixture(2, checkpoint758);
     deadWithBoundary(f, [7]);
     f.first.terminalBoundaryPersistenceFailed = true;
     f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    expect(await f.run()).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:attempted/boundaryFailed`,
+    });
+    expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
+  });
+
+  it('a failed boundary persistence on a dead engine with a hand in the air refuses', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithBoundary(f, [7]);
+    f.first.terminalBoundaryPersistenceFailed = true;
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    f.onSnapshots((ids) => ({
+      data: [
+        { table_id: ids[0], hand_number: 3, stage: 'turn', updated_at: new Date().toISOString() },
+      ],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a failed boundary persistence on a LIVE engine is never an allowance', async () => {
+    const f = fixture(2, checkpoint758);
+    f.first.terminalBoundaryPersistenceFailed = true;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_work_not_drained',
+      failedTable: f.first.tableId,
+    });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a failed boundary flag that is not a boolean is unreadable, and refuses', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    (f.first as any).terminalBoundaryPersistenceFailed = 'true';
     expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
     expect(f.snapshotReads).toEqual([]);
   });
@@ -2266,15 +2310,57 @@ describe('exact 8825 retained original custody retirement', () => {
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(3);
   });
-  it('still refuses a failed terminal boundary on an interrupted original', async () => {
+  /* A FAILED BOUNDARY ON A DEAD ORIGINAL (2026-09-23). `physical()` carried
+     the same flat `=== false` the capture did, so fixing only the capture
+     would move the refusal one check up (CLAUDE.md 10.86 rule 4). Every other
+     conjunct of "dead" is refused on before this field, so the flag alone is
+     deferred to the same row proof, which runs before anything is written and
+     before the disposition proof that still demands its receipt. */
+  it('proves a failed terminal boundary on an interrupted original from rows before retiring it', async () => {
+    const f = mixedFixture();
+    interruptMidHand(f);
+    const original = f.originals[0].engine;
+    original.terminalBoundaryPersistenceFailed = true;
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${original.tableId}:attempted/boundaryFailed`,
+    });
+    expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([original.tableId]);
+    expect(f.receipts.size).toBe(2);
+    // The guard proves, it never edits.
+    expect(original.terminalBoundaryPersistenceFailed).toBe(true);
+  });
+  it('refuses a failed terminal boundary on an interrupted original with a hand in the air', async () => {
     const f = mixedFixture();
     interruptMidHand(f);
     f.originals[0].engine.terminalBoundaryPersistenceFailed = true;
+    f.onSnapshots((ids: string[]) => ({
+      data: [
+        { table_id: ids[0], hand_number: 3, stage: 'turn', updated_at: new Date().toISOString() },
+      ],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.calls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('still refuses a failed terminal boundary on an original that holds a live bank', async () => {
+    const f = mixedFixture();
+    interruptMidHand(f);
+    const original = f.originals[0].engine;
+    original.terminalBoundaryPersistenceFailed = true;
+    original.timeBankEngine.playerBanks.set(`${original.tableId}:x`, { isActive: false });
     expect(await f.run()).toMatchObject({
       ok: false,
       reason: 'mixed_original_work_not_drained',
       failedCheck: 'engine.terminalBoundaryPersistenceFailed',
     });
+    expect(f.snapshotReads).toEqual([]);
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(3);
   });
@@ -2781,6 +2867,180 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(result).toMatchObject({ ok: false, reason: 'engine_state_changed' });
   });
 
+  /* ═══ A DEAD ENGINE WITH A FAILED BOUNDARY DOES NOT HOLD THE RELEASE (2026-09-23) ═══
+
+     Every engine release was refused at this capture with
+     `captureEngine.engine_work_not_drained` and the detail
+     `stopped=true,terminal=true,scope=tournament,seats=3,banks=0,
+     f06=true/false,permitPhase=attempted,settling=0,postTasks=false,moves=0,
+     boundary=0/true,accounting=0`. The only failing term was
+     `terminalBoundaryPersistenceFailed === false`, and on 8825af51 a stopped
+     engine never clears it, so the refusal was for ever. It is now deferred
+     to the row proof; a hand in the air still refuses, and so does every
+     engine that is not dead. */
+  const deadFailedBoundary = (f: any, n: number) => {
+    const q = quarantined(f, n);
+    const { e } = q;
+    // seats=3, banks=0: the roster and metadata the stop left behind.
+    for (const k of [1, 2]) {
+      const userId = uuid(76000 + n * 10 + k);
+      e.seatedPlayers.push({
+        user_id: userId,
+        occupancy_id: uuid(77000 + n * 10 + k),
+        seat_number: 1 + k,
+        stack: 100,
+      });
+      e.timeBankMeta.set(userId, { initialSeconds: 90, baseSeconds: 30, dbConsumedSeconds: 15 });
+    }
+    e.f06CurrentPermit = {
+      recoveryState: () => 'attempted',
+      phase: 'attempted',
+    };
+    e.terminalBoundaryPersistenceFailed = true;
+    return q;
+  };
+
+  it('a dead engine whose only obstacle is a failed boundary is deferred to the row proof, not refused', async () => {
+    const f: any = mixedFixture();
+    const { e } = deadFailedBoundary(f, 640);
+    const result: any = await f.run();
+    // The capture no longer refuses it: the checkpoint ran past every capture
+    // and wrote and read back the live fleet.
+    expect(result.reason, JSON.stringify(result)).not.toBe('engine_work_not_drained');
+    expect(result.failedCheck).toBeUndefined();
+    expect(result.unresolvableCustody).toBe(`tables=1 ${e.tableId}:attempted/boundaryFailed`);
+    expect(result.attemptedTables).toBeGreaterThan(0);
+    expect(result.verifiedTables).toBe(result.attemptedTables);
+    // It asked the database for that exact table before anything was written,
+    // and wrote nothing for the dead table itself.
+    expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([e.tableId]);
+    expect(f.rows.has(e.tableId)).toBe(false);
+    // The guard proves, it never edits.
+    expect(e.terminalBoundaryPersistenceFailed).toBe(true);
+    // This fixture's 8825 readiness model refuses any engine still holding a
+    // permit, which is the readiness gate, outside this capture. The same
+    // engine without its permit shows the whole run completing.
+  });
+
+  it('the same dead engine with no permit completes the whole checkpoint', async () => {
+    const f: any = mixedFixture();
+    const { e } = deadFailedBoundary(f, 640);
+    e.f06CurrentPermit = null;
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({
+      ok: true,
+      readyForRestart: true,
+      unresolvableCustody: `tables=1 ${e.tableId}:none/boundaryFailed`,
+    });
+    expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([e.tableId]);
+  });
+
+  it('the same dead engine with a hand in the air on its table is refused, and nothing is written', async () => {
+    const f: any = mixedFixture();
+    const { e } = deadFailedBoundary(f, 640);
+    f.onSnapshots(() => ({
+      data: [
+        {
+          table_id: e.tableId,
+          hand_number: 9,
+          stage: 'flop',
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'f06_custody_unresolvable_unproven' });
+    expect(result.unresolvableCustody).toBeUndefined();
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it('the same dead engine on an unreadable snapshot is refused, never read as quiet', async () => {
+    const f: any = mixedFixture();
+    deadFailedBoundary(f, 640);
+    f.onSnapshots(() => ({ data: null, error: { message: 'PGRST002' } }) as any);
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'f06_custody_unresolvable_unproven' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a live engine',
+      (e: any) => {
+        Object.assign(e, {
+          running: true,
+          terminal: false,
+          teardownPromise: null,
+          maintenancePaused: true,
+          holdBeforeNextHand: true,
+          handForHandResolve: () => undefined,
+          f06CurrentPermit: null,
+        });
+      },
+      'engine_work_not_drained',
+    ],
+    [
+      'a stopped engine holding a live bank',
+      (e: any) => {
+        e.f06CurrentPermit = null;
+        const userId = e.seatedPlayers[0].user_id;
+        e.timeBankEngine.playerBanks.set(`${e.tableId}:${userId}`, {
+          tableId: e.tableId,
+          playerId: userId,
+          remainingSeconds: 75,
+          usesRemaining: 2,
+          isActive: false,
+          unlimitedActivations: false,
+        });
+      },
+      'engine_work_not_drained',
+    ],
+    [
+      'a settlement in flight',
+      (e: any) => e.settlementInFlight.add(Promise.resolve()),
+      'engine_work_not_drained',
+    ],
+    [
+      'a move operation',
+      (e: any) => e.tournamentMoveOperations.add(Promise.resolve()),
+      'engine_work_not_drained',
+    ],
+    [
+      'post-hand tasks',
+      (e: any) => (e.postHandTasksPromise = Promise.resolve()),
+      'engine_work_not_drained',
+    ],
+    // A permit on an engine with a hand controller is refused by the F06
+    // custody check first, today and after; without one, by the release check.
+    ['a hand controller', (e: any) => (e.handController = {}), 'f06_custody_not_drained'],
+    [
+      'a hand controller and no permit',
+      (e: any) => {
+        e.handController = {};
+        e.f06CurrentPermit = null;
+      },
+      'stopped_engine_not_released',
+    ],
+    ['a recovery in flight', (e: any) => (e.f06RecoveryInFlight = true), 'f06_custody_not_drained'],
+  ])(
+    'a failed boundary on %s still refuses exactly as before, with no row read',
+    async (_label, alter, reason) => {
+      const f: any = mixedFixture();
+      const { e } = deadFailedBoundary(f, 640);
+      alter(e);
+      const result: any = await f.run();
+      expect(result).toMatchObject({
+        ok: false,
+        reason,
+        failedCheck: `captureEngine.${reason}`,
+        failedTable: e.tableId,
+      });
+      expect(f.snapshotReads).toEqual([]);
+      expect(f.calls).toEqual([]);
+    }
+  );
+
   it('leaves every other profile exactly as strict as before', async () => {
     const f = fixture(2);
     f.first.seatedPlayers = [];
@@ -2872,15 +3132,30 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
     expect(f.server.tableEngines.size).toBe(4);
   });
 
-  it('still refuses a fenced engine whose boundary is recorded as failed', async () => {
+  it('proves a fenced engine whose boundary is recorded as failed from rows, before anything is written', async () => {
     const f = mixedFixture();
     const stuck = f.abandonedOriginal();
     stuck.terminalBoundaryPendingGenerations.add(7);
     stuck.terminalBoundaryPersistenceFailed = true;
     const result: any = await f.run();
+    expect(result.ok).toBe(true);
+    expect(result.unresolvableCustody).toBe(`tables=1 ${stuck.tableId}:none/boundaryFailed`);
+    expect(result.abandonedBoundaries).toContain(`${stuck.tableId}:1`);
+    expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([stuck.tableId]);
+  });
+
+  it('refuses a fenced engine whose boundary is recorded as failed when a hand is in the air', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    stuck.terminalBoundaryPersistenceFailed = true;
+    f.onSnapshots(() => ({ data: [{ table_id: stuck.tableId, hand_number: 1 }], error: null }));
+    const result: any = await f.run();
     expect(result.ok).toBe(false);
-    expect(result.failedCheck).toBe('engine.terminalBoundaryPersistenceFailed');
-    expect(f.snapshotReads).toEqual([]);
+    expect(result.reason).toBe('f06_custody_unresolvable_unproven');
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(4);
   });
 
   /* THE DEFERRAL IS NOT A ROUTE PAST THE DISPOSITION PROOF. Proving the felt

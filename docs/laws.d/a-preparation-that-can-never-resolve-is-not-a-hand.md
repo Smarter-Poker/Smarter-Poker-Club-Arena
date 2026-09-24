@@ -21,3 +21,13 @@ allow-list of preparation reasons only, with the engine's own
 incomplete snapshot is not mistaken for a live hand, three outcomes rather
 than two, failing closed on "could not tell", and with no flag, variable or
 argument that can turn a refusal into permission.
+
+Section 5 (2026-09-23) pins the same discipline for
+`terminalBoundaryPersistenceFailed`: build 8825af51 sets it when a hand fails
+to start or settle and never clears it on a stopped engine, so every release
+refused on `captureEngine.engine_work_not_drained` with `boundary=0/true` on a
+dead engine. On an engine that is stopped, terminal, with no hand controller,
+no recovery in flight and an empty live bank map, the flag now defers the
+table to `proveUnresolvableCustody`, which reads the rows before anything is
+written; on any other engine it refuses exactly as before, in both the capture
+and `physical()`.

@@ -422,7 +422,9 @@ describe('4. the legacy checkpoint bounds the same condition, the same way', () 
     for (const conjunct of [
       'collection.size > maxEntriesPerTable ||',
       'Number.isSafeInteger(value) && value > 0',
-      'engine.terminalBoundaryPersistenceFailed !== false ||',
+      // A failed persistence is an allowance only through the dead-engine
+      // deferral (section 5), never by itself.
+      '(engine.terminalBoundaryPersistenceFailed !== false &&\n            !failedBoundaryOnDeadEngine(tableId, engine)) ||',
       'engine.running !== false ||',
       'engine.terminal !== true ||',
       'engine.handController !== null ||',
@@ -442,5 +444,81 @@ describe('4. the legacy checkpoint bounds the same condition, the same way', () 
     expect(GUARD).toContain('unresolvableCustody = `tables=${ids.length} ');
     expect(GUARD).toContain('...(unresolvableCustody === null ? {} : { unresolvableCustody }),');
     expect(PUBLISHER).toContain("'unresolvableCustody',");
+  });
+});
+
+/* 5. A FAILED BOUNDARY ON AN ENGINE THAT WILL NEVER RUN AGAIN (2026-09-23).
+   Every release was refused with `captureEngine.engine_work_not_drained` and
+   `stopped=true,terminal=true,scope=tournament,seats=3,banks=0,f06=true/false,
+   permitPhase=attempted,settling=0,postTasks=false,moves=0,boundary=0/true,
+   accounting=0`. The only failing term was the flat
+   `terminalBoundaryPersistenceFailed === false`, which build 8825af51 never
+   clears on a stopped engine. The flag on a DEAD engine is now deferred to
+   the same row proof; on anything else it refuses exactly as before. */
+describe('5. a failed boundary on a dead engine is proved from rows, never waved through', () => {
+  const helper = GUARD.slice(
+    GUARD.indexOf('const failedBoundaryOnDeadEngine = ('),
+    GUARD.indexOf('const boundaryGenerationsAllowed = (')
+  );
+  const drain = GUARD.slice(
+    GUARD.indexOf('require(engine.settlementInFlight instanceof Set &&'),
+    GUARD.indexOf("'engine_work_not_drained');") + "'engine_work_not_drained');".length
+  );
+  const physical = GUARD.slice(
+    GUARD.indexOf('const physical = ('),
+    GUARD.indexOf('const vector = (')
+  );
+
+  it('"dead" is the existing conjunction and nothing wider', () => {
+    for (const conjunct of [
+      'engine.terminalBoundaryPersistenceFailed !== true ||',
+      'engine.running !== false ||',
+      'engine.terminal !== true ||',
+      'engine.handController !== null ||',
+      'engine.f06RecoveryInFlight !== false ||',
+      '!(engine.timeBankEngine?.playerBanks instanceof Map) ||',
+      'engine.timeBankEngine.playerBanks.size !== 0',
+    ])
+      expect(helper).toContain(conjunct);
+    // Unreadable is never dead.
+    expect(helper).toContain('catch {');
+    expect(helper).toContain('return false;');
+  });
+
+  it('the table is deferred to the same row proof, which runs before anything is written', () => {
+    expect(helper).toContain('deferredUnresolvableCustody.set(tableId,');
+    const proofAt = GUARD.indexOf('await proveUnresolvableCustody(checkAll);');
+    expect(proofAt).toBeGreaterThan(0);
+    expect(proofAt).toBeLessThan(GUARD.indexOf("stage = 'checkpoint';"));
+  });
+
+  it('the capture drain admits the flag only through that deferral', () => {
+    expect(drain).toContain(
+      '(engine.terminalBoundaryPersistenceFailed === false ||\n          failedBoundaryOnDeadEngine(tableId, engine))'
+    );
+    // Every other conjunct of the drain proof is untouched.
+    for (const conjunct of [
+      'engine.settlementInFlight.size === 0 &&',
+      'engine.postHandTasksPromise === null &&',
+      'engine.actionLock === false &&',
+      'engine.tournamentMoveOperations.size === 0 &&',
+    ])
+      expect(drain).toContain(conjunct);
+  });
+
+  it('physical() applies the same rule, so the refusal does not move one check up', () => {
+    expect(physical).toContain(
+      'terminalBoundaryPersistenceFailed === true &&\n            failedBoundaryOnDeadEngine(tableId, engine)'
+    );
+    expect(physical).toContain(
+      'terminalBoundaryPersistenceFailed === false || failedBoundaryDeferred,'
+    );
+    expect(physical).toContain(
+      '(terminalBoundaryPersistenceFailed === false || failedBoundaryDeferred),'
+    );
+  });
+
+  it('has no bypass', () => {
+    expect(helper).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved|setTimeout|setInterval/);
   });
 });

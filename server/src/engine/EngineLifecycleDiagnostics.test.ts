@@ -934,9 +934,15 @@ describe('the retained 8825 drain refusal names its failed sub-condition', () =>
       fault: (e) => (e.f06RecoveryInFlight = true),
     },
     {
+      // On a DEAD original a failed boundary is deferred to the row proof
+      // (2026-09-23, `failedBoundaryOnDeadEngine`). One that still holds a live
+      // bank is not dead, and keeps this refusal exactly as before.
       check: 'engine.terminalBoundaryPersistenceFailed',
       observed: 'true',
-      fault: (e) => (e.terminalBoundaryPersistenceFailed = true),
+      fault: (e) => {
+        e.terminalBoundaryPersistenceFailed = true;
+        e.timeBankEngine.playerBanks.set(`${e.tableId}:${id(996)}`, { isActive: false });
+      },
     },
     {
       check: 'engine.timeBankAccountingUnconfirmed',

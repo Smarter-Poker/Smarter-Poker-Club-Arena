@@ -1443,6 +1443,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
+      - name: Capability registry and accepted-event continuation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-capability-registry.py --output "$GITHUB_WORKSPACE/artifacts/capability-registry"
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

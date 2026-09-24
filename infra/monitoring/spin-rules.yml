@@ -136,9 +136,16 @@ groups:
       # 112 Spins paid 5,737.00 out of a pool with no record of them, and the
       # booking gauge read 0 the whole time.
       #
-      # Zero is the normal reading: every Spin books inline at settle. A single
-      # one standing for fifteen minutes means the backstop is not completing,
-      # which is the condition, not the symptom.
+      # Zero is the normal reading. Since 2026-09-10 the launch that deals a
+      # Spin books its entry, draws, settles and writes the receipt in ONE
+      # transaction (fn_spin_draw_and_settle_atomic), and 0 of 37,391 draws
+      # since then lack a receipt. A single one standing for fifteen minutes
+      # therefore means that transaction was bypassed, which is the condition,
+      # not the symptom. The pg_cron schedule spin_sweep_unbooked was retired on
+      # 2026-09-22 by 20260922155223 for exactly that reason. The World Hub
+      # route /api/cron/spin-sweep still calls fn_spin_sweep_unbooked from Open
+      # Claw; docs/BAND-AIDS-REGISTER.md (TIER 1 #9) names it as compensation
+      # still to remove, not as the fix.
       - alert: SpinDrawNeverBooked
         expr: poker_spin_draw_unbooked > 0
         for: 15m
@@ -153,9 +160,13 @@ groups:
             reached them - but the pool's books do not contain money that left
             it, so every reserve total, every thin-pool decision and every
             reconciliation reading from it is wrong by that amount.
-            fn_spin_sweep_unbooked settles these every 15 minutes from Open
-            Claw. Read the job's RESPONSE BODY, not its exit: the dispatcher
-            logs "executed successfully" for an HTTP 500. `remaining` in that
+            The atomic draw books every Spin in the transaction that draws it,
+            so this means that transaction was bypassed: treat it as a P0 and
+            find the writer. The pg_cron sweep was retired on 2026-09-22; the
+            World Hub route /api/cron/spin-sweep still calls
+            fn_spin_sweep_unbooked from Open Claw at 7,22,37,52. If you read
+            that job, read its RESPONSE BODY, not its exit: the dispatcher logs
+            "executed successfully" for an HTTP 500, and `remaining` in that
             body is this same number.
           runbook: https://monitor.smarter.poker/runbooks/spin-never-booked
 

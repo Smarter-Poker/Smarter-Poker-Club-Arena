@@ -1605,6 +1605,11 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-diamond-health-comparisons.py
 
+      - name: A schedule keeps its time zone across daylight saving
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-schedule-time-zone.py --output artifacts/schedule-time-zone
+
       # ── THE DIAMOND ARENA ACCEPTANCE RUNS HERE (2026-09-19) ──────────────
       # tests/sql/run-*diamond*.py certify the Diamond money doors (custody,
       # wallet transfer, buy-in, top-up, straddle, run-it-twice, bomb pot, the

@@ -29,12 +29,14 @@ export interface TournamentScheduleRow {
   name: string;
   description: string | null;
   active: boolean;
-  /** 0=Sunday .. 6=Saturday, UTC. */
+  /** 0=Sunday .. 6=Saturday, in time_zone (UTC when it is null). */
   days_of_week: number[];
-  /** 'HH:MM' 24h, UTC. */
+  /** 'HH:MM' 24h, in time_zone (UTC when it is null). */
   start_times_utc: string[];
   interval_minutes: number | null;
   config: Record<string, unknown>;
+  /** IANA zone of the days and times; null = UTC (every pre-2026-09-24 row). */
+  time_zone: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,7 +50,14 @@ export interface TournamentScheduleDraft {
   description?: string;
   active?: boolean;
   daysOfWeek: number[];
+  /** 'HH:MM' wall-clock times in timeZone (UTC when timeZone is null). */
   startTimesUtc: string[];
+  /**
+   * IANA zone the days and times are in (the creator's device zone). Omit on
+   * an update to keep the stored zone; null means UTC. Editing a schedule
+   * changes only instances the engine has not spawned yet.
+   */
+  timeZone?: string | null;
   intervalMinutes?: number | null;
   /** fn_create_tournament p_config shape, WITHOUT startTime. */
   config: Record<string, unknown>;
@@ -66,7 +75,8 @@ const SCHEDULE_ERRORS: Record<string, string> = {
     'Custom Level Breaks Are Not Supported. Remove Break Rows And Use The Synchronized Break Setting.',
   days_of_week_required: 'Pick at least one day of the week.',
   days_of_week_out_of_range: 'Days of week must be Sunday through Saturday.',
-  start_time_format_invalid: 'Start times must be HH:MM, 24-hour, UTC.',
+  start_time_format_invalid: 'Start times must be HH:MM, 24-hour.',
+  time_zone_unknown: 'Your time zone is not recognized. Set your device to a named time zone.',
   start_times_or_interval_required: 'Add at least one start time, or a repeat interval.',
   interval_minutes_out_of_range: 'The repeat interval must be 5 to 1440 minutes.',
 };
@@ -88,6 +98,7 @@ class TournamentScheduleService {
         active: draft.active ?? true,
         daysOfWeek: draft.daysOfWeek,
         startTimesUtc: draft.startTimesUtc,
+        ...(draft.timeZone !== undefined ? { timeZone: draft.timeZone } : {}),
         intervalMinutes: draft.intervalMinutes ?? null,
         config: isUnlimitedMtt({ ...draft.config, type: draft.config.type ?? 'mtt' })
           ? { ...draft.config, maxPlayers: null, max_players: null }
@@ -140,7 +151,7 @@ class TournamentScheduleService {
     const { data, error } = await supabase
       .from('tournament_schedules')
       .select(
-        'id, union_id, club_id, name, description, active, days_of_week, start_times_utc, interval_minutes, config, created_at, updated_at'
+        'id, union_id, club_id, name, description, active, days_of_week, start_times_utc, interval_minutes, config, time_zone, created_at, updated_at'
       )
       .eq('union_id', unionId)
       .order('created_at', { ascending: false });

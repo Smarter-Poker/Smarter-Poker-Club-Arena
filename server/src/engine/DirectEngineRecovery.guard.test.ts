@@ -62,6 +62,42 @@ describe('direct table-engine terminal recovery', () => {
     expect(recovery).not.toContain('setInterval(');
   });
 
+  it('retires the cached admission generation once its confirmed release lands', () => {
+    // A table whose start() fails AFTER a successful lease grant (e.g. a
+    // crash-recovery refusal reading a retained hand submission, not a lease
+    // problem) used to keep the OLD generation cached in
+    // `directTableAdmissionLeaseGenerations`. The next admission's
+    // `.get(tableId) ?? randomUUID()` then re-requested and was re-granted
+    // that exact same dead generation forever, so
+    // fn_ca_resume_hand_submission's same-generation guard refused every
+    // retry with `original_failure_or_handoff_unproven` on an unbroken
+    // restart loop. `awaitDirectTableLeaseRelease` already clears this cache
+    // once ITS release is confirmed; `performDirectTableEngineRecovery` must
+    // do the same for its own confirmed release, and only for the exact
+    // generation it just released.
+    const recovery = method('private async performDirectTableEngineRecovery(');
+    const releaseAt = recovery.indexOf('await releaseTables([');
+    const confirmedGateAt = recovery.indexOf("release.status !== 'confirmed'", releaseAt);
+    const guardAt = recovery.indexOf(
+      'if (this.directTableAdmissionLeaseGenerations.get(tableId) === leaseAuthority.generation) {',
+      confirmedGateAt
+    );
+    const cacheDeleteAt = recovery.indexOf(
+      'this.directTableAdmissionLeaseGenerations.delete(tableId)',
+      guardAt
+    );
+    const removeAt = recovery.indexOf('this.tableEngines.delete(tableId)');
+
+    expect(releaseAt).toBeGreaterThan(-1);
+    expect(confirmedGateAt).toBeGreaterThan(releaseAt);
+    // Guarded by identity, not unconditional: a concurrent admission that has
+    // already cached a NEWER generation for this table must not be erased by
+    // a stale recovery finishing late.
+    expect(guardAt).toBeGreaterThan(confirmedGateAt);
+    expect(cacheDeleteAt).toBeGreaterThan(guardAt);
+    expect(cacheDeleteAt).toBeLessThan(removeAt);
+  });
+
   it('joins duplicate signals by engine identity without suppressing a successor generation', () => {
     const recovery = method('private async recoverDirectTableEngine(');
     expect(GAME_SERVER).toContain(

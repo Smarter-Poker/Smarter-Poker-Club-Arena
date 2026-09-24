@@ -1719,6 +1719,20 @@ export class GameServer {
             `${release.reason} after ${release.attempts} attempt(s): ${release.detail}`
         );
       }
+      // A confirmed release retires this exact generation from the database.
+      // Leaving it cached here made the next admission re-request the SAME
+      // UUID (`?? randomUUID()` below only fires when the map has nothing),
+      // so a table whose start() fails AFTER a successful lease grant - a
+      // crash-recovery refusal, not a lease problem - kept being granted its
+      // own dead generation forever: fn_ca_resume_hand_submission's
+      // same-generation guard then refuses every retry with
+      // original_failure_or_handoff_unproven, on a 1-5s crash loop, without
+      // end. awaitDirectTableLeaseRelease already clears this cache for the
+      // uncertain-claim release path; this is the same cleanup for a
+      // confirmed crash-recovery release.
+      if (this.directTableAdmissionLeaseGenerations.get(tableId) === leaseAuthority.generation) {
+        this.directTableAdmissionLeaseGenerations.delete(tableId);
+      }
     }
     if (this.tableEngines.get(tableId) !== engine) return;
 

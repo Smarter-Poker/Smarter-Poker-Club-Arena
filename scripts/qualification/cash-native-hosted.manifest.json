@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 155650,
-      "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+      "bytes": 155887,
+      "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -245,6 +245,15 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,
         "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      }
+    }
+  },
+  "tournamentCreationRulesIntegration": {
+    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155650,
+        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
       }
     }
   }

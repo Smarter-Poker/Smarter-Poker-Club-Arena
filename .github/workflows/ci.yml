@@ -1447,6 +1447,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
+      - name: "Tournament creation refuses what the client refuses"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-creation-rules.py --output artifacts/tournament-creation-rules
       - name: Concurrent hands preserve shared F06 custody lanes
         id: f06_hand_authority
         env:

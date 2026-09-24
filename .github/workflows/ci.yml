@@ -1447,6 +1447,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-club-membership-cap.py --output artifacts/club-membership-cap
+      - name: Capability registry and accepted-event continuation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-capability-registry.py --output "$GITHUB_WORKSPACE/artifacts/capability-registry"
       - name: Kill pot table settings refuse what the engine cannot honour
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

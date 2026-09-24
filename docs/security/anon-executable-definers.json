@@ -48,6 +48,11 @@
       "reason": "public-read"
     },
     {
+      "fn": "fn_platform_capabilities()",
+      "reason": "public-read",
+      "note": "The platform capability registry clients read before offering a product surface, including before login. A logged-out caller learns each capability's id, rule version, title, scope, variants, compatibility, readiness and available flag, which the product shows to anyone. No readiness evidence, actor, club, player or wallet data; read-only (migration 20260924025555)."
+    },
+    {
       "fn": "fn_resolve_ads(p_slot text, p_club_id uuid, p_limit integer, p_country text)",
       "reason": "public-read"
     },

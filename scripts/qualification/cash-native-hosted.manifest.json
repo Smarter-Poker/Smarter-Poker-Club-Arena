@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 156072,
-      "sha256": "114984b2d2c531b950da810d3a2eb6dd6a5af2c7d369d4b5b4acf12efed7f682"
+      "bytes": 156315,
+      "sha256": "84b2a741ef725ceb48c5f80965761e9fa70e7dc9661d75803a9a5adbe9f7be47"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -257,12 +257,21 @@
       }
     }
   },
-  "killPotTableSettingsIntegration": {
-    "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+  "capabilityRegistryIntegration": {
+    "reason": "One capability registry: ci.yml gains the Capability registry and accepted-event continuation step (scripts/ci/test-capability-registry.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
         "bytes": 155875,
         "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
+      }
+    }
+  },
+  "killPotTableSettingsIntegration": {
+    "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
       }
     }
   }

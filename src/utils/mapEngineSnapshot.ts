@@ -281,6 +281,14 @@ export interface MappedTableStatePatch {
    */
   postBBDeferredUserIds: string[];
   /**
+   * 2026-09-24 - the players released from the wait who owe a live big blind
+   * on the NEXT deal (`postingBBToEnter` in the engine). Between agreeing to
+   * post and being dealt in they are in neither list above, and the seat must
+   * still say they are posting rather than sitting out. Empty on an engine
+   * older than the field, which leaves the pre-fix behaviour exactly as it was.
+   */
+  postingBBUserIds: string[];
+  /**
    * How many seats this table has, as the MAPPER resolved it (phase 1,
    * 2026-08-31): the engine's published `max_seats` when present, otherwise
    * the highest occupied seat, never below the caller's own belief.
@@ -635,6 +643,8 @@ export function mapEngineSnapshot(
     // pre-fix behaviour exactly as it was rather than hiding a live prompt.
     postBBDeferredUserIds:
       (s as unknown as { post_bb_deferred_user_ids?: string[] }).post_bb_deferred_user_ids ?? [],
+    postingBBUserIds:
+      (s as unknown as { posting_bb_user_ids?: string[] }).posting_bb_user_ids ?? [],
     // Phase 1 (2026-08-31): the resolved seat count, identical to the length
     // of every per-seat array in this patch. See the field docs above.
     maxSeats: effectiveMaxSeats,

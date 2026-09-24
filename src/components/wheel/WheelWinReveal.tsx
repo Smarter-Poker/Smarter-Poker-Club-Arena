@@ -134,6 +134,10 @@ export function WheelWinReveal({
         }}
       >
         <SpadeConsole
+          /* The X follows Escape exactly: only once the reveal has played
+             (ANIMATIONS MUST ALWAYS PLAY) and never while a bonus game is
+             still ahead of the player. */
+          onClose={!gameAhead && (ready || timedPrize) ? finish : undefined}
           eyebrow={eyebrow ?? (prize.kind === 'upgrade' ? 'Wheel Upgrade' : 'You Won')}
           title={title}
           pill={

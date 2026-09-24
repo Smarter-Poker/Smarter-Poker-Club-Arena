@@ -3294,6 +3294,7 @@
     "fn_platform_invariants_health",
     "fn_player_display_name",
     "fn_player_home_club",
+    "fn_player_needs_a_started_game",
     "fn_player_rakeback_rate",
     "fn_player_spendable_balance",
     "fn_plinko_activate_table",

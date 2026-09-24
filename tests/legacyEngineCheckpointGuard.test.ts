@@ -1018,6 +1018,50 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.calls).toEqual([]);
   });
 
+  /* A JOIN THAT DID NOT COME BACK NAMES NOTHING (2026-09-24). Run 36008454881
+     was the first release since 2026-09-18 whose capture walk refused nothing,
+     and it stopped here with no `failedCheck`, no `failedTable` and no detail:
+     two different promises across four hundred engines, and not one word about
+     which. */
+  it('names which join did not come back, on which table, and why', async () => {
+    const f = fixture(3);
+    stopEmpty(f);
+    Object.assign(f.first, {
+      teardownPromise: Promise.reject(new Error('retained an unresolved seat-move 4f21e0c2')),
+    });
+    const other: any = [...f.server.tableEngines.values()][1];
+    other.presenceSave = Promise.reject(new Error('park write refused'));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      // The stopped owner's two joins come first, in capture order.
+      failedCheck: 'previousNativeWork.teardown',
+      failedTable: f.first.tableId,
+    });
+    expect(result.observedDetail).toContain('unfulfilled=2');
+    expect(result.observedDetail).toContain('presenceSave=1');
+    expect(result.observedDetail).toContain('teardown=1');
+    expect(result.observedDetail).toContain(`${other.tableId.slice(0, 8)}:presenceSave`);
+    expect(result.observedDetail).toContain(`${f.first.tableId.slice(0, 8)}:teardown`);
+    // The engine writes the message, so only letters, spaces and underscores
+    // travel: no id, hand number or amount can reach a log through it.
+    expect(result.observedDetail).toContain('reason=retained an unresolved seat move');
+    expect(result.observedDetail).not.toContain('4f21e0c2');
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('adds no detail when every join comes back', async () => {
+    const f = fixture(2);
+    stopEmpty(f);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: true });
+    expect(result.failedCheck).toBeUndefined();
+    expect(result.observedDetail).toBeUndefined();
+  });
+
   it('does not drop bank custody from a stopped engine', async () => {
     const f = fixture(2);
     Object.assign(f.first, {

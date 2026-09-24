@@ -3052,14 +3052,86 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     }
     // Join the existing announcement/native park writes before taking the final
     // baseline. Pointer equality refuses any newly admitted presence writer.
-    const previousWork = await Promise.allSettled(
-      captures.flatMap((capture) =>
-        capture.stopped ? [capture.presenceSave, capture.teardown] : [capture.presenceSave]
-      )
+    const previousJoins = captures.flatMap((capture) =>
+      capture.stopped
+        ? [
+            { capture, join: 'presenceSave' },
+            { capture, join: 'teardown' },
+          ]
+        : [{ capture, join: 'presenceSave' }]
     );
-    require(previousWork.every(
-      (entry) => entry.status === 'fulfilled'
-    ), 'previous_native_work_unconfirmed');
+    const previousWork = await Promise.allSettled(
+      previousJoins.map(({ capture, join }) => capture[join])
+    );
+    /* ═══ A JOIN THAT DID NOT COME BACK NAMES NOTHING (2026-09-24) ═══
+
+       Run 36008454881 is the measurement. It is the first release since
+       2026-09-18 whose capture walk refused NOTHING - every table was admitted
+       or deferred - and it stopped here instead, on
+       `previous_native_work_unconfirmed`, carrying no `failedCheck`, no
+       `failedTable` and no detail at all. This join covers two different
+       promises on up to four hundred engines: the park/announcement write each
+       captured engine owns, and the teardown of each stopped one. Which
+       promise, on which table, and why, is the whole diagnosis, and none of it
+       reached a reader. The guard's own comment above `bankShape` says what
+       that costs: a refusal that names nothing is one maintenance break spent
+       to learn one fact.
+
+       Observability only, on a path that is already refusing. The condition,
+       its code and its order are the exact ones above: `unfulfilled.length ===
+       0` is `previousWork.every((entry) => entry.status === 'fulfilled')` over
+       the same settled array, in the same order. Nothing is joined twice and
+       no outcome moves.
+
+       `words` is stricter than `describe` on purpose. A rejection message is
+       written by the engine, not by this guard, so it is reduced to LETTERS,
+       spaces and underscores before it travels: no digit, hyphen or separator
+       survives, so no user id, table id, hand number, amount, card or token
+       can reach a log through it, and what is left is the sentence the engine
+       wrote. */
+    const words = (value) => {
+      try {
+        if (typeof value !== 'string') return describe(value);
+        const text = value.replace(/[^A-Za-z _]+/g, ' ').replace(/ +/g, ' ').trim();
+        return text.length === 0 ? `string(${value.length})` : text.slice(0, 64);
+      } catch {
+        return 'unreadable';
+      }
+    };
+    const unfulfilled = previousWork
+      .map((entry, index) => ({ entry, ...previousJoins[index] }))
+      .filter(({ entry }) => entry.status !== 'fulfilled');
+    if (unfulfilled.length > 0) {
+      const first = unfulfilled[0];
+      const counted = (join) => unfulfilled.filter((item) => item.join === join).length;
+      noteRefusal(() => ({
+        failedCheck: `previousNativeWork.${first.join}`,
+        failedTable: uuid(first.capture.tableId)
+          ? first.capture.tableId
+          : describe(first.capture.tableId),
+        observedDetail: [
+          `unfulfilled=${unfulfilled.length}`,
+          `joined=${previousWork.length}`,
+          `presenceSave=${counted('presenceSave')}`,
+          `teardown=${counted('teardown')}`,
+          `stopped=${first.capture.stopped}`,
+          `scope=${describe(first.capture.engine?.engineLeaseScope)}`,
+          `tournament=${
+            uuid(first.capture.engine?.engineLeaseTournamentId)
+              ? first.capture.engine.engineLeaseTournamentId
+              : 'none'
+          }`,
+          `reason=${words(first.entry.reason?.message)}`,
+          `tables=${unfulfilled
+            .slice(0, 12)
+            .map((item) => `${String(item.capture.tableId).slice(0, 8)}:${item.join}`)
+            .join('/')}`,
+        ]
+          .join(',')
+          .slice(0, 512),
+      }));
+    }
+    require(unfulfilled.length === 0, 'previous_native_work_unconfirmed');
     checkAll();
     // Order is load-bearing: the rows prove that the residue and the disposed
     // banks hold nothing, and that no deferred unresolvable permit has a hand

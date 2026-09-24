@@ -122,10 +122,21 @@ function fixture(count = 1, predecessor = release) {
       }
       return [...server.tableEngines.values()].every(
         (e) =>
-          e.isMaintenanceStateDurable() && (predecessor !== checkpoint8825 || !e.f06CurrentPermit)
+          // 8825 `unparkedTables` (MaintenanceBreak.ts:1768-1795) asks a STOPPED
+          // engine only about an unresolved F06 preparation and then
+          // `continue`s past it: `if (!engine.isRunning()) continue;` comes
+          // before the durability question, so a dead engine's unwritten park
+          // never holds the process's own certificate shut.
+          (predecessor === checkpoint8825 && !e.running) ||
+          (e.isMaintenanceStateDurable() && (predecessor !== checkpoint8825 || !e.f06CurrentPermit))
       );
     }
   }
+  // Tables whose park write the database fences (a lease generation that is
+  // no longer current): `savePresenceAtPark` returns false, nothing is
+  // written, and `parkedBankSaveComplete` stays false - exactly what
+  // `persistPresenceForRestart` does on a refused upsert, with no throw.
+  const fenced = new Set<string>();
   class Table {
     static liveEngines = new Map();
     tableId: string;
@@ -190,16 +201,20 @@ function fixture(count = 1, predecessor = release) {
       }
       return saved;
     }
-    isMaintenanceStateDurable() {
-      // 8825 `maintenanceDurabilityReason`: only a parked bank or a SEATED
-      // player's bank needs the park write (ServerTableEngineBase.ts:5575-5585);
-      // a bank a bust left behind for a player the roster no longer holds does not.
+    maintenanceDurabilityReason() {
+      // 8825 `maintenanceDurabilityReason` (ServerTableEngineBase.ts:5573-5585):
+      // only a parked bank or a SEATED player's bank needs the park write; a
+      // bank a bust left behind for a player the roster no longer holds does
+      // not, and the one reason an unwritten park produces is named.
       const hasBanks =
         Object.keys(this.parkedTimeBanks ?? {}).length > 0 ||
         this.seatedPlayers.some((seat) =>
           this.timeBankEngine.playerBanks.has(`${this.tableId}:${seat.user_id}`)
         );
-      return !hasBanks || this.parkedBankSaveComplete;
+      return hasBanks && !this.parkedBankSaveComplete ? 'bank_park_write_incomplete' : null;
+    }
+    isMaintenanceStateDurable() {
+      return this.maintenanceDurabilityReason() === null;
     }
     hasReleasedProcessOwnership() {
       return !this.running && this.terminal;
@@ -220,6 +235,7 @@ function fixture(count = 1, predecessor = release) {
       try {
         calls.push(when);
         await onWrite?.(this);
+        if (fenced.has(this.tableId)) return;
         const parkedAt = new Date().toISOString();
         rows.set(this.tableId, {
           table_id: this.tableId,
@@ -480,6 +496,9 @@ function fixture(count = 1, predecessor = release) {
     },
     onMoves: (hook: typeof onMoves) => {
       onMoves = hook;
+    },
+    fence: (tableId: string) => {
+      fenced.add(tableId);
     },
     holdGate: (reasons?: Record<string, number>) => {
       gateOnPreparations = true;
@@ -3259,17 +3278,237 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     return e;
   };
 
-  it('a restored bank no roster will ever claim is deferred and proved from rows', async () => {
+  /* A DEAD GENERATION PROVES ITS PARK FROM THE ROW IT READ (2026-09-24).
+
+     Run 36061780372 (the 21:36 recovery window) cleared every capture
+     refusal and every row proof, wrote 83 tables, and refused
+     `native_checkpoint_unconfirmed`: 22 of those writes came back `403
+     TOURNAMENT_MANAGER_FENCED: lease generation is no longer current` - the
+     eleven `parkedNoRoster` tables, each written once and retried once. A
+     stopped tournament engine on a dead lease generation cannot write
+     tournament data, and the database is right to refuse it. It does not
+     need to: the row it would write is the row it read at `start()`, at the
+     same hand, so the guard proves THAT row instead of writing it, and holds
+     it to the standard the write would have been. */
+  const rowTheEngineRead = (f: any, e: any, overrides: Record<string, unknown> = {}) => {
+    const parkedAt = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
+    const row = {
+      table_id: e.tableId,
+      // Written by whichever process parked this table last; not this one.
+      engine_instance: '1-e662d4b1:parked',
+      parked_at: parkedAt,
+      disconnect_states: { [uuid(90001)]: { state: 'disconnected' } },
+      time_bank_snapshot: {
+        version: 1,
+        parkedAt,
+        handNumber: e.handCount,
+        players: structuredClone(e.parkedTimeBanks),
+      },
+      ...overrides,
+    };
+    f.rows.set(e.tableId, row);
+    return structuredClone(row);
+  };
+
+  it('a restored bank no roster will ever claim is deferred, proved from rows, and its row is proved rather than written', async () => {
     const f: any = mixedFixture();
     const e = parkedNoRoster(f, 640, 2);
+    // The write the database would fence. It is never attempted.
+    f.fence(e.tableId);
+    const before = rowTheEngineRead(f, e);
     const result: any = await f.run();
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
     expect(result.unresolvableCustody).toContain(`${e.tableId}:parkedNoRoster:2`);
     // It asked the database, per table, with the one predicate this file has.
     expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([e.tableId]);
-    // And the row it writes is the row it read: the same banks, same hand.
-    expect(f.rows.get(e.tableId).time_bank_snapshot.players).toEqual(e.parkedTimeBanks);
-    expect(f.rows.get(e.tableId).time_bank_snapshot.handNumber).toBe(e.handCount);
+    // The row it read is the row that stands: untouched, same banks, same hand.
+    expect(f.rows.get(e.tableId)).toEqual(before);
+    // It was never written: the one park call is the mixed original's.
+    expect(f.calls).toEqual(['parked']);
+    expect(result.attemptedTables).toBe(1);
+    expect(result.verifiedTables).toBe(1);
+    expect(result.provedRows).toContain('tables=1/1 tournament=1');
+    expect(result.provedRows).toContain(
+      `${e.tableId.slice(0, 8)}:tournament:banks=2:extra=0:states=1`
+    );
+    // And the engine's own unwritten-park reason did not hold the release.
+    expect(e.parkedBankSaveComplete).toBe(false);
+    expect(e.isMaintenanceStateDurable()).toBe(false);
+  });
+
+  it('a row the loader would have skipped an entry of is still the row it read', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 650, 1);
+    f.fence(e.tableId);
+    const row = rowTheEngineRead(f, e);
+    // An unrestorable entry: `loadTimeBanksFromPark` skipped it, so the engine
+    // never held it, and the successor skips it again.
+    row.time_bank_snapshot.players[uuid(76999)] = { ...restoredBank(650), remainingSeconds: 900 };
+    f.rows.set(e.tableId, row);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.provedRows).toContain(`${e.tableId.slice(0, 8)}:tournament:banks=1:extra=1`);
+  });
+
+  /* A row that does not say what the engine holds is not a proof, and the
+     capture stays on the write path it always had. On a dead generation that
+     write is fenced and the refusal names the table, the deferral and the
+     check the row failed; on a live one it is written and read back inside
+     its own write window, exactly as before. */
+  const unprovenRow = async (
+    n: number,
+    alter: (row: any, e: any) => void,
+    fence: boolean
+  ): Promise<{ result: any; e: any; f: any }> => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, n, 2);
+    if (fence) f.fence(e.tableId);
+    const row = rowTheEngineRead(f, e);
+    alter(row, e);
+    f.rows.set(e.tableId, row);
+    return { result: await f.run(), e, f };
+  };
+  const unprovenShapes: [string, string, (row: any, e: any) => void, string][] = [
+    [
+      'a restorable bank the engine does not hold',
+      'snapshot.extraPlayers',
+      (row) => {
+        row.time_bank_snapshot.players[uuid(76998)] = restoredBank(651);
+      },
+      '',
+    ],
+    [
+      'a bank that does not match the one the engine holds',
+      'snapshot.players',
+      (row, e) => {
+        row.time_bank_snapshot.players[Object.keys(e.parkedTimeBanks)[0]].remainingSeconds = 10;
+      },
+      '',
+    ],
+    [
+      'another hand',
+      'snapshot.handNumber',
+      (row, e) => {
+        row.time_bank_snapshot.handNumber = e.handCount + 1;
+      },
+      '',
+    ],
+    [
+      'an announcement that nulled the snapshot',
+      'snapshot.shape',
+      (row) => {
+        row.time_bank_snapshot = null;
+      },
+      '',
+    ],
+    [
+      'a presence the successor would still read',
+      'row.presence',
+      (row) => {
+        const parkedAt = new Date(Date.now() - 60000).toISOString();
+        row.parked_at = parkedAt;
+        row.time_bank_snapshot.parkedAt = parkedAt;
+      },
+      '',
+    ],
+  ];
+
+  it.each(unprovenShapes)(
+    'a row holding %s is not a proof: on a dead generation the fenced write refuses, naming the check (%s)',
+    async (_shape, check, alter) => {
+      const { result, e } = await unprovenRow(651, alter, true);
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'native_checkpoint_unconfirmed',
+        failedCheck: 'engine.parkedBankSaveComplete',
+        failedTable: e.tableId,
+      });
+      expect(result.observedDetail).toContain(`rowProof=${check}`);
+      expect(result.observedDetail).toContain('deferred=parkedNoRoster:2');
+      expect(result.provedRows).toContain(`tables=0/1`);
+      expect(result.provedRows).toContain(`${e.tableId.slice(0, 8)}:unproven=${check}`);
+    }
+  );
+
+  it.each(unprovenShapes)(
+    'a row holding %s is not a proof: on a live generation the row is written and read back (%s)',
+    async (_shape, check, alter) => {
+      const { result, e, f } = await unprovenRow(652, alter, false);
+      expect(result, JSON.stringify(result)).toMatchObject({ ok: true, attemptedTables: 2 });
+      expect(result.provedRows).toContain(`${e.tableId.slice(0, 8)}:unproven=${check}`);
+      // The row it writes is the row it read: the same banks, same hand, fresh.
+      const row = f.rows.get(e.tableId);
+      expect(row.engine_instance).toBe('1-3846b8bb:parked');
+      expect(row.time_bank_snapshot.players).toEqual(e.parkedTimeBanks);
+      expect(row.time_bank_snapshot.handNumber).toBe(e.handCount);
+      expect(row.disconnect_states).toEqual({});
+    }
+  );
+
+  it('a row that is gone is not a proof either: nothing is invented, the write path answers', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 654, 1);
+    f.fence(e.tableId);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'native_checkpoint_unconfirmed',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('rowProof=row.present');
+    expect(f.rows.has(e.tableId)).toBe(false);
+  });
+
+  it('a row read that errors is not a proof: the write path answers', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 656, 1);
+    rowTheEngineRead(f, e);
+    let reads = 0;
+    f.onRead(() => {
+      reads += 1;
+      throw new Error('synthetic read failure');
+    });
+    const result: any = await f.run();
+    // The read threw inside the client call; the guard cannot use it as a
+    // proof, and refuses on the throw exactly as any other failed read does.
+    expect(result.ok).toBe(false);
+    expect(reads).toBe(1);
+  });
+
+  it('a fenced write on a table that is NOT a dead generation still refuses, and now names the table', async () => {
+    const f: any = mixedFixture();
+    // The mixed original's own seated player: it writes, and the write is refused.
+    const first = f.first;
+    f.fence(first.tableId);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'native_checkpoint_unconfirmed',
+      failedCheck: 'engine.parkedBankSaveComplete',
+      failedTable: first.tableId,
+    });
+    expect(result.observedDetail).toContain('deferred=none');
+    expect(f.calls).toEqual(['parked']);
+  });
+
+  it('a table the engine will not call durable for any other reason still refuses, naming it', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 655, 1);
+    f.fence(e.tableId);
+    rowTheEngineRead(f, e);
+    // 8825's own reason for this shape is `bank_park_write_incomplete`; any
+    // other reason on the same table is an engine this guard does not
+    // understand, and it refuses exactly as the process-wide require did.
+    e.maintenanceDurabilityReason = () => 'accounting_pending';
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'native_readiness_refused',
+      failedCheck: 'engine.isMaintenanceStateDurable',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('durability=accounting_pending');
+    expect(result.observedDetail).toContain('rowProved=true');
   });
 
   it('a hand in the air on that table refuses the restored bank too', async () => {

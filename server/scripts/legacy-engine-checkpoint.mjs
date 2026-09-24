@@ -160,6 +160,11 @@ function checkpointSummary(value) {
     // account of what a release stepped over. Carried verbatim; nothing
     // reads it.
     'nativeWorkMembers',
+    // Which dead generations' park rows were proved from the row they had read
+    // instead of written again (the database fences a write from a lease
+    // generation that is no longer current), with what each row held. Carried
+    // verbatim; nothing reads it.
+    'provedRows',
   ]) {
     const item = value?.[key];
     if (

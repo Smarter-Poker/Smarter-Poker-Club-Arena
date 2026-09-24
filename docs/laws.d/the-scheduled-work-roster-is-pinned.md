@@ -5,8 +5,10 @@
 The number of active pg_cron jobs on production is pinned in a file git owns.
 It cannot change without a reviewed edit in two places.
 
-Measured 2026-09-19: **135 active**, **137 rows** in `cron.job`. The two that are
-not active are the bust sweeps that
+Measured 2026-09-19: **135 active**, **137 rows** in `cron.job`. 2026-09-20: 132 and
+134, after `20260920070402` retired three watchers. 2026-09-22: **121 active**,
+**123 rows**, once `20260922155223` retires eleven compensation jobs whose
+writers are correct at the source. The two that are not active are the bust sweeps that
 `20260910073355_the_retired_sweeps_keep_their_disabled_schedule_rows` restored
 and disabled, so the staged retirement chain `20260910000850` — whose CHECK
 constraints demand exactly two rows — can still be applied.

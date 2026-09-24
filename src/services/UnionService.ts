@@ -346,19 +346,6 @@ class UnionServiceClass {
     return data ? this.mapUnion(data) : this.getUnion(unionId);
   }
 
-  /**
-   * Delete union
-   */
-  async deleteUnion(unionId: string): Promise<boolean> {
-    const { error } = await supabase.from('unions').delete().eq('id', unionId);
-
-    if (!error) {
-      masterBus.emit('UNION_UPDATED', { unionId });
-    }
-
-    return !error;
-  }
-
   // ─────────────────────────────────────────────────────────────────────────────
   // UNION ADMINS
   // ─────────────────────────────────────────────────────────────────────────────

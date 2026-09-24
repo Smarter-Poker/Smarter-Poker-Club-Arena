@@ -109,8 +109,19 @@ describe('the weekly union close pays from one pot', () => {
 
 /* Part two and three (Dan, 2026-09-03): the basis is the rake the CLUB'S
    PLAYERS generated at the union's games, not the rake from the club's own
-   tables. Cash from ca_union_rake_attribution (the seat the player sat
-   through, captured hourly), tournaments from tournament_players. */
+   tables. As shipped on 2026-09-03: cash from ca_union_rake_attribution (the
+   seat the player sat through, captured hourly by
+   ca-union-rake-attribution-hourly), tournaments from tournament_players.
+
+   What these assertions pin is that 2026-09-03 migration pair, by file name,
+   and that history does not change. The live close has since moved on:
+   measured 2026-09-22, no function, view or materialized view in the
+   database reads ca_union_rake_attribution any more (its only reference is
+   its own writer, fn_ca_attribute_union_rake), and atomic_distribute_rake
+   records rake_attributions.club_id at bank time through
+   fn_cash_earning_club. So the hourly job was retired by
+   20260922155223_eleven_compensation_jobs_whose_writers_are_correct_stop_running;
+   the table and its writer stay, as history. */
 const ATTR_FILE = readdirSync(DIR)
   .filter((f) => f.includes('every_chip_of_union_rake_knows_which_clubs_player_paid_it'))
   .sort()
@@ -134,7 +145,7 @@ function closeBody(sql: string): string {
 }
 
 describe("the close shares the rake a club's players generated", () => {
-  it('ships the attribution table, its hourly job and the part-three close', () => {
+  it('shipped the attribution table, its hourly job (retired 2026-09-22) and the part-three close', () => {
     expect(ATTR_FILE, 'the attribution migration is missing').toBeTruthy();
     expect(CLOSE_V3_FILE, 'the part-three close migration is missing').toBeTruthy();
     expect(ATTR).toContain('CREATE TABLE IF NOT EXISTS public.ca_union_rake_attribution');

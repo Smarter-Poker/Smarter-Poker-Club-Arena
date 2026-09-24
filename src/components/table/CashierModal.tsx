@@ -326,6 +326,7 @@ export function CashierModal({
     >
       <div className="cashier-dialog" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={onClose}
           as="section"
           family="riveted"
           eyebrow="Add Chips"

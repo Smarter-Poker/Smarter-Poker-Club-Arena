@@ -708,6 +708,7 @@ export function UnionWalletModal({
     >
       <div className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={onClose}
           className="uwm-console"
           family="riveted"
           eyebrow={walletLabel}

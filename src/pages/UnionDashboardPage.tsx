@@ -2922,7 +2922,16 @@ export default function UnionDashboardPage() {
           {/* ══════ TAB: SETTINGS ══════ */}
           {tab === 'operations' && (
             <div style={{ padding: '16px' }}>
-              <UnionOpsPanel unionId={unionId ?? undefined} canRun={isLead} />
+              {/* The panel's own fallback is one hardcoded union. This page
+                  only ever operates on the union it authorized, so without one
+                  it says so instead of showing another union's books. */}
+              {authorizedUnionId ? (
+                <UnionOpsPanel unionId={authorizedUnionId} canRun={isLead} />
+              ) : (
+                <div className="admin-empty-state">
+                  <span>No Union Selected</span>
+                </div>
+              )}
             </div>
           )}
 

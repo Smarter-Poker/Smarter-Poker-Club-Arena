@@ -722,6 +722,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
           <span className="hh-panel__grab" />
         </div>
         <SpadeConsole
+          onClose={onClose}
           as="div"
           className="hh-console"
           eyebrow="This Table"

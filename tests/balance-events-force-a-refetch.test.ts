@@ -23,7 +23,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceBlockAfter, sliceEnclosingBlock, sliceBetween, sliceCall } from './helpers/sourceWindow';
+import {
+  sliceBlockAfter,
+  sliceEnclosingBlock,
+  sliceBetween,
+  sliceCall,
+} from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -48,20 +53,26 @@ describe('event-driven refreshes force past the window', () => {
   it('GlobalHeader forces on WALLET_REFRESHED', () => {
     const at = HEADER.indexOf("'WALLET_REFRESHED'");
     expect(at).toBeGreaterThan(-1);
-    expect(sliceEnclosingBlock(HEADER, "'WALLET_REFRESHED'")).toMatch(/loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/);
+    expect(sliceEnclosingBlock(HEADER, "'WALLET_REFRESHED'")).toMatch(
+      /loadBalances\([^)]*\{\s*force:\s*true\s*\}\)/
+    );
   });
 
   it('GlobalHeader forces on BALANCE_UPDATED', () => {
     const at = HEADER.indexOf("'BALANCE_UPDATED'");
     expect(at).toBeGreaterThan(-1);
-    expect(sliceEnclosingBlock(HEADER, "'BALANCE_UPDATED'")).toMatch(/loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/);
+    expect(sliceEnclosingBlock(HEADER, "'BALANCE_UPDATED'")).toMatch(
+      /loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/
+    );
   });
 
   it('MasterBus forces on DIAMOND_BALANCE_CHANGED and DIAMOND_SPENT', () => {
     for (const event of ["'DIAMOND_BALANCE_CHANGED'", "'DIAMOND_SPENT'"]) {
       const at = BUS.indexOf(`this.subscribe(${event}`);
       expect(at, `${event} subscriber not found`).toBeGreaterThan(-1);
-      expect(sliceEnclosingBlock(BUS, `this.subscribe(${event}`)).toMatch(/loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/);
+      expect(sliceEnclosingBlock(BUS, `this.subscribe(${event}`)).toMatch(
+        /loadDiamonds\([^)]*\{\s*force:\s*true\s*\}\)/
+      );
     }
   });
 
@@ -87,8 +98,8 @@ describe('event-driven refreshes force past the window', () => {
   });
 
   it('useWallet().refresh() forces - it is the explicit "this is stale" API', () => {
-    // hooks/index.ts holds FOUR different `refresh: () =>` properties (union,
-    // wallet, settlement, nearby). Anchor on the wallet one by finding the
+    // hooks/index.ts holds several `refresh: () =>` properties (union,
+    // wallet, settlement). Anchor on the wallet one by finding the
     // refresh that actually calls loadBalances, rather than the first match.
     const candidates = [...HOOKS.matchAll(/refresh: \(\) => \{/g)].map((m) => m.index ?? -1);
     const walletRefresh = candidates

@@ -133,7 +133,6 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
     lastNoHandResultCheckAt: DISCOVERY_NOW,
     lastPlaceOverpayChargeAt: DISCOVERY_NOW,
     lastSpinExpireAt: DISCOVERY_NOW,
-    lastFeeRequeueAt: DISCOVERY_NOW,
     readSeatFirstPaidSeats: vi.fn(async () => new Map()),
     // The start gate reads each row's roster (2026-09-24); these rows carry
     // their field in current_players, so the roster is that number.

@@ -2183,21 +2183,29 @@ export default function MultiTablePage() {
        real table plus the lobby tab read as 2 and the chip appeared during
        single-table play. Count actual game tables only, here AND inside
        compute() (a tab closing between ticks must retire the chip too). */
-    const liveTableCount = tables.filter((t) => isTableTab(t)).length;
     /* Dan 2026-08-30: "THE PROFIT COUNTER NUMBER SHOULD NEVER WORK OR ENGAGE
        OR TRACK ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'."
        Tournament tables are excluded from the aggregation entirely - a
        tournament stack is not a cash result, and mixing the two printed a
-       meaningless number. The chip therefore renders only when at least one
-       CASH table is being tracked, and the whole feature obeys the
-       Multi Table Profit Tracking switch. */
-    if (hidden || liveTableCount < 2 || !profitTracking) {
+       meaningless number.
+
+       Dan 2026-09-23, screenshot of an MTT tab beside one 2/5 tab with a "0"
+       chip on the header: "THE MULTI TABLE PROFIT/LOSS COUNTER SHOULD ONLY
+       APPEAR WHEN 2 OR MORE CASH GAMES ARE BEING PLAYED, NOT A MTT AND CASH
+       GAME, OR JUST ONE CASH GAME." The gate counted every game table toward
+       the "multiple" and only then dropped the tournaments from the sum, so
+       an MTT plus one cash table passed as two tables and printed the one
+       cash table's result. Both counts are now CASH counts: the chip exists
+       only while two or more cash tables are open, and obeys the Multi Table
+       Profit Tracking switch. */
+    const liveCashCount = tables.filter((t) => isTableTab(t) && !t.isTournament).length;
+    if (hidden || liveCashCount < 2 || !profitTracking) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
       const live = tablesRef.current.filter((t) => isTableTab(t) && !t.isTournament);
-      if (live.length < 1 || tablesRef.current.filter((t) => isTableTab(t)).length < 2) {
+      if (live.length < 2) {
         setSessionAgg(null);
         return;
       }

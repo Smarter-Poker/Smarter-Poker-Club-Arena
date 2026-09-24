@@ -173,12 +173,10 @@ import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import {
   reconcilePendingFees,
   auditBBJDrift,
-  repairUnbankedBBJFees,
   auditRakeAttributionDrift,
   auditSatelliteConservation,
   auditPrizeDisbursement,
   auditDoublePaidObligations,
-  requeueUnbankedCashRake,
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError } from './services/errorReporter.js';
@@ -400,18 +398,6 @@ const SEAT_FIRST_START_INTERVAL = 1000;
  */
 const LEASE_REAP_STALE_SECONDS = 3600;
 const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
-
-/**
- * How often the bomb-pot award ledger is repaired, and how many hands one pass
- * will rebuild. Hourly because the gap it closes is a WRITE LOSS, not a design
- * gap: `bomb_pot_award_units` is written fire-and-forget from settlement, so a
- * Supabase blip that outlasts three retries loses rows that nothing was ever
- * going to come back for. 500 hands is far above the observed loss rate
- * (~17/day) and the repair is idempotent, so an over-large budget costs a
- * no-op rather than a duplicate.
- */
-const BOMB_LEDGER_REPAIR_INTERVAL_MS = 60 * 60 * 1000;
-const BOMB_LEDGER_REPAIR_BATCH = 500;
 
 /**
  * ── PRE-SEAT LEAD (Dan 2026-08-30, binding) ──
@@ -2820,8 +2806,6 @@ export class GameServer {
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
   private lastSpinExpireAt = 0;
-  /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
-  private lastFeeRequeueAt = 0;
   private running: boolean = false;
   /** One boot and one teardown per orchestrator instance; neither may outrun the other. */
   private startOperation: Promise<void> | null = null;
@@ -3088,12 +3072,12 @@ export class GameServer {
     paused: () => this.maintenanceBreak.isActive(),
   });
   /**
-   * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
-   * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
+   * A5: completes the jackpot payout claims in `pending_fee_distributions` and
+   * runs the hourly read-only money audits. Rake and the BBJ drop are the hand's
+   * own post-commit envelope and are never re-driven here (2026-09-22).
    */
   private feeReconcileTimer: NodeJS.Timeout | null = null;
   private leaseReapTimer: NodeJS.Timeout | null = null;
-  private bombLedgerRepairTimer: NodeJS.Timeout | null = null;
   private clockSkewTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
   /**
@@ -3503,18 +3487,18 @@ export class GameServer {
       // and it must not deal a hand into a break players are still watching.
       // (the break is adopted at Step 0b now - see above)
 
-      // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
-      // taken out of the pot inside the hand; if the banking RPC fails the chips
-      // exist nowhere. The engine now queues those failures durably — this drains
-      // that queue, and independently compares what rake_records booked as BBJ
-      // contribution against what the jackpot pool actually received, because a
-      // failure the engine never noticed would otherwise stay invisible (it did,
-      // for a week).
+      // Step 8 (A5): Start the fee reconciler. It completes the jackpot payout
+      // claims the live payout could not land (the maintenance freeze defers
+      // them; a process death can orphan a write-ahead claim) and runs the
+      // read-only money audits, among them the independent comparison of what
+      // rake_records booked as BBJ contribution against what the jackpot pool
+      // received. The rake and BBJ drop of an accepted hand are banked by the
+      // hand's own post-commit envelope, so nothing here re-drives or re-queues
+      // them (2026-09-22).
       this.startFeeReconciler();
       this.startLeaseReaper();
       this.startClockSkewMonitor();
       this.statsHealth.start();
-      this.startBombLedgerRepairSweep();
 
       // Step 8b: accepted-hand settlement stores history and projection work in
       // one database transaction. The projection worker drains that durable
@@ -3721,10 +3705,6 @@ export class GameServer {
     if (this.leaseReapTimer) {
       clearInterval(this.leaseReapTimer);
       this.leaseReapTimer = null;
-    }
-    if (this.bombLedgerRepairTimer) {
-      clearInterval(this.bombLedgerRepairTimer);
-      this.bombLedgerRepairTimer = null;
     }
     if (this.clockSkewTimer) {
       clearInterval(this.clockSkewTimer);
@@ -5294,14 +5274,20 @@ export class GameServer {
   }
 
   /**
-   * A5: every 5 minutes, re-drive any fee the engine could not bank, then check
-   * the two BBJ ledgers against each other.
+   * A5: every 5 minutes, complete any jackpot payout claim the live payout could
+   * not land; every hour, run the read-only money audits.
    *
-   * Both underlying operations are idempotent — `atomic_distribute_rake` is
-   * hand-gated and `bbj_record_contribution` is keyed per (table, hand) — so a
-   * cycle that overlaps a queue entry which has since succeeded resolves it as a
-   * no-op rather than double-banking. `running` is re-checked inside the tick so
-   * a shutdown mid-cycle cannot start new work.
+   * The payout RPC is idempotent on (pool, table, hand), so a cycle that overlaps
+   * a claim which has since been paid resolves it as a no-op rather than paying
+   * twice. `running` is re-checked inside the tick so a shutdown mid-cycle cannot
+   * start new work.
+   *
+   * NOTHING HERE RE-DRIVES OR RE-QUEUES A FEE (2026-09-22). The rake and BBJ drop
+   * of an accepted hand are carried by its post-commit envelope, which the only
+   * hand door refuses to commit without, and banked in one transaction. The
+   * hourly restart-orphan re-queue and the hourly BBJ self-heal that used to run
+   * here compensated for the split write the envelope removed, and the re-queue
+   * raced a late envelope with an equal-split claim. See FeeReconciler.ts.
    */
   private startFeeReconciler(): void {
     const FEE_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
@@ -5336,18 +5322,7 @@ export class GameServer {
       }
       if (cycle % DRIFT_EVERY_N_CYCLES === 0) {
         try {
-          // SELF-HEAL 2026-08-18: repair BEFORE auditing, so the audit reports
-          // what is still broken rather than what was already fixable. The
-          // repair backdates recovered rows to the original hand time, so a
-          // successful repair drives the drift measurement to zero in the same
-          // cycle instead of alarming on money that is now banked.
-          const healed = await repairUnbankedBBJFees(48);
-          if (healed.repaired > 0) {
-            console.log(
-              `[BBJ self-heal] recovered ${healed.repaired} unbanked contribution(s), ` +
-                `${healed.chips.toFixed(2)} chips`
-            );
-          }
+          // Read-only: reports BBJ ledger drift, never repairs it.
           await auditBBJDrift(1);
           // Weighted contributed rake (Dan 2026-08-29): invariant 4/9 watchdog
           // — every WEIGHTED_CONTRIBUTED hand's per-player rake_attributions
@@ -5381,19 +5356,6 @@ export class GameServer {
           // Nine freerolls ranked a full field, crowned a winner and paid
           // nobody, silently. Detects only; the finish path does the funding.
           await auditGuaranteesKept(24);
-          // Historical pre-atomic fees (2026-08-31): a process death between
-          // the old independent hand and fee writes could leave no durable fee
-          // claim. Measured: 20 cash hands / 72.30 chips in 24h, clustered at
-          // restarts. This sweep files those historical rows into the durable
-          // database queue; accepted hands now commit both records atomically.
-          // 6 hours, not 48: MEASURED 2026-08-31, the 48h scan takes 12.9s and
-          // PostgREST cancels at ~8s, so the very first production run of this
-          // sweep died with 57014 and it had never healed anything. The SQL now
-          // carries its own 120s ceiling AND this window matches the cadence —
-          // at a 5-minute cycle a 6-hour window gives an orphaned hand ~72
-          // chances to be caught, for an eighth of the rows (3.3s measured).
-          // Pass 48 explicitly for a catch-up after an outage.
-          await requeueUnbankedCashRake(6, 10, 200);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }
@@ -5556,70 +5518,6 @@ export class GameServer {
       this.launchServerLifecycleJob(this.reapDeadLeases(), 'GameServer.lease_reap_failed');
     }, LEASE_REAP_INTERVAL_MS);
     console.log('[GameServer] Lease reaper started (hourly)');
-  }
-
-  /**
-   * Rebuild `bomb_pot_award_units` rows that settlement lost.
-   *
-   * WHY THIS EXISTS. The award-unit write in ServerTableEngineSettlement is
-   * fire-and-forget by design — the ledger narrates money `logHandHistory` has
-   * already recorded, so it must never be able to fail a hand. It retries three
-   * times and then reports. What it never had was anything that came back for
-   * the row afterwards, so a blip that outlasted the third attempt left a
-   * PERMANENT hole: `fn_bomb_pot_ledger_gaps` filed it as critical, roughly 17
-   * a day, and the only way to close one was a human running a backfill.
-   *
-   * A retry that gives up is not durability; the sweep is the other half of it.
-   *
-   * `fn_backfill_bomb_pot_award_units` does the arithmetic — the engine's own
-   * pot/board/rake decomposition reproduced from columns already stored on the
-   * hand, never card evaluation — and deliberately rebuilds SINGLE-WINNER
-   * hands only. Multi-winner bomb hands stay missing and stay visible in the
-   * gap report, because `hand_history.winners` is merged per user and does not
-   * record which board each winner took. An incomplete ledger that says so
-   * beats a complete-looking one that is partly fiction.
-   *
-   * Best-effort by construction, like every other sweep here: `running` is
-   * re-checked inside the tick, and every failure path reports and returns so
-   * housekeeping can never be the reason the platform stops dealing.
-   */
-  private startBombLedgerRepairSweep(): void {
-    if (this.bombLedgerRepairTimer) return;
-
-    const tick = async (): Promise<void> => {
-      if (!this.running) return;
-      // THE FREEZE (Dan 2026-09-01): the backfill writes award units - chip
-      // accounting. Hourly cadence; the break costs it nothing.
-      if (isMaintenanceFrozen()) return;
-      try {
-        const { data, error } = await supabase.rpc('fn_backfill_bomb_pot_award_units', {
-          p_limit: BOMB_LEDGER_REPAIR_BATCH,
-          p_dry_run: false,
-        });
-        if (error) {
-          reportError(error, 'GameServer.bomb_ledger_repair_failed');
-          return;
-        }
-        const row = (Array.isArray(data) ? data[0] : data) as
-          | { hands_written?: number; units_written?: number; hands_skipped?: number }
-          | undefined;
-        const hands = Number(row?.hands_written ?? 0);
-        if (hands > 0) {
-          console.log(
-            `[BombLedgerRepair] rebuilt ${Number(row?.units_written ?? 0)} award unit(s) ` +
-              `across ${hands} hand(s); ${Number(row?.hands_skipped ?? 0)} left for the gap report`
-          );
-        }
-      } catch (err) {
-        reportError(err, 'GameServer.bomb_ledger_repair_threw');
-      }
-    };
-
-    this.launchServerLifecycleJob(tick(), 'GameServer.bomb_ledger_repair_tick_failed');
-    this.bombLedgerRepairTimer = setInterval(() => {
-      this.launchServerLifecycleJob(tick(), 'GameServer.bomb_ledger_repair_tick_failed');
-    }, BOMB_LEDGER_REPAIR_INTERVAL_MS);
-    console.log('[GameServer] Bomb-pot award ledger repair sweep started (hourly)');
   }
 
   private async triggerSynchronizedBreak(): Promise<void> {
@@ -7745,44 +7643,14 @@ export class GameServer {
           }
         }
 
-        // ── UNBANKED FEE RE-QUEUE (2026-08-28) ──
-        // queueUnbankedFee is the last line of defence: when a rake or BBJ fee
-        // cannot be banked it goes into pending_fee_distributions, and the
-        // drain above empties that. When the QUEUE INSERT itself failed - a
-        // Cloudflare 520, a PostgREST schema-cache blip - the alert was the
-        // only record left, and its text said the chips were "recoverable only
-        // by hand". They are not: since 2026-08-22 the alert carries the whole
-        // payload (pot, numPlayers, contributions), which is everything needed
-        // to put the row back in the queue.
-        //
-        // fn_requeue_unbanked_fees re-runs feeIsAccountedFor in SQL before
-        // queueing anything, because most of these alerts describe fees that
-        // were banked moments later - on the first run, 1,205 of 1,459. Without
-        // that check this would double-book the overwhelming majority of what
-        // it touches.
-        if (Date.now() - this.lastFeeRequeueAt > 30 * 60 * 1000) {
-          this.lastFeeRequeueAt = Date.now();
-          try {
-            const { data: rq, error: rqErr } = await supabase.rpc('fn_requeue_unbanked_fees', {
-              p_apply: true,
-              p_limit: 500,
-            });
-            if (rqErr) {
-              reportError(
-                new Error(`[GameServer] unbanked fee re-queue failed: ${rqErr.message}`),
-                'GameServer.fee_requeue_failed'
-              );
-            } else if (Number(rq?.requeued) > 0 || Number(rq?.already_accounted) > 0) {
-              console.log(
-                `[GameServer] Unbanked fee re-queue: ${rq.requeued} re-queued ` +
-                  `(${rq.rake_requeued} rake, ${rq.bbj_requeued} bbj), ` +
-                  `${rq.already_accounted} already banked (alerts ${rq.alerts_open_before} -> ${rq.alerts_open_after})`
-              );
-            }
-          } catch (rqEx) {
-            reportError(rqEx, 'GameServer.fee_requeue_threw');
-          }
-        }
+        /* The former UNBANKED FEE RE-QUEUE (fn_requeue_unbanked_fees, every 30
+           minutes) is intentionally gone (2026-09-22). It turned an unqueueable
+           rake or BBJ-drop failure alert back into a queue row. The rake and
+           BBJ drop of an accepted hand are carried by its post-commit envelope,
+           which the only hand door refuses to commit without, and banked in one
+           transaction, so that failure has no production writer left: the last
+           such alert was raised on 2026-09-08. A re-queue here would put a
+           second, timer-driven door back on money the hand already owns. */
 
         /* The former PLAYED-BUT-STILL-REGISTERING repair is intentionally
            gone. It was compensating for start() dealing before its lifecycle

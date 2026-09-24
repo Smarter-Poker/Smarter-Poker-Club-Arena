@@ -333,6 +333,7 @@ export function BBJInfoModal({
         aria-label="Bad Beat Jackpot"
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow={isMini ? 'MINI BAD BEAT JACKPOT' : 'BAD BEAT JACKPOT'}
           title={headline}
           subtitle={sublabel}

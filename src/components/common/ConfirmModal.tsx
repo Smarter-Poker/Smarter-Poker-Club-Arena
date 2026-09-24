@@ -140,6 +140,7 @@ export function ConfirmModal({
         aria-busy={loading || undefined}
       >
         <SpadeConsole
+          onClose={loading ? undefined : onCancel}
           as="div"
           title={formatPopupText(title)}
           titleId="confirm-modal-title"

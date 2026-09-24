@@ -277,6 +277,7 @@ export function ScheduleCloseDialog({
         }}
       >
         <SpadeConsole
+          onClose={busy ? undefined : onClose}
           eyebrow="Governed Lifecycle"
           title="Schedule Close"
           titleId="schedule-close-title"
@@ -454,6 +455,7 @@ export function EditGameDialog({
         }}
       >
         <SpadeConsole
+          onClose={busy ? undefined : requestClose}
           eyebrow="Safe Pre-Game Changes"
           title={`Edit ${game.kind === 'table' ? 'Table' : 'Tournament'}`}
           titleId="edit-game-title"
@@ -603,6 +605,7 @@ export function ContractHistoryDialog({
         aria-labelledby="contract-title"
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Published Contract History"
           title={game.name}
           titleId="contract-title"

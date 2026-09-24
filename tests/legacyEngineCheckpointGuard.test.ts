@@ -809,6 +809,102 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.snapshotReads).toEqual([]);
   });
 
+  /* A STICKY "DID NOT SUCCEED" ON A PROCESS THAT IS ALREADY DEAD (2026-09-24).
+     Run 35956154940 cleared the boundary-count refusal #5155 bounded and
+     stopped on the LAST conjunct of the same proof, on table 6557ebd8, with
+     `boundary=0/true, permitPhase=attempted`: an EMPTY pending set and a
+     `terminalBoundaryPersistenceFailed` that only
+     `beginTerminalBoundaryPersistence` clears, which a stopped terminal engine
+     can never reach. */
+  const deadWithFailedBoundary = (f: ReturnType<typeof fixture>) => {
+    stopEmpty(f);
+    f.first.terminalBoundaryPersistenceFailed = true;
+  };
+
+  it('a resolved-and-failed boundary on a dead engine is deferred and proved from rows', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithFailedBoundary(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:failedBoundary:attempted`,
+    });
+    expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
+  });
+
+  it('with no permit at all it is deferred to the same row proof', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithFailedBoundary(f);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      unresolvableCustody: `tables=1 ${f.first.tableId}:failedBoundary:none`,
+    });
+    expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
+  });
+
+  it('a hand in the air on that table refuses the failed boundary too', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithFailedBoundary(f);
+    f.onSnapshots((ids: string[]) => ({
+      data: [
+        { table_id: ids[0], hand_number: 9, stage: 'flop', updated_at: new Date().toISOString() },
+      ],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a LIVE engine with a failed boundary keeps the flat false, and no row is read', async () => {
+    const f = fixture(2, checkpoint758);
+    // Empty, parked and live: every OTHER conjunct of the deferral is
+    // satisfied, so only "this engine can still run again" refuses it.
+    f.first.seatedPlayers = [];
+    f.first.timeBankMeta.clear();
+    f.first.timeBankEngine.playerBanks.clear();
+    f.first.terminalBoundaryPersistenceFailed = true;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_work_not_drained',
+      failedTable: f.first.tableId,
+    });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a permit in any other phase keeps the flat false, and no row is read', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithFailedBoundary(f);
+    f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a dead engine STILL carrying a generation refuses on the count, one conjunct earlier', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithFailedBoundary(f);
+    f.first.terminalBoundaryPendingGenerations = new Set([7]);
+    f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a dead engine that still holds a live bank refuses, and no row is read', async () => {
+    const f = fixture(2, checkpoint758);
+    deadWithFailedBoundary(f);
+    f.first.timeBankEngine.playerBanks.set('held', { remainingSeconds: 1 });
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'engine_work_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
   it('a retained permit on a LIVE engine still refuses, and no row is read for it', async () => {
     const f = fixture(2, checkpoint758);
     f.first.f06CurrentPermit = { recoveryState: () => 'reserved' };

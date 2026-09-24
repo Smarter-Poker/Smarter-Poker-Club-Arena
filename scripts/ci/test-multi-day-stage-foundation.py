@@ -251,6 +251,44 @@ CREATE TRIGGER a0_tournament_live_seat_root_guard
 """
 
 
+# Production's money-RPC registry DDL guard (event trigger ab_ca_money_rpc_registered, read live
+# 2026-09-24): a new public function whose source writes a balance column must already be registered.
+# The first production install of 20260924043239 was refused by it; the harness carries it so a
+# missing registration fails here first.
+MONEY_REGISTRY_GUARD = r"""
+CREATE TABLE IF NOT EXISTS public.ca_money_rpc_registry (
+  proname text PRIMARY KEY, status text NOT NULL, notes text, added_at timestamptz NOT NULL DEFAULT now());
+CREATE OR REPLACE FUNCTION public.fn_ca_money_rpc_balance_columns() RETURNS text[] LANGUAGE sql IMMUTABLE AS $f$
+  SELECT ARRAY['agent_wallet_balance','backup_balance','backup_bbj_balance','balance','bbj_wallet','bounty_winnings',
+    'chip_balance','chip_pool','chip_treasury','chips','credit_used','held_chips','insurance_balance','insurance_wallet',
+    'locked_chips','main_balance','main_bbj_balance','prize','promo_balance','promo_fund_balance','promo_wallet',
+    'promo_wallet_balance','rake_wallet','spin_reserve_wallet','stack']::text[] $f$;
+CREATE OR REPLACE FUNCTION public.fn_ca_money_rpc_writes_balances(p_src text) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp' AS $f$
+  SELECT COALESCE(
+    p_src ~* 'UPDATE\s+(public\.)?(club_members|club_wallets|union_wallets|unions|table_seats|bbj_pools|clubs|agents|wallets|spin_bonus_pools|tournament_players)\y'
+    OR p_src ~* 'INSERT\s+INTO\s+(public\.)?(club_members|club_wallets|union_wallets|unions|bbj_pools|clubs|agents|wallets|spin_bonus_pools)\y', false)
+  AND COALESCE(p_src ~* ('\y(' || array_to_string(public.fn_ca_money_rpc_balance_columns(), '|') || ')\y'), false);
+$f$;
+CREATE OR REPLACE FUNCTION public.fn_ca_money_rpc_registry_guard() RETURNS event_trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public', 'pg_temp' AS $f$
+DECLARE obj record; v_name text; v_src text;
+BEGIN
+  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands() LOOP
+    IF obj.object_type <> 'function' OR obj.schema_name IS DISTINCT FROM 'public' THEN CONTINUE; END IF;
+    SELECT p.proname, p.prosrc INTO v_name, v_src FROM pg_proc p WHERE p.oid = obj.objid AND p.prokind = 'f';
+    IF v_name IS NULL THEN CONTINUE; END IF;
+    IF NOT public.fn_ca_money_rpc_writes_balances(v_src) THEN CONTINUE; END IF;
+    IF EXISTS (SELECT 1 FROM public.ca_money_rpc_registry g WHERE g.proname = v_name) THEN CONTINUE; END IF;
+    RAISE EXCEPTION 'REFUSED: % writes balance columns and is not in ca_money_rpc_registry', v_name USING ERRCODE = '42501';
+  END LOOP;
+END;
+$f$;
+DROP EVENT TRIGGER IF EXISTS ab_ca_money_rpc_registered;
+CREATE EVENT TRIGGER ab_ca_money_rpc_registered ON ddl_command_end EXECUTE FUNCTION public.fn_ca_money_rpc_registry_guard();
+"""
+
+
 def seed_event(c):
     """T1: a RUNNING MTT at the end of level 12, two tables, six players (one a
     horse), every stack equal to its last accepted hand. T2: an ordinary
@@ -380,6 +418,7 @@ def run_all(c, capability):
     seed_event(c)
     # The unbuilt guard, installed with its own seven-column probe on T3.
     c.psql((MIG / '20260902052302_a_half_guarded_feature_is_a_feature_that_can_be_half_built.sql').read_text())
+    c.psql(MONEY_REGISTRY_GUARD)
 
     # ---- before: the platform has no BAGGED and no way back into RUNNING ----
     c.psql("UPDATE public.tournaments SET status='BAGGED' WHERE id='%s';" % T3, error='tournaments_status_check')
@@ -402,6 +441,10 @@ def run_all(c, capability):
         c.psql((MIG / name).read_text())
     assert c.val("SELECT convalidated FROM pg_constraint WHERE conname='tournaments_status_check'") == 't'
     ok('migrations_install_in_order', ', '.join(n[:14] for n in CANDIDATES))
+    assert c.val("SELECT string_agg(proname || '=' || status, ',' ORDER BY proname) FROM public.ca_money_rpc_registry"
+                 " WHERE proname IN ('fn_bag_tournament_stage','fn_seat_stage_entitlement')") == \
+        'fn_bag_tournament_stage=approved,fn_seat_stage_entitlement=approved'
+    ok('money_moving_stage_rpcs_are_registered_before_they_exist', 'production DDL guard carried in the harness')
 
     # Declared live proofs are true on the installed schema.
     proofs = []

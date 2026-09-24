@@ -56,6 +56,7 @@
 -- ROLLBACK: DROP the eight functions (none has a caller before the engine
 -- release of R5).
 --
+-- @live-proof: (SELECT count(*) = 2 FROM public.ca_money_rpc_registry WHERE proname IN ('fn_bag_tournament_stage','fn_seat_stage_entitlement') AND status = 'approved')
 -- @live-proof: (SELECT count(*) = 7 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.prosecdef AND p.proname IN ('fn_seal_tournament_stage_plan','fn_begin_stage_end','fn_bag_tournament_stage','fn_reschedule_tournament_stage','fn_begin_stage_resume','fn_seat_stage_entitlement','fn_complete_stage_resume') AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE'))
 
 BEGIN;
@@ -72,12 +73,24 @@ BEGIN
      OR to_regclass('public.hand_state_snapshots') IS NULL
      OR to_regclass('public.engine_tournament_leases') IS NULL
      OR to_regclass('public.tournament_stage_resume_receipts') IS NULL
+     OR to_regclass('public.ca_money_rpc_registry') IS NULL
      OR NOT EXISTS (SELECT 1 FROM pg_trigger t
                      WHERE t.tgname = 'trg_tournaments_bagged_status_door' AND t.tgenabled = 'O') THEN
     RAISE EXCEPTION 'MULTI_DAY_RPC_PREREQUISITES_MISSING' USING ERRCODE = '55000';
   END IF;
 END
 $pre$;
+
+-- The two RPCs that move stacks are registered BEFORE they exist, as the
+-- production DDL guard ab_ca_money_rpc_registered requires. The first install
+-- (2026-09-24) was refused without these rows and rolled back; the owner
+-- approved both registrations the same day.
+INSERT INTO public.ca_money_rpc_registry (proname, status, notes) VALUES
+  ('fn_bag_tournament_stage', 'approved',
+   'Multi-day bag (multi-day-v1), owner-approved 2026-09-24: moves each seated tournament stack from table_seats.stack into tournament_players.chips and a tournament_stage_bags row, sum-checked against the last committed hand watermarks; service-role only, lease-fenced, capability-gated (tournament.multi_day.single_flight), refused while frozen, idempotent on its bag receipt.'),
+  ('fn_seat_stage_entitlement', 'approved',
+   'Multi-day resume (multi-day-v1), owner-approved 2026-09-24: seats one qualification entitlement once, moving its bagged stack from tournament_players.chips to a new table_seats.stack; service-role only, lease-fenced, capability-gated, idempotent on the resume receipt, chip conservation checked.')
+ON CONFLICT (proname) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- 0. THE LEASE PROOF (private helper).

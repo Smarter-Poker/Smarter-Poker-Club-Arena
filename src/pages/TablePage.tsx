@@ -774,6 +774,10 @@ interface TableState {
   // and are held out only by their seat. The hero is never asked again while
   // their own id is in here; the engine posts for them when the seat clears.
   postBBDeferredUserIds?: string[];
+  // 2026-09-24 - released from the wait and owing a live big blind on the next
+  // deal. In neither list above; the seat reads it as "posting" so nobody is
+  // painted SITTING OUT between agreeing to post and being dealt in.
+  postingBBUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
   /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
@@ -2740,6 +2744,7 @@ function LiveTablePage({
         // Walkthrough Step 4 fix 2026-04-29: waiting-for-BB user IDs.
         waitingForBBUserIds: mapped.waitingForBBUserIds,
         postBBDeferredUserIds: mapped.postBBDeferredUserIds,
+        postingBBUserIds: mapped.postingBBUserIds,
       };
     });
     // tableState.maxPlayers is read through tableStateRef above, deliberately:
@@ -24605,14 +24610,18 @@ function LiveTablePage({
                   }
                   /* Dan 2026-09-23: a cash entrant the engine is holding for
                      the big blind is "Waiting For BB", and one who agreed to
-                     post it is not sitting out at all. Same two engine lists
-                     the hero's footer reads (post_bb_deferred_user_ids and
+                     post it is not sitting out at all. The three engine lists
+                     (post_bb_deferred_user_ids, posting_bb_user_ids and
                      waiting_for_bb_user_ids); the hero's own local agreement
-                     covers the round trip before the engine echoes it. */
+                     covers the round trip before the engine echoes it. The
+                     posting list was missing on 2026-09-23: a player released
+                     to post on the next deal is in neither of the other two,
+                     so that window still read SITTING OUT. */
                   entryWait={
                     !displayPlayer?.id || tableState.isTournament
                       ? null
                       : (tableState.postBBDeferredUserIds ?? []).includes(displayPlayer.id) ||
+                          (tableState.postingBBUserIds ?? []).includes(displayPlayer.id) ||
                           (displayPlayer.isHero && bbPostAgreed)
                         ? 'posting_bb'
                         : (tableState.waitingForBBUserIds ?? []).includes(displayPlayer.id)

@@ -27,6 +27,12 @@ import { masterBus } from '../core/MasterBus';
 import { readTournamentFormat } from '../utils/tournamentPresentation';
 import { retryAsync } from '../utils/retryAsync';
 import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
+import {
+  TOURNAMENT_CREATE_ERRORS,
+  assertTournamentRpcConfig,
+  tournamentCreateDbErrorMessage,
+  tournamentCreateErrorMessage,
+} from '../lib/tournamentCreationRules';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
 import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
@@ -526,39 +532,12 @@ export interface SpinMultiplier {
 export const RESTART_WEEKLY_MINUTES = 7 * 24 * 60;
 export const RESTART_MAX_MINUTES = RESTART_WEEKLY_MINUTES;
 
-/**
- * fn_create_tournament returns a machine-readable reason; turn it into
- * something a club owner can act on. Anything unmapped falls back to a generic
- * message rather than leaking the raw code.
+/*
+ * fn_create_tournament returns a machine-readable reason; the owner reads the
+ * sentence for it. TOURNAMENT_CREATE_ERRORS, and every rule behind it, lives in
+ * src/lib/tournamentCreationRules.ts, shared by every creation surface and
+ * mirrored by public.fn_tournament_config_refusal (20260924033701).
  */
-const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
-  not_authenticated: 'You need to be signed in to create a tournament.',
-  not_authorised:
-    'Only the owner or an admin can create tournaments here. A club inside a union does not create its own - the union creates them.',
-  buy_in_must_not_be_negative: 'Buy-in cannot be negative.',
-  buy_in_must_be_whole: 'Buy-in must be a whole number of chips, with no decimals.',
-  bounty_must_be_whole: 'Bounty amount must be a whole number of chips, with no decimals.',
-  max_players_must_be_positive: 'Choose the number of seats for this Sit And Go or Spin.',
-  blind_structure_required: 'Choose a blind structure.',
-  custom_level_breaks_not_supported:
-    'Custom Level Breaks Are Not Supported. Remove Break Rows And Use The Synchronized Break Setting.',
-  payout_structure_required: 'Choose a payout structure.',
-  payouts_must_total_100: 'Payout percentages have to add up to 100%.',
-  more_paid_places_than_players: 'This Sit And Go or Spin has more paid places than seats.',
-  bounty_amount_required: 'A bounty tournament needs a bounty amount.',
-  bounty_exceeds_buy_in:
-    'The bounty plus the 10% fee is more than the buy-in, so there would be nothing left for the prize pool.',
-  // Parity keys (2026-08-22)
-  early_bird_chips_must_not_be_negative: 'Early bird chips cannot be negative.',
-  restart_every_minutes_out_of_range:
-    'Restart interval must be between 5 minutes and one week (10080 minutes).',
-  total_days_out_of_range: 'A multi-day tournament runs 2 to 7 days.',
-  mystery_range_requires_mystery_bounty:
-    'Mystery bounty multipliers only apply to mystery bounty tournaments.',
-  mystery_bounty_range_invalid: 'Mystery bounty multipliers must be positive, with max >= min.',
-  satellite_seats_invalid: 'A satellite must award at least 1 seat.',
-  satellite_seats_requires_target: 'Satellite seats need a target tournament.',
-};
 
 export interface TournamentConfig {
   name: string;
@@ -1057,6 +1036,14 @@ class TournamentService {
    * server owns every default. Clamped keys clamp here exactly as the server
    * clamps them (sliders clamp silently; money/structure keys were already
    * refused in createTournament's validation).
+   *
+   * THE CREATION RULES RUN HERE, LAST (20260924033701). Every surface builds
+   * its p_config through this method, so this is where the one shared list in
+   * tournamentCreationRules is applied: a configuration the engine cannot run
+   * throws the owner-facing refusal instead of being sent. fn_create_tournament
+   * applies the identical list server-side. A schedule config built here is
+   * checked again, on the schedule surface, by TournamentScheduleService.upsert
+   * and fn_upsert_tournament_schedule.
    */
   buildRpcConfig(config: TournamentConfig): Record<string, unknown> {
     if (
@@ -1184,6 +1171,7 @@ class TournamentService {
       p.satelliteSeats = config.satelliteTarget.seatsAwarded;
     }
 
+    assertTournamentRpcConfig(p, { surface: 'create' });
     return p;
   }
 
@@ -1235,52 +1223,6 @@ class TournamentService {
       }
       if (settings && settings.crossClubTournaments === false) {
         throw new Error('This union does not allow cross-club tournaments');
-      }
-    }
-
-    // VALIDATION: Payout structure percentages must sum to ~100%
-    if (config.payoutStructure && Array.isArray(config.payoutStructure)) {
-      const totalPercent = config.payoutStructure.reduce(
-        (sum: number, p: any) => sum + (Number(p.percentage) || 0),
-        0
-      );
-      if (totalPercent > 0 && Math.abs(totalPercent - 100) > 1) {
-        throw new Error(`Payout percentages must sum to 100% (got ${totalPercent.toFixed(1)}%)`);
-      }
-    }
-
-    // VALIDATION: Blind structure must have increasing blinds and positive durations
-    // TOURNEY-AUDIT 2026-07-24: BREAK levels (isBreak / 0-0 blinds) are now
-    // SKIPPED in the monotonicity check. The standard turbo/regular/deepStack
-    // presets all contain break entries encoded as smallBlind:0/bigBlind:0, so
-    // the old check threw "must not decrease" on EVERY tournament created with
-    // a break-containing structure — a hard creation blocker.
-    if (isUnlimitedMtt(config)) {
-      validateMttBlindStructure(config.blindStructure, config.startingStack);
-    } else if (config.blindStructure && Array.isArray(config.blindStructure)) {
-      const isBreakLevel = (l: any): boolean =>
-        !!l?.isBreak || (Number(l?.smallBlind) === 0 && Number(l?.bigBlind) === 0);
-      let prevPlaying: any = null;
-      for (let i = 0; i < config.blindStructure.length; i++) {
-        const level = config.blindStructure[i] as any;
-        if (level.durationMinutes !== undefined && level.durationMinutes <= 0) {
-          throw new Error(
-            `Blind level ${i + 1} has invalid duration (${level.durationMinutes}). Must be > 0.`
-          );
-        }
-        if (isBreakLevel(level)) continue; // breaks don't participate in blind monotonicity
-        if (prevPlaying) {
-          // FIX: Use OR — either blind decreasing is invalid (was AND, which allowed partial decreases)
-          if (
-            Number(level.smallBlind) < Number(prevPlaying.smallBlind) ||
-            Number(level.bigBlind) < Number(prevPlaying.bigBlind)
-          ) {
-            throw new Error(
-              `Blind structure must not decrease: level ${i + 1} (${level.smallBlind}/${level.bigBlind}) is lower than the previous playing level (${prevPlaying.smallBlind}/${prevPlaying.bigBlind})`
-            );
-          }
-        }
-        prevPlaying = level;
       }
     }
 
@@ -1345,6 +1287,15 @@ class TournamentService {
       }
     }
 
+    // ── THE SHARED CREATION RULES (20260924033701) ──
+    // Payout total (within 1 of 100, zero refused), a Sit And Go or Spin
+    // ladder that never falls, the new-MTT blind contract, a positive starting
+    // stack, a future start, a satellite target, the deck's seat ceiling and
+    // an open late window for rebuys all live in tournamentCreationRules and
+    // run inside buildRpcConfig, the same list every other surface uses and
+    // fn_create_tournament applies again. Built once, sent as built.
+    const rpcConfig = this.buildRpcConfig(config);
+
     // Map format to variant for DB
     const variantMap: Record<string, string> = {
       mtt: 'freezeout',
@@ -1387,7 +1338,7 @@ class TournamentService {
     // not let a caller probe which clubs exist or who administers them).
     const { data: rpcResult, error: rpcError } = await supabase.rpc('fn_create_tournament', {
       p_club_id: await resolveClubUUID(clubId),
-      p_config: this.buildRpcConfig(config),
+      p_config: rpcConfig,
     });
 
     /**
@@ -1403,35 +1354,24 @@ class TournamentService {
      */
     if (rpcError) {
       reportError(rpcError, 'TournamentService.createTournament_rpc');
-      const code = (rpcError as { code?: string }).code ?? '';
-      const friendly: Record<string, string> = {
-        '23514': 'Could not create the tournament. The buy-in or fee failed a safety check.',
-        '0A000': 'Could not create the tournament. That option is not available yet.',
-        '42501': 'You do not have permission to create games for this club.',
-      };
       /**
-       * 55000 IS THE GUARANTEE REFUSAL, AND ITS MESSAGE IS ALREADY WRITTEN
-       * FOR THE OWNER (2026-08-31 audit).
+       * EVERY SQLSTATE HAS ITS OWN REASON (20260924033701).
        *
-       * trg_tournaments_guarantee_affordable raises, verbatim: "Club X cannot
-       * guarantee N chips: <bank> holds A, floor B, already promised C on live
-       * events — short by D. Add chips to the bank to cover the guarantee."
-       * That sentence names the shortfall and the remedy.
-       *
-       * It was not in this map, so it fell to the default — "Please try again"
-       * — which describes a transient blip. The condition is neither
-       * transient nor mysterious: the owner is short by a stated number of
-       * chips and nothing they retry will change that. The migration that
-       * added the trigger even records the assumption this broke: "The UI
-       * already shows the raise verbatim as a toast."
-       *
-       * Passed through as written. The Toast layer applies the house style
-       * (Title Case, no em dashes) at render, so the raise text needs no
-       * massaging here.
+       * 23514 used to read "the buy-in or fee failed a safety check" whatever
+       * raised it, while tournaments_creation_guard raises it for seats and
+       * paid places. 22023 (the MTT blind contract, the mystery bounty
+       * document, the Free Buy option guard) and 23503 (a satellite target
+       * that no longer exists) fell to "Please try again", which describes a
+       * blip that retrying cures; neither is one. 55000 is still the
+       * guarantee refusal passed through as written, because its text names
+       * the shortfall and the remedy. tournamentCreateDbErrorMessage owns the
+       * map; the raw error still goes to the reporter above.
        */
-      const raised = String((rpcError as { message?: string }).message ?? '').trim();
-      if (code === '55000' && raised) throw new Error(raised);
-      throw new Error(friendly[code] ?? 'Could not create the tournament. Please try again.');
+      throw new Error(
+        tournamentCreateDbErrorMessage(
+          rpcError as { code?: string; message?: string; details?: string }
+        )
+      );
     }
     const result = rpcResult as {
       success?: boolean;
@@ -1440,9 +1380,7 @@ class TournamentService {
       mystery_config?: Record<string, unknown>;
     } | null;
     if (!result?.success) {
-      throw new Error(
-        TOURNAMENT_CREATE_ERRORS[result?.error ?? ''] ?? 'Could not create tournament'
-      );
+      throw new Error(tournamentCreateErrorMessage(result?.error));
     }
 
     if (config.type === 'mystery_bounty') {

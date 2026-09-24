@@ -75,6 +75,10 @@ function fixture(count = 1, predecessor = release) {
   let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
   const moveReads: { ids: string[] }[] = [];
   let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
+  const dealtReads: { table: string; since: string; player: string }[] = [];
+  let onDealt:
+    | ((table: string, since: string, player: string) => { data: any; error: any })
+    | undefined;
   // Opt-in: model a predecessor whose `unparkedTables()` has no bound, so one
   // unresolved F06 preparation holds `readyForRestart()` false for ever.
   // 8825af51 is exactly that engine and it is what production runs.
@@ -381,6 +385,47 @@ function fixture(count = 1, predecessor = release) {
               },
             };
           }
+          if (name === 'hand_history') {
+            // Has the destination dealt this player a hand since the move?
+            const filter: any = {
+              table: '',
+              since: '',
+              player: '',
+              eq: (key: string, value: string) => {
+                expect(key).toBe('table_id');
+                filter.table = value;
+                return filter;
+              },
+              gt: (key: string, value: string) => {
+                expect(key).toBe('created_at');
+                filter.since = value;
+                return filter;
+              },
+              contains: (key: string, value: any) => {
+                expect(key).toBe('players');
+                expect(Object.keys(value[0])).toEqual(['userId']);
+                filter.player = value[0].userId;
+                return filter;
+              },
+              limit: async (bound: number) => {
+                expect(bound).toBe(1);
+                dealtReads.push({
+                  table: filter.table,
+                  since: filter.since,
+                  player: filter.player,
+                });
+                return onDealt
+                  ? onDealt(filter.table, filter.since, filter.player)
+                  : { data: [], error: null };
+              },
+            };
+            return {
+              select: (columns: string) => {
+                expect(columns).toBe('id');
+                return filter;
+              },
+            };
+          }
           expect(name).toBe('engine_presence_parked');
           return {
             select: () => ({
@@ -428,6 +473,10 @@ function fixture(count = 1, predecessor = release) {
     },
     onSeats: (hook: typeof onSeats) => {
       onSeats = hook;
+    },
+    dealtReads,
+    onDealt: (hook: typeof onDealt) => {
+      onDealt = hook;
     },
     onMoves: (hook: typeof onMoves) => {
       onMoves = hook;
@@ -2881,6 +2930,48 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.moveReads).toEqual([{ ids: [uuid(69000)] }]);
     expect(f.calls).toEqual([]);
     expect(f.rpcCalls).toEqual([]);
+  });
+
+  /* A MOVE THE DESTINATION HAS ALREADY DEALT IS NOT IN TRANSIT (2026-09-24).
+     Run 36050875490 refused on a move twenty-one minutes old into a seat that
+     had since been dealt thirty-three hands. */
+  it('accepts a move inside the hour once the destination has dealt that player a hand after it', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    const executed = new Date(Date.now() - 21 * 60000).toISOString();
+    landed(f, from, uuid(67000), executed);
+    f.onDealt((table: string, since: string, player: string) => {
+      expect([table, since, player]).toEqual([uuid(67000), executed, from.departed]);
+      return { data: [{ id: uuid(70000) }], error: null };
+    });
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.dealtReads).toHaveLength(1);
+    expect(result.bankDisposition).toContain('arrivalsInWindowChecked=1');
+    expect(result.bankDisposition).toContain('arrivalsDealtSince=1');
+  });
+
+  it.each([
+    ['no hand since', () => ({ data: [], error: null })],
+    ['an unreadable answer', () => ({ data: null, error: { code: '57014' } })],
+    ['a row it cannot read', () => ({ data: [{ id: 'x' }], error: null })],
+  ])('still refuses a move inside the hour with %s', async (_label, answer: any) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 21 * 60000).toISOString());
+    f.onDealt(answer);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('asks nothing about a move that executed over an hour ago', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.dealtReads).toEqual([]);
   });
 
   it('accepts a move out of a residue table that executed over an hour ago: its handoff can no longer be claimed', async () => {

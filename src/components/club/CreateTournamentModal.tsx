@@ -35,6 +35,12 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
+import {
+  WEEKDAY_NAMES,
+  scheduleWriteTimeZone,
+  localClockTime,
+  scheduleZoneLabel,
+} from '../../utils/scheduleTimeZone';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import {
   manualTournamentBlindPreset,
@@ -306,20 +312,27 @@ export default function CreateTournamentModal({
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
   const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
-  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
+  /** The owner's IANA zone: a recurring event keeps it (null = UTC). */
+  const scheduleTimeZone = useMemo(() => scheduleWriteTimeZone(), []);
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(() =>
+    scheduleTimeZone ? new Date().getDate() : new Date().getUTCDate()
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /** The weekday and UTC time this event starts, read from the start-time
-   *  fields (or "about now" for an event that starts now). */
+  /** The weekday and time this event starts, read from the start-time
+   *  fields (or "about now" for an event that starts now), on the owner's own
+   *  clock when the device names its zone (saved with the row, so 8:00 PM
+   *  stays 8:00 PM local across daylight saving), else in UTC as before. */
   const weeklySlotFromStart = useCallback((): { daysOfWeek: number[]; startTimesUtc: string[] } => {
     const when =
       startTimeMode === 'scheduled' && scheduledDate && scheduledTime
         ? new Date(`${scheduledDate}T${scheduledTime}`)
         : new Date(Date.now() + 10 * 60 * 1000);
     const at = Number.isFinite(when.getTime()) ? when : new Date(Date.now() + 10 * 60 * 1000);
+    if (scheduleTimeZone) return { daysOfWeek: [at.getDay()], startTimesUtc: [localClockTime(at)] };
     return { daysOfWeek: [at.getUTCDay()], startTimesUtc: [at.toISOString().slice(11, 16)] };
-  }, [startTimeMode, scheduledDate, scheduledTime]);
+  }, [startTimeMode, scheduledDate, scheduledTime, scheduleTimeZone]);
 
   // ── The buy-in, split ──
   // total = what the player pays (the typed whole number)
@@ -892,6 +905,7 @@ export default function CreateTournamentModal({
             effectiveSchedule.mode === 'times'
               ? effectiveSchedule.startTimesUtc.filter((t) => t.trim() !== '')
               : [],
+          timeZone: scheduleTimeZone,
           intervalMinutes:
             effectiveSchedule.mode === 'interval' ? effectiveSchedule.intervalMinutes : null,
           active: true,
@@ -2201,6 +2215,13 @@ export default function CreateTournamentModal({
                     Same Day And Time Every Week, With This Configuration. Next Week's Event Is
                     Published As Soon As This One Is Created.
                   </span>
+                  {repeatsWeekly && (
+                    <span className={styles.helperText} data-testid="repeats-weekly-local-time">
+                      {`Every ${WEEKDAY_NAMES[weeklySlotFromStart().daysOfWeek[0]] ?? ''} At ${
+                        weeklySlotFromStart().startTimesUtc[0] ?? ''
+                      } ${scheduleZoneLabel(scheduleTimeZone)}`}
+                    </span>
+                  )}
                 </div>
                 {!repeatsWeekly && (
                   <div className={styles.formGroup}>
@@ -2264,6 +2285,7 @@ export default function CreateTournamentModal({
                       </label>
                     )}
                     <WeeklyScheduleEditor
+                      timeZone={scheduleTimeZone}
                       value={schedule}
                       onChange={setSchedule}
                       hideDays={scheduleCadence !== 'weekly'}

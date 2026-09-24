@@ -1331,6 +1331,16 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-member-status-server-owned.py
+      # Depends on the capability registry migration 20260924025555, which
+      # merges first; the harness exits 2 naming it when it is absent.
+      - name: Multi-day stage foundation keeps every stack through a bag and a resume (needs capability registry 20260924025555)
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-stage-foundation.py
+      - name: Multi-day stage view shows each player only their own bag and the operator doors refuse without authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-stage-view.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1455,10 +1465,18 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-capability-registry.py --output "$GITHUB_WORKSPACE/artifacts/capability-registry"
+      - name: Kill pot table settings refuse what the engine cannot honour
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-kill-pot-table-settings.py
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
+      - name: "Tournament creation refuses what the client refuses"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-creation-rules.py --output artifacts/tournament-creation-rules
       - name: Concurrent hands preserve shared F06 custody lanes
         id: f06_hand_authority
         env:
@@ -1616,6 +1634,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-diamond-health-comparisons.py
+
+      - name: A schedule keeps its time zone across daylight saving
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-schedule-time-zone.py --output artifacts/schedule-time-zone
 
       # ── THE DIAMOND ARENA ACCEPTANCE RUNS HERE (2026-09-19) ──────────────
       # tests/sql/run-*diamond*.py certify the Diamond money doors (custody,

@@ -311,7 +311,7 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
    * own words. Everything else on preflop is an ordinary action.
    */
   const preflop = byStreet('preflop');
-  const forced = new Set(['sb', 'bb', 'ante', 'straddle']);
+  const forced = new Set(['sb', 'bb', 'ante', 'straddle', 'kill_blind']);
   /**
    * THE FORMAT'S ORDER, not the log's: antes, then the small blind, then the
    * big blind, then any straddle. The engine writes them in seat order, so a
@@ -319,7 +319,7 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
    * big blind first in the file - which reads as a hand where the blinds were
    * the wrong way round.
    */
-  const POST_ORDER: Record<string, number> = { ante: 0, sb: 1, bb: 2, straddle: 3 };
+  const POST_ORDER: Record<string, number> = { ante: 0, sb: 1, bb: 2, kill_blind: 3, straddle: 4 };
   const postRows = (preflop?.rows ?? [])
     .filter((r) => forced.has(r.verb) || r.dead)
     .slice()
@@ -328,6 +328,7 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
     if (r.verb === 'sb') lines.push(`${r.name}: posts small blind ${money(r.amount)}`);
     else if (r.verb === 'bb') lines.push(`${r.name}: posts big blind ${money(r.amount)}`);
     else if (r.verb === 'straddle') lines.push(`${r.name}: posts straddle ${money(r.amount)}`);
+    else if (r.verb === 'kill_blind') lines.push(`${r.name}: posts kill blind ${money(r.amount)}`);
     else lines.push(`${r.name}: posts the ante ${money(r.amount)}`);
   }
 

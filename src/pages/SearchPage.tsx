@@ -43,6 +43,7 @@ import { PlayerSearchService, type PlayerSearchResult } from '../services/Player
 import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
 import { formatBuyInShort } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 import styles from './SearchPage.module.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -244,6 +245,9 @@ export function tournamentStatusLabel(status: string): string {
       return 'Registering';
     case 'ANNOUNCED':
       return 'Announced';
+    case 'BAGGED':
+      // Multi-day, between days. Never "Bagged" from the default below.
+      return DAY_COMPLETE_LABEL;
     default:
       return status ? status.charAt(0) + status.slice(1).toLowerCase() : 'Scheduled';
   }
@@ -1331,7 +1335,9 @@ export default function SearchPage() {
                               ? 'Open Lobby'
                               : tournament.status === 'RUNNING'
                                 ? 'Watch'
-                                : 'Register'}
+                                : isBaggedStatus(tournament.status)
+                                  ? 'View Schedule'
+                                  : 'Register'}
                           </button>
                         </div>
                       </article>

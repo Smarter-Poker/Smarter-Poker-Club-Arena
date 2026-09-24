@@ -267,6 +267,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // outcome moves, and the walk that fills it is followed immediately by the
   // same throw the first refusal raised, so nothing is captured, proved or
   // written after it.
+  // Observability only: WHAT is inside the rejections the previous-work join
+  // meets, whether it refuses on them or steps over them. Never read by a
+  // decision.
+  let nativeWorkMembers = null;
   let refusalCensus = null;
   const censusByCode = new Map();
   const censusTables = [];
@@ -314,6 +318,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
     ...(bankDisposition === null ? {} : { bankDisposition }),
     ...(unresolvableCustody === null ? {} : { unresolvableCustody }),
+    ...(nativeWorkMembers === null ? {} : { nativeWorkMembers }),
     ...(refusalCensus === null ? {} : { refusalCensus }),
   });
 
@@ -1689,7 +1694,24 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         for (const id of page) provenUnresolvableCustody.add(id);
       }
       checkAll();
-      unresolvableCustody = `tables=${ids.length} ${ids
+      // The per-table list is the record, but it outgrew its carrier: run
+      // 36022429840 deferred 47 tables and the 512-character cut left the
+      // first nine, alphabetically, so the kinds behind the other 38 could not
+      // be read at all. The counts go FIRST, for the same reason `permitPhase`
+      // sits beside `f06=` rather than after the fleet census: what is
+      // appended last is what a long record loses. A kind is the label with
+      // its counts removed, so `parkedNoRoster:2` and `parkedNoRoster:4` are
+      // one kind and `failedBoundary:attempted` stays its own.
+      const kindOf = (label) => String(label).replace(/[0-9]+/g, '').replace(/:(?=\+|$)/g, '');
+      const kinds = new Map();
+      for (const id of ids) {
+        const kind = kindOf(deferredUnresolvableCustody.get(id));
+        kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+      }
+      unresolvableCustody = `tables=${ids.length} ${[...kinds]
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .map(([kind, count]) => `${kind}=${count}`)
+        .join(' ')} ${ids
         .map((id) => `${id}:${deferredUnresolvableCustody.get(id)}`)
         .join(' ')}`.slice(0, 512);
     }
@@ -2600,6 +2622,59 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             (retained8825 && bank.isActive === false)), 'bank_occupancy_mismatch');
         if (!seats.has(bank.playerId)) residue.add(bank.playerId.toLowerCase());
       }
+      /* ═══ A LIVE SEAT BETWEEN ITS BANKS IS NOT CUSTODY (2026-09-24) ═══
+
+       Run 36026978112 refused `bank_metadata_without_bank` on 3a294223 with
+       `stopped=false terminal=false scope=cash seats=2 banks=1
+       metaSeatedWithoutBank=1 fleetLiveSeatedMeta=1`: ONE live cash table, out
+       of 439 walked, whose seated player held accounting metadata and no live
+       bank. The release refused the whole fleet for it.
+
+       That shape is ordinary operation, and it is transient. 8825 creates a
+       seat's bank and its metadata TOGETHER, at deal time, in one branch
+       (ServerTableEngineDealing.ts:2955: `if (!getPlayerBank(...))`
+       `initializePlayer` then `timeBankMeta.set`). It removes the bank in
+       seven places and deletes the metadata in exactly one, the cash branch of
+       `adoptSeatRoster` (ServerTableEngineBase.ts:4283), which only runs for a
+       user the next roster no longer holds. So a player who is removed and
+       re-seated at the same table - a cashout and a re-seat, a bust and a
+       rebuy, a sit-out eviction and a return - keeps the metadata, loses the
+       bank, and gets BOTH back at the next deal. The break is what stopped
+       that deal from happening.
+
+       NOTHING IS PERSISTED FOR SUCH A SEAT, EITHER WAY. 8825's own
+       `captureParkedTimeBanks` walks the roster and skips a seat with no bank
+       (`if (!bank) continue`, :5531), so the row this checkpoint writes is
+       identical whether this require passes or refuses, and the successor
+       seeds the ordinary allowance at its first deal exactly as this engine
+       would have at its next one. The refusal protected no value. What it did
+       do was make the release a lottery: one table in four hundred, mid-rebuy
+       at the wrong second, refuses everything.
+
+       THE STOPPED CASE IS UNTOUCHED AND IS WHERE THE PROTECTION LIVES. A
+       STOPPED engine still qualifies only by holding no bank at all, so a
+       stopped engine that kept some of its banks refuses here exactly as
+       before, one require earlier than `stopped_engine_retains_custody` would.
+
+       ONE CONJUNCT IS ADDED AND IT IS `!stopped`, DELIBERATELY. Everything
+       else this case needs is already PROVED, for this engine, a few requires
+       above: a non-stopped engine reached here only through
+       `engine_not_physically_parked`, which required `running === true`,
+       `terminal === false`, `teardownPromise === null`, `maintenancePaused ===
+       true`, `holdBeforeNextHand === true` and `handController === null`, and
+       through `engine_work_not_drained`, which required no settlement, no
+       post-hand tasks, no move operations and a clean boundary. Repeating any
+       of them here would add a conjunct no test could ever make false, which
+       is how a guard fills up with checks nobody can reason about. The law
+       test asserts that ordering and those conditions instead, so the
+       dependency is pinned rather than duplicated.
+
+       AND IT IS STILL PROVED FROM ROWS. The seat joins `disposed`, and
+       `proveBanksHeldNothing` already asks, for every table holding a disposed
+       seat and without regard to whether its engine is stopped, whether the
+       felt is quiet - the same 120s incomplete-snapshot predicate as the
+       release gate. A hand in the air on that table still refuses the whole
+       checkpoint, from rows, before anything is written. */
       const disposed = new Set();
       for (const userId of engine.timeBankMeta.keys()) {
         const seated = seats.has(userId);
@@ -2607,7 +2682,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         require(retained8825 &&
           uuid(userId) &&
           (!seated ||
-            (stopped && engine.timeBankEngine.playerBanks.size === 0)), 'bank_metadata_without_bank');
+            !stopped ||
+            engine.timeBankEngine.playerBanks.size === 0), 'bank_metadata_without_bank');
         (seated ? disposed : residue).add(userId.toLowerCase());
       }
       const expectedBanks = {};
@@ -3052,14 +3128,294 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     }
     // Join the existing announcement/native park writes before taking the final
     // baseline. Pointer equality refuses any newly admitted presence writer.
-    const previousWork = await Promise.allSettled(
-      captures.flatMap((capture) =>
-        capture.stopped ? [capture.presenceSave, capture.teardown] : [capture.presenceSave]
-      )
+    const previousJoins = captures.flatMap((capture) =>
+      capture.stopped
+        ? [
+            { capture, join: 'presenceSave' },
+            { capture, join: 'teardown' },
+          ]
+        : [{ capture, join: 'presenceSave' }]
     );
-    require(previousWork.every(
-      (entry) => entry.status === 'fulfilled'
-    ), 'previous_native_work_unconfirmed');
+    const previousWork = await Promise.allSettled(
+      previousJoins.map(({ capture, join }) => capture[join])
+    );
+    /* ═══ A JOIN THAT DID NOT COME BACK NAMES NOTHING (2026-09-24) ═══
+
+       Run 36008454881 is the measurement. It is the first release since
+       2026-09-18 whose capture walk refused NOTHING - every table was admitted
+       or deferred - and it stopped here instead, on
+       `previous_native_work_unconfirmed`, carrying no `failedCheck`, no
+       `failedTable` and no detail at all. This join covers two different
+       promises on up to four hundred engines: the park/announcement write each
+       captured engine owns, and the teardown of each stopped one. Which
+       promise, on which table, and why, is the whole diagnosis, and none of it
+       reached a reader. The guard's own comment above `bankShape` says what
+       that costs: a refusal that names nothing is one maintenance break spent
+       to learn one fact.
+
+       Observability only, on a path that is already refusing. The condition,
+       its code and its order are the exact ones above: `unfulfilled.length ===
+       0` is `previousWork.every((entry) => entry.status === 'fulfilled')` over
+       the same settled array, in the same order. Nothing is joined twice and
+       no outcome moves.
+
+       `words` is stricter than `describe` on purpose. A rejection message is
+       written by the engine, not by this guard, so it is reduced to LETTERS,
+       spaces and underscores before it travels: no digit, hyphen or separator
+       survives, so no user id, table id, hand number, amount, card or token
+       can reach a log through it, and what is left is the sentence the engine
+       wrote. */
+    const words = (value) => {
+      try {
+        if (typeof value !== 'string') return describe(value);
+        const text = value.replace(/[^A-Za-z _]+/g, ' ').replace(/ +/g, ' ').trim();
+        return text.length === 0 ? `string(${value.length})` : text.slice(0, 64);
+      } catch {
+        return 'unreadable';
+      }
+    };
+    /* ═══ A TEARDOWN A DEAD PROCESS CAN NEVER FINISH (2026-09-24) ═══
+
+       Run 36015361207 is the measurement. It is the first release whose
+       capture walk admitted or deferred every table AND whose refusal named
+       itself (#5198), and it stopped here, on eight stopped engines of one
+       tournament whose lease the old process lost:
+
+         previousNativeWork.teardown  failedTable 6557ebd8
+         unfulfilled=8 presenceSave=0 teardown=8 stopped=true scope=tournament
+         reason=Table engine ... teardown failed in operation
+
+       That sentence is written in exactly one place in 8825,
+       `performStop` (ServerTableEngineBase.ts:3613), and only at its END,
+       after every step of the stop has run. `stop()` memoizes the promise
+       (:3417), so the same rejection is returned for ever: nothing in this
+       process will ever run that teardown again. The only thing that ends it
+       is replacing the process, which is exactly what this join refused:
+       CLAUDE.md 10.86, the fix for the wedge sitting behind the wedge, the
+       same shape as the three deferrals above.
+
+       WHAT A FAILED 8825 TEARDOWN CAN HAVE LEFT UNWRITTEN. `performStop`
+       collects into that AggregateError from exactly three places, and
+       carries on past each of them:
+
+         1. an owned writer it joined rejected (the dealing loop, a
+            settlement, the post-hand tasks, a tournament move, a read
+            continuation: :3486). Each is a promise that has already SETTLED;
+            this process never re-runs it, and what it committed is in the
+            database. A hand it left open is an incomplete
+            `hand_state_snapshots` row, which is exactly what the row proof
+            below reads.
+         2. the terminal snapshot flush failed (:3545). A failed write
+            changes no row, and the row it would have replaced is not money:
+            8825 says above `requestSnapshot` that "rehydrate() is never
+            called and checkCrashRecovery() abandons in-flight hands", and
+            `checkCrashRecovery` (:8116) takes only the hand number and the
+            disconnect states from it, marks the hand complete, and leaves
+            every player on the stack the rows hold. Completion itself is a
+            different write (`complete_hand_snapshot`), never this flush.
+         3. a module dispose threw (:3595): process memory, gone with the
+            process either way.
+
+       Every other throw in `performStop` leaves WITHOUT that sentence. The
+       seat boundary tail (a cashout, :3511) rejects with its own error, before
+       any cleanup runs, so it fails the exact-message conjunct below and
+       still refuses. What this checkpoint itself persists for a table,
+       its banks and presence, is asserted empty on this engine by
+       `stopped_engine_retains_custody` before this point, and pinned by
+       `checkAll` after it.
+
+       THIS IS PINNED TO 8825 AND TO NOTHING WIDER. Later builds add a fourth
+       source to the same AggregateError: `performStop` now captures a
+       stopped tournament table's time banks into custody and records a
+       failure to do so in the same array. On such a predecessor a failed
+       teardown CAN hide an uncaptured bank, so it keeps refusing exactly as
+       before, and so does every rejection that is not the exact 8825
+       sentence for this table, every engine that is not stopped, terminal
+       and fully released, and every `presenceSave` join on any engine.
+
+       And a deferral is not a waiver: the table goes into the same
+       `deferredUnresolvableCustody` map as the three cases above, and
+       `proveUnresolvableCustody` refuses the whole checkpoint unless the rows
+       prove that table quiet BEFORE anything is written. A hand in the air
+       still refuses, from rows. */
+    const deadTeardownFailureDeferred = (capture, failure) => {
+      try {
+        const engine = capture.engine;
+        const tableId = capture.tableId;
+        if (
+          !retained8825 ||
+          capture.stopped !== true ||
+          engine.teardownPromise !== capture.teardown ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.terminalTeardownComplete !== false ||
+          engine.hasReleasedProcessOwnership() !== true ||
+          engine.handController !== null ||
+          engine.dealingLoopPromise !== null ||
+          engine.f06RecoveryInFlight !== false ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0 ||
+          !(failure instanceof Error) ||
+          failure.name !== 'AggregateError' ||
+          !Array.isArray(failure.errors) ||
+          failure.errors.length === 0 ||
+          failure.message !==
+            `Table engine ${tableId} teardown failed in ${failure.errors.length} operation(s)`
+        )
+          return false;
+        const label = `failedTeardown:${failure.errors.length}`;
+        const prior = deferredUnresolvableCustody.get(tableId);
+        deferredUnresolvableCustody.set(tableId, prior === undefined ? label : `${prior}+${label}`);
+        return true;
+      } catch {
+        // Unreadable is never "dead". It keeps the original refusal.
+        return false;
+      }
+    };
+    /* ═══ WHAT IS ACTUALLY INSIDE THE REJECTION (2026-09-24) ═══
+
+       #5198 named the eight tables whose teardown did not come back and the
+       sentence each engine wrote. #5201 read `performStop` and bounded them,
+       on the argument that the AggregateError it throws collects from exactly
+       three places and that none of the three can hide an unwritten money
+       fact on 8825. That argument is made from SOURCE. Nothing in the record
+       says what the members of those eight aggregates actually were, so
+       nothing confirms it from the running fleet, and a release that steps
+       over a rejection leaves no account of what it stepped over.
+
+       This is that account, and it covers BOTH sets: the joins that still
+       refuse, and the teardowns the deferral above admitted. The second set
+       is the more important one, by the rule the guard already applies to
+       `unresolvableCustody` - the record of a refusal that did not happen
+       still has to reach a reader - so this is emitted on the path that
+       proceeds as well as the path that refuses.
+
+       Observability only. It reads rejections `Promise.allSettled` has
+       already settled, in the order the filter above visited them; nothing is
+       joined twice, no promise is created, `deadTeardownFailureDeferred` is
+       called exactly once per teardown rejection exactly as before, and no
+       condition, code or order moves.
+
+       WHAT TRAVELS. A member's TYPE and its structured CODE are written by
+       the runtime, not by a player: `AggregateError`, `PostgrestError`,
+       `23505`, `PGRST116`, an HTTP status. Both are held to an identifier
+       character class and a length, so a type-shaped or code-shaped value
+       that is not one reduces to `unknown` or `none` rather than carrying
+       what it holds. A member's MESSAGE goes through the same `words`
+       reduction as the aggregate's: letters, spaces and underscores only, so
+       no user id, table id, hand number, amount, card or token can travel
+       through it. Signatures and sentences are counted and de-duplicated, so
+       eight copies of one failure cost one. */
+    const memberName = (value) => {
+      try {
+        if (value === null || value === undefined) return describe(value);
+        const name = typeof value.name === 'string' ? value.name : value.constructor?.name;
+        return typeof name === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(name)
+          ? name
+          : 'unknown';
+      } catch {
+        return 'unreadable';
+      }
+    };
+    const memberCode = (value) => {
+      try {
+        const code = value?.code ?? value?.status ?? null;
+        if (typeof code === 'number' && Number.isSafeInteger(code) && code >= 0) return String(code);
+        return typeof code === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(code) ? code : 'none';
+      } catch {
+        return 'unreadable';
+      }
+    };
+    // An `AggregateError`'s members, or the rejection itself when it carries
+    // none. A member that is itself an aggregate is NOT unwrapped further: one
+    // level is what `performStop` builds, and an unbounded walk is not.
+    const membersOf = (reason) => {
+      try {
+        if (Array.isArray(reason?.errors)) return reason.errors.slice(0, maxEntriesPerTable);
+        return reason === null || reason === undefined ? [] : [reason];
+      } catch {
+        return [];
+      }
+    };
+    const rejected = previousWork
+      .map((entry, index) => ({ entry, ...previousJoins[index] }))
+      .filter(({ entry }) => entry.status !== 'fulfilled');
+    const unfulfilled = rejected.filter(
+      ({ entry, capture, join }) =>
+        !(join === 'teardown' && deadTeardownFailureDeferred(capture, entry.reason))
+    );
+    if (rejected.length > 0) {
+      try {
+        const signatures = new Map();
+        const sentences = new Map();
+        const refusing = new Set(unfulfilled);
+        let members = 0;
+        for (const item of rejected) {
+          const prefix = refusing.has(item) ? 'r' : 'd';
+          for (const member of membersOf(item.entry.reason)) {
+            members++;
+            const signature = `${prefix}.${memberName(member)}(${memberCode(member)})`;
+            signatures.set(signature, (signatures.get(signature) ?? 0) + 1);
+            const sentence = words(member?.message).slice(0, 48);
+            sentences.set(sentence, (sentences.get(sentence) ?? 0) + 1);
+          }
+        }
+        const ranked = (entries) =>
+          [...entries].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+        nativeWorkMembers = [
+          `joins=${rejected.length}`,
+          `deferredJoins=${rejected.length - unfulfilled.length}`,
+          `refusingJoins=${unfulfilled.length}`,
+          `members=${members}`,
+          ...ranked(signatures).map(([signature, count]) => `${signature}=${count}`),
+          `words=${ranked(sentences)
+            .slice(0, 6)
+            .map(([sentence]) => sentence)
+            .join('/')}`,
+        ]
+          .join(' ')
+          .slice(0, 512);
+      } catch {
+        // An unreadable witness is never a decision, and never a blank record.
+        nativeWorkMembers = 'members=unreadable';
+      }
+    }
+    if (unfulfilled.length > 0) {
+      const first = unfulfilled[0];
+      const counted = (join) => unfulfilled.filter((item) => item.join === join).length;
+      const deferredTeardowns = () =>
+        [...deferredUnresolvableCustody.values()].filter((label) => label.includes('failedTeardown:'))
+          .length;
+      noteRefusal(() => ({
+        failedCheck: `previousNativeWork.${first.join}`,
+        failedTable: uuid(first.capture.tableId)
+          ? first.capture.tableId
+          : describe(first.capture.tableId),
+        observedDetail: [
+          `unfulfilled=${unfulfilled.length}`,
+          `joined=${previousWork.length}`,
+          `presenceSave=${counted('presenceSave')}`,
+          `teardown=${counted('teardown')}`,
+          `teardownDeferred=${deferredTeardowns()}`,
+          `stopped=${first.capture.stopped}`,
+          `scope=${describe(first.capture.engine?.engineLeaseScope)}`,
+          `tournament=${
+            uuid(first.capture.engine?.engineLeaseTournamentId)
+              ? first.capture.engine.engineLeaseTournamentId
+              : 'none'
+          }`,
+          `reason=${words(first.entry.reason?.message)}`,
+          `members=${membersOf(first.entry.reason).length}`,
+          `tables=${unfulfilled
+            .slice(0, 12)
+            .map((item) => `${String(item.capture.tableId).slice(0, 8)}:${item.join}`)
+            .join('/')}`,
+        ]
+          .join(',')
+          .slice(0, 512),
+      }));
+    }
+    require(unfulfilled.length === 0, 'previous_native_work_unconfirmed');
     checkAll();
     // Order is load-bearing: the rows prove that the residue and the disposed
     // banks hold nothing, and that no deferred unresolvable permit has a hand

@@ -81,6 +81,7 @@ import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsol
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { uuid } from '../utils/uuid';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -1220,6 +1221,8 @@ export default function TournamentPage() {
       return isLateRegOpen(t)
         ? { label: 'Late Reg', ink: 'gold' }
         : { label: 'Running', ink: 'blue' };
+    // Multi-day, between days: live, closed to entry, not done.
+    if (isBaggedStatus(t.status)) return { label: DAY_COMPLETE_LABEL, ink: 'gold' };
     if (t.status === 'COMPLETED') return { label: 'Done', ink: 'muted' };
     if (t.status === 'CANCELLED') return { label: 'Off', ink: 'red' };
     return { label: 'Soon', ink: 'muted' };

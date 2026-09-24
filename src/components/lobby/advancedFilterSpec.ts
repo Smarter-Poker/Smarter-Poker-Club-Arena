@@ -50,6 +50,8 @@ import {
 } from '../../utils/tournamentFilters';
 import { SPIN_VARIANT_KEYS, TOURNAMENT_VARIANT_KEYS } from '../../config/tournamentVariants';
 import { CASH_TEMPLATES } from '../../config/cashGames';
+import type { PlatformCapabilityId } from '../../config/platformCapabilities';
+import { killModeOf } from '../../utils/killPot';
 
 export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MTT' | 'SPIN' | 'SNG';
 
@@ -72,6 +74,13 @@ export interface FeatureOption {
    * the same functions the card's medallions call, so the two cannot disagree.
    */
   test?: (row: Record<string, unknown>) => boolean | null;
+  /**
+   * A chip for a capability the platform may not be running yet. The sheet
+   * draws it only while `fn_platform_capabilities()` says the capability is
+   * available (AdvancedFilters), because a chip for a feature nothing can
+   * have is the ghost this file has removed three times.
+   */
+  capability?: PlatformCapabilityId;
 }
 
 export interface RangeSpec {
@@ -147,6 +156,29 @@ const CASH_FEATURES: FeatureOption[] = [
   { key: 'time_bank', label: 'Time Bank', match: ['time_bank_enabled'] },
   { key: 'all_in_or_fold', label: 'All-In Or Fold', match: ['all_in_or_fold'] },
 ];
+
+/**
+ * KILL POTS (rule manifest kill-v1), back with the feature. Removed on
+ * 2026-08-25 because the engine did not enforce it; it comes back keyed on the
+ * one column the engine reads, `tables.kill_mode`, and on the LIMIT tab only,
+ * because kill-v1 covers exactly the two fixed-limit games and a Hold'em or
+ * Omaha chip for it could only ever match nothing. Three-valued like every
+ * chip: 'half' or 'full' is yes, 'off' or null is no, and a row whose source
+ * did not select the column (get_club_home's first paint) is "cannot tell",
+ * which never hides it.
+ */
+const KILL_POT_FEATURE: FeatureOption = {
+  key: 'kill_pot',
+  label: 'Kill Pot',
+  match: ['kill_mode'],
+  test: (row) => {
+    const mode = killModeOf(row.kill_mode);
+    return mode === null ? null : mode !== 'off';
+  },
+  capability: 'cash.fixed_limit.kill_pots',
+};
+
+const LIMIT_FEATURES: FeatureOption[] = [...CASH_FEATURES, KILL_POT_FEATURE];
 
 /**
  * Omaha drops Seven-Deuce, and now for a reason the engine agrees with rather
@@ -422,7 +454,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
-    features: CASH_FEATURES,
+    features: LIMIT_FEATURES,
   },
   MTT: {
     /* Every game an MTT can be created as, plus `pineapple` — which is NOT

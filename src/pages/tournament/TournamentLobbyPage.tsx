@@ -42,6 +42,8 @@ import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 import { SpadeConsole } from '../../components/console/SpadeConsole';
+import { useTournamentStageViews } from '../../hooks/useTournamentStageView';
+import { dayCompleteLabel, nextDayStartsLabel } from '../../utils/multiDaySchedule';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -61,7 +63,7 @@ interface Tournament extends TournamentEntryWindowRow {
   prizePool: number;
   guaranteedPrize: number;
   startTime: string;
-  status: 'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED';
+  status: 'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'BAGGED' | 'COMPLETED' | 'CANCELLED';
   currentPlayers: number;
   maxPlayers: number | null;
   startingChips: number;
@@ -229,7 +231,7 @@ export default function TournamentLobbyPage() {
   useEffect(() => {
     // Get all running tournament IDs from current tournaments
     const runningTournamentIds = tournamentsRef.current
-      .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING'].includes(t.status))
+      .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'].includes(t.status))
       .map((t) => t.id);
 
     // Cleanup old channels for tournaments no longer running
@@ -394,7 +396,8 @@ export default function TournamentLobbyPage() {
       let activeQuery = supabase
         .from('tournaments')
         .select(fields)
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+        // BAGGED: a multi-day event between days stays on the board.
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'])
         .lte('start_time', seventyTwoHoursOut)
         .order('is_pinned', { ascending: false })
         .order('start_time', { ascending: true });
@@ -404,7 +407,7 @@ export default function TournamentLobbyPage() {
         .from('tournaments')
         .select(fields)
         .eq('is_pinned', true)
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'])
         .gt('start_time', seventyTwoHoursOut)
         .order('start_time', { ascending: true });
 
@@ -743,13 +746,15 @@ export default function TournamentLobbyPage() {
       // Then by status priority: RUNNING > REGISTERING > ANNOUNCED > COMPLETED
       const statusPriority: Record<string, number> = {
         RUNNING: 0,
-        REGISTERING: 1,
-        ANNOUNCED: 2,
-        COMPLETED: 3,
-        CANCELLED: 4,
+        // Multi-day, between days: under way, just below the events dealing.
+        BAGGED: 1,
+        REGISTERING: 2,
+        ANNOUNCED: 3,
+        COMPLETED: 4,
+        CANCELLED: 5,
       };
-      const aPriority = statusPriority[a.status] ?? 5;
-      const bPriority = statusPriority[b.status] ?? 5;
+      const aPriority = statusPriority[a.status] ?? 6;
+      const bPriority = statusPriority[b.status] ?? 6;
       if (aPriority !== bPriority) return aPriority - bPriority;
       // Then by start time
       return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
@@ -794,6 +799,26 @@ export default function TournamentLobbyPage() {
       [] as Array<{ label: string; order: number; tournaments: Tournament[] }>
     )
     .sort((a, b) => a.order - b.order);
+
+  /* Multi-day cards: read the stage view for the BAGGED rows only, and only
+     when the multi-day capability is available. No plan, no line. */
+  const stageViews = useTournamentStageViews(
+    tournaments.filter((t) => t.status === 'BAGGED').map((t) => t.id)
+  );
+  const stageNoteFor = (id: string) => {
+    const view = stageViews[id];
+    if (!view) return undefined;
+    return {
+      headline: dayCompleteLabel(view.currentStage?.dayNo),
+      next: view.nextStart
+        ? nextDayStartsLabel(
+            view.nextStart.dayNo,
+            view.nextStart.scheduledStartUtc,
+            view.nextStart.timeZone
+          )
+        : null,
+    };
+  };
 
   const upcomingCount = tournaments.filter((t) =>
     ['ANNOUNCED', 'REGISTERING'].includes(t.status)
@@ -992,7 +1017,9 @@ export default function TournamentLobbyPage() {
                               ? 'registering'
                               : tournament.status === 'RUNNING'
                                 ? 'running'
-                                : 'cancelled',
+                                : tournament.status === 'BAGGED'
+                                  ? 'bagged'
+                                  : 'cancelled',
                       blindStructure: tournament.structureFacts.speedLabel ?? 'Unconfirmed',
                       structureFacts: tournament.structureFacts,
                       gameType: tournament.gameType,
@@ -1032,6 +1059,7 @@ export default function TournamentLobbyPage() {
                        header says this; the lobby is simply the surface that
                        never got wired to it. */
                     knownRegistration={tournament.isRegistered}
+                    stageNote={stageNoteFor(tournament.id)}
                     onRegister={() => handleRegister(tournament.id)}
                   />
                 </div>

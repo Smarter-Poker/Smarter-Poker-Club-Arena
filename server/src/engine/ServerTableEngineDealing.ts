@@ -1884,6 +1884,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandCommunityCards3 = [];
       this.currentHandBombPot = null;
       this.currentHandVariant = null;
+      // KILL POTS: per-hand record and cancellation. The ledger itself
+      // (killSchedule) persists across hands by design.
+      this.currentHandKillRecord = null;
+      this.currentHandKillCancellation = null;
       this.currentHandWinnersByBoard = [];
       // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
       this.currentHandPerPotAwards = [];
@@ -2662,6 +2666,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
 
+      /* ── KILL POT (rule manifest kill-v1) ────────────────────────────────
+         Decided HERE, once, at the hand boundary, from the settings the table
+         row holds now: a change of mode or threshold takes effect at the next
+         hand, and a pending kill keeps the mode frozen into it. A kill is
+         played only if its killer is in the roster this hand is dealt to;
+         otherwise it is cancelled with the reason recorded on this hand's row.
+         Pure - nothing is committed until the controller exists (below), so
+         a deal that is prepared and then abandoned changes nothing. */
+      const killSettings = this.killSettingsFromTable();
+      const killDecision = this.killSchedule.decide({
+        settings: killSettings,
+        variant: bombHandVariant ?? this.dealtGameVariant(),
+        isTournament: this.isTournamentTable(),
+        isBombHand: Boolean(bombPotConfig),
+        asset: this.tableInfo.arena?.asset === 'diamonds' ? 'diamonds' : 'chips',
+        baseBigBlind: Number(this.tableInfo.big_blind),
+        roster: players.map((p) => ({ userId: p.user_id, seat: p.seat_number })),
+        sbSeat,
+        bbSeat,
+      });
+
       const config: HandConfig = {
         asset: this.tableInfo.arena?.asset ?? 'chips',
         tableId: this.tableId,
@@ -2708,6 +2733,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
         allInOrFold: this.tableInfo.all_in_or_fold ?? false,
         bombPot: bombPotConfig,
+        // KILL POT: the frozen kill state and the hand's effective limits.
+        killPot: killDecision.kind === 'kill' ? killDecision.hand : undefined,
         /**
          * A BOMB HAND HAS NO STRADDLE (2026-08-29).
          *
@@ -2831,6 +2858,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           : undefined
       );
       const preparedController = this.handController;
+      // KILL POT: the hand exists, so the deal decision is committed. A
+      // cancellation is final; a kill stays pending until this hand SETTLES.
+      this.killSchedule.commitDeal(killDecision);
+      this.currentHandKillSettings = killSettings;
+      this.currentHandKillCancellation =
+        killDecision.kind === 'cancel' ? killDecision.cancellation : null;
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
       // these exact players to this exact total.

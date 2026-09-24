@@ -104,7 +104,9 @@ describe('the start lane runs at one second', () => {
       SERVER_CODE.split('await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);').length - 1;
     // Three since 2026-09-11: RUNNING re-adoption left the big discovery loop
     // for a lane of its own (discoverRunningResumes) on the same cadence.
-    expect(remaining, 'the other discovery loops keep their own pace').toBe(3);
+    // Four since 2026-09-24: multi-day stage resumes (discoverStageResumes)
+    // sleep in slices of the same five-second cadence.
+    expect(remaining, 'the other discovery loops keep their own pace').toBe(4);
   });
 
   it('one second is inside the lead-in, so the wheel can still open on Dan beat', () => {

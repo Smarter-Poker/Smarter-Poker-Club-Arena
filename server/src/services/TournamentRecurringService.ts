@@ -3192,7 +3192,9 @@ export class TournamentRecurringService {
         .from('tournaments')
         .select('id', { count: 'exact', head: true })
         .eq('tournament_type', 'MTT')
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG']);
+        // BAGGED (multi-day, between two days) is a live MTT, not a gap in
+        // the board: counting it out would launch a replacement overnight.
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG', 'BAGGED']);
       if (!mttCountErr && (liveMtts ?? 0) < 2) {
         let need = 2 - (liveMtts ?? 0);
         const allConfigs = HOURLY_SCHEDULE.flatMap((b) => b.tournaments);
@@ -3858,7 +3860,7 @@ export class TournamentRecurringService {
             .eq('union_id', union.id)
             .eq('is_xmtt', true)
             .ilike('name', config.name)
-            .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING']);
+            .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED']);
 
           if ((count || 0) > 0) continue;
 
@@ -4083,7 +4085,8 @@ export class TournamentRecurringService {
       let query = supabase
         .from('tournaments')
         .select('id', { count: 'exact', head: true })
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING']);
+        // A BAGGED multi-day instance is still the active instance.
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED']);
 
       // Filter by variant type — type parameter should match the tournament variant
       if (type === 'mtt') {
@@ -4817,7 +4820,14 @@ export class TournamentRecurringService {
         .from('tournament_players')
         .select('user_id, tournament_id, tournaments!inner(status, start_time)')
         .in('status', ['registered', 'playing'])
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        /* BAGGED (multi-day, 2026-09-24) OCCUPIES ITS FIELD. Between two days
+           the event holds no seat - the bag vacated every chair - so the
+           seat read above counts nothing for it, yet every surviving horse
+           owes the next day a seat exactly as a surviving human does. Its
+           'playing' registration is that game, and a bagged event's
+           start_time is in the past, so the horizon below always counts it.
+           No double count: a BAGGED event has no live seat. */
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])
         .or(`start_time.is.null,start_time.lte.${horizonIso}`, { referencedTable: 'tournaments' })
         // Same unstable-pagination hazard as the seat read above: a horse is
         // registered for several events at once, so user_id alone does not

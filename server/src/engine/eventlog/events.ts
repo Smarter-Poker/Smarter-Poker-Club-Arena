@@ -63,7 +63,7 @@ export interface Stakes {
   ante?: number;
 }
 
-export type BlindKind = 'small_blind' | 'big_blind' | 'ante' | 'straddle';
+export type BlindKind = 'small_blind' | 'big_blind' | 'ante' | 'straddle' | 'kill_blind';
 
 export interface BlindPosting {
   seat: number;

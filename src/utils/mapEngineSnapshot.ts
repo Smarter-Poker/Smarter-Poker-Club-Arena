@@ -19,6 +19,12 @@
 
 import type { EngineSnapshot } from '../services/EngineStateClient';
 import { recordServerTime } from './serverClock';
+import {
+  parseKillHand,
+  parseKillNext,
+  type KillHandSnapshot,
+  type KillNextSnapshot,
+} from './killPot';
 
 // ─── Raw payload type (duplicated here, not imported, so a server shape tweak
 // can't silently break the client at runtime; typos surface at compile time).
@@ -105,6 +111,14 @@ export interface EnginePublishedState {
    */
   bomb_pot_waiting_for?: number | null;
   /**
+   * KILL POTS (rule manifest kill-v1). `kill_hand` is THIS hand's frozen kill
+   * (its effective limits, kill blind and killer), null on a base-limit hand;
+   * `kill_next` is the kill scheduled for the NEXT hand, null when none is.
+   * Absent on engines older than the feature. See utils/killPot.
+   */
+  kill_hand?: unknown;
+  kill_next?: unknown;
+  /**
    * THE REGULAR ANTE (Dan 2026-09-04). Per-posting amount in chips, 0 or
    * absent when the table runs none; `ante_mode` says who posts it - every
    * seat, or the big blind once for the table. Absent on older engines.
@@ -185,6 +199,10 @@ export interface MappedTableStatePatch {
    * ordinary hands indefinitely, with the reason available nowhere.
    */
   bombPotWaitingFor: number | null;
+  /** KILL POTS (kill-v1): this hand's kill, or null on a base-limit hand. */
+  killHand: KillHandSnapshot | null;
+  /** KILL POTS (kill-v1): the kill scheduled for the next hand, or null. */
+  killNext: KillNextSnapshot | null;
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as; null when the engine predates the field. Clients size villain
@@ -571,6 +589,10 @@ export function mapEngineSnapshot(
     // announce BOMB POT NEXT HAND and then deal ordinary hands indefinitely
     // with no explanation available anywhere.
     bombPotWaitingFor: typeof s.bomb_pot_waiting_for === 'number' ? s.bomb_pot_waiting_for : null,
+    // KILL POTS (kill-v1): the felt's pill and next-hand line, straight from
+    // the engine. Malformed or absent maps to null, never to a guessed kill.
+    killHand: parseKillHand(s.kill_hand),
+    killNext: parseKillNext(s.kill_next),
     // THE REGULAR ANTE (Dan 2026-09-04): the felt prints it beside the blinds.
     ante: typeof s.ante === 'number' && s.ante > 0 ? s.ante : 0,
     anteMode: s.ante_mode === 'per_player' || s.ante_mode === 'big_blind' ? s.ante_mode : null,

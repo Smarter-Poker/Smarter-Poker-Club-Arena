@@ -69,10 +69,12 @@ Refusals, by what they mean:
 - an answer that says nothing about the hand (a lane the door would not wait
   for, a serialization failure, a lost connection) is asked again, at most
   three times, one and two seconds apart;
-- the platform freeze: the door refuses it, and an adoption never waits on
-  it (waiting would hold every healthy table of the event, and a resume slot,
-  until the thaw). Inside the freeze the door is not asked, the table stays
-  exactly as blocked as before, and the next adoption asks.
+- the platform freeze: the door refuses it, and every engine release adopts
+  its whole fleet inside the freeze. An adoption that found a dead generation
+  therefore waits for the thaw (lifecycle-fenced, at most seven minutes) and
+  then asks; past the ceiling the table stays exactly as blocked as before.
+  (First shipped as "never wait"; corrected 2026-09-24 because that left the
+  release's own adoptions unable to decide the backlog they inherit.)
 
 `poker_f06_abandoned_generation_closures_total{outcome}` counts every answer
 (`aborted`, `replayed`, `already_closed`, `refused`, `transient`), seeded at
@@ -95,7 +97,7 @@ permit with a receipt.
   the exact request above; the event row is read again and the manager adopts
   level 3; a permit of its own generation, an unreadable table and a rule
   refusal never reach a second pass; transient answers are bounded; the
-  freeze is never waited on and the next adoption asks; a later adoption asks
+  freeze is waited out, bounded, and a stop during the wait asks nothing; a later adoption asks
   again after a refusal; an adoption whose lifecycle ends stops asking and
   starts no dealer; a retained original is finished first. An independent
   review of the diff against the production door's SQL found no mismatch in
@@ -111,10 +113,10 @@ permit with a receipt.
 ## Costs and limits
 
 - One extra `fn_f06_hand_number_state` read per table per adoption.
-- Adoptions inside the maintenance freeze (every deploy) do not decide. A
-  dead generation left by a mid-hour blip is decided by the adoption that
-  follows it; one already standing at a deploy waits for the next adoption
-  or an operator run of the same door with the same receipt.
+- An adoption inside the maintenance freeze holds that one event's tables
+  (and a resume slot for up to 60 s) until the thaw. Nothing deals during the
+  freeze, so the cost is only a slower adoption at a release that inherits
+  many dead generations.
 - A table whose hand the door refuses by rule stays blocked until an operator
   decides it; the refusal is reported with its code.
 - Not in this change: a manager that lost its lease cannot finish stopping

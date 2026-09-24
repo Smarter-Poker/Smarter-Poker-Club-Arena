@@ -247,6 +247,11 @@ export async function logHandHistory(params: {
     variant?: string;
   } | null;
   /**
+   * KILL POTS (rule manifest kill-v1): hand_history.kill_pot jsonb. See
+   * KillPot.KillPotRecord. Null/absent on a hand with no kill facts.
+   */
+  killPot?: import('../../engine/KillPot.js').KillPotRecord | null;
+  /**
    * COMPLETENESS PASS 2026-08-26: run-it-twice boards 2..N (engine card
    * strings, run order). Written to hand_history.rit_boards — NULL on every
    * single-run hand so historical rows and normal hands look identical.
@@ -522,6 +527,11 @@ export async function logHandHistory(params: {
     // 20260827_bomb_pot_standardization.
     community_cards3: params.communityCards3?.length ? params.communityCards3 : null,
     bomb_pot: params.bombPot ?? null,
+    // KILL POTS (rule manifest kill-v1): the kill facts of this hand - the kill
+    // it played, the kill it set for the next hand (restored from here at
+    // engine start) and a kill it cancelled. Omitted entirely on every other
+    // hand, so those rows are byte-identical to before.
+    ...(params.killPot ? { kill_pot: params.killPot } : {}),
     // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. NULL (not
     // []) on single-run hands so historical rows and normal hands look
     // identical. Column added by migration 20260826_hand_history_rit_boards.

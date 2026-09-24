@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-ca-product/fix/schedules-keep-their-time-zone - migration 20260924045822_a_schedule_keeps_its_time_zone.sql: tournament_schedules.time_zone (IANA zone, NULL = the original UTC contract) and its validator.",
+  "functions": ["fn_schedule_time_zone_is_known"],
+  "columns": { "tournament_schedules": ["time_zone"] }
+}

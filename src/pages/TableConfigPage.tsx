@@ -43,8 +43,18 @@ import { tournamentScheduleService } from '../services/TournamentScheduleService
 import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
+import { scheduleWriteTimeZone } from '../utils/scheduleTimeZone';
 import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
+import DayScheduleEditor from '../components/tournament/DayScheduleEditor';
+import { usePlatformCapability } from '../hooks/usePlatformCapability';
+import { sealStagePlan, stageRefusalMessage } from '../services/TournamentStageService';
+import {
+  MULTI_DAY_CAPABILITY,
+  buildStagePlan,
+  defaultStagePlanDraft,
+  type StagePlanDraft,
+} from '../utils/multiDaySchedule';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { MttCreationStructurePreview } from '../components/tournament/MttCreationStructurePreview';
@@ -462,6 +472,14 @@ export default function TableConfigPage({
   const toast = useToast();
 
   const [config, setConfig] = useState<TableConfig>({ ...DEFAULT_CONFIG });
+  /* MULTI-DAY MTT (design R5). The switch exists only while the platform
+     registry says tournament.multi_day.single_flight is available; the Day
+     Schedule is sealed through fn_operator_seal_stage_plan right after the
+     tournament is created. The badge columns (is_multi_day, total_days) are
+     never written from here: buildTournamentConfig still refuses them and the
+     database guard stays the gate until R6. */
+  const multiDayGate = usePlatformCapability(MULTI_DAY_CAPABILITY);
+  const [stagePlan, setStagePlan] = useState<StagePlanDraft>(defaultStagePlanDraft);
   /* FREEROLLS ARE FREE BUY (Dan 2026-09-02): a 0 buy-in MTT. Spins and SNGs
      never qualify, whatever the buy-in field says. */
   const isFreeBuy = isFreeBuyEvent({
@@ -930,6 +948,8 @@ export default function TableConfigPage({
       name: config.name.trim() || 'Tournament',
       daysOfWeek: scheduleValue.daysOfWeek,
       startTimesUtc: scheduleValue.mode === 'times' ? scheduleValue.startTimesUtc : [],
+      // The editor shows the owner's own clock; the row keeps that zone.
+      timeZone: scheduleWriteTimeZone(),
       intervalMinutes: scheduleValue.mode === 'interval' ? scheduleValue.intervalMinutes : null,
       active: true,
       config: rpcConfig,
@@ -949,6 +969,34 @@ export default function TableConfigPage({
       }
 
       const tournamentConfig = buildTournamentConfig(config, gameType);
+
+      /* The Day Schedule is checked before anything is created, so a plan the
+         database would refuse never leaves a one-day event behind it. */
+      const multiDay =
+        config.gameMode === 'mtt' && config.multiDayMtt && multiDayGate === 'available';
+      let sealedPlan: ReturnType<typeof buildStagePlan> | null = null;
+      if (multiDay) {
+        if (config.tournamentSchedule) {
+          toast.error('A Multi-Day MTT Cannot Also Repeat On A Weekly Schedule.');
+          return;
+        }
+        if (!tournamentConfig.startTime) {
+          toast.error('Set The Start Time For Day 1.');
+          return;
+        }
+        sealedPlan = buildStagePlan(stagePlan, {
+          entryLevels: Math.max(
+            tournamentConfig.lateRegistrationLevels || 0,
+            tournamentConfig.rebuyLevels || 0,
+            tournamentConfig.addOnLevels || 1
+          ),
+          day1StartUtc: tournamentConfig.startTime.toISOString(),
+        });
+        if (!sealedPlan.ok) {
+          toast.error(sealedPlan.message);
+          return;
+        }
+      }
 
       // ── Tournament Schedule (2026-08-22): with the toggle ON, save a
       // tournament_schedules row carrying the exact p_config a hand-created
@@ -984,6 +1032,16 @@ export default function TableConfigPage({
             : 'Tournament created. Registration is open.'
         );
         const createdId = (created as { id?: string } | null)?.id;
+        if (createdId && sealedPlan?.ok) {
+          const sealed = await sealStagePlan(createdId, sealedPlan.plan);
+          if (sealed.ok) {
+            toast.success(`Day Schedule Saved: ${sealedPlan.plan.stages.length} Days.`);
+          } else {
+            toast.error(
+              `The Tournament Was Created As A One-Day Event. ${stageRefusalMessage(sealed.reason)}.`
+            );
+          }
+        }
         if (createdId) {
           masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: createdId, status: 'REGISTERING' });
         }
@@ -1616,21 +1674,43 @@ export default function TableConfigPage({
                 anywhere writes `flight_end_chips_snapshot`. The tournament
                 played down to one winner in a single session and paid the
                 whole prize pool, with the lobby promising otherwise.
-                `trg_tournaments_refuse_unbuilt_multi_day` now refuses the flag
-                at the database for every caller, so a control here could only
-                produce an error. Restore the Toggle and the Total Days field
-                in the commit that implements Day 2. */}
-            <div className="config-toggle">
-              <span className="toggle-label">
-                Multi-Day MTT
-                <HelpPopover label="Multi-Day MTT">
-                  Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event
-                  Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused
-                  Rather Than Promised.
-                </HelpPopover>
-              </span>
-              <span className="toggle-status off">NOT AVAILABLE YET</span>
-            </div>
+                `trg_tournaments_refuse_unbuilt_multi_day` refuses the flag at
+                the database for every caller.
+                2026-09-24: Day 2 is built (single flight: bag at the end of a
+                level, resume at a scheduled time). The switch is back, but it
+                writes no flag column: it seals a Day Schedule into the stage
+                tables through fn_operator_seal_stage_plan, and it appears only
+                when the capability registry says the platform runs multi-day
+                events; until then the honest status stays. There is no Total
+                Days field: the number of days is the number of rows. */}
+            {multiDayGate === 'available' ? (
+              <>
+                <Toggle
+                  label="Multi-Day MTT"
+                  value={config.multiDayMtt}
+                  onChange={(v) => updateConfig('multiDayMtt', v)}
+                  tooltip="The Event Bags At The End Of A Level And Resumes On A Later Day At The Time You Set"
+                />
+                {config.multiDayMtt && (
+                  <DayScheduleEditor
+                    value={stagePlan}
+                    onChange={setStagePlan}
+                    day1StartLocal={config.startTime}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="config-toggle">
+                <span className="toggle-label">
+                  Multi-Day MTT
+                  <HelpPopover label="Multi-Day MTT">
+                    Multi-Day Events Are Not Switched On For This Platform Yet. Until They Are,
+                    Every Tournament Plays Down To One Winner In A Single Session.
+                  </HelpPopover>
+                </span>
+                <span className="toggle-status off">NOT AVAILABLE YET</span>
+              </div>
+            )}
             <NumberField
               label="Minimum Players To Start"
               value={config.minPlayers}
@@ -1691,6 +1771,7 @@ export default function TableConfigPage({
             />
             {config.tournamentSchedule && (
               <WeeklyScheduleEditor
+                timeZone={scheduleWriteTimeZone()}
                 value={{
                   daysOfWeek: config.scheduleDays,
                   startTimesUtc: config.scheduleTimes,

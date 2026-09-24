@@ -229,6 +229,16 @@ export interface TableInfo {
    * many seconds of the due time. NULL = always show.
    */
   bomb_pot_announce_seconds?: number | null;
+  /**
+   * KILL POTS (rule manifest kill-v1). 'off' (default) | 'half' | 'full'.
+   * Honoured only at a fixed-limit cash table; read by KillPot.readKillSettings,
+   * which treats a row without the column as 'off'. Like every rule here it is
+   * in the loadTable select AND the throttled re-read, and it takes effect at
+   * the next hand boundary.
+   */
+  kill_mode?: string | null;
+  /** KILL POTS: the scoop threshold in BASE big blinds, one of 8, 10, 12, 15. */
+  kill_threshold_bb?: number | null;
   /** Bible V8 §2.1: Minimum players to start a hand */
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
@@ -416,6 +426,15 @@ export interface HandConfig {
      */
     triggerReason?: string;
   };
+  /**
+   * KILL POT (rule manifest kill-v1): present only on a kill hand at a
+   * fixed-limit cash table. Frozen at the deal. It carries the hand's
+   * EFFECTIVE fixed-limit sizes (smallBet / bigBet), the killer and the kill
+   * blind; every fixed-limit reader sizes from it (KillPot.handFixedLimitSmallBet)
+   * so no two readers can disagree. `smallBlind` / `bigBlind` above stay the
+   * BASE blinds: rake, BBJ and hand history all read those.
+   */
+  killPot?: import('./engine/KillPot.js').KillHandState;
   /** Bible V8 §2.8 / §4.20: Whether Run It Twice is enabled for this hand */
   ritEnabled?: boolean;
   /** Bible V8 §2.8 / §4.19: Whether Insurance is enabled for this hand */
@@ -1011,6 +1030,9 @@ export type TournamentStatus =
   | 'ANNOUNCED'
   | 'REGISTERING'
   | 'RUNNING'
+  // Multi-day (2026-09-24): between two stages of one event. Not terminal:
+  // the event still owns its players, their stacks (as bags) and its money.
+  | 'BAGGED'
   | 'COMPLETED'
   | 'CANCELLED'
   | 'LATE_REG';

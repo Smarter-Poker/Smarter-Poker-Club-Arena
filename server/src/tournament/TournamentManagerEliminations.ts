@@ -1723,6 +1723,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.isProcessingEliminations = false;
       eliminationSweepsInflight.dec();
       eliminationSweepMs.observe(Date.now() - sweepStartedAt);
+      // Multi-day: busts in the day's final hands are recorded before the
+      // bag. A finished sweep is the edge the stage-end barrier waits for.
+      if (completedWholeSweep && this.stageEndPause && this.running && !signal.aborted) {
+        this.advanceStageEndBarrier();
+      }
     }
   }
 

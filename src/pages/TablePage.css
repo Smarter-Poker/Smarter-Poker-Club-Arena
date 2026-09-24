@@ -7,8 +7,6 @@
  * Reference: docs/UI_DESIGN_REFERENCE.md
  */
 
-@import '../styles/design-tokens.css';
-
 /* Z-Index Hierarchy */
 :root {
   --z-table: 1;

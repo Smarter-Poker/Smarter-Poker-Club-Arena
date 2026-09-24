@@ -608,7 +608,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: true,
-      unresolvableCustody: `tables=1 ${f.first.tableId}:attempted`,
+      unresolvableCustody: `tables=1 attempted=1 ${f.first.tableId}:attempted`,
     });
     // It asked the database, per table, with the one predicate this file has.
     expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
@@ -689,7 +689,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: true,
-      unresolvableCustody: `tables=1 ${f.first.tableId}:reserved`,
+      unresolvableCustody: `tables=1 reserved=1 ${f.first.tableId}:reserved`,
     });
   });
 
@@ -733,7 +733,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     f.first.f06CurrentPermit = { recoveryState: () => 'attempted' };
     expect(await f.run()).toMatchObject({
       ok: true,
-      unresolvableCustody: `tables=1 ${f.first.tableId}:attempted`,
+      unresolvableCustody: `tables=1 attempted=1 ${f.first.tableId}:attempted`,
     });
   });
 
@@ -763,7 +763,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: true,
-      unresolvableCustody: `tables=1 ${f.first.tableId}:boundary3`,
+      unresolvableCustody: `tables=1 boundary=1 ${f.first.tableId}:boundary3`,
     });
     expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
   });
@@ -828,7 +828,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: true,
-      unresolvableCustody: `tables=1 ${f.first.tableId}:failedBoundary:attempted`,
+      unresolvableCustody: `tables=1 failedBoundary:attempted=1 ${f.first.tableId}:failedBoundary:attempted`,
     });
     expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
   });
@@ -839,7 +839,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: true,
-      unresolvableCustody: `tables=1 ${f.first.tableId}:failedBoundary:none`,
+      unresolvableCustody: `tables=1 failedBoundary:none=1 ${f.first.tableId}:failedBoundary:none`,
     });
     expect(f.snapshotReads.map((read) => read.ids)).toContainEqual([f.first.tableId]);
   });
@@ -2448,14 +2448,41 @@ describe('exact 8825 retained original custody retirement', () => {
 describe('an 8825 bank refusal names its table and counts the fleet the capture walked', () => {
   // Observability only (2026-09-22): the production profile, with its two
   // retained originals. The census walks exactly what the capture walks.
-  it('names a live table whose seated player kept metadata and no bank, and leaves the retained originals out', async () => {
+  it('counts a live seated player who kept metadata and no bank, and leaves the retained originals out', async () => {
     const f: any = mixedFixture();
-    // A live, parked table whose seated player holds metadata but no bank (8825
-    // can leave it: a cashout and a re-seat at the same table before the next
-    // deal re-seeds the bank). It is not proved from rows, so it still refuses
-    // on this profile, unlike residue and disposed banks.
-    const e: any = new f.Table(600);
+    // A live, parked table whose seated player holds metadata but no bank, and
+    // a STOPPED one that kept a bank, which still refuses. The census counts
+    // the live shape either way; the two retained originals are never walked
+    // by the capture, so it does not count them.
+    const live: any = new f.Table(600);
+    live.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(live.tableId, live);
+    // A stopped engine that kept one of its banks: its seated player's
+    // metadata is not explained by a stop that disposed everything.
+    const e: any = new f.Table(601);
+    Object.assign(e, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+      maintenancePaused: false,
+      holdBeforeNextHand: false,
+      handForHandResolve: null,
+    });
+    // Its seated player's bank is gone but the metadata remains, and the
+    // engine still holds a bank for someone the roster no longer seats.
+    const seated601 = e.seatedPlayers[0].user_id;
     e.timeBankEngine.playerBanks.clear();
+    e.timeBankEngine.playerBanks.set(`${e.tableId}:${uuid(74601)}`, {
+      tableId: e.tableId,
+      playerId: uuid(74601),
+      remainingSeconds: 75,
+      usesRemaining: 2,
+      isActive: false,
+      unlimitedActivations: false,
+    });
+    expect(e.timeBankMeta.has(seated601)).toBe(true);
     f.server.tableEngines.set(e.tableId, e);
     const result: any = await f.run();
     expect(result).toMatchObject({
@@ -2464,21 +2491,12 @@ describe('an 8825 bank refusal names its table and counts the fleet the capture 
       failedCheck: 'captureEngine.bank_metadata_without_bank',
       failedTable: e.tableId,
     });
-    // The fleet engine and this table: the two retained originals are never
-    // walked by the capture, so the census does not count them either.
     expect(String(result.observedDetail).split(',')).toEqual(
-      expect.arrayContaining([
-        'metaSeatedWithoutBank=1',
-        'fleet=2',
-        'fleetStopped=0',
-        'fleetLiveSeatedMeta=1',
-        'fleetDepartedMeta=0',
-        'fleetOrphanBank=0',
-      ])
+      expect.arrayContaining(['fleet=3', 'fleetStopped=1', 'fleetLiveSeatedMeta=1'])
     );
     expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
     expect(f.calls).toEqual([]);
-    expect(f.server.tableEngines.size).toBe(4);
+    expect(f.server.tableEngines.size).toBe(5);
   });
 
   it('names a table that still holds an F06 permit outside retained custody, and counts it', async () => {
@@ -2912,14 +2930,73 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.calls).toEqual([]);
   });
 
-  it('still refuses a live engine whose seated player has metadata and no bank', async () => {
-    // 8825 can leave this shape (a cashout and a re-seat at the same table
-    // before the next deal re-seeds the bank, ServerTableEngineDealing.ts:2955),
-    // and it is not proved from rows here: it still refuses.
+  /* A LIVE SEAT BETWEEN ITS BANKS IS NOT CUSTODY (2026-09-24).
+
+     Run 36026978112 refused `bank_metadata_without_bank` on 3a294223, ONE live
+     cash table out of 439 walked, whose seated player held metadata and no
+     bank (`fleetLiveSeatedMeta=1`). 8825 creates a seat's bank and metadata
+     together at deal time (ServerTableEngineDealing.ts:2955) and deletes the
+     metadata only for a user the next roster no longer holds
+     (ServerTableEngineBase.ts:4283), so a player removed and re-seated at the
+     same table keeps the metadata, loses the bank, and gets both back at the
+     next deal. `captureParkedTimeBanks` skips a seat with no bank, so the row
+     written is identical either way: the refusal protected no value and made
+     the release a lottery on fleet churn. */
+  it('a live seated player between its banks is proved from rows, not refused', async () => {
     const f: any = mixedFixture();
     const e: any = new f.Table(630);
     e.timeBankEngine.playerBanks.clear();
     f.server.tableEngines.set(e.tableId, e);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // It joins `disposed` and the felt of its table is proved quiet from rows.
+    expect(result.bankDisposition).toContain('disposedTables=1');
+    expect(result.bankDisposition).toContain('disposedSeats=1');
+    expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([e.tableId]);
+    // Nothing is persisted for that seat, exactly as the engine itself would.
+    expect(f.rows.has(e.tableId)).toBe(false);
+  });
+
+  it('a hand in the air on that live table still refuses the whole checkpoint', async () => {
+    const f: any = mixedFixture();
+    const e: any = new f.Table(631);
+    e.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(e.tableId, e);
+    f.onSnapshots((ids: string[]) => ({
+      data: ids.includes(e.tableId)
+        ? [
+            {
+              table_id: e.tableId,
+              hand_number: 9,
+              stage: 'flop',
+              updated_at: new Date().toISOString(),
+            },
+          ]
+        : [],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'stopped_disposed_banks_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a STOPPED engine that kept a bank still refuses on the same require', async () => {
+    const f: any = mixedFixture();
+    const { e } = quarantined(f, 632);
+    // `quarantined` keeps the roster and the metadata and clears the banks.
+    // Give it back a bank for someone the roster no longer seats, so its
+    // seated player's metadata is no longer explained by a stop that disposed
+    // everything.
+    e.timeBankEngine.playerBanks.set(`${e.tableId}:${uuid(74632)}`, {
+      tableId: e.tableId,
+      playerId: uuid(74632),
+      remainingSeconds: 75,
+      usesRemaining: 2,
+      isActive: false,
+      unlimitedActivations: false,
+    });
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: false,
@@ -3302,6 +3379,22 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
      it stepped over. */
   const member = (name: string, code: unknown, message: string) =>
     Object.assign(new Error(message), { name, ...(code === undefined ? {} : { code }) });
+
+  /* A DEFERRAL RECORD NOBODY CAN READ IS NOT A RECORD (2026-09-24). Run
+     36022429840 deferred 47 tables and the 512-character carrier left the
+     first nine, alphabetically, so the kinds behind the other 38 were gone. */
+  it('the kinds survive the carrier when the table list does not', async () => {
+    const f: any = mixedFixture();
+    for (let i = 0; i < 40; i++)
+      deadTeardown(f, 700 + i, `aaaa${1000 + i}-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.unresolvableCustody).toContain('tables=40');
+    // The count of each kind is readable even though the list is not.
+    expect(result.unresolvableCustody).toContain('failedTeardown=40');
+    expect(result.unresolvableCustody.length).toBeLessThanOrEqual(512);
+    expect(result.unresolvableCustody).toMatch(/^[\w .,:/=()+-]+$/);
+  });
 
   it('accounts for every teardown it stepped over, on the path that proceeds', async () => {
     const f: any = mixedFixture();

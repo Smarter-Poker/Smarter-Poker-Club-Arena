@@ -1694,7 +1694,24 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         for (const id of page) provenUnresolvableCustody.add(id);
       }
       checkAll();
-      unresolvableCustody = `tables=${ids.length} ${ids
+      // The per-table list is the record, but it outgrew its carrier: run
+      // 36022429840 deferred 47 tables and the 512-character cut left the
+      // first nine, alphabetically, so the kinds behind the other 38 could not
+      // be read at all. The counts go FIRST, for the same reason `permitPhase`
+      // sits beside `f06=` rather than after the fleet census: what is
+      // appended last is what a long record loses. A kind is the label with
+      // its counts removed, so `parkedNoRoster:2` and `parkedNoRoster:4` are
+      // one kind and `failedBoundary:attempted` stays its own.
+      const kindOf = (label) => String(label).replace(/[0-9]+/g, '').replace(/:(?=\+|$)/g, '');
+      const kinds = new Map();
+      for (const id of ids) {
+        const kind = kindOf(deferredUnresolvableCustody.get(id));
+        kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+      }
+      unresolvableCustody = `tables=${ids.length} ${[...kinds]
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .map(([kind, count]) => `${kind}=${count}`)
+        .join(' ')} ${ids
         .map((id) => `${id}:${deferredUnresolvableCustody.get(id)}`)
         .join(' ')}`.slice(0, 512);
     }
@@ -2605,6 +2622,59 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             (retained8825 && bank.isActive === false)), 'bank_occupancy_mismatch');
         if (!seats.has(bank.playerId)) residue.add(bank.playerId.toLowerCase());
       }
+      /* ═══ A LIVE SEAT BETWEEN ITS BANKS IS NOT CUSTODY (2026-09-24) ═══
+
+       Run 36026978112 refused `bank_metadata_without_bank` on 3a294223 with
+       `stopped=false terminal=false scope=cash seats=2 banks=1
+       metaSeatedWithoutBank=1 fleetLiveSeatedMeta=1`: ONE live cash table, out
+       of 439 walked, whose seated player held accounting metadata and no live
+       bank. The release refused the whole fleet for it.
+
+       That shape is ordinary operation, and it is transient. 8825 creates a
+       seat's bank and its metadata TOGETHER, at deal time, in one branch
+       (ServerTableEngineDealing.ts:2955: `if (!getPlayerBank(...))`
+       `initializePlayer` then `timeBankMeta.set`). It removes the bank in
+       seven places and deletes the metadata in exactly one, the cash branch of
+       `adoptSeatRoster` (ServerTableEngineBase.ts:4283), which only runs for a
+       user the next roster no longer holds. So a player who is removed and
+       re-seated at the same table - a cashout and a re-seat, a bust and a
+       rebuy, a sit-out eviction and a return - keeps the metadata, loses the
+       bank, and gets BOTH back at the next deal. The break is what stopped
+       that deal from happening.
+
+       NOTHING IS PERSISTED FOR SUCH A SEAT, EITHER WAY. 8825's own
+       `captureParkedTimeBanks` walks the roster and skips a seat with no bank
+       (`if (!bank) continue`, :5531), so the row this checkpoint writes is
+       identical whether this require passes or refuses, and the successor
+       seeds the ordinary allowance at its first deal exactly as this engine
+       would have at its next one. The refusal protected no value. What it did
+       do was make the release a lottery: one table in four hundred, mid-rebuy
+       at the wrong second, refuses everything.
+
+       THE STOPPED CASE IS UNTOUCHED AND IS WHERE THE PROTECTION LIVES. A
+       STOPPED engine still qualifies only by holding no bank at all, so a
+       stopped engine that kept some of its banks refuses here exactly as
+       before, one require earlier than `stopped_engine_retains_custody` would.
+
+       ONE CONJUNCT IS ADDED AND IT IS `!stopped`, DELIBERATELY. Everything
+       else this case needs is already PROVED, for this engine, a few requires
+       above: a non-stopped engine reached here only through
+       `engine_not_physically_parked`, which required `running === true`,
+       `terminal === false`, `teardownPromise === null`, `maintenancePaused ===
+       true`, `holdBeforeNextHand === true` and `handController === null`, and
+       through `engine_work_not_drained`, which required no settlement, no
+       post-hand tasks, no move operations and a clean boundary. Repeating any
+       of them here would add a conjunct no test could ever make false, which
+       is how a guard fills up with checks nobody can reason about. The law
+       test asserts that ordering and those conditions instead, so the
+       dependency is pinned rather than duplicated.
+
+       AND IT IS STILL PROVED FROM ROWS. The seat joins `disposed`, and
+       `proveBanksHeldNothing` already asks, for every table holding a disposed
+       seat and without regard to whether its engine is stopped, whether the
+       felt is quiet - the same 120s incomplete-snapshot predicate as the
+       release gate. A hand in the air on that table still refuses the whole
+       checkpoint, from rows, before anything is written. */
       const disposed = new Set();
       for (const userId of engine.timeBankMeta.keys()) {
         const seated = seats.has(userId);
@@ -2612,7 +2682,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         require(retained8825 &&
           uuid(userId) &&
           (!seated ||
-            (stopped && engine.timeBankEngine.playerBanks.size === 0)), 'bank_metadata_without_bank');
+            !stopped ||
+            engine.timeBankEngine.playerBanks.size === 0), 'bank_metadata_without_bank');
         (seated ? disposed : residue).add(userId.toLowerCase());
       }
       const expectedBanks = {};

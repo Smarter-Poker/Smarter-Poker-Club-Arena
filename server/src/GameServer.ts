@@ -443,6 +443,10 @@ const BOMB_LEDGER_REPAIR_BATCH = 500;
  * and watches the same held felt for the same minute a human does.
  */
 const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
+/* How far ahead of the pre-seat lead the discovery pass reads a
+   registration-first event's roster, so a row whose lead opens while a long
+   pass is still walking is decided from its roster too. */
+const ROSTER_READ_HORIZON_MS = 10 * 60_000;
 /**
  * How often a REGISTERING row with a finalized pool is offered to the launch
  * completion RPC (2026-09-11).
@@ -6879,6 +6883,28 @@ export class GameServer {
         const seatFirstRows = (registering || []).filter((t) => isPersistedSeatFirst(t));
         const paidSeatsByTournament = await this.readSeatFirstPaidSeats(seatFirstRows);
 
+        /* THE FIELD IS THE ROSTER, NOT THE COUNTER (2026-09-24).
+           A registration-first event (every format that is not seat-first)
+           is started, and topped up, off the size of its field. That used to
+           be tournaments.current_players, a denormalised counter. Two mtt-v2
+           events sat REGISTERING for days past their start with 24 entrants
+           on their roster and a counter of 1: the gate below called them
+           short and sent them to the past-start top-up, the top-up counted
+           the real roster, found nothing to add and returned 0, and the start
+           branch that would have adopted their launch receipt never ran. The
+           gate now reads the same count the top-up reads (registered/playing
+           entrants, a horse counted exactly like a human), batched here for
+           the rows whose decision depends on it. A row this read could not
+           answer for keeps the counter, and the failed read is reported. */
+        const rosterHorizon = registeringReadAt + ROSTER_READ_HORIZON_MS;
+        const rosterRows = (registering || []).filter(
+          (t) =>
+            !isPersistedSeatFirst(t) &&
+            (t.effective_max_players !== null ||
+              Date.parse(String(t.start_time)) - TOURNAMENT_PRESEAT_LEAD_MS <= rosterHorizon)
+        );
+        const rosterByTournament = await this.readEntrantRosterCounts(rosterRows);
+
         /* ONE FLEET READ PER PASS, AND THE TOP-UPS BESIDE THE WALK (2026-09-11).
            Every top-up below re-read the fleet, its load, the cash-room reserve
            and a club's whole membership, then ran to completion before the next
@@ -6983,6 +7009,12 @@ export class GameServer {
           // Seat-first = spin or heads-up (2-seat SNG). Must agree with
           // fn_take_seat_and_buy_in / isSeatFirstFormat — see 2026-08-24 audit.
           const isSngOrSpin = isPersistedSeatFirst(tournament);
+          /* The size of the field for every count-based decision below. A
+             seat-first game is unchanged: its start is paid seats, and this
+             stays the counter it always read. */
+          const fieldCount = isSngOrSpin
+            ? tournament.current_players
+            : (rosterByTournament.get(tournament.id) ?? tournament.current_players);
 
           /**
            * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can
@@ -7008,7 +7040,7 @@ export class GameServer {
 
           const maxReached =
             tournament.effective_max_players !== null &&
-            tournament.current_players >= tournament.effective_max_players;
+            fieldCount >= tournament.effective_max_players;
           /**
            * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
            *
@@ -7025,8 +7057,7 @@ export class GameServer {
            * on a later read after that operation actually settles.
            */
           const timeReached =
-            startTime - TOURNAMENT_PRESEAT_LEAD_MS <= now &&
-            tournament.current_players >= minPlayers;
+            startTime - TOURNAMENT_PRESEAT_LEAD_MS <= now && fieldCount >= minPlayers;
 
           // SNG/Spin: only start when every seat has been bought and paid for.
           // MTT variants: start at scheduled time with minimum players.
@@ -7067,8 +7098,7 @@ export class GameServer {
 
           // Preserve the old past-start minimum-field gate, including a
           // malformed row whose maximum is below its minimum.
-          const needsPastStartTopUp =
-            !poolFinalized && isPastStart && tournament.current_players < minPlayers;
+          const needsPastStartTopUp = !poolFinalized && isPastStart && fieldCount < minPlayers;
           if (shouldStart && !needsPastStartTopUp) {
             const isScheduledMtt = isPersistedUnlimitedMtt(tournament);
             if (isScheduledMtt) {
@@ -7086,14 +7116,14 @@ export class GameServer {
                logging it here is how a drifted counter reads as a healthy
                start in the logs. */
             const reason = finishingADealtGame
-              ? `finalized pool, already dealt - finishing with the field it has (${tournament.current_players} on the board)`
+              ? `finalized pool, already dealt - finishing with the field it has (${fieldCount} on the board)`
               : isSngOrSpin
                 ? `seats sold (${paidSeats}/${tournament.max_players})`
                 : maxReached
-                  ? `full (${tournament.current_players}/${tournament.max_players})`
+                  ? `full (${fieldCount}/${tournament.max_players})`
                   : startTime > now
-                    ? `pre-seating ${tournament.current_players} players, cards in ${Math.round((startTime - now) / 1000)}s`
-                    : `${tournament.current_players} players`;
+                    ? `pre-seating ${fieldCount} players, cards in ${Math.round((startTime - now) / 1000)}s`
+                    : `${fieldCount} players`;
             /* Re-check in the same tick as the set: the seat-first fast lane
                (discoverSeatFirstStarts) may have started this game while this
                pass was busy with earlier rows. Both sites check-and-set with
@@ -7203,7 +7233,7 @@ export class GameServer {
             }
           }
 
-          if (!poolFinalized && isPastStart && tournament.current_players < minPlayers) {
+          if (needsPastStartTopUp) {
             /**
              * Dan 2026-08-19: fill to a FULL FIELD, every format.
              *
@@ -9104,6 +9134,46 @@ export class GameServer {
    * read for every live table rather than for one guessed table, which is
    * what makes the choice possible at all.
    */
+  /**
+   * ENTRANTS ON THE ROSTER, FOR EVERY REGISTRATION-FIRST ROW, IN ONE PASS
+   * (2026-09-24).
+   *
+   * The same count topUpWithHorses measures its shortfall in: rows in
+   * tournament_players whose status is registered or playing. A horse is an
+   * entrant like any other (CLAUDE.md 10.5). Keyset-paged per chunk of 100
+   * ids, so a large board is a handful of reads rather than one per row, and
+   * PostgREST's row ceiling cannot truncate it silently. A chunk that could
+   * not be read completely is left out of the map (the caller keeps the
+   * counter for those rows) and fetchAllRows has already reported it.
+   */
+  private async readEntrantRosterCounts(rows: Array<{ id: string }>): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    for (let offset = 0; offset < rows.length; offset += 100) {
+      const ids = rows.slice(offset, offset + 100).map((row) => row.id);
+      const page = await fetchAllRows<{ id: string; tournament_id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('tournament_players')
+            .select('id, tournament_id')
+            .in('tournament_id', ids)
+            .in('status', ['registered', 'playing'])
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'GameServer.registeringRoster', maxRows: 100_000 }
+      );
+      if (!page.complete) continue;
+      for (const id of ids) counts.set(id, 0);
+      for (const row of page.rows) {
+        const tid = String(row.tournament_id ?? '');
+        if (counts.has(tid)) counts.set(tid, (counts.get(tid) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
   private async readSeatFirstPaidSeats(
     seatFirstRows: Array<{ id: string }>
   ): Promise<Map<string, number>> {

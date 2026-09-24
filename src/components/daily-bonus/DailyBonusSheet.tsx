@@ -683,6 +683,7 @@ export default function DailyBonusSheet({
       aria-busy={loading || undefined}
     >
       <SpadeConsole
+        onClose={onClose}
         as="section"
         crest="diamond"
         eyebrow="Club Arena"

@@ -391,6 +391,7 @@ export default function DiamondWalletModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           crest="flat"
           eyebrow="Club Arena"
           title="Diamond Wallet"

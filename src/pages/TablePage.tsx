@@ -23582,12 +23582,26 @@ function LiveTablePage({
                           {(tableState.clubName || tableState.unionName) && (
                             <span className="table-brand__line table-brand__line--identity">
                               <span className="table-brand__club">
-                                {tableState.clubName}
+                                {/* A NAME IS ONE WORD TO THE LINE BREAKER (Dan 2026-09-23:
+                                    '"Shark Club" needs to be on the same line, not stacked').
+                                    The union span below is nowrap and carried its own
+                                    separator, so the only break opportunity on the row was
+                                    the space INSIDE the club's name - "SHARK" / "CLUB ·
+                                    MIDWAY UNION" on every phone. The club name is nowrap
+                                    now, and the one breakable space on the row sits between
+                                    the two names, so a row too long for one line breaks
+                                    club / union and never inside either. */}
+                                <span className="table-brand__club-name">
+                                  {tableState.clubName}
+                                </span>
                                 {tableState.unionName && (
-                                  <span className="table-brand__union">
-                                    {tableState.clubName ? ' · ' : ''}
-                                    {tableState.unionName}
-                                  </span>
+                                  <>
+                                    {tableState.clubName ? ' ' : ''}
+                                    <span className="table-brand__union">
+                                      {tableState.clubName ? '· ' : ''}
+                                      {tableState.unionName}
+                                    </span>
+                                  </>
                                 )}
                               </span>
                             </span>
@@ -24576,6 +24590,22 @@ function LiveTablePage({
                       ? null
                       : (sitOutStamps.get(displayPlayer.id) ?? null)
                   }
+                  /* Dan 2026-09-23: a cash entrant the engine is holding for
+                     the big blind is "Waiting For BB", and one who agreed to
+                     post it is not sitting out at all. Same two engine lists
+                     the hero's footer reads (post_bb_deferred_user_ids and
+                     waiting_for_bb_user_ids); the hero's own local agreement
+                     covers the round trip before the engine echoes it. */
+                  entryWait={
+                    !displayPlayer?.id || tableState.isTournament
+                      ? null
+                      : (tableState.postBBDeferredUserIds ?? []).includes(displayPlayer.id) ||
+                          (displayPlayer.isHero && bbPostAgreed)
+                        ? 'posting_bb'
+                        : (tableState.waitingForBBUserIds ?? []).includes(displayPlayer.id)
+                          ? 'waiting_for_bb'
+                          : null
+                  }
                   /* Dan 2026-08-18: only the hero can mark their own cards. */
                   showPickedCardIndexes={displayPlayer?.isHero ? shownCardIndexes : undefined}
                   onToggleShowCard={displayPlayer?.isHero ? handleToggleShowCard : undefined}
@@ -25025,6 +25055,10 @@ function LiveTablePage({
           <div className="seat-buyin-confirm__card">
             <SpadeConsole
               as="div"
+              /* The X is Cancel (Dan 2026-09-23: every popup closes from its
+                 top-right corner). Withheld while the debit is in flight, the
+                 same guard the backdrop and the Cancel plate carry. */
+              onClose={seatFirstPending ? undefined : () => setSeatFirstConfirm(null)}
               eyebrow={`Seat ${seatFirstConfirm} · ${seatFirstBuyIn.label}`}
               title="Buy In"
               titleId="seat-buyin-confirm-title"
@@ -25848,6 +25882,10 @@ function LiveTablePage({
           >
             <SpadeConsole
               as="div"
+              /* The X is Wait For BB (Dan 2026-09-23: every popup closes from
+                 its top-right corner) - the same thing the secondary plate
+                 does, and the engine keeps holding the seat either way. */
+              onClose={() => setPostOrWaitOpen(false)}
               eyebrow="Your Entry"
               title="Post Or Wait"
               titleId="post-or-wait-title"
@@ -25990,12 +26028,17 @@ function LiveTablePage({
       {/* ═══════════════════════════════════════════════════════════════════════
           SIDE MENU (Slide-in)
           ═══════════════════════════════════════════════════════════════════════ */}
-      /* THE SIDE MENU IS GONE (2026-09-15). It could not be opened: the only reference to
-      `toggleSideMenu` was the overlay's own close handler, inside the block the overlay itself
-      rendered, so nothing anywhere could set `isSideMenuOpen` true. The felt's menu is `TableMenu`
-      in the HUD - the trigger `approvedHamburgerGearGuard` pins - and this was its superseded
-      predecessor left behind with 241 lines of JSX and its own stylesheet. The hamburger is
-      untouched (CLAUDE.md 10.7): what went is a menu no player could reach. */
+      {/* THE SIDE MENU IS GONE (2026-09-15). It could not be opened: the only reference to
+          `toggleSideMenu` was the overlay's own close handler, inside the block the overlay itself
+          rendered, so nothing anywhere could set `isSideMenuOpen` true. The felt's menu is `TableMenu`
+          in the HUD - the trigger `approvedHamburgerGearGuard` pins - and this was its superseded
+          predecessor left behind with 241 lines of JSX and its own stylesheet. The hamburger is
+          untouched (CLAUDE.md 10.7): what went is a menu no player could reach.
+
+          2026-09-23: this note shipped as a BARE block comment in JSX, and JSX has no such thing -
+          between two elements the text of a comment is a text node, so every live table printed
+          the paragraph above under the felt (Dan's screenshot). A JSX comment lives inside braces.
+          tests/unit/noBareCommentsInJsx.test.ts now fails the build on the next one. */}
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
       {/* THE FLOATING "I'M BACK" IS GONE (Dan 2026-09-04: "there shouldn't be
           two 'im back' buttons"). It hung bottom-right over the hero's cards

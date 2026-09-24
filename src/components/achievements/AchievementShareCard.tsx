@@ -229,6 +229,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Club Arena"
           title="Share Achievement"
           titleId="share-card-title"

@@ -89,6 +89,10 @@ BEGIN
     v_new := replace(v_src, v_anchor, v_insert);
     IF v_new = v_src THEN RAISE EXCEPTION 'substitution produced no change'; END IF;
     EXECUTE v_new;
+    PERFORM public.fn_ca_declare_guard_redefinition(
+      'fn_ca_financial_alert_to_incident',
+      'migration 20260924211841_a_resolved_settlement_does_not_open_a_live_incident'
+    );
   END IF;
 
   /* Resolve the stray incidents opened from an already-resolved settlement

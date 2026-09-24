@@ -69,6 +69,9 @@ function fixture(count = 1, predecessor = release) {
   const snapshotReads: { ids: string[]; since: string }[] = [];
   let onSnapshots: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
   const seatReads: { users: string[] }[] = [];
+  // Every open seat row the fixture handed back, so the batched arrivals
+  // question can answer per (table, occupancy) exactly as the per-table one.
+  const openRows: any[] = [];
   let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
   const moveReads: { ids: string[] }[] = [];
   let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
@@ -344,7 +347,9 @@ function fixture(count = 1, predecessor = release) {
               limit: async (bound: number) => {
                 expect(bound).toBe(901);
                 seatReads.push({ users: [...filter.users] });
-                return onSeats ? onSeats(filter.users) : { data: [], error: null };
+                const answer = onSeats ? onSeats(filter.users) : { data: [], error: null };
+                if (Array.isArray(answer?.data)) openRows.push(...answer.data);
+                return answer;
               },
             };
             return {
@@ -407,6 +412,7 @@ function fixture(count = 1, predecessor = release) {
     rows,
     snapshotReads,
     seatReads,
+    openRows,
     moveReads,
     first: [...server.tableEngines.values()][0],
     run: (discovered = [server]) =>
@@ -1650,12 +1656,42 @@ function mixedFixture() {
   };
   Object.assign(f.options, { custodyIntent: intent });
   const arrivalReads: { table: string; occupancies: string[] }[] = [];
+  const arrivalPlayerReads: { players: string[] }[] = [];
+  const perTableArrivalReads: { table: string; occupancies: string[] }[] = [];
+  // 'perPlayer' is production once migration 20260924190214 is applied;
+  // 'missing' is the box before it, where PostgREST answers PGRST202 and the
+  // guard asks the per-table question exactly as before.
+  let batchArrivals: 'perPlayer' | 'missing' = 'perPlayer';
   let onArrivals: ((table: string, occupancies: string[]) => { data: any; error: any }) | undefined;
+  let onArrivalsForPlayers: ((players: string[]) => { data: any; error: any }) | undefined;
   Object.assign(f.modules.client.supabase, {
     rpc: async (name: string, input: any) => {
+      if (name === 'fn_cash_seat_move_arrivals_for_players') {
+        expect(Object.keys(input)).toEqual(['p_player_ids']);
+        expect(input.p_player_ids.length).toBeLessThanOrEqual(500);
+        arrivalPlayerReads.push({ players: [...input.p_player_ids] });
+        if (batchArrivals === 'missing')
+          return { data: null, error: { code: 'PGRST202', message: 'function not found' } };
+        if (onArrivalsForPlayers) return onArrivalsForPlayers(input.p_player_ids);
+        // The union of the per-table answers for every open seat these
+        // players hold, which is what the batched function returns.
+        const data: any[] = [];
+        for (const row of f.openRows) {
+          if (!input.p_player_ids.includes(row.user_id)) continue;
+          arrivalReads.push({ table: row.table_id, occupancies: [row.occupancy_id] });
+          const answer = onArrivals ? onArrivals(row.table_id, [row.occupancy_id]) : { data: [] };
+          if (answer?.error) return answer;
+          data.push(...(answer.data ?? []));
+        }
+        return { data, error: null };
+      }
       if (name === 'fn_cash_seat_move_arrivals') {
         expect(Object.keys(input).sort()).toEqual(['p_occupancy_ids', 'p_table_id']);
         arrivalReads.push({ table: input.p_table_id, occupancies: [...input.p_occupancy_ids] });
+        perTableArrivalReads.push({
+          table: input.p_table_id,
+          occupancies: [...input.p_occupancy_ids],
+        });
         return onArrivals
           ? onArrivals(input.p_table_id, input.p_occupancy_ids)
           : { data: [], error: null };
@@ -1785,6 +1821,14 @@ function mixedFixture() {
     receipts,
     rpcCalls,
     arrivalReads,
+    arrivalPlayerReads,
+    perTableArrivalReads,
+    batchArrivals: (mode: typeof batchArrivals) => {
+      batchArrivals = mode;
+    },
+    onArrivalsForPlayers: (cb: typeof onArrivalsForPlayers) => {
+      onArrivalsForPlayers = cb;
+    },
     onArrivals: (cb: typeof onArrivals) => {
       onArrivals = cb;
     },
@@ -2689,6 +2733,94 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(result.bankDisposition).toContain('residueOpenSeatsElsewhere=1');
     expect(result.bankDisposition).toContain('arrivalTablesAsked=1');
     expect(result.bankDisposition).toContain('arrivalsInWindowChecked=0');
+  });
+
+  /* ONE QUESTION FOR EVERY ARRIVAL (2026-09-24). Run 36042895085 asked the
+     per-table arrivals function 767 times in thirteen seconds and lost its
+     outcome to the publisher's 20 s budget. The same question is asked once
+     per fleet through fn_cash_seat_move_arrivals_for_players (migration
+     20260924190214), and the per-table question survives only as the
+     fallback for a box that does not have the function yet. */
+  it('asks the arrivals question once for every residue player, never per table', async () => {
+    const f: any = mixedFixture();
+    const a = cashedOut(f, 600);
+    const b = cashedOut(f, 602);
+    f.onSeats(() => ({
+      data: [
+        { table_id: uuid(66000), user_id: a.departed, occupancy_id: uuid(66001) },
+        { table_id: uuid(66010), user_id: a.departed, occupancy_id: uuid(66011) },
+        { table_id: uuid(66020), user_id: b.departed, occupancy_id: uuid(66021) },
+      ],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.arrivalPlayerReads).toEqual([{ players: [a.departed, b.departed].sort() }]);
+    expect(f.perTableArrivalReads).toEqual([]);
+    expect(result.bankDisposition).toContain('arrivalTablesAsked=3');
+    expect(result.bankDisposition).toContain('arrivalQuestion=perPlayer');
+    expect(result.bankDisposition).toContain('arrivalPlayersAsked=2');
+  });
+
+  it('an arrival outside the seats it asked about is not an arrival it counts', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(67000), user_id: from.departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    // The batched function answers for the PLAYER; a receipt into a seat the
+    // guard did not ask about (a seat whose capture holds the bank, or one
+    // long closed) is exactly what the per-table question never saw.
+    f.onArrivalsForPlayers(() => ({
+      data: [
+        {
+          move_id: uuid(69000),
+          player_id: from.departed,
+          from_table_id: from.e.tableId,
+          to_table_id: uuid(67000),
+          source_occupancy_id: uuid(69001),
+          destination_occupancy_id: uuid(68999),
+        },
+      ],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.moveReads).toEqual([]);
+    expect(result.bankDisposition).toContain('arrivalsInWindowChecked=0');
+  });
+
+  it('a box without the batched function is asked per table, exactly as before', async () => {
+    const f: any = mixedFixture();
+    f.batchArrivals('missing');
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 60000).toISOString());
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.seatMoveInTransit',
+      failedTable: uuid(67000),
+    });
+    expect(f.arrivalPlayerReads).toHaveLength(1);
+    expect(f.perTableArrivalReads).toEqual([{ table: uuid(67000), occupancies: [uuid(68000)] }]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a batched answer that fills its page, or errors, still refuses and names the read', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    f.onArrivalsForPlayers(() => ({ data: null, error: { code: '42501' } }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.arrivalsRead',
+    });
+    expect(result.observedDetail).toContain('error=42501');
+    expect(f.calls).toEqual([]);
   });
 
   it('accepts a player who moved away once the destination capture holds a bank for that occupancy', async () => {

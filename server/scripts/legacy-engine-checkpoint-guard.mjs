@@ -3097,24 +3097,76 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
       const arrivals = [];
       const asked = [...pending.values()].sort((a, b) => (lower(a.tableId) < lower(b.tableId) ? -1 : 1));
-      for (const [index, answer] of (await readAll(asked.map(({ tableId, occupancies }) => () =>
-        modules.client.supabase.rpc('fn_cash_seat_move_arrivals', {
-          p_table_id: tableId,
-          p_occupancy_ids: [...occupancies].sort(),
-        })))).entries()) {
-        require(asked[index].occupancies.length <= 64, 'bank_residue_unproven');
-        answered(answer, 64, 'bank_residue_unproven', 'arrivalsRead');
-        for (const arrival of answer.data) {
-          require(record(arrival) &&
-            uuid(arrival.move_id) &&
-            uuid(arrival.player_id) &&
-            uuid(arrival.from_table_id) &&
-            uuid(arrival.to_table_id) &&
-            uuid(arrival.destination_occupancy_id), 'bank_residue_unproven');
-          // Every arrival in hand counts, whatever its source still shows: a
-          // swap partner, or a source engine replaced after running its move,
-          // leaves no residue there, and its handoff is in transit all the same.
-          arrivals.push(arrival);
+      const admitArrival = (arrival) => {
+        require(record(arrival) &&
+          uuid(arrival.move_id) &&
+          uuid(arrival.player_id) &&
+          uuid(arrival.from_table_id) &&
+          uuid(arrival.to_table_id) &&
+          uuid(arrival.destination_occupancy_id), 'bank_residue_unproven');
+        // Every arrival in hand counts, whatever its source still shows: a
+        // swap partner, or a source engine replaced after running its move,
+        // leaves no residue there, and its handoff is in transit all the same.
+        arrivals.push(arrival);
+      };
+      /* ═══ ONE QUESTION FOR EVERY ARRIVAL (2026-09-24) ═══
+
+         Run 36042895085 (the 18:55 break) is the measurement, from the
+         progress record and the Supabase edge logs: the guard entered this
+         proof 663 ms in, then made 767 `fn_cash_seat_move_arrivals` calls -
+         one per destination table, eight at a time - between 18:55:11.975 and
+         18:55:24.755, thirteen seconds of the publisher's 20000 ms work
+         budget, and the call's outcome was lost. The database side of each
+         call is under 10 ms (measured); the cost is the round trips.
+
+         The same question, asked once: every receipt for these residue
+         players whose destination seat is still open
+         (`fn_cash_seat_move_arrivals_for_players`, the same join and the same
+         ENGINE_ONLY gate, migration 20260924190214), filtered here to the
+         exact (table, occupancy) pairs this guard holds no bank for. That is
+         the union of the per-table answers, so nothing is admitted that the
+         per-table question would have refused, and nothing it would have
+         admitted is refused. At most 500 players a call, at most a handful of
+         calls for the whole fleet, and still refused on any error or any page
+         that fills. Until the function exists on the box (PostgREST answers
+         PGRST202 to a function it cannot find) the per-table question is
+         asked exactly as before, so a release that arrives ahead of the
+         migration is no worse off than it was. */
+      const pendingPairs = new Set(
+        asked.flatMap(({ tableId, occupancies }) =>
+          occupancies.map((occupancy) => `${lower(tableId)}:${lower(occupancy)}`)
+        )
+      );
+      const askedPlayers = [...new Set(open
+        .filter((row) => pendingPairs.has(`${lower(row.table_id)}:${lower(row.occupancy_id)}`))
+        .map((row) => row.user_id))].sort();
+      const byPlayer = askedPlayers.length === 0
+        ? []
+        : await readAll(chunks(askedPlayers, 500).map((players) => () =>
+          modules.client.supabase.rpc('fn_cash_seat_move_arrivals_for_players', {
+            p_player_ids: players,
+          })));
+      const batchMissing = byPlayer.some((answer) => answer?.error?.code === 'PGRST202');
+      if (!batchMissing) {
+        for (const answer of byPlayer) {
+          answered(answer, 4000, 'bank_residue_unproven', 'arrivalsRead');
+          for (const arrival of answer.data) {
+            require(record(arrival) &&
+              uuid(arrival.to_table_id) &&
+              uuid(arrival.destination_occupancy_id), 'bank_residue_unproven');
+            if (pendingPairs.has(`${lower(arrival.to_table_id)}:${lower(arrival.destination_occupancy_id)}`))
+              admitArrival(arrival);
+          }
+        }
+      } else {
+        for (const [index, answer] of (await readAll(asked.map(({ tableId, occupancies }) => () =>
+          modules.client.supabase.rpc('fn_cash_seat_move_arrivals', {
+            p_table_id: tableId,
+            p_occupancy_ids: [...occupancies].sort(),
+          })))).entries()) {
+          require(asked[index].occupancies.length <= 64, 'bank_residue_unproven');
+          answered(answer, 64, 'bank_residue_unproven', 'arrivalsRead');
+          for (const arrival of answer.data) admitArrival(arrival);
         }
       }
       const moveIds = [...new Set(arrivals.map(({ move_id }) => lower(move_id)))].sort();
@@ -3162,6 +3214,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
         `residueOpenSeatsElsewhere=${open.length}`,
         `arrivalTablesAsked=${asked.length}`,
+        `arrivalQuestion=${batchMissing ? 'perTable' : 'perPlayer'}`,
+        `arrivalPlayersAsked=${askedPlayers.length}`,
         `arrivalsInWindowChecked=${arrivals.length}`,
         `disposedTables=${disposedTables.length}`,
         `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,

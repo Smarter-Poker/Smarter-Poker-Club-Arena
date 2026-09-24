@@ -274,7 +274,12 @@ describe('DailyBonusSheet', () => {
     const overlay = document.querySelector('.dbs-overlay');
     expect(overlay?.parentElement).toBe(document.body);
     // The two painted plates: NOT NOW closes, CLAIM NEXT claims the first open tile.
-    const notNow = screen.getByRole('button', { name: 'Close' });
+    /* Two controls close it since 2026-09-23: the X in the head's corner
+       (Dan: every popup closes from its top right) and the foot plate. This
+       is the plate. */
+    const notNow = screen
+      .getAllByRole('button', { name: 'Close' })
+      .find((b) => b.className.includes('sc-plate'))!;
     expect(notNow.className).toContain('sc-plate');
     expect(notNow.textContent).toBe('Not Now');
     fireEvent.click(notNow);

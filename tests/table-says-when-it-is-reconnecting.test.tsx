@@ -183,7 +183,9 @@ describe('the table says when it is not connected', () => {
        and the banner has to come with it. A hard-coded 52% left the banner a
        third of the felt above the wordmark, in the middle of the board stack,
        on run-it-twice and bomb-pot tables. The literal is the bug now. */
-    expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*58%\)\s*-\s*6%\)/);
+    /* 2026-09-23: the anchor is the wordmark's TOP edge (56%), so the pill
+       hangs half a point above it rather than six above its old centre. */
+    expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*56%\)\s*-\s*0\.5%\)/);
     expect(rule).not.toMatch(/top:\s*52%/);
     // Bottom-anchored, so it grows UP off the wordmark rather than over it.
     expect(BANNER_CSS).toMatch(/transform:\s*translate\(-50%,\s*-100%\)/);

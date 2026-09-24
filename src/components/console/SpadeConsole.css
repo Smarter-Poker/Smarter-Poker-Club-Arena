@@ -107,6 +107,21 @@
    box one pixel into each of them closes the junction with the right art and
    moves no content: the negative margin is paid straight back as padding.
    Do not "tidy" these four declarations into a plain `padding` shorthand. */
+/* ── THE GLASS IS SOLID (Dan 2026-09-23) ──────────────────────────────
+   "POST OR WAIT IS SEE THROUGH ... THIS SHOULD HAVE A SOLID BACK AND NOT SEE
+   THE TABLE THROUGH THE FONTS." Measured on the slices: the spade master's
+   head is opaque, but mid.png is alpha 0-1 everywhere between its rails (x
+   74-923 of 1000) and bottom-plates.png is transparent above its closing rail
+   except where the two plates sit. On a dark page nobody saw it; over a live
+   felt the board and the seats printed straight through the body copy.
+
+   The body and the foot now carry the master's own glass tone (#0a0b0d,
+   sampled from the head's well) as a second background layer UNDER the art,
+   inset to the rail interior so nothing paints outside the frame: 84.9% wide,
+   centred, which is x 74-923. The art is unchanged and still paints on top.
+   The shark and riveted families cut their glass opaque and their
+   `background-image` overrides below replace the layer list, so they are not
+   touched. Only the spade family had a window where its glass should be. */
 .sc__body {
   position: relative;
   display: flex;
@@ -115,8 +130,9 @@
   padding: 1px 10.5% calc(3cqw + 1px);
   margin-top: -1px;
   margin-bottom: -1px;
-  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
-    repeat-y;
+  background:
+    url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto repeat-y,
+    linear-gradient(#0a0b0d, #0a0b0d) 50% 0 / 84.9% 100% no-repeat;
 }
 
 /* A FLAT BOTTOM, CARRYING NOTHING (Dan 2026-09-08). The closing cap is the
@@ -126,13 +142,22 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 72;
-  background: url('/assets/club-buttons/console/spade-console-v1/bottom-foot.png') bottom center /
-    100% auto no-repeat;
+  /* The glass layer stops at 80% of the foot: inside the closing rail on
+     both feet (rows 205-266 of 277 on the plates foot, 0-61 of 72 on the flat
+     one), so it never shows below the frame. See "THE GLASS IS SOLID". */
+  background:
+    url('/assets/club-buttons/console/spade-console-v1/bottom-foot.png') bottom center / 100% auto
+      no-repeat,
+    linear-gradient(#0a0b0d, #0a0b0d) 50% 0 / 84.9% 80% no-repeat;
 }
 
 .sc--plates .sc__foot {
   aspect-ratio: 1000 / 277;
-  background-image: url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png');
+  /* Both layers restated: a one-value `background-image` would collapse the
+     layer list and drop the glass. */
+  background-image:
+    url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png'),
+    linear-gradient(#0a0b0d, #0a0b0d);
 }
 
 /* ── THE SHARK FAMILY (Dan 2026-09-13) ─────────────────────────────────
@@ -252,6 +277,44 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* ── THE X (Dan 2026-09-23) ───────────────────────────────────────────────
+   A lit glyph in the head's clear top-right glass, in each family's measured
+   `close` zone (SpadeConsole.tsx). No box, no rim, no fill: the control is a
+   word on the glass, like CLOSE at the foot. The zone can be narrow on the
+   shark head, so the tappable area is padded out to 44px with a
+   pseudo-element, the same way the seat and action controls do it. */
+.sc__close {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 5.2cqw;
+  font-weight: 400;
+  line-height: 1;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sc__close::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+.sc__close:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
 }
 
 /* ── Ink: the master's own colours ────────────────────────────────────── */

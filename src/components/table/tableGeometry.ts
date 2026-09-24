@@ -437,9 +437,9 @@ export const BOARD_CHIP_GAP_WIDTH_PCT = 0.2;
  * date."
  *
  * `.table-brand` in TablePage.css: `width: 62%` of the felt capped at 260px,
- * centred on `--sp-brand-top` (declared 58% on `.table-surface`, and moved to
- * 72% / 84% by the `[data-boards]` rules), holding a 900x116 wordmark at full
- * width,
+ * hung from `--sp-brand-top` by its top edge (56% on `.table-surface` since
+ * 2026-09-23; moved to 59% / 64% by the `[data-boards]` rules), holding a
+ * 900x116 wordmark at full width,
  * a 6px gap, and two `.table-brand__line` rows at 0.48rem.
  *
  * ── WHY 62 IS THE RIGHT NUMBER, AND WHY IT WAS NOT ─────────────────────────
@@ -502,10 +502,18 @@ export const BOARD_CHIP_GAP_WIDTH_PCT = 0.2;
    item 10 ("the button is not even close to the player who has the button")
    made worse by the fix for his item 7A. The name wraps inside the existing
    box instead, and nothing else on the felt has to move. */
+/* THE BAND HANGS FROM ITS TOP (2026-09-23, with the masthead it describes).
+   Dan: "THE BOARD CARDS SHOULD NEVER EVER BE OVERLAPPING 'SMARTER.POKER' ON
+   THE FELT, ALWAYS ABOVE." `.table-brand` is anchored by its TOP edge now
+   (`--sp-brand-top: 56%` of the felt window, translate on X only), so a taller
+   block grows down the felt and never up into the board. This band mirrors
+   that: `topOfFeltYPct` replaces the old centre, and the rectangle is top +
+   height rather than centre +- half. The `lines: 3` tallest-block rule is
+   unchanged, and it now means the same thing in both files. */
 export const FELT_TEXT_BAND = {
   widthOfFeltPct: 62,
   maxWidthPx: 260,
-  centerOfFeltYPct: 58,
+  topOfFeltYPct: 56,
   logoAspect: 900 / 116,
   logoToMetaGapPx: 6,
   lineHeightPx: 11,
@@ -568,17 +576,29 @@ export const BUTTON_ANGLE_DEG = 36;
  * The closest the two markers may ever be, centre to centre, as a percentage
  * of the table's width.
  *
- * In PERCENT rather than pixels because both markers are now sized as a
- * proportion of the table (see TableVisualHotfix.css): a chip is 3.6% of the
- * table's width and the button 4.0%, so their radii are 1.8% and 2.0%, and they
- * touch at 3.8%. 6% leaves a chip's width of felt between them at every table
- * size, so they read as two markers rather than one smear.
+ * In PERCENT rather than pixels because both markers are sized as a
+ * proportion of the table (see TableVisualHotfix.css), and DERIVED from those
+ * sizes rather than written as a number, because the number went stale once
+ * already:
  *
- * The button's mobile floor (17px, where the glyph would otherwise stop being
- * legible) makes it proportionally larger on a small phone - 2.45% of the width
- * rather than 2.0% - which the 6% still covers.
+ *   Written on 2026-08-26 as 6, when a chip was 3.6% of the table and the
+ *   button 4.0% - radii 1.8% and 2.0%, touching at 3.8%, so 6% left a chip's
+ *   width of felt between them. On 2026-09-04 the button was doubled to
+ *   BUTTON_WIDTH_PCT = 7.2% (Dan: "double the size as the chips in pot") and
+ *   this constant was not re-derived: radii 1.8% + 3.6% touch at 5.4%, and 6%
+ *   left 0.6% - two pixels on a phone - between the puck's rim and the first
+ *   chip. Dan 2026-09-23, screenshot of will.marino's seat: "THE BUTTON IS
+ *   COVERING HIS CHIPS. THAT SHOULD NEVER HAPPEN."
+ *
+ * So the rule is stated as what it always meant: the two radii, plus one full
+ * chip's width of daylight. 1.8 + 3.6 + 3.6 = 9% today, and if either marker
+ * is resized again this follows.
+ *
+ * The button's mobile floor (BUTTON_MIN_PX, where the glyph would otherwise
+ * stop being legible) makes it proportionally larger on a small phone; the
+ * chip's daylight of margin absorbs that.
  */
-export const MARKER_MIN_GAP_WIDTH_PCT = 6;
+export const MARKER_MIN_GAP_WIDTH_PCT = CHIP_WIDTH_PCT / 2 + BUTTON_WIDTH_PCT / 2 + CHIP_WIDTH_PCT;
 
 /**
  * How far inside the felt's edge a marker's CENTRE must stay, as a percentage
@@ -1054,13 +1074,13 @@ function feltTextRectSq(size: Size): RectSq {
     (FELT_TEXT_BAND.lines - 1) * FELT_TEXT_BAND.lineGapPx;
   const heightPx = brandPx / FELT_TEXT_BAND.logoAspect + FELT_TEXT_BAND.logoToMetaGapPx + metaPx;
   const u = unitPx(size);
-  const centreYPct = FELT_WINDOW.top + (FELT_TEXT_BAND.centerOfFeltYPct / 100) * FELT_WINDOW.height;
-  const centreYSq = ((centreYPct / 100) * size.h) / u;
+  const topYPct = FELT_WINDOW.top + (FELT_TEXT_BAND.topOfFeltYPct / 100) * FELT_WINDOW.height;
+  const topYSq = ((topYPct / 100) * size.h) / u;
   return {
     x0: feltCenter().x - brandPx / 2 / u,
     x1: feltCenter().x + brandPx / 2 / u,
-    y0: centreYSq - heightPx / 2 / u,
-    y1: centreYSq + heightPx / 2 / u,
+    y0: topYSq,
+    y1: topYSq + heightPx / u,
   };
 }
 

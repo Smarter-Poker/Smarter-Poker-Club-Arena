@@ -400,6 +400,7 @@ export function GameRulesModal({
         }}
       >
         <SpadeConsole
+          onClose={onClose}
           as="div"
           eyebrow={stakes}
           title={`${variant} Rules`}

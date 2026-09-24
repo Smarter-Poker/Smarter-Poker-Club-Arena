@@ -259,10 +259,21 @@ describe('Find A Player locator', () => {
       expect(onClose).not.toHaveBeenCalled();
     });
 
-    it('has no corner dismiss control', () => {
-      renderLocator();
+    it('has the corner X every popup carries (Dan 2026-09-23)', async () => {
+      /* This pinned the OPPOSITE until 2026-09-23 - "no corner dismiss
+         control", the quiet exit at the bottom being the only way out. Dan:
+         "FOR THE BBJ, TABLE SETTINGS OR ANYTHING ELSE THAT POPS UP, THERE
+         SHOULD ALWAYS BE AN 'X' IN THE TOP RIGHT CORNER TO 'CLOSE THE PAGE'.
+         YOU SHOULD NEVER HAVE TO GO TO THE BOTTOM OF THE PAGE TO CLOSE IT."
+         The console prints it; the quiet exit below stays. */
+      const user = userEvent.setup();
+      const { onClose } = renderLocator();
 
-      expect(screen.queryByRole('button', { name: /^(×|✕|x|close)$/i })).not.toBeInTheDocument();
+      const corner = screen.getByRole('button', { name: 'Close' });
+      expect(corner.className).toContain('sc__close');
+      await user.click(corner);
+
+      expect(onClose).toHaveBeenCalled();
     });
 
     it('closes from the quiet exit at the bottom', async () => {

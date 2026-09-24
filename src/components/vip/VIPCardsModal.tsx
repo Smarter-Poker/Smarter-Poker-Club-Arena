@@ -211,6 +211,7 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           crest="vip"
           eyebrow="Club Arena Membership"
           title={isLifetime ? 'Lifetime VIP' : 'VIP'}

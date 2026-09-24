@@ -1,0 +1,3 @@
+# server/src/tournament/aBaggedHorseIsABaggedPlayer.law.test.ts
+
+Multi-day tournaments (MULTI-DAY-DESIGN.md, R5 engine, 2026-09-24) bag every surviving stack at the end of a day and re-seat it the next day. CLAUDE.md 10.5 makes a horse a player, so the law pins that the multi-day engine code (`multiDayStages.ts`, `stageResumeSchedule.ts` and the multi-day block of `TournamentManagerBase`) never reads `is_horse` or a horse id, that the next-day seat draw is one shuffle in which renaming a horse to a human changes no chair, and that the fleet's horse-load read counts a BAGGED event's registrations, so a horse bagged overnight is not handed out as free while it still owes the next day a seat, exactly as a human does.

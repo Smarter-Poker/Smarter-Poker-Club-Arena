@@ -86,8 +86,11 @@ interface SpawnDue {
 }
 
 const POLL_INTERVAL_MS = 60 * 1000;
-/** Live = a player can join it or it is still playing/settling. */
-const LIVE_STATUSES = ['REGISTERING', 'RUNNING', 'COMPLETING'];
+/**
+ * Live = a player can join it or it is still playing/settling. BAGGED is a
+ * multi-day event between two days: still playing, never a finished instance.
+ */
+const LIVE_STATUSES = ['REGISTERING', 'RUNNING', 'BAGGED', 'COMPLETING'];
 
 /** How far behind `now` a scheduled time still spawns (boot catch-up). */
 export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;

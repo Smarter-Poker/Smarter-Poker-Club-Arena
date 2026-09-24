@@ -3098,12 +3098,117 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return 'unreadable';
       }
     };
+    /* ═══ A TEARDOWN A DEAD PROCESS CAN NEVER FINISH (2026-09-24) ═══
+
+       Run 36015361207 is the measurement. It is the first release whose
+       capture walk admitted or deferred every table AND whose refusal named
+       itself (#5198), and it stopped here, on eight stopped engines of one
+       tournament whose lease the old process lost:
+
+         previousNativeWork.teardown  failedTable 6557ebd8
+         unfulfilled=8 presenceSave=0 teardown=8 stopped=true scope=tournament
+         reason=Table engine ... teardown failed in operation
+
+       That sentence is written in exactly one place in 8825,
+       `performStop` (ServerTableEngineBase.ts:3613), and only at its END,
+       after every step of the stop has run. `stop()` memoizes the promise
+       (:3417), so the same rejection is returned for ever: nothing in this
+       process will ever run that teardown again. The only thing that ends it
+       is replacing the process, which is exactly what this join refused:
+       CLAUDE.md 10.86, the fix for the wedge sitting behind the wedge, the
+       same shape as the three deferrals above.
+
+       WHAT A FAILED 8825 TEARDOWN CAN HAVE LEFT UNWRITTEN. `performStop`
+       collects into that AggregateError from exactly three places, and
+       carries on past each of them:
+
+         1. an owned writer it joined rejected (the dealing loop, a
+            settlement, the post-hand tasks, a tournament move, a read
+            continuation: :3486). Each is a promise that has already SETTLED;
+            this process never re-runs it, and what it committed is in the
+            database. A hand it left open is an incomplete
+            `hand_state_snapshots` row, which is exactly what the row proof
+            below reads.
+         2. the terminal snapshot flush failed (:3545). A failed write
+            changes no row, and the row it would have replaced is not money:
+            8825 says above `requestSnapshot` that "rehydrate() is never
+            called and checkCrashRecovery() abandons in-flight hands", and
+            `checkCrashRecovery` (:8116) takes only the hand number and the
+            disconnect states from it, marks the hand complete, and leaves
+            every player on the stack the rows hold. Completion itself is a
+            different write (`complete_hand_snapshot`), never this flush.
+         3. a module dispose threw (:3595): process memory, gone with the
+            process either way.
+
+       Every other throw in `performStop` leaves WITHOUT that sentence. The
+       seat boundary tail (a cashout, :3511) rejects with its own error, before
+       any cleanup runs, so it fails the exact-message conjunct below and
+       still refuses. What this checkpoint itself persists for a table,
+       its banks and presence, is asserted empty on this engine by
+       `stopped_engine_retains_custody` before this point, and pinned by
+       `checkAll` after it.
+
+       THIS IS PINNED TO 8825 AND TO NOTHING WIDER. Later builds add a fourth
+       source to the same AggregateError: `performStop` now captures a
+       stopped tournament table's time banks into custody and records a
+       failure to do so in the same array. On such a predecessor a failed
+       teardown CAN hide an uncaptured bank, so it keeps refusing exactly as
+       before, and so does every rejection that is not the exact 8825
+       sentence for this table, every engine that is not stopped, terminal
+       and fully released, and every `presenceSave` join on any engine.
+
+       And a deferral is not a waiver: the table goes into the same
+       `deferredUnresolvableCustody` map as the three cases above, and
+       `proveUnresolvableCustody` refuses the whole checkpoint unless the rows
+       prove that table quiet BEFORE anything is written. A hand in the air
+       still refuses, from rows. */
+    const deadTeardownFailureDeferred = (capture, failure) => {
+      try {
+        const engine = capture.engine;
+        const tableId = capture.tableId;
+        if (
+          !retained8825 ||
+          capture.stopped !== true ||
+          engine.teardownPromise !== capture.teardown ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.terminalTeardownComplete !== false ||
+          engine.hasReleasedProcessOwnership() !== true ||
+          engine.handController !== null ||
+          engine.dealingLoopPromise !== null ||
+          engine.f06RecoveryInFlight !== false ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0 ||
+          !(failure instanceof Error) ||
+          failure.name !== 'AggregateError' ||
+          !Array.isArray(failure.errors) ||
+          failure.errors.length === 0 ||
+          failure.message !==
+            `Table engine ${tableId} teardown failed in ${failure.errors.length} operation(s)`
+        )
+          return false;
+        const label = `failedTeardown:${failure.errors.length}`;
+        const prior = deferredUnresolvableCustody.get(tableId);
+        deferredUnresolvableCustody.set(tableId, prior === undefined ? label : `${prior}+${label}`);
+        return true;
+      } catch {
+        // Unreadable is never "dead". It keeps the original refusal.
+        return false;
+      }
+    };
     const unfulfilled = previousWork
       .map((entry, index) => ({ entry, ...previousJoins[index] }))
-      .filter(({ entry }) => entry.status !== 'fulfilled');
+      .filter(
+        ({ entry, capture, join }) =>
+          entry.status !== 'fulfilled' &&
+          !(join === 'teardown' && deadTeardownFailureDeferred(capture, entry.reason))
+      );
     if (unfulfilled.length > 0) {
       const first = unfulfilled[0];
       const counted = (join) => unfulfilled.filter((item) => item.join === join).length;
+      const deferredTeardowns = () =>
+        [...deferredUnresolvableCustody.values()].filter((label) => label.includes('failedTeardown:'))
+          .length;
       noteRefusal(() => ({
         failedCheck: `previousNativeWork.${first.join}`,
         failedTable: uuid(first.capture.tableId)
@@ -3114,6 +3219,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           `joined=${previousWork.length}`,
           `presenceSave=${counted('presenceSave')}`,
           `teardown=${counted('teardown')}`,
+          `teardownDeferred=${deferredTeardowns()}`,
           `stopped=${first.capture.stopped}`,
           `scope=${describe(first.capture.engine?.engineLeaseScope)}`,
           `tournament=${

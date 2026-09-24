@@ -276,6 +276,23 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       return 'unreadable';
     }
   };
+  /* A database refusal names itself. Every `f06` function raises a bare
+     upper-case token (`F06_MIXED_OLD_LEASE_CHANGED`), and PostgREST hands that
+     token back as the error's `message` with the SQLSTATE beside it. Those are
+     the two facts a refused release needs and neither one names a player, a
+     bank or a row. Anything that is NOT such a token is reduced to its length
+     by `describe`, so a message that carried a payload could not export it. */
+  const refusalToken = (value) =>
+    typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value) ? value : describe(value);
+  /* A SQLSTATE is five characters of `[0-9A-Z]` and nothing else - the SQL
+     standard fixes both the length and the alphabet - so it can be carried
+     whole and can carry nothing. `refusalToken` alone would not: half of them
+     begin with a digit (`57014`, `42501`, `23505`) and would be reduced to
+     their length, which is the one thing a SQLSTATE does not tell you.
+     PostgREST's own codes (`PGRST202`) are identifier-shaped and fall through
+     to the token rule; anything else falls through that to its length. */
+  const sqlState = (value) =>
+    typeof value === 'string' && /^[0-9A-Z]{5}$/.test(value) ? value : refusalToken(value);
   const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const uuid = (value) =>
     typeof value === 'string' &&
@@ -1878,9 +1895,65 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             custodyCommitAttempted = true;
           const response = await modules.client.supabase.rpc(name, args);
           checkAll();
-          require(!response.error &&
-            record(response.data) &&
-            response.data.ok === true, 'mixed_custody_rpc_unknown');
+          /* ═══ THE DATABASE NAMED IT AND THE GUARD CALLED IT UNKNOWN (2026-09-24) ═══
+
+             Run 36068474418 is the measurement: 62 tables attempted, 62
+             completed, all 62 read back and verified inside their own write
+             windows - and then `mixed_custody_rpc_unknown`, naming nothing.
+             The Supabase edge log for that second holds what this conjunction
+             threw away: `POST /rest/v1/rpc/fn_f06_prepare_mixed_manager_custody`
+             answered 400 with SQLSTATE P0001. Which of that function's refusals
+             fired is written only in its message, and by the time a person
+             looked, the database's own log for that second was no longer
+             retained. So the single fact that decides the next fix reached
+             nobody, and the outcome was `unknown` because the guard made it
+             unknown.
+
+             It cannot be anything else. `fn_f06_prepare_mixed_manager_custody`
+             has no path that returns `ok` false: it returns a record with `ok`
+             true or it raises. So `response.data.ok` can never be the conjunct
+             that fails while the call came back cleanly, and the only reachable
+             failure here is an error this conjunction declined to read. That is
+             10.86 rule 1: "I could not tell" has to say what it does know.
+
+             Observability only. The three collapsed facts - the call did not
+             come back, it came back as something that is not a record, it came
+             back saying no - are told apart, and the database's own SQLSTATE
+             and refusal token travel with them. `reason` is still
+             `mixed_custody_rpc_unknown` for every existing parser, no check,
+             threshold or outcome moves, and a refusal is still a refusal that
+             carries `retryAllowed` false.
+
+             Only a bare upper-case refusal token of the kind every f06 function
+             raises is carried verbatim. Any other string becomes its length,
+             exactly as `describe` does, so no permit payload, card, credential
+             or player identity can reach a log. */
+          witness(
+            'mixed_custody_rpc_unknown',
+            [
+              ['rpc.transport', () => !response.error],
+              ['rpc.body', () => record(response.data)],
+              ['rpc.ok', () => response.data.ok === true],
+            ],
+            () => ({
+              failedField: name,
+              observed: sqlState(response.error?.code),
+              observedDetail: [
+                `sqlstate=${sqlState(response.error?.code)}`,
+                `refusal=${refusalToken(response.error?.message)}`,
+                `hint=${refusalToken(response.error?.hint)}`,
+                `details=${describe(response.error?.details)}`,
+                `body=${describe(response.data)}`,
+                `ok=${describe(response.data?.ok)}`,
+                `commit=${args.p_expected === null ? 'no' : 'yes'}`,
+                `tournament=${
+                  uuid(args.p_tournament_id) ? args.p_tournament_id : describe(args.p_tournament_id)
+                }`,
+              ]
+                .join(',')
+                .slice(0, 512),
+            })
+          );
           return response.data;
         };
         const observation = await rpc('fn_f06_prepare_mixed_manager_custody', input);

@@ -157,6 +157,8 @@ def run_all(c, capability):
     c.psql(capability.read_text())
     F.seed_event(c)
     c.psql((MIG / '20260902052302_a_half_guarded_feature_is_a_feature_that_can_be_half_built.sql').read_text())
+    # The production money-RPC DDL guard the foundation harness carries.
+    c.psql(F.MONEY_REGISTRY_GUARD)
     for name in F.CANDIDATES:
         c.psql((MIG / name).read_text())
 

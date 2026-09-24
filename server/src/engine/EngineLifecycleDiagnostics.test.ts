@@ -478,6 +478,10 @@ async function nativeCheckpoint(
                 table_id: o.accepted.engine.tableId,
                 allocation_epoch: o.accepted.row.custody_id,
                 lifecycle: '1',
+                // smarter_private.f06_mixed_custody_snapshot names its witness
+                // since migration 20260924225647: 'permits' for an epoch that
+                // reserved, 'never_reserved' for one that never did.
+                witness: 'permits',
                 permits: [structuredClone(o.accepted.row)],
               },
             ]
@@ -486,6 +490,7 @@ async function nativeCheckpoint(
           table_id: extra.e.tableId,
           allocation_epoch: extra.row.custody_id,
           lifecycle: '1',
+          witness: 'permits',
           permits: [structuredClone(extra.row)],
         })),
       ],
@@ -814,11 +819,14 @@ describe('native retained 8825 release checkpoint', () => {
         expect(o.permit.recoveryState()).toBe('reserved');
         expect(f.s.tournamentRetirementCustody.admissionAllowed(o.e.tableId)).toBe(false);
       }
+      // Every manager is observed before any is committed (2026-09-24): both
+      // observations, then the first commit, whose readback is where the
+      // change arrives. The second manager is never committed.
       expect(
-        checkpointIo.rpc.mock.calls.filter(
-          ([name]) => name === 'fn_f06_prepare_mixed_manager_custody'
-        )
-      ).toHaveLength(2);
+        checkpointIo.rpc.mock.calls
+          .filter(([name]) => name === 'fn_f06_prepare_mixed_manager_custody')
+          .map(([, args]) => (args.p_expected === null ? 'observe' : 'commit'))
+      ).toEqual(['observe', 'observe', 'commit']);
     }
   );
 });

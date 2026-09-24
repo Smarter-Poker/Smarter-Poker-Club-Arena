@@ -194,20 +194,23 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     }
     if (structure !== 'fixed_limit') return { betting_structure: structure };
     const stage = state.stage ?? 'preflop';
+    // KILL POT (kill-v1): the HAND's effective small bet, never the table
+    // row's big blind - on a kill hand those differ, and the client must draw
+    // the same bet the controller will accept.
+    const streetBet = fixedLimitBetSize(
+      this.handController?.getFixedLimitSmallBet?.() ?? this.tableInfo?.big_blind ?? 2,
+      stage
+    );
     return {
       betting_structure: structure,
-      fixed_bet_size: fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+      fixed_bet_size: streetBet,
       fixed_raise_size: fixedLimitStreetBounds(
         state.actionHistory ?? [],
         stage,
-        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+        streetBet,
         state.currentBet
       ).raiseSize,
-      wagers_capped: isFixedLimitCapped(
-        state.actionHistory ?? [],
-        stage,
-        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage)
-      ),
+      wagers_capped: isFixedLimitCapped(state.actionHistory ?? [], stage, streetBet),
     };
   }
 
@@ -280,6 +283,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BOMB POT STANDARDIZATION 2026-08-27: countdown + timed due timestamp
       // now come from the scheduler (all trigger modes), not raw arithmetic.
       ...this.bombPotSnapshotFields(),
+      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
+      ...this.killPotSnapshotFields(),
       // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
       // The money moved every hand (HandController posts it and the pot
       // showed it) but no field said so, so the felt could not print it.
@@ -512,6 +517,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BOMB POT STANDARDIZATION 2026-08-27: scheduler-derived, all modes,
       // plus bomb_pot_next_at (epoch ms) for the timed mode's clock.
       ...this.bombPotSnapshotFields(),
+      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
+      ...this.killPotSnapshotFields(),
       // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
       // The money moved every hand (HandController posts it and the pot
       // showed it) but no field said so, so the felt could not print it.
@@ -772,6 +779,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards3: [],
       hand_variant: this.activeHandVariant(),
       ...this.bombPotSnapshotFields(),
+      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
+      ...this.killPotSnapshotFields(),
       ...this.anteSnapshotFields(),
       current_bet: 0,
       current_player: null,

@@ -146,8 +146,8 @@ Updated 2026-09-24 (continuation after the day-two review).
 | 7 Operator UI and catalog admin  | Implemented and reviewed line by line; unit contract tests pin every RPC key and refusal copy against the SQL                                                                                                                                                                                                                                                                     |
 | 8 Qualification                  | 155 scenarios pass on the production path (installed file, then the fix) with PostgREST-faithful identity (`isolated-qualification-2026-09-24.json`)                                                                                                                                                                                                                              |
 | 9 Readiness                      | Distribution/provider review unchanged: no new processor, no cash subscription, no external purchase link                                                                                                                                                                                                                                                                         |
-| 10 Install, rollout, release     | Client for #5077 published (both build-info endpoints at 0662cc2a3 on 2026-09-22). Forward fix: see the delivery record in the changelog.                                                                                                                                                                                                                                         |
-| 11 Final evidence                | `docs/changelog/2026-09-24-club-and-union-diamond-commerce-fixes.md`                                                                                                                                                                                                                                                                                                              |
+| 10 Install, rollout, release     | Both migrations installed and read back byte-identical (2026-09-24 05:04 UTC). Client live: build `abea9a1af` contains #5164. Engine consumer waits on the first successful engine release (release workstream, #5161).                                                                                                                                                           |
+| 11 Final evidence                | Delivery record in `docs/changelog/2026-09-24-club-and-union-diamond-commerce-fixes.md`                                                                                                                                                                                                                                                                                           |
 
 ## D-series applicability
 
@@ -205,7 +205,7 @@ wallet ceiling path (D64) rather than the reserve path itself.
 
 ## Next actions
 
-1. Merge the fix PR, install `20260924033509` outside :50-:03 UTC, read back.
-2. Verify client publication and the live page; engine release for the
-   renewal consumer (see the changelog's delivery record).
+1. Done: #5164 merged, `20260924033509` installed and read back, client live.
+2. Engine: verify `/health` and the `[CommerceRenewal]` log line after the
+   first successful engine release (owned by the release workstream).
 3. Owner: decision 5 (staff browser refunds) and decision 2 (launch cohort).

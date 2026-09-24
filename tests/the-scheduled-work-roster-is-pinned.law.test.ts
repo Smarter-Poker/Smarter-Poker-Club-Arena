@@ -3,8 +3,10 @@
  *  LAW: THE SCHEDULED-WORK ROSTER IS PINNED, AND MOVING IT IS A DECISION
  * ===========================================================================
  *
- * MEASURED 2026-09-20: 132 ACTIVE pg_cron jobs, 134 rows in cron.job. The two
- * that are not active are the bust sweeps that
+ * MEASURED 2026-09-22: 121 ACTIVE pg_cron jobs, 123 rows in cron.job, once
+ * 20260922155223 is applied. The roster file says how that was measured:
+ * production read at its observed_at (132 of 134), minus the eleven rows that
+ * migration unschedules. The two that are not active are the bust sweeps that
  * 20260910073355_the_retired_sweeps_keep_their_disabled_schedule_rows restored
  * and disabled, so the staged retirement chain 20260910000850 - whose CHECK
  * constraints demand exactly two rows - can still be applied.
@@ -49,8 +51,22 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * coverage. The argument for every one of the three is in that migration's
  * header, and the roster header records the same change. The two retained
  * inactive rows are untouched.
+ *
+ * 132 -> 121 on 2026-09-22. Migration
+ * 20260922155223_eleven_compensation_jobs_whose_writers_are_correct_stop_running
+ * retired ca-redrive-unbanked-rake-15m, rake-repair-unbanked-hourly,
+ * ca-union-rake-attribution-hourly, ca-bounty-backpay-hourly,
+ * ca-payout-sweep-hourly, spin_repair_missing_multiplier, spin_sweep_unbooked,
+ * ca-spin-return-unawarded-draws-15m, ca-promo-accrual-retry-10m,
+ * ca-post-commit-orphan-drain-10m and ca-pgrst-reload-if-stale. Each one
+ * compensated for a writer that is now correct at its source, each candidate
+ * set was empty, and each had done no work for seven days or more; the
+ * argument for every one is in that migration's header. The two retained
+ * inactive rows are untouched again, and
+ * tests/a-retired-compensation-job-is-never-scheduled-again.law.test.ts keeps
+ * all fourteen names from coming back.
  */
-const ACTIVE_JOBS = 132;
+const ACTIVE_JOBS = 121;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -76,8 +92,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('134 total is 132 active plus the two rows 20260910073355 kept disabled', () => {
-    expect(TOTAL_JOBS).toBe(134);
+  it('123 total is 121 active plus the two rows 20260910073355 kept disabled', () => {
+    expect(TOTAL_JOBS).toBe(123);
     expect(raw).toContain('20260910073355');
   });
 

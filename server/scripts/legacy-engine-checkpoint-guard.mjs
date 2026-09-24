@@ -2781,7 +2781,36 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             deadParkedBanksDeferred(tableId, engine)) &&
           Object.keys(states).length === 0, 'stopped_engine_retains_custody');
       }
-      const signature = canonical({
+      /* ═══ PRESENCE IS OBSERVED; CUSTODY IS HELD (2026-09-24) ═══
+
+         Run 36056765988 (the 20:55 break) is the measurement: the first
+         release since 2026-09-22 to clear every capture refusal, every row
+         proof and the previous-work join, write 79 tables' park rows, and
+         then refuse `engine_state_changed` on the re-verification after the
+         write - naming nothing, because that require was the process-wide
+         one. Every part of this signature but one is frozen by the break
+         itself: the hand number (parked), the roster and stacks (the Postgres
+         freeze guard refuses every seat write), the banks (no hand, no
+         timer), and the residue and disposed sets that derive from them. The
+         one part the freeze does not touch is the disconnect FSM: a player's
+         socket drops or comes back during the five minutes exactly as it does
+         at any other time, and on a live fleet of hundreds of tables one of
+         them will, in the seconds between the capture and the write. That is
+         presence, which the successor re-observes from heartbeats within
+         seconds of adopting the row; it is not custody, and refusing the
+         whole release on it is the same forever-block one level up (CLAUDE.md
+         10.86 rule 4).
+
+         So the signature is split. CUSTODY - hand number, roster, banks,
+         residue, disposed - must not move between observations, and a move
+         refuses exactly as before, now naming its table and the field.
+         PRESENCE may change its VALUES between observations and the newest
+         observation is adopted; its REGISTRY - which players have a state at
+         all - may not, because a player appearing or vanishing from it is a
+         roster event the freeze forbids, and that still refuses. The readback
+         holds the row's presence to the same rule: the same players, each
+         with a record, not the same bytes. */
+      const custody = {
         handNumber: engine.handCount,
         roster: engine.seatedPlayers.map((seat) => [
           seat.user_id,
@@ -2790,12 +2819,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           seat.stack,
         ]),
         banks: expectedBanks,
-        states,
         ...(retained8825 ? { residue: [...residue].sort(), disposed: [...disposed].sort() } : {}),
-      });
+      };
+      const custodySignature = canonical(custody);
+      const presenceRegistry = canonical(Object.keys(states).sort());
+      const signature = canonical({ ...custody, states });
       return {
         tableId,
         engine,
+        custody,
+        custodySignature,
+        presenceRegistry,
         methods,
         authority,
         stopped,
@@ -2978,11 +3012,34 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         current.methods.every(
           (method, index) => method === captured.methods[index]
         ), 'engine_method_changed');
-      require(current.pause === captured.pause &&
-        current.timer === captured.timer &&
-        current.bankEngine === captured.bankEngine &&
-        current.bankMeta === captured.bankMeta &&
-        current.signature === captured.signature, 'engine_state_changed');
+      witness(
+        'engine_state_changed',
+        [
+          ['engine.pause', () => current.pause === captured.pause],
+          ['engine.timer', () => current.timer === captured.timer],
+          ['engine.bankEngine', () => current.bankEngine === captured.bankEngine],
+          ['engine.bankMeta', () => current.bankMeta === captured.bankMeta],
+          ['custody', () => current.custodySignature === captured.custodySignature],
+          ['presence.registry', () => current.presenceRegistry === captured.presenceRegistry],
+        ],
+        () => ({
+          failedTable: captured.tableId,
+          observedDetail: Object.keys(captured.custody)
+            .filter((key) => canonical(current.custody[key]) !== canonical(captured.custody[key]))
+            .map((key) => `moved=${key}`)
+            .concat(
+              current.presenceRegistry === captured.presenceRegistry
+                ? []
+                : [`presenceRegistry=${Object.keys(current.states).length}/${Object.keys(captured.states).length}`]
+            )
+            .join(',')
+            .slice(0, 512),
+        })
+      );
+      // Presence values are observed, not held: the newest observation is the
+      // one the row will be read against (see the readback).
+      captured.states = current.states;
+      captured.signature = current.signature;
       require(current.presenceSave === captured.presenceSave, 'presence_writer_changed');
       require(current.accountingPending === captured.accountingPending &&
         current.checkpointGeneration ===
@@ -3711,8 +3768,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           typeof snapshot.parkedAt === 'string' &&
           Date.parse(snapshot.parkedAt) === parkedAt &&
           canonical(snapshot.players) === canonical(captured.banks) &&
-          canonical(row.disconnect_states) ===
-            canonical(captured.states), 'checkpoint_readback_mismatch');
+          record(row.disconnect_states) &&
+          canonical(Object.keys(row.disconnect_states).sort()) ===
+            canonical(Object.keys(captured.states).sort()) &&
+          Object.values(row.disconnect_states).every(record), 'checkpoint_readback_mismatch');
         verifiedTables++;
         progress();
       }

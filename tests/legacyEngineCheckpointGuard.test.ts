@@ -3822,7 +3822,68 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
       });
     });
     const result: any = await f.run();
-    expect(result).toMatchObject({ ok: false, reason: 'engine_state_changed' });
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'engine_state_changed',
+      failedCheck: 'custody',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toBe('moved=residue');
+  });
+
+  /* PRESENCE IS OBSERVED; CUSTODY IS HELD (2026-09-24). Run 36056765988
+     wrote 79 park rows and refused engine_state_changed on the
+     re-verification, naming nothing. The only part of the signature the
+     break does not freeze is the disconnect FSM. */
+  it('a presence value that moves between the capture and the write is adopted, and the row is read against it', async () => {
+    const f: any = mixedFixture();
+    const e: any = f.first;
+    const userId = e.seatedPlayers[0].user_id;
+    let state: any = { [userId]: { status: 'connected', since: 1 } };
+    e.disconnectEngine = { getFsmStatesForTable: () => structuredClone(state) };
+    f.onWrite((engine: any) => {
+      if (engine === e) state = { [userId]: { status: 'disconnected', since: 2 } };
+    });
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.rows.get(e.tableId).disconnect_states).toEqual({
+      [userId]: { status: 'disconnected', since: 2 },
+    });
+  });
+
+  it('a presence registry that changes between observations still refuses, and names it', async () => {
+    const f: any = mixedFixture();
+    const e: any = f.first;
+    const userId = e.seatedPlayers[0].user_id;
+    let state: any = { [userId]: { status: 'connected' } };
+    e.disconnectEngine = { getFsmStatesForTable: () => structuredClone(state) };
+    f.onWrite((engine: any) => {
+      if (engine === e) state = {};
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'engine_state_changed',
+      failedCheck: 'presence.registry',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toBe('presenceRegistry=0/1');
+  });
+
+  it('a readback whose presence names a different set of players still refuses', async () => {
+    const f: any = mixedFixture();
+    const e: any = f.first;
+    const userId = e.seatedPlayers[0].user_id;
+    e.disconnectEngine = { getFsmStatesForTable: () => ({ [userId]: { status: 'connected' } }) };
+    f.onRead((data: any[]) =>
+      data.map((row: any) =>
+        row.table_id === e.tableId
+          ? { ...row, disconnect_states: { [uuid(64001)]: { status: 'connected' } } }
+          : row
+      )
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'checkpoint_readback_mismatch' });
   });
 
   it('leaves every other profile exactly as strict as before', async () => {

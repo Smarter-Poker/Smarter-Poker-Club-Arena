@@ -94,6 +94,10 @@ import { seatFirstPrecheckPrometheusLines } from './services/seatFirstPrecheckMe
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
+import {
+  leaseHeartbeatSessionsToPrometheus,
+  stopLeaseHeartbeatSessions,
+} from './services/leaseHeartbeatSession.js';
 import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
 import { handProjectionWakesToPrometheus } from './services/supabase/handProjection.js';
 import {
@@ -4043,6 +4047,8 @@ export class GameServer {
     this.tournamentManagerAdmissionLeaseGenerations.clear();
     stopLeadershipRenewal();
     await releaseLeadership();
+    // Renewal is over once the leases are released; close its sessions.
+    await stopLeaseHeartbeatSessions();
 
     // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
     // WebSocket server (EngineWebSocketServer.close()) handles its own
@@ -4942,6 +4948,10 @@ export class GameServer {
       // publication. See services/supabase/handOutboxListener.ts.
       ...handProjectionWakesToPrometheus(),
       ...this.handOutboxListener.toPrometheus(),
+      // Which transport renews leases (2026-09-24). transport="shared" climbing
+      // while ENGINE_PG_LISTEN_URL is set means the dedicated session is down.
+      // See services/leaseHeartbeatSession.ts.
+      ...leaseHeartbeatSessionsToPrometheus(),
       ...this.handOutboxMetrics.toPrometheus(),
       // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
       //

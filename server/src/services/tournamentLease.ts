@@ -41,6 +41,7 @@
  */
 
 import { supabase } from './supabase/client.js';
+import { leaseHeartbeatRpc } from './leaseHeartbeatSession.js';
 /* Counted, not merely returned: every branch below that declines to renew a
    lease used to be silent, and repeated silent declines are exactly how a
    table ends up restarting every twenty seconds with nothing to read. */
@@ -407,7 +408,10 @@ async function heartbeatTournamentBatch(
      FIRST batch - and it stays well inside the audited 30s stale window. */
   const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v4', {
+    /* LEASE RENEWAL CANNOT QUEUE BEHIND GAME TRAFFIC (2026-09-24): the
+       dedicated session when configured, the shared client otherwise. Same
+       arguments, same { data, error } answer. See leaseHeartbeatSession.ts. */
+    const { data, error } = await leaseHeartbeatRpc('tournament', {
       p_instance_id: INSTANCE_ID,
       p_claims: claims.map((claim) => ({
         tournament_id: claim.tournamentId,

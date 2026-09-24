@@ -43,6 +43,7 @@ import { tournamentScheduleService } from '../services/TournamentScheduleService
 import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
+import { deviceTimeZone } from '../utils/scheduleTimeZone';
 import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
 import DayScheduleEditor from '../components/tournament/DayScheduleEditor';
@@ -947,6 +948,8 @@ export default function TableConfigPage({
       name: config.name.trim() || 'Tournament',
       daysOfWeek: scheduleValue.daysOfWeek,
       startTimesUtc: scheduleValue.mode === 'times' ? scheduleValue.startTimesUtc : [],
+      // The editor shows the owner's own clock; the row keeps that zone.
+      timeZone: deviceTimeZone(),
       intervalMinutes: scheduleValue.mode === 'interval' ? scheduleValue.intervalMinutes : null,
       active: true,
       config: rpcConfig,
@@ -1768,6 +1771,7 @@ export default function TableConfigPage({
             />
             {config.tournamentSchedule && (
               <WeeklyScheduleEditor
+                timeZone={deviceTimeZone()}
                 value={{
                   daysOfWeek: config.scheduleDays,
                   startTimesUtc: config.scheduleTimes,

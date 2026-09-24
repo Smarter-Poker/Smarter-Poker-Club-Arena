@@ -58,6 +58,7 @@ import {
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import { localDateIn, zonedStartUtc } from './scheduleWallClock.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
   HEADS_UP_PAYOUTS,
@@ -74,15 +75,23 @@ export interface TournamentScheduleRow {
   club_id: string;
   name: string;
   active: boolean;
-  days_of_week: number[]; // 0=Sunday .. 6=Saturday, UTC
-  start_times_utc: string[]; // 'HH24:MI'
+  days_of_week: number[]; // 0=Sunday .. 6=Saturday, UTC (or local, see time_zone)
+  start_times_utc: string[]; // 'HH24:MI', UTC (or local wall clock, see time_zone)
   interval_minutes: number | null;
   config: Record<string, unknown> | string;
+  /**
+   * IANA zone (migration 20260924045822). NULL or absent: the days and times
+   * are UTC, exactly as before. Set: they are the wall-clock weekday and time
+   * in this zone, converted per occurrence by scheduleWallClock.zonedStartUtc.
+   */
+  time_zone?: string | null;
 }
 
 interface SpawnDue {
   spawnKey: string;
   startTime: Date;
+  /** The schedule's own calendar date of this occurrence (UTC for a NULL zone). */
+  localDate: string;
 }
 
 const POLL_INTERVAL_MS = 60 * 1000;
@@ -225,9 +234,18 @@ export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
  *
  * The spawn key is `${schedule.id}:${yyyy-mm-dd}:${HH:MM}` in UTC, so the same
  * instance computes the same key on every process that ever looks at it.
+ *
+ * A ZONED schedule (time_zone set) reads days and times on the zone's own
+ * calendar and converts each occurrence with zonedStartUtc (the one rule,
+ * daylight-saving gap and overlap included). Its key is the same shape on the
+ * LOCAL calendar - `${id}:${local date}:${local HH:MM}` - so each local start
+ * has one identity: a fall-back day that reads 01:30 twice still has exactly
+ * one key for it, and the UNIQUE(spawn_key) claim admits it once. An unknown
+ * zone throws (RangeError) rather than guessing UTC: the caller's
+ * per-schedule catch reports it and the schedule spawns nothing.
  */
 export function timedSpawnsDue(
-  schedule: Pick<TournamentScheduleRow, 'id' | 'days_of_week' | 'start_times_utc'>,
+  schedule: Pick<TournamentScheduleRow, 'id' | 'days_of_week' | 'start_times_utc' | 'time_zone'>,
   now: Date,
   aheadMs: number = TIMED_WINDOW_AHEAD_MS
 ): SpawnDue[] {
@@ -235,6 +253,9 @@ export function timedSpawnsDue(
   const times = schedule.start_times_utc ?? [];
   const days = new Set(schedule.days_of_week ?? []);
   if (times.length === 0 || days.size === 0) return due;
+  if (schedule.time_zone) {
+    return zonedSpawnsDue(schedule.id, schedule.time_zone, days, times, now, aheadMs);
+  }
 
   // The candidate-day span must cover the whole look-ahead window: a schedule
   // with a multi-day spawnAheadMinutes (flagships that open registration days
@@ -266,6 +287,43 @@ export function timedSpawnsDue(
       due.push({
         spawnKey: `${schedule.id}:${at.toISOString().slice(0, 10)}:${m[1]}:${m[2]}`,
         startTime: at,
+        localDate: at.toISOString().slice(0, 10),
+      });
+    }
+  }
+  return due;
+}
+
+/** timedSpawnsDue for a schedule whose days and times are in `zone`. */
+function zonedSpawnsDue(
+  scheduleId: string,
+  zone: string,
+  days: Set<number>,
+  times: string[],
+  now: Date,
+  aheadMs: number
+): SpawnDue[] {
+  const due: SpawnDue[] = [];
+  // Local calendar days from yesterday through the end of the look-ahead; one
+  // extra day because a spring-forward inside the window advances the wall
+  // clock an hour further than elapsed time.
+  const today = localDateIn(now, zone);
+  const todayMs = Date.parse(`${today}T00:00:00.000Z`);
+  const aheadDays = Math.max(1, Math.ceil(aheadMs / 86_400_000)) + 1;
+  for (let dayOffset = -1; dayOffset <= aheadDays; dayOffset++) {
+    const day = new Date(todayMs + dayOffset * 86_400_000);
+    if (!days.has(day.getUTCDay())) continue;
+    const localDate = day.toISOString().slice(0, 10);
+    for (const tm of times) {
+      const m = /^([01][0-9]|2[0-3]):([0-5][0-9])$/.exec(String(tm));
+      if (!m) continue; // malformed time - fail closed on this entry
+      const at = zonedStartUtc(localDate, `${m[1]}:${m[2]}`, zone);
+      const delta = at.getTime() - now.getTime();
+      if (delta < -TIMED_WINDOW_PAST_MS || delta > aheadMs) continue;
+      due.push({
+        spawnKey: `${scheduleId}:${localDate}:${m[1]}:${m[2]}`,
+        startTime: at,
+        localDate,
       });
     }
   }
@@ -641,8 +699,10 @@ export class ScheduledTournamentService {
     // buy-in decides: 48 hours, or 6 days above 200. See spawnAheadMsFor.
     const cadence = String(cfg.recurrenceCadence ?? 'weekly').toLowerCase();
     const monthlyDay = Math.min(31, Math.max(1, Number(cfg.recurrenceDayOfMonth) || 1));
+    // The day of month is read on the schedule's own calendar (UTC for a
+    // NULL zone, so unchanged there).
     const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg)).filter((spawn) =>
-      cadence === 'monthly' ? spawn.startTime.getUTCDate() === monthlyDay : true
+      cadence === 'monthly' ? Number(spawn.localDate.slice(8, 10)) === monthlyDay : true
     );
     if (due.length === 0) return;
 

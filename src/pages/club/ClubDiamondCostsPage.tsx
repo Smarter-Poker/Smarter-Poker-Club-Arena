@@ -30,6 +30,20 @@
  * THE PICTURE (#ClubArenaConsole): spade consoles, rows printed on the glass,
  * two plates or none. Nothing is drawn.
  *
+ * CATALOG, TERMS, WRITTEN QUOTES AND REVIEWS (20260924182605). While the
+ * catalog is not published, the page lists no prices and quotes nothing. The
+ * Operating Service Terms version in effect is named wherever an owner
+ * accepts it (the confirm step and the free month start). A quote may say the
+ * owner never had a free month; the confirm step then offers it beside the
+ * purchase and never blocks the purchase. Above 2,500 members a club asks for
+ * a written quote; an offer is bought through the same order as any capacity.
+ * An owner whose free month ended (or was inherited already ended) can ask
+ * platform staff for a review.
+ *
+ * SETTLED EARNINGS (20260924183657). The owner's settled Diamond Spins
+ * earnings beside the operating diamonds paid for this scope, as a comparison
+ * only: it never says which diamonds paid.
+ *
  * Routes: /clubs/:clubId/diamond-costs (finance access in the operations
  * registry) and /unions/:unionId/diamond-costs.
  */
@@ -64,6 +78,9 @@ import ClubCommerceService, {
   type ScopeKind,
   type ScopeStatus,
   type Sponsorship,
+  type EarningsCoverage,
+  type TrialReview,
+  type WrittenQuote,
 } from '../../services/ClubCommerceService';
 import { isUUID, resolveClubUUIDStrict } from '../../utils/clubIdResolver';
 import { titleCase } from '../../utils/titleCase';
@@ -310,6 +327,23 @@ function refundPolicyLine(version: number | null | undefined): string {
   return typeof version === 'number' && version > 0
     ? `Refunds Follow Refund Policy Version ${version}.`
     : 'Refunds Follow The Current Refund Policy.';
+}
+
+/** What an owner accepts by confirming or by starting the free month. */
+function serviceTermsLine(version: number | null | undefined): string {
+  return typeof version === 'number' && version > 0
+    ? `You Accept Operating Service Terms Version ${version}.`
+    : 'You Accept The Operating Service Terms In Effect.';
+}
+
+/** The largest capacity sold from the catalog; above it, a written quote. */
+const WRITTEN_QUOTE_FLOOR = 2500;
+const REVIEW_MIN = 20;
+const REVIEW_MAX = 2000;
+
+/** A note someone typed, printed in Title Case with its closing stop trimmed. */
+function noteWords(text: string | null | undefined): string {
+  return titleCase(String(text ?? '').trim()).replace(/[.\s]+$/, '');
 }
 
 /** The current version of one policy kind, or null when it was not read. */
@@ -661,6 +695,8 @@ function QuoteConsole({
   onGetDiamonds,
   notice,
   refundPolicyVersion,
+  serviceTermsVersion,
+  freeMonth = null,
 }: {
   order: CommerceOrder;
   sectionId: string;
@@ -677,6 +713,11 @@ function QuoteConsole({
   notice?: { label: string; value: string; ink: ConsoleInk; meta: string } | null;
   /** The refund policy version in effect, from fn_ca_commerce_policies. */
   refundPolicyVersion: number | null;
+  /** The Operating Service Terms version the payer accepts by confirming. */
+  serviceTermsVersion: number | null;
+  /** The owner's own free month door, offered when the quote says they never
+      had one. Never a reason to refuse the purchase. */
+  freeMonth?: { busy: boolean; onStart: () => void } | null;
 }) {
   const quote = order.quote;
   const quoteId = quote?.quote_id ?? null;
@@ -700,6 +741,8 @@ function QuoteConsole({
   const expired = left <= 0;
   const short = Math.max(0, quote.net - Number(quote.available_balance ?? 0));
   const trialBlocks = trialAction !== null && quote.trial_active && quote.net > 0;
+  const freeMonthOffered =
+    quote.free_month_available === true && !quote.sponsorship_id && !outcomeUnknown;
   const titleId = `${sectionId}-title`;
 
   const secondary = outcomeUnknown
@@ -834,6 +877,32 @@ function QuoteConsole({
             meta="The Connection Dropped Before The Answer. Retrying Sends The Same Order Key, So This Order Is Charged At Most Once."
           />
         ) : null}
+        {freeMonthOffered && freeMonth ? (
+          <>
+            <Row
+              label="Free Month Available"
+              value="Not Started"
+              ink="blue"
+              wrap
+              meta="You Have Never Had A Free Month. It Runs Every Included Operating Service For 30 Days With No Service Fee. Paying Now Is Still Your Choice."
+            />
+            <ChoiceRow
+              label="Start Free Month"
+              meta={`Starts Now Instead Of This Order, Which Is Discarded Uncharged. ${serviceTermsLine(serviceTermsVersion)}`}
+              value={freeMonth.busy ? 'Starting' : 'Start'}
+              ink="green"
+              disabled={freeMonth.busy || paying || recovering}
+              onClick={freeMonth.onStart}
+            />
+          </>
+        ) : null}
+        <Row
+          label="Operating Service Terms"
+          value={serviceTermsVersion ? `Version ${serviceTermsVersion}` : 'In Effect'}
+          ink="blue"
+          wrap
+          meta={`By Confirming, ${serviceTermsLine(serviceTermsVersion)}`}
+        />
       </div>
       <p className="sc-copy">
         Confirming Charges Your Diamonds Once. If The Connection Drops, Retrying Sends The Same
@@ -1355,9 +1424,22 @@ function ReceiptsConsole({
   );
 }
 
-/** The refund policy in effect, and the renewal terms a renewal accepts. */
-function PolicyConsole({ refund, terms }: { refund: Policy | null; terms: Policy | null }) {
-  if (!refund && !terms) return null;
+/**
+ * The refund policy in effect, the renewal terms a renewal accepts, and the
+ * Operating Service Terms every purchase and free month accepts (their text
+ * opens on request, it is long).
+ */
+function PolicyConsole({
+  refund,
+  terms,
+  service = null,
+}: {
+  refund: Policy | null;
+  terms: Policy | null;
+  service?: Policy | null;
+}) {
+  const [serviceOpen, setServiceOpen] = useState(false);
+  if (!refund && !terms && !service) return null;
   return (
     <SpadeConsole
       eyebrow="Policies"
@@ -1386,7 +1468,18 @@ function PolicyConsole({ refund, terms }: { refund: Policy | null; terms: Policy
             meta={titleCase(terms.body)}
           />
         ) : null}
+        {service ? (
+          <ChoiceRow
+            label={`Operating Service Terms, Version ${service.version}`}
+            meta={`In Effect Since ${dateWord(service.effective_from)}. Every Purchase And Free Month Records The Version Accepted.`}
+            value={serviceOpen ? 'Hide' : 'Read'}
+            ink="blue"
+            pressed={serviceOpen}
+            onClick={() => setServiceOpen((v) => !v)}
+          />
+        ) : null}
       </div>
+      {service && serviceOpen ? <p className="sc-copy">{titleCase(service.body)}</p> : null}
     </SpadeConsole>
   );
 }
@@ -1403,7 +1496,9 @@ function sponsorshipIsEffective(s: Sponsorship, serverNow: number): boolean {
 
 /**
  * BUY FOR A COVERED CLUB (union page, sponsor only). The union owner who pays
- * an active sponsorship chooses a covered club and a club capacity, quotes it
+ * an active sponsorship chooses a covered club and a club capacity (or the
+ * club insurance module, when the catalog says the platform offers it: R2
+ * 5.2, accepted by the same sponsored quote and purchase doors), quotes it
  * as a sponsored club order (fn_ca_commerce_quote('club', club, lines,
  * sponsorship, NULL, 'purchase')) and confirms it with the same order key
  * rules as every other order. A club still in its free month cannot be
@@ -1420,6 +1515,8 @@ function SponsorBuyConsole({
   receipts,
   receiptsKnown,
   refundPolicyVersion,
+  serviceTermsVersion,
+  pricesPublished,
 }: {
   status: ScopeStatus;
   clubProducts: CatalogProduct[];
@@ -1433,6 +1530,9 @@ function SponsorBuyConsole({
   /** False when the receipts could not be read, so a club's sponsored spend is unknown. */
   receiptsKnown: boolean;
   refundPolicyVersion: number | null;
+  serviceTermsVersion: number | null;
+  /** False while the club catalog is read without prices. */
+  pricesPublished: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -1462,7 +1562,17 @@ function SponsorBuyConsole({
   const club = clubs.find((c) => c.club_id === clubId) ?? null;
   const clubTrial = club !== null && (club.trial_active || inTrial.has(club.club_id));
   const capacities = clubProducts.filter((p) => p.kind === 'capacity' && p.scope_kind === 'club');
-  const product = capacities.find((p) => p.sku === sku) ?? null;
+  /* The club insurance module, only when the platform says the capability it
+     sells is available now (fn_ca_commerce_catalog platform_available). */
+  const insurance = clubProducts.filter(
+    (p) =>
+      p.kind === 'club_insurance_module' &&
+      p.scope_kind === 'club' &&
+      p.supported &&
+      p.platform_available === true
+  );
+  const offerings = [...capacities, ...insurance];
+  const product = offerings.find((p) => p.sku === sku) ?? null;
   const serverNow = nowMs + skewMs;
   const eligible = club
     ? sponsorships.filter(
@@ -1529,7 +1639,7 @@ function SponsorBuyConsole({
   };
 
   const getQuote = () => {
-    if (!club || !product) return toast.error('Choose A Club And A Capacity First');
+    if (!club || !product) return toast.error('Choose A Club And A Service First');
     if (clubTrial)
       return toast.info('This Club Is Still In Its Free Month. Nothing Can Be Charged');
     if (!sponsorshipId) return toast.error('Choose The Sponsorship To Pay With');
@@ -1622,9 +1732,19 @@ function SponsorBuyConsole({
         ) : null}
         {club && !clubTrial ? (
           <div className={styles.rows}>
-            {capacities.map((p) => {
-              const tooSmall = p.capacity !== null && club.roster_count > p.capacity;
-              const current = club.capacity?.sku === p.sku;
+            {!pricesPublished ? (
+              <Row
+                label="Diamond Prices Are Not Published Yet"
+                value="Not Yet"
+                ink="gold"
+                wrap
+                meta="Nothing Can Be Quoted Until Prices Are Published."
+              />
+            ) : null}
+            {offerings.map((p) => {
+              const isCapacity = p.kind === 'capacity';
+              const tooSmall = isCapacity && p.capacity !== null && club.roster_count > p.capacity;
+              const current = isCapacity && club.capacity?.sku === p.sku;
               /* Never offered when the sponsorship cannot pay for it: the
                  purchase would be refused (sponsorship_budget_exceeded or
                  sponsorship_club_budget_exceeded). */
@@ -1637,11 +1757,13 @@ function SponsorBuyConsole({
                     ? ' Its Sponsored Allowance Could Not Be Read. Retry The Receipts Below.'
                     : overBudget
                       ? ` Above The ${diamonds(allowance)} Left In This Club's Sponsored Allowance.`
-                      : current
-                        ? ' Its Current Capacity; Buying It Again Adds The Next Period.'
-                        : club.capacity
-                          ? ' Starts When Its Current Paid Period Ends.'
-                          : ' Starts Now.';
+                      : !isCapacity
+                        ? ` ${sentence(p.included_note).trim() || 'Insurance Software Access For This Club.'} Starts Now, Or After Any Insurance Period Already Paid.`
+                        : current
+                          ? ' Its Current Capacity; Buying It Again Adds The Next Period.'
+                          : club.capacity
+                            ? ' Starts When Its Current Paid Period Ends.'
+                            : ' Starts Now.';
               const offered = p.supported && !tooSmall && !overBudget;
               return (
                 <ChoiceRow
@@ -1702,8 +1824,8 @@ function SponsorBuyConsole({
           </div>
         ) : null}
         <p className="sc-copy">
-          A Sponsored Order Is Charged To You Once And Pays For That Club Capacity; The Club Owner
-          Is Never Charged For The Same Period. Its Receipt Is Listed Below.
+          A Sponsored Order Is Charged To You Once And Pays For That Club's Capacity Or Insurance
+          Module; The Club Owner Is Never Charged For The Same Period. Its Receipt Is Listed Below.
         </p>
       </SpadeConsole>
 
@@ -1724,6 +1846,7 @@ function SponsorBuyConsole({
         }}
         onGetDiamonds={() => navigate(BUY_DIAMONDS)}
         refundPolicyVersion={refundPolicyVersion}
+        serviceTermsVersion={serviceTermsVersion}
       />
       <ReceiptConsole
         order={order}
@@ -1732,6 +1855,384 @@ function SponsorBuyConsole({
       />
       {order.recovering ? <LoadingState message="Checking Your Order" /> : null}
     </>
+  );
+}
+
+/* ══ Written quotes above 2,500 members (20260924182605) ══════════════════
+   The owner asks with the capacity they need; platform staff offer a
+   capacity and a price for this club alone, or decline with a note. An offer
+   is a private capacity product, bought through the page's one order flow
+   (quote, order key, confirm), so nothing here charges anything. Clubs only. */
+
+function writtenQuoteView(w: WrittenQuote): {
+  label: string;
+  value: string;
+  ink: ConsoleInk;
+  meta: string;
+} {
+  const cap = Number(w.offered_capacity ?? w.requested_capacity ?? 0).toLocaleString();
+  const staff = w.staff_note ? ` Note From Platform Staff: ${noteWords(w.staff_note)}.` : '';
+  switch (w.state) {
+    case 'requested':
+      return {
+        label: `Up To ${Number(w.requested_capacity).toLocaleString()} Members`,
+        value: 'Requested',
+        ink: 'blue',
+        meta: `Asked ${when(w.created_at)}.${w.request_note ? ` Your Note: ${noteWords(w.request_note)}.` : ''} Platform Staff Reply With A Capacity And A Price, Or A Note.`,
+      };
+    case 'offered':
+      return {
+        label: `Up To ${cap} Approved Members`,
+        value: diamonds(w.offered_diamonds),
+        ink: 'gold',
+        meta: `Written Quote For 30 Days Of Access, For This Club Only. Valid Until ${when(w.valid_until)}.${staff} You Asked For ${Number(w.requested_capacity).toLocaleString()}.`,
+      };
+    case 'accepted':
+      return {
+        label: `Up To ${cap} Approved Members`,
+        value: 'Bought',
+        ink: 'green',
+        meta: `Bought At ${diamonds(w.offered_diamonds)} For 30 Days. It Renews And Upgrades Like Any Capacity.`,
+      };
+    case 'expired':
+      return {
+        label: `Up To ${cap} Approved Members`,
+        value: 'Expired',
+        ink: 'muted',
+        meta: `The Offer Of ${diamonds(w.offered_diamonds)} Was Valid Until ${when(w.valid_until)}. Ask Again For A New Written Quote.`,
+      };
+    case 'declined':
+      return {
+        label: `Up To ${cap} Members`,
+        value: 'Declined',
+        ink: 'red',
+        meta: `${staff.trim() || 'Declined By Platform Staff.'} Declined ${when(w.decided_at)}.`,
+      };
+    case 'withdrawn':
+    default:
+      return {
+        label: `Up To ${cap} Members`,
+        value: 'Withdrawn',
+        ink: 'muted',
+        meta: `You Withdrew This Request ${when(w.decided_at)}.`,
+      };
+  }
+}
+
+function WrittenQuotesConsole({
+  quotes,
+  isOwner,
+  busy,
+  buyDisabled,
+  buyingId,
+  onRequest,
+  onWithdraw,
+  onBuy,
+}: {
+  quotes: WrittenQuote[];
+  isOwner: boolean;
+  busy: boolean;
+  /** True while an order is in flight, checkout is paused or prices are hidden. */
+  buyDisabled: boolean;
+  /** The offer whose quote is on the confirm step. */
+  buyingId: string | null;
+  onRequest: (capacity: number, note: string | null) => Promise<boolean>;
+  onWithdraw: (w: WrittenQuote) => void;
+  onBuy: (w: WrittenQuote) => void;
+}) {
+  const toast = useToast();
+  const noteId = useId();
+  const [capacity, setCapacity] = useState('');
+  const [note, setNote] = useState('');
+  const open = quotes.find((w) => w.state === 'requested') ?? null;
+  const offered = quotes.filter((w) => w.state === 'offered').length;
+  const asking = isOwner && !open;
+  const wanted = parseWhole(capacity);
+  const valid = wanted !== null && wanted > WRITTEN_QUOTE_FLOOR && wanted <= 1_000_000;
+
+  const send = async () => {
+    if (!valid || wanted === null)
+      return toast.error(refusalCopy('written_quote_capacity_out_of_range'));
+    const text = note.trim();
+    if (text.length > 2000) return toast.error(refusalCopy('note_too_long'));
+    if (await onRequest(wanted, text || null)) {
+      setCapacity('');
+      setNote('');
+    }
+  };
+
+  return (
+    <SpadeConsole
+      eyebrow="Above 2,500 Members"
+      title="Written Quotes"
+      pill={open ? 'Requested' : offered > 0 ? `${offered.toLocaleString()} Offered` : 'Ask'}
+      pillInk={open ? 'blue' : offered > 0 ? 'gold' : 'muted'}
+      plates={
+        asking
+          ? {
+              secondary: {
+                label: 'Clear',
+                onClick: () => {
+                  setCapacity('');
+                  setNote('');
+                },
+                disabled: busy || (capacity === '' && note === ''),
+              },
+              primary: {
+                label: busy ? 'Sending' : 'Ask For A Quote',
+                ink: 'white',
+                onClick: () => void send(),
+                disabled: busy || !valid,
+              },
+            }
+          : undefined
+      }
+      foot={asking ? 'plates' : 'foot'}
+    >
+      <div className={styles.rows}>
+        {quotes.length === 0 ? <Row label="No Written Quotes Yet" value="" /> : null}
+        {quotes.map((w) => {
+          const v = writtenQuoteView(w);
+          return (
+            <div key={w.written_quote_id}>
+              <Row label={v.label} value={v.value} ink={v.ink} wrap meta={v.meta} />
+              {w.state === 'offered' && isOwner ? (
+                <ChoiceRow
+                  label="Buy This Written Quote"
+                  meta="Priced Through The Normal Order: You See The Exact Charge And Period Before Paying."
+                  value={buyingId === w.written_quote_id ? 'Quoted' : 'Buy'}
+                  ink="blue"
+                  pressed={buyingId === w.written_quote_id}
+                  disabled={buyDisabled || busy}
+                  onClick={() => onBuy(w)}
+                />
+              ) : null}
+              {w.state === 'requested' && isOwner ? (
+                <ChoiceRow
+                  label="Withdraw Request"
+                  meta="Platform Staff Stop Working On It. You Can Ask Again Afterwards."
+                  value={busy ? 'Saving' : 'Withdraw'}
+                  ink="red"
+                  disabled={busy}
+                  onClick={() => onWithdraw(w)}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {asking ? (
+        <div className={styles.fields}>
+          <Field
+            label="Members Needed (More Than 2,500)"
+            value={capacity}
+            onChange={setCapacity}
+            disabled={busy}
+            hint="Approved Members, Each Counted Once, Up To 1,000,000."
+          />
+          <label className={styles.field}>
+            <span className="sc-label sc-ink--blue">Note (Optional)</span>
+            <textarea
+              className={`${styles.fieldInput} ${own.detailsInput}`}
+              value={note}
+              maxLength={2000}
+              rows={3}
+              disabled={busy}
+              aria-describedby={noteId}
+              onChange={(e) => setNote(e.target.value)}
+            />
+            <span id={noteId} className="sc-copy sc-ink--muted">
+              Up To 2,000 Characters. What Platform Staff Should Know About Your Club.
+            </span>
+          </label>
+        </div>
+      ) : null}
+      <p className="sc-copy">
+        Above 2,500 Members There Is No List Price. Platform Staff Offer A Capacity And A Price In
+        Writing For This Club Alone, And You Buy It Through The Same Order As Any Capacity.
+      </p>
+    </SpadeConsole>
+  );
+}
+
+/* ══ Free month review (20260924182605, R2 2.4) ═══════════════════════════
+   A later club or union of the same operator shares the first free month's
+   end, so one enrolled after it ended has no free days. A genuinely new,
+   independent operation asks platform staff for a review with a statement;
+   staff approve (a fresh 30 days for this one scope) or decline with a note. */
+
+function reviewView(r: TrialReview): { value: string; ink: ConsoleInk; meta: string } {
+  const asked = `Asked ${when(r.created_at)}. Your Statement: ${noteWords(r.statement)}.`;
+  const staff = r.staff_note ? ` Note From Platform Staff: ${noteWords(r.staff_note)}.` : '';
+  if (r.state === 'approved')
+    return {
+      value: 'Approved',
+      ink: 'green',
+      meta: `${asked}${staff} Your Free Month For This Scope Ends ${when(r.granted_trial_end)}.`,
+    };
+  if (r.state === 'declined')
+    return {
+      value: 'Declined',
+      ink: 'red',
+      meta: `${asked}${staff || ' Declined By Platform Staff.'} Declined ${when(r.decided_at)}.`,
+    };
+  return { value: 'Requested', ink: 'blue', meta: `${asked} With Platform Staff For A Decision.` };
+}
+
+function TrialReviewConsole({
+  reviews,
+  endedAt,
+  canAsk,
+  busy,
+  onRequest,
+}: {
+  reviews: TrialReview[];
+  /** When this scope's free month ended, if it has. */
+  endedAt: string | null;
+  canAsk: boolean;
+  busy: boolean;
+  onRequest: (statement: string) => Promise<boolean>;
+}) {
+  const statementId = useId();
+  const [statement, setStatement] = useState('');
+  const length = statement.trim().length;
+  const valid = length >= REVIEW_MIN && length <= REVIEW_MAX;
+  const latest = reviews[0] ?? null;
+  const send = async () => {
+    if (valid && (await onRequest(statement.trim()))) setStatement('');
+  };
+  return (
+    <SpadeConsole
+      eyebrow="Free Month"
+      title="Free Month Review"
+      pill={latest ? reviewView(latest).value : canAsk ? 'Available' : 'None'}
+      pillInk={latest ? reviewView(latest).ink : 'muted'}
+      plates={
+        canAsk
+          ? {
+              secondary: {
+                label: 'Clear',
+                onClick: () => setStatement(''),
+                disabled: busy || statement === '',
+              },
+              primary: {
+                label: busy ? 'Sending' : 'Ask For A Review',
+                ink: 'white',
+                onClick: () => void send(),
+                disabled: busy || !valid,
+              },
+            }
+          : undefined
+      }
+      foot={canAsk ? 'plates' : 'foot'}
+    >
+      <div className={styles.rows}>
+        {endedAt ? (
+          <Row
+            label="Free Month Ended"
+            value={dateWord(endedAt)}
+            ink="muted"
+            wrap
+            meta="A Later Club Or Union Of The Same Operator Shares The First Free Month's End. A Genuinely New, Independent Operation Can Ask Platform Staff For A Review."
+          />
+        ) : null}
+        {reviews.map((r) => {
+          const v = reviewView(r);
+          return (
+            <Row
+              key={r.review_id}
+              label="Free Month Review"
+              value={v.value}
+              ink={v.ink}
+              wrap
+              meta={v.meta}
+            />
+          );
+        })}
+      </div>
+      {canAsk ? (
+        <div className={styles.fields}>
+          <label className={styles.field}>
+            <span className="sc-label sc-ink--blue">Why This Is A New Operation</span>
+            <textarea
+              className={`${styles.fieldInput} ${own.detailsInput}`}
+              value={statement}
+              maxLength={REVIEW_MAX}
+              rows={4}
+              disabled={busy}
+              aria-describedby={statementId}
+              onChange={(e) => setStatement(e.target.value)}
+            />
+            <span id={statementId} className="sc-copy sc-ink--muted">
+              {`${length.toLocaleString()} Of 2,000 Characters, At Least 20. No Documents Are Needed.`}
+            </span>
+          </label>
+        </div>
+      ) : null}
+    </SpadeConsole>
+  );
+}
+
+/* ══ Settled earnings (20260924183657, R2 5.3 and 5.5) ════════════════════
+   The owner's settled Diamond Spins earnings beside the operating diamonds
+   they paid for this scope, in the same window. A comparison only: every
+   purchase is still paid from the available balance under the normal
+   accounting order, and nothing here says which diamonds paid. */
+
+function EarningsConsole({
+  coverage,
+  scopeWord,
+}: {
+  coverage: EarningsCoverage;
+  scopeWord: string;
+}) {
+  const e = coverage.earnings;
+  const o = coverage.operating;
+  const days = Number(coverage.days ?? 30);
+  const earnMeta = [
+    `Diamond Spins Daily Settlements Credited To You In The Last ${days} Days, Across Everything You Host`,
+    `${Number(e.credited).toLocaleString()} Credited`,
+    e.debited ? `${Number(e.debited).toLocaleString()} Debited` : '',
+    e.applied_to_debt
+      ? `${Number(e.applied_to_debt).toLocaleString()} Settled An Earlier Diamond Debt`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const paidMeta = `${Number(o.purchases).toLocaleString()} ${o.purchases === 1 ? 'Purchase' : 'Purchases'} Paid By You In The Same ${days} Days${
+    o.refunded ? `, After ${diamonds(o.refunded)} Refunded` : ''
+  }.${o.paid_by_others ? ` ${diamonds(o.paid_by_others)} More Paid By Your Union Sponsor.` : ''} All Your Operating Purchases: ${diamonds(o.owner_all_scopes_net_paid)}.`;
+  return (
+    <SpadeConsole
+      eyebrow={`Last ${days} Days`}
+      title="Settled Earnings"
+      pill="Comparison"
+      pillInk="muted"
+      foot="foot"
+    >
+      <p className="sc-copy">Settled Earnings Can Help Cover Operating Purchases.</p>
+      <div className={styles.rows}>
+        <Row
+          label="Settled Earnings"
+          value={diamonds(e.net_settled)}
+          ink={e.net_settled > 0 ? 'green' : 'muted'}
+          wrap
+          meta={`${earnMeta}.${e.pending_unsettled > 0 ? ` ${diamonds(e.pending_unsettled)} Not Yet Settled Are Not Counted.` : ''}`}
+        />
+        <Row
+          label={`Operating Purchases For This ${scopeWord}`}
+          value={diamonds(o.net_paid)}
+          ink="silver"
+          wrap
+          meta={paidMeta}
+        />
+      </div>
+      <p className="sc-copy sc-ink--muted">
+        A Comparison, Not A Record Of Which Diamonds Paid. Every Purchase Is Paid From Your
+        Available Balance Under The Normal Accounting Order, And Earnings Already Spent Are Not
+        Available Again.
+      </p>
+    </SpadeConsole>
   );
 }
 
@@ -1841,6 +2342,14 @@ function DiamondCostsConsole({
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   /* The club catalog, read on a union page for a sponsor buying club capacity. */
   const [clubCatalog, setClubCatalog] = useState<CatalogProduct[]>([]);
+  const [clubCatalogVisible, setClubCatalogVisible] = useState(true);
+  /* Read beside the page; null when not read (or not this reader's to read),
+     which hides only their own console. */
+  const [writtenQuotes, setWrittenQuotes] = useState<WrittenQuote[] | null>(null);
+  const [reviews, setReviews] = useState<TrialReview[] | null>(null);
+  const [earnings, setEarnings] = useState<EarningsCoverage | null>(null);
+  /* The written quote offer being bought through the order flow, if any. */
+  const [writtenPick, setWrittenPick] = useState<WrittenQuote | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [receiptsFailed, setReceiptsFailed] = useState(false);
   /* The versioned policy texts; null when they could not be read. */
@@ -1884,7 +2393,12 @@ function DiamondCostsConsole({
     async (id: string) => {
       const seq = ++loadSeq.current;
       try {
-        const [s, c, r, cc, pol] = await Promise.all([
+        const quiet = <T,>(where: string, p: Promise<T>): Promise<T | null> =>
+          p.catch((e: unknown) => {
+            reportError(e, `ClubDiamondCostsPage.${where}`);
+            return null;
+          });
+        const [s, c, r, cc, pol, wq, rv, er] = await Promise.all([
           ClubCommerceService.scopeStatus(scopeKind, id),
           ClubCommerceService.catalog(scopeKind),
           /* Receipts failing must not hide the rest of the page. A union page
@@ -1903,11 +2417,17 @@ function DiamondCostsConsole({
                 return null;
               })
             : Promise.resolve(null),
-          /* The policy texts are read beside the page; failing hides only them. */
+          /* The policy texts are read beside the page; failing hides only them.
+             Every kind is read at once, service_terms included. */
           ClubCommerceService.policies().catch((e: unknown) => {
             reportError(e, 'ClubDiamondCostsPage.policies');
             return null;
           }),
+          scopeKind === 'club'
+            ? quiet('writtenQuotes', ClubCommerceService.writtenQuotes(scopeKind, id))
+            : Promise.resolve(null),
+          quiet('trialReviews', ClubCommerceService.trialReviews(scopeKind, id)),
+          quiet('earnings', ClubCommerceService.earningsCoverage(scopeKind, id, 30)),
         ]);
         if (!isMountedRef.current || seq !== loadSeq.current) return;
         if (isRefusal(s)) {
@@ -1940,6 +2460,11 @@ function DiamondCostsConsole({
           covered_clubs: Array.isArray(s.covered_clubs) ? s.covered_clubs : [],
         });
         setClubCatalog(cc && Array.isArray(cc.products) ? cc.products : []);
+        setClubCatalogVisible(!cc || cc.catalog_visible !== false);
+        setWrittenQuotes(wq);
+        setReviews(rv);
+        /* An administrator is refused the owner's earnings (owner_required). */
+        setEarnings(er && !isRefusal(er) ? er : null);
         setCatalog({ ...c, products: Array.isArray(c.products) ? c.products : [] });
         if (r) {
           setReceipts(r);
@@ -2005,6 +2530,10 @@ function DiamondCostsConsole({
   );
   const productOf = (sku: string | null | undefined) =>
     sku ? (products.find((p) => p.sku === sku) ?? null) : null;
+  /* The catalog is not published (fn_ca_commerce_catalog catalog_visible
+     false): products come without prices and the quote door refuses. Staff
+     read prices regardless, so only a catalog with no price at all hides. */
+  const pricesHidden = catalog?.catalog_visible === false && products.every((p) => !p.price);
   const serverNow = nowMs + skewMs;
   const isOwner = status?.role === 'owner';
   const trial = status?.trial ?? null;
@@ -2045,6 +2574,7 @@ function DiamondCostsConsole({
   const chooseProduct = (p: CatalogProduct) => {
     editInputs();
     order.clearReceipt();
+    setWrittenPick(null);
     setSelectedSku(p.sku);
     if (p.quantity_unit === 'covered_club') {
       const covered = status?.covered_club_count ?? 0;
@@ -2058,6 +2588,7 @@ function DiamondCostsConsole({
 
   const clearChoice = () => {
     editInputs();
+    setWrittenPick(null);
     setSelectedSku(null);
     setRenewOn(false);
     setRenewMax('');
@@ -2067,6 +2598,7 @@ function DiamondCostsConsole({
   const getQuote = () => {
     if (order.outcomeUnknown) return toast.error('Check Your Last Order Before Starting A New One');
     if (!scopeId || !selected) return toast.error('Choose A Service First');
+    if (pricesHidden) return toast.error(refusalCopy('catalog_not_visible'));
     if (!status?.checkout_enabled) return toast.error(refusalCopy('checkout_disabled'));
     const qty = coveredQuantity(selected, quantity);
     if (qty === null) return toast.error('Enter Between 1 And 500 Covered Clubs');
@@ -2100,6 +2632,8 @@ function DiamondCostsConsole({
       toast.success(
         r.replay ? 'Your Free Month Is Already Running' : 'Your Free Operating Month Has Started'
       );
+      /* A quote taken before the free month is no longer the order to pay. */
+      order.discard();
       await load(scopeId);
     } catch (e) {
       reportError(e, 'ClubDiamondCostsPage.activate');
@@ -2295,6 +2829,100 @@ function DiamondCostsConsole({
     await load(scopeId);
   };
 
+  /**
+   * One owner write that is not an order (a written quote request or
+   * withdrawal, a review request): one at a time, a refusal in words, and a
+   * refresh after it. Returns true when the server accepted it.
+   */
+  const ownerWrite = async (
+    where: string,
+    run: () => Promise<{ success: true } | Refusal>,
+    fallback: string,
+    done: string
+  ): Promise<boolean> => {
+    if (!scopeId || busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const r = await run();
+      if (!isMountedRef.current) return false;
+      if (isRefusal(r)) {
+        toast.error(refusalCopy(r.error, fallback));
+        /* An open request already on file is shown by the refresh. */
+        if (/already_(requested|decided)$/.test(r.error)) await load(scopeId);
+        return false;
+      }
+      toast.success(done);
+      await load(scopeId);
+      return true;
+    } catch (e) {
+      reportError(e, `ClubDiamondCostsPage.${where}`);
+      if (isMountedRef.current) toast.error(fallback);
+      return false;
+    } finally {
+      busyRef.current = false;
+      if (isMountedRef.current) setBusy(false);
+    }
+  };
+
+  const requestWritten = (capacity: number, note: string | null) =>
+    ownerWrite(
+      'writtenQuoteRequest',
+      () => ClubCommerceService.requestWrittenQuote(scopeKind, scopeId ?? '', capacity, note),
+      'The Written Quote Request Was Not Sent',
+      'Written Quote Requested. Platform Staff Will Reply Here'
+    );
+
+  const withdrawWritten = (w: WrittenQuote) =>
+    void ownerWrite(
+      'writtenQuoteWithdraw',
+      () => ClubCommerceService.withdrawWrittenQuote(w.written_quote_id),
+      'The Request Could Not Be Withdrawn',
+      'Written Quote Request Withdrawn'
+    );
+
+  const requestReview = (statement: string) =>
+    ownerWrite(
+      'trialReviewRequest',
+      () => ClubCommerceService.requestTrialReview(scopeKind, scopeId ?? '', statement),
+      'The Review Request Was Not Sent',
+      'Review Requested. Platform Staff Will Reply Here'
+    );
+
+  /**
+   * Buy a written quote offer: its private capacity product is quoted through
+   * the page's one order flow (quote, order key, confirm), exactly like a
+   * catalog capacity; a larger capacity than the current one is an upgrade.
+   */
+  const buyWritten = (w: WrittenQuote) => {
+    if (order.outcomeUnknown) return toast.error('Check Your Last Order Before Starting A New One');
+    if (!scopeId || !w.sku) return toast.error(refusalCopy('written_quote_not_found'));
+    if (pricesHidden) return toast.error(refusalCopy('catalog_not_visible'));
+    if (!status?.checkout_enabled) return toast.error(refusalCopy('checkout_disabled'));
+    editInputs();
+    order.clearReceipt();
+    setSelectedSku(null);
+    setRenewOn(false);
+    setRenewMax('');
+    setSponsorshipId(null);
+    setWrittenPick(w);
+    const id = scopeId;
+    const sku = w.sku;
+    const purchaseKind: PurchaseKind =
+      activeCapacity !== null &&
+      activeCapacity.sku !== sku &&
+      Number(w.offered_capacity ?? 0) > Number(activeCapacity.capacity ?? 0)
+        ? 'upgrade'
+        : 'purchase';
+    void order.requestQuote(() =>
+      ClubCommerceService.quote(scopeKind, id, [{ sku, quantity: 1 }], {
+        sponsorshipId: null,
+        renewalMaxDiamonds: null,
+        purchaseKind,
+      })
+    );
+  };
+
   /** The receipts a refund request's unknown outcome is checked against. */
   const readScopeReceipts = () =>
     scopeKind === 'union'
@@ -2355,6 +2983,9 @@ function DiamondCostsConsole({
   const refundPolicy = currentPolicy(policies, 'refund');
   const termsPolicy = currentPolicy(policies, 'renewal_terms');
   const ceilingPolicy = currentPolicy(policies, 'renewal_ceiling');
+  const servicePolicy = currentPolicy(policies, 'service_terms');
+  /* The version an owner accepts: the policy read, else the catalog's word. */
+  const serviceTermsVersion = servicePolicy?.version ?? catalog?.service_terms_version ?? null;
 
   /**
    * Every refund request for one purchase line: the receipt's own, and the
@@ -2463,7 +3094,7 @@ function DiamondCostsConsole({
           onRequestRefund={openRefund}
         />
         {refundConsole}
-        <PolicyConsole refund={refundPolicy} terms={termsPolicy} />
+        <PolicyConsole refund={refundPolicy} terms={termsPolicy} service={servicePolicy} />
       </div>
     );
   }
@@ -2531,6 +3162,9 @@ function DiamondCostsConsole({
         };
   })();
   const trialEnd = trial ? Date.parse(trial.trial_end) : NaN;
+  /* This scope's free month is over: it ran out, or it was inherited already
+     ended from the operator's first free month (R2 2.4, 2.5). */
+  const trialEnded = trial !== null && !trialActive;
   const trialLeft = trialEnd - serverNow;
   const trialAuth = trialRight?.renewal?.state === 'authorized' ? trialRight.renewal : null;
   const nextRenewal =
@@ -2719,7 +3353,7 @@ function DiamondCostsConsole({
               {isOwner ? (
                 <ChoiceRow
                   label="Start Free Month"
-                  meta="Starts Now. The Exact End Time Is Shown Here Once It Begins."
+                  meta={`Starts Now. The Exact End Time Is Shown Here Once It Begins. ${serviceTermsLine(serviceTermsVersion)}`}
                   value={busy ? 'Starting' : 'Start'}
                   ink="green"
                   disabled={busy}
@@ -3011,10 +3645,16 @@ function DiamondCostsConsole({
       <SpadeConsole
         eyebrow="Catalog"
         title="Diamond Prices"
-        pill={catalog ? (catalogWord(catalog.catalog_version) ?? undefined) : undefined}
-        pillInk="muted"
+        pill={
+          pricesHidden
+            ? 'Not Published'
+            : catalog
+              ? (catalogWord(catalog.catalog_version) ?? undefined)
+              : undefined
+        }
+        pillInk={pricesHidden ? 'gold' : 'muted'}
         plates={
-          canBuy
+          canBuy && !pricesHidden
             ? {
                 secondary: {
                   label: 'Clear',
@@ -3030,10 +3670,19 @@ function DiamondCostsConsole({
               }
             : undefined
         }
-        foot={canBuy ? 'plates' : 'foot'}
+        foot={canBuy && !pricesHidden ? 'plates' : 'foot'}
       >
         <div className={styles.rows}>
-          {!status.checkout_enabled ? (
+          {pricesHidden ? (
+            <Row
+              label="Diamond Prices Are Not Published Yet"
+              value="Not Yet"
+              ink="gold"
+              wrap
+              meta="Services Are Priced And Quoted Here Once Platform Staff Publish The Catalog. Nothing Can Be Ordered Before Then."
+            />
+          ) : null}
+          {!status.checkout_enabled && !pricesHidden ? (
             <Row
               label="Checkout Paused"
               value="Paused"
@@ -3041,8 +3690,10 @@ function DiamondCostsConsole({
               meta="Prices Can Be Reviewed. Orders Resume When Checkout Reopens."
             />
           ) : null}
-          {products.length === 0 ? <Row label="No Services Listed" value="" /> : null}
-          {products.map((p) => {
+          {!pricesHidden && products.length === 0 ? (
+            <Row label="No Services Listed" value="" />
+          ) : null}
+          {(pricesHidden ? [] : products).map((p) => {
             const tooSmall =
               p.kind === 'capacity' &&
               p.capacity !== null &&
@@ -3073,6 +3724,14 @@ function DiamondCostsConsole({
               />
             );
           })}
+          {scopeKind === 'club' ? (
+            <Row
+              label="Above 2,500 Members: Ask For A Written Quote"
+              value=""
+              wrap
+              meta="Platform Staff Offer A Capacity And A Price For Your Club Alone. Ask Under Written Quotes Below."
+            />
+          ) : null}
         </div>
         {selected && selected.quantity_unit === 'covered_club' ? (
           <div className={styles.fields}>
@@ -3163,6 +3822,12 @@ function DiamondCostsConsole({
           Prices Are Whole Diamonds Per Stated Term. No Per Hand, Per Table Hour Or Per Transfer
           Charge. Displayed Club Levels Are Not Purchased Capacity.
         </p>
+        {scopeKind === 'club' ? (
+          <p className="sc-copy">
+            Member Capacity Counts Approved Accounts, Each Once. It Is Not A Limit On Tables Or
+            Seats Played At Once.
+          </p>
+        ) : null}
       </SpadeConsole>
 
       <QuoteConsole
@@ -3171,8 +3836,8 @@ function DiamondCostsConsole({
         eyebrow="Quote"
         skewMs={skewMs}
         busy={busy}
-        canRequote={Boolean(selected)}
-        onRequote={getQuote}
+        canRequote={Boolean(selected || writtenPick)}
+        onRequote={writtenPick && !selected ? () => buyWritten(writtenPick) : getQuote}
         trialAction={
           order.quote?.sponsorship_id
             ? {
@@ -3196,11 +3861,46 @@ function DiamondCostsConsole({
         onGetDiamonds={() => navigate(BUY_DIAMONDS)}
         notice={upgradeNotice}
         refundPolicyVersion={refundPolicy?.version ?? null}
+        serviceTermsVersion={serviceTermsVersion}
+        freeMonth={isOwner ? { busy, onStart: () => void activate() } : null}
       />
 
       <ReceiptConsole order={order} sectionId="diamond-costs-receipt" />
 
       {order.recovering ? <LoadingState message="Checking Your Order" /> : null}
+
+      {scopeKind === 'club' && writtenQuotes !== null ? (
+        <WrittenQuotesConsole
+          quotes={writtenQuotes}
+          isOwner={isOwner}
+          busy={busy}
+          buyDisabled={order.quoting || locked || pricesHidden || !status.checkout_enabled}
+          buyingId={
+            order.quote && writtenPick && order.quote.lines.some((l) => l.sku === writtenPick.sku)
+              ? writtenPick.written_quote_id
+              : null
+          }
+          onRequest={requestWritten}
+          onWithdraw={withdrawWritten}
+          onBuy={buyWritten}
+        />
+      ) : null}
+
+      {reviews !== null && (trialEnded || reviews.length > 0) ? (
+        <TrialReviewConsole
+          reviews={reviews}
+          endedAt={trialEnded && trial ? trial.trial_end : null}
+          canAsk={
+            isOwner &&
+            trialEnded &&
+            !reviews.some((r) => r.state === 'requested' || r.state === 'approved')
+          }
+          busy={busy}
+          onRequest={requestReview}
+        />
+      ) : null}
+
+      {earnings && isOwner ? <EarningsConsole coverage={earnings} scopeWord={scopeWord} /> : null}
 
       {scopeKind === 'union' && isOwner ? (
         <SpadeConsole
@@ -3284,6 +3984,8 @@ function DiamondCostsConsole({
           receipts={receipts}
           receiptsKnown={!receiptsFailed}
           refundPolicyVersion={refundPolicy?.version ?? null}
+          serviceTermsVersion={serviceTermsVersion}
+          pricesPublished={clubCatalogVisible || clubCatalog.some((p) => p.price)}
         />
       ) : null}
 
@@ -3421,7 +4123,7 @@ function DiamondCostsConsole({
 
       {refundConsole}
 
-      <PolicyConsole refund={refundPolicy} terms={termsPolicy} />
+      <PolicyConsole refund={refundPolicy} terms={termsPolicy} service={servicePolicy} />
     </div>
   );
 }

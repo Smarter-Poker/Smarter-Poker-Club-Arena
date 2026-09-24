@@ -199,7 +199,7 @@ GRANT SELECT, INSERT, UPDATE ON public.tables TO service_role, authenticated;
 CREATE TABLE public.table_seats (table_id uuid, seat_number integer, left_at timestamptz);
 CREATE TABLE public.hand_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), table_id uuid, hand_number bigint,
-  small_blind numeric, big_blind numeric, bbj_amount numeric NOT NULL DEFAULT 0,
+  small_blind numeric, big_blind numeric(12,2), bbj_amount numeric NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.cash_games (
   id uuid PRIMARY KEY, club_id uuid, union_id uuid, name text, template_name text, variant text,
@@ -321,6 +321,15 @@ try:
     else:
         run('capability-registry-stub', STUB_REGISTRY)
     run('capability-starts-planned', "SELECT public.fn_capability_available('cash.fixed_limit.kill_pots');", 'f')
+
+    # Production declares tables.big_blind numeric(15,2); the first live install
+    # (2026-09-24) was refused by a typmod-sensitive precondition. The
+    # preconditions must accept the production declaration.
+    pre_block = between(installer, 'DO $pre$', '$pre$;')
+    run('preconditions-accept-production-numeric-precision',
+        "BEGIN; ALTER TABLE public.tables ALTER COLUMN big_blind TYPE numeric(15,2);\n" + pre_block +
+        "\nSELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid='public.tables'::regclass"
+        " AND attname='big_blind'; ROLLBACK;", 'numeric(15,2)')
 
     # A drifted opener body is refused before anything is written.
     run('install-refused-on-changed-opener-preimage',

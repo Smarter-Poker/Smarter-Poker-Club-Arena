@@ -194,10 +194,11 @@ BEGIN
   END IF;
 
   -- The columns the trigger and the projections read, with the types they
-  -- were written against.
+  -- were written against. Type names are compared without typmod: production
+  -- declares tables.big_blind numeric(15,2) (refused on first install, 2026-09-24).
   IF (SELECT count(*) FROM pg_attribute a
        WHERE a.attrelid = 'public.tables'::regclass AND NOT a.attisdropped
-         AND (a.attname, format_type(a.atttypid, a.atttypmod)) IN
+         AND (a.attname, format_type(a.atttypid, NULL)) IN
              (('club_id','uuid'),('game_variant','text'),('game_type','text'),
               ('tournament_id','uuid'),('bomb_pot_enabled','boolean'),
               ('big_blind','numeric'),('cluster_id','uuid'))) <> 7 THEN

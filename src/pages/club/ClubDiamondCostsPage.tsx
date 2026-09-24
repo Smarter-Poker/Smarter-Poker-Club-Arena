@@ -2189,8 +2189,7 @@ function EarningsConsole({
   const e = coverage.earnings;
   const o = coverage.operating;
   const days = Number(coverage.days ?? 30);
-  const earnMeta = [
-    `Diamond Spins Daily Settlements Credited To You In The Last ${days} Days, Across Everything You Host`,
+  const earnParts = [
     `${Number(e.credited).toLocaleString()} Credited`,
     e.debited ? `${Number(e.debited).toLocaleString()} Debited` : '',
     e.applied_to_debt
@@ -2199,6 +2198,7 @@ function EarningsConsole({
   ]
     .filter(Boolean)
     .join(', ');
+  const earnMeta = `Diamond Spins Daily Settlements Credited To You In The Last ${days} Days, Across Everything You Host: ${earnParts}`;
   const paidMeta = `${Number(o.purchases).toLocaleString()} ${o.purchases === 1 ? 'Purchase' : 'Purchases'} Paid By You In The Same ${days} Days${
     o.refunded ? `, After ${diamonds(o.refunded)} Refunded` : ''
   }.${o.paid_by_others ? ` ${diamonds(o.paid_by_others)} More Paid By Your Union Sponsor.` : ''} All Your Operating Purchases: ${diamonds(o.owner_all_scopes_net_paid)}.`;

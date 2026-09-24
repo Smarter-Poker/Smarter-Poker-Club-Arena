@@ -307,6 +307,18 @@ export default function CommerceDeskPage() {
   const me = user?.id ?? null;
   const isMounted = useIsMounted();
 
+  /* Seven tabs scroll sideways on a phone; a deep link to a later one
+     (?tab=metrics) must not open with the current tab off screen. */
+  const tabsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const strip = tabsRef.current;
+    const on = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !on) return;
+    const left = on.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + on.offsetWidth > strip.scrollLeft + strip.clientWidth)
+      strip.scrollLeft = Math.max(0, left + on.offsetWidth - strip.clientWidth);
+  }, [tab]);
+
   /* The catalog and every price version are shared by the Catalog and
      Evidence tabs, and are read together so a product's price in effect and
      its history never disagree on screen. */
@@ -391,7 +403,7 @@ export default function CommerceDeskPage() {
         </p>
       </header>
 
-      <nav className={s.tabs} aria-label="Commerce Desk Sections">
+      <nav ref={tabsRef} className={s.tabs} aria-label="Commerce Desk Sections">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -2367,7 +2379,10 @@ function WrittenQuoteCard({
   const isMounted = useIsMounted();
   const inFlight = useRef(false);
   const [busy, setBusy] = useState<'offer' | 'decline' | null>(null);
-  const [capacity, setCapacity] = useState(String(w.requested_capacity ?? ''));
+  const [capacity, setCapacity] = useState(
+    /* Printed as the owner asked it, grouped; parseWhole reads the commas. */
+    w.requested_capacity == null ? '' : Number(w.requested_capacity).toLocaleString('en-US')
+  );
   const [price, setPrice] = useState('');
   const [days, setDays] = useState(String(WRITTEN_QUOTE_LIMITS.defaultValidDays));
   const [note, setNote] = useState('');
@@ -3000,15 +3015,15 @@ function MetricsPanel() {
               <Row label="Zero Net Receipts" value={whole(p.zero_net)} />
               <Row
                 label="Purchases"
-                value={`${whole(p.by_kind.purchase.committed)}, ${diamonds(p.by_kind.purchase.net_paid_diamonds)}`}
+                value={`${whole(p.by_kind.purchase.committed)} For ${diamonds(p.by_kind.purchase.net_paid_diamonds)}`}
               />
               <Row
                 label="Upgrades"
-                value={`${whole(p.by_kind.upgrade.committed)}, ${diamonds(p.by_kind.upgrade.net_paid_diamonds)}`}
+                value={`${whole(p.by_kind.upgrade.committed)} For ${diamonds(p.by_kind.upgrade.net_paid_diamonds)}`}
               />
               <Row
                 label="Renewals"
-                value={`${whole(p.by_kind.renewal.committed)}, ${diamonds(p.by_kind.renewal.net_paid_diamonds)}`}
+                value={`${whole(p.by_kind.renewal.committed)} For ${diamonds(p.by_kind.renewal.net_paid_diamonds)}`}
               />
               <Row label="Paid By Sponsors" value={diamonds(p.sponsored_net_diamonds)} />
               <Row label="Waived On Receipts" value={diamonds(p.trial_waiver_diamonds)} />
@@ -3059,7 +3074,7 @@ function MetricsPanel() {
               />
               <Row
                 label="Approved, Not Yet Returned"
-                value={`${whole(rr.awaiting_execution)}, ${diamonds(rr.awaiting_execution_diamonds)}`}
+                value={`${whole(rr.awaiting_execution)} For ${diamonds(rr.awaiting_execution_diamonds)}`}
                 tone={rr.awaiting_execution ? 'gold' : undefined}
               />
               <Row

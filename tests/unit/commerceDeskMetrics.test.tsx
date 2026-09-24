@@ -114,7 +114,7 @@ describe('Commerce Desk: Metrics', () => {
     const pay = await screen.findByRole('article', { name: 'Payments' });
     expect(h.rpc).toHaveBeenCalledWith('fn_ca_commerce_metrics', { p_days: 30 });
     expect(value(pay, 'Net Paid')).toBe('3,000 Diamonds');
-    expect(value(pay, 'Purchases')).toBe('6, 3,000 Diamonds');
+    expect(value(pay, 'Purchases')).toBe('6 For 3,000 Diamonds');
     expect(value(pay, 'Paid By Sponsors')).toBe('500 Diamonds');
     const quotes = screen.getByRole('article', { name: 'Quotes' });
     expect(value(quotes, 'Proposed, Not Paid')).toBe('4,700 Diamonds');
@@ -125,7 +125,7 @@ describe('Commerce Desk: Metrics', () => {
     const refunds = screen.getByRole('article', { name: 'Refunds' });
     expect(value(refunds, 'Returned')).toBe('500 Diamonds');
     expect(value(refunds, 'Oldest Awaiting A Decision')).toBe('30 Hours');
-    expect(value(refunds, 'Approved, Not Yet Returned')).toBe('1, 100 Diamonds');
+    expect(value(refunds, 'Approved, Not Yet Returned')).toBe('1 For 100 Diamonds');
     expect(value(refunds, 'Oldest Not Yet Returned')).toBe('5 Hours');
     expect(value(refunds, 'Declined Requests')).toBe('1');
     const renewals = screen.getByRole('article', { name: 'Renewals' });

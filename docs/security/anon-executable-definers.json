@@ -51,6 +51,7 @@
       "fn": "fn_resolve_ads(p_slot text, p_club_id uuid, p_limit integer, p_country text)",
       "reason": "public-read"
     },
+    { "fn": "fn_shared_bonus_replay(p_share_id uuid)", "reason": "public-read" },
     { "fn": "fn_tournament_fee_names_its_player()", "reason": "public-read" },
     { "fn": "get_daily_challenge()", "reason": "public-read" },
     {

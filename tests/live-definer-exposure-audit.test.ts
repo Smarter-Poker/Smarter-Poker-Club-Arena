@@ -93,9 +93,11 @@ describe('it fails in the safe direction', () => {
 describe('the baseline is small, reasoned, and shrink-only', () => {
   const baseline = JSON.parse(read('scripts/ci/definer-exposure-baseline.json'));
 
-  it('holds only the two that were read line by line', () => {
+  it('holds only the one still exposed, read line by line', () => {
+    // get_current_settlement_period left on 2026-09-22: retired to a refusal
+    // that writes nothing on 2026-09-17 and closed to every browser role on
+    // 2026-09-20. A list that may only shrink is pinned at its new size.
     expect(Object.keys(baseline.reviewedExceptions).sort()).toEqual([
-      'get_current_settlement_period',
       'recalculate_leaderboard_ranks',
     ]);
   });

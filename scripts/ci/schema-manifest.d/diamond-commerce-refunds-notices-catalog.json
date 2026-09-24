@@ -94,6 +94,7 @@
     ],
     "ca_commerce_settings": ["consumer_heartbeat_at"],
     "ca_commerce_renewal_mandates": ["ceiling_text_version", "sponsorship_id", "terms_version"],
-    "ca_commerce_notices": ["suppressed_at", "suppressed_reason"]
+    "ca_commerce_notices": ["suppressed_at", "suppressed_reason"],
+    "ca_commerce_products": ["platform_capability_id"]
   }
 }

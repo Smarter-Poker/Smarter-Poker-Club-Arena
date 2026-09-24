@@ -24,6 +24,7 @@ import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapac
 import {
   TOURNAMENT_CREATE_ERRORS,
   assertTournamentRpcConfig,
+  tournamentCreateErrorMessage,
 } from '../lib/tournamentCreationRules';
 
 export interface TournamentScheduleRow {
@@ -73,6 +74,11 @@ const SCHEDULE_ERRORS: Record<string, string> = {
   start_time_format_invalid: 'Start times must be HH:MM, 24-hour, UTC.',
   start_times_or_interval_required: 'Add at least one start time, or a repeat interval.',
   interval_minutes_out_of_range: 'The repeat interval must be 5 to 1440 minutes.',
+  // 20260924102056: an enforced commerce admission refuses a NEW recurring
+  // schedule. The server's own `message` is shown (scheduleErrorText); this
+  // is the same sentence for an answer that carries none.
+  operating_access_required:
+    'This Club Needs Active Operating Access To Create A New Tournament. Scheduled And Running Tournaments Are Not Affected.',
 };
 
 /**
@@ -80,7 +86,10 @@ const SCHEDULE_ERRORS: Record<string, string> = {
  * sentences, as a hand-created tournament (fn_tournament_config_refusal,
  * 20260924033701), so an unmapped schedule code falls through to that map.
  */
-function scheduleErrorText(code: string | undefined): string {
+function scheduleErrorText(code: string | undefined, serverMessage?: string | null): string {
+  if (code === 'operating_access_required') {
+    return tournamentCreateErrorMessage(code, serverMessage);
+  }
   return (
     SCHEDULE_ERRORS[code ?? ''] ??
     TOURNAMENT_CREATE_ERRORS[code ?? ''] ??
@@ -115,9 +124,14 @@ class TournamentScheduleService {
       reportError(error, 'TournamentScheduleService.upsert');
       throw new Error('Could not save the schedule.');
     }
-    const res = data as { ok?: boolean; schedule_id?: string; error?: string } | null;
+    const res = data as {
+      ok?: boolean;
+      schedule_id?: string;
+      error?: string;
+      message?: string;
+    } | null;
     if (!res?.ok || !res.schedule_id) {
-      throw new Error(scheduleErrorText(res?.error));
+      throw new Error(scheduleErrorText(res?.error, res?.message));
     }
     return res.schedule_id;
   }

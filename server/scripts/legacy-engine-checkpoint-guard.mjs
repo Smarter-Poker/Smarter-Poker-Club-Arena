@@ -3183,11 +3183,53 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           executedAt.set(lower(move.id), move.executed_at);
         }
       }
+      /* ═══ A MOVE THE DESTINATION HAS ALREADY DEALT IS NOT IN TRANSIT (2026-09-24) ═══
+
+         Run 36050875490 (the 19:55 break) is the measurement: the first
+         release to finish this proof inside its budget, refused at
+         `seatMoveInTransit` on e4e522db for a move executed twenty-one
+         minutes earlier - into a seat the destination had since dealt
+         THIRTY-THREE hands to (hand_history, players[].userId). The one-hour
+         rule below is a ceiling on how long a handoff can still be claimed;
+         it says nothing about whether the claim still matters. Once the
+         destination has dealt that seat a hand after the move, the bank is
+         live there (ServerTableEngineDealing.ts:3036 seeds it on the deal)
+         and 8825 never applies a carried bank or presence over a live one
+         (:4233), so the deposit can no longer change anything, claimed or
+         not. And this fleet executes a cash seat move every few minutes
+         (414 receipts a day), so "no move in the last hour" is a window
+         that is almost never open: the same forever-block one level up
+         (CLAUDE.md 10.86 rule 4).
+
+         So a move inside the hour is asked ONE more question, from rows: has
+         `hand_history` recorded a hand at the destination table, after the
+         move executed, with that player in it? One row is enough. No row, an
+         error or an unreadable answer keeps the refusal exactly as it was. */
       const claimableSince = Date.now() - 3600000;
-      for (const arrival of arrivals) {
+      const inWindow = arrivals.filter((arrival) => {
         const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
-        if (!(Number.isFinite(executed) && executed < claimableSince))
-          refuseAt('proveBanksHeldNothing.seatMoveInTransit', arrival.to_table_id, 'bank_residue_unproven');
+        return !(Number.isFinite(executed) && executed < claimableSince);
+      });
+      let arrivalsDealtSince = 0;
+      for (const [index, answer] of (await readAll(inWindow.map((arrival) => () => {
+        const executed = executedAt.get(lower(arrival.move_id));
+        return typeof executed === 'string'
+          ? modules.client.supabase
+              .from('hand_history')
+              .select('id')
+              .eq('table_id', arrival.to_table_id)
+              .gt('created_at', executed)
+              .contains('players', [{ userId: arrival.player_id }])
+              .limit(1)
+          : Promise.resolve({ data: [], error: null });
+      }))).entries()) {
+        const arrival = inWindow[index];
+        answered(answer, 1, 'bank_residue_unproven', 'dealtSinceRead');
+        if (answer.data.length === 1 && record(answer.data[0]) && uuid(answer.data[0].id)) {
+          arrivalsDealtSince++;
+          continue;
+        }
+        refuseAt('proveBanksHeldNothing.seatMoveInTransit', arrival.to_table_id, 'bank_residue_unproven');
       }
       // 3. The felt is quiet at every stopped table whose metadata outlived the
       // banks its stop disposed: the release gate's own predicate.
@@ -3217,6 +3259,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         `arrivalQuestion=${batchMissing ? 'perTable' : 'perPlayer'}`,
         `arrivalPlayersAsked=${askedPlayers.length}`,
         `arrivalsInWindowChecked=${arrivals.length}`,
+        `arrivalsDealtSince=${arrivalsDealtSince}`,
         `disposedTables=${disposedTables.length}`,
         `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,
         `disposedEvents=${events.slice(0, 12).join('/') || 'none'}`,

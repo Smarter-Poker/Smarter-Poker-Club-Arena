@@ -1,1 +1,109 @@
-LS0gMjAyNjA5MjMyMTUzMDBfYV9yZXRpcmVkX2Vycm9yX3Byb3ZpZGVyc19vcmNoZXN0cmF0b3Jfc3RheXNfcmV0aXJlZC5zcWwKLS0KLS0gUHJvZHVjdGlvbiBBbGVydHMgRmxlZXQsIG9wZXJhdGlvbmFsX2FsZXJ0X2V2ZW50cyBpZD0xNQotLSAoT3BlbkNsYXdKb2JzSGF2ZUdvbmVTaWxlbnQsIGZpcmluZyBjb250aW51b3VzbHkgc2luY2UgMjAyNi0wOS0xMikgYW5kCi0tIGlkPTExIChPcGVuQ2xhd0ZsZWV0TG9uZ1NpbGVuY2UsIGNsb3NlZCBmb3IgaXRzIHR3byBrbm93biBqb2JzIGJ5Ci0tIFNtYXJ0ZXItUG9rZXItV29ybGQtSHViIzE5NjMgYW5kIHRoZSBkZXRlY3RvciBmaXggaW4KLS0gMjAyNjA5MjMxNzU3MzBfYV9zcGFyc2Vfam9iX2Nhbl9zdGlsbF9iZV9kZWFkLnNxbCwgYnV0IG5vdCBmb3IgdGhpcyBvbmUpLgotLQotLSBSZWFkIGxpdmUgYWdhaW5zdCBwcm9kdWN0aW9uICgyMDI2LTA5LTIzKSBiZWZvcmUgd3JpdGluZyB0aGlzIGZpeDoKLS0gdl9vcGVuY2xhd19qb2Jfc3RhbGVuZXNzIGN1cnJlbnRseSByZXBvcnRzIGV4YWN0bHkgdGhyZWUgaXNfc3RhbGU9dHJ1ZQotLSBqb2JzIC0tIC9jcm9uL3ZpZGVvLWxpYnJhcnktc2NyYXBlciAoZml4ZWQgaW4gV29ybGQgSHViICMxOTYzLCBwZW5kaW5nCi0tIG1lcmdlKSwgL2Nyb24vcG9rZXJuZXdzLXZpZGVvcyAoZmFpbGluZyBpbnNpZGUgdGhlIHNtYXJ0ZXItcG9rZXItd29ya2VycwotLSByZXBvLCBhIGRpZmZlcmVudCBjb2RlYmFzZSB0aGlzIGZsZWV0IGhhcyBubyBhY2Nlc3MgdG8pLCBhbmQ6Ci0tCi0tICAgam9iX25hbWUgICAgICAgICAgICAgICAgICAgICBzdWNjZXNzZXNfMzBkICBsYXN0X3N1Y2Nlc3NfYXQgICAgICAgIHNpbGVudAotLSAgIC9jcm9uL2NsYXdib3Qtb3JjaGVzdHJhdG9yICAgICAgICAgICAgICAyMSAgMjAyNi0wOS0xNSAwNzowMDowMFogICA4LjZkCi0tCi0tIC9jcm9uL2NsYXdib3Qtb3JjaGVzdHJhdG9yIHJhbiBkYWlseSBhbmQgInN1Y2NlZWRlZCIgZm9yIHdlZWtzLCBidXQgaXRzCi0tIG9uZSBhbmQgb25seSB0YXNrIChjcm9uX2V4ZWN1dGlvbl9sb2cucmVzdWx0LT5yZXN1bHRzLT4wLCB0YXNrX2lkCi0tICJjYi0wMS1zZW50cnktdHJpYWdlIikgaGFkIGl0c2VsZiBiZWVuIGVycm9yaW5nIG9uIGV2ZXJ5IHNpbmdsZSBydW4gc2luY2UKLS0gYXQgbGVhc3QgMjAyNi0wOC0yMCAoIkZhaWxlZCB0byBwYXJzZSBVUkwgZnJvbSAvYXBpL2NsYXdib3Qvc2VudHJ5LXRyaWFnZSIKLS0gLS0gYSByZWxhdGl2ZSBVUkwgYnVpbHQgd2l0aCBubyBiYXNlKS4gSXQgbmV2ZXIgZGlkIHVzZWZ1bCB3b3JrIGluIHRoZQotLSBvYnNlcnZlZCBoaXN0b3J5LgotLQotLSBXaGF0IGFjdHVhbGx5IGhhcHBlbmVkIG9uIDIwMjYtMDktMTUvMTY6IFdvcmxkIEh1YiBQUiAjMTgxMiAoIlJlbW92ZQotLSBleHRlcm5hbCBlcnJvciB0ZWxlbWV0cnkgZnJvbSBXb3JsZCBIdWIiKSBmb3JtYWxseSByZXRpcmVkIHRoZSBTZW50cnkKLS0gZXJyb3ItdHJhY2tpbmcgcHJvdmlkZXIgKDIwMjYtMDktMTYgMDY6MTU6NTQgVVRDKSBhbmQsIHBlciBpdHMgb3duCi0tIGRlc2NyaXB0aW9uLCBpbmNsdWRlZCAiZml4OiByZXRpcmUgcHJvdmlkZXItb25seSB3b3JrZXIgZGlzcGF0Y2gKLS0gc2NoZWR1bGUiIC0tIHJlbW92aW5nIC9hcGkvY2xhd2JvdC9vcmNoZXN0cmF0b3IgZnJvbQotLSBzY3JpcHRzL29wZW5jbGF3LWNyb24tZGlzcGF0Y2hlci5weSdzIEFMTF9DUk9OUy4gVGhhdCByZXBvJ3MKLS0gX190ZXN0c19fL3JldGlyZWQtZXJyb3ItcHJvdmlkZXIudGVzdC5tanMgbm93IHBpbnMsIGJ5IG5hbWUsIHRoYXQgdGhlCi0tIGRpc3BhdGNoZXIgaGFzIG5vIC9hcGkgb3IgL2Nyb24gY2xhd2JvdFsvLV1vcmNoZXN0cmF0b3IgZW50cnkgYXQgYWxsLgotLSBjbGF3Ym90LW9yY2hlc3RyYXRvcidzIHNvbGUgcHVycG9zZSB3YXMgZm9yd2FyZGluZyB0byB0aGUgcmV0aXJlZAotLSBwcm92aWRlcjsgaXQgd2FzIG5ldmVyIHJlcHVycG9zZWQsIGFuZCBpdHMgcmVtb3ZhbCBmcm9tIHRoZSBkaXNwYXRjaGVyCi0tIHdhcyBjb3JyZWN0IGFuZCBkZWxpYmVyYXRlIC0tIHRoZSBqb2IncyBsYXN0IHN1Y2Nlc3NmdWwgZGlzcGF0Y2gsCi0tIDIwMjYtMDktMTUgMDc6MDA6MDAgVVRDLCBpcyBleGFjdGx5IHRoZSBydW4gYmVmb3JlIHRoYXQgcmV0aXJlbWVudAotLSBsYW5kZWQsIGFuZCB0aGVyZSBoYXMgbm90IGJlZW4gb25lIHNpbmNlLgotLQotLSBUaGUgZ2FwOiB3aG9ldmVyIHNoaXBwZWQgUFIgIzE4MTIgcmVtb3ZlZCB0aGUgZGlzcGF0Y2hlciBlbnRyeSBidXQgbmV2ZXIKLS0gYWRkZWQgYSByb3cgdG8gY2FfcmV0aXJlZF9jcm9uX2pvYnMsIHRoZSByZWdpc3RyeSB2X29wZW5jbGF3X2pvYl9zdGFsZW5lc3MKLS0gYWxyZWFkeSBjaGVja3MgKE5PVCBFWElTVFMgLi4uIGNhX3JldGlyZWRfY3Jvbl9qb2JzKSB0byBleGNsdWRlIGEgam9iIHRoYXQKLS0gd2FzIGRlbGliZXJhdGVseSB0YWtlbiBvdXQgb2Ygcm90YXRpb24uIFdpdGhvdXQgdGhhdCByb3csIHRoZSB2aWV3IGhhcwotLSBzcGVudCBlaWdodCBkYXlzIGFuZCBjb3VudGluZyB0cmVhdGluZyBhIGNvcnJlY3RseS1kZWNvbW1pc3Npb25lZCBqb2IgYXMKLS0gb25lIHRoYXQgaXMgdW5leHBlY3RlZGx5IGdvaW5nIHNpbGVudCAtLSBleGFjdGx5IHRoZSBjbGFzcyBvZiBvdmVyc2lnaHQKLS0gdGhlIGZpdmUgZXhpc3Rpbmcgcm93cyBpbiB0aGlzIHRhYmxlIHdlcmUgZWFjaCBhZGRlZCB0byBmaXggKHNlZQotLSAyMDI2MDgyN19ob3JzZXNfYXJlX3BsYXllcnNfbGF3LnNxbCdzIHNpYmxpbmdzIGFuZCB0aGlzIHRhYmxlJ3Mgb3duCi0tIGhpc3RvcnkgZm9yIC9jcm9uL3BsYXllci1zdGF0cy1yZWZyZXNoLCAvY3Jvbi90cml2aWEtcHZwLWNsZWFudXAsIGV0YykuCi0tCi0tIFRIRSBGSVg6IHJlZ2lzdGVyIC9jcm9uL2NsYXdib3Qtb3JjaGVzdHJhdG9yIGluIGNhX3JldGlyZWRfY3Jvbl9qb2JzLgotLSBObyB2aWV3IG9yIGZ1bmN0aW9uIGNoYW5nZXMgbmVlZGVkIC0tIHRoZSBleGNsdXNpb24gYWxyZWFkeSBleGlzdHMgYW5kCi0tIHRha2VzIGVmZmVjdCB0aGUgbW9tZW50IHRoZSByb3cgZXhpc3RzLiBQcm92ZWQgaW4gYSByb2xsZWQtYmFjayBwcm9iZQotLSBhZ2FpbnN0IHByb2R1Y3Rpb24gaW1tZWRpYXRlbHkgYmVmb3JlIHRoaXMgbWlncmF0aW9uOiBpc19zdGFsZSByZWFkIHRydWUKLS0gYmVmb3JlIHRoZSBpbnNlcnQgYW5kIE5VTEwgKGV4Y2x1ZGVkIGZyb20gdGhlIHZpZXcgZW50aXJlbHkpIGFmdGVyLAotLSBjb25maXJtZWQgdmlhIGEgc2VsZi1hYm9ydGluZyBETyBibG9jayBwZXIgY2x1Yi1hcmVuYSBDTEFVREUubWQgMTEuNS4KLS0KLS0gSWRlbXBvdGVudDogam9iX25hbWUgaXMgdGhpcyB0YWJsZSdzIHByaW1hcnkga2V5LCBzbyBhIHNlY29uZCBhcHBsaWNhdGlvbgotLSAoZS5nLiBpZiB0aGlzIGxhbmRzIGFsb25nc2lkZSBhbm90aGVyIGFnZW50J3MgaW5zZXJ0IGZvciB0aGUgc2FtZSBqb2IpIGlzCi0tIGEgbm8tb3AgcmF0aGVyIHRoYW4gYW4gZXJyb3IuCi0tCi0tIFRoaXMgbWlncmF0aW9uIG9ubHkgSU5TRVJUcyBhIHJvdyAtIG5vIGZ1bmN0aW9uLCB0YWJsZSwgdmlldywgaW5kZXgsCi0tIHRyaWdnZXIgb3IgcG9saWN5IC0gc28gc3RlcCAyIG9mIGNoZWNrLW1pZ3JhdGlvbnMtYXJlLWxpdmUubWpzIGhhcyBub3RoaW5nCi0tIHRvIGxvb2sgdXAuIFN0ZXAgMyBpcyB0aGlzOgotLQotLSBAbGl2ZS1wcm9vZjogRVhJU1RTIChTRUxFQ1QgMSBGUk9NIHB1YmxpYy5jYV9yZXRpcmVkX2Nyb25fam9icyBXSEVSRSBqb2JfbmFtZSA9ICcvY3Jvbi9jbGF3Ym90LW9yY2hlc3RyYXRvcicpCgpCRUdJTjsKCklOU0VSVCBJTlRPIHB1YmxpYy5jYV9yZXRpcmVkX2Nyb25fam9icyAoam9iX25hbWUsIHJldGlyZWRfYXQsIHJlYXNvbiwgcmVwbGFjZWRfYnkpClZBTFVFUyAoCiAgJy9jcm9uL2NsYXdib3Qtb3JjaGVzdHJhdG9yJywKICAnMjAyNi0wOS0xNiAwNjoxNTo1NCswMCcsCiAgJ1JldGlyZWQgZnJvbSBvcGVuY2xhdy1jcm9uLWRpc3BhdGNoZXIucHknJ3MgQUxMX0NST05TIG9uIDIwMjYtMDktMTYgYnkgJwogICdXb3JsZCBIdWIgUFIgIzE4MTIgKCJSZW1vdmUgZXh0ZXJuYWwgZXJyb3IgdGVsZW1ldHJ5IGZyb20gV29ybGQgSHViIiAvICcKICAnImZpeDogcmV0aXJlIHByb3ZpZGVyLW9ubHkgd29ya2VyIGRpc3BhdGNoIHNjaGVkdWxlIiksIHdoaWNoIGRlY29tbWlzc2lvbmVkICcKICAndGhlIFNlbnRyeSBlcnJvci10cmFja2luZyBwcm92aWRlci4gY2xhd2JvdC1vcmNoZXN0cmF0b3InJ3Mgb25seSB0YXNrIHdhcyAnCiAgJ1NlbnRyeSBlcnJvciB0cmlhZ2UgKHRhc2tfaWQgY2ItMDEtc2VudHJ5LXRyaWFnZSwgZm9yd2FyZGluZyB0byAnCiAgJy9hcGkvY2xhd2JvdC9zZW50cnktdHJpYWdlKSBhbmQgd2FzIG5ldmVyIHJlcHVycG9zZWQgdG8gYW55dGhpbmcgZWxzZTsgJwogICd0aGF0IHRhc2sgaGFkIGl0c2VsZiBiZWVuIGVycm9yaW5nIG9uIGV2ZXJ5IHJ1biBzaW5jZSBhdCBsZWFzdCAyMDI2LTA4LTIwICcKICAnKCJGYWlsZWQgdG8gcGFyc2UgVVJMIGZyb20gL2FwaS9jbGF3Ym90L3NlbnRyeS10cmlhZ2UiKSwgc28gdGhlIGpvYiBuZXZlciAnCiAgJ2RpZCB1c2VmdWwgd29yayBldmVuIHdoaWxlIGl0IHdhcyBzdGlsbCBiZWluZyBkaXNwYXRjaGVkLiBXb3JsZCBIdWIgbWFpbicncyAnCiAgJ19fdGVzdHNfXy9yZXRpcmVkLWVycm9yLXByb3ZpZGVyLnRlc3QubWpzIHBpbnMgdGhhdCB0aGUgZGlzcGF0Y2hlciBjYXJyaWVzICcKICAnbm8gL2FwaSBvciAvY3JvbiBjbGF3Ym90LW9yY2hlc3RyYXRvciBlbnRyeSBnb2luZyBmb3J3YXJkLiBMYXN0IHN1Y2Nlc3NmdWwgJwogICdkaXNwYXRjaCAyMDI2LTA5LTE1IDA3OjAwOjAwIFVUQywgdGhlIGRheSBiZWZvcmUgcmV0aXJlbWVudDsgemVybyBydW5zICcKICAnc2luY2UuIE5ldmVyIHJlZ2lzdGVyZWQgaGVyZSwgc28gdl9vcGVuY2xhd19qb2Jfc3RhbGVuZXNzIGhhcyB0cmVhdGVkIGEgJwogICdkZWxpYmVyYXRlbHkgZGVjb21taXNzaW9uZWQgam9iIGFzIG9uZSBzaWxlbnRseSBnb2luZyBzdGFsZSBmb3IgZWlnaHQgZGF5cywgJwogICdmZWVkaW5nIGZhbHNlIHBvc2l0aXZlcyBpbnRvIG9wZXJhdGlvbmFsX2FsZXJ0X2V2ZW50cyAnCiAgJyhPcGVuQ2xhd0pvYnNIYXZlR29uZVNpbGVudCwgT3BlbkNsYXdGbGVldExvbmdTaWxlbmNlKS4nLAogIG51bGwKKQpPTiBDT05GTElDVCAoam9iX25hbWUpIERPIE5PVEhJTkc7CgpETyAkYXNzZXJ0X3JlZ2lzdGVyZWQkCkJFR0lOCiAgSUYgTk9UIEVYSVNUUyAoCiAgICBTRUxFQ1QgMSBGUk9NIHB1YmxpYy5jYV9yZXRpcmVkX2Nyb25fam9icwogICAgIFdIRVJFIGpvYl9uYW1lID0gJy9jcm9uL2NsYXdib3Qtb3JjaGVzdHJhdG9yJwogICkgVEhFTgogICAgUkFJU0UgRVhDRVBUSU9OICdjbGF3Ym90LW9yY2hlc3RyYXRvciByZXRpcmVtZW50IHJvdyBkaWQgbm90IGluc3RhbGwnOwogIEVORCBJRjsKICBJRiBFWElTVFMgKAogICAgU0VMRUNUIDEgRlJPTSBwdWJsaWMudl9vcGVuY2xhd19qb2Jfc3RhbGVuZXNzCiAgICAgV0hFUkUgam9iX25hbWUgPSAnL2Nyb24vY2xhd2JvdC1vcmNoZXN0cmF0b3InCiAgKSBUSEVOCiAgICBSQUlTRSBFWENFUFRJT04gJ2NsYXdib3Qtb3JjaGVzdHJhdG9yIGlzIHN0aWxsIHZpc2libGUgdG8gdl9vcGVuY2xhd19qb2Jfc3RhbGVuZXNzIGFmdGVyIHJlZ2lzdGVyaW5nIGl0IGFzIHJldGlyZWQnOwogIEVORCBJRjsKRU5EOwokYXNzZXJ0X3JlZ2lzdGVyZWQkOwoKQ09NTUlUOwo=
+-- 20260923215300_a_retired_error_providers_orchestrator_stays_retired.sql
+--
+-- Production Alerts Fleet, operational_alert_events id=15
+-- (OpenClawJobsHaveGoneSilent, firing continuously since 2026-09-12) and
+-- id=11 (OpenClawFleetLongSilence, closed for its two known jobs by
+-- Smarter-Poker-World-Hub#1963 and the detector fix in
+-- 20260923175730_a_sparse_job_can_still_be_dead.sql, but not for this one).
+--
+-- Read live against production (2026-09-23) before writing this fix:
+-- v_openclaw_job_staleness currently reports exactly three is_stale=true
+-- jobs -- /cron/video-library-scraper (fixed in World Hub #1963, pending
+-- merge), /cron/pokernews-videos (failing inside the smarter-poker-workers
+-- repo, a different codebase this fleet has no access to), and:
+--
+--   job_name                     successes_30d  last_success_at        silent
+--   /cron/clawbot-orchestrator              21  2026-09-15 07:00:00Z   8.6d
+--
+-- /cron/clawbot-orchestrator ran daily and "succeeded" for weeks, but its
+-- one and only task (cron_execution_log.result->results->0, task_id
+-- "cb-01-sentry-triage") had itself been erroring on every single run since
+-- at least 2026-08-20 ("Failed to parse URL from /api/clawbot/sentry-triage"
+-- -- a relative URL built with no base). It never did useful work in the
+-- observed history.
+--
+-- What actually happened on 2026-09-15/16: World Hub PR #1812 ("Remove
+-- external error telemetry from World Hub") formally retired the Sentry
+-- error-tracking provider (2026-09-16 06:15:54 UTC) and, per its own
+-- description, included "fix: retire provider-only worker dispatch
+-- schedule" -- removing /api/clawbot/orchestrator from
+-- scripts/openclaw-cron-dispatcher.py's ALL_CRONS. That repo's
+-- __tests__/retired-error-provider.test.mjs now pins, by name, that the
+-- dispatcher has no /api or /cron clawbot[/-]orchestrator entry at all.
+-- clawbot-orchestrator's sole purpose was forwarding to the retired
+-- provider; it was never repurposed, and its removal from the dispatcher
+-- was correct and deliberate -- the job's last successful dispatch,
+-- 2026-09-15 07:00:00 UTC, is exactly the run before that retirement
+-- landed, and there has not been one since.
+--
+-- The gap: whoever shipped PR #1812 removed the dispatcher entry but never
+-- added a row to ca_retired_cron_jobs, the registry v_openclaw_job_staleness
+-- already checks (NOT EXISTS ... ca_retired_cron_jobs) to exclude a job that
+-- was deliberately taken out of rotation. Without that row, the view has
+-- spent eight days and counting treating a correctly-decommissioned job as
+-- one that is unexpectedly going silent -- exactly the class of oversight
+-- the five existing rows in this table were each added to fix (see
+-- 20260827_horses_are_players_law.sql's siblings and this table's own
+-- history for /cron/player-stats-refresh, /cron/trivia-pvp-cleanup, etc.).
+--
+-- THE FIX: register /cron/clawbot-orchestrator in ca_retired_cron_jobs.
+-- No view or function changes needed -- the exclusion already exists and
+-- takes effect the moment the row exists. Proved in a rolled-back probe
+-- against production immediately before this migration: is_stale read true
+-- before the insert and NULL (excluded from the view entirely) after,
+-- confirmed via a self-aborting DO block per club-arena CLAUDE.md 11.5.
+--
+-- Idempotent: job_name is this table's primary key, so a second application
+-- (e.g. if this lands alongside another agent's insert for the same job) is
+-- a no-op rather than an error.
+--
+-- This migration only INSERTs a row - no function, table, view, index,
+-- trigger or policy - so step 2 of check-migrations-are-live.mjs has nothing
+-- to look up. Step 3 is this:
+--
+-- @live-proof: EXISTS (SELECT 1 FROM public.ca_retired_cron_jobs WHERE job_name = '/cron/clawbot-orchestrator')
+
+BEGIN;
+
+INSERT INTO public.ca_retired_cron_jobs (job_name, retired_at, reason, replaced_by)
+VALUES (
+  '/cron/clawbot-orchestrator',
+  '2026-09-16 06:15:54+00',
+  'Retired from openclaw-cron-dispatcher.py''s ALL_CRONS on 2026-09-16 by '
+  'World Hub PR #1812 ("Remove external error telemetry from World Hub" / '
+  '"fix: retire provider-only worker dispatch schedule"), which decommissioned '
+  'the Sentry error-tracking provider. clawbot-orchestrator''s only task was '
+  'Sentry error triage (task_id cb-01-sentry-triage, forwarding to '
+  '/api/clawbot/sentry-triage) and was never repurposed to anything else; '
+  'that task had itself been erroring on every run since at least 2026-08-20 '
+  '("Failed to parse URL from /api/clawbot/sentry-triage"), so the job never '
+  'did useful work even while it was still being dispatched. World Hub main''s '
+  '__tests__/retired-error-provider.test.mjs pins that the dispatcher carries '
+  'no /api or /cron clawbot-orchestrator entry going forward. Last successful '
+  'dispatch 2026-09-15 07:00:00 UTC, the day before retirement; zero runs '
+  'since. Never registered here, so v_openclaw_job_staleness has treated a '
+  'deliberately decommissioned job as one silently going stale for eight days, '
+  'feeding false positives into operational_alert_events '
+  '(OpenClawJobsHaveGoneSilent, OpenClawFleetLongSilence).',
+  null
+)
+ON CONFLICT (job_name) DO NOTHING;
+
+DO $assert_registered$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ca_retired_cron_jobs
+     WHERE job_name = '/cron/clawbot-orchestrator'
+  ) THEN
+    RAISE EXCEPTION 'clawbot-orchestrator retirement row did not install';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.v_openclaw_job_staleness
+     WHERE job_name = '/cron/clawbot-orchestrator'
+  ) THEN
+    RAISE EXCEPTION 'clawbot-orchestrator is still visible to v_openclaw_job_staleness after registering it as retired';
+  END IF;
+END;
+$assert_registered$;
+
+COMMIT;

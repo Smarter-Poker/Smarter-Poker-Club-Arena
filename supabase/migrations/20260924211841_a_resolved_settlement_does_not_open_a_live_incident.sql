@@ -48,6 +48,13 @@
    shape - raised in the same instant as an already-resolved financial_alerts
    row, never touched again except by escalation, still open - and are
    resolved here with their cause named. */
+
+-- This migration patches fn_ca_financial_alert_to_incident's body via a
+-- dynamic EXECUTE (see below), so it declares no static CREATE OR REPLACE
+-- FUNCTION for tests/a-merged-migration-must-be-live.law.test.ts's object
+-- scan to find - it must prove itself instead:
+-- @live-proof: (SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_ca_financial_alert_to_incident') LIKE '%A RESOLVED SETTLEMENT DOES NOT OPEN A LIVE INCIDENT%'
+
 BEGIN;
 
 DO $mig$

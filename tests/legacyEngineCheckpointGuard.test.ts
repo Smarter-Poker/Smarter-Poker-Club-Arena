@@ -4394,6 +4394,34 @@ describe('an epoch that never reserved a hand is witnessed by its absence (2026-
     expect(f.receipts.size).toBe(0);
   });
 
+  it('a refusal on the second manager commits nothing for the first (2026-09-24)', async () => {
+    const f = mixedFixture();
+    const second = f.originals[1].manager.tournamentId;
+    let observations = 0;
+    f.changeResponse((name: string, data: any) => {
+      if (name !== 'fn_f06_prepare_mixed_manager_custody') return data;
+      if (data.receipt !== null) return data;
+      observations += 1;
+      return data.tournament_id === second
+        ? { __rpcError: { code: 'P0001', message: 'F06_RETIRED_CANONICAL_CHANGED: registrations' } }
+        : data;
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedTable: second,
+    });
+    expect(result.observedDetail).toContain('expected=observe');
+    // Both managers were observed, and the first was NOT committed: no
+    // immutable transfer row exists for the next attempt to refuse against.
+    expect(observations).toBe(2);
+    expect(f.receipts.size).toBe(0);
+    // And nothing was retired: every original is still in the map.
+    for (const { engine } of f.originals)
+      expect(f.server.tableEngines.has(engine.tableId)).toBe(true);
+  });
+
   it('a refused custody RPC names the manager, the RPC, the message and the map', async () => {
     const f = mixedFixture();
     const e = f.waitingOriginal(0, 0);

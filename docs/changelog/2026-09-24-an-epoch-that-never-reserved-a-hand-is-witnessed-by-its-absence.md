@@ -80,3 +80,30 @@ epoch that reserved is still witnessed from its permits; a receipt naming
 neither witness refuses and commits nothing; a `never_reserved` witness for an
 engine the guard can itself place refuses; a refused custody RPC names the
 manager, the RPC, the message and the map.
+
+## Every manager is observed before any is committed
+
+Read against the rows before the next attempt: the second retained manager,
+615783bf (Afternoon Free Buy), will refuse
+`F06_RETIRED_CANONICAL_CHANGED: registrations` in
+`smarter_private.f06_retired_origin_transfer`. One `tournament_players` row
+(user 62ec986d) was attested on 2026-09-21 as `playing`, chip count 0, no
+seat, and now reads `eliminated`, position 12, `eliminated_at` 2026-09-18
+22:12:05: a real bust, recorded after the attestation by the knockout door's
+second caller. The origin and abort receipts are immutable and a real bust is
+not unrecorded to tidy a comparison, so that refusal stands until the
+comparison itself is changed - a change to a custody proof that was proposed
+and NOT applied in this session (the migration was refused by the session's
+own action classifier); it is recorded here for Dan's decision, not routed
+around.
+
+What this PR does about it is the guard's own discipline. The commit call
+inserts an immutable `f06_manager_custody_transfers` row carrying the run's
+release checkpoint, and the guard observed and committed each manager in
+turn, so the second manager's refusal would have stranded the first manager's
+row and every later attempt would have refused it as
+`F06_MIXED_TRANSFER_CHANGED` for ever. The two calls are two phases now: every
+manager is observed and checked before the first commit is sent, and a
+refusal anywhere in the first phase commits nothing. Pinned: a refusal on the
+second manager's observation leaves no receipt, no transfer, and every
+original in the map.

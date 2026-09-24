@@ -2079,6 +2079,31 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           }
         }
         require(originalDispositions === 1, 'mixed_original_disposition_set_changed');
+        capture.commit = { rpc, input, proof };
+      }
+      /* ═══ EVERY MANAGER IS OBSERVED BEFORE ANY IS COMMITTED (2026-09-24) ═══
+
+         The commit call (`p_expected` set) INSERTS an immutable
+         `f06_manager_custody_transfers` row carrying this run's
+         `release_checkpoint` (run id, ownership token, break times). Until
+         today each manager was observed and committed in turn, so a refusal
+         on the SECOND manager's observation - which the rows say is exactly
+         what the next attempt will meet: `F06_RETIRED_CANONICAL_CHANGED:
+         registrations` on 615783bf, a bust recorded after its origin was
+         attested - would have left the FIRST manager's row behind, and every
+         later attempt would then refuse that manager as
+         `F06_MIXED_TRANSFER_CHANGED` against a row nothing can delete. The
+         wedge one level up (CLAUDE.md 10.86 rule 4), made by this guard.
+
+         So the two calls are two phases. Every manager's observation, and
+         every check this guard makes of it, completes before the first commit
+         is sent; a refusal anywhere in the first phase commits nothing. The
+         database still holds each commit to its own observation
+         (`F06_MIXED_CANONICAL_CHANGED`), so nothing that could move between
+         the phases is admitted by the split. */
+      for (const capture of retainedManagers) {
+        const { manager, proposal, local } = capture;
+        const { rpc, input, proof } = capture.commit;
         const committed = await rpc('fn_f06_prepare_mixed_manager_custody', {
           ...input,
           p_expected: proof,

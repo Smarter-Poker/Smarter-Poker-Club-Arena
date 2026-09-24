@@ -17,14 +17,22 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+if 'PG_BIN' not in os.environ and not Path(PG_BIN, 'initdb').exists():
+    # A Linux runner: the newest installed server's binaries.
+    _found = sorted(Path('/usr/lib/postgresql').glob('*/bin/initdb'), key=lambda p: int(p.parts[-3]) if p.parts[-3].isdigit() else 0)
+    if _found:
+        PG_BIN = str(_found[-1].parent)
 PORT = '55611'
 DB = 'diamond_club_commerce_probe'
-MIGRATION = ROOT / 'supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql'
+MIGRATIONS = [ROOT / 'supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql',
+              ROOT / 'supabase/migrations/20260924033509_club_and_union_diamond_commerce_fixes.sql']
+MIGRATION = MIGRATIONS[-1]
 FIXTURE = ROOT / 'tests/fixtures/accounting-delivery/diamond-games'
 
 work = Path(tempfile.mkdtemp(prefix='diamond-club-commerce.'))
@@ -79,11 +87,19 @@ def stop_cluster():
 
 def sql(q, ok=True, db=DB, user=None, role=None):
     """One statement (or script) in one transaction. Optional synthetic identity."""
+    # Present identity exactly as PostgREST does: the whole claims object in
+    # request.jwt.claims AND the database role switched to the JWT role. The
+    # production guards read both (fn_is_service_context reads the claims
+    # object; EXECUTE grants follow the role), so a harness that only set the
+    # legacy per-claim settings ran every call as an unguarded superuser.
     prefix = ''
     if user:
         prefix += f"SELECT set_config('request.jwt.claim.sub','{user}',false);"
     if role:
         prefix += f"SELECT set_config('request.jwt.claim.role','{role}',false);"
+    if user or role:
+        claims = json.dumps({k: v for k, v in (('sub', user), ('role', role or 'authenticated')) if v})
+        prefix += f"SELECT set_config('request.jwt.claims','{claims}',false); SET ROLE {role or 'authenticated'};"
     r = run(PSQL + ['-d', db, '-At', '-c', prefix + q])
     if ok and r.returncode:
         raise AssertionError(f'{q[:200]}\n{r.stderr}')
@@ -134,9 +150,12 @@ def load_fixture():
 
 
 def apply_migration():
-    r = run(PSQL + ['-d', DB, '-f', str(MIGRATION)])
-    if r.returncode:
-        raise SystemExit('migration failed:\n' + r.stderr)
+    # The installed migration, then its forward fix, in order: the path
+    # production takes. Each file is its own transaction.
+    for m in MIGRATIONS:
+        r = run(PSQL + ['-d', DB, '-f', str(m)])
+        if r.returncode:
+            raise SystemExit(f'migration {m.name} failed:\n' + r.stderr)
 
 
 # Synthetic identities.
@@ -260,6 +279,16 @@ def scenarios():
     m = rpc('fn_ca_commerce_set_renewal', f"'{trial_ent[0]['id']}',true,700,'capacity_100',1", A)
     check(m['success'] and m['state'] == 'authorized' and m['due_at'] == t1['trial_end'], 'D02 post-trial authorization attaches to the trial right at the trial end')
     check(balance(A) == 1000, 'D02 an authorization records no debit')
+    # The page cancels a post-trial authorization without naming a product.
+    mc = rpc('fn_ca_commerce_set_renewal', f"'{trial_ent[0]['id']}',false,NULL,NULL,NULL", A)
+    check(mc.get('success') and mc.get('state') == 'cancelled', 'D50 a post-trial authorization is cancelled without naming its product', mc)
+    m250 = rpc('fn_ca_commerce_set_renewal', f"'{trial_ent[0]['id']}',true,1500,'capacity_250',1", A)
+    st = rpc('fn_ca_commerce_scope_status', f"'club','{C1}'", A)
+    check(m250.get('success') and m250.get('mandate_id') == m['mandate_id'] and st.get('success')
+          and count(f"public.ca_commerce_renewal_mandates WHERE entitlement_id='{trial_ent[0]['id']}'") == 1,
+          'D09 one right carries one renewal mandate: authorizing another product replaces it, never a second charge for the same period', m250)
+    m = rpc('fn_ca_commerce_set_renewal', f"'{trial_ent[0]['id']}',true,700,'capacity_100',1", A)
+    check(m['success'] and m['state'] == 'authorized' and m['sku'] == 'capacity_100' and m['max_diamonds'] == 700, 'D09 the owner re-authorizes the first paid period')
 
     # ---- D27 notices --------------------------------------------------------
     check(count(f"public.ca_commerce_notices WHERE user_id='{A}' AND kind='club_commerce_trial_reminder'") == 2, 'D27 two trial reminders are recorded durably')
@@ -278,6 +307,10 @@ def scenarios():
     adm = rpc('fn_ca_commerce_admission', f"'club','{C1}','open_table'", A)
     check(adm['allowed'] and (not adm['would_allow']) and adm['reason'] == 'no_effective_entitlement' and not adm['enforced'],
           'D22 after expiry with enforcement in shadow the answer names the refusal without refusing')
+    st_c1 = rpc('fn_ca_commerce_scope_status', f"'club','{C1}'", A)
+    auth_renewals = [e['renewal'] for e in st_c1['entitlements'] if e.get('renewal')]
+    check(len(auth_renewals) == 1 and auth_renewals[0]['sku'] == 'capacity_100' and auth_renewals[0]['quantity'] == 1,
+          'D50 the status names the product and quantity a standing authorization will buy', auth_renewals)
     token = str(uuid.uuid4())
     claimed = sql(f"SELECT count(*) FROM public.fn_ca_commerce_claim_due_renewals('{token}',10)", role='service_role')
     check(int(claimed) == 1, 'D09 the due first-period authorization is claimed under a lease')
@@ -287,7 +320,29 @@ def scenarios():
     lost = json.loads(sql(f"SELECT public.fn_ca_commerce_execute_renewal('{mid}','{uuid.uuid4()}')", role='service_role'))
     check(lost.get('error') == 'lease_lost', 'D73 execution under a stale lease is refused')
     before = balance(A)
-    ex = json.loads(sql(f"SELECT public.fn_ca_commerce_execute_renewal('{mid}','{token}')", role='service_role'))
+    # Lock order: an upgrade or refund holds the scope lock and then writes the
+    # mandate row. The renewal consumer racing it must wait on the scope, not
+    # hold the mandate and wait on the scope (a deadlock that aborts one side).
+    scope_key = f"ca_commerce_scope:club:{C1}"
+    race = {}
+
+    def scope_holder():
+        race['holder'] = run(PSQL + ['-d', DB, '-At', '-v', 'ON_ERROR_STOP=1', '-c',
+                                     f"BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('{scope_key}',0)); SELECT pg_sleep(1.2); "
+                                     f"UPDATE public.ca_commerce_renewal_mandates SET updated_at = now() WHERE id = '{mid}'; COMMIT;"])
+
+    def renewal_runner():
+        time.sleep(0.4)
+        try:
+            race['ex'] = json.loads(sql(f"SELECT public.fn_ca_commerce_execute_renewal('{mid}','{token}')", role='service_role'))
+        except AssertionError as e:
+            race['ex'] = {'error': 'raised', 'detail': str(e)[-300:]}
+    ths = [threading.Thread(target=scope_holder), threading.Thread(target=renewal_runner)]
+    [t.start() for t in ths]; [t.join() for t in ths]
+    check(race['holder'].returncode == 0 and 'deadlock' not in (race['holder'].stderr or '') and race['ex'].get('success'),
+          'D70 renewal execution takes the scope lock before the mandate: no deadlock against an upgrade or refund in flight',
+          {'holder': (race['holder'].stderr or '')[-300:], 'ex': race['ex']})
+    ex = race['ex']
     check(ex['success'] and ex['outcome'] == 'renewed' and int(ex['charged']) == 700 and balance(A) == before - 700,
           'D03 the first paid period charges exactly the accepted amount at the trial end')
     ent = json.loads(sql(f"SELECT to_jsonb(e) FROM public.ca_commerce_entitlements e WHERE e.purchase_id='{ex['purchase_id']}'"))
@@ -340,6 +395,9 @@ def scenarios():
     b1x = buy(P, q1['quote_id'], 'someone-elses-key')
     check(b1x.get('error') == 'quote_belongs_to_another_actor', 'D19 a quote is bound to its actor')
     check(count(f"public.ca_commerce_entitlements WHERE scope_id='{C1}' AND kind='capacity' AND state='effective'") == 2, 'two consecutive capacity periods, no overlap')
+    qup = quote(A, 'club', C1, 'capacity_250', purchase_kind='upgrade')
+    check(qup.get('success') and qup['lines'][0]['replaces_entitlement_id'] == ent_capacity and qup['lines'][0]['ends_at'][:19] == ent['ends_at'].replace(' ', 'T')[:19],
+          'D11 an upgrade amends the current right even when the next period is already prepaid', qup)
 
     # D06: expired quote, catalog change, owner change.
     q3 = quote(A, 'club', C1, 'club_insurance_module')
@@ -351,7 +409,20 @@ def scenarios():
     pub = rpc('fn_ca_commerce_price_publish', f"'{d['price_version_id']}',NULL", S)
     check(pub['success'], 'D74 staff publishes a new price version prospectively')
     b4 = buy(A, q4['quote_id'], 'catalog-changed-0001')
-    check(b4.get('error') == 'context_changed', 'D06 a catalog change withdraws an unconsumed quote instead of charging a different amount')
+    check(b4.get('error') == 'context_changed', 'D06 a catalog change withdraws an unconsumed quote instead of charging a different amount', b4)
+    # The staff publications run under the staff browser identity; the
+    # version readings between them are the harness's own instrument, taken
+    # as the database owner (the internal helper has no browser grant).
+    same_tx = sql("""BEGIN; RESET ROLE; CREATE TEMP TABLE cv(v text); GRANT ALL ON cv TO PUBLIC; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version(); SET ROLE authenticated;
+      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_draft('club_insurance_module',260,'flat',NULL,'Same second authority one')->>'price_version_id')::uuid, NULL);
+      RESET ROLE; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version(); SET ROLE authenticated;
+      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_draft('club_insurance_module',270,'flat',NULL,'Same second authority two')->>'price_version_id')::uuid, NULL);
+      RESET ROLE; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version();
+      SELECT count(DISTINCT v) FROM cv; ROLLBACK;""", user=S, role='authenticated')
+    check(same_tx == '3', 'D06 two publications inside one second still yield distinct catalog versions, so no quote survives either', same_tx)
+    dsr = rpc('fn_ca_commerce_price_draft', "'club_insurance_module',280,'flat',NULL,'Service route price authority'", None, role='service_role')
+    r = rpc('fn_ca_commerce_price_publish', f"'{dsr['price_version_id']}',NULL", None, role='service_role')
+    check(r.get('error') == 'publisher_required', 'D74 a publication without a named publisher is refused in JSON, not a raw trigger error', r)
     check(count("public.ca_commerce_price_versions WHERE sku='club_insurance_module' AND status='published'") == 1, 'D74 one published price per product after publication')
     check(p1['lines'][0]['unit_diamonds'] == 700 and json.loads(sql(f"SELECT to_jsonb(p) FROM public.ca_commerce_purchases p WHERE p.id='{p1['id']}'"))['lines'][0]['price_version_id'] == p1['lines'][0]['price_version_id'],
           'D18 an accepted purchase keeps its price version and amount')
@@ -406,9 +477,14 @@ def scenarios():
     sql(f"UPDATE public.profiles SET diamond_multiplier=2.00 WHERE id='{A}'")
     r = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,200,'Fixture: partial return of an unused right','refund-0001'", A)
     check(r.get('error') == 'staff_required', 'D19 refunds are issued by staff, not self-served')
+    before_browser = balance(A)
+    r = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,200,'Fixture: staff browser session','refund-browser-0001'", S)
+    check(r.get('error') == 'refund_requires_service_route' and balance(A) == before_browser
+          and count("public.ca_commerce_refunds WHERE request_key='refund-browser-0001'") == 0,
+          'R2-A05 a staff browser session is told in JSON that refunds travel the service route, before any work', r)
     sql(f"INSERT INTO public.diamond_debts(user_id,purchase_id,amount,reason) VALUES ('{A}',gen_random_uuid(),50,'fixture chargeback receivable')")
     before = balance(A)
-    r1 = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,200,'Fixture: partial return of an unused right','refund-0001'", S)
+    r1 = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,200,'Fixture: partial return of an unused right','refund-0001'", S, role='service_role')
     check(r1['success'] and r1['gross'] == 200 and r1['debt_settled'] == 50 and r1['net_increase'] == 150 and balance(A) == before + 150,
           'D36 / D38 a refund to a 2x-multiplier wallet returns exactly 200 gross, settles 50 of debt and adds 150 to the balance')
     tx = json.loads(sql(f"SELECT to_jsonb(t) FROM public.diamond_transactions t WHERE t.id='{r1['diamond_tx_id']}'"))
@@ -416,14 +492,17 @@ def scenarios():
     mr = mint_rows(r1['diamond_tx_id'])
     check(len(mr) == 1 and mr[0]['action'] == 'mint' and float(mr[0]['amount']) == 200, 'D17 the refund is registered as one exact issuance, no excess diamonds')
     check(r1['lot_restoration'] and sum(x['restored'] for x in r1['lot_restoration']) == 200, 'D39 / D65 operation-linked lot provenance is restored, bounded by what this purchase consumed')
-    r1r = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,200,'Fixture: partial return of an unused right','refund-0001'", S)
+    r1r = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,200,'Fixture: partial return of an unused right','refund-0001'", S, role='service_role')
     check(r1r['success'] and r1r['is_replay'] and r1r['charged_this_attempt'] == 0 and balance(A) == before + 150, 'D17 a refund replay credits nothing twice')
-    r2 = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,600,'Fixture: attempt beyond the refundable remainder','refund-0002'", S)
+    r2 = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,600,'Fixture: attempt beyond the refundable remainder','refund-0002'", S, role='service_role')
     check(r2.get('error') == 'exceeds_refundable' and r2['refundable'] == 500, 'D40 cumulative returns stay within the net paid allocation')
-    r3 = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,500,'Fixture: return the remainder in full','refund-0003'", S)
+    r3 = rpc('fn_ca_commerce_refund', f"'{b9['purchase_id']}',0,500,'Fixture: return the remainder in full','refund-0003'", S, role='service_role')
     check(r3['success'] and r3['entitlement_revoked'], 'D17 a full return revokes only that line right')
     check(count(f"public.ca_commerce_entitlements WHERE purchase_id='{b9['purchase_id']}' AND state='revoked'") == 1
           and count(f"public.ca_commerce_entitlements WHERE scope_id='{C1}' AND kind='capacity' AND state='effective'") == 2, 'D17 other overlapping paid rights remain valid')
+    rec = {x['purchase_id']: x for x in rpc('fn_ca_commerce_receipts', f"'club','{C1}'", A)}
+    check(rec[b9['purchase_id']]['entitlement_status'] == 'revoked' and rec[b1['purchase_id']]['entitlement_status'] == 'effective',
+          'D68 a recovered receipt reports the present state of its right: a fully refunded right reads revoked', {k: v['entitlement_status'] for k, v in rec.items()})
     sql(f"UPDATE public.profiles SET diamond_multiplier=1.00 WHERE id='{A}'")
 
     # ---- D64 wallet headroom ------------------------------------------------
@@ -431,27 +510,48 @@ def scenarios():
     # (a direct wallet write is refused by DR6; use the canonical credit door to approach the ceiling)
     cur = balance(A)
     sql(f"SELECT public.add_diamonds_to_balance('{A}',{2147483600 - cur},'purchase','Fixture: approach the wallet ceiling','ceiling-{uuid.uuid4()}')", role='service_role')
-    r4 = rpc('fn_ca_commerce_refund', f"'{b1['purchase_id']}',0,100,'Fixture: refund into a wallet at its ceiling','refund-0004'", S)
+    r4 = rpc('fn_ca_commerce_refund', f"'{b1['purchase_id']}',0,100,'Fixture: refund into a wallet at its ceiling','refund-0004'", S, role='service_role')
     check(not r4['success'] and count("public.ca_commerce_refunds WHERE request_key='refund-0004'") == 0 and balance(A) == 2147483600,
           'D64 a refund the wallet cannot receive is refused whole and remains owed, nothing partially credited')
-    sql(f"SELECT public.deduct_diamonds('{A}',2147483600-2000,'Fixture: leave the ceiling','fixture_spend','fixture_spend','{{}}'::jsonb,'ceiling-out-{uuid.uuid4()}',0)", user=A, role='authenticated')
-    r4b = rpc('fn_ca_commerce_refund', f"'{b1['purchase_id']}',0,100,'Fixture: refund into a wallet at its ceiling','refund-0004'", S)
+    sql(f"SELECT public.deduct_diamonds('{A}',2147483600-2000,'Fixture: leave the ceiling','fixture_spend','fixture_spend','{{}}'::jsonb,'ceiling-out-{uuid.uuid4()}',0)", role='service_role')
+    r4b = rpc('fn_ca_commerce_refund', f"'{b1['purchase_id']}',0,100,'Fixture: refund into a wallet at its ceiling','refund-0004'", S, role='service_role')
     check(r4b['success'] and not r4b['is_replay'] and r4b['gross'] == 100, 'D64 the same refund request succeeds once the wallet has room, exactly once')
+    outs = {}
+
+    def refund_race(name):
+        try:
+            outs[name] = rpc('fn_ca_commerce_refund', f"'{b1['purchase_id']}',0,50,'Fixture: two staff tabs submit one refund','refund-race-0001'", S, role='service_role')
+        except AssertionError as e:
+            outs[name] = {'error': 'raised', 'detail': str(e)[-300:]}
+    before = balance(A)
+    ths = [threading.Thread(target=refund_race, args=(n,)) for n in ('r1', 'r2')]
+    [t.start() for t in ths]; [t.join() for t in ths]
+    check(all(v.get('success') for v in outs.values()) and sorted(v['is_replay'] for v in outs.values()) == [False, True] and balance(A) == before + 50,
+          'D17 two concurrent submissions of one refund request credit once and both return its receipt', outs)
 
     # ---- D11 / D54 upgrades --------------------------------------------------
     # Owner X: a fresh club with a paid 100-member right at exactly half its period.
     rpc('fn_ca_commerce_activate_trial', f"'club','{C4}'", X)
     sql(f"UPDATE public.ca_commerce_trials SET trial_start = trial_start - interval '800 hours', trial_end = trial_end - interval '800 hours' WHERE operator_id='{X}'")
     sql(f"UPDATE public.ca_commerce_entitlements SET starts_at = starts_at - interval '800 hours', ends_at = ends_at - interval '800 hours' WHERE trial_id=(SELECT id FROM public.ca_commerce_trials WHERE operator_id='{X}')")
+    # X holds one lot whose arena reserve exceeds its remainder (available -100) and one open lot of 200.
+    sql(f"INSERT INTO public.diamond_purchase_lots(user_id,purchase_id,issued,consumed,refunded,arena_reserved) VALUES ('{X}',gen_random_uuid(),600,300,0,400)")
+    sql(f"INSERT INTO public.diamond_purchase_lots(user_id,purchase_id,issued) VALUES ('{X}',gen_random_uuid(),200)")
     qx = quote(X, 'club', C4, 'capacity_100')
     bx = buy(X, qx['quote_id'], 'x-first-0001')
-    check(bx['success'] and bx['charged_this_attempt'] == 700, 'upgrade fixture: X holds a paid 100-member period')
+    check(bx['success'] and bx['charged_this_attempt'] == 700, 'upgrade fixture: X holds a paid 100-member period', bx)
+    px = json.loads(sql(f"SELECT to_jsonb(p) FROM public.ca_commerce_purchases p WHERE p.id='{bx['purchase_id']}'"))
+    check(sum(x['consumed_delta'] for x in px['lot_allocation']) == 200,
+          'R2-A03 an over-reserved lot offers nothing: the expected split equals what the canonical consumer takes, so a funded purchase is not refused', px['lot_allocation'])
     ex_id = bx['lines'][0]['entitlement_id']
     sql(f"UPDATE public.ca_commerce_entitlements SET starts_at = now() - interval '360 hours', ends_at = now() + interval '360 hours' WHERE id='{ex_id}'")
     qu = quote(X, 'club', C4, 'capacity_250', purchase_kind='upgrade')
     check(qu['success'] and qu['lines'][0]['credit'] in (349, 350) and qu['lines'][0]['gross'] in (750, 751) and 400 <= qu['net'] <= 402,
           'D11 a 700 -> 1,500 upgrade at half period credits the unused 350 against 750 for the remainder: 400 diamonds, whole diamonds, residue never in favor of free capacity', qu['lines'][0])
     before = balance(X)
+    mis = buy(X, qu['quote_id'], 'x-upgrade-mislabel', kind='purchase')
+    check(mis.get('error') == 'purchase_kind_mismatch' and count(f"public.ca_commerce_purchases WHERE request_key='x-upgrade-mislabel'") == 0,
+          'D68 an upgrade quote cannot be committed under another kind: the receipt always names what was bought', mis)
     bu = buy(X, qu['quote_id'], 'x-upgrade-0001', kind='upgrade')
     check(bu['success'] and bu['charged_this_attempt'] == qu['net'] and balance(X) == before - qu['net'], 'D11 the upgrade charges once, exactly the quoted amount')
     old = json.loads(sql(f"SELECT to_jsonb(e) FROM public.ca_commerce_entitlements e WHERE e.id='{ex_id}'"))
@@ -468,6 +568,16 @@ def scenarios():
           'D54 a staged upgrade costs the same as the direct upgrade within whole-diamond residues, and residues never buy free capacity', {'staged_total': staged_total, 'q2': qu2['lines'][0]})
     qd = quote(X, 'club', C4, 'capacity_60', purchase_kind='upgrade')
     check(qd.get('error') == 'downgrade_applies_at_next_period', 'D11 a downgrade is prospective, never an interrupted period')
+    r = rpc('fn_ca_commerce_refund', f"'{bx['purchase_id']}',0,700,'Fixture: refund of a right already credited into an upgrade','refund-x-0001'", S, role='service_role')
+    check(r.get('error') == 'exceeds_refundable' and r.get('refundable') == 700 - qu['lines'][0]['credit'],
+          'D40 / R2 6.4 unused value credited into an upgrade cannot also come back as a refund', r)
+    before = balance(X)
+    rb = rpc('fn_ca_commerce_refund', f"'{bu['purchase_id']}',0,100,'Fixture: partial return of the upgraded right','refund-x-0002'", S, role='service_role')
+    check(rb['success'] and balance(X) == before + 100, 'fixture: a partial refund of the upgraded right')
+    qu3 = quote(X, 'club', C4, 'capacity_500', purchase_kind='upgrade')
+    basis = new['value_basis'] - 100
+    check(qu3['success'] and basis - 10 <= qu3['lines'][0]['credit'] <= basis,
+          'D54 / R2 4.4 an upgrade never credits value that a refund already returned', {'basis_after_refund': basis, 'line': qu3['lines'][0]})
 
     # ---- D76 bounds --------------------------------------------------------------
     r = rpc('fn_ca_commerce_quote', f"'club','{C1}','[]'::jsonb,NULL,NULL,'purchase'", A)
@@ -478,6 +588,9 @@ def scenarios():
     check(r.get('error') == 'quantity_out_of_range', 'D76 a zero quantity is refused')
     r = rpc('fn_ca_commerce_quote', f"'union','{U}','{json.dumps([{'sku': 'union_back_office', 'quantity': 501}])}'::jsonb,NULL,NULL,'purchase'", B)
     check(r.get('error') == 'quantity_out_of_range', 'D76 an excessive quantity is refused')
+    for bad in ('abc', 2.5, -1):
+        r = rpc('fn_ca_commerce_quote', f"'union','{U}','{json.dumps([{'sku': 'union_back_office', 'quantity': bad}])}'::jsonb,NULL,NULL,'purchase'", B)
+        check(r.get('error') == 'quantity_out_of_range', f'D76 a malformed quantity ({bad!r}) is a named refusal, never a raw cast error', r)
     r = rpc('fn_ca_commerce_quote', f"'club','{C1}','{json.dumps([{'sku': 'capacity_100'}, {'sku': 'capacity_250'}])}'::jsonb,NULL,NULL,'purchase'", A)
     check(r.get('error') == 'duplicate_line', 'D76 two lines of one kind cannot expand rights twice')
     r = rpc('fn_ca_commerce_quote', f"'club','{C1}','{json.dumps([{'sku': 'report_export_7d'}])}'::jsonb,NULL,NULL,'purchase'", A)
@@ -496,6 +609,8 @@ def scenarios():
     check(qb['success'] and qb['net'] == 2000, 'union back office prices 1,000 per covered club: 2 clubs = 2,000')
     bb = buy(B, qb['quote_id'], 'union-bo-0001')
     check(bb['success'] and bb['charged_this_attempt'] == 2000, 'D46 covered quantity is a purchase, not an affiliation side effect')
+    r = quote(B, 'union', U, 'union_back_office', qty=1, purchase_kind='upgrade')
+    check(r.get('error') == 'downgrade_applies_at_next_period', 'D11 fewer covered clubs mid-period is a downgrade: it applies at the next period and never forfeits paid value', r)
     sql(f"INSERT INTO public.union_clubs(union_id,club_id) VALUES ('{U}','{C1}'); UPDATE public.clubs SET union_id='{U}' WHERE id='{C1}'")
     check(balance(B) == 5000 - 2000 and count(f"public.ca_commerce_entitlements WHERE scope_id='{C1}' AND kind='capacity' AND state='effective'") == 2,
           'D45 / D46 a club joining a union with back office only is neither debited nor refunded; its standalone capacity stands')
@@ -510,6 +625,17 @@ def scenarios():
     check(r.get('error') == 'sponsor_payer_required', 'D42 a delegate cannot quote against the sponsor budget from an end-user session')
     r = rpc('fn_ca_commerce_quote', f"'club','{C4}','{lines('capacity_60')}'::jsonb,'{sp['sponsorship_id']}',NULL,'purchase'", B)
     check(r.get('error') == 'sponsorship_not_effective', 'D12 an unrelated club cannot use the union budget')
+    # The union's own shell club carries clubs.union_id but is not a covered
+    # (union_clubs) club: the sponsorship does not reach it.
+    shell = str(uuid.uuid4())
+    sql(f"INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES ('{shell}','Commerce Union Shell','{B}','{U}',0,0,true)")
+    r = rpc('fn_ca_commerce_quote', f"'club','{shell}','{lines('capacity_60')}'::jsonb,'{sp['sponsorship_id']}',NULL,'purchase'", B)
+    check(r.get('error') == 'sponsorship_not_effective', 'D12 membership is the union_clubs link: the union shell club is not covered by its sponsorship', r)
+    ust = rpc('fn_ca_commerce_scope_status', f"'union','{U}'", B)
+    linked = sorted(sql(f"SELECT string_agg(club_id::text, ',' ORDER BY club_id) FROM public.union_clubs WHERE union_id='{U}'").split(','))
+    check(sorted(c['club_id'] for c in ust['covered_clubs']) == linked and shell not in linked and ust['covered_club_count'] == len(linked)
+          and all('roster_count' in c and 'trial_active' in c for c in ust['covered_clubs']),
+          'D12 the union status lists exactly its covered clubs, with roster and trial state, for the sponsor to act on', ust.get('covered_clubs'))
     qs = rpc('fn_ca_commerce_quote', f"'club','{C3}','{lines('capacity_60')}'::jsonb,'{sp['sponsorship_id']}',NULL,'purchase'", B)
     check(qs['success'] and qs['payer_id'] == B and qs['net'] == 500, 'D12 the sponsor pays for a covered club at the catalog price, no discount')
     # Spoofed payer: the sponsor's quote submitted by the club owner's session.
@@ -520,6 +646,9 @@ def scenarios():
     check(bs['success'] and balance(B) == before_b - 500 and balance(D) == before_d, 'D12 the sponsor is debited once; the club owner is not debited')
     check(count(f"public.ca_commerce_entitlements WHERE scope_id='{C3}' AND kind='capacity' AND source='sponsor' AND state='effective'") == 1, 'D12 the beneficiary holds the right')
     check(int(sql(f"SELECT committed FROM public.ca_commerce_sponsorships WHERE id='{sp['sponsorship_id']}'")) == 500, 'D43 committed charges are tracked against the budget')
+    rs = [r for r in rpc('fn_ca_commerce_receipts', 'NULL,NULL', B) if r['purchase_id'] == bs['purchase_id']]
+    check(len(rs) == 1 and rs[0]['sponsorship_id'] == sp['sponsorship_id'] and rs[0]['scope_id'] == C3,
+          'D12 the sponsor sees the sponsored club receipt, and it names the sponsorship that paid', rs)
     # D43: two covered clubs race for the remaining 500 with 500 each: exactly one wins.
     qs2 = rpc('fn_ca_commerce_quote', f"'club','{C2}','{lines('capacity_60')}'::jsonb,'{sp['sponsorship_id']}',NULL,'purchase'", B)
     qs3 = rpc('fn_ca_commerce_quote', f"'club','{C3}','{lines('capacity_60')}'::jsonb,'{sp['sponsorship_id']}',NULL,'purchase'", B)
@@ -556,6 +685,9 @@ def scenarios():
     check(ex['outcome'] == 'needs_attention' and ex['reason'] == 'price_above_accepted_ceiling' and balance(A) == before,
           'D10 a price increase above the accepted ceiling does not auto-charge and leaves a visible attention state')
     check(count(f"public.notifications WHERE type='club_commerce_renewal_attention' AND user_id='{A}'") == 1, 'D27 the attention notice is delivered once')
+    msg = sql(f"SELECT message FROM public.notifications WHERE type='club_commerce_renewal_attention' AND user_id='{A}' ORDER BY created_at DESC LIMIT 1")
+    check('_' not in msg and 'Up To 100 Approved Members' in msg and 'Price Above Accepted Ceiling' in msg,
+          'Title Case copy: the attention notice names the product and the reason in words, never a code', msg)
     # D50: cancellation before the due renewal.
     m2 = rpc('fn_ca_commerce_set_renewal', f"'{ent_capacity}',true,900,NULL,NULL", A)
     check(m2['success'] and m2['state'] == 'authorized' and m2['max_diamonds'] == 900, 'D09 the owner re-authorizes at a higher ceiling')
@@ -572,6 +704,21 @@ def scenarios():
     ex = json.loads(sql(f"SELECT public.fn_ca_commerce_execute_renewal('{m4['mandate_id']}','{token}')", role='service_role'))
     check(ex['outcome'] == 'needs_attention' and ex['reason'] == 'lapsed_beyond_lateness_policy' and balance(A) == before,
           'D49 a renewal resumed beyond the accepted lateness window charges nothing and creates no historic debt')
+    check(count(f"public.notifications WHERE type='club_commerce_renewal_attention' AND user_id='{A}'") == 2,
+          'D27 a re-authorized renewal that fails again notifies again: one notice per failed attempt')
+    # The first paid period ends while the manually prepaid next period already covers its end.
+    m5 = rpc('fn_ca_commerce_set_renewal', f"'{ent_capacity}',true,900,NULL,NULL", A)
+    sql(f"""UPDATE public.ca_commerce_entitlements
+          SET starts_at = starts_at - ((SELECT ends_at FROM public.ca_commerce_entitlements WHERE id='{ent_capacity}') - now() + interval '1 minute'),
+              ends_at = ends_at - ((SELECT ends_at FROM public.ca_commerce_entitlements WHERE id='{ent_capacity}') - now() + interval '1 minute')
+        WHERE scope_id='{C1}' AND kind='capacity'""")
+    sql(f"UPDATE public.ca_commerce_renewal_mandates m SET due_at = e.ends_at FROM public.ca_commerce_entitlements e WHERE e.id = m.entitlement_id AND m.id='{m5['mandate_id']}'")
+    token = str(uuid.uuid4())
+    n = int(sql(f"SELECT count(*) FROM public.fn_ca_commerce_claim_due_renewals('{token}',10)", role='service_role'))
+    before, before_p = balance(A), count('public.ca_commerce_purchases')
+    ex = json.loads(sql(f"SELECT public.fn_ca_commerce_execute_renewal('{m5['mandate_id']}','{token}')", role='service_role'))
+    check(n == 1 and ex.get('outcome') == 'needs_attention' and ex.get('reason') == 'period_already_covered' and balance(A) == before and count('public.ca_commerce_purchases') == before_p,
+          'R2 4.2 / 4.6 a renewal buys only the period beginning at its due instant; a prepaid period already covering it is never billed again ahead of time', ex)
 
     # ---- D22 enforcement, D63 -------------------------------------------------
     st = rpc('fn_ca_commerce_settings_set', "NULL,NULL,now(),false", S)
@@ -614,6 +761,16 @@ def scenarios():
     [t.start() for t in ths]; [t.join() for t in ths]
     check(outs['a']['success'] and outs['x']['success'], 'D70 unrelated owners purchase concurrently without a global lock', outs)
 
+    # ---- D74 prospective publication ------------------------------------------
+    d1 = rpc('fn_ca_commerce_price_draft', "'capacity_60',550,'flat',NULL,'Test prospective price authority'", S)
+    p1 = rpc('fn_ca_commerce_price_publish', f"'{d1['price_version_id']}',now() + interval '1 hour'", S)
+    d2 = rpc('fn_ca_commerce_price_draft', "'capacity_60',600,'flat',NULL,'Test earlier prospective price'", S)
+    p2 = rpc('fn_ca_commerce_price_publish', f"'{d2['price_version_id']}',now() + interval '30 minutes'", S)
+    qf = quote(X, 'club', C4, 'capacity_60')
+    rows = json.loads(sql("SELECT jsonb_agg(status ORDER BY version) FROM public.ca_commerce_price_versions WHERE sku='capacity_60'"))
+    check(p1.get('success') and p2.get('success') and qf.get('success') and qf['net'] == 500 and rows == ['published', 'retired', 'published'],
+          'D74 a prospective price leaves the current price in effect until its date; a later-dated version replaced before it began never takes effect', {'p1': p1, 'p2': p2, 'qf': qf.get('error'), 'rows': rows})
+
     # ---- D20 conservation ---------------------------------------------------------
     conservation = json.loads(sql("""
       SELECT jsonb_build_object(
@@ -632,6 +789,9 @@ def scenarios():
           'D20 wallet, journal and register conservation: every paid diamond has one spend and one retirement; every refund one exact issuance; waivers move nothing', conservation)
     check(count("pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relname IN ('tables','table_seats','tournaments','tournament_players','club_members') AND t.tgname LIKE '%commerce%'") == 0,
           'D21 / D28 no commerce trigger sits in the gameplay or seating path')
+    r = sql(f"UPDATE public.profiles SET diamonds = diamonds + 1 WHERE id = '{P}'", ok=False, user=P, role='authenticated')
+    check(r.returncode != 0 and ('server-managed' in r.stderr or 'permission denied' in r.stderr),
+          'R2-A05 a signed-in player still cannot write a wallet directly: the guard admits a door, not a person', r.stderr[-200:])
     check(count("pg_proc WHERE proname LIKE 'fn_ca_commerce%' AND (proname ~* '(repair|backpay|redrive|catchup|backfill|heal|reconcile|sweep)')") == 0,
           'no band-aid: the commerce boundary owns its outcomes; nothing repairs them later')
 
@@ -646,7 +806,7 @@ def main():
         print(f'PASS {passed} scenarios: club and union diamond commerce qualified in isolation')
         out = os.environ.get('COMMERCE_RESULTS')
         if out:
-            Path(out).write_text(json.dumps({'passed': passed, 'results': results, 'migration': MIGRATION.name}, indent=1))
+            Path(out).write_text(json.dumps({'passed': passed, 'results': results, 'migrations': [m.name for m in MIGRATIONS]}, indent=1))
     except AssertionError as e:
         print('FAIL', e, file=sys.stderr)
         out = os.environ.get('COMMERCE_RESULTS')

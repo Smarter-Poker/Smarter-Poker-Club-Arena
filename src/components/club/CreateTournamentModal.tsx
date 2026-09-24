@@ -1048,7 +1048,7 @@ export default function CreateTournamentModal({
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <form className={styles.form} onSubmit={handleSubmit}>
           <SpadeConsole
-            onClose={onClose}
+            onClose={isSubmitting ? undefined : onClose}
             eyebrow={unionId ? 'Union Tournament Command' : 'Club Tournament Command'}
             title={unionId ? 'Create Union Tournament' : 'Create Tournament'}
             subtitle="Configure, Validate, Then Publish"

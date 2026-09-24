@@ -387,7 +387,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       >
         <div className={styles.scrollBody}>
           <SpadeConsole
-            onClose={onClose}
+            onClose={requestClose}
             as="div"
             className={styles.console}
             eyebrow="Club Arena"

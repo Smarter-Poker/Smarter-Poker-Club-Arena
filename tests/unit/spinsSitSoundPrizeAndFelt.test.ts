@@ -237,8 +237,10 @@ describe('a six-handed table is shorter than a nine-handed one', () => {
        avoid, and the seat ring is then measured against a box of a shape it
        was never measured on. */
     expect(TABLE_CSS).toContain('aspect-ratio: var(--sp-table-ar-w) / var(--sp-table-ar-h)');
-    expect(TABLE_CSS).toContain(
-      'calc(var(--sp-table-h, 100dvh) * var(--sp-table-ar-w) / var(--sp-table-ar-h))'
+    // The height budget less the short-ring drop (0px for 7, 8 and 9), times
+    // the same two tokens (2026-09-24, see `--sp-short-table-drop`).
+    expect(TABLE_CSS).toMatch(
+      /\(var\(--sp-table-h, 100dvh\) - var\(--sp-short-table-drop, 0px\)\) \* var\(--sp-table-ar-w\) \/\s*var\(--sp-table-ar-h\)/
     );
   });
 

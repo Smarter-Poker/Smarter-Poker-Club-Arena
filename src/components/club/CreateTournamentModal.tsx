@@ -37,7 +37,7 @@ import WeeklyScheduleEditor, {
 } from '../tournament/WeeklyScheduleEditor';
 import {
   WEEKDAY_NAMES,
-  deviceTimeZone,
+  scheduleWriteTimeZone,
   localClockTime,
   scheduleZoneLabel,
 } from '../../utils/scheduleTimeZone';
@@ -313,7 +313,7 @@ export default function CreateTournamentModal({
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
   const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   /** The owner's IANA zone: a recurring event keeps it (null = UTC). */
-  const scheduleTimeZone = useMemo(() => deviceTimeZone(), []);
+  const scheduleTimeZone = useMemo(() => scheduleWriteTimeZone(), []);
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(() =>
     scheduleTimeZone ? new Date().getDate() : new Date().getUTCDate()
   );

@@ -37,6 +37,32 @@ export function deviceTimeZone(): string | null {
   }
 }
 
+/**
+ * THE ENGINE MUST READ ZONES BEFORE A CLIENT WRITES THEM (2026-09-24).
+ *
+ * A zoned row stores the owner's wall clock ("Friday 20:00 America/Chicago").
+ * An engine without scheduleWallClock reads every row's weekday and time as
+ * UTC, so it would start that event at 20:00 UTC, hours early. The database
+ * half is installed and the client half is merged, but the engine release
+ * that reads zones (PR #5188) has not reached production: every engine
+ * release since 2026-09-18 has been refused before cutover, and the running
+ * engine is 8825af51. Until that release is verified live at
+ * https://engine.smarter.poker/health, a schedule is written exactly as
+ * before (UTC, no zone). Set this to true in the same change that records
+ * the verified engine release.
+ */
+export const SCHEDULE_ZONES_REACH_THE_ENGINE = false;
+
+/**
+ * The zone a schedule write carries: the device's zone once the engine reads
+ * zones, otherwise null (the UTC contract every engine understands).
+ */
+export function scheduleWriteTimeZone(
+  engineReadsZones: boolean = SCHEDULE_ZONES_REACH_THE_ENGINE
+): string | null {
+  return engineReadsZones ? deviceTimeZone() : null;
+}
+
 /** The zone name shown beside a schedule's times; NULL means UTC. */
 export function scheduleZoneLabel(timeZone: string | null | undefined): string {
   return timeZone || 'UTC';

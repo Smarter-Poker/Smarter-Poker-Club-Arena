@@ -30,7 +30,11 @@ import WeeklyScheduleEditor, {
   DEFAULT_WEEKLY_SCHEDULE,
   describeSchedule,
 } from '../../src/components/tournament/WeeklyScheduleEditor';
-import { deviceTimeZone } from '../../src/utils/scheduleTimeZone';
+import {
+  deviceTimeZone,
+  scheduleWriteTimeZone,
+  SCHEDULE_ZONES_REACH_THE_ENGINE,
+} from '../../src/utils/scheduleTimeZone';
 import { tournamentScheduleService } from '../../src/services/TournamentScheduleService';
 import { supabase } from '../../src/lib/supabase';
 
@@ -143,11 +147,23 @@ describe('the service sends the zone only when the caller states one', () => {
   });
 });
 
-describe('Repeats Weekly saves the local day and time with the zone', () => {
-  it('an 8:00 PM Friday start in Chicago is saved as Friday 20:00 America/Chicago', async () => {
+describe('a schedule is written with a zone only once the engine reads zones', () => {
+  // The running engine (8825af51) reads every row as UTC; a zoned row would
+  // start hours early. The write stays on the UTC contract until the engine
+  // release carrying scheduleWallClock is verified live.
+  it('the gate is closed while that engine release is not live', () => {
+    expect(SCHEDULE_ZONES_REACH_THE_ENGINE).toBe(false);
+    expect(scheduleWriteTimeZone()).toBeNull();
+  });
+
+  it('once the engine reads zones, a write carries the device zone', () => {
+    expect(scheduleWriteTimeZone(true)).toBe('America/Chicago');
+    expect(scheduleWriteTimeZone(false)).toBeNull();
+  });
+
+  it('Repeats Weekly saves the UTC day and time with no zone while the gate is closed', async () => {
     // Friday 2026-10-30, 19:50 CDT: "starts now" means ten minutes from now,
-    // 20:00 local. The old code saved Saturday 01:00 UTC, which the November
-    // change would have turned into a 7:00 PM Friday event.
+    // 20:00 local = Saturday 01:00 UTC, exactly what every engine reads.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-31T00:50:00Z'));
     const rpc = mockRpc();
@@ -164,7 +180,7 @@ describe('Repeats Weekly saves the local day and time with the zone', () => {
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Repeats Weekly' }));
     expect(screen.getByTestId('repeats-weekly-local-time')).toHaveTextContent(
-      'Every Friday At 20:00 America/Chicago'
+      'Every Saturday At 01:00 UTC'
     );
     fireEvent.submit(container.querySelector('form')!);
     await waitFor(() =>
@@ -175,11 +191,8 @@ describe('Repeats Weekly saves the local day and time with the zone', () => {
         p_schedule: Record<string, unknown>;
       }
     ).p_schedule;
-    expect(sent).toMatchObject({
-      daysOfWeek: [5],
-      startTimesUtc: ['20:00'],
-      timeZone: 'America/Chicago',
-    });
+    expect(sent).toMatchObject({ daysOfWeek: [6], startTimesUtc: ['01:00'] });
+    expect(sent.timeZone ?? null).toBeNull();
     expect(mocks.error).not.toHaveBeenCalled();
   });
 });

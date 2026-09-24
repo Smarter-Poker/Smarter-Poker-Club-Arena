@@ -79,8 +79,10 @@
      bezel, the 1px inner bezel (::before) flush against it and the 1px white
      highlight shadow outside it painted as ONE 4px band of light metal. The
      border is a hairline now, the inner bezel is retired (a second ring inside
-     a 1px ring is a thicker ring), and the plate keeps its nickel edge, its
-     navy face and its depth from the shadows below. */
+     a 1px ring is a thicker ring), the outer white highlight is gone too
+     (2026-09-24: it was still painted under the hairline, so the bottom edge
+     read as a 2px light band), and the plate keeps its nickel edge, its navy
+     face and its depth from the dark shadows below. */
   border: 1px solid transparent;
   border-radius: 9px;
   padding: 4px 14px;
@@ -88,7 +90,6 @@
   z-index: 50;
   max-width: calc(100% - 200px);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.22),
     0 3px 5px rgba(0, 0, 0, 0.55),
     0 9px 20px rgba(0, 0, 0, 0.5),
     0 0 26px rgba(36, 92, 168, 0.3),
@@ -143,7 +144,6 @@
   0%,
   100% {
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.22),
       0 3px 5px rgba(0, 0, 0, 0.55),
       0 9px 20px rgba(0, 0, 0, 0.5),
       0 0 22px rgba(36, 92, 168, 0.26),
@@ -152,7 +152,6 @@
   }
   50% {
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.22),
       0 3px 5px rgba(0, 0, 0, 0.55),
       0 9px 20px rgba(0, 0, 0, 0.5),
       0 0 40px rgba(54, 124, 214, 0.45),

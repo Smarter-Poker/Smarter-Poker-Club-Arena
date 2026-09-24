@@ -614,6 +614,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // client stops asking them — without it the overlay returns on the very
       // next snapshot, and on every reload, which is the complaint itself.
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
+      // 2026-09-24: the third entry state. A player released from the wait
+      // to post their own live big blind on the NEXT deal is in neither list
+      // above (postBBToEnter deletes them from both), so between the tap and
+      // the deal every client read "not waiting, not agreed" and painted
+      // whatever the seat's status said - SITTING OUT, for the one case Dan
+      // named. Published so the seat can say they are posting.
+      posting_bb_user_ids: Array.from(this.postingBBToEnter),
       // Bible V8 §2.4: Side pot information for multi-way all-ins
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
@@ -819,6 +826,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       is_anonymous: this.tableInfo?.is_anonymous === true,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
+      posting_bb_user_ids: Array.from(this.postingBBToEnter),
       pots: [],
       action_history: [],
       players: (this.seatedPlayers ?? []).map((p) => ({

@@ -278,6 +278,15 @@ describe('the felt: a thinner frame, and the mini under it', () => {
     const phone = plateCss.slice(plateCss.indexOf('@media (max-width: 768px)'));
     expect(phone).toContain('border-width: 1px;');
     expect(phone).not.toContain('border-width: 2px;');
+    /* 2026-09-24: the third layer of that band. The outer white highlight
+       (`0 1px 0 rgba(255,255,255,.22)`, not inset) was still painted under
+       the hairline in the base rule and both pulse keyframes, so the bottom
+       edge read as 2px of light. Only inset highlights remain: they sit on
+       the plate's face, not outside its edge. */
+    const outerWhite = /(^|[^-\w])(?!inset)\s*0 1px 0 rgba\(255, 255, 255, 0\.\d+\)/m;
+    expect(plateCss.replace(/inset 0 1px 0 rgba\(255, 255, 255, 0\.\d+\)/g, '')).not.toMatch(
+      outerWhite
+    );
   });
 
   it('the mini row is its own element under the plate, with the flat amount', () => {

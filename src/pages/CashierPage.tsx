@@ -2987,6 +2987,12 @@ function CashierContent() {
         >
           <div className={styles.consoleDialog} onClick={(e) => e.stopPropagation()}>
             <SpadeConsole
+              onClose={
+                isProcessing
+                  ? undefined
+                  : () =>
+                      setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })
+              }
               eyebrow="Protected Transfer"
               title="Confirm Transfer"
               titleId="send-confirm-title"

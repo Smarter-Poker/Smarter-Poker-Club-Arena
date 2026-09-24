@@ -107,6 +107,7 @@ export default function PlayerBlockModal({
         aria-busy={submitting || undefined}
       >
         <SpadeConsole
+          onClose={submitting ? undefined : onCancel}
           as="div"
           eyebrow="Player Safety"
           title={`Block ${playerName}?`}

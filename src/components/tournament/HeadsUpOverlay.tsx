@@ -98,6 +98,7 @@ export const HeadsUpOverlay: React.FC<HeadsUpOverlayProps> = ({
 
       <div className="hu-overlay__content">
         <SpadeConsole
+          onClose={handleDismiss}
           as="div"
           className="hu-overlay__console"
           eyebrow={tournamentName}

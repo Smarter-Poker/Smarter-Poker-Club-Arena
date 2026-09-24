@@ -153,13 +153,18 @@ export function Modal({
       document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
 
-      // Focus the first focusable element in the modal
+      // Focus the first focusable element in the modal - skipping the
+      // console's painted X, which sits first in the DOM on every popup since
+      // 2026-09-23 and is the last resort for initial focus, never the first
+      // (see useFocusTrap for the same rule).
       setTimeout(() => {
         if (modalRef.current) {
-          const focusable = modalRef.current.querySelector(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          ) as HTMLElement;
-          focusable?.focus();
+          const focusable = Array.from(
+            modalRef.current.querySelectorAll<HTMLElement>(
+              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            )
+          );
+          (focusable.find((el) => !el.classList.contains('sc__close')) ?? focusable[0])?.focus();
         }
       }, 0);
     }

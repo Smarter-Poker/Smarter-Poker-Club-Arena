@@ -85,7 +85,14 @@ describe('gameTypeLabel', () => {
     // same table read "Short Deck" in the popup and "short_deck" on the page.
     expect(gameTypeLabel('short_deck')).toBe('Short Deck');
     expect(gameTypeLabel('sixplus')).toBe('Short Deck');
-    expect(gameTypeLabel('ofc_pineapple')).toBe('OFC');
+    /* MOVED, NOT WEAKENED 2026-09-22: this pinned 'OFC', and that label was the
+       defect. Every `ofc_pineapple` row was a Crazy Pineapple table (retired
+       2026-08-23), and Open-Face Chinese is excluded by owner decision, so the
+       legacy spelling reads as the game it was and a bare `ofc`, which no row
+       ever carried, names no game. tests/ofc-is-not-offered.law.test.ts. */
+    expect(gameTypeLabel('ofc_pineapple')).toBe('Crazy Pineapple');
+    expect(gameTypeLabel('OFC_PINEAPPLE')).toBe('Crazy Pineapple');
+    expect(gameTypeLabel('ofc')).toBe('Poker');
     // Anything unrecognised still arrives as words, not as an identifier.
     expect(gameTypeLabel('some_new_variant')).toBe('Some New Variant');
   });

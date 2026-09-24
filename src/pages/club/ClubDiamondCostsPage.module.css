@@ -1,0 +1,24 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB AND UNION DIAMOND COSTS - two wrapping rules for the rows on the glass
+
+   The shared diamond-games rows print a label and a value on one line each,
+   which suits a game readout. This page prints prices ("250 Diamonds Per
+   Covered Club, Up To 5,000"), long product titles and exact local dates, and
+   at 375px a no-wrap value squeezed its label to nothing. These two rules let
+   the words wrap inside the same row. Nothing is drawn: no frame, no radius,
+   no gradient (#ClubArenaConsole).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+span.wrapLabel {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+span.wrapValue {
+  max-width: 46cqw;
+  text-align: right;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

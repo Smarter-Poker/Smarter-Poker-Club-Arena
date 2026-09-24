@@ -46,6 +46,17 @@
 --
 -- This refuses a string that a program produced by accident. It does not try
 -- to judge whether a label is the RIGHT label; that is the triggers' job.
+--
+-- RESTORED TO THE REPOSITORY 2026-09-24. This file was reconstructed byte for
+-- byte from supabase_migrations.schema_migrations.statements, which is what
+-- production actually ran on 2026-09-20. The proof directive below is the one
+-- addition: what was applied carried none. A CHECK constraint is not among the
+-- object kinds tests/a-merged-migration-must-be-live.law.test.ts looks up for
+-- itself, so this migration has to say where to look. The line is a comment
+-- and changes no SQL. It was checked against production before it was written
+-- here, and it reads true.
+--
+-- @live-proof: (SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.tables'::regclass AND conname IN ('tables_stakes_is_not_a_javascript_accident', 'tables_name_is_not_a_javascript_accident') AND contype = 'c') = 2
 -- ===========================================================================
 
 ALTER TABLE public.tables

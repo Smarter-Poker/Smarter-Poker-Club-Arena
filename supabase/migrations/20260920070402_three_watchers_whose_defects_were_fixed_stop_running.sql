@@ -97,6 +97,17 @@
 -- spin_repair_missing_multiplier stays, for reasons recorded earlier: its
 -- named superseder is UPDATE-scoped, has no INSERT path, and refuses rather
 -- than stamps, and 115 zero-multiplier spins sit in REGISTERING today.
+--
+-- RESTORED TO THE REPOSITORY 2026-09-24. This file was reconstructed byte for
+-- byte from supabase_migrations.schema_migrations.statements, which is what
+-- production actually ran on 2026-09-20. The proof directive below is the one
+-- addition: what was applied carried none, because this migration creates no
+-- persistent object (it retires three schedules and drops two functions), so
+-- tests/a-merged-migration-must-be-live.law.test.ts has nothing to look up.
+-- The line is a comment and changes no SQL. It was checked against production
+-- before it was written here, and it reads true.
+--
+-- @live-proof: (SELECT count(*) FROM cron.job WHERE jobname IN ('union-seat-provenance-heal', 'ca-bbj-repair-unbanked-15m', 'reconcile-club-table-counts-nightly')) = 0 AND (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('increment_club_table_count', 'decrement_club_table_count')) = 0
 -- ===========================================================================
 
 DO $retire$

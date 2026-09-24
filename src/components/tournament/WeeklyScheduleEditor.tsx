@@ -6,12 +6,20 @@
  * The recurring-tournament recurrence editor shared by TableConfigPage (MTT
  * tab) and CreateTournamentModal. Pure controlled component: seven day chips
  * (0=Sunday .. 6=Saturday, matching tournament_schedules.days_of_week), one or
- * more HH:MM (24h, UTC) start times, and an alternative "repeat every N
+ * more HH:MM (24h) start times, and an alternative "repeat every N
  * minutes" mode. Days are required in BOTH modes — that is what
  * fn_upsert_tournament_schedule enforces.
+ *
+ * A SCHEDULE KEEPS ITS TIME ZONE (2026-09-24). Days and times are the
+ * creator's own wall clock, in the zone named by the `timeZone` prop (the
+ * device's IANA zone, see deviceTimeZone), and the host saves that zone with
+ * the row. The engine converts each occurrence for its own date, so 8:00 PM
+ * stays 8:00 PM local across daylight saving. With no zone the editor falls
+ * back to UTC, exactly as before, and says so.
  */
 
 import './WeeklyScheduleEditor.css';
+import { scheduleZoneLabel } from '../../utils/scheduleTimeZone';
 
 export interface WeeklyScheduleValue {
   daysOfWeek: number[];
@@ -32,11 +40,15 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 export const TIME_UTC_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
-/** Human summary of a stored schedule row — shared with the union manager. */
+/**
+ * Human summary of a stored schedule row — shared with the union manager.
+ * Times are shown in the row's own zone, named, and UTC when it has none.
+ */
 export function describeSchedule(
   days: number[],
   times: string[],
-  intervalMinutes: number | null
+  intervalMinutes: number | null,
+  timeZone?: string | null
 ): string {
   const dayText =
     days.length === 7
@@ -47,18 +59,22 @@ export function describeSchedule(
           .map((d) => DAY_NAMES[d]?.slice(0, 3) ?? String(d))
           .join(', ');
   if (intervalMinutes) return `${dayText} - every ${intervalMinutes.toLocaleString()} min`;
-  return `${dayText} at ${times.join(', ')} UTC`;
+  return `${dayText} at ${times.join(', ')} ${scheduleZoneLabel(timeZone)}`;
 }
 
 export default function WeeklyScheduleEditor({
   value,
   onChange,
   hideDays = false,
+  timeZone = null,
 }: {
   value: WeeklyScheduleValue;
   onChange: (next: WeeklyScheduleValue) => void;
   hideDays?: boolean;
+  /** The zone the days and times are in (saved with the row); null = UTC. */
+  timeZone?: string | null;
 }) {
+  const zoneLabel = scheduleZoneLabel(timeZone);
   const toggleDay = (day: number) => {
     const has = value.daysOfWeek.includes(day);
     onChange({
@@ -98,7 +114,7 @@ export default function WeeklyScheduleEditor({
             checked={value.mode === 'times'}
             onChange={() => onChange({ ...value, mode: 'times' })}
           />
-          <span>At Set Times (UTC)</span>
+          <span>At Set Times ({zoneLabel})</span>
         </label>
         <label className="wse-mode-option">
           <input
@@ -165,7 +181,7 @@ export default function WeeklyScheduleEditor({
       )}
 
       <p className="wse-hint">
-        Days And Times Are In UTC.{' '}
+        Days And Times Are In {zoneLabel}.{' '}
         {hideDays ? 'Choose At Least One Start Time' : 'Pick At Least One Day'}
         {value.mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
       </p>

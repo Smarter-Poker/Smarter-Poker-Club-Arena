@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 155887,
-      "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
+      "bytes": 156111,
+      "sha256": "23da0ea4edb98e1e9e6ca1acb8627086969c625cb6fba18bf0d3ce77b2257a03"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -254,6 +254,15 @@
       ".github/workflows/ci.yml": {
         "bytes": 155650,
         "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+      }
+    }
+  },
+  "scheduleTimeZoneIntegration": {
+    "reason": "A schedule keeps its time zone: ci.yml gains the 'A schedule keeps its time zone across daylight saving' owned-PostgreSQL step (scripts/ci/test-schedule-time-zone.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155887,
+        "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
       }
     }
   }

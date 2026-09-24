@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Assignment CA-DIAMOND-COMMERCE-2026-09-22 (R2), sections 4.4, 6.4 and 7.3.
- * Three jobs, one tab each:
+ * Four jobs, one tab each:
  *
  *   Refund Queue         every request by state, with the policy figures the
  *                        request door computed, and Approve / Decline. The
@@ -15,6 +15,9 @@
  *                        checkout and catalog visibility switches.
  *   Comparison Evidence  record a competitor's observed price, and verify one a
  *                        colleague recorded (the server refuses the recorder).
+ *   Admission            what the recorded shadow decisions say enforcement
+ *                        would refuse, per door and per club, read before
+ *                        anyone switches enforcement on (20260924102056).
  *
  * PLATFORM STAFF ONLY. The route sits behind PlatformStaffGuard and every door
  * checks fn_is_platform_admin() again, so the guard is a courtesy and the
@@ -41,6 +44,9 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
 import { titleCase } from '../../utils/titleCase';
 import CommerceDeskService, {
+  ADMISSION_ACTION_LABEL,
+  ADMISSION_DOOR_LABEL,
+  ADMISSION_REASON_LABEL,
   CommerceDeskTransportError,
   PRICE_RULE_LABEL,
   PRICE_STATUS_LABEL,
@@ -52,9 +58,12 @@ import CommerceDeskService, {
   isRefusal,
   lookupDeskNames,
   lookupHandles,
+  lookupScopeNames,
   nextPriceStep,
   priceRulesFor,
   refundReasonWords,
+  admissionWords,
+  type AdmissionReport,
   type DeskCatalog,
   type DeskCatalogProduct,
   type DeskEvidence,
@@ -253,17 +262,21 @@ function WhenPicker({
    THE PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-type TabKey = 'refunds' | 'catalog' | 'evidence';
+type TabKey = 'refunds' | 'catalog' | 'evidence' | 'admission';
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'refunds', label: 'Refund Queue' },
   { key: 'catalog', label: 'Catalog' },
   { key: 'evidence', label: 'Comparison Evidence' },
+  { key: 'admission', label: 'Admission' },
 ];
 
 export default function CommerceDeskPage() {
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab: TabKey = tabParam === 'catalog' || tabParam === 'evidence' ? tabParam : 'refunds';
+  const tab: TabKey =
+    tabParam === 'catalog' || tabParam === 'evidence' || tabParam === 'admission'
+      ? tabParam
+      : 'refunds';
   const setTab = (next: TabKey) => {
     const p = new URLSearchParams(params);
     if (next === 'refunds') p.delete('tab');
@@ -353,8 +366,8 @@ export default function CommerceDeskPage() {
           Commerce Desk
         </h1>
         <p className={s.lede}>
-          Club And Union Diamond Refunds, Catalog Prices And Comparison Evidence. Every Change Here
-          Is Checked Again By The Server And Recorded With Your Name.
+          Club And Union Diamond Refunds, Catalog Prices, Comparison Evidence And Admission. Every
+          Change Here Is Checked Again By The Server And Recorded With Your Name.
         </p>
       </header>
 
@@ -396,6 +409,7 @@ export default function CommerceDeskPage() {
           reloadEvidence={loadEvidence}
         />
       )}
+      {tab === 'admission' && <AdmissionPanel />}
     </main>
   );
 }
@@ -1943,5 +1957,219 @@ function EvidenceCard({
         </div>
       )}
     </article>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. ADMISSION (the shadow report)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const ADMISSION_WINDOWS = [7, 30, 90] as const;
+
+function AdmissionPanel() {
+  const isMounted = useIsMounted();
+  const [days, setDays] = useState<(typeof ADMISSION_WINDOWS)[number]>(30);
+  const [report, setReport] = useState<AdmissionReport | null>(null);
+  const [names, setNames] = useState<DeskNames>({ people: {}, clubs: {}, unions: {} });
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(
+    async (window: number) => {
+      const mine = ++seq.current;
+      setReport(null);
+      setError(null);
+      try {
+        const res = await CommerceDeskService.admissionReport(window);
+        if (!isMounted.current || mine !== seq.current) return;
+        if (isRefusal(res)) {
+          setError(deskRefusalCopy(res.error, 'The Admission Report Could Not Be Read'));
+          return;
+        }
+        const rep: AdmissionReport = {
+          ...res,
+          doors: Array.isArray(res.doors) ? res.doors : [],
+          scopes: Array.isArray(res.scopes) ? res.scopes : [],
+        };
+        setReport(rep);
+        // Names only; the report itself is ids and counts.
+        const n = await lookupScopeNames(rep.scopes);
+        if (!isMounted.current || mine !== seq.current) return;
+        setNames(n);
+      } catch (e) {
+        if (!isMounted.current || mine !== seq.current) return;
+        reportUnexpected(e, 'CommerceDeskPage.AdmissionPanel.load');
+        setError(failureText(e, 'The Admission Report Could Not Be Read'));
+      }
+    },
+    [isMounted]
+  );
+
+  useEffect(() => {
+    void load(days);
+  }, [days, load]);
+
+  const totals = useMemo(() => {
+    const doors = report?.doors ?? [];
+    return {
+      decisions: doors.reduce((a, d) => a + Number(d.decisions || 0), 0),
+      wouldDeny: doors.reduce((a, d) => a + Number(d.would_deny || 0), 0),
+      refused: doors.reduce((a, d) => a + Number(d.refused || 0), 0),
+    };
+  }, [report]);
+
+  return (
+    <>
+      <section className={s.section} aria-labelledby="desk-admission-title">
+        <div className={s.sectionHead}>
+          <h2 id="desk-admission-title" className={s.sectionTitle}>
+            Admission
+          </h2>
+          <button type="button" className={s.link} onClick={() => void load(days)}>
+            Refresh
+          </button>
+        </div>
+        <p className={s.copy}>
+          Every New Member, New Table, New Tournament And Insurance Offer Asks Whether The Club Has
+          Operating Access. In Shadow Nothing Is Refused: The Answer Is Recorded So You Can See What
+          Enforcement Would Refuse Before It Is Switched On. Existing Members, Running Games And
+          Payouts Are Never Checked.
+        </p>
+        <div className={s.chips} role="radiogroup" aria-label="Report Window">
+          {ADMISSION_WINDOWS.map((w) => (
+            <button
+              key={w}
+              type="button"
+              role="radio"
+              aria-checked={days === w}
+              className={`${s.chip} ${days === w ? s.chipOn : ''}`}
+              onClick={() => setDays(w)}
+            >
+              Last {w} Days
+            </button>
+          ))}
+        </div>
+        {error && (
+          <p className={s.alert} role="alert">
+            {error}
+          </p>
+        )}
+        {!error && report === null && <LoadingState message="Reading The Admission Report" />}
+        {report && (
+          <>
+            <Row
+              label="Enforcement"
+              value={
+                report.enforced
+                  ? `On Since ${when(report.enforced_from)}`
+                  : report.enforced_from
+                    ? `Scheduled For ${when(report.enforced_from)}`
+                    : 'Off. Admission Runs In Shadow'
+              }
+              tone={report.enforced ? 'gold' : 'blue'}
+            />
+            <Row label="Decisions Recorded" value={whole(totals.decisions)} />
+            <Row
+              label="Would Be Refused"
+              value={whole(totals.wouldDeny)}
+              tone={totals.wouldDeny ? 'gold' : 'green'}
+            />
+            <Row
+              label="Refused"
+              value={whole(totals.refused)}
+              tone={totals.refused ? 'red' : 'muted'}
+            />
+          </>
+        )}
+      </section>
+
+      {report && (
+        <section className={s.section} aria-labelledby="desk-admission-doors">
+          <h2 id="desk-admission-doors" className={s.sectionTitle}>
+            By Door
+          </h2>
+          {report.doors.length === 0 ? (
+            <p className={s.empty}>No Admission Decisions In The Last {whole(report.days)} Days</p>
+          ) : (
+            <div className={s.cardGrid}>
+              {report.doors.map((d) => (
+                <article
+                  key={`${d.action}:${d.door}`}
+                  className={s.card}
+                  aria-label={admissionWords(ADMISSION_DOOR_LABEL, d.door)}
+                >
+                  <div className={s.cardHead}>
+                    <h3 className={s.cardTitle}>{admissionWords(ADMISSION_DOOR_LABEL, d.door)}</h3>
+                    <span className={`${s.pill} ${s[d.would_deny ? 'ink_gold' : 'ink_green']}`}>
+                      {d.would_deny ? `${whole(d.would_deny)} Would Refuse` : 'All Allowed'}
+                    </span>
+                  </div>
+                  <Row label="Checks" value={admissionWords(ADMISSION_ACTION_LABEL, d.action)} />
+                  <Row label="Decisions" value={whole(d.decisions)} />
+                  <Row label="Would Be Refused" value={whole(d.would_deny)} />
+                  <Row label="Clubs Or Unions Affected" value={whole(d.scopes_would_deny)} />
+                  {d.refused > 0 && <Row label="Refused" value={whole(d.refused)} tone="red" />}
+                  {d.undecided > 0 && (
+                    <Row label="Decision Unavailable" value={whole(d.undecided)} tone="muted" />
+                  )}
+                  <Row label="Last Decision" value={when(d.last_at)} />
+                  <Row label="Door" value={<Code>{d.door}</Code>} />
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {report && (
+        <section className={s.section} aria-labelledby="desk-admission-scopes">
+          <h2 id="desk-admission-scopes" className={s.sectionTitle}>
+            Clubs And Unions Enforcement Would Refuse
+          </h2>
+          {report.scopes.length === 0 ? (
+            <p className={s.empty}>None In The Last {whole(report.days)} Days</p>
+          ) : (
+            <div className={s.cardGrid}>
+              {report.scopes.map((x) => {
+                const name =
+                  x.scope_kind === 'club' ? names.clubs[x.scope_id] : names.unions[x.scope_id];
+                const kind = x.scope_kind === 'club' ? 'Club' : 'Union';
+                return (
+                  <article
+                    key={`${x.scope_kind}:${x.scope_id}`}
+                    className={s.card}
+                    aria-label={name ? titleCase(name) : `${kind} ${shortId(x.scope_id)}`}
+                  >
+                    <div className={s.cardHead}>
+                      <h3 className={s.cardTitle}>
+                        {name ? (
+                          `${titleCase(name)} (${kind})`
+                        ) : (
+                          <>
+                            {kind} <Code>{shortId(x.scope_id)}</Code>
+                          </>
+                        )}
+                      </h3>
+                      <span className={`${s.pill} ${s.ink_gold}`}>
+                        {whole(x.would_deny)} Would Refuse
+                      </span>
+                    </div>
+                    <Row
+                      label="Why"
+                      value={(x.reasons ?? [])
+                        .map((r) => admissionWords(ADMISSION_REASON_LABEL, r))
+                        .join(', ')}
+                      prose
+                    />
+                    {x.refused > 0 && <Row label="Refused" value={whole(x.refused)} tone="red" />}
+                    <Row label="Last Decision" value={when(x.last_at)} />
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+    </>
   );
 }

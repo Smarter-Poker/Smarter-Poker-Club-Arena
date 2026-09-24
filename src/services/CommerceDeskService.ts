@@ -241,6 +241,75 @@ export function nextPriceStep(status: PriceStatus): 'validate' | 'publish' | 're
   return null;
 }
 
+/* ── Admission shadow report (fn_ca_commerce_admission_report) ───────────── */
+
+export interface AdmissionDoorRow {
+  action: string;
+  door: string;
+  decisions: number;
+  would_deny: number;
+  refused: number;
+  undecided: number;
+  scopes_would_deny: number;
+  last_at: string | null;
+}
+
+export interface AdmissionScopeRow {
+  scope_kind: ScopeKind;
+  scope_id: string;
+  would_deny: number;
+  refused: number;
+  reasons: string[];
+  last_at: string | null;
+}
+
+export interface AdmissionReport {
+  days: number;
+  since: string;
+  enforced_from: string | null;
+  enforced: boolean;
+  doors: AdmissionDoorRow[];
+  scopes: AdmissionScopeRow[];
+}
+
+/** What each admission action is, in the words staff read. */
+export const ADMISSION_ACTION_LABEL: Readonly<Record<string, string>> = {
+  approve_member: 'Approve Or Add A Member',
+  join_member: 'Member Joins Without Review',
+  open_table: 'Open A New Table',
+  create_tournament: 'Create A Tournament Or Schedule',
+  club_insurance: 'Offer Club Insurance',
+  union_tools: 'Union Back Office',
+  union_insurance: 'Offer Union Insurance',
+};
+
+/** Which door recorded the decision, in the words staff read. */
+export const ADMISSION_DOOR_LABEL: Readonly<Record<string, string>> = {
+  fn_review_join_request: 'Owner Approves A Join Request',
+  fn_join_club: 'Player Joins A Club That Admits Automatically',
+  fn_redeem_club_invite_code: 'Invite Link Admits A Pending Member',
+  fn_agent_attach_player: 'Agent Or Staff Adds A Player',
+  fn_cash_game_create: 'Owner Opens A Cash Game',
+  fn_create_tournament: 'Owner Creates A Tournament',
+  fn_upsert_tournament_schedule: 'Owner Creates A Recurring Schedule',
+};
+
+/** Why a decision would refuse (or allowed), in the words staff read. */
+export const ADMISSION_REASON_LABEL: Readonly<Record<string, string>> = {
+  no_effective_entitlement: 'No Operating Access',
+  capacity_reached: 'Member Capacity Reached',
+  within_capacity: 'Within Capacity',
+  entitled: 'Operating Access Active',
+  trial: 'Free Month',
+  platform_scope: 'Platform Club',
+  unpriced_action: 'Not A Priced Action',
+  decision_unavailable: 'Decision Unavailable',
+};
+
+export function admissionWords(table: Readonly<Record<string, string>>, code: string): string {
+  return hasOwn(table, code) ? table[code] : enumToTitleCase(code);
+}
+
 /* ── Door answers ─────────────────────────────────────────────────────────── */
 
 export interface Refusal {
@@ -283,6 +352,11 @@ async function call<T>(fn: string, args: Record<string, unknown>, where: string)
 const CommerceDeskService = {
   catalog(): Promise<DeskCatalog> {
     return call<DeskCatalog>('fn_ca_commerce_catalog', { p_scope_kind: null }, 'Read The Catalog');
+  },
+
+  /** What enforcement would refuse, from the recorded shadow decisions. Staff only. */
+  admissionReport(days = 30): Promise<DeskAnswer<AdmissionReport>> {
+    return call('fn_ca_commerce_admission_report', { p_days: days }, 'Read The Admission Report');
   },
 
   refundQueue(
@@ -541,6 +615,32 @@ export async function lookupDeskNames(requests: readonly RefundRequest[]): Promi
   return out;
 }
 
+/** Club and union names for a list of scopes (the admission report). Best effort. */
+export async function lookupScopeNames(
+  scopes: ReadonlyArray<{ scope_kind: ScopeKind; scope_id: string }>
+): Promise<DeskNames> {
+  const clubs = [...new Set(scopes.filter((x) => x.scope_kind === 'club').map((x) => x.scope_id))];
+  const unions = [
+    ...new Set(scopes.filter((x) => x.scope_kind === 'union').map((x) => x.scope_id)),
+  ];
+  const out: DeskNames = { people: {}, clubs: {}, unions: {} };
+  const [c, u] = await Promise.all([
+    clubs.length
+      ? supabase.from('clubs').select('id, name').in('id', clubs)
+      : Promise.resolve({ data: [], error: null }),
+    unions.length
+      ? supabase.from('unions').select('id, name').in('id', unions)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (c.error) reportError(c.error, 'CommerceDeskService.lookupScopeNames.clubs');
+  if (u.error) reportError(u.error, 'CommerceDeskService.lookupScopeNames.unions');
+  for (const row of (c.data ?? []) as Array<{ id: string; name: string | null }>)
+    if (row.name) out.clubs[row.id] = row.name;
+  for (const row of (u.data ?? []) as Array<{ id: string; name: string | null }>)
+    if (row.name) out.unions[row.id] = row.name;
+  return out;
+}
+
 /* ── Refusal copy ─────────────────────────────────────────────────────────── */
 
 /**
@@ -567,6 +667,8 @@ export const DESK_REFUSAL_COPY: Readonly<Record<string, string>> = {
 
   // fn_ca_commerce_price_draft
   unknown_sku: 'That Product Is Not In The Catalog',
+  capability_unavailable:
+    'This Product Sells A Platform Capability That Is Not Available Yet. The Capability Registry Must Show It Deployed First',
   invalid_price:
     'The Price Is Not Valid. Use A Whole Number Of Diamonds, A Listed Price Rule And A Price Authority Of At Least 10 Characters',
 

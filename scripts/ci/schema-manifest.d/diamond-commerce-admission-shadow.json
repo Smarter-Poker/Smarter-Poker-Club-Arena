@@ -5,6 +5,7 @@
     "fn_ca_commerce_admission",
     "fn_ca_commerce_admission_decide",
     "fn_ca_commerce_admission_message",
+    "fn_ca_commerce_admission_report",
     "fn_ca_commerce_admit"
   ],
   "columns": {

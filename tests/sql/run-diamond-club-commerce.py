@@ -150,6 +150,16 @@ def load_fixture():
     INSERT INTO public.feature_pricing(feature,diamond_cost,usage_type,description) VALUES ('club_creation',100,'permanent','Create Club'),('rabbit_hunt',5,'per_use','Rabbit Hunt');
     CREATE FUNCTION public.fn_is_platform_admin() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
       SELECT EXISTS(SELECT 1 FROM public.profiles p WHERE p.id=auth.uid() AND p.role IN ('admin','superadmin','god')) $$;
+    -- STAND-IN for Prompt 1's capability registry (20260924025555), with the
+    -- contract's semantics (CAPABILITY-CONTRACT.md 2, 3): available means
+    -- deployed or production_verified, an unknown id is false. Seeded with
+    -- production's readiness of the one capability commerce sells.
+    CREATE TABLE public.platform_capabilities(capability_id text PRIMARY KEY, readiness text NOT NULL);
+    INSERT INTO public.platform_capabilities VALUES ('cash.insurance_ev_cashout','deployed'),('variant.ofc','excluded');
+    CREATE FUNCTION public.fn_capability_available(p_capability_id text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+      SELECT COALESCE((SELECT readiness IN ('deployed','production_verified') FROM public.platform_capabilities
+                        WHERE capability_id = p_capability_id), false) $$;
+    GRANT EXECUTE ON FUNCTION public.fn_capability_available(text) TO authenticated, service_role;
     """)
 
 
@@ -778,6 +788,23 @@ def scenarios():
     rows = json.loads(sql("SELECT jsonb_agg(status ORDER BY version) FROM public.ca_commerce_price_versions WHERE sku='capacity_60'"))
     check(p1.get('success') and p2.get('success') and qf.get('success') and qf['net'] == 500 and rows == ['published', 'retired', 'published'],
           'D74 a prospective price leaves the current price in effect until its date; a later-dated version replaced before it began never takes effect', {'p1': p1, 'p2': p2, 'qf': qf.get('error'), 'rows': rows})
+
+    # ---- Platform capability (Prompt 1's CAPABILITY-CONTRACT.md, section 2) -------
+    caps = json.loads(sql("SELECT jsonb_object_agg(sku, platform_capability_id) FROM public.ca_commerce_products WHERE platform_capability_id IS NOT NULL"))
+    check(caps == {'club_insurance_module': 'cash.insurance_ev_cashout', 'union_insurance_module': 'cash.insurance_ev_cashout'},
+          'CAP both insurance modules name the platform capability they sell; capacity, reports and assets name none', caps)
+    ok_q = quote(X, 'club', C4, 'club_insurance_module')
+    sql("UPDATE public.platform_capabilities SET readiness='tested' WHERE capability_id='cash.insurance_ev_cashout'")
+    no_q = quote(X, 'club', C4, 'club_insurance_module')
+    cap_q = quote(X, 'club', C4, 'capacity_60')
+    sup = rpc('fn_ca_commerce_product_support', "'club_insurance_module',true", S)
+    sql("UPDATE public.platform_capabilities SET readiness='deployed' WHERE capability_id='cash.insurance_ev_cashout'")
+    again = quote(X, 'club', C4, 'club_insurance_module')
+    check(ok_q.get('success') is True and no_q.get('error') == 'sku_not_available' and no_q.get('capability') == 'cash.insurance_ev_cashout'
+          and cap_q.get('success') and sup == {'success': False, 'error': 'capability_unavailable', 'sku': 'club_insurance_module'}
+          and again.get('success') is True,
+          'CAP commerce never quotes (so never sells or renews) a capability the registry calls unavailable, staff cannot mark it supported meanwhile, and it sells again once deployed',
+          {'ok': ok_q.get('error'), 'no': no_q, 'cap': cap_q.get('error'), 'sup': sup, 'again': again.get('error')})
 
     # ---- D20 conservation ---------------------------------------------------------
     conservation = json.loads(sql("""

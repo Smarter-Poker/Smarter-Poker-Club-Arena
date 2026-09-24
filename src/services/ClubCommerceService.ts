@@ -469,6 +469,7 @@ export const REFUSAL_COPY: Record<string, string> = {
   basket_size: 'Choose Between One And Twelve Services',
   unknown_sku: 'That Service Is Not In The Catalog',
   sku_not_available: 'That Service Is Not Available Yet',
+  capability_unavailable: 'That Service Is Not Available Yet',
   sku_scope_mismatch: 'That Service Does Not Apply To This Scope',
   duplicate_line: 'Choose Each Kind Of Service Once',
   no_published_price: 'That Service Has No Published Price',

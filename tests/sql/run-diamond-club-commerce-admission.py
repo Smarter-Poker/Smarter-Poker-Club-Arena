@@ -4,7 +4,7 @@
 Assignment CA-DIAMOND-COMMERCE-2026-09-22 (R2), sections 2.3, 4.3, 6.3 and
 D21 / D22 / D28 / D52 / D53. Builds the same private, socket-only cluster as
 tests/sql/run-diamond-club-commerce.py (reused through importlib, unmodified),
-installs the two commerce migrations production has, loads the four admission
+installs the two commerce migrations production has, loads the seven admission
 doors captured verbatim from production
 (tests/fixtures/diamond-club-commerce-admission/), then:
 
@@ -66,10 +66,22 @@ RED, GREEN = 'admission_red', 'admission_green'
 LIVE_MD5 = {  # production, 2026-09-24, pg_get_functiondef
     'public.fn_review_join_request(uuid,uuid,boolean)': '0ad8e6df115201015d969e0db78e3ff5',
     'public.fn_cash_game_create(uuid,text,text,numeric,numeric,integer,jsonb,text,boolean)': 'fec049e3a50544b66d88dab7ff535ae2',
-    'public.fn_create_tournament(uuid,jsonb)': '4c5c8783d1f6f534fdaf5cefbb460d62',
-    'public.fn_upsert_tournament_schedule(jsonb)': 'b8dd7cc8e0996889a936affdc732b664',
+    'public.fn_create_tournament(uuid,jsonb)': 'bc5e5dcea11302574163b21f10b63465',
+    'public.fn_upsert_tournament_schedule(jsonb)': '358f8137847a8a4a5a3f68ff387d2dc2',
+    'public.fn_join_club(uuid)': '005b11687350a0a98547a3593e556767',
+    'public.fn_redeem_club_invite_code(uuid,uuid,text)': '917d92ab9e196221dab00790b24772d7',
+    'public.fn_agent_attach_player(uuid,uuid,uuid)': 'f6af5f81cce337123d4aa56df4f04cfa',
+    'public.fn_join_club_membership_impl(uuid)': 'dc9908bbe4447d2a455039efd2ff0137',
+    'public.fn_club_membership_lock(uuid)': '07343122ba0f2fa43bfb879184d56be9',
+    'public.fn_club_membership_count(uuid,uuid)': '3e9b2104d51842cfd202bd30e0a1c9a1',
+    'public.fn_club_membership_cap()': '6511fc3913189151b46c3953033a289d',
+    'public.fn_schedule_time_zone_is_known(text)': '0fe6c641a93674740394fd523f107faf',
     'public.fn_ca_commerce_admission(text,uuid,text)': '9fc091db66ee2265502e042420ddd84e',
 }
+
+# The doors the migration amends (the rest of LIVE_MD5 are helpers it must not touch).
+DOORS = [s for s in LIVE_MD5 if 'admission(' not in s and 'membership_' not in s and 'time_zone' not in s]
+assert len(DOORS) == 7, DOORS
 
 passed = 0
 results = []
@@ -220,6 +232,32 @@ def schedule(db, owner, cid, name, sched_id=None, active=True):
     return rpc(db, 'fn_upsert_tournament_schedule', f"'{json.dumps(s)}'::jsonb", owner)
 
 
+def join(db, uid, cid, ok=True):
+    """A player joins through fn_join_club, as the browser does."""
+    return q1(db, f"SELECT public.fn_join_club('{cid}')", uid, ok=ok)
+
+
+def invite(db, uid, cid, inviter_number):
+    return rpc(db, 'fn_redeem_club_invite_code', f"'{cid}','{uid}','{inviter_number}'", uid)
+
+
+def agent(db, cid, tag):
+    """An active member who is an active agent of the club."""
+    a = person(db, tag)
+    psql(db, f"""INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{cid}','{a}','agent','active',0);
+      INSERT INTO public.agents(club_id,user_id,status) VALUES ('{cid}','{a}','active');""")
+    return a
+
+
+def attach(db, caller, cid, agent_uid, player):
+    return rpc(db, 'fn_agent_attach_player', f"'{cid}','{agent_uid}','{player}'", caller)
+
+
+def number(db, uid, n):
+    psql(db, f"UPDATE public.profiles SET player_number='{n}' WHERE id='{uid}'")
+    return n
+
+
 def decisions(db, cid, where='true'):
     return json.loads(scalar(db, f"""SELECT COALESCE(jsonb_agg(jsonb_build_object('action',action,'door',door,'would_allow',would_allow,'enforced',enforced,
       'allowed',allowed,'reason',reason,'actor',actor_id,'subject',subject_id) ORDER BY id),'[]') FROM public.ca_commerce_admission_decisions
@@ -236,6 +274,8 @@ MSG_TABLE = 'This Club Needs Active Operating Access To Open A New Table. Runnin
 MSG_MEMBER = 'This Club Needs Active Operating Access To Approve New Members. Current Members Are Not Affected.'
 MSG_CAPACITY = 'This Club Has Reached Its Member Capacity. Upgrade Capacity To Approve New Members. Current Members Are Not Affected.'
 MSG_TOURNAMENT = 'This Club Needs Active Operating Access To Create A New Tournament. Scheduled And Running Tournaments Are Not Affected.'
+MSG_JOIN_FULL = 'This Club Is Full And Cannot Accept New Members Right Now. Please Contact The Club.'
+MSG_JOIN = 'This Club Cannot Accept New Members Right Now. Please Contact The Club.'
 MSG_INSURANCE = 'This Club Needs The Insurance Module To Offer Insurance On A New Table. Existing Insurance Offers Are Not Affected.'
 
 
@@ -374,6 +414,79 @@ def s_horse_counts(db, t):
     return 'a horse joining counts in the roster like a human and is never gated itself'
 
 
+def s_member_doors_shadow(db, t):
+    """Every door a club gains a NEW approved member through is decided, not only the owner review."""
+    o = person(db, t + 'o9', 5000)
+    auto = club(db, t + 'k9a', o, requires_approval=False)
+    rev = club(db, t + 'k9r', o)
+    n = number(db, o, ('77' if t == 'r' else '78') + '0901')
+    p1 = person(db, t + 'p9a')
+    out = json.loads(join(db, p1, auto))
+    ck(out.get('status') == 'active' and status_of(db, auto, p1) == 'active', 'shadow member: an automatic join lands active', out)
+    again = json.loads(join(db, p1, auto))
+    ck(again.get('status') == 'active', 'shadow member: joining again returns the existing membership', again)
+    ck(json.loads(join(db, o, auto)).get('role') == 'owner', 'shadow member: the owner is a member of their own club')
+    p2 = person(db, t + 'p9b')
+    ck(json.loads(join(db, p2, rev)).get('status') == 'pending', 'shadow member: a join into a reviewing club lands pending (not an admission)')
+    r = invite(db, p2, rev, n)
+    ck(r.get('success') and r.get('status') == 'active' and status_of(db, rev, p2) == 'active', 'shadow member: the invite admits the pending member', r)
+    a = agent(db, auto, t + 'a9')
+    p3 = person(db, t + 'p9c')
+    r = attach(db, o, auto, a, p3)
+    ck(r.get('success') and status_of(db, auto, p3) == 'active', 'shadow member: an agent add lands', r)
+    r = attach(db, o, auto, a, p1)
+    ck(r.get('success'), 'shadow member: moving an existing member into a downline proceeds', r)
+    d = decisions(db, auto) + decisions(db, rev)
+    ck([(x['action'], x['door'], x['would_allow'], x['allowed'], x['subject']) for x in d]
+       == [('join_member', 'fn_join_club', False, True, p1), ('approve_member', 'fn_agent_attach_player', False, True, p3),
+           ('join_member', 'fn_redeem_club_invite_code', False, True, p2)],
+       'shadow member: exactly the three new admissions were decided and allowed; re-joins, the owner, the pending join and the downline move were not', d)
+    return 'shadow: the automatic join, the invite admission and the agent add are each decided once and proceed'
+
+
+def s_member_doors_enforced(db, t):
+    o = person(db, t + 'o10', 5000)
+    auto = club(db, t + 'k10a', o, requires_approval=False)
+    buy(db, o, auto, 'capacity_60', t + 'cap-k10-0001')
+    fill(db, auto, t + 'fill10', 58)  # owner + 58 = 59 of 60
+    p1 = person(db, t + 'p10a')
+    ck(json.loads(join(db, p1, auto)).get('status') == 'active', 'enforced member: the automatic join for the last seat lands')
+    p2 = person(db, t + 'p10b')
+    r = join(db, p2, auto, ok=False)
+    ck(r.returncode != 0 and MSG_JOIN_FULL in r.stderr and status_of(db, auto, p2) == '',
+       'enforced member: the next automatic join is refused in Title Case and writes no membership', r.stderr[-300:])
+    ck(json.loads(join(db, p1, auto)).get('status') == 'active', 'enforced member: an existing member re-joining is never re-checked')
+    bare = club(db, t + 'k10b', o, requires_approval=False)
+    p3 = person(db, t + 'p10c')
+    r = join(db, p3, bare, ok=False)
+    ck(r.returncode != 0 and MSG_JOIN in r.stderr and status_of(db, bare, p3) == '',
+       'enforced member: a club with no operating access cannot take automatic joins', r.stderr[-300:])
+    # A reviewing club at capacity: the invite leaves the member pending for the owner.
+    rev = club(db, t + 'k10r', o)
+    buy(db, o, rev, 'capacity_60', t + 'cap-k10r-0001')
+    fill(db, rev, t + 'fill10r', 59)  # full
+    n = number(db, o, ('77' if t == 'r' else '78') + '1001')
+    p4 = person(db, t + 'p10d')
+    ck(json.loads(join(db, p4, rev)).get('status') == 'pending', 'enforced member: a join into a reviewing club still lands pending')
+    r = invite(db, p4, rev, n)
+    ck(r.get('success') and r.get('status') == 'pending' and status_of(db, rev, p4) == 'pending',
+       'enforced member: a refused invite keeps the member pending for the owner (the invite still attaches)', r)
+    r = approve(db, o, rev, p4)
+    ck(r.get('success') is False and r.get('error') == MSG_CAPACITY, 'enforced member: the owner meets the same full roster', r)
+    # The agent add.
+    a = agent(db, bare, t + 'a10')
+    p5 = person(db, t + 'p10e')
+    r = attach(db, o, bare, a, p5)
+    ck(r.get('success') is False and r.get('code') == 'operating_access_required' and r.get('error') == MSG_MEMBER and status_of(db, bare, p5) == '',
+       'enforced member: an agent add without operating access is refused with the owner sentence and writes nothing', r)
+    d = decisions(db, auto) + decisions(db, bare) + decisions(db, rev)
+    ck([(x['door'], x['allowed'], x['reason']) for x in d]
+       == [('fn_join_club', True, 'within_capacity'), ('fn_agent_attach_player', False, 'no_effective_entitlement'),
+           ('fn_redeem_club_invite_code', False, 'capacity_reached'), ('fn_review_join_request', False, 'capacity_reached')],
+       'enforced member: every refusal that returns is recorded; a raising join rolls its own decision back with the refusal', d)
+    return 'enforced: automatic joins, invites and agent adds meet capacity; nothing half-written, existing members untouched'
+
+
 def s_system_paths_not_gated(db, t):
     o = person(db, t + 'o6', 5000)
     k = club(db, t + 'k6', o)
@@ -396,13 +509,14 @@ def s_system_paths_not_gated(db, t):
     ck(r.get('error') == 'not_authenticated', 'system: the owner doors are browser doors; the engine cannot and does not use them', r)
     callers = json.loads(scalar(db, """SELECT COALESCE(jsonb_agg(p.proname ORDER BY p.proname),'[]') FROM pg_proc p
       WHERE p.pronamespace='public'::regnamespace AND p.prosrc LIKE '%fn_ca_commerce_admit(%'"""))
-    ck(callers == ['fn_cash_game_create', 'fn_create_tournament', 'fn_review_join_request', 'fn_upsert_tournament_schedule'],
-       'system: exactly the four owner doors call the admission gate', callers)
+    ck(callers == ['fn_agent_attach_player', 'fn_cash_game_create', 'fn_create_tournament', 'fn_join_club', 'fn_redeem_club_invite_code',
+                   'fn_review_join_request', 'fn_upsert_tournament_schedule'],
+       'system: exactly the seven admission doors call the admission gate', callers)
     ck(count(db, """pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_proc f ON f.oid=t.tgfoid
       WHERE c.relname IN ('tables','table_seats','tournaments','tournament_players','club_members')
         AND NOT t.tgisinternal AND (t.tgname LIKE '%commerce%' OR f.prosrc LIKE '%ca_commerce%')""") == 0,
        'D21 / D28 no commerce trigger (by name or by body) sits in the gameplay or seating path')
-    return 'engine/system writers (tables, spawns, seats, registrations, horse joins) are never gated; only four doors call the gate'
+    return 'engine/system writers (tables, spawns, seats, registrations, horse joins) are never gated; only seven doors call the gate'
 
 
 def s_last_seat_race(db, t):
@@ -432,6 +546,33 @@ def s_last_seat_race(db, t):
     return 'two concurrent approvals for the last seat: exactly one lands'
 
 
+def s_last_seat_join_race(db, t):
+    o = person(db, t + 'o11', 5000)
+    k = club(db, t + 'k11', o, requires_approval=False)
+    buy(db, o, k, 'capacity_60', t + 'cap-k11-0001')
+    fill(db, k, t + 'fill11', 58)  # 59 of 60: one seat left
+    j1, j2 = person(db, t + 'j11a'), person(db, t + 'j11b')
+    outs = {}
+
+    def slow():
+        r = psql(db, as_caller(j1) + f"BEGIN; SELECT public.fn_join_club('{k}'); SELECT pg_sleep(1.2); COMMIT;", ok=False)
+        outs['a'] = r.stdout + r.stderr
+
+    def fast():
+        time.sleep(0.4)
+        r = psql(db, as_caller(j2) + f"SELECT public.fn_join_club('{k}')", ok=False)
+        outs['b'] = r.stdout + r.stderr
+
+    ths = [threading.Thread(target=slow), threading.Thread(target=fast)]
+    [x.start() for x in ths]
+    [x.join() for x in ths]
+    active = count(db, f"public.club_members WHERE club_id='{k}' AND status='active'")
+    ck(active == 60 and status_of(db, k, j1) == 'active' and status_of(db, k, j2) == '' and MSG_JOIN_FULL in outs.get('b', '')
+       and 'deadlock' not in (outs.get('a', '') + outs.get('b', '')),
+       'race: two automatic joins for the last seat, one lands and the other meets a full club (membership lock, then scope lock)', {'active': active, 'outs': outs})
+    return 'two concurrent automatic joins for the last seat: exactly one lands, no deadlock'
+
+
 def s_browser_read_is_tightened(db, t):
     A, B, D, X, S, C1, C3 = base.A, base.B, base.D, base.X, base.S, base.C1, base.C3
     adm = rpc(db, 'fn_ca_commerce_admission', f"'club','{C1}','open_table'", X)
@@ -459,17 +600,33 @@ def s_browser_read_is_tightened(db, t):
         ck(r.returncode != 0 and 'permission denied' in r.stderr, f'tightened: a browser cannot call {fn.split("(")[0]} directly', r.stderr[-200:])
     r = q1(db, 'SELECT count(*) FROM public.ca_commerce_admission_decisions', A, ok=False)
     ck(r.returncode != 0 and 'permission denied' in r.stderr, 'tightened: decisions are not browser-readable', r.stderr[-200:])
-    return 'the browser read answers only owners/administrators; the gate, decision and log are internal'
+    rep = rpc(db, 'fn_ca_commerce_admission_report', '30', A)
+    ck(rep == {'success': False, 'error': 'staff_required'}, 'report: an owner cannot read the shadow report', rep)
+    r = q1(db, 'SELECT public.fn_ca_commerce_admission_report(30)', role='anon', ok=False)
+    ck(r.returncode != 0 and 'permission denied' in r.stderr, 'report: anon cannot execute it', r.stderr[-200:])
+    rep = rpc(db, 'fn_ca_commerce_admission_report', '500', S)
+    doors = {(d['action'], d['door']): d for d in rep.get('doors', [])}
+    ck(rep.get('success') and rep.get('days') == 90 and rep.get('enforced') is True
+       and doors.get(('join_member', 'fn_join_club'), {}).get('decisions', 0) >= 2
+       and doors.get(('approve_member', 'fn_agent_attach_player'), {}).get('refused', 0) >= 1
+       and doors.get(('approve_member', 'fn_review_join_request'), {}).get('would_deny', 0) >= 1
+       and all(set(d) == {'action', 'door', 'decisions', 'would_deny', 'refused', 'undecided', 'scopes_would_deny', 'last_at'} for d in rep['doors'])
+       and rep.get('scopes') and all(x['would_deny'] >= 1 and x['reasons'] for x in rep['scopes']),
+       'report: staff read every door\'s decisions, would-deny and refusals, and the scopes a would-deny fell on (window capped at 90 days)', rep)
+    return 'the browser read answers only owners/administrators; the gate, decision and log are internal; staff read the shadow report'
 
 
 SCENARIOS = [  # (name, needs enforcement on)
     (s_shadow_records_and_allows, False),
+    (s_member_doors_shadow, False),
     (s_enforced_refuses_without_side_effect, True),
     (s_effective_right_allowed, True),
     (s_existing_obligations_untouched, True),
     (s_horse_counts, True),
+    (s_member_doors_enforced, True),
     (s_system_paths_not_gated, True),
     (s_last_seat_race, True),
+    (s_last_seat_join_race, True),
     (s_browser_read_is_tightened, True),
 ]
 
@@ -556,15 +713,16 @@ def migration_safety():
     record('SAFETY a concurrent change elsewhere in a door body is preserved, not clobbered', r.returncode == 0 and body == 't', r.stderr[-300:])
 
     db = copy('admission_exact_diff')
-    befores = {s: text(db, f"SELECT pg_get_functiondef('{s}'::regprocedure)") for s in LIVE_MD5 if 'admission(' not in s}
+    befores = {s: text(db, f"SELECT pg_get_functiondef('{s}'::regprocedure)") for s in LIVE_MD5 if s in DOORS}
     ck(apply(db).returncode == 0, 'safety: apply for the diff')
     diffs = {}
     for s, b in befores.items():
         a = text(db, f"SELECT pg_get_functiondef('{s}'::regprocedure)")
         bl, al = b.split('\n'), a.split('\n')
         diffs[s] = (len(al) - len(bl), all(line in al for line in bl))
-    record('SAFETY each door only gains lines (every original line survives, none is edited)',
-           all(added > 0 and kept for added, kept in diffs.values()), diffs)
+    helpers = {s: md5_of(db, s) == m for s, m in LIVE_MD5.items() if s not in DOORS and 'admission(' not in s}
+    record('SAFETY each door only gains lines (every original line survives, none is edited); the helpers are untouched',
+           all(added > 0 and kept for added, kept in diffs.values()) and all(helpers.values()), {**diffs, **helpers})
 
 
 # ---------------------------------------------------------------------------
@@ -582,7 +740,7 @@ def main():
             psql(TEMPLATE, f"INSERT INTO auth.sessions(id,user_id,not_after) VALUES ('{sid(who)}','{who}',now() + interval '1 day')")
 
         fidelity = {s: md5_of(TEMPLATE, s) == m for s, m in LIVE_MD5.items()}
-        record('FIXTURE the four doors and the admission read are byte-identical to production (md5 of pg_get_functiondef)', all(fidelity.values()), fidelity)
+        record('FIXTURE the seven doors, their membership helpers and the admission read are byte-identical to production (md5 of pg_get_functiondef)', all(fidelity.values()), fidelity)
 
         psql('postgres', f'CREATE DATABASE {RED} TEMPLATE {TEMPLATE}')
         psql('postgres', f'CREATE DATABASE {GREEN} TEMPLATE {TEMPLATE}')

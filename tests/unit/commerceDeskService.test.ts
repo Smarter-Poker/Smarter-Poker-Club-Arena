@@ -149,6 +149,8 @@ const SCOPE = '00000000-0000-4000-8000-000000000001';
 
 async function exerciseEveryDoor() {
   await CommerceDeskService.catalog();
+  await CommerceDeskService.admissionReport();
+  await CommerceDeskService.admissionReport(90);
   await CommerceDeskService.refundQueue('requested');
   await CommerceDeskService.refundQueue(null, 50);
   await CommerceDeskService.decideRefund(SCOPE, true, 500, null);
@@ -293,6 +295,7 @@ describe('DESK_REFUSAL_COPY: every code the desk doors can return has staff copy
     'fn_ca_commerce_comparison_verify',
     'fn_ca_commerce_price_versions',
     'fn_ca_commerce_comparison_list',
+    'fn_ca_commerce_admission_report',
   ];
   const codes = new Set(DOORS.flatMap((d) => [...refusalCodes(d)]));
 

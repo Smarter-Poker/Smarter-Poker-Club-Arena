@@ -1,4 +1,4 @@
--- What the four admission doors need to run in isolation.
+-- What the seven admission doors need to run in isolation.
 --
 -- PART 1 is captured EXACTLY from production project kuklfnapbkmacvwxktbh on
 -- 2026-09-24 (UTC) with pg_get_functiondef, read-only: the authorization and
@@ -261,9 +261,137 @@ AS $function$
   END;
 $function$;
 
+-- The membership helpers the member doors call (captured 2026-09-24):
+--   fn_club_membership_lock(uuid)            07343122ba0f2fa43bfb879184d56be9
+--   fn_club_membership_count(uuid,uuid)      3e9b2104d51842cfd202bd30e0a1c9a1
+--   fn_club_membership_cap()                 6511fc3913189151b46c3953033a289d
+--   fn_join_club_membership_impl(uuid)       dc9908bbe4447d2a455039efd2ff0137
+CREATE OR REPLACE FUNCTION public.fn_club_membership_lock(p_user_id uuid)
+ RETURNS void
+ LANGUAGE sql
+ SET search_path TO 'pg_catalog'
+AS $function$
+  SELECT pg_advisory_xact_lock(hashtextextended(p_user_id::text, 77431))
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_club_membership_count(p_user_id uuid, p_excluding_club uuid DEFAULT NULL::uuid)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'pg_catalog'
+AS $function$
+  SELECT count(*)::integer
+    FROM public.club_members cm
+   WHERE cm.user_id = p_user_id
+     AND cm.status::text IN ('active', 'approved')
+     AND COALESCE(cm.membership_lifecycle_status::text, 'active') = 'active'
+     AND (p_excluding_club IS NULL OR cm.club_id <> p_excluding_club)
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_club_membership_cap()
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+ SET search_path TO 'pg_catalog'
+AS $function$ SELECT 10 $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_join_club_membership_impl(p_club_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_owner uuid;
+  v_requires_approval boolean;
+  v_active_count int;
+  v_role text;
+  v_status text;
+  v_row club_members%ROWTYPE;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  SELECT owner_id, COALESCE(requires_approval, false)
+    INTO v_owner, v_requires_approval
+    FROM clubs
+    WHERE id = p_club_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Club not found';
+  END IF;
+
+  SELECT * INTO v_row FROM club_members
+    WHERE club_id = p_club_id AND user_id = v_uid;
+  IF FOUND THEN
+    RETURN to_jsonb(v_row);
+  END IF;
+
+  IF v_uid = v_owner THEN
+    v_role := 'owner';
+    v_status := 'active';
+  ELSE
+    PERFORM public.fn_club_membership_lock(v_uid);
+    v_active_count := public.fn_club_membership_count(v_uid);
+    IF v_active_count >= public.fn_club_membership_cap() THEN
+      RAISE EXCEPTION 'You can only be a member of up to % clubs. Leave a club to join a new one.',
+        public.fn_club_membership_cap();
+    END IF;
+
+    v_role := 'player';
+    v_status := CASE WHEN v_requires_approval THEN 'pending' ELSE 'active' END;
+  END IF;
+
+  -- chip_balance = 0 written EXPLICITLY: the default was 1000 until 2026-08-26.
+  INSERT INTO club_members (club_id, user_id, role, status, tier, rank_level, orange_ball_status, chip_balance)
+  VALUES (p_club_id, v_uid, v_role, v_status, 'bronze', 0, 'cold', 0)
+  ON CONFLICT (club_id, user_id) DO NOTHING
+  RETURNING * INTO v_row;
+
+  IF NOT FOUND THEN
+    SELECT * INTO v_row FROM club_members
+      WHERE club_id = p_club_id AND user_id = v_uid;
+  END IF;
+
+  RETURN to_jsonb(v_row);
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_club_membership_lock(uuid), public.fn_club_membership_count(uuid,uuid),
+  public.fn_club_membership_cap(), public.fn_join_club_membership_impl(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_club_membership_lock(uuid), public.fn_club_membership_count(uuid,uuid),
+  public.fn_club_membership_cap(), public.fn_join_club_membership_impl(uuid) TO service_role;
+
+-- The schedule door's zone check (captured 2026-09-24 13:10 UTC, 20260924045822):
+--   fn_schedule_time_zone_is_known(text)     0fe6c641a93674740394fd523f107faf
+CREATE OR REPLACE FUNCTION public.fn_schedule_time_zone_is_known(p_zone text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'pg_catalog'
+AS $function$
+  SELECT p_zone IS NULL
+      OR ((p_zone IN ('UTC', 'GMT')
+           OR p_zone ~ '^[A-Z][A-Za-z]+/[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)?$')
+          AND EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names n WHERE n.name = p_zone))
+$function$;
+
 -- ===== PART 2: fixture relations and stand-ins (NOT production) ============
 
 CREATE TABLE IF NOT EXISTS auth.sessions (id uuid PRIMARY KEY, user_id uuid, not_after timestamptz);
+
+-- The agents relation the member doors read (columns they touch only).
+CREATE TABLE IF NOT EXISTS public.agents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  status text NOT NULL DEFAULT 'active',
+  total_players integer NOT NULL DEFAULT 0,
+  active_player_count integer NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT ALL ON public.agents TO service_role;
 
 CREATE TABLE public.tables (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -316,8 +444,21 @@ CREATE TABLE public.tournament_schedules (
   config jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_by uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  time_zone text
 );
+
+-- STAND-IN for fn_tournament_config_refusal(jsonb,text) (production md5
+-- c1a376cb8d9a01b4ba9db181c7ab9e50, 20260924033701): the configuration rules
+-- both tournament doors check BEFORE admission. This migration does not touch
+-- them and the scenarios use configurations production accepts, so the
+-- stand-in accepts every configuration (NULL = no refusal).
+CREATE FUNCTION public.fn_tournament_config_refusal(p_config jsonb, p_context text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$ SELECT NULL::text $$;
+-- STAND-IN for fn_mystery_bounty_creation_document(jsonb): only a mystery
+-- bounty reaches it, and no scenario creates one.
+CREATE FUNCTION public.fn_mystery_bounty_creation_document(p_config jsonb) RETURNS jsonb
+LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture: mystery bounty creation is not exercised'; END $$;
 
 -- STAND-IN for the governed tournament creator: writes the club event the
 -- real creator writes and answers with the same receipt shape.

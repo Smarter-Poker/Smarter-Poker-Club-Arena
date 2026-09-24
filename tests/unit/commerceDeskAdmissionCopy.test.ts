@@ -3,11 +3,14 @@
  *  AN ENFORCED ADMISSION REFUSAL READS AS THE SERVER WROTE IT (20260924102056)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Once staff enforce commerce admission, four owner doors refuse a NEW action
- * with a Title Case sentence from fn_ca_commerce_admission_message, each in
- * its own shape:
+ * Once staff enforce commerce admission, the admission doors refuse a NEW
+ * action with a Title Case sentence from fn_ca_commerce_admission_message,
+ * each in its own shape:
  *
  *   fn_review_join_request         { success: false, error: <sentence>, code: 'operating_access_required' }
+ *   fn_agent_attach_player         { success: false, code: 'operating_access_required', error: <sentence> }
+ *   fn_join_club                   RAISE EXCEPTION <sentence> USING HINT = 'operating_access_required'
+ *   fn_redeem_club_invite_code     no refusal: the member stays pending for the owner
  *   fn_create_tournament           { success: false, error: 'operating_access_required', message: <sentence> }
  *   fn_upsert_tournament_schedule  { error: 'operating_access_required', message: <sentence> }
  *   fn_cash_game_create            RAISE EXCEPTION <sentence> USING HINT = 'operating_access_required'
@@ -27,6 +30,12 @@ vi.mock('../../src/services/GameAccessService', () => ({
 vi.mock('../../src/utils/clubIdResolver', () => ({
   resolveClubUUID: async (value: string) => value,
 }));
+vi.mock('../../src/services/ArenaContextService', () => ({
+  getArenaContext: async () => null,
+}));
+vi.mock('../../src/services/ClubEntryTrustService', () => ({
+  ClubEntryTrustService: { track: () => undefined },
+}));
 
 import { supabase } from '../../src/lib/supabase';
 import {
@@ -40,6 +49,8 @@ import {
 import { cashGameCreateRefusalText } from '../../src/config/cashGames';
 import { tournamentService, type TournamentConfig } from '../../src/services/TournamentService';
 import { tournamentScheduleService } from '../../src/services/TournamentScheduleService';
+import { ClubJoinService } from '../../src/services/ClubJoinService';
+import { AgentService } from '../../src/services/AgentService';
 import { BLIND_STRUCTURES, newTournamentPlayingLevels } from '../../src/config/blindStructures';
 
 afterEach(() => vi.restoreAllMocks());
@@ -73,10 +84,19 @@ const sentences = (action: string) => SENTENCES.get(action) ?? [];
 
 describe('the sentences are read from the migration', () => {
   it('finds every action the gate names', () => {
-    for (const action of ['approve_member', 'open_table', 'create_tournament', 'club_insurance'])
+    for (const action of [
+      'approve_member',
+      'join_member',
+      'open_table',
+      'create_tournament',
+      'club_insurance',
+    ])
       expect(sentences(action).length, action).toBeGreaterThan(0);
-    // approve_member has two: capacity reached, and no operating access.
+    // approve_member and join_member have two each: capacity reached, and no
+    // operating access. join_member is written to the player, not the owner.
     expect(sentences('approve_member')).toHaveLength(2);
+    expect(sentences('join_member')).toHaveLength(2);
+    for (const s of sentences('join_member')) expect(s).toMatch(/Please Contact The Club\.$/);
     expect(sentences('else')).toEqual([OPERATING_ACCESS_FALLBACK]);
   });
 
@@ -108,15 +128,10 @@ describe('member approval shows the refusal sentence', () => {
     ).toBe(sentence);
   });
 
-  it('ClubDetailPage reads it before the generic toast', () => {
-    const page = read('src/pages/ClubDetailPage.tsx');
-    const at = page.indexOf("supabase.rpc('fn_review_join_request'");
-    const refusal = page.indexOf('operatingAccessRefusal(res)', at);
-    const generic = page.indexOf('throw new Error(res?.error ||', at);
-    expect(at).toBeGreaterThan(-1);
-    expect(refusal).toBeGreaterThan(at);
-    expect(refusal).toBeLessThan(generic);
-  });
+  // ClubDetailPage.tsx carries the only client call of fn_review_join_request,
+  // and nothing imports it (tests/unit/orphanModuleRatchet.test.ts): it ships
+  // to nobody. The owner review answers in the shape above for whichever
+  // client calls it; the member doors below are the ones this client uses.
 
   it('is not fooled by any other refusal', () => {
     expect(operatingAccessRefusal({ success: false, error: 'not_authorised' })).toBeNull();
@@ -124,6 +139,53 @@ describe('member approval shows the refusal sentence', () => {
     expect(
       operatingAccessRefusal({ success: false, code: 'operating_access_required', error: '' })
     ).toBe(OPERATING_ACCESS_FALLBACK);
+  });
+});
+
+describe('a refused member door reads as the server wrote it', () => {
+  it.each(sentences('join_member'))('the join modal and invite page show: %s', async (sentence) => {
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: null,
+      error: { message: sentence, code: 'P0001', hint: 'operating_access_required', details: '' },
+    } as never);
+    await expect(ClubJoinService.join({ identifier: '123456' })).rejects.toThrow(
+      new Error(sentence)
+    );
+  });
+
+  it.each(sentences('approve_member'))('an agent add shows: %s', async (sentence) => {
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: {
+        success: false,
+        code: 'operating_access_required',
+        error: sentence,
+        reason: 'capacity_reached',
+      },
+      error: null,
+    } as never);
+    const res = await AgentService.attachPlayerToAgent('club', 'agent', 'player');
+    expect(res).toEqual({ success: false, code: 'operating_access_required', error: sentence });
+    expect(read('src/components/agent/PlayerInviteModal.tsx')).toMatch(
+      /AgentService\.attachPlayerToAgent[\s\S]{0,200}if \(!res\.success\)[\s\S]{0,120}text: res\.error \|\|/
+    );
+  });
+
+  it('the join surfaces print the thrown message', () => {
+    expect(read('src/components/modals/JoinClubModal.tsx')).toMatch(
+      /ClubJoinService\.join\([\s\S]{0,400}error instanceof Error\s*\?\s*error\.message/
+    );
+  });
+
+  it('pins the member door shapes', () => {
+    expect(SQL).toMatch(
+      /'join_member', 'fn_join_club', v_uid\);[\s\S]{0,200}RAISE EXCEPTION '%', v_ca_admission->>'message' USING ERRCODE = 'P0001', HINT = 'operating_access_required'/
+    );
+    expect(SQL).toMatch(
+      /'join_member', 'fn_redeem_club_invite_code', p_user_id\);[\s\S]{0,200}v_new_status := 'pending';/
+    );
+    expect(SQL).toMatch(
+      /'approve_member', 'fn_agent_attach_player', p_player_id\);[\s\S]{0,200}RETURN jsonb_build_object\('success', false, 'code', 'operating_access_required',\s*'error', v_ca_admission->>'message'/
+    );
   });
 });
 

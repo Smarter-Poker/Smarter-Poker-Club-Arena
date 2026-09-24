@@ -10,13 +10,27 @@
 -- answered whether a scope may admit a NEW discretionary operation, but no
 -- door asked it, and any signed-in caller could ask it about any scope.
 --
--- 1. Every prospective, owner-initiated operating action named by the
---    admission map now consults admission on the server, in the door itself:
+-- 1. Every prospective operating action named by the admission map, and
+--    every door through which a club gains a NEW approved member, now
+--    consults admission on the server, in the door itself:
 --      approve a new club member ....... fn_review_join_request (approve only)
+--      join a club that admits members
+--        automatically ................. fn_join_club (new or returning member only)
+--      admit a pending member through
+--        an invite link ................ fn_redeem_club_invite_code (pending only)
+--      an agent adds a player .......... fn_agent_attach_player (new or pending only)
 --      open a new table ................ fn_cash_game_create
 --      offer insurance on a new table .. fn_cash_game_create (insurance option)
 --      create a tournament ............. fn_create_tournament
 --      create a recurring schedule ..... fn_upsert_tournament_schedule (new only)
+--    A club's roster grows through four doors, not one: 3 of the 5 live
+--    clubs admit automatically (requires_approval false), so a join there
+--    makes an approved member with no review at all, and an invite link
+--    promotes a pending join without the owner. Each of them is decided
+--    against capacity like an owner approval. A refused automatic join tells
+--    the player the club cannot accept members right now; a refused invite
+--    leaves the member pending for the owner (nothing is lost); a refused
+--    agent add returns the owner sentence.
 --    Each decision is recorded durably in ca_commerce_admission_decisions
 --    (scope, action, door, would_allow, enforced, allowed, reason, actor,
 --    subject id, at; ids only). In SHADOW (admission_enforced_from NULL or in
@@ -28,15 +42,21 @@
 --    approved, tables and tournaments already open, schedules already created
 --    (and their spawns), and every engine/system writer (auto-spawn, feeder
 --    tables, balancing, horse floor seeding, horse club joins) never reach
---    these doors: each door requires a signed-in caller who passed the door's
---    own authorization, and the gate sits after that check. No trigger is
---    added anywhere (the D21 / D28 harness check stays true).
+--    these doors: each is a browser door, the gate sits after the door's own
+--    authorization, and chip movements that happen to write a membership row
+--    (fn_credit_chips, fn_transfer_chips, table unlocks) are money paths and
+--    are never consulted. Reinstating a suspended member and moving a member
+--    between downlines are not admissions. No trigger is added anywhere (the
+--    D21 / D28 harness check stays true).
 -- 3. fn_ca_commerce_admission (the browser read) now answers only a caller
 --    who owns or administers the scope (club owner/co-owner/admin, union
 --    owner/admin, the union owner/admin of a covered club, platform staff);
 --    anyone else gets {"error":"access_denied"}. Service role is unrestricted.
 --    The decision itself moves, unchanged except that every answer now names
 --    would_allow, to fn_ca_commerce_admission_decide (internal).
+-- 4. fn_ca_commerce_admission_report (staff only) shows, per door and per
+--    scope, what the recorded shadow decisions say enforcement would refuse,
+--    so the switch is made on evidence, not on a guess.
 --
 -- How the doors are amended: the anchor-insert pattern of
 -- 20260914120854. Each door is read with pg_get_functiondef at apply time,
@@ -56,7 +76,7 @@
 -- The database refuses DDL inside the hourly break window (:50 to :03 UTC).
 --
 -- The door amendments create no object of their own, so they state their proof:
--- @live-proof: (SELECT count(*) = 4 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc LIKE '%fn_ca_commerce_admit(%' AND p.proname IN ('fn_review_join_request','fn_cash_game_create','fn_create_tournament','fn_upsert_tournament_schedule'))
+-- @live-proof: (SELECT count(*) = 7 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc LIKE '%fn_ca_commerce_admit(%' AND p.proname IN ('fn_review_join_request','fn_join_club','fn_redeem_club_invite_code','fn_agent_attach_player','fn_cash_game_create','fn_create_tournament','fn_upsert_tournament_schedule'))
 -- @live-proof: (SELECT strpos(pg_get_functiondef('public.fn_ca_commerce_admission(text,uuid,text)'::regprocedure), 'access_denied') > 0)
 
 BEGIN;
@@ -81,7 +101,8 @@ BEGIN
   IF to_regclass('public.ca_commerce_admission_decisions') IS NOT NULL
      OR to_regprocedure('public.fn_ca_commerce_admit(text,uuid,text,text,uuid)') IS NOT NULL
      OR to_regprocedure('public.fn_ca_commerce_admission_decide(text,uuid,text)') IS NOT NULL
-     OR to_regprocedure('public.fn_ca_commerce_admission_message(text,text)') IS NOT NULL THEN
+     OR to_regprocedure('public.fn_ca_commerce_admission_message(text,text)') IS NOT NULL
+     OR to_regprocedure('public.fn_ca_commerce_admission_report(integer)') IS NOT NULL THEN
     RAISE EXCEPTION 'admission wiring objects already exist; this migration has run or collided';
   END IF;
   -- The helpers the decision reads, and the append-only guard it reuses.
@@ -91,6 +112,7 @@ BEGIN
       'public.fn_ca_commerce_scope_role(text,uuid,uuid)',
       'public.fn_ca_commerce_append_only()',
       'public.fn_is_platform_admin()',
+      'public.fn_club_membership_lock(uuid)',
       'public.fn_cash_override_bool(jsonb,text,boolean)']) AS sig LOOP
     IF to_regprocedure(r.sig) IS NULL THEN
       RAISE EXCEPTION 'admission dependency % is missing', r.sig;
@@ -100,6 +122,9 @@ BEGIN
   -- not) and is not already wired.
   FOR r IN SELECT unnest(ARRAY[
       'public.fn_review_join_request(uuid,uuid,boolean)',
+      'public.fn_join_club(uuid)',
+      'public.fn_redeem_club_invite_code(uuid,uuid,text)',
+      'public.fn_agent_attach_player(uuid,uuid,uuid)',
       'public.fn_cash_game_create(uuid,text,text,numeric,numeric,integer,jsonb,text,boolean)',
       'public.fn_create_tournament(uuid,jsonb)',
       'public.fn_upsert_tournament_schedule(jsonb)']) AS sig LOOP
@@ -117,7 +142,7 @@ BEGIN
 END $baseline$;
 
 -- ---------------------------------------------------------------------------
--- 1. The decision record. Owner actions only (low volume), ids only, append
+-- 1. The decision record. Admissions only (low volume), ids only, append
 -- only, not browser-readable. No foreign key: a decision log must never take
 -- a lock on clubs or unions (CLAUDE.md section 2, rule 7).
 -- ---------------------------------------------------------------------------
@@ -169,6 +194,7 @@ BEGIN
   v_in_trial := public.fn_ca_commerce_in_trial(p_scope_kind, p_scope_id);
   v_kind := CASE p_action
     WHEN 'approve_member' THEN 'capacity'
+    WHEN 'join_member' THEN 'capacity'
     WHEN 'open_table' THEN 'capacity'
     WHEN 'create_tournament' THEN 'capacity'
     WHEN 'union_tools' THEN 'union_back_office'
@@ -186,7 +212,7 @@ BEGIN
     v_allowed := true; v_reason := 'trial';
   ELSIF v_ent.id IS NULL THEN
     v_allowed := false; v_reason := 'no_effective_entitlement';
-  ELSIF p_action = 'approve_member' THEN
+  ELSIF p_action IN ('approve_member', 'join_member') THEN
     v_roster := public.fn_ca_commerce_roster_count(p_scope_id);
     v_allowed := v_roster < v_ent.capacity;
     v_reason := CASE WHEN v_allowed THEN 'within_capacity' ELSE 'capacity_reached' END;
@@ -232,6 +258,10 @@ LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $$
       THEN 'This Club Has Reached Its Member Capacity. Upgrade Capacity To Approve New Members. Current Members Are Not Affected.'
     WHEN p_action = 'approve_member'
       THEN 'This Club Needs Active Operating Access To Approve New Members. Current Members Are Not Affected.'
+    WHEN p_action = 'join_member' AND p_reason = 'capacity_reached'
+      THEN 'This Club Is Full And Cannot Accept New Members Right Now. Please Contact The Club.'
+    WHEN p_action = 'join_member'
+      THEN 'This Club Cannot Accept New Members Right Now. Please Contact The Club.'
     WHEN p_action = 'open_table'
       THEN 'This Club Needs Active Operating Access To Open A New Table. Running Tables Are Not Affected.'
     WHEN p_action = 'create_tournament'
@@ -251,10 +281,12 @@ $$;
 -- with the refusal sentence. A decision that cannot be computed or recorded
 -- never blocks the owner's action (D28): it is logged as undecided and the
 -- action proceeds; only a computed, enforced would-deny refuses.
--- approve_member serializes on the commerce scope lock (the same key the
--- purchase, renewal and refund paths take) so two approvals racing for the
--- last seat cannot both pass once enforced. No other path holds a membership
--- lock and then asks for this key, so the order cannot invert.
+-- approve_member and join_member serialize on the commerce scope lock (the
+-- same key the purchase, renewal and refund paths take) so two admissions
+-- racing for the last seat cannot both pass once enforced. Lock order is one
+-- way only: a join door takes the joining player's membership lock
+-- (fn_club_membership_lock, which fn_join_club_atomic already holds) BEFORE
+-- this key, and no path holding this key asks for a membership lock.
 -- ---------------------------------------------------------------------------
 CREATE FUNCTION public.fn_ca_commerce_admit(p_scope_kind text, p_scope_id uuid, p_action text, p_door text, p_subject_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -264,7 +296,7 @@ DECLARE
   v_id bigint;
   v_policy text;
 BEGIN
-  IF p_action = 'approve_member' THEN
+  IF p_action IN ('approve_member', 'join_member') THEN
     PERFORM pg_advisory_xact_lock(hashtextextended('ca_commerce_scope:' || p_scope_kind || ':' || p_scope_id::text, 0));
   END IF;
   BEGIN
@@ -290,7 +322,62 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
--- 6. The doors. Anchor-insert, one anchor per door (see the header).
+-- 6. The shadow report (staff read, the Commerce Desk's Admission tab). What
+-- the decision log says a switch to enforcement would do, per door and per
+-- scope, before anyone switches it: decisions, would-deny, refused and
+-- undecided counts over a window (1 to 90 days), and the scopes a would-deny
+-- fell on. Ids and counts only.
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION public.fn_ca_commerce_admission_report(p_days integer DEFAULT 30) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_days integer := LEAST(GREATEST(COALESCE(p_days, 30), 1), 90);
+  v_since timestamptz;
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' AND NOT public.fn_is_platform_admin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'staff_required');
+  END IF;
+  v_since := now() - make_interval(days => v_days);
+  RETURN jsonb_build_object(
+    'success', true,
+    'days', v_days,
+    'since', v_since,
+    'enforced_from', (SELECT s.admission_enforced_from FROM public.ca_commerce_settings s WHERE s.id = 1),
+    'enforced', COALESCE((SELECT s.admission_enforced_from <= now() FROM public.ca_commerce_settings s WHERE s.id = 1), false),
+    'doors', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'action', x.action, 'door', x.door, 'decisions', x.decisions, 'would_deny', x.would_deny,
+               'refused', x.refused, 'undecided', x.undecided, 'scopes_would_deny', x.scopes_would_deny,
+               'last_at', x.last_at)
+             ORDER BY x.would_deny DESC, x.decisions DESC, x.action, x.door)
+        FROM (SELECT d.action, d.door, count(*)::integer AS decisions,
+                     count(*) FILTER (WHERE d.would_allow IS FALSE)::integer AS would_deny,
+                     count(*) FILTER (WHERE NOT d.allowed)::integer AS refused,
+                     count(*) FILTER (WHERE d.would_allow IS NULL)::integer AS undecided,
+                     count(DISTINCT d.scope_id) FILTER (WHERE d.would_allow IS FALSE)::integer AS scopes_would_deny,
+                     max(d.decided_at) AS last_at
+                FROM public.ca_commerce_admission_decisions d
+               WHERE d.decided_at >= v_since
+               GROUP BY d.action, d.door) x), '[]'::jsonb),
+    'scopes', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'scope_kind', y.scope_kind, 'scope_id', y.scope_id, 'would_deny', y.would_deny,
+               'refused', y.refused, 'reasons', y.reasons, 'last_at', y.last_at)
+             ORDER BY y.would_deny DESC, y.last_at DESC)
+        FROM (SELECT d.scope_kind, d.scope_id,
+                     count(*)::integer AS would_deny,
+                     count(*) FILTER (WHERE NOT d.allowed)::integer AS refused,
+                     to_jsonb(array_agg(DISTINCT d.reason ORDER BY d.reason)) AS reasons,
+                     max(d.decided_at) AS last_at
+                FROM public.ca_commerce_admission_decisions d
+               WHERE d.decided_at >= v_since AND d.would_allow IS FALSE
+               GROUP BY d.scope_kind, d.scope_id
+               ORDER BY count(*) DESC, max(d.decided_at) DESC
+               LIMIT 50) y), '[]'::jsonb));
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 7. The doors. Anchor-insert, one anchor per door (see the header).
 -- ---------------------------------------------------------------------------
 DO $wire$
 DECLARE
@@ -327,6 +414,83 @@ $a1$,
     END IF;
     UPDATE club_members
 $n1$),
+    -- Join a club that admits members automatically: the join itself makes a
+    -- NEW approved member. A club that reviews joins is decided at the
+    -- approval (or the invite) instead; the owner, a member already in the
+    -- club (any state but departed) and a join into a reviewing club never
+    -- reach the gate. The membership lock comes first (see the gate).
+    ('public.fn_join_club(uuid)',
+     'v_uid IS NULL',
+     $a5$  PERFORM set_config('app.club_membership_source', 'join_club', true);
+$a5$,
+     $n5$  -- ca-commerce-admission: joining a club that admits members automatically
+  -- makes a NEW approved member now (R2 4.3, D22). Shadow records and
+  -- proceeds; enforced refuses here, before anything is written.
+  IF EXISTS (SELECT 1 FROM public.clubs c
+              WHERE c.id = p_club_id AND c.owner_id IS DISTINCT FROM v_uid
+                AND NOT COALESCE(c.requires_approval, false))
+     AND NOT EXISTS (SELECT 1 FROM public.club_members cm
+                      WHERE cm.club_id = p_club_id AND cm.user_id = v_uid
+                        AND COALESCE(cm.membership_lifecycle_status::text, 'active') <> 'departed') THEN
+    PERFORM public.fn_club_membership_lock(v_uid);
+    DECLARE
+      v_ca_admission jsonb := public.fn_ca_commerce_admit('club', p_club_id, 'join_member', 'fn_join_club', v_uid);
+    BEGIN
+      IF NOT COALESCE((v_ca_admission->>'allowed')::boolean, true) THEN
+        RAISE EXCEPTION '%', v_ca_admission->>'message' USING ERRCODE = 'P0001', HINT = 'operating_access_required';
+      END IF;
+    END;
+  END IF;
+  PERFORM set_config('app.club_membership_source', 'join_club', true);
+$n5$),
+    -- An invite link promotes a PENDING join into an approved member without
+    -- the owner. A refusal leaves the member pending (the invite and upline
+    -- still attach), so the owner decides at fn_review_join_request.
+    ('public.fn_redeem_club_invite_code(uuid,uuid,text)',
+     'v_caller <> p_user_id',
+     $a6$  v_new_status := CASE WHEN v_member.status = 'pending' THEN 'active' ELSE v_member.status END;
+$a6$,
+     $n6$  v_new_status := CASE WHEN v_member.status = 'pending' THEN 'active' ELSE v_member.status END;
+  -- ca-commerce-admission: an invite admitting a PENDING member makes a NEW
+  -- approved member (R2 4.3, D22). Shadow records and proceeds; enforced
+  -- keeps the member pending for the owner instead.
+  IF v_member.status = 'pending' THEN
+    PERFORM public.fn_club_membership_lock(p_user_id);
+    DECLARE
+      v_ca_admission jsonb := public.fn_ca_commerce_admit('club', p_club_id, 'join_member', 'fn_redeem_club_invite_code', p_user_id);
+    BEGIN
+      IF NOT COALESCE((v_ca_admission->>'allowed')::boolean, true) THEN
+        v_new_status := 'pending';
+      END IF;
+    END;
+  END IF;
+$n6$),
+    -- An agent (or club staff) adds a player: a NEW member, or a pending one
+    -- made active. Moving an existing member between downlines is not an
+    -- admission and never reaches the gate.
+    ('public.fn_agent_attach_player(uuid,uuid,uuid)',
+     'NOT v_is_staff AND v_caller <> p_agent_user_id',
+     $a7$  SELECT * INTO v_member FROM club_members
+   WHERE club_id = p_club_id AND user_id = p_player_id;
+$a7$,
+     $n7$  -- ca-commerce-admission: adding a NEW player, or activating a pending
+  -- one, is a prospective owner-side action (R2 4.3, D22). Shadow records and
+  -- proceeds; enforced refuses here, before the row changes.
+  IF NOT EXISTS (SELECT 1 FROM public.club_members
+                  WHERE club_id = p_club_id AND user_id = p_player_id AND status IS DISTINCT FROM 'pending') THEN
+    PERFORM public.fn_club_membership_lock(p_player_id);
+    DECLARE
+      v_ca_admission jsonb := public.fn_ca_commerce_admit('club', p_club_id, 'approve_member', 'fn_agent_attach_player', p_player_id);
+    BEGIN
+      IF NOT COALESCE((v_ca_admission->>'allowed')::boolean, true) THEN
+        RETURN jsonb_build_object('success', false, 'code', 'operating_access_required',
+          'error', v_ca_admission->>'message', 'reason', v_ca_admission->>'reason');
+      END IF;
+    END;
+  END IF;
+  SELECT * INTO v_member FROM club_members
+   WHERE club_id = p_club_id AND user_id = p_player_id;
+$n7$),
     -- Open a NEW cash game (Main 1), and offer insurance on it. The engine's
     -- own table writers (fn_cash_cluster_open_table for feeders, balancing
     -- and must-move mains) are not this door and are never gated.
@@ -425,12 +589,14 @@ $n4$)
 END $wire$;
 
 -- ---------------------------------------------------------------------------
--- 7. Grants, restated. The browser read keeps its door; the decision, the
+-- 8. Grants, restated. The browser read keeps its door; the decision, the
 -- gate and the sentence are internal (the doors run as their owner). A
 -- REVOKE names PUBLIC.
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION public.fn_ca_commerce_admission(text, uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_ca_commerce_admission(text, uuid, text) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_commerce_admission_report(integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_ca_commerce_admission_report(integer) TO authenticated, service_role;
 REVOKE ALL ON FUNCTION
   public.fn_ca_commerce_admission_decide(text, uuid, text),
   public.fn_ca_commerce_admission_message(text, text),
@@ -438,7 +604,7 @@ REVOKE ALL ON FUNCTION
 FROM PUBLIC, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- 8. Post-conditions.
+-- 9. Post-conditions.
 -- ---------------------------------------------------------------------------
 DO $post$
 DECLARE
@@ -450,16 +616,19 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.ca_commerce_admission_decisions) THEN
     RAISE EXCEPTION 'installation must not record decisions';
   END IF;
-  -- Exactly the four doors call the gate, each once per wired action.
+  -- Exactly the seven doors call the gate.
   SELECT count(*) INTO v_count FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc LIKE '%fn_ca_commerce_admit(%';
-  IF v_count <> 4 OR EXISTS (
+  IF v_count <> 7 OR EXISTS (
       SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc LIKE '%fn_ca_commerce_admit(%'
          AND p.oid NOT IN (to_regprocedure('public.fn_review_join_request(uuid,uuid,boolean)'),
+                           to_regprocedure('public.fn_join_club(uuid)'),
+                           to_regprocedure('public.fn_redeem_club_invite_code(uuid,uuid,text)'),
+                           to_regprocedure('public.fn_agent_attach_player(uuid,uuid,uuid)'),
                            to_regprocedure('public.fn_cash_game_create(uuid,text,text,numeric,numeric,integer,jsonb,text,boolean)'),
                            to_regprocedure('public.fn_create_tournament(uuid,jsonb)'),
                            to_regprocedure('public.fn_upsert_tournament_schedule(jsonb)'))) THEN
-    RAISE EXCEPTION 'the admission gate must be called by exactly the four owner doors, found %', v_count;
+    RAISE EXCEPTION 'the admission gate must be called by exactly the seven admission doors, found %', v_count;
   END IF;
   -- Never in the gameplay or seating path (spec 1143, D21, D28): no trigger on
   -- these relations runs a function that mentions commerce.
@@ -475,6 +644,10 @@ BEGIN
      OR NOT has_function_privilege('authenticated', 'public.fn_ca_commerce_admission(text,uuid,text)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.fn_ca_commerce_admission(text,uuid,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'fn_ca_commerce_admission must be executable by authenticated and service_role only';
+  END IF;
+  IF has_function_privilege('anon', 'public.fn_ca_commerce_admission_report(integer)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.fn_ca_commerce_admission_report(integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'the shadow report is a staff door: authenticated (checked inside) and never anon';
   END IF;
   IF has_function_privilege('authenticated', 'public.fn_ca_commerce_admit(text,uuid,text,text,uuid)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.fn_ca_commerce_admit(text,uuid,text,text,uuid)', 'EXECUTE')
@@ -493,6 +666,9 @@ BEGIN
   IF EXISTS (
       SELECT 1 FROM unnest(ARRAY[
         'public.fn_review_join_request(uuid,uuid,boolean)',
+        'public.fn_join_club(uuid)',
+        'public.fn_redeem_club_invite_code(uuid,uuid,text)',
+        'public.fn_agent_attach_player(uuid,uuid,uuid)',
         'public.fn_cash_game_create(uuid,text,text,numeric,numeric,integer,jsonb,text,boolean)',
         'public.fn_create_tournament(uuid,jsonb)',
         'public.fn_upsert_tournament_schedule(jsonb)']) s(sig)

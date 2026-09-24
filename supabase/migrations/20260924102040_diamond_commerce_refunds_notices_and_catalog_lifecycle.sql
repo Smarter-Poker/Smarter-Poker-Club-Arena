@@ -81,7 +81,8 @@ BEGIN
     ('fn_ca_commerce_price_draft', '5c82a8ad9fcfc5791f6c3163d85e1ef6'),
     ('fn_ca_commerce_price_publish', '3a21220f50fe66cd21bcc9d542ce8527'),
     ('fn_ca_commerce_activate_launch_cohort', '87826fae6c5be1d47bb140faa261ada2'),
-    ('fn_ca_commerce_product_support', '7294f3eb813de69ec155a9abac2b7c89')
+    ('fn_ca_commerce_product_support', '7294f3eb813de69ec155a9abac2b7c89'),
+    ('fn_ca_commerce_quote_impl', '6db7a6ce5c84e09bddcf66fabcddf4b0')
   ) AS t(fn, md5) LOOP
     IF (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = r.fn) IS DISTINCT FROM r.md5 THEN
       RAISE EXCEPTION 'commerce baseline changed: % is not the live body this migration replaces', r.fn;
@@ -91,10 +92,63 @@ BEGIN
      OR to_regclass('public.ca_commerce_refund_requests') IS NOT NULL
      OR to_regclass('public.ca_commerce_comparison_evidence') IS NOT NULL
      OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ca_commerce_settings' AND column_name = 'consumer_heartbeat_at')
-     OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ca_commerce_renewal_mandates' AND column_name = 'sponsorship_id') THEN
+     OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ca_commerce_renewal_mandates' AND column_name = 'sponsorship_id')
+     OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ca_commerce_products' AND column_name = 'platform_capability_id') THEN
     RAISE EXCEPTION 'commerce baseline changed: an object this migration adds already exists';
   END IF;
+  -- Prompt 1's capability registry (20260924025555), the one authority on
+  -- whether a technical capability may be sold (CAPABILITY-CONTRACT.md 2, 3).
+  IF to_regprocedure('public.fn_capability_available(text)') IS NULL THEN
+    RAISE EXCEPTION 'the platform capability registry (20260924025555) must be installed first';
+  END IF;
 END $baseline$;
+
+-- ---------------------------------------------------------------------------
+-- 0b. Commerce sells only what the platform can do (Prompt 1's capability
+-- contract, docs/handoffs/club-arena-product-completion/CAPABILITY-CONTRACT.md,
+-- section 2: "Commerce MUST NOT sell, enable or advertise a capability that
+-- is not available"). A product that sells a technical capability names it;
+-- the quote (and so every purchase, upgrade and renewal, which all quote
+-- first) refuses it while fn_capability_available says no, and staff cannot
+-- mark it supported while it is unavailable. Both insurance modules sell
+-- cash.insurance_ev_cashout (deployed today). Capacity, reports and assets
+-- sell no technical capability of the registry.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.ca_commerce_products ADD COLUMN platform_capability_id text
+  CHECK (platform_capability_id IS NULL OR platform_capability_id ~ '^[a-z0-9_]+(\.[a-z0-9_]+)+$');
+UPDATE public.ca_commerce_products SET platform_capability_id = 'cash.insurance_ev_cashout'
+ WHERE sku IN ('club_insurance_module', 'union_insurance_module');
+
+DO $capability$
+DECLARE
+  v_before text;
+  v_after text;
+  v_acl_before aclitem[];
+  v_acl_after aclitem[];
+  v_oid oid := to_regprocedure('public.fn_ca_commerce_quote_impl(uuid,uuid,text,uuid,jsonb,uuid,integer,text)');
+  v_anchor text := $a$    IF NOT v_product.supported THEN
+      RETURN jsonb_build_object('success', false, 'error', 'sku_not_available', 'sku', v_product.sku, 'line', v_i);
+    END IF;
+$a$;
+  v_insert text := $n$    -- A product that sells a platform capability is not sold while the
+    -- registry says the capability is unavailable (20260924102040).
+    IF v_product.platform_capability_id IS NOT NULL
+       AND NOT public.fn_capability_available(v_product.platform_capability_id) THEN
+      RETURN jsonb_build_object('success', false, 'error', 'sku_not_available', 'sku', v_product.sku, 'line', v_i,
+        'capability', v_product.platform_capability_id);
+    END IF;
+$n$;
+BEGIN
+  SELECT pg_get_functiondef(p.oid), p.proacl INTO v_before, v_acl_before FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_before) - length(replace(v_before, v_anchor, ''))) <> length(v_anchor) THEN
+    RAISE EXCEPTION 'the quote''s supported check must occur exactly once; review the live body';
+  END IF;
+  EXECUTE replace(v_before, v_anchor, v_anchor || v_insert);
+  SELECT pg_get_functiondef(p.oid), p.proacl INTO v_after, v_acl_after FROM pg_proc p WHERE p.oid = v_oid;
+  IF replace(v_after, v_anchor || v_insert, v_anchor) IS DISTINCT FROM v_before OR v_acl_after IS DISTINCT FROM v_acl_before THEN
+    RAISE EXCEPTION 'the capability check changed the quote beyond its own lines';
+  END IF;
+END $capability$;
 
 -- ---------------------------------------------------------------------------
 -- 1. Versioned policy texts (R2 5.4, 6.4). A version is never edited: a new
@@ -1583,6 +1637,14 @@ DECLARE
 BEGIN
   IF COALESCE(auth.role(), '') <> 'service_role' AND NOT public.fn_is_platform_admin() THEN
     RETURN jsonb_build_object('success', false, 'error', 'staff_required');
+  END IF;
+  -- A product that sells a platform capability cannot be marked supported
+  -- while the registry says the capability is unavailable (section 0b).
+  IF p_supported IS TRUE AND EXISTS (
+       SELECT 1 FROM public.ca_commerce_products p
+        WHERE p.sku = p_sku AND p.platform_capability_id IS NOT NULL
+          AND NOT public.fn_capability_available(p.platform_capability_id)) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'capability_unavailable', 'sku', p_sku);
   END IF;
   UPDATE public.ca_commerce_products SET supported = p_supported WHERE sku = p_sku;
   IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'unknown_sku'); END IF;

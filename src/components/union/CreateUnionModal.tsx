@@ -138,7 +138,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
       >
         <form onSubmit={handleSubmit}>
           <SpadeConsole
-            onClose={onClose}
+            onClose={requestClose}
             className={styles.console}
             /* The club medallion: a union is a network of CLUBS, and the crest
                is the one thing this standard lets a surface vary. */

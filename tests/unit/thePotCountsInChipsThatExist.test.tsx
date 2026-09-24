@@ -53,6 +53,16 @@ describe('the grid', () => {
     expect(countGrid(12, 40)).toBe(1);
   });
 
+  it('float noise on a whole pot is not a fraction (2026-09-24)', () => {
+    // The pill is fed mainPot - streetBets straight from the snapshot; a rake
+    // split can hand it 5.000000000000001 and a subtraction 0.30000000000000004.
+    expect(countGrid(0, 5.000000000000001)).toBe(1);
+    expect(countGrid(0.1 + 0.2 - 0.3, 3)).toBe(1);
+    expect(countGrid(11.999999999999998, 40)).toBe(1);
+    // A real cent is still a real cent.
+    expect(countGrid(0, 5.01)).toBe(0.01);
+  });
+
   it('anything with a real fraction counts in cents, never finer', () => {
     expect(countGrid(0, 7.5)).toBe(0.01);
     expect(countGrid(3.5, 10)).toBe(0.01);

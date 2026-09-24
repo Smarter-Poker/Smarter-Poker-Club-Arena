@@ -4543,6 +4543,7 @@ export default function MultiTablePage() {
                 moved onto the schema's own green and red. */}
             <div className="multi-table-page__session-agg" role="dialog" aria-label="Session">
               <SpadeConsole
+                onClose={() => setShowSessionAgg(false)}
                 as="div"
                 eyebrow="All Tables"
                 title="Session"
@@ -4626,6 +4627,7 @@ export default function MultiTablePage() {
                   actually found, which is the one figure a player wants before
                   they read a single row. */}
               <SpadeConsole
+                onClose={closeQuickJoin}
                 as="div"
                 eyebrow="Open Seats"
                 title="Quick Join"

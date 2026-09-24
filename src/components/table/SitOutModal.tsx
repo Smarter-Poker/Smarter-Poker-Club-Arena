@@ -200,6 +200,7 @@ export function SitOutModal({
         }}
       >
         <SpadeConsole
+          onClose={onClose}
           className="sitout-modal__console"
           crest="flat"
           eyebrow="At This Table"

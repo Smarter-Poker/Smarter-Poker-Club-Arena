@@ -259,6 +259,9 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     // covers the poll in between; this is the durable answer.
     const engine = strip(read('src/engine/ServerTableEngine.ts'));
     expect(engine).toMatch(/post_bb_deferred_user_ids: Array\.from\(this\.postBBWhenClear\)/);
+    // 2026-09-24: and the players already released to post on the next deal,
+    // who are in neither of the other two lists and were painted SITTING OUT.
+    expect(engine).toMatch(/posting_bb_user_ids: Array\.from\(this\.postingBBToEnter\)/);
   });
 });
 

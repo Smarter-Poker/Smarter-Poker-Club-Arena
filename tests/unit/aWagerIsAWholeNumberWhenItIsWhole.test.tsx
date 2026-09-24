@@ -57,6 +57,37 @@ describe('the action badge prints a wager, not a stack', () => {
     expect(badge('bet', 0.5)).toBe('Bet 0.50');
   });
 
+  it('the net-win float is a wager too: "+12", never "+12.00" (2026-09-24)', () => {
+    // The one float item 9 missed: the winner's +N rode formatStack and read
+    // +12.00 beside a stack delta that already read +12.
+    const { container, unmount } = render(
+      <SeatSlot
+        seatNumber={2}
+        player={villain({ stack: 156 })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        isWinner
+        netWinAmount={12}
+      />
+    );
+    expect(container.querySelector('.seat__net-win')?.textContent).toBe('+12');
+    unmount();
+    const fraction = render(
+      <SeatSlot
+        seatNumber={2}
+        player={villain({ stack: 156 })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        isWinner
+        netWinAmount={7.5}
+      />
+    );
+    expect(fraction.container.querySelector('.seat__net-win')?.textContent).toBe('+7.5');
+    fraction.unmount();
+  });
+
   it('a whole stack of at least 100 still prints as a whole stack', () => {
     // Nothing here touches the STACK rule: 144 reads 144.
     const { container } = render(

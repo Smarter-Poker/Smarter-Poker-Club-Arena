@@ -207,10 +207,14 @@ export interface ConsoleHeadContent {
   eyebrow: boolean;
   subtitle: boolean;
   pill: boolean;
+  /** The painted X (Dan 2026-09-23). Absent on a caller that predates it. */
+  close?: boolean;
 }
 
 /** Only the head zones this content actually paints, keyed by what they hold. */
-export type ConsoleHeadLayout = Partial<Record<'eyebrow' | 'title' | 'subtitle' | 'pill', Zone>> & {
+export type ConsoleHeadLayout = Partial<
+  Record<'eyebrow' | 'title' | 'subtitle' | 'pill' | 'close', Zone>
+> & {
   title: Zone;
 };
 
@@ -220,6 +224,7 @@ interface HeadZoneTable {
   titleBesidePill: Zone;
   subtitle: Zone;
   pill: Zone;
+  close: Zone;
   /** Only where a head has to re-measure its lines to fit a third one. */
   eyebrowWithSubtitle?: Zone;
   titleWithSubtitle?: Zone;
@@ -249,11 +254,26 @@ export function consoleHeadZones(
   content: ConsoleHeadContent
 ): ConsoleHeadLayout {
   const zones = FAMILY[family].zones as HeadZoneTable;
+  /* THE X TAKES THE PILL'S SIDE OF THE HEAD WHERE IT HAS TO (2026-09-24).
+     On the shark and riveted masters the close zone sits in the right end of
+     the wide title band (shark: x 642-674 inside a title that runs to x 660;
+     riveted: y 150-186 under a title that runs to y 172, in x 604-643), so a
+     head with an X and no pill printed a long title into the glyph. Where
+     the X's rectangle meets the wide title band, the title takes the narrow
+     band exactly as it does beside a pill - those bands were measured clear
+     of the pill slot, and the X sits in or beside that slot. On the spade
+     master the X (x 848-908) is clear of the title (x 100-640) and the wide
+     band is kept, so no spade popup loses title room to an X it never
+     touches. Decided by the rectangles, not by family, so the next master
+     cannot get it wrong by omission. */
+  const wideTitle = content.subtitle ? (zones.titleWithSubtitle ?? zones.title) : zones.title;
+  const closeCrowdsTitle = Boolean(content.close) && intersects(zones.close, wideTitle);
+  const rightSideTaken = Boolean(content.pill) || closeCrowdsTitle;
   const title = content.subtitle
-    ? content.pill
+    ? rightSideTaken
       ? (zones.titleBesidePillWithSubtitle ?? zones.titleBesidePill)
       : (zones.titleWithSubtitle ?? zones.title)
-    : content.pill
+    : rightSideTaken
       ? zones.titleBesidePill
       : zones.title;
   const eyebrow = content.subtitle ? (zones.eyebrowWithSubtitle ?? zones.eyebrow) : zones.eyebrow;
@@ -262,7 +282,16 @@ export function consoleHeadZones(
     ...(content.eyebrow ? { eyebrow } : {}),
     ...(content.subtitle ? { subtitle: zones.subtitle } : {}),
     ...(content.pill ? { pill: zones.pill } : {}),
+    ...(content.close ? { close: zones.close } : {}),
   };
+}
+
+/** Whether two zones share any master pixels. */
+function intersects(a: Zone, b: Zone): boolean {
+  return (
+    Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
+    Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y)
+  );
 }
 
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
@@ -437,6 +466,7 @@ export function SpadeConsole({
     eyebrow: Boolean(eyebrow),
     subtitle: Boolean(subtitle),
     pill: Boolean(pill),
+    close: Boolean(onClose),
   });
   const onePlate = F.plates === 1;
   return (
@@ -480,14 +510,14 @@ export function SpadeConsole({
             style={zonePct(head.pill, W, TOP_H)}
           />
         )}
-        {onClose && (
+        {onClose && head.close && (
           <button
             type="button"
             className="sc__close sc-ink--silver"
             onClick={onClose}
             aria-label="Close"
             data-testid="sc-close"
-            style={zonePct((Z as { close: Zone }).close, W, TOP_H)}
+            style={zonePct(head.close, W, TOP_H)}
           >
             <span aria-hidden="true">{'\u00D7'}</span>
           </button>

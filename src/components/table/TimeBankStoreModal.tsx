@@ -84,7 +84,7 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
     >
       <div className="tbs-dialog" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
-          onClose={onClose}
+          onClose={busy ? undefined : onClose}
           as="section"
           family="riveted"
           eyebrow="Time Banks"

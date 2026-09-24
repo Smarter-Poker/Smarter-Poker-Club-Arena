@@ -36,10 +36,10 @@ describe('section 30 — the value matrix, both game rules', () => {
 
   for (const min of [30, 50] as const) {
     for (const cur of [0, 7, 29, 30, 49, 50, 54, 99, 100]) {
-      it(`MIN ${min}% + CURRENT ${cur}%`, () => {
+      it(`TABLE MIN ${min}% + CURRENT ${cur}%`, () => {
         render(<VpipRequirementBadge minimumVpip={min} currentVpip={cur} />);
         expect(screen.getByText(`${cur}%`)).toBeTruthy();
-        expect(screen.getByText(`MIN ${min}%`)).toBeTruthy();
+        expect(screen.getByText(`TABLE MIN ${min}%`)).toBeTruthy();
       });
     }
   }
@@ -97,7 +97,7 @@ describe('section 1 — only two game rules are sanctioned', () => {
       expect(() =>
         render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />)
       ).not.toThrow();
-      expect(screen.getByText('MIN 40%')).toBeTruthy();
+      expect(screen.getByText('TABLE MIN 40%')).toBeTruthy();
       expect(spy.mock.calls.flat().join(' ')).toMatch(/Invalid VPIP requirement: 40/);
     } finally {
       spy.mockRestore();
@@ -121,7 +121,7 @@ describe('section 1 — only two game rules are sanctioned', () => {
     vi.stubEnv('DEV', false);
     try {
       render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />);
-      expect(screen.getByText('MIN 40%')).toBeTruthy();
+      expect(screen.getByText('TABLE MIN 40%')).toBeTruthy();
       expect(screen.getByText('54%')).toBeTruthy();
       expect(reportError).toHaveBeenCalledTimes(1);
       expect(String(reportError.mock.calls[0][0])).toMatch(/not a sanctioned game rule/i);
@@ -228,7 +228,7 @@ describe('section 3 — drawn, not baked; and since 2026-09-23, no frames at all
     expect(TSX).not.toMatch(/\.png|\.webp|<img/i);
   });
 
-  it('three rows and nothing around them: VPIP, the figure, MIN N% (Dan 2026-09-23)', () => {
+  it('three rows and nothing around them: VPIP, the figure, TABLE MIN N% (Dan 2026-09-23)', () => {
     /* "THE VPIP EXTERIOR AND INTERIOR FRAMES NEED TO BE REMOVED AND IT SHOULD
        JUST DISPLAY 'VPIP', UNDER IT THE ACTUAL PERCENTAGE, AND UNDER THAT THE
        'TABLE MIN'." The plaque's bezel, face, inner frame, readout window,
@@ -237,7 +237,7 @@ describe('section 3 — drawn, not baked; and since 2026-09-23, no frames at all
     const { container } = render(<VpipRequirementBadge minimumVpip={30} currentVpip={54} />);
     const badge = screen.getByTestId('vpip-badge');
     const rows = Array.from(badge.children).map((el) => el.textContent);
-    expect(rows).toEqual(['VPIP', '54%', 'MIN 30%']);
+    expect(rows).toEqual(['VPIP', '54%', 'TABLE MIN 30%']);
     expect(badge.textContent).not.toContain('CURRENT');
     for (const gone of [
       '.vpipBadge__face',

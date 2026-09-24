@@ -59,6 +59,8 @@ const MANAGER = read('server/src/tournament/TournamentManager.ts');
 const BREAK = read('server/src/maintenance/MaintenanceBreak.ts');
 const TRANSACTION = read('server/scripts/engine-release-transaction.sh');
 const INFLIGHT = read('server/scripts/engine-release-inflight-hands.py');
+const GUARD = read('server/scripts/legacy-engine-checkpoint-guard.mjs');
+const PUBLISHER = read('server/scripts/legacy-engine-checkpoint.mjs');
 
 /**
  * The body of `async parkForTournamentMove(...)`, bounded by its own matching
@@ -256,5 +258,189 @@ describe('3. the release gate asks the database, and fails closed', () => {
     expect(INFLIGHT).not.toMatch(/print\([^)]*SERVICE_ROLE/);
     expect(INFLIGHT).toContain('PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"');
     expect(INFLIGHT).toContain('class RefuseRedirects(HTTPRedirectHandler):');
+  });
+});
+
+/**
+ * 4. THE LEGACY CHECKPOINT CARRIED THE SAME UNBOUNDED REFUSAL (2026-09-23)
+ * ------------------------------------------------------------------------
+ * Section 3 bounded the health gate. The legacy checkpoint - which runs INSIDE
+ * the engine process, after that gate has already certified the break - held
+ * its own copy of the same fail-closed condition in two places, both unbounded:
+ * `captureEngine` refused ANY retained F06 permit on ANY engine, and the final
+ * readiness check asked the predecessor's own `readyForRestart()`, which on
+ * 8825af51 has no bound at all. So the release still could not land, and the
+ * fix for the wedge stayed behind the wedge. Run 35897820986 is the
+ * measurement: `captureEngine.f06_custody_not_drained`, `retryAllowed:false`,
+ * `stopped=true terminal=true banks=0 permitPhase=attempted`, with production
+ * 190 commits and four days behind main.
+ *
+ * The rule is unchanged and is simply applied one more time: a hand that might
+ * be in the air still refuses, from rows; only the case where waiting cannot
+ * help is bounded; and what the release stepped over is NAMED.
+ */
+describe('4. the legacy checkpoint bounds the same condition, the same way', () => {
+  const deferral = GUARD.slice(
+    GUARD.indexOf('const deadEngineCustody = ('),
+    GUARD.indexOf('const captureEngine = (')
+  );
+  const proof = GUARD.slice(
+    GUARD.indexOf('async function proveUnresolvableCustody('),
+    GUARD.indexOf('const restartHeldOnlyByProvenUnresolvableCustody = ()')
+  );
+  const readiness = GUARD.slice(
+    GUARD.indexOf('const restartHeldOnlyByProvenUnresolvableCustody = ()'),
+    GUARD.indexOf('// Prove, PER TABLE and from rows, that every deferred boundary generation')
+  );
+
+  it('the capture defers such a permit instead of refusing it for ever', () => {
+    // The regression, in the exact form it held the platform: an unconditional
+    // refusal for any permit at all.
+    expect(GUARD).not.toContain(
+      "require(engine.f06CurrentPermit === null &&\n          engine.f06RecoveryInFlight === false, 'f06_custody_not_drained');"
+    );
+    expect(GUARD).toContain('deadEngineCustody(tableId, engine)), ');
+    expect(deferral).toContain('deferredUnresolvableCustody.set(tableId, permitPhaseOf(engine));');
+  });
+
+  it('only an engine that can never run again, and holds no bank, is deferred', () => {
+    // Each of these is a separate way the permit could still be resolved in
+    // this process, or a separate thing the engine could still be holding.
+    for (const conjunct of [
+      'engine.f06CurrentPermit === null ||',
+      'engine.f06RecoveryInFlight !== false ||',
+      'engine.running !== false ||',
+      'engine.terminal !== true ||',
+      'engine.handController !== null ||',
+      'engine.timeBankEngine.playerBanks.size !== 0',
+    ])
+      expect(deferral).toContain(conjunct);
+    // Unreadable is never "dead": it keeps the original refusal.
+    expect(deferral).toContain('catch {');
+    expect(deferral).toContain('return false;');
+  });
+
+  it('it asks the database per table, with the ONE predicate this file has', () => {
+    expect(proof).toContain(".from('hand_state_snapshots')");
+    expect(proof).toContain(".eq('is_complete', false)");
+    expect(proof).toContain(".gte('updated_at', since)");
+    expect(proof).toContain(".in('table_id', page)");
+    // Shared with the boundary proof and with the in-flight reader. A second,
+    // differently-tuned predicate for the same fact is how a gate ends up
+    // disagreeing with itself.
+    expect(proof).toContain('inflightWindowMs');
+  });
+
+  it('"could not tell" is its own outcome and it refuses', () => {
+    expect(proof).toContain(
+      "require(!error && Array.isArray(data) && data.length === 0,\n          'f06_custody_unresolvable_unproven');"
+    );
+    // The bound is a refusal, not a truncation that reads as "none found".
+    expect(proof).toContain('.limit(page.length + 1);');
+    expect(proof).toContain(
+      "require(ids.length <= maxTables, 'f06_custody_unresolvable_unproven');"
+    );
+  });
+
+  it('the proof runs before anything is written', () => {
+    const proved = GUARD.indexOf('await proveUnresolvableCustody(checkAll);');
+    expect(proved).toBeGreaterThan(-1);
+    expect(proved).toBeLessThan(GUARD.indexOf("persistPresenceForRestart('parked')"));
+    // And the deferral cannot be satisfied by anything other than that call.
+    expect((GUARD.match(/deferredUnresolvableCustody/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("readiness asks the engine's own answer first, and only then the fallback", () => {
+    expect(GUARD).toContain(
+      'require(maintenance.readyForRestart() === true ||\n      restartHeldOnlyByProvenUnresolvableCustody()'
+    );
+  });
+
+  it('the fallback admits ONLY preparation reasons, by the same allow-list', () => {
+    expect(readiness).toContain(
+      "if (name !== 'f06_preparation_unresolved' && name !== 'f06_preparation_stuck')"
+    );
+    // The same two reasons the release transaction admits, and no others.
+    const admitted = [...readiness.matchAll(/'(f06_preparation_[a-z]+)'/g)].map((m) => m[1]).sort();
+    expect([...new Set(admitted)]).toEqual(['f06_preparation_stuck', 'f06_preparation_unresolved']);
+  });
+
+  it('the fallback can only be satisfied by tables the rows PROVED quiet', () => {
+    expect(readiness).toContain('provenUnresolvableCustody.has(tableId)');
+    // A blocker the guard cannot put a table id to is COULD NOT TELL: the count
+    // equality is what makes an unidentifiable blocker refuse instead of pass.
+    expect(readiness).toContain('blockers.length === counted &&');
+    expect(readiness).toContain('if (counted === 0) return false;');
+    // A deferral is not a proof. Only the proven set may be read here.
+    expect(readiness).not.toContain('deferredUnresolvableCustody');
+  });
+
+  /* The same three outcomes, in the other capture. `physical()` has carried
+     this rule since #5020 and #5021; `captureEngine`, which walks every table
+     `physical()` does not, demanded a flat zero, so the release cleared the
+     permit refusal and stopped one require later on the same table with
+     `boundary=1/false, permitPhase=attempted` (run 35927313976). */
+  const boundary = GUARD.slice(
+    GUARD.indexOf('const boundaryGenerationsAllowed = ('),
+    GUARD.indexOf('const captureEngine = (')
+  );
+
+  it('the other capture no longer demands a flat zero boundary count', () => {
+    const drain = GUARD.slice(
+      GUARD.indexOf('require(engine.settlementInFlight instanceof Set &&'),
+      GUARD.indexOf("'engine_work_not_drained');")
+    );
+    // The regression, in the exact form that stopped run 35927313976 one
+    // require after the permit refusal it had just cleared. (`neverStarted`
+    // keeps its own flat zero and is a different, narrower predicate, so this
+    // is scoped to the drain require rather than to the whole file.)
+    expect(drain).not.toContain('engine.terminalBoundaryPendingGenerations.size === 0');
+    expect(drain).toContain(
+      'engine.terminalBoundaryPendingGenerations.size <=\n          boundaryGenerationsAllowed(tableId, engine)'
+    );
+    // Every other conjunct of the drain proof is untouched.
+    for (const conjunct of [
+      'engine.settlementInFlight.size === 0 &&',
+      'engine.postHandTasksPromise === null &&',
+      'engine.actionLock === false &&',
+      'engine.tournamentMoveOperations.size === 0 &&',
+      'engine.terminalBoundaryPersistenceFailed === false',
+    ])
+      expect(drain).toContain(conjunct);
+  });
+
+  it('an attempted permit admits exactly one, and any other phase admits none', () => {
+    expect(boundary).toContain("if (phase === 'attempted') return 1;");
+    expect(boundary).toContain("if (phase !== 'none') return 0;");
+  });
+
+  it('with no permit it is deferred to the same row proof, never waved through', () => {
+    expect(boundary).toContain('deferredUnresolvableCustody.set(tableId,');
+  });
+
+  it('the shape is proved before the count, and a live engine keeps its zero', () => {
+    for (const conjunct of [
+      'collection.size > maxEntriesPerTable ||',
+      'Number.isSafeInteger(value) && value > 0',
+      'engine.terminalBoundaryPersistenceFailed !== false ||',
+      'engine.running !== false ||',
+      'engine.terminal !== true ||',
+      'engine.handController !== null ||',
+      'engine.f06RecoveryInFlight !== false ||',
+      'engine.timeBankEngine.playerBanks.size !== 0',
+    ])
+      expect(boundary).toContain(conjunct);
+    // Unreadable is never an allowance.
+    expect(boundary).toContain('catch {');
+    expect(boundary).toContain('return 0;');
+  });
+
+  it('has no bypass, and names what it stepped over', () => {
+    const region = deferral + proof + readiness + boundary;
+    expect(region).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
+    // The record of a refusal that did not happen still has to reach a reader.
+    expect(GUARD).toContain('unresolvableCustody = `tables=${ids.length} ');
+    expect(GUARD).toContain('...(unresolvableCustody === null ? {} : { unresolvableCustody }),');
+    expect(PUBLISHER).toContain("'unresolvableCustody',");
   });
 });

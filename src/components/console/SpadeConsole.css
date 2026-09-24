@@ -337,6 +337,13 @@
   overflow: hidden;
 }
 
+/* A plate that navigates is an anchor over the same art (see PlateLink).
+   The kit prints its own label in its own ink, so the browser's link dress
+   is removed rather than restyled. */
+.sc-plate--link {
+  text-decoration: none;
+}
+
 /* The face inside the rim: labels fit this, never the rim. */
 .sc-plate__well {
   display: grid;

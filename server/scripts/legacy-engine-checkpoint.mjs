@@ -124,6 +124,11 @@ function checkpointSummary(value) {
     // nothing, and on which stopped tournaments. Carried verbatim; nothing
     // reads it.
     'bankDisposition',
+    // Which tables held an F06 permit that no process could ever resolve, and
+    // the phase each was in when the rows proved the felt quiet. This is the
+    // record of what a release stepped over, so a refusal that never happened
+    // is still legible afterwards. Carried verbatim; nothing reads it.
+    'unresolvableCustody',
   ]) {
     const item = value?.[key];
     if (

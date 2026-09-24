@@ -288,10 +288,16 @@ export function InsuranceModal({
 
   // ── EV Cashout calculations ──
   // DEAD-BUTTON FIX 2026-08-26: enableEvCashout defaulted true, TablePage
-  // never passed onEvCashout, and NO server endpoint exists for EV cashout —
-  // so the tab rendered a "Cash Out" button that quietly did nothing to a
-  // player making a financial decision. The tab now requires a real handler;
-  // until the server grows one, the modal is insurance-only.
+  // never passed onEvCashout, and at that time no server endpoint existed for
+  // EV cashout, so the tab rendered a "Cash Out" button that quietly did
+  // nothing to a player making a financial decision. The tab still requires a
+  // real handler before it renders.
+  // CORRECTED 2026-09-22: the endpoint exists. Since 2026-08-28 POST /insurance
+  // accepts response 'cashout' (server/src/handlers/insurance.ts), the engine's
+  // respondToInsurance locks the offer through InsuranceEngine.acceptEvCashout
+  // and settlement pays it as an 'ev_cashout', and TablePage passes onEvCashout
+  // (handleInsuranceEvCashout -> respondToInsurance(tableId, 'cashout')) through
+  // TableModalsLayer, so at the table the Cash Out tab is live.
   const evCashoutAvailable = enableEvCashout && typeof onEvCashout === 'function';
   const evCashoutRake = offer.evCashoutRake ?? 0.01;
   const evRaw = useMemo(

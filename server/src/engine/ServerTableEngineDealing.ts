@@ -487,8 +487,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Observe the server-driven seats before classifying stale presence,
         // using the same heartbeat path as the periodic table tick. Human
         // presence, voluntary sit-outs and time-bank state remain untouched.
+        /* A HORSE IS NEVER ABSENT (2026-09-23).
+
+           This used to be a bare heartbeat, and it leaned on a side effect
+           that heartbeat no longer has. Until today a reconnect edge cleared
+           the consecutive-timeout ladder and the away-blind budget, so beating
+           a restored horse silently reset both. It does not any more: a beat
+           is proof of a SOCKET, and only a voluntary action proves a player -
+           otherwise a frozen phone's once-per-orbit edge disarms every rule
+           that could ever free its seat. See DisconnectEngine.heartbeat.
+
+           A horse has no phone and no person. It runs inside this process, so
+           when the engine restores one it is not observing a socket, it is
+           asserting presence outright - and the strike ladder, whose entire
+           job is to find a seat nobody is behind, means nothing on a seat the
+           server itself is playing. Leaving stale strikes on a restored horse
+           is what would force its turn and sit it out, which is the exact
+           thing this block exists to prevent.
+
+           So the horse says what it means. recordPlayerActed is the API for
+           "this seat acted of its own accord", which is true of a horse every
+           hand, and it clears the ladder, the away-blind budget and the stale
+           protection deadline together. Human presence, voluntary sit-outs and
+           time-bank state remain untouched, exactly as before. */
         for (const p of this.seatedPlayers) {
-          if (p.is_horse) this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+          /* Kept as an INCLUSION rather than `if (!p.is_horse) continue`, which
+             reads as a fourth horse exclusion to check-horses-are-players and
+             is not one: this block gives a horse MORE than a human gets, never
+             less. Dan 2026-08-27, binding: horses are never excluded by design. */
+          if (p.is_horse) {
+            /* Only the seat that was actually AWAY is being restored. A horse
+               already CONNECTED keeps its history, and a horse SAT_OUT keeps
+               its sit-out, its eviction clock and its strikes - a restoration
+               is not an excuse to erase either. */
+            const wasDisconnected =
+              this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state === 'DISCONNECTED';
+            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+            if (wasDisconnected) this.disconnectEngine.recordPlayerActed(this.tableId, p.user_id);
+          }
         }
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);

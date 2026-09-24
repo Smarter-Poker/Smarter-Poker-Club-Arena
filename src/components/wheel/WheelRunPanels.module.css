@@ -1,0 +1,128 @@
+/* The queue card and the resume card sit in the cabinet's setup slot, on the
+   same painted plates every control there wears. Nothing here draws a control
+   in CSS: the button faces are the shark panel art. */
+.card {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  width: 100%;
+  max-width: 560px;
+  margin: 2px auto 6px;
+  padding: 4px 8px 6px;
+  text-align: center;
+  font-family: 'Roboto Condensed', sans-serif;
+}
+.cardTitle {
+  margin: 0;
+  color: #ffd700;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.cardCopy {
+  margin: 0;
+  color: #f4f7fb;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.cardMeta {
+  margin: 0;
+  color: #9aa5b3;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.cardActions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+}
+.cardButton,
+.cardButtonQuiet {
+  flex: 1;
+  min-height: 44px;
+  min-width: 160px;
+  padding: 0 12px;
+  border: 8px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') 26 fill / 8px /
+    0 stretch;
+  background: transparent;
+  color: #ffd700;
+  font:
+    800 15px 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cardButtonQuiet {
+  border-image-source: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  color: #dbe9f2;
+}
+.cardButton:disabled,
+.cardButtonQuiet:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cardButton:focus-visible,
+.cardButtonQuiet:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 1px;
+}
+
+/* The end-of-run summary body, inside the reveal's console. */
+.summary {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px;
+}
+.summaryHeading {
+  margin: 4px 0 0;
+  color: #45adff;
+  font:
+    800 14px 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+.item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: #dbe9f2;
+  font:
+    700 14px 'Roboto Condensed',
+    sans-serif;
+}
+.item[data-next] {
+  color: #ffd700;
+}
+.itemArt {
+  width: 34px;
+  height: 34px;
+}
+.itemTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.itemValue {
+  color: #ffd700;
+  font-variant-numeric: tabular-nums;
+}

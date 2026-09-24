@@ -34,15 +34,16 @@ export function pendingBonus(user: string, club: string, game: BonusGame): Bonus
     !v.budget ||
     !validBonusBudget(v.budget) ||
     typeof v.budget.doubled !== 'boolean' ||
-    // A saved request keeps the drop value it was sent with, so a completed game
-    // from before ten drops became the one setting still replays its receipt.
-    !Number.isSafeInteger(v.budget.denomination) ||
-    v.budget.denomination < 1 ||
-    // Only Plinko plays its entry in drops of the denomination. The other games
-    // carry the preference's drop value along unused (a 25-diamond Donkey Cross
-    // award keeps a 10-diamond drop), exactly as DiamondBonusService.start
-    // accepts them; requiring it to divide their total deleted a live wager.
-    (v.game === 'plinko' && bonusTotal(v.budget) % v.budget.denomination !== 0)
+    // A Plinko request keeps the drop value it was sent with, so a completed game
+    // from an older drop rule still replays its receipt. The other games carry
+    // no drop value (null, or 1 from an older client).
+    (v.game === 'plinko'
+      ? typeof v.budget.denomination !== 'number' ||
+        !Number.isSafeInteger(v.budget.denomination) ||
+        v.budget.denomination < 1 ||
+        bonusTotal(v.budget) % v.budget.denomination !== 0
+      : v.budget.denomination !== null &&
+        (typeof v.budget.denomination !== 'number' || !Number.isSafeInteger(v.budget.denomination)))
   ) {
     reportError(new Error('The Saved Bonus Could Not Be Replayed'), 'diamondBonusRecovery.shape');
     sessionStorage.removeItem(key(user, club, game));

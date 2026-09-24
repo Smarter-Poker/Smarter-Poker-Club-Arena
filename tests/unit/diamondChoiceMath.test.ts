@@ -7,7 +7,10 @@ import {
   ROAD_LADDERS,
   roadSurvives,
   roundedMinePrize,
+  verifyChoiceRound,
+  verifyChoiceRoundDetailed,
 } from '../../src/utils/diamondChoiceMath';
+import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
 
 describe('Diamond choice games keep the edge once per round', () => {
   it('every Mines stopping point returns exactly four fifths before cent rounding', () => {
@@ -45,5 +48,76 @@ describe('Diamond choice games keep the edge once per round', () => {
     expect(() => minePrize(1, 15, 11)).toThrow();
     expect(() => roadSurvives(-1n, 110)).toThrow();
     expect(() => roadSurvives(RANDOM_SPACE, 110)).toThrow();
+  });
+});
+
+/**
+ * EVERY FINISHED ROUND CAN CHECK ITSELF (2026-09-22). Proving a round meant
+ * opening a collapsed panel, decoding an unlabelled 64-character hash and
+ * pressing a button within the five seconds before the receipt left for the
+ * wheel. The page checks every finished round in the background now, so the
+ * verifier has to say WHICH of the four checks failed - and it must never
+ * throw on numbers bad enough to break one of them, or the other three are
+ * lost with it.
+ */
+describe('a finished round proves itself, check by check', () => {
+  const all = { seal: true, draw: true, prizes: true, payout: true };
+  const receipts = fixtures.receipts as Record<string, Record<string, unknown>>;
+  const round = (game: 'crossing' | 'mines', change: Record<string, unknown> = {}) =>
+    ({ ...receipts[game], ...change }) as unknown as Parameters<typeof verifyChoiceRound>[0];
+
+  it.each(['crossing', 'mines'] as const)(
+    'passes every check on a real %s receipt',
+    async (game) => {
+      expect(await verifyChoiceRoundDetailed(round(game))).toEqual(all);
+      expect(await verifyChoiceRound(round(game))).toBe(true);
+    }
+  );
+
+  it('fails the seal alone when the revealed seed is not the sealed one', async () => {
+    const tampered = round('crossing', {
+      proof: { ...receipts.crossing.proof, server_seed_hash: 'a'.repeat(64) },
+    });
+    expect(await verifyChoiceRoundDetailed(tampered)).toEqual({ ...all, seal: false });
+    expect(await verifyChoiceRound(tampered)).toBe(false);
+  });
+
+  it('fails the draw alone when the road roll is not the one the seed makes', async () => {
+    const tampered = round('crossing', {
+      proof: { ...receipts.crossing.proof, road_roll: '1' },
+    });
+    expect(await verifyChoiceRoundDetailed(tampered)).toEqual({ ...all, draw: false });
+  });
+
+  it('fails the payout alone when the settled chips are not the sealed draw', async () => {
+    const tampered = round('crossing', { payout_chips: 99 });
+    expect(await verifyChoiceRoundDetailed(tampered)).toEqual({ ...all, payout: false });
+  });
+
+  it('fails the prizes alone when a rung of the ladder is not this stake', async () => {
+    const prizes = [...(receipts.crossing.prizes as number[])];
+    prizes[3] = 999;
+    expect(await verifyChoiceRoundDetailed(round('crossing', { prizes }))).toEqual({
+      ...all,
+      prizes: false,
+    });
+  });
+
+  it('says false rather than throwing on numbers no formula can take', async () => {
+    // A stake of nothing makes roadSurvives, the ladder and the rounding draw
+    // all throw. The seal is still checkable, and still says so.
+    const broken = round('crossing', { bet_chips: 0 });
+    await expect(verifyChoiceRoundDetailed(broken)).resolves.toEqual({
+      seal: true,
+      draw: false,
+      prizes: false,
+      payout: false,
+    });
+  });
+
+  it('proves nothing about a round with no proof, or no pick', async () => {
+    const none = { seal: false, draw: false, prizes: false, payout: false };
+    expect(await verifyChoiceRoundDetailed(round('crossing', { proof: null }))).toEqual(none);
+    expect(await verifyChoiceRoundDetailed(round('crossing', { picked: [] }))).toEqual(none);
   });
 });

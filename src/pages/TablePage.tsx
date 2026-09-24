@@ -110,6 +110,7 @@ import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { withClubContext } from '../utils/clubScopedPath';
+import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
@@ -23028,9 +23029,18 @@ function LiveTablePage({
                         // Dan 2026-09-04: a hub tab beside this table, not a
                         // separate browser tab the felt cannot see (the
                         // strip, the swipe and every other table stay put).
+                        //
+                        // 2026-09-21: the exact Hub page, not the alias. The
+                        // menu said '/hub/marketplace', which 308s to
+                        // /hub/diamond-store inside the frame - so the tab's
+                        // own address no longer matched what opened it, and
+                        // pressing the item again opened a SECOND tab (or hit
+                        // the cap) instead of focusing the one already there.
+                        // It also names this table's club, so "Club
+                        // Marketplace" opens that club's shop.
                         onClick: () =>
                           masterBus.emit('OPEN_HUB_TAB', {
-                            path: '/hub/marketplace',
+                            path: hubMarketplaceDestination('', actualClubIdRef.current),
                             requestedBy: userId,
                           }),
                       },

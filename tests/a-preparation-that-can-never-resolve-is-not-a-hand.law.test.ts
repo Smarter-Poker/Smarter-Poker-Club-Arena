@@ -504,6 +504,24 @@ describe('a flag a dead process can never clear is answered from rows', () => {
     expect(boundary).toContain('engine.terminalBoundaryPersistenceFailed !== false ||');
   });
 
+  it('the capture walk finishes, so one refused release names the whole set', () => {
+    // The release only ever named the table that refused FIRST, so a fleet
+    // holding several shapes cost one maintenance break per shape to read.
+    expect(GUARD).toContain('noteCensus(tableId, code);');
+    expect(GUARD).toContain('...(refusalCensus === null ? {} : { refusalCensus }),');
+    expect(PUBLISHER).toContain("'refusalCensus',");
+    const walk = GUARD.slice(
+      GUARD.indexOf('for (const [id, engine] of entries) {'),
+      GUARD.indexOf('const checkEngine = (captured) => {')
+    );
+    // The walk is observation only. It still refuses, and it still refuses
+    // before anything downstream of it can capture, prove or write.
+    expect(walk).toContain("if (reason !== null) throw new Error('legacy_checkpoint_refused');");
+    expect(walk).toContain('if (reason === null) captures.push(captured);');
+    expect(walk).toContain('if (reason === null) throw error;');
+    expect(walk).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
+  });
+
   it('an engine_work_not_drained refusal now names every field it turns on', () => {
     const detail = GUARD.slice(
       GUARD.indexOf('const engineRefusalDetail = ('),
@@ -516,5 +534,95 @@ describe('a flag a dead process can never clear is answered from rows', () => {
       '`actionLock=${engine?.actionLock === true}`',
     ])
       expect(detail).toContain(term);
+  });
+});
+
+/* A RESTORED BANK NO ROSTER WILL EVER CLAIM (2026-09-24).
+
+   Run 36000655625 refused `captureEngine.parked_bank_invalid` on b027e4cf with
+   `stopped=true terminal=true seats=0 banks=0 meta=0 parked=2`. `parkedTimeBanks`
+   is filled once by `readParkedTimeBanks` inside `start()` and emptied only by
+   `applyParkedTimeBanks`, whose one caller is `adoptSeatRoster` in the
+   wait-for-players loop, so a stopped terminal engine holds those banks for ever
+   and the refusal blocks the process replacement that is its only resolution. */
+describe('a restored bank no roster will ever claim is answered from rows', () => {
+  const parked = GUARD.slice(
+    GUARD.indexOf('const deadParkedBanksDeferred = ('),
+    GUARD.indexOf('const captureEngine = (')
+  );
+
+  it('the parked-bank proof keeps both shape conjuncts and bounds only the last', () => {
+    const loop = GUARD.slice(
+      GUARD.indexOf('for (const [userId, bank] of Object.entries(engine.parkedTimeBanks)) {'),
+      GUARD.indexOf("'parked_bank_invalid');")
+    );
+    // A key that is not a user id, or a bank that is not restorable, still
+    // refuses on every engine. Only the occupancy equality is bounded.
+    expect(loop).toContain('uuid(userId) &&');
+    expect(loop).toContain('validBank(bank) &&');
+    expect(loop).toContain(
+      '(seats.get(userId)?.occupancy_id === bank.occupancyId ||\n            deadParkedBanksDeferred(tableId, engine))'
+    );
+  });
+
+  it('only an engine that can never adopt a roster, holding nothing live, is deferred', () => {
+    // Each of these is a separate way the bank could still be claimed in this
+    // process, or a separate thing the engine could still be holding.
+    for (const conjunct of [
+      'engine.running !== false ||',
+      'engine.terminal !== true ||',
+      'engine.f06RecoveryInFlight !== false ||',
+      'engine.seatedPlayers.length !== 0 ||',
+      'engine.timeBankEngine.playerBanks.size !== 0 ||',
+      'engine.timeBankMeta.size !== 0 ||',
+      'Object.keys(engine.parkedTimeBanks).length > maxEntriesPerTable',
+    ])
+      expect(parked).toContain(conjunct);
+    // Unreadable is never "dead".
+    expect(parked).toContain('catch {');
+    expect(parked).toContain('return false;');
+  });
+
+  it('a deferral is never a waiver: the same row proof answers for it', () => {
+    expect(parked).toContain('deferredUnresolvableCustody.set(');
+    expect(parked).toContain('`parkedNoRoster:${Object.keys(engine.parkedTimeBanks).length}`');
+    expect(parked).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
+  });
+
+  it('the stopped-custody proof defers the same table instead of refusing it', () => {
+    const custody = GUARD.slice(
+      GUARD.indexOf('require((retained8825 || engine.timeBankMeta.size === 0) &&'),
+      GUARD.indexOf("'stopped_engine_retains_custody');")
+    );
+    // The same flat zero, one require later, on the same fact.
+    expect(custody).not.toContain('Object.keys(engine.parkedTimeBanks).length === 0 &&');
+    expect(custody).toContain(
+      '(Object.keys(engine.parkedTimeBanks).length === 0 ||\n            deadParkedBanksDeferred(tableId, engine))'
+    );
+    // Everything else it proves about a stopped engine is untouched.
+    expect(custody).toContain('engine.timeBankEngine.playerBanks.size === 0 &&');
+    expect(custody).toContain('Object.keys(states).length === 0');
+  });
+
+  it('a parked_bank_invalid refusal names which of its three facts failed', () => {
+    const detail = GUARD.slice(
+      GUARD.indexOf('const engineRefusalDetail = ('),
+      GUARD.indexOf('const deadEngineCustody = (')
+    );
+    expect(detail).toContain('`parkedFault=${parkedFaultOf(engine)}`');
+    const fault = GUARD.slice(
+      GUARD.indexOf('const parkedFaultOf = ('),
+      GUARD.indexOf('const engineRefusalDetail = (')
+    );
+    for (const value of [
+      "return 'user_not_uuid';",
+      "return 'bank_not_restorable';",
+      "return 'unseated';",
+      "return 'occupancy_mismatch';",
+    ])
+      expect(fault).toContain(value);
+    // Observability only: it reads nothing the original conjunction does not.
+    expect(fault).toContain('catch {');
+    expect(fault).toContain("return 'unreadable';");
   });
 });

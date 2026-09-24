@@ -35,6 +35,7 @@ import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { gameManagementService } from '../services/GameManagementService';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
@@ -1015,10 +1016,11 @@ export default function ClubDetailPage() {
           toast.success('Member Demoted To Player');
           break;
         }
+        // fn_club_set_member_status decides who may suspend whom and records
+        // it; updateStatus throws the server's refusal text, shown below.
         case 'suspend': {
-          const ok = await MembershipService.updateStatus(clubId, memberUserId, 'suspended' as any);
-          if (!ok) throw new Error('Failed to suspend member');
-          toast.success('Member suspended');
+          await MembershipService.updateStatus(clubId, memberUserId, 'suspended');
+          toast.success('Member Suspended');
           break;
         }
         case 'remove': {
@@ -1035,7 +1037,11 @@ export default function ClubDetailPage() {
       }
       loadClubData();
     } catch (error) {
-      toast.error(`Failed to ${action} member`);
+      toast.error(
+        action === 'suspend'
+          ? safeErrorMessage(error, 'Could Not Suspend This Member')
+          : `Failed to ${action} member`
+      );
     } finally {
       setMemberActionLoading(null);
     }

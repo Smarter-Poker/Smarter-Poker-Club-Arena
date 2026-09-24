@@ -37,3 +37,23 @@ span.metaFull {
   grid-column: 1 / -1;
   min-width: 0;
 }
+
+/* The optional details of a refund request: the same underlined field the
+   page prints every other input as, grown to a few lines of Inter copy.
+   Nothing is drawn around it. */
+textarea.detailsInput {
+  min-height: 22cqw;
+  resize: vertical;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 3.7cqw;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+/* Focus is the brighter underline the field rule already gives
+   (.fieldInput:focus-visible); the global ring's halo and corner would draw a
+   box around an underlined field. */
+textarea.detailsInput:focus-visible {
+  border-radius: 0;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 80%);
+}

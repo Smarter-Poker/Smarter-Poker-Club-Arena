@@ -95,6 +95,7 @@ const INTERNAL_ONLY = [
   'src/pages/admin/EngineDashboard.tsx',
   'src/pages/admin/AnalyticsDashboard.tsx',
   'src/pages/admin/HouseAdsPage.tsx',
+  'src/pages/admin/CommerceDeskPage.tsx',
   'src/pages/AdminDashboardPage.tsx',
   'src/pages/DriftIncidentsPage.tsx',
   'src/pages/ClubFooterShowcasePage.tsx',

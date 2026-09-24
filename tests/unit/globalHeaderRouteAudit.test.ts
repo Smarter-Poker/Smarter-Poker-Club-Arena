@@ -55,14 +55,16 @@ describe('the complete route manifest inherits one global header', () => {
     // +2 for clubs/:clubId/diamond-costs and unions/:unionId/diamond-costs
     // (2026-09-22): the operator's own Club And Union Diamond Costs console.
     // Both spend the operator's diamonds, so both carry the shared header.
-    expect(allPaths).toHaveLength(148); // Includes the public, explicitly shared bonus replay. +1: cashier statements
+    // +1 for commerce-desk (2026-09-24): platform staff decide diamond refunds
+    // and run the catalog. A staff page, behind PlatformStaffGuard, in the shell.
+    expect(allPaths).toHaveLength(149); // Includes the public, explicitly shared bonus replay. +1: cashier statements
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(138); // +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs
+    expect(shellPaths).toHaveLength(139); // +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs, +1: commerce desk
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -76,7 +78,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(139); // +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs
+    expect(applicable.size).toBe(140); // +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs, +1: commerce desk
     expect(unclassified).toEqual([]);
   });
 

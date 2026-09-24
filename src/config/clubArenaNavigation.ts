@@ -308,6 +308,11 @@ export function getClubArenaNavigation({
           path: '/house-ads',
           description: 'Platform Campaign Controls',
         },
+        {
+          label: 'Commerce Desk',
+          path: '/commerce-desk',
+          description: 'Diamond Refunds, Catalog Prices, And Comparison Evidence',
+        },
       ],
     });
   }

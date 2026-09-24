@@ -39,6 +39,7 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { gameManagementService } from '../services/GameManagementService';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { operatingAccessRefusal } from '../services/CommerceDeskService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -982,6 +983,15 @@ export default function ClubDetailPage() {
             p_approve: action === 'approve',
           });
           if (error || !res?.success) {
+            // 20260924102056: an enforced commerce admission refuses a NEW
+            // member with the server's own sentence (code
+            // operating_access_required). Show it as written; the generic
+            // toast below would hide why the approval did not happen.
+            const admission = error ? null : operatingAccessRefusal(res);
+            if (admission) {
+              toast.error(admission);
+              break;
+            }
             throw new Error(res?.error || `Failed to ${action} request`);
           }
           // Drop from the pending list; approved members show up as active on reload.

@@ -162,8 +162,7 @@ admission never checks an existing event, only a new one.
 `fn_ca_commerce_admission_report(p_days)` (platform staff or the service role)
 answers, over 1 to 90 days, each door's decisions, would-deny, refused and
 undecided counts, and the clubs a would-deny fell on with the reasons. The
-Commerce Desk's Admission tab prints it (it ships with the desk pull
-request), so the switch is made on evidence.
+Commerce Desk's Admission tab prints it, so the switch is made on evidence.
 
 ## Turning enforcement on later
 
@@ -204,14 +203,11 @@ SELECT action, reason, count(*) FILTER (WHERE would_allow IS FALSE) AS would_den
 - **Games in a union's house club are checked against that club.** The club's
   own trial or capacity applies, not the union's. Shadow data will show
   whether a union mapping is needed before enforcement.
-- **Client copy.** The tournament, schedule and cash surfaces read
-  `operating_access_required` and show the server's sentence
-  (`TOURNAMENT_CREATE_ERRORS`, the schedule map, `cashGameCreateRefusalText`;
-  `LIVE_REFUSALS` pins the cash sentence). The join modal and invite page
-  already print a thrown join message, and the agent add already prints
-  `error`. The test that pins every sentence on every surface,
-  `tests/unit/commerceDeskAdmissionCopy.test.ts`, ships with the Commerce Desk
-  pull request because it also covers the desk.
+- **Client copy** is shipped: `TOURNAMENT_CREATE_ERRORS` and the schedule
+  map read `operating_access_required` with the server's `message`, the cash
+  create flow shows the raised sentence (`LIVE_REFUSALS` pins it), the join
+  modal and invite page print the raised join sentence, and the agent add
+  prints `error` (`tests/unit/commerceDeskAdmissionCopy.test.ts`).
 
 ## Proof
 

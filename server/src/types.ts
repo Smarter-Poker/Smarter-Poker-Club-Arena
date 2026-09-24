@@ -1011,6 +1011,9 @@ export type TournamentStatus =
   | 'ANNOUNCED'
   | 'REGISTERING'
   | 'RUNNING'
+  // Multi-day (2026-09-24): between two stages of one event. Not terminal:
+  // the event still owns its players, their stacks (as bags) and its money.
+  | 'BAGGED'
   | 'COMPLETED'
   | 'CANCELLED'
   | 'LATE_REG';

@@ -21,6 +21,7 @@ import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { freeBuyConfig } from '../utils/freeBuy';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
+import { TOURNAMENT_CREATE_ERRORS, startTimeIsPast } from './tournamentCreationRules';
 import {
   mttPayoutDepthForChoice,
   MTT_PAYOUT_DEPTH_REQUIRED,
@@ -214,9 +215,27 @@ export function buildTournamentConfig(
   const clampInt = (v: number, lo: number, hi: number) =>
     Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
 
-  // Next Step (Satellite): only real with a target — a satellite without a
-  // target would silently pay cash, defeating the point.
+  // Next Step (Satellite): only real with a target. A satellite without a
+  // target would pay cash, defeating the point, and this used to build a plain
+  // MTT instead without saying so. The toggle on with no target is refused
+  // with the same sentence every other surface uses (20260924033701).
+  if (isMtt && config.nextStepSatellite && !config.satelliteTargetId) {
+    throw new Error(TOURNAMENT_CREATE_ERRORS.satellite_target_required);
+  }
   const isSatellite = isMtt && Boolean(config.nextStepSatellite && config.satelliteTargetId);
+
+  // A start time in the past is REFUSED, not replaced. This used to drop it
+  // and let the server start the event a minute from now, so an owner who
+  // picked yesterday (or had last week's saved time restored) created an
+  // event at a time they never chose. An SNG ignores the start time.
+  let startTime: Date | undefined;
+  if (config.gameMode === 'mtt' && config.startTime) {
+    const when = new Date(config.startTime);
+    if (Number.isFinite(when.getTime())) {
+      if (startTimeIsPast(when)) throw new Error(TOURNAMENT_CREATE_ERRORS.start_time_in_past);
+      startTime = when;
+    }
+  }
 
   // Rebuy / add-on money. Custom toggles switch the derived cost for a typed
   // whole number; the whole-number rule is enforced by rounding here and
@@ -256,18 +275,8 @@ export function buildTournamentConfig(
     lateRegistrationLevels: config.gameMode === 'mtt' ? config.lateRegistrationLevel : 0,
     // The MTT start time IS honoured: the discovery loop starts an MTT once
     // start_time has passed and the minimum field is present. An SNG ignores
-    // it for starting (it starts when full) but still needs a value, and a
-    // time in the past would trip the 30-minute auto-cancel immediately — so
-    // anything not in the future falls back to the service default.
-    startTime:
-      config.gameMode === 'mtt' && config.startTime
-        ? (() => {
-            const when = new Date(config.startTime);
-            return Number.isFinite(when.getTime()) && when.getTime() > Date.now()
-              ? when
-              : undefined;
-          })()
-        : undefined,
+    // it (it starts when full). A past time was refused above.
+    startTime,
     isRebuy: isMtt && config.numberOfRebuysReentries > 0,
     isReentry: isMtt && config.numberOfRebuysReentries > 0,
     rebuyCost,

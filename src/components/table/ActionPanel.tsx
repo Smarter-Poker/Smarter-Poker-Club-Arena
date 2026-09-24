@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { haptic } from '../../services/SoundService';
+import '../../styles/table-design-tokens.css';
 import './ActionPanel.css';
 import { formatTableChips } from '../../utils/format';
 

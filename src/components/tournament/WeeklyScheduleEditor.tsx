@@ -19,7 +19,7 @@
  */
 
 import './WeeklyScheduleEditor.css';
-import { scheduleZoneLabel } from '../../utils/scheduleTimeZone';
+import { WEEKDAY_NAMES, scheduleZoneLabel } from '../../utils/scheduleTimeZone';
 
 export interface WeeklyScheduleValue {
   daysOfWeek: number[];
@@ -36,7 +36,6 @@ export const DEFAULT_WEEKLY_SCHEDULE: WeeklyScheduleValue = {
 };
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export const TIME_UTC_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
@@ -56,7 +55,7 @@ export function describeSchedule(
       : days
           .slice()
           .sort((a, b) => a - b)
-          .map((d) => DAY_NAMES[d]?.slice(0, 3) ?? String(d))
+          .map((d) => WEEKDAY_NAMES[d]?.slice(0, 3) ?? String(d))
           .join(', ');
   if (intervalMinutes) return `${dayText} - every ${intervalMinutes.toLocaleString()} min`;
   return `${dayText} at ${times.join(', ')} ${scheduleZoneLabel(timeZone)}`;
@@ -97,7 +96,7 @@ export default function WeeklyScheduleEditor({
             <button
               key={day}
               type="button"
-              title={DAY_NAMES[day]}
+              title={WEEKDAY_NAMES[day]}
               className={`wse-day-chip ${value.daysOfWeek.includes(day) ? 'active' : ''}`}
               onClick={() => toggleDay(day)}
             >

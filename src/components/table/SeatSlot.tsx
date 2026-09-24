@@ -19,6 +19,7 @@
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
+import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
 import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';

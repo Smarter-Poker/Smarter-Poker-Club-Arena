@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 155650,
-      "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+      "bytes": 155875,
+      "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -245,6 +245,15 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,
         "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      }
+    }
+  },
+  "clubMembershipCapIntegration": {
+    "reason": "Club membership cap: ci.yml gains the 'Club membership cap: one count, one lock, one limit' owned-PostgreSQL step (scripts/ci/test-club-membership-cap.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155650,
+        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
       }
     }
   }

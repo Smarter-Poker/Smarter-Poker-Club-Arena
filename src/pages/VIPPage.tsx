@@ -685,7 +685,11 @@ export default function VIPPage() {
               // issue a usable entitlement. Themes are bought/redeemed from
               // Table Studio and the rewards catalog, where the exact preset
               // bundle is part of the server-side SKU.
-              .filter(([feature, pricing]) => feature !== 'theme_unlock' && pricing.cost > 0)
+              // "club_creation" sells nothing: see docs/handoffs/club-arena-product-completion/.
+              .filter(
+                ([feature, pricing]) =>
+                  feature !== 'theme_unlock' && feature !== 'club_creation' && pricing.cost > 0
+              )
               .map(([feature, pricing]) => (
                 <div key={feature} className="purchase-card">
                   <div className="purchase-info">

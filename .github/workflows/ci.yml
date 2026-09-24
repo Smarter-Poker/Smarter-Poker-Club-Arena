@@ -1443,6 +1443,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
+      - name: "Club membership cap: one count, one lock, one limit"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-membership-cap.py --output artifacts/club-membership-cap
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

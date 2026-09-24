@@ -267,7 +267,12 @@ import { peekWarmSeats, warmSeatsPromise, type WarmSeat } from '../services/tabl
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import { potSizedRaiseTo } from '../components/table/ActionPanel';
-import { betChipOffsetPx, chipCollectOffsetPx, seatPodPx } from '../components/table/tableGeometry';
+import {
+  betChipOffsetPx,
+  chipCollectOffsetPx,
+  POT_ANCHOR_PCT,
+  seatPodPx,
+} from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -911,8 +916,13 @@ const _win = window as any;
  * `.pot-area` is a zero-size anchor with translate(-50%,-50%), so its top%
  * IS the pot's centre. Aim there.
  * If either the base rule or the hotfix moves the pot, move this with it.
+ *
+ * 2026-09-23: the constant moved to tableGeometry.ts, because the collect
+ * sweep (chipCollectOffsetPx) lives there and was still converging on the
+ * MIDDLE of the felt - the bets flew to a point a quarter of the table below
+ * the pill every hand (Dan: "THE CHIPS ARE NOT BEING MOVED OR SHIPPED TO THE
+ * CORRECT POSITION"). One anchor for chips going in and chips coming out.
  */
-const POT_ANCHOR_PCT = { x: 49.9, y: 23 };
 
 /**
  * How long a multi-board reveal that was still playing when the NEXT hand

@@ -31,7 +31,11 @@ if 'PG_BIN' not in os.environ and not Path(PG_BIN, 'initdb').exists():
 PORT = '55611'
 DB = 'diamond_club_commerce_probe'
 MIGRATIONS = [ROOT / 'supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql',
-              ROOT / 'supabase/migrations/20260924033509_club_and_union_diamond_commerce_fixes.sql']
+              ROOT / 'supabase/migrations/20260924033509_club_and_union_diamond_commerce_fixes.sql',
+              ROOT / 'supabase/migrations/20260924102040_diamond_commerce_refunds_notices_and_catalog_lifecycle.sql']
+# 20260924102056 (admission in shadow) amends doors this fixture set does not
+# carry; tests/sql/run-diamond-club-commerce-admission.py applies it over the
+# captured live doors.
 MIGRATION = MIGRATIONS[-1]
 FIXTURE = ROOT / 'tests/fixtures/accounting-delivery/diamond-games'
 
@@ -147,6 +151,21 @@ def load_fixture():
     CREATE FUNCTION public.fn_is_platform_admin() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
       SELECT EXISTS(SELECT 1 FROM public.profiles p WHERE p.id=auth.uid() AND p.role IN ('admin','superadmin','god')) $$;
     """)
+
+
+REGISTRY = ROOT / 'supabase/migrations/20260924025555_one_capability_registry_and_accepted_event_continuation.sql'
+
+
+def install_registry():
+    """Prompt 1's capability registry, the real migration production installed
+    before commerce's (20260924025555). It checks the tournament status
+    vocabulary production carries, which the captured fixture does not declare,
+    so that constraint is stated first, exactly as production has it."""
+    sql("""ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_status_check
+      CHECK (status = ANY (ARRAY['ANNOUNCED'::text, 'REGISTERING'::text, 'LATE_REG'::text, 'RUNNING'::text, 'COMPLETING'::text, 'COMPLETED'::text, 'CANCELLED'::text]))""")
+    r = run(PSQL + ['-d', DB, '-f', str(REGISTRY)])
+    if r.returncode:
+        raise SystemExit('capability registry failed:\n' + r.stderr)
 
 
 def apply_migration():
@@ -298,12 +317,20 @@ def scenarios():
     delivered = int(sql("SELECT public.fn_ca_commerce_deliver_due_notices(50)", role='service_role'))
     delivered2 = int(sql("SELECT public.fn_ca_commerce_deliver_due_notices(50)", role='service_role'))
     check(delivered == 1 and delivered2 == 0 and count("public.notifications") == 1, 'D27 a due reminder is delivered exactly once')
+    title = sql("SELECT title FROM public.notifications WHERE type='club_commerce_trial_reminder'")
+    check(title == 'Your Operating Trial Ends In 30 Days',
+          'D27 a trial reminder states the time actually left when it is delivered, not the count it was written with', title)
 
     # ---- Simulated clock: the trial ends; the consumer buys the first period --
     sql(f"UPDATE public.ca_commerce_trials SET trial_start = trial_start - interval '721 hours', trial_end = trial_end - interval '721 hours' WHERE operator_id='{A}'")
     sql(f"UPDATE public.ca_commerce_entitlements SET starts_at = starts_at - interval '721 hours', ends_at = ends_at - interval '721 hours' WHERE trial_id=(SELECT id FROM public.ca_commerce_trials WHERE operator_id='{A}')")
     sql(f"UPDATE public.ca_commerce_renewal_mandates SET due_at = due_at - interval '721 hours' WHERE scope_id='{C1}'")
     trial_end = sql(f"SELECT trial_end FROM public.ca_commerce_trials WHERE operator_id='{A}'")
+    sql("UPDATE public.ca_commerce_notices SET due_at = now() - interval '1 minute' WHERE dedupe_key LIKE 'trial-reminder-27:%'")
+    late = int(sql("SELECT public.fn_ca_commerce_deliver_due_notices(50)", role='service_role'))
+    check(late == 0 and count("public.notifications WHERE type='club_commerce_trial_reminder'") == 1
+          and count("public.ca_commerce_notices WHERE dedupe_key LIKE 'trial-reminder-27:%' AND suppressed_reason='trial_already_ended'") == 1,
+          'D27 a trial reminder the consumer reaches after the trial ended is suppressed, never sent late')
     adm = rpc('fn_ca_commerce_admission', f"'club','{C1}','open_table'", A)
     check(adm['allowed'] and (not adm['would_allow']) and adm['reason'] == 'no_effective_entitlement' and not adm['enforced'],
           'D22 after expiry with enforcement in shadow the answer names the refusal without refusing')
@@ -406,6 +433,7 @@ def scenarios():
     check(b3.get('error') == 'quote_expired' and b3.get('requote'), 'D06 an expired quote refuses and asks for a requote')
     q4 = quote(A, 'club', C1, 'club_insurance_module')
     d = rpc('fn_ca_commerce_price_draft', "'club_insurance_module',250,'flat',NULL,'Test price change authority'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d['price_version_id']}'", S)
     pub = rpc('fn_ca_commerce_price_publish', f"'{d['price_version_id']}',NULL", S)
     check(pub['success'], 'D74 staff publishes a new price version prospectively')
     b4 = buy(A, q4['quote_id'], 'catalog-changed-0001')
@@ -414,9 +442,9 @@ def scenarios():
     # version readings between them are the harness's own instrument, taken
     # as the database owner (the internal helper has no browser grant).
     same_tx = sql("""BEGIN; RESET ROLE; CREATE TEMP TABLE cv(v text); GRANT ALL ON cv TO PUBLIC; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version(); SET ROLE authenticated;
-      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_draft('club_insurance_module',260,'flat',NULL,'Same second authority one')->>'price_version_id')::uuid, NULL);
+      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_validate((public.fn_ca_commerce_price_draft('club_insurance_module',260,'flat',NULL,'Same second authority one')->>'price_version_id')::uuid)->>'price_version_id')::uuid, NULL);
       RESET ROLE; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version(); SET ROLE authenticated;
-      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_draft('club_insurance_module',270,'flat',NULL,'Same second authority two')->>'price_version_id')::uuid, NULL);
+      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_validate((public.fn_ca_commerce_price_draft('club_insurance_module',270,'flat',NULL,'Same second authority two')->>'price_version_id')::uuid)->>'price_version_id')::uuid, NULL);
       RESET ROLE; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version();
       SELECT count(DISTINCT v) FROM cv; ROLLBACK;""", user=S, role='authenticated')
     check(same_tx == '3', 'D06 two publications inside one second still yield distinct catalog versions, so no quote survives either', same_tx)
@@ -675,6 +703,7 @@ def scenarios():
     # D10: price above the accepted ceiling.
     mid = sql(f"SELECT id FROM public.ca_commerce_renewal_mandates WHERE entitlement_id='{ent_capacity}' AND state='authorized'")
     d = rpc('fn_ca_commerce_price_draft', "'capacity_100',800,'flat',NULL,'Test price increase authority'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d['price_version_id']}'", S)
     rpc('fn_ca_commerce_price_publish', f"'{d['price_version_id']}',NULL", S)
     sql(f"UPDATE public.ca_commerce_renewal_mandates SET due_at = now() - interval '1 minute' WHERE id='{mid}'")
     token = str(uuid.uuid4())
@@ -763,13 +792,35 @@ def scenarios():
 
     # ---- D74 prospective publication ------------------------------------------
     d1 = rpc('fn_ca_commerce_price_draft', "'capacity_60',550,'flat',NULL,'Test prospective price authority'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d1['price_version_id']}'", S)
     p1 = rpc('fn_ca_commerce_price_publish', f"'{d1['price_version_id']}',now() + interval '1 hour'", S)
     d2 = rpc('fn_ca_commerce_price_draft', "'capacity_60',600,'flat',NULL,'Test earlier prospective price'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d2['price_version_id']}'", S)
     p2 = rpc('fn_ca_commerce_price_publish', f"'{d2['price_version_id']}',now() + interval '30 minutes'", S)
     qf = quote(X, 'club', C4, 'capacity_60')
     rows = json.loads(sql("SELECT jsonb_agg(status ORDER BY version) FROM public.ca_commerce_price_versions WHERE sku='capacity_60'"))
     check(p1.get('success') and p2.get('success') and qf.get('success') and qf['net'] == 500 and rows == ['published', 'retired', 'published'],
           'D74 a prospective price leaves the current price in effect until its date; a later-dated version replaced before it began never takes effect', {'p1': p1, 'p2': p2, 'qf': qf.get('error'), 'rows': rows})
+
+    # ---- Platform capability (Prompt 1's CAPABILITY-CONTRACT.md, section 2) -------
+    caps = json.loads(sql("SELECT jsonb_object_agg(sku, platform_capability_id) FROM public.ca_commerce_products WHERE platform_capability_id IS NOT NULL"))
+    check(caps == {'club_insurance_module': 'cash.insurance_ev_cashout', 'union_insurance_module': 'cash.insurance_ev_cashout'},
+          'CAP both insurance modules name the platform capability they sell; capacity, reports and assets name none', caps)
+    ok_q = quote(X, 'club', C4, 'club_insurance_module')
+    # Readiness moves only through the registry's own writer (contract section 6).
+    rev = int(sql("SELECT revision FROM public.platform_capabilities WHERE capability_id='cash.insurance_ev_cashout'"))
+    down = rpc('fn_set_capability_readiness', f"'cash.insurance_ev_cashout','tested','insurance-v1',{rev},'{{}}'::jsonb", None, role='service_role')
+    no_q = quote(X, 'club', C4, 'club_insurance_module')
+    cap_q = quote(X, 'club', C4, 'capacity_60')
+    sup = rpc('fn_ca_commerce_product_support', "'club_insurance_module',true", S)
+    rev = int(sql("SELECT revision FROM public.platform_capabilities WHERE capability_id='cash.insurance_ev_cashout'"))
+    up = rpc('fn_set_capability_readiness', f"'cash.insurance_ev_cashout','deployed','insurance-v1',{rev},'{{\"harness\":\"restored\"}}'::jsonb", None, role='service_role')
+    again = quote(X, 'club', C4, 'club_insurance_module')
+    check(ok_q.get('success') is True and no_q.get('error') == 'sku_not_available' and no_q.get('capability') == 'cash.insurance_ev_cashout'
+          and cap_q.get('success') and sup == {'success': False, 'error': 'capability_unavailable', 'sku': 'club_insurance_module'}
+          and again.get('success') is True,
+          'CAP commerce never quotes (so never sells or renews) a capability the registry calls unavailable, staff cannot mark it supported meanwhile, and it sells again once deployed',
+          {'ok': ok_q.get('error'), 'no': no_q, 'cap': cap_q.get('error'), 'sup': sup, 'again': again.get('error'), 'down': down, 'up': up})
 
     # ---- D20 conservation ---------------------------------------------------------
     conservation = json.loads(sql("""
@@ -800,6 +851,7 @@ def main():
     try:
         start_cluster()
         load_fixture()
+        install_registry()
         apply_migration()
         seed()
         scenarios()

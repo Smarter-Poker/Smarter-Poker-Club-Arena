@@ -1374,11 +1374,13 @@ class TournamentService {
     const result = rpcResult as {
       success?: boolean;
       error?: string;
+      /** 20260924102056: the admission sentence beside operating_access_required. */
+      message?: string;
       tournament_id?: string;
       mystery_config?: Record<string, unknown>;
     } | null;
     if (!result?.success) {
-      throw new Error(tournamentCreateErrorMessage(result?.error));
+      throw new Error(tournamentCreateErrorMessage(result?.error, result?.message));
     }
 
     if (config.type === 'mystery_bounty') {

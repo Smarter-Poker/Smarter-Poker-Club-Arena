@@ -106,13 +106,34 @@ export const TOURNAMENT_CREATE_ERRORS: Readonly<Record<string, string>> = {
     'Blinds Can Never Go Down From One Level To The Next. Fix The Blind Structure.',
   blind_level_duration_invalid: 'Every Blind Level Needs A Duration Longer Than 0 Minutes.',
   starting_stack_must_be_positive: 'Starting Chips Must Be A Whole Number Greater Than 0.',
+  // 20260924102056: an enforced commerce admission refuses a NEW tournament or
+  // a NEW recurring schedule. The server sends its own sentence beside the
+  // code (fn_ca_commerce_admission_message) and that sentence is what the
+  // owner reads; this line is the same sentence, for an answer without one.
+  operating_access_required:
+    'This Club Needs Active Operating Access To Create A New Tournament. Scheduled And Running Tournaments Are Not Affected.',
 };
 
 export const TOURNAMENT_CREATE_FALLBACK_ERROR =
   'Could Not Create The Tournament. Refresh The Lobby And Try Again.';
 
-/** The owner-facing sentence for a refusal code, never the raw code. */
-export function tournamentCreateErrorMessage(code: string | null | undefined): string {
+/** The refusal code whose words come from the server (see TOURNAMENT_CREATE_ERRORS). */
+export const OPERATING_ACCESS_REQUIRED = 'operating_access_required';
+
+/**
+ * The owner-facing sentence for a refusal code, never the raw code. For
+ * `operating_access_required` the server's own `message` is shown as written
+ * (it is already the finished Title Case sentence), with the house line as
+ * the fallback when an answer carries none.
+ */
+export function tournamentCreateErrorMessage(
+  code: string | null | undefined,
+  serverMessage?: string | null
+): string {
+  if (code === OPERATING_ACCESS_REQUIRED && typeof serverMessage === 'string') {
+    const said = serverMessage.trim();
+    if (said && !said.includes(String.fromCharCode(0x2014))) return said;
+  }
   return TOURNAMENT_CREATE_ERRORS[code ?? ''] ?? TOURNAMENT_CREATE_FALLBACK_ERROR;
 }
 

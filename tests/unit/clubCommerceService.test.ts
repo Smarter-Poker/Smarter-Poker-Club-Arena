@@ -3,24 +3,29 @@
  *  THE DIAMOND COSTS CLIENT SPEAKS THE MIGRATION'S OWN CONTRACT
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * src/services/ClubCommerceService.ts calls the browser doors that
- * supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql
- * installs. PostgREST resolves an RPC by its name AND its argument names, so
- * one renamed `p_` key is not a type error anywhere: it is a 404 "could not
- * find the function" at the moment an owner presses Pay.
+ * src/services/ClubCommerceService.ts calls the browser doors that the
+ * commerce migrations install, in order: 20260922143541 (base),
+ * 20260924033509 (fixes), 20260924102040 (refunds, notices, catalog
+ * lifecycle) and 20260924102056 (admission wired in shadow). Every migration
+ * that names fn_ca_commerce_ is read, so a new one is covered the day it
+ * lands. PostgREST resolves an RPC by its name AND its argument names, so one
+ * renamed `p_` key is not a type error anywhere: it is a 404 "could not find
+ * the function" at the moment an owner presses Pay.
  *
  * This file reads the SQL text itself (no database) and pins, both ways:
  *
- *   1. every RPC the service sends exists in the migration, is granted to
- *      `authenticated`, and receives only argument keys the signature
- *      declares, including every parameter that has no DEFAULT;
- *   2. every refusal code the migration can return (a literal 'error', a
+ *   1. every RPC the service sends exists (its LAST definition across the
+ *      migrations wins), is granted to `authenticated` after every later
+ *      REVOKE, and receives only argument keys the signature declares,
+ *      including every parameter that has no DEFAULT;
+ *   2. every refusal code the migrations can return (a literal 'error', a
  *      CA_COMMERCE_ exception lowered by the purchase and refund boundaries,
  *      the mandate_<state> family, and every renewal needs_attention reason)
- *      has operator copy in REFUSAL_COPY, in Title Case, with no em dash.
+ *      has operator copy in REFUSAL_COPY, in Title Case, with no em dash;
+ *   3. the refund reasons the page offers are exactly the SQL CHECK list.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,18 +43,25 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 import ClubCommerceService, {
+  REFUND_REASONS,
   REFUSAL_COPY,
+  ceilingSentence,
   isRefusal,
   listPrice,
+  owedReasonWords,
   refusalCopy,
   type CatalogProduct,
 } from '../../src/services/ClubCommerceService';
 
 const ROOT = resolve(__dirname, '../..');
-const SQL = readFileSync(
-  resolve(ROOT, 'supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql'),
-  'utf8'
-);
+const MIGRATIONS_DIR = resolve(ROOT, 'supabase/migrations');
+/** Every migration that touches the commerce boundary, in apply order. */
+const COMMERCE_FILES = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .filter((f) => readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8').includes('fn_ca_commerce_'));
+const SQL_BY_FILE = COMMERCE_FILES.map((f) => readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8'));
+const SQL = SQL_BY_FILE.join('\n');
 const EM_DASH = String.fromCharCode(0x2014);
 
 /** Split a parameter list on top level commas (DEFAULT now() has parens). */
@@ -70,8 +82,11 @@ function splitTopLevel(list: string): string[] {
 }
 
 type Param = { name: string; hasDefault: boolean };
+/** The last definition of each function wins, as it does in the database. */
 const SIGNATURES = new Map<string, Param[]>();
-for (const m of SQL.matchAll(/^CREATE FUNCTION public\.(fn_ca_commerce_\w+)\((.*)\) RETURNS /gm)) {
+for (const m of SQL.matchAll(
+  /^CREATE (?:OR REPLACE )?FUNCTION public\.(fn_ca_commerce_\w+)\((.*)\) RETURNS /gm
+)) {
   SIGNATURES.set(
     m[1],
     splitTopLevel(m[2]).map((p) => ({
@@ -81,15 +96,23 @@ for (const m of SQL.matchAll(/^CREATE FUNCTION public\.(fn_ca_commerce_\w+)\((.*
   );
 }
 
-/** Function names in the GRANT ... TO authenticated statement(s). */
+/**
+ * Function names `authenticated` may execute after every GRANT and REVOKE
+ * statement, applied in migration order (a later REVOKE ALL ... FROM
+ * authenticated removes an earlier grant until a later GRANT restores it).
+ */
 const GRANTED_TO_AUTHENTICATED = new Set<string>();
-for (const m of SQL.matchAll(/GRANT EXECUTE ON FUNCTION([\s\S]*?)TO ([^;]+);/g)) {
-  if (!/\bauthenticated\b/.test(m[2])) continue;
-  for (const f of m[1].matchAll(/public\.(fn_ca_commerce_\w+)\(/g))
-    GRANTED_TO_AUTHENTICATED.add(f[1]);
+for (const m of SQL.matchAll(
+  /(GRANT EXECUTE|REVOKE ALL) ON FUNCTION([\s\S]*?)(TO|FROM) ([^;]+);/g
+)) {
+  if (!/\bauthenticated\b/.test(m[4])) continue;
+  for (const f of m[2].matchAll(/public\.(fn_ca_commerce_\w+)\(/g)) {
+    if (m[1] === 'GRANT EXECUTE') GRANTED_TO_AUTHENTICATED.add(f[1]);
+    else GRANTED_TO_AUTHENTICATED.delete(f[1]);
+  }
 }
 
-/** Every code the migration can hand back as `error` (or as a renewal reason). */
+/** Every code the migrations can hand back as `error` (or as a renewal reason). */
 function refusalCodes(): Set<string> {
   const codes = new Set<string>();
   // Literal refusals. The lookbehind skips `v_x->>'error', 'unknown'` inside a
@@ -139,9 +162,24 @@ async function exerciseEveryDoor() {
   await ClubCommerceService.setSponsorship(scope, { totalBudget: 5000, perClubBudget: 500 });
   await ClubCommerceService.setSponsorship(scope, { sponsorshipId: scope, revoke: true });
   await ClubCommerceService.admission('club', scope, 'approve_member');
+  await ClubCommerceService.refundRequest(scope, 0, 'scope_closed', 'refund-key-0001', null);
+  await ClubCommerceService.refundRequest(scope, 1, 'purchase_in_error', 'refund-key-0002', 'x');
+  await ClubCommerceService.policies('refund');
+  await ClubCommerceService.policies();
 }
 
 describe('ClubCommerceService: every RPC matches the migration signature', () => {
+  it('reads every commerce migration, in order', () => {
+    for (const f of [
+      '20260922143541_club_and_union_diamond_commerce.sql',
+      '20260924033509_club_and_union_diamond_commerce_fixes.sql',
+      '20260924102040_diamond_commerce_refunds_notices_and_catalog_lifecycle.sql',
+      '20260924102056_diamond_commerce_admission_is_wired_in_shadow.sql',
+    ])
+      expect(COMMERCE_FILES).toContain(f);
+    expect([...COMMERCE_FILES].sort()).toEqual(COMMERCE_FILES);
+  });
+
   it('parses the migration signatures it is checked against', () => {
     expect(SIGNATURES.size).toBeGreaterThan(20);
     expect(SIGNATURES.get('fn_ca_commerce_quote')?.map((p) => p.name)).toEqual([
@@ -199,6 +237,40 @@ describe('ClubCommerceService: every RPC matches the migration signature', () =>
     });
   });
 
+  it('a refund request sends exactly the declared keys, details null when empty', async () => {
+    const purchase = '00000000-0000-4000-8000-0000000000b1';
+    await ClubCommerceService.refundRequest(purchase, 2, 'service_unavailable', 'rk-00000001');
+    const [call] = rpc.calls;
+    expect(call.fn).toBe('fn_ca_commerce_refund_request');
+    expect(Object.keys(call.args).sort()).toEqual(
+      SIGNATURES.get('fn_ca_commerce_refund_request')!
+        .map((p) => p.name)
+        .sort()
+    );
+    expect(call.args).toEqual({
+      p_purchase_id: purchase,
+      p_line_index: 2,
+      p_reason: 'service_unavailable',
+      p_request_key: 'rk-00000001',
+      p_details: null,
+    });
+  });
+
+  it('set_renewal is the sponsor-aware body from the refunds migration', () => {
+    expect(SIGNATURES.get('fn_ca_commerce_set_renewal')?.map((p) => p.name)).toEqual([
+      'p_entitlement_id',
+      'p_enabled',
+      'p_max_diamonds',
+      'p_sku',
+      'p_quantity',
+    ]);
+    expect(GRANTED_TO_AUTHENTICATED.has('fn_ca_commerce_refund_request')).toBe(true);
+    expect(GRANTED_TO_AUTHENTICATED.has('fn_ca_commerce_policies')).toBe(true);
+    /* Internal doors stay private, so the page never calls them. */
+    expect(GRANTED_TO_AUTHENTICATED.has('fn_ca_commerce_execute_approved_refunds')).toBe(false);
+    expect(GRANTED_TO_AUTHENTICATED.has('fn_ca_commerce_refund_policy')).toBe(false);
+  });
+
   it('reads every receipt of the viewer with both scope arguments null', async () => {
     await ClubCommerceService.receipts(null, null);
     expect(rpc.calls[0]).toEqual({
@@ -238,6 +310,15 @@ describe('REFUSAL_COPY: every code the migration can return has operator copy', 
       'mandate_needs_attention',
       'price_above_accepted_ceiling',
       'sponsor_payer_required',
+      /* 20260924102040 and 20260924102056 */
+      'request_already_open',
+      'error_window_passed',
+      'no_unused_whole_days',
+      'replaced_by_newer_purchase',
+      'invalid_reason',
+      'operating_access_required',
+      'consumer_not_running',
+      'unexpected_error',
     ])
       expect(codes).toContain(known);
   });
@@ -259,6 +340,45 @@ describe('REFUSAL_COPY: every code the migration can return has operator copy', 
     expect(refusalCopy('constructor', 'Fallback')).toBe('Fallback');
     expect(refusalCopy(undefined, 'Fallback')).toBe('Fallback');
     expect(refusalCopy('insufficient_diamonds')).toBe('Not Enough Available Diamonds');
+  });
+});
+
+describe('refunds: the page offers exactly what the migration accepts', () => {
+  const checkList = (re: RegExp) => {
+    const m = SQL.match(re);
+    expect(m, String(re)).not.toBeNull();
+    return [...m![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+  };
+
+  it('the reasons are the reason_code CHECK list and the request door list', () => {
+    const table = checkList(/reason_code text NOT NULL CHECK \(reason_code IN \(([^)]*)\)\)/);
+    const door = checkList(/p_reason NOT IN \(([^)]*)\)/);
+    expect(REFUND_REASONS.map((r) => r.code)).toEqual(table);
+    expect(door).toEqual(table);
+    for (const r of REFUND_REASONS) {
+      expect(r.label.includes(EM_DASH) || r.note.includes(EM_DASH)).toBe(false);
+      for (const word of `${r.label} ${r.note}`.split(/\s+/))
+        expect(word, r.label).toMatch(/^[A-Z0-9(]/);
+    }
+  });
+
+  it('the ceiling preview fills the same three placeholders the server fills', () => {
+    const template = SQL.match(/\('renewal_ceiling', 1, 'Renewal Authorization',\s*'([^']+)'\)/);
+    expect(template).not.toBeNull();
+    for (const ph of ['{product}', '{ceiling}', '{payer}']) expect(template![1]).toContain(ph);
+    expect(ceilingSentence(template![1], 'Up To 250 Approved Members', 1, 1500, false)).toBe(
+      'I Authorize Club Arena To Renew Up To 250 Approved Members For Up To 1,500 Diamonds Per Period, Paid From My Diamond Balance, Until I Cancel.'
+    );
+    expect(ceilingSentence(template![1], 'Union Back Office', 3, 3000, true)).toBe(
+      'I Authorize Club Arena To Renew Union Back Office For 3 Covered Clubs For Up To 3,000 Diamonds Per Period, Paid From My Diamond Balance Within My Sponsorship Budget, Until I Cancel.'
+    );
+    expect(ceilingSentence(null, 'X', 1, 1, false)).toBeNull();
+  });
+
+  it('an owed reason always reads in words', () => {
+    expect(owedReasonWords('diamond_balance_limit')).toBe('Your Diamond Balance Is At Its Limit');
+    expect(owedReasonWords('some_new_wallet_code')).toBe('Some New Wallet Code');
+    expect(owedReasonWords(null)).toBe('The Wallet Could Not Receive It Yet');
   });
 });
 

@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 156355,
-      "sha256": "e3b0d5253aa41c7b328b6eb7c504628e4129f3d3255f4db7e07a8ab287f5fa97"
+      "bytes": 156547,
+      "sha256": "e91379b67c8947d773646c070258358f86e6b6c0ac9ee74c2cb877ac98382a86"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -266,12 +266,21 @@
       }
     }
   },
-  "tournamentCreationRulesIntegration": {
-    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+  "memberStatusServerOwnedIntegration": {
+    "reason": "Member status is server owned: ci.yml gains the 'A member's club status is changed only by the server' owned-PostgreSQL step (scripts/ci/test-member-status-server-owned.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
         "bytes": 156118,
         "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "tournamentCreationRulesIntegration": {
+    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
       }
     }
   }

@@ -3142,7 +3142,6 @@
     "fn_leaderboard_reward_contexts",
     "fn_leaderboard_snapshot_gaps",
     "fn_league_pooled",
-    "fn_lease_generation_keeps_its_reserved_hand",
     "fn_leave_club_atomic",
     "fn_leave_seat_and_refund",
     "fn_ledger_fires",

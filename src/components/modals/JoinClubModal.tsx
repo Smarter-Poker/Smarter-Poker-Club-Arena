@@ -316,6 +316,7 @@ export default function JoinClubModal({
       >
         <div className={styles.scrollBody}>
           <SpadeConsole
+            onClose={onClose}
             as="div"
             className={styles.console}
             eyebrow="Club Access"

@@ -24,7 +24,7 @@ describe('union settlement completion receipt', () => {
     'round4_invoices_failed: invoice_error',
   ])('refuses an HTTP-successful database refusal: %s', async (error) => {
     mocks.rpc.mockResolvedValue({ data: { ...receipt(), success: false, error }, error: null });
-    await expect(UnionOpsService.runSettlementCascade()).rejects.toThrow(
+    await expect(UnionOpsService.runSettlementCascade(MIDWAY_UNION_ID)).rejects.toThrow(
       'Settlement did not complete'
     );
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
@@ -38,7 +38,9 @@ describe('union settlement completion receipt', () => {
     { ...receipt(), union_id: 'another-union' },
   ])('does not certify an absent, malformed or wrong-union receipt', async (data) => {
     mocks.rpc.mockResolvedValue({ data, error: null });
-    await expect(UnionOpsService.runSettlementCascade()).rejects.toThrow('could not be verified');
+    await expect(UnionOpsService.runSettlementCascade(MIDWAY_UNION_ID)).rejects.toThrow(
+      'could not be verified'
+    );
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
   });
 
@@ -63,7 +65,7 @@ describe('union settlement completion receipt', () => {
         { amount: 1, shortfalls: 0, success: false },
       ]) {
         mocks.rpc.mockResolvedValueOnce({ data: { ...receipt(), [key]: round }, error: null });
-        await expect(UnionOpsService.runSettlementCascade()).rejects.toThrow(
+        await expect(UnionOpsService.runSettlementCascade(MIDWAY_UNION_ID)).rejects.toThrow(
           'could not be verified'
         );
       }
@@ -73,7 +75,7 @@ describe('union settlement completion receipt', () => {
 
   it('returns exact reported amounts after explicit matching completion', async () => {
     mocks.rpc.mockResolvedValue({ data: receipt(), error: null });
-    await expect(UnionOpsService.runSettlementCascade()).resolves.toEqual(receipt());
+    await expect(UnionOpsService.runSettlementCascade(MIDWAY_UNION_ID)).resolves.toEqual(receipt());
     expect(mocks.rpc).toHaveBeenCalledWith('fn_union_settlement_cascade', {
       p_union_id: MIDWAY_UNION_ID,
       p_period_start: null,
@@ -102,7 +104,31 @@ describe('union settlement completion receipt', () => {
   it('preserves transport failure and never retries an uncertain mutation', async () => {
     const error = new Error('connection lost');
     mocks.rpc.mockResolvedValue({ data: receipt(), error });
-    await expect(UnionOpsService.runSettlementCascade()).rejects.toBe(error);
+    await expect(UnionOpsService.runSettlementCascade(MIDWAY_UNION_ID)).rejects.toBe(error);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* These methods used to default a missing union id to MIDWAY_UNION_ID, so a
+   surface that had not resolved its union read, swept or settled one hardcoded
+   union instead. A missing id is now refused before the database is asked. */
+describe('a union-scoped call names its union', () => {
+  const calls: Array<[string, (id: unknown) => Promise<unknown>]> = [
+    ['runSettlementCascade', (id) => UnionOpsService.runSettlementCascade(id as string)],
+    ['getSettlementPreview', (id) => UnionOpsService.getSettlementPreview(id as string)],
+    ['runIntegritySweep', (id) => UnionOpsService.runIntegritySweep(id as string)],
+    ['getCoverageStrict', (id) => UnionOpsService.getCoverageStrict(id as string)],
+    ['getCoverage', (id) => UnionOpsService.getCoverage(id as string)],
+    ['getAgentRisk', (id) => UnionOpsService.getAgentRisk(id as string)],
+    ['getAllAgentStatements', (id) => UnionOpsService.getAllAgentStatements(id as string)],
+    ['getDistributionCheck', (id) => UnionOpsService.getDistributionCheck(id as string)],
+    ['getSettlementRounds', (id) => UnionOpsService.getSettlementRounds(id as string)],
+  ];
+
+  it.each(calls)('%s refuses a missing union id without asking the database', async (_, call) => {
+    for (const id of [undefined, null, '', '   ']) {
+      await expect(call(id)).rejects.toThrow('No Union Selected');
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

@@ -205,6 +205,7 @@ export function TableSettingsPanel({
   return (
     <div className="tsp-container tsp-overlay" aria-busy={loading}>
       <SpadeConsole
+        onClose={onClose}
         as="div"
         eyebrow="This Table"
         title="Table Settings"

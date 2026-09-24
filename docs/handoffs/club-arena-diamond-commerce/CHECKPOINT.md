@@ -132,20 +132,22 @@ WHERE effective` plus the overlap predicate under the scope lock (D32).
 
 ## Phase state
 
-| Phase                            | State                                                                                                                                                                                                          |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0 Discovery, authority, baseline | Done: fresh clone, policy receipt, live definition reads within the read-only scope, checkpoint created                                                                                                        |
-| 1 Contracts and schema           | Implemented, Tested (isolated)                                                                                                                                                                                 |
-| 2 Trial                          | Implemented, Tested (D01, D02, D27, D47, D51)                                                                                                                                                                  |
-| 3 Quotes, checkout, exactly-once | Implemented, Tested (D03..D07, D31, D32, D66, D68, D70, D76)                                                                                                                                                   |
-| 4 Renewals, upgrades, lifecycle  | Implemented, Tested (D09, D10, D11, D49, D50, D54, D73); engine consumer Implemented, Tested (unit)                                                                                                            |
-| 5 Sponsorship                    | Implemented, Tested (D12, D42, D43, D44, D45, D46) for the sponsor's own session; delegate session route deferred                                                                                              |
-| 6 Reports, assets, refunds       | Refunds Implemented, Tested (D17, D36, D38, D39, D40, D41, D64); reports and assets installed as products, unsupported for sale                                                                                |
-| 7 Operator UI and catalog admin  | Implemented (client page, registry item, staff functions); browser verification pending publication                                                                                                            |
-| 8 Qualification                  | 126 checks pass in isolation (`isolated-qualification-2026-09-22.json`)                                                                                                                                        |
-| 9 Readiness                      | Distribution/provider review: no new processor, no cash subscription, no external purchase link; diamond acquisition unchanged. Apple 3.1.1 note: purchased diamonds never expire with a service period (D63). |
-| 10 Install, rollout, release     | Pending: PR, checks, protected merge, migration install and readback, client publication, engine staging                                                                                                       |
-| 11 Final evidence                | Pending                                                                                                                                                                                                        |
+Updated 2026-09-24 (continuation after the day-two review).
+
+| Phase                            | State                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Discovery, authority, baseline | Done                                                                                                                                                                                                                                                                                                                                                                              |
+| 1 Contracts and schema           | Installed: `20260922143541` (history row present, installed 2026-09-23 17:06 UTC, unused at review: 0 trials, quotes, purchases, mandates, refunds, sponsorships, notices). Fixes ship forward in `20260924033509_club_and_union_diamond_commerce_fixes.sql`, which pins the installed baseline (11 function bodies by md5, the original mandate key) before it changes anything. |
+| 2 Trial                          | Implemented, Tested (D01, D02, D27, D47, D51)                                                                                                                                                                                                                                                                                                                                     |
+| 3 Quotes, checkout, exactly-once | Implemented, Tested (D03..D07, D31, D32, D66, D68, D70, D76); kind-mismatch and malformed-quantity refusals added                                                                                                                                                                                                                                                                 |
+| 4 Renewals, upgrades, lifecycle  | Implemented, Tested (D09, D10, D11, D49, D50, D54, D73); one mandate per right; covered-period guard; scope-then-mandate lock order (deadlock test)                                                                                                                                                                                                                               |
+| 5 Sponsorship                    | Implemented, Tested (D12, D42..D46). The sponsor buys for a covered club from the union page (Buy For A Covered Club). Membership is the `union_clubs` link only.                                                                                                                                                                                                                 |
+| 6 Reports, assets, refunds       | Refunds Implemented, Tested (D17, D36, D38..D41, D64) through the service route; a browser session is refused in JSON (see decision 5). Reports and assets installed as products, unsupported for sale.                                                                                                                                                                           |
+| 7 Operator UI and catalog admin  | Implemented and reviewed line by line; unit contract tests pin every RPC key and refusal copy against the SQL                                                                                                                                                                                                                                                                     |
+| 8 Qualification                  | 155 scenarios pass on the production path (installed file, then the fix) with PostgREST-faithful identity (`isolated-qualification-2026-09-24.json`)                                                                                                                                                                                                                              |
+| 9 Readiness                      | Distribution/provider review unchanged: no new processor, no cash subscription, no external purchase link                                                                                                                                                                                                                                                                         |
+| 10 Install, rollout, release     | Both migrations installed and read back byte-identical (2026-09-24 05:04 UTC). Client live: build `abea9a1af` contains #5164. Engine consumer waits on the first successful engine release (release workstream, #5161).                                                                                                                                                           |
+| 11 Final evidence                | Delivery record in `docs/changelog/2026-09-24-club-and-union-diamond-commerce-fixes.md`                                                                                                                                                                                                                                                                                           |
 
 ## D-series applicability
 
@@ -178,35 +180,32 @@ wallet ceiling path (D64) rather than the reserve path itself.
 
 1. Price publication: catalog v1 publishes the R2 candidate schedule with
    `price_authority` naming the assignment and `comparison_verified=false`.
-   No newer owner-confirmed price instruction was found. A 20%-cheaper claim
-   stays disabled until a matched comparator is recorded per SKU.
+   A 20%-cheaper claim stays disabled until a matched comparator is recorded
+   per SKU.
 2. Launch cohort: `fn_ca_commerce_activate_launch_cohort()` enrolls every
-   existing operator prospectively from one recorded event. It is NOT run at
-   install. Running it is the activation step of Phase 10.2 and is recorded
-   here when done.
+   existing operator prospectively from one recorded event. Not run. It is the
+   owner's launch switch; running it starts every operator's 30-day clock.
 3. Admission enforcement: shadow until `ca_commerce_settings.admission_enforced_from`
-   is set through `fn_ca_commerce_settings_set`; the existing join, table and
-   tournament doors are wired to `fn_ca_commerce_admission` in a follow-up
-   migration before enforcement is switched on.
-4. Delegated sponsor spending, report exports, artwork SKUs: later increments.
+   is set; the join, table and tournament doors are wired to
+   `fn_ca_commerce_admission` in a follow-up before enforcement is switched on.
+   `fn_ca_commerce_admission` answers any signed-in caller for any scope
+   (roster count and capacity only); tighten when it is wired.
+4. Report exports and artwork SKUs: later increments (products exist,
+   `supported=false`).
+5. OWNER DECISION: staff refunds from a browser session. A refund credits the
+   payer through `add_diamonds_to_balance`, and
+   `fn_guard_profile_privileged_columns` admits that write only from a service
+   context or a ledgered door named in its allowlist. Naming
+   `fn_ca_commerce_refund` there (one line, the 20260914120854 pattern) would
+   let platform staff refund from the browser. That is a permission change to
+   a shared wallet guard; the session's action classifier refused it as a
+   permission grant, so it is left to the owner. Until then the refund door
+   answers `refund_requires_service_route` in JSON and refunds travel a
+   service-role route. No page or engine path calls the refund door today.
 
 ## Next actions
 
-1. Done: branch pushed, PR #5077 open, checks read (see Phase 10).
-2. BLOCKED, needs the owner: install the migration through an approved route
-   outside the :50-:03 UTC window. The Supabase MCP `apply_migration` call
-   from this session was refused by the action classifier. Options: the owner
-   permits that call in this session, or applies
-   `supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql`
-   (sha256 595da91b3f5a58ced44735fdb7df439b9955c9212eecb6101768c5f28884c065)
-   through the CLI / dashboard SQL editor as ONE transaction, name
-   `club_and_union_diamond_commerce`. Then read back functions, grants and the
-   catalog and record the history row here. The migration must be installed
-   before the engine release is dispatched: `check-engine-doors-exist` reads
-   production `pg_proc` for `fn_ca_commerce_claim_due_renewals`,
-   `fn_ca_commerce_execute_renewal` and `fn_ca_commerce_deliver_due_notices`.
-3. Protected squash merge; verify `publish-club-arena` and both build-info
-   endpoints; verify the page renders at `/hub/club-arena/clubs/<id>/diamond-costs`.
-4. Engine: `stage-engine-release.yml` -> certified `auto-deploy-hetzner.yml`;
-   verify `/health` identity and the consumer's log line.
-5. Record every identity above in this file.
+1. Done: #5164 merged, `20260924033509` installed and read back, client live.
+2. Engine: verify `/health` and the `[CommerceRenewal]` log line after the
+   first successful engine release (owned by the release workstream).
+3. Owner: decision 5 (staff browser refunds) and decision 2 (launch cohort).

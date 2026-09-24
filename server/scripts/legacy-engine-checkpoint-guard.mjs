@@ -1878,9 +1878,55 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             custodyCommitAttempted = true;
           const response = await modules.client.supabase.rpc(name, args);
           checkAll();
-          require(!response.error &&
-            record(response.data) &&
-            response.data.ok === true, 'mixed_custody_rpc_unknown');
+          // The same condition and the same code as before; this names the
+          // manager, the RPC, what the database said, and the shape of the
+          // physical map it refused - which the process-wide require never
+          // did (run 36068474418 refused `mixed_custody_rpc_unknown` and
+          // named nothing; the cause was on the Postgres log alone).
+          witness(
+            'mixed_custody_rpc_unknown',
+            [
+              ['rpc.error', () => !response.error],
+              ['rpc.data', () => record(response.data)],
+              ['rpc.ok', () => response.data.ok === true],
+            ],
+            () => {
+              const engines = Array.isArray(local?.engines) ? local.engines : [];
+              const backed = engines.filter(
+                (e) => e.permit === null && typeof e.allocation_epoch === 'string'
+              );
+              const clean = (value) =>
+                String(value ?? '')
+                  .replace(/[^\w .,:/=()+-]+/g, ' ')
+                  .replace(/ {2,}/g, ' ')
+                  .trim()
+                  .slice(0, 96);
+              return {
+                failedTable: manager.tournamentId,
+                observedDetail: [
+                  `rpc=${name}`,
+                  `expected=${args.p_expected === null ? 'observe' : 'commit'}`,
+                  `code=${clean(response.error?.code ?? 'none')}`,
+                  `message=${clean(response.error?.message ?? response.data?.reason ?? 'none')}`,
+                  `engines=${engines.length}`,
+                  `permits=${engines.filter((e) => e.permit !== null).length}`,
+                  `allocationBacked=${backed.length}`,
+                  `nullLifecycle=${engines.filter((e) => e.lifecycle === null).length}`,
+                  `backed=${backed
+                    .slice(0, 12)
+                    .map(
+                      (e) =>
+                        `${String(e.table_id).slice(0, 8)}:${String(e.allocation_epoch).slice(0, 8)}:${
+                          e.lifecycle === null ? 'null' : e.lifecycle
+                        }:hand=${e.bank_custody?.hand_number}:seats=${e.bank_custody?.roster?.length}`
+                    )
+                    .join('/')}`,
+                ]
+                  .join(',')
+                  .slice(0, 512),
+              };
+            }
+          );
           return response.data;
         };
         const observation = await rpc('fn_f06_prepare_mixed_manager_custody', input);
@@ -1951,24 +1997,44 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           const matches = proof.engine_lifecycles.filter((e) => e.table_id === original.tableId);
           require(matches.length === 1, 'mixed_original_lifecycle_evidence_missing');
           const witness = matches[0];
+          /* AN EPOCH THAT NEVER RESERVED A HAND IS WITNESSED BY ITS ABSENCE
+             (2026-09-24). An engine holds one allocator epoch for its life and
+             every hand it deals reserves a permit under it, so an epoch with
+             no permit row is an engine that dealt nothing in this generation -
+             a table admitted and left waiting for players. Run 36068474418
+             refused the whole transfer for seven of them. The database now
+             witnesses that case under its locks (migration
+             20260924225647): no permit under the epoch, no reserved hand on
+             the table, the table's own lifecycle, `permits: []` and
+             `witness: 'never_reserved'`. This holds the receipt to exactly
+             that shape, and to the shape it always had for an epoch that did
+             reserve; a receipt saying neither refuses as before. */
+          const neverReserved =
+            witness.witness === 'never_reserved' &&
+            Array.isArray(witness.permits) &&
+            witness.permits.length === 0 &&
+            original.permit === null &&
+            original.lifecycle === null;
           require(witness.allocation_epoch === original.allocationEpoch &&
             typeof witness.lifecycle === 'string' &&
             /^[1-9][0-9]{0,18}$/.test(witness.lifecycle) &&
             (original.lifecycle === null || original.lifecycle === witness.lifecycle) &&
             Array.isArray(witness.permits) &&
-            witness.permits.length > 0 &&
-            new Set(witness.permits.map((p) => p.permit_id)).size === witness.permits.length &&
-            witness.permits.every(
-              (p) =>
-                uuid(p.permit_id) &&
-                p.tournament_id === manager.tournamentId &&
-                p.generation === manager.tournamentLeaseGeneration &&
-                p.table_id === original.tableId &&
-                p.custody_id === original.allocationEpoch &&
-                Number.isSafeInteger(p.lifecycle) &&
-                String(p.lifecycle) === witness.lifecycle &&
-                ['accepted', 'never_started', 'aborted_unsettled'].includes(p.state)
-            ), 'mixed_original_lifecycle_evidence_invalid');
+            (neverReserved ||
+              (witness.witness === 'permits' &&
+                witness.permits.length > 0 &&
+                new Set(witness.permits.map((p) => p.permit_id)).size === witness.permits.length &&
+                witness.permits.every(
+                  (p) =>
+                    uuid(p.permit_id) &&
+                    p.tournament_id === manager.tournamentId &&
+                    p.generation === manager.tournamentLeaseGeneration &&
+                    p.table_id === original.tableId &&
+                    p.custody_id === original.allocationEpoch &&
+                    Number.isSafeInteger(p.lifecycle) &&
+                    String(p.lifecycle) === witness.lifecycle &&
+                    ['accepted', 'never_started', 'aborted_unsettled'].includes(p.state)
+                ))), 'mixed_original_lifecycle_evidence_invalid');
           original.lifecycle = witness.lifecycle;
           local.engines.find((e) => e.table_id === original.tableId).lifecycle = witness.lifecycle;
         }

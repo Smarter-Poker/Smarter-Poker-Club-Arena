@@ -1732,6 +1732,7 @@ function mixedFixture() {
   let batchArrivals: 'perPlayer' | 'missing' = 'perPlayer';
   let onArrivals: ((table: string, occupancies: string[]) => { data: any; error: any }) | undefined;
   let onArrivalsForPlayers: ((players: string[]) => { data: any; error: any }) | undefined;
+  let lifecycleWitness: 'permits' | 'never_reserved' | 'unmarked' = 'never_reserved';
   Object.assign(f.modules.client.supabase, {
     rpc: async (name: string, input: any) => {
       if (name === 'fn_cash_seat_move_arrivals_for_players') {
@@ -1769,7 +1770,48 @@ function mixedFixture() {
       let data: any;
       if (name === 'fn_f06_prepare_mixed_manager_custody') {
         const canonical = {
-          engine_lifecycles: [],
+          // smarter_private.f06_mixed_custody_snapshot (migration
+          // 20260924225647): every allocation-backed engine is witnessed, from
+          // its permit rows when it reserved, by their absence when it never did.
+          engine_lifecycles: input.p_local.engines
+            .filter((e: any) => e.permit === null && e.allocation_epoch !== null)
+            .map((e: any) =>
+              lifecycleWitness === 'permits'
+                ? {
+                    table_id: e.table_id,
+                    allocation_epoch: e.allocation_epoch,
+                    lifecycle: '1',
+                    witness: 'permits',
+                    permits: [
+                      {
+                        permit_id: uuid(91000),
+                        tournament_id: input.p_tournament_id,
+                        generation: input.p_origin_generation,
+                        table_id: e.table_id,
+                        custody_id: e.allocation_epoch,
+                        lifecycle: 1,
+                        state: 'accepted',
+                      },
+                    ],
+                  }
+                : lifecycleWitness === 'never_reserved'
+                  ? {
+                      table_id: e.table_id,
+                      allocation_epoch: e.allocation_epoch,
+                      lifecycle: '1',
+                      witness: 'never_reserved',
+                      permits: [],
+                    }
+                  : {
+                      // The database before migration 20260924225647 could not
+                      // answer this shape at all; a receipt naming neither
+                      // witness is what an old body would look like if it did.
+                      table_id: e.table_id,
+                      allocation_epoch: e.allocation_epoch,
+                      lifecycle: '1',
+                      permits: [],
+                    }
+            ),
           pending_original_tables: [],
           original_evidence: input.p_local.engines
             .filter((e: any) => e.permit)
@@ -1822,7 +1864,10 @@ function mixedFixture() {
           receipt: receipts.get(input.p_tournament_id),
         };
       }
-      return { error: null, data: changeResponse ? changeResponse(name, data) : data };
+      const changed = changeResponse ? changeResponse(name, data) : data;
+      // A PostgREST refusal: the RAISE text travels as `error.message`, no data.
+      if (changed && changed.__rpcError) return { error: changed.__rpcError, data: null };
+      return { error: null, data: changed };
     },
   });
   /* A SECOND original on one manager holding NO permit at all - the shape the
@@ -1869,6 +1914,49 @@ function mixedFixture() {
     f.server.tournamentOwnedTables.add(e.tableId);
     return e;
   };
+  /* A WAITING TABLE: admitted under this generation (allocator installed, so
+     it holds an epoch), stopped before it ever dealt, so no permit was ever
+     reserved under that epoch and no witness for its lifecycle exists in
+     memory. Tournament 5a387a75 holds seven of these (run 36068474418). */
+  const waitingOriginal = (managerIndex = 0, n = 0) => {
+    const { manager } = originals[managerIndex];
+    const e: any = new f.Table(400 + managerIndex * 10 + n);
+    e.running = false;
+    e.terminal = true;
+    e.terminalTeardownComplete = true;
+    e.teardownPromise = Promise.resolve();
+    e.dealingLoopPromise = null;
+    e.seatBoundaryTail = Promise.resolve();
+    e.snapshotFlushPromise = null;
+    e.readContinuationTasks = new Set();
+    e.tournamentMoveOperationByOwner = new Map();
+    e.entryHoldWriteChains = new Map();
+    e.f06HandPreparation = null;
+    e.f06AllocationEpoch = uuid(92000 + managerIndex * 10 + n);
+    e.f06Allocator = async () => 1;
+    e.f06AllocationCurrent = () => false;
+    e.f06PermitFactory = async () => {
+      throw new Error('never dealt');
+    };
+    e.f06CurrentPermit = null;
+    e.lifecycleDiagnostics = { instanceId: uuid(85600 + managerIndex * 10 + n) };
+    e.engineLeaseScope = 'tournament';
+    e.engineLeaseVerified = true;
+    e.engineLeaseTournamentId = manager.tournamentId;
+    e.engineLeaseGeneration = manager.tournamentLeaseGeneration;
+    e.hasOnlyDrainedTournamentMoveOwner = () => true;
+    e.timeBankEngine.playerBanks.clear();
+    e.timeBankMeta.clear();
+    manager.tableEngines.set(e.tableId, e);
+    manager.drainedF06Originals.push([e.tableId, e]);
+    dataActorContext.bindTournamentDataAuthorityMethods(
+      { tournamentId: manager.tournamentId, leaseGeneration: manager.tournamentLeaseGeneration },
+      e
+    );
+    f.server.tableEngines.set(e.tableId, e);
+    f.server.tournamentOwnedTables.add(e.tableId);
+    return e;
+  };
   /* Take the interrupted permit off a manager's FIRST original, leaving it the
      lifecycle witness a permit used to carry - so the run reaches the custody
      proof rather than stopping at `mixed_original_lifecycle_unproven` and
@@ -1885,7 +1973,11 @@ function mixedFixture() {
     intent,
     originals,
     abandonedOriginal,
+    waitingOriginal,
     clearInterruptedPermit,
+    lifecycleWitness: (mode: typeof lifecycleWitness) => {
+      lifecycleWitness = mode;
+    },
     receipts,
     rpcCalls,
     arrivalReads,
@@ -4246,5 +4338,85 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
     expect(f.snapshotReads).toHaveLength(1);
     expect(f.receipts.size).toBe(0);
     expect(f.server.tableEngines.has(stuck.tableId)).toBe(true);
+  });
+});
+
+describe('an epoch that never reserved a hand is witnessed by its absence (2026-09-24)', () => {
+  /* Run 36068474418, the first release to reach fn_f06_prepare_mixed_manager
+     _custody: `mixed_custody_rpc_unknown`, named nothing; the Postgres log said
+     F06_MIXED_ALLOCATION_WITNESS_UNPROVEN at f06_mixed_custody_snapshot line
+     42. The retained $100 Freeroll manager holds seven waiting single-seat
+     tables admitted under its generation that never dealt. */
+  it('a waiting original is witnessed never_reserved and the transfer proceeds', async () => {
+    const f = mixedFixture();
+    const waiting = [f.waitingOriginal(0, 0), f.waitingOriginal(0, 1)];
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.rpcCalls.length).toBeGreaterThan(0);
+    for (const e of waiting) expect(f.server.tableEngines.has(e.tableId)).toBe(false);
+    // The engine's own fields are untouched: the guard proves, it never edits.
+    for (const e of waiting) expect(e.f06CurrentPermit).toBeNull();
+  });
+
+  it('an epoch that did reserve is still witnessed from its permits, exactly as before', async () => {
+    const f = mixedFixture();
+    f.lifecycleWitness('permits');
+    f.waitingOriginal(0, 0);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+  });
+
+  it('a receipt that names neither witness refuses, and nothing is committed', async () => {
+    const f = mixedFixture();
+    f.lifecycleWitness('unmarked');
+    f.waitingOriginal(0, 0);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_lifecycle_evidence_invalid',
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+
+  it('a never_reserved witness for an epoch the guard can itself place refuses', async () => {
+    const f = mixedFixture();
+    const e = f.waitingOriginal(0, 0);
+    // A lifecycle witness in memory means the epoch is not unplaceable; the
+    // absence witness is only for the engine nobody can place.
+    const breakId = uuid(83900);
+    f.originals[0].manager.retainedTournamentBreakSources.set(e.tableId, { breakId, engine: e });
+    f.originals[0].manager.durableTournamentBreaks.set(breakId, { lifecycle: '1' });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_lifecycle_evidence_invalid',
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+
+  it('a refused custody RPC names the manager, the RPC, the message and the map', async () => {
+    const f = mixedFixture();
+    const e = f.waitingOriginal(0, 0);
+    f.changeResponse((name: string, data: any) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? { __rpcError: { code: 'P0001', message: 'F06_MIXED_ALLOCATION_WITNESS_UNPROVEN' } }
+        : data
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedCheck: 'rpc.error',
+      failedTable: f.originals[0].manager.tournamentId,
+    });
+    expect(result.observedDetail).toContain('rpc=fn_f06_prepare_mixed_manager_custody');
+    expect(result.observedDetail).toContain('expected=observe');
+    expect(result.observedDetail).toContain('code=P0001');
+    expect(result.observedDetail).toContain('message=F06_MIXED_ALLOCATION_WITNESS_UNPROVEN');
+    expect(result.observedDetail).toContain('allocationBacked=1');
+    expect(result.observedDetail).toContain(
+      `backed=${e.tableId.slice(0, 8)}:${e.f06AllocationEpoch.slice(0, 8)}:null:hand=17:seats=1`
+    );
+    expect(f.receipts.size).toBe(0);
   });
 });

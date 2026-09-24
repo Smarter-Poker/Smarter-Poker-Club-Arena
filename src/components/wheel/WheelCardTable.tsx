@@ -141,6 +141,7 @@ export function WheelCardTable({
       className={revealStyles.dialog}
     >
       <SpadeConsole
+        onClose={plated ? onClose : undefined}
         eyebrow="Diamond Cards"
         title={revealed ? 'Your Card' : 'Pick A Card'}
         crest="diamond"

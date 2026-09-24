@@ -150,6 +150,7 @@ export function WheelRunSummary({
       className={revealStyles.dialog}
     >
       <SpadeConsole
+        onClose={onClose}
         eyebrow="Auto Spin"
         title={title}
         pill={`${summary.done.toLocaleString()} Of ${summary.total.toLocaleString()}`}

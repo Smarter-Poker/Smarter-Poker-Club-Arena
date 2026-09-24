@@ -78,4 +78,28 @@ describe('the parent decides from the engine lists', () => {
     // the deferred check is the earlier branch
     expect(expr.indexOf('postBBDeferredUserIds')).toBeLessThan(expr.indexOf('waitingForBBUserIds'));
   });
+
+  it('a player released to post on the next deal is posting, not sitting out (2026-09-24)', () => {
+    // postBBToEnter deletes the player from BOTH waitingForBB and
+    // postBBWhenClear and parks them in postingBBToEnter, which was not
+    // published. So between the tap and the deal the seat read neither list
+    // and fell through to SITTING OUT - the case Dan named.
+    const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
+    const expr = sliceBetween(page, 'entryWait={', 'showPickedCardIndexes=');
+    expect(expr).toContain('(tableState.postingBBUserIds ?? []).includes(displayPlayer.id)');
+    expect(expr.indexOf('postingBBUserIds')).toBeLessThan(expr.indexOf("? 'posting_bb'"));
+    const mapper = readFileSync(resolve(__dirname, '../../src/utils/mapEngineSnapshot.ts'), 'utf8');
+    expect(mapper).toContain('posting_bb_user_ids');
+    expect(mapper).toMatch(
+      /postingBBUserIds:\s*\n?\s*\(s as unknown as \{ posting_bb_user_ids\?: string\[\] \}\)\.posting_bb_user_ids \?\? \[\]/
+    );
+    const engine = readFileSync(
+      resolve(__dirname, '../../server/src/engine/ServerTableEngine.ts'),
+      'utf8'
+    );
+    // Both snapshot builders (live and idle) publish it.
+    expect(
+      engine.match(/posting_bb_user_ids: Array\.from\(this\.postingBBToEnter\)/g)
+    ).toHaveLength(2);
+  });
 });

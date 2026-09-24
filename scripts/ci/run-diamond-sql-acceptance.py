@@ -88,6 +88,14 @@ RUNNERS = [
      'diamond commerce admission is wired in shadow, qualified in isolation'),
     ('run-diamond-club-commerce-refunds.py',
      'diamond commerce refunds, notices and catalog lifecycle qualified in isolation'),
+    ('run-diamond-club-commerce-completion.py',
+     'diamond commerce catalog, terms, written quotes and trial reviews qualified in isolation'),
+    ('run-diamond-club-commerce-metrics.py',
+     'diamond commerce staff metrics qualified in isolation'),
+    ('run-diamond-club-commerce-earnings.py',
+     'settled earnings coverage and sponsored club insurance qualified in isolation'),
+    ('run-diamond-club-commerce-recovery.py',
+     'diamond commerce ownership, deletion and restore-shaped recovery qualified in isolation'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -105,6 +113,10 @@ SQL_SCRIPTS = [
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-club-commerce-admission.py',
+    'run-diamond-club-commerce-completion.py',
+    'run-diamond-club-commerce-earnings.py',
+    'run-diamond-club-commerce-metrics.py',
+    'run-diamond-club-commerce-recovery.py',
     'run-diamond-club-commerce-refunds.py',
     'run-diamond-club-commerce.py',
     'run-diamond-stats-asset-dimension.py',

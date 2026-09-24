@@ -48,6 +48,9 @@ if 'PG_BIN' not in os.environ and not Path(PG_BIN, 'initdb').exists():
     if _found:
         PG_BIN = str(_found[-1].parent)
 shutil.rmtree(h.work, ignore_errors=True)
+# A private cluster in a directory this runner makes and removes. The base
+# harness's start_cluster starts it socket-only (listen_addresses= empty), so
+# nothing reaches it over the network.
 h.work = Path(tempfile.mkdtemp(prefix='diamond-club-commerce-earnings.'))
 h.sock = h.work / 'socket'
 h.sock.mkdir()

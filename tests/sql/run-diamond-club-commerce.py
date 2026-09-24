@@ -31,7 +31,11 @@ if 'PG_BIN' not in os.environ and not Path(PG_BIN, 'initdb').exists():
 PORT = '55611'
 DB = 'diamond_club_commerce_probe'
 MIGRATIONS = [ROOT / 'supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql',
-              ROOT / 'supabase/migrations/20260924033509_club_and_union_diamond_commerce_fixes.sql']
+              ROOT / 'supabase/migrations/20260924033509_club_and_union_diamond_commerce_fixes.sql',
+              ROOT / 'supabase/migrations/20260924102040_diamond_commerce_refunds_notices_and_catalog_lifecycle.sql']
+# 20260924102056 (admission in shadow) amends doors this fixture set does not
+# carry; tests/sql/run-diamond-club-commerce-admission.py applies it over the
+# captured live doors.
 MIGRATION = MIGRATIONS[-1]
 FIXTURE = ROOT / 'tests/fixtures/accounting-delivery/diamond-games'
 
@@ -406,6 +410,7 @@ def scenarios():
     check(b3.get('error') == 'quote_expired' and b3.get('requote'), 'D06 an expired quote refuses and asks for a requote')
     q4 = quote(A, 'club', C1, 'club_insurance_module')
     d = rpc('fn_ca_commerce_price_draft', "'club_insurance_module',250,'flat',NULL,'Test price change authority'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d['price_version_id']}'", S)
     pub = rpc('fn_ca_commerce_price_publish', f"'{d['price_version_id']}',NULL", S)
     check(pub['success'], 'D74 staff publishes a new price version prospectively')
     b4 = buy(A, q4['quote_id'], 'catalog-changed-0001')
@@ -414,9 +419,9 @@ def scenarios():
     # version readings between them are the harness's own instrument, taken
     # as the database owner (the internal helper has no browser grant).
     same_tx = sql("""BEGIN; RESET ROLE; CREATE TEMP TABLE cv(v text); GRANT ALL ON cv TO PUBLIC; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version(); SET ROLE authenticated;
-      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_draft('club_insurance_module',260,'flat',NULL,'Same second authority one')->>'price_version_id')::uuid, NULL);
+      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_validate((public.fn_ca_commerce_price_draft('club_insurance_module',260,'flat',NULL,'Same second authority one')->>'price_version_id')::uuid)->>'price_version_id')::uuid, NULL);
       RESET ROLE; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version(); SET ROLE authenticated;
-      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_draft('club_insurance_module',270,'flat',NULL,'Same second authority two')->>'price_version_id')::uuid, NULL);
+      SELECT public.fn_ca_commerce_price_publish((public.fn_ca_commerce_price_validate((public.fn_ca_commerce_price_draft('club_insurance_module',270,'flat',NULL,'Same second authority two')->>'price_version_id')::uuid)->>'price_version_id')::uuid, NULL);
       RESET ROLE; INSERT INTO cv SELECT public.fn_ca_commerce_catalog_version();
       SELECT count(DISTINCT v) FROM cv; ROLLBACK;""", user=S, role='authenticated')
     check(same_tx == '3', 'D06 two publications inside one second still yield distinct catalog versions, so no quote survives either', same_tx)
@@ -675,6 +680,7 @@ def scenarios():
     # D10: price above the accepted ceiling.
     mid = sql(f"SELECT id FROM public.ca_commerce_renewal_mandates WHERE entitlement_id='{ent_capacity}' AND state='authorized'")
     d = rpc('fn_ca_commerce_price_draft', "'capacity_100',800,'flat',NULL,'Test price increase authority'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d['price_version_id']}'", S)
     rpc('fn_ca_commerce_price_publish', f"'{d['price_version_id']}',NULL", S)
     sql(f"UPDATE public.ca_commerce_renewal_mandates SET due_at = now() - interval '1 minute' WHERE id='{mid}'")
     token = str(uuid.uuid4())
@@ -763,8 +769,10 @@ def scenarios():
 
     # ---- D74 prospective publication ------------------------------------------
     d1 = rpc('fn_ca_commerce_price_draft', "'capacity_60',550,'flat',NULL,'Test prospective price authority'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d1['price_version_id']}'", S)
     p1 = rpc('fn_ca_commerce_price_publish', f"'{d1['price_version_id']}',now() + interval '1 hour'", S)
     d2 = rpc('fn_ca_commerce_price_draft', "'capacity_60',600,'flat',NULL,'Test earlier prospective price'", S)
+    rpc('fn_ca_commerce_price_validate', f"'{d2['price_version_id']}'", S)
     p2 = rpc('fn_ca_commerce_price_publish', f"'{d2['price_version_id']}',now() + interval '30 minutes'", S)
     qf = quote(X, 'club', C4, 'capacity_60')
     rows = json.loads(sql("SELECT jsonb_agg(status ORDER BY version) FROM public.ca_commerce_price_versions WHERE sku='capacity_60'"))

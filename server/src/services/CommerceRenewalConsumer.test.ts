@@ -49,6 +49,10 @@ function fakeDoors(
             reason: 'price_above_accepted_ceiling',
           };
     }),
+    executeRefunds: vi.fn(async (token: string, limit: number) => {
+      calls.push(['refunds', [token, limit]]);
+      return { success: true, claimed: 2, refunded: 1, owed: 1, failed: 0 };
+    }),
     deliverNotices: vi.fn(async (limit: number) => {
       calls.push(['deliver', [limit]]);
       return 3;
@@ -60,17 +64,19 @@ function fakeDoors(
 }
 
 describe('the durable renewal consumer', () => {
-  it('claims due mandates under one lease, executes each once with that lease, then delivers due notices', async () => {
+  it('claims due mandates under one lease (the heartbeat), executes each once, then approved refunds, then delivers due notices', async () => {
     const { doors, calls } = fakeDoors();
     consumer.__setCommerceConsumerDoors(doors);
     consumer.startCommerceRenewalConsumer();
     await vi.advanceTimersByTimeAsync(0);
     const token = (calls[0][1] as unknown[])[0];
-    expect(calls.map((c) => c[0])).toEqual(['claim', 'execute', 'execute', 'deliver']);
+    expect(calls.map((c) => c[0])).toEqual(['claim', 'execute', 'execute', 'refunds', 'deliver']);
     expect((calls[1][1] as unknown[])[1]).toBe(token);
     expect((calls[2][1] as unknown[])[1]).toBe(token);
+    expect((calls[3][1] as unknown[])[0]).toBe(token);
     const status = consumer.commerceRenewalConsumerStatus();
     expect(status.lastRenewals).toEqual({ claimed: 2, renewed: 1, attention: 1, leaseLost: 0 });
+    expect(status.lastRefunds).toEqual({ claimed: 2, refunded: 1, owed: 1, failed: 0 });
     expect(status.lastNoticesDelivered).toBe(3);
     expect(status.lastError).toBeNull();
     expect(mocked.report).not.toHaveBeenCalled();
@@ -82,6 +88,47 @@ describe('the durable renewal consumer', () => {
     consumer.startCommerceRenewalConsumer();
     await vi.advanceTimersByTimeAsync(0);
     expect(doors.claim).not.toHaveBeenCalled();
+    expect(doors.executeRefunds).not.toHaveBeenCalled();
+    expect(doors.deliverNotices).not.toHaveBeenCalled();
+  });
+
+  it('a freeze that begins mid-wake stops the refunds (money) but not the notices', async () => {
+    let frozen = false;
+    const { doors } = fakeDoors({
+      frozen: () => frozen,
+      execute: vi.fn(async () => {
+        frozen = true;
+        return { success: true, outcome: 'renewed' as const };
+      }),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(doors.execute).toHaveBeenCalledTimes(1);
+    expect(doors.executeRefunds).not.toHaveBeenCalled();
+    expect(doors.deliverNotices).toHaveBeenCalledTimes(1);
+  });
+
+  it('refunds run on every wake even when no renewal is due: an owed refund is retried by its owner on the next wake', async () => {
+    const { doors } = fakeDoors({ claim: vi.fn(async () => []) });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(consumer.COMMERCE_RENEWAL_POLL_MS + 1);
+    expect(doors.claim).toHaveBeenCalledTimes(2);
+    expect(doors.executeRefunds).toHaveBeenCalledTimes(2);
+    expect(doors.deliverNotices).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refused refund run is reported, not swallowed, and notices wait for the next wake', async () => {
+    const { doors } = fakeDoors({
+      executeRefunds: vi.fn(async () => ({ success: false, error: 'lease_token_required' })),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumer.commerceRenewalConsumerStatus().lastError).toContain('lease_token_required');
+    expect(mocked.report).toHaveBeenCalledTimes(1);
     expect(doors.deliverNotices).not.toHaveBeenCalled();
   });
 
@@ -104,6 +151,7 @@ describe('the durable renewal consumer', () => {
     resolveFirst();
     await stopping;
     expect(doors.execute).toHaveBeenCalledTimes(1);
+    expect(doors.executeRefunds).not.toHaveBeenCalled();
     expect(doors.deliverNotices).not.toHaveBeenCalled();
     expect(consumer.commerceRenewalConsumerStatus().active).toBe(false);
   });
@@ -127,12 +175,17 @@ describe('the durable renewal consumer', () => {
     expect(consumer.commerceRenewalConsumerStatus().lastError).toBeNull();
   });
 
-  it('the production doors call the three named database functions with the lease', async () => {
+  it('the production doors call the four named database functions with the lease', async () => {
     mocked.rpc.mockImplementation(async (name: string) => {
       if (name === 'fn_ca_commerce_claim_due_renewals')
         return { data: [mandate('m1')], error: null };
       if (name === 'fn_ca_commerce_execute_renewal')
         return { data: { success: true, outcome: 'renewed' }, error: null };
+      if (name === 'fn_ca_commerce_execute_approved_refunds')
+        return {
+          data: { success: true, claimed: 1, refunded: 0, owed: 1, failed: 0 },
+          error: null,
+        };
       if (name === 'fn_ca_commerce_deliver_due_notices') return { data: 2, error: null };
       return { data: null, error: { message: `unexpected ${name}` } };
     });
@@ -142,12 +195,37 @@ describe('the durable renewal consumer', () => {
     expect(names).toEqual([
       'fn_ca_commerce_claim_due_renewals',
       'fn_ca_commerce_execute_renewal',
+      'fn_ca_commerce_execute_approved_refunds',
       'fn_ca_commerce_deliver_due_notices',
     ]);
     const claimArgs = mocked.rpc.mock.calls[0][1] as { p_lease_token: string; p_limit: number };
     const execArgs = mocked.rpc.mock.calls[1][1] as { p_mandate_id: string; p_lease_token: string };
+    const refundArgs = mocked.rpc.mock.calls[2][1] as { p_lease_token: string; p_limit: number };
     expect(execArgs.p_lease_token).toBe(claimArgs.p_lease_token);
     expect(execArgs.p_mandate_id).toBe('m1');
+    expect(refundArgs.p_lease_token).toBe(claimArgs.p_lease_token);
+    expect(refundArgs.p_limit).toBeGreaterThan(0);
+    expect(consumer.commerceRenewalConsumerStatus().lastRefunds).toEqual({
+      claimed: 1,
+      refunded: 0,
+      owed: 1,
+      failed: 0,
+    });
     expect(consumer.commerceRenewalConsumerStatus().lastNoticesDelivered).toBe(2);
+  });
+
+  it('a database error from the refund door is reported with the function name', async () => {
+    mocked.rpc.mockImplementation(async (name: string) => {
+      if (name === 'fn_ca_commerce_claim_due_renewals') return { data: [], error: null };
+      if (name === 'fn_ca_commerce_execute_approved_refunds')
+        return { data: null, error: { message: 'permission denied' } };
+      return { data: 0, error: null };
+    });
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumer.commerceRenewalConsumerStatus().lastError).toBe(
+      'fn_ca_commerce_execute_approved_refunds: permission denied'
+    );
+    expect(mocked.report).toHaveBeenCalledTimes(1);
   });
 });

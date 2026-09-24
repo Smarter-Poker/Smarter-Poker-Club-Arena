@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
-import { ErrorState, LoadingState } from '../../components/common/EmptyState';
+import { LoadingState } from '../../components/common/EmptyState';
 import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
 import ClubCommerceService, {
   isRefusal,
@@ -69,7 +69,6 @@ const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 
 const diamonds = (n: number | null | undefined) => `${Number(n ?? 0).toLocaleString()} Diamonds`;
-const nominal = (cents: number | null | undefined) => `$${(Number(cents ?? 0) / 100).toFixed(2)}`;
 const orderRef = (id: string | null | undefined) =>
   String(id ?? '')
     .slice(0, 8)
@@ -88,6 +87,43 @@ function when(iso: string | null | undefined): string {
     minute: '2-digit',
     timeZoneName: 'short',
   });
+}
+
+/** The local calendar date alone ("Oct 5, 2026"), for a row's value. */
+function dateWord(iso: string | null | undefined): string {
+  if (!iso) return 'Not Set';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Not Set';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** The local time with its zone ("6:04 PM PDT"), for the meta under a date. */
+function timeWord(iso: string | null | undefined): string {
+  if (!iso) return 'Not Set';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Not Set';
+  return d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+/**
+ * The publication date of a catalog version. fn_ca_commerce_catalog_version
+ * answers 'catalog:' + the latest published_at as YYYYMMDD"T"HH24MISS in UTC
+ * + ':' + a hash; only the date is for reading. Null when the version carries
+ * no timestamp ('catalog:none:...'), so the caller prints nothing rather than
+ * the hash.
+ */
+function catalogWord(version: string | null | undefined): string | null {
+  const m = /^catalog:(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(?::|$)/.exec(
+    String(version ?? '')
+  );
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  const at = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+  return Number.isFinite(at) ? dateWord(new Date(at).toISOString()) : null;
 }
 
 /** "12 Days", "5 Hours", "Under 1 Hour": how long until a moment. */
@@ -125,6 +161,13 @@ function termWord(hours: number | null | undefined): string {
   return `${days.toLocaleString()} ${days === 1 ? 'Day' : 'Days'}`;
 }
 
+/** " Text." from a catalog note that may be empty or already end a sentence. */
+function sentence(text: string | null | undefined): string {
+  const t = String(text ?? '').trim();
+  if (!t) return '';
+  return /[.!?]$/.test(t) ? ` ${t}` : ` ${t}.`;
+}
+
 function periodWord(p: CatalogProduct): string {
   if (p.term_kind === 'period') return `${termWord(p.term_hours)} Of Access`;
   if (p.term_kind === 'report_interval') return `${p.report_days ?? 0} Day Reporting Interval`;
@@ -154,15 +197,19 @@ function Row({
   /** Let a long label or value wrap inside the row (375px). */
   wrap?: boolean;
 }) {
+  /* The meta is the row's third grid item and spans both columns, so a wide
+     value never squeezes the note into the label's half of the glass. */
   return (
-    <div className={styles.row}>
+    <div className={`${styles.row} ${own.rowWithMeta}`}>
       <span className={`sc-label sc-ink--blue ${styles.rowLabel} ${wrap ? own.wrapLabel : ''}`}>
         {label}
-        {meta ? <span className={`${styles.rowMeta} sc-ink--muted`}>{meta}</span> : null}
       </span>
       <span className={`${styles.rowValue} sc-ink--${ink} ${wrap ? own.wrapValue : ''}`}>
         {value}
       </span>
+      {meta ? (
+        <span className={`${styles.rowMeta} ${own.metaFull} sc-ink--muted`}>{meta}</span>
+      ) : null}
     </div>
   );
 }
@@ -188,20 +235,18 @@ function ChoiceRow({
   return (
     <button
       type="button"
-      className={styles.rowButton}
+      className={`${styles.rowButton} ${own.rowWithMeta}`}
       onClick={onClick}
       disabled={disabled}
       aria-pressed={pressed}
       aria-label={`${label}: ${value}`}
       aria-describedby={metaId}
     >
-      <span className={`sc-label sc-ink--silver ${styles.rowLabel} ${own.wrapLabel}`}>
-        {label}
-        <span id={metaId} className={`${styles.rowMeta} sc-ink--muted`}>
-          {meta}
-        </span>
-      </span>
+      <span className={`sc-label sc-ink--silver ${styles.rowLabel} ${own.wrapLabel}`}>{label}</span>
       <span className={`${styles.rowValue} sc-ink--${ink} ${own.wrapValue}`}>{value}</span>
+      <span id={metaId} className={`${styles.rowMeta} ${own.metaFull} sc-ink--muted`}>
+        {meta}
+      </span>
     </button>
   );
 }
@@ -445,6 +490,7 @@ function QuoteConsole({
   onRequote,
   trialAction,
   onGetDiamonds,
+  notice,
 }: {
   order: CommerceOrder;
   sectionId: string;
@@ -457,6 +503,8 @@ function QuoteConsole({
   onRequote: () => void;
   trialAction: TrialAction | null;
   onGetDiamonds: () => void;
+  /** A consequence of this order the caller knows and the quote does not. */
+  notice?: { label: string; value: string; ink: ConsoleInk; meta: string } | null;
 }) {
   const quote = order.quote;
   const quoteId = quote?.quote_id ?? null;
@@ -571,8 +619,11 @@ function QuoteConsole({
           value={diamonds(quote.net)}
           ink="gold"
           wrap
-          meta={`Paid In Diamonds Only; Nominal Catalog Value ${nominal(quote.nominal_cents)}. Payer: ${quote.sponsorship_id ? 'Union Sponsor' : 'You'}.`}
+          meta={`Paid In Diamonds Only. Payer: ${quote.sponsorship_id ? 'Union Sponsor' : 'You'}.`}
         />
+        {notice ? (
+          <Row label={notice.label} value={notice.value} ink={notice.ink} wrap meta={notice.meta} />
+        ) : null}
         <Row
           label={quote.sponsorship_id ? 'Sponsor Available' : 'Available'}
           value={Number(quote.available_balance ?? 0).toLocaleString()}
@@ -686,7 +737,11 @@ function ReceiptConsole({
           label="Order"
           value={orderRef(receipt.purchase_id)}
           wrap
-          meta={`Committed ${when(receipt.committed_at)}. Catalog ${String(receipt.catalog_version ?? '').replace('catalog:', 'V ')}.`}
+          meta={`Committed ${when(receipt.committed_at)}.${
+            catalogWord(receipt.catalog_version)
+              ? ` Prices Published ${catalogWord(receipt.catalog_version)}.`
+              : ''
+          }`}
         />
         {typeof receipt.balance_after === 'number' ? (
           <Row
@@ -726,6 +781,8 @@ function SponsorBuyConsole({
   checkoutEnabled,
   skewMs,
   onSettled,
+  receipts,
+  receiptsKnown,
 }: {
   status: ScopeStatus;
   clubProducts: CatalogProduct[];
@@ -734,6 +791,10 @@ function SponsorBuyConsole({
   checkoutEnabled: boolean;
   skewMs: number;
   onSettled: () => Promise<void>;
+  /** Every receipt the viewer paid or placed (fn_ca_commerce_receipts(NULL, NULL)). */
+  receipts: Receipt[];
+  /** False when the receipts could not be read, so a club's sponsored spend is unknown. */
+  receiptsKnown: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -778,6 +839,42 @@ function SponsorBuyConsole({
         : null;
   const locked = order.locked;
 
+  /**
+   * What one sponsorship can still pay for this club, by the checks
+   * fn_ca_commerce_purchase_impl makes before it charges a sponsored order:
+   *   committed + net <= total_budget, and, when a per club budget is set,
+   *   SUM(net) of this sponsorship's purchases for this club + net <= per_club_budget.
+   * That sum counts every purchase's net as charged (a refund lowers the
+   * sponsorship's committed, not the purchase's net), so it is summed here
+   * from the receipts' original totals, never net of refunds. Every such
+   * purchase is paid by the sponsor, so the viewer's own receipts hold all of
+   * them. Null means it cannot be known: the receipts were not read, or one
+   * of them does not say which sponsorship paid it.
+   */
+  const allowanceFor = (s: Sponsorship, forClub: string): number | null => {
+    const total = Math.max(0, Number(s.total_budget ?? 0) - Number(s.committed ?? 0));
+    if (s.per_club_budget == null) return total;
+    if (!receiptsKnown) return null;
+    const paidForClub = receipts.filter((r) => r.scope_id === forClub && r.payer_id === s.payer_id);
+    if (paidForClub.some((r) => !('sponsorship_id' in r))) return null;
+    const spent = paidForClub
+      .filter((r) => r.sponsorship_id === s.id)
+      .reduce((n, r) => n + Number(r.original_total_diamonds ?? 0), 0);
+    return Math.max(0, Math.min(total, Number(s.per_club_budget) - spent));
+  };
+  const chosenSponsorship = eligible.find((s) => s.id === sponsorshipId) ?? null;
+  /* With no sponsorship chosen yet, a capacity is on offer if ANY eligible
+     sponsorship can pay for it; choosing one then applies its own limit. */
+  const allowances = club
+    ? (chosenSponsorship ? [chosenSponsorship] : eligible).map((s) => allowanceFor(s, club.club_id))
+    : [];
+  const allowanceKnown = allowances.length > 0 && allowances.every((a) => a !== null);
+  const allowance = allowanceKnown ? Math.max(...(allowances as number[])) : null;
+  const overAllowance = (p: CatalogProduct): boolean => {
+    const price = listPrice(p, 1);
+    return allowance === null || price === null || price > allowance;
+  };
+
   const chooseClub = (id: string) => {
     order.editInputs();
     order.clearReceipt();
@@ -798,6 +895,7 @@ function SponsorBuyConsole({
     if (clubTrial)
       return toast.info('This Club Is Still In Its Free Month. Nothing Can Be Charged');
     if (!sponsorshipId) return toast.error('Choose The Sponsorship To Pay With');
+    if (overAllowance(product)) return toast.error(refusalCopy('sponsorship_club_budget_exceeded'));
     if (!checkoutEnabled) return toast.error(refusalCopy('checkout_disabled'));
     const forClub = club.club_id;
     void order.requestQuote(() =>
@@ -814,6 +912,8 @@ function SponsorBuyConsole({
       <SpadeConsole
         eyebrow="Sponsorship"
         title="Buy For A Covered Club"
+        pill={clubs.length === 1 ? '1 Club' : `${clubs.length.toLocaleString()} Clubs`}
+        pillInk={clubs.length > 0 ? 'blue' : 'muted'}
         plates={{
           secondary: {
             label: 'Clear',
@@ -831,6 +931,7 @@ function SponsorBuyConsole({
               !product ||
               clubTrial ||
               !sponsorshipId ||
+              overAllowance(product) ||
               !checkoutEnabled,
           },
         }}
@@ -886,24 +987,33 @@ function SponsorBuyConsole({
             {capacities.map((p) => {
               const tooSmall = p.capacity !== null && club.roster_count > p.capacity;
               const current = club.capacity?.sku === p.sku;
+              /* Never offered when the sponsorship cannot pay for it: the
+                 purchase would be refused (sponsorship_budget_exceeded or
+                 sponsorship_club_budget_exceeded). */
+              const overBudget = eligible.length > 0 && overAllowance(p);
               const note = !p.supported
                 ? ' Not Yet Available.'
                 : tooSmall
                   ? ` Smaller Than Its ${Number(club.roster_count).toLocaleString()} Approved Members.`
-                  : current
-                    ? ' Its Current Capacity; Buying It Again Adds The Next Period.'
-                    : club.capacity
-                      ? ' Starts When Its Current Paid Period Ends.'
-                      : ' Starts Now.';
+                  : overBudget && allowance === null
+                    ? ' Its Sponsored Allowance Could Not Be Read. Retry The Receipts Below.'
+                    : overBudget
+                      ? ` Above The ${diamonds(allowance)} Left In This Club's Sponsored Allowance.`
+                      : current
+                        ? ' Its Current Capacity; Buying It Again Adds The Next Period.'
+                        : club.capacity
+                          ? ' Starts When Its Current Paid Period Ends.'
+                          : ' Starts Now.';
+              const offered = p.supported && !tooSmall && !overBudget;
               return (
                 <ChoiceRow
                   key={p.sku}
                   label={p.title}
                   meta={`${periodWord(p)}.${note}`}
                   value={p.supported ? priceWord(p) : 'Not Yet Available'}
-                  ink={sku === p.sku ? 'blue' : p.supported && !tooSmall ? 'silver' : 'muted'}
+                  ink={sku === p.sku ? 'blue' : offered ? 'silver' : 'muted'}
                   pressed={sku === p.sku}
-                  disabled={!p.supported || !p.price || tooSmall || locked}
+                  disabled={!p.supported || !p.price || tooSmall || overBudget || locked}
                   onClick={() => {
                     order.editInputs();
                     order.clearReceipt();
@@ -926,7 +1036,11 @@ function SponsorBuyConsole({
                   <ChoiceRow
                     key={s.id}
                     label={s.club_id ? 'Pay With This Club Budget' : 'Pay With Any Club Budget'}
-                    meta={`${diamonds(Number(s.total_budget ?? 0) - Number(s.committed ?? 0))} Remaining${s.per_club_budget ? `, Up To ${diamonds(s.per_club_budget)} Per Club` : ''}.`}
+                    meta={
+                      allowanceFor(s, club.club_id) === null
+                        ? 'Its Allowance For This Club Could Not Be Read.'
+                        : `${diamonds(allowanceFor(s, club.club_id))} Left For This Club${s.per_club_budget ? `, Of ${diamonds(s.per_club_budget)} Per Club` : ''}.`
+                    }
                     value={sponsorshipId === s.id ? 'Selected' : 'Select'}
                     ink={sponsorshipId === s.id ? 'blue' : 'silver'}
                     pressed={sponsorshipId === s.id}
@@ -941,10 +1055,10 @@ function SponsorBuyConsole({
             {eligible.length === 1 ? (
               <Row
                 label="Paid From"
-                value={`${diamonds(Number(eligible[0].total_budget ?? 0) - Number(eligible[0].committed ?? 0))} Left`}
-                ink="silver"
+                value={allowance === null ? 'Unknown' : `${diamonds(allowance)} Left`}
+                ink={allowance === null ? 'gold' : 'silver'}
                 wrap
-                meta={`${eligible[0].club_id ? 'The Budget For This Club' : 'Your Budget For Any Covered Club'}${eligible[0].per_club_budget ? `, Up To ${diamonds(eligible[0].per_club_budget)} Per Club` : ''}.`}
+                meta={`${eligible[0].club_id ? 'The Budget For This Club' : 'Your Budget For Any Covered Club'}: ${diamonds(Math.max(0, Number(eligible[0].total_budget ?? 0) - Number(eligible[0].committed ?? 0)))} Of ${diamonds(eligible[0].total_budget)} Uncommitted${eligible[0].per_club_budget ? `, Up To ${diamonds(eligible[0].per_club_budget)} Per Club` : ''}.${allowance === null ? ' What This Club Has Already Used Could Not Be Read; Retry The Receipts Below.' : ''}`}
               />
             ) : null}
           </div>
@@ -987,6 +1101,60 @@ function SponsorBuyConsole({
  * a switch between clubs or unions (or a retry after an error) mounts a fresh
  * console with no state, key or in-flight response carried across.
  */
+/**
+ * Loading, not found and read failures, on the same spade console as the page
+ * (#ClubArenaConsole): the message printed on the glass, and the two painted
+ * plates, Operations and Try Again. Try Again remounts the console, so it is
+ * also the way out of a read that never answers.
+ */
+function StateConsole({
+  scopeKind,
+  backPath,
+  pill,
+  pillInk,
+  message,
+  onRetry,
+}: {
+  scopeKind: ScopeKind;
+  /** Null when there is no scope to go back to (a route that names none). */
+  backPath: string | null;
+  pill: string;
+  pillInk: ConsoleInk;
+  message: string;
+  onRetry?: () => void;
+}) {
+  const navigate = useNavigate();
+  const scopeWord = scopeKind === 'union' ? 'Union' : 'Club';
+  return (
+    <div className={styles.page}>
+      <SpadeConsole
+        eyebrow={`${scopeWord} Operations`}
+        title="Diamond Costs"
+        titleId="diamond-costs-title"
+        pill={pill}
+        pillInk={pillInk}
+        aria-busy={pill === 'Reading' ? true : undefined}
+        plates={{
+          secondary: {
+            label: backPath ? 'Operations' : 'Home',
+            onClick: () => navigate(backPath ?? '/'),
+          },
+          primary: {
+            label: 'Try Again',
+            ink: 'white',
+            onClick: () => onRetry?.(),
+            disabled: !onRetry,
+          },
+        }}
+      >
+        <p className="sc-copy" role={pill === 'Reading' ? 'status' : 'alert'}>
+          {message}
+        </p>
+      </SpadeConsole>
+    </div>
+  );
+}
+
 export default function ClubDiamondCostsPage({ scopeKind }: { scopeKind: ScopeKind }) {
   const params = useParams<{ clubId?: string; unionId?: string }>();
   const routeId = scopeKind === 'club' ? params.clubId : params.unionId;
@@ -995,11 +1163,13 @@ export default function ClubDiamondCostsPage({ scopeKind }: { scopeKind: ScopeKi
 
   if (!routeId || (scopeKind === 'union' && !isUUID(routeId))) {
     return (
-      <div className={styles.page}>
-        <ErrorState
-          message={scopeKind === 'union' ? 'This Union Was Not Found' : 'This Club Was Not Found'}
-        />
-      </div>
+      <StateConsole
+        scopeKind={scopeKind}
+        backPath={null}
+        pill="Not Found"
+        pillInk="red"
+        message={scopeKind === 'union' ? 'This Union Was Not Found' : 'This Club Was Not Found'}
+      />
     );
   }
   return (
@@ -1456,18 +1626,36 @@ function DiamondCostsConsole({
     await load(scopeId);
   };
 
-  if (loading) return <LoadingState message="Reading Diamond Costs" />;
+  const backPath =
+    scopeKind === 'club' ? `/clubs/${routeId}/operations` : `/unions/${routeId}/operations`;
+  if (loading) {
+    return (
+      <StateConsole
+        scopeKind={scopeKind}
+        backPath={backPath}
+        pill="Reading"
+        pillInk="blue"
+        message="Reading Diamond Costs"
+        onRetry={onRetry}
+      />
+    );
+  }
   if (error || !status) {
     return (
-      <div className={styles.page}>
-        <ErrorState message={error ?? 'The Diamond Costs Could Not Be Read'} onRetry={onRetry} />
-      </div>
+      <StateConsole
+        scopeKind={scopeKind}
+        backPath={backPath}
+        pill="Not Read"
+        pillInk="red"
+        message={error ?? 'The Diamond Costs Could Not Be Read'}
+        onRetry={onRetry}
+      />
     );
   }
 
   const scopeWord = scopeKind === 'union' ? 'Union' : 'Club';
-  const backPath =
-    scopeKind === 'club' ? `/clubs/${routeId}/operations` : `/unions/${routeId}/operations`;
+  const activeRights = rights.filter((r) => r.active).length;
+  const activeSponsorships = (status.sponsorships ?? []).filter((x) => x.state === 'active').length;
   const paidActive = rights.some((r) => r.active && r.source !== 'trial');
   const accessPill = trialActive ? 'Free Month' : paidActive ? 'Paid' : 'No Access';
   const accessInk: ConsoleInk = trialActive ? 'blue' : paidActive ? 'green' : 'gold';
@@ -1484,7 +1672,7 @@ function DiamondCostsConsole({
     const r = e.renewal;
     if (!r) return '';
     const price = renewalPrice(e);
-    let note = `Up To ${diamonds(r.max_diamonds)}.`;
+    let note = `Ceiling: ${diamonds(r.max_diamonds)}.`;
     if (price !== null) {
       note += ` Today's Price: ${diamonds(price)}.`;
       if (price > r.max_diamonds)
@@ -1494,6 +1682,44 @@ function DiamondCostsConsole({
     }
     return note;
   };
+
+  /** How a renewal will go at today's price: the row's ink says it first. */
+  const renewalInk = (e: Entitlement): ConsoleInk => {
+    const r = e.renewal;
+    const price = renewalPrice(e);
+    if (!r || price === null) return 'blue';
+    if (price > r.max_diamonds) return 'red';
+    if (balance !== null && balance < price) return 'gold';
+    return 'blue';
+  };
+
+  /** The service a post trial authorization will buy, named. */
+  const authorizedService = (r: { sku?: string | null; quantity?: number } | null): string => {
+    const p = productOf(r?.sku ?? null);
+    if (!p) return 'Your Authorized Service';
+    const qty = Number(r?.quantity ?? 1);
+    return qty > 1 ? `${p.title} For ${qty.toLocaleString()} Covered Clubs` : p.title;
+  };
+
+  /* An upgrade moves an authorized renewal onto the new right at the SAME
+     ceiling (fn_ca_commerce_purchase_impl). Say so before the charge when the
+     new service's price is above that ceiling, because that renewal would
+     then not complete. */
+  const upgradeNotice = (() => {
+    const q = order.quote;
+    const line = q?.lines[0];
+    const mandate = activeCapacity?.renewal;
+    if (!q || q.purchase_kind !== 'upgrade' || !line || mandate?.state !== 'authorized')
+      return null;
+    const price = listPrice(productOf(line.sku), line.quantity || 1);
+    if (price === null || price <= mandate.max_diamonds) return null;
+    return {
+      label: 'Renewal Ceiling',
+      value: `Up To ${diamonds(mandate.max_diamonds)}`,
+      ink: 'red' as ConsoleInk,
+      meta: `Your Authorized Renewal Moves To The Upgrade At This Ceiling. The New Capacity Renews At ${diamonds(price)}, So That Renewal Would Not Complete. Cancel It And Authorize A New Ceiling After The Upgrade.`,
+    };
+  })();
 
   /* Union page: the union's own receipts plus the club orders this union's
      sponsorships paid, each named by its club. The receipt names its
@@ -1540,7 +1766,7 @@ function DiamondCostsConsole({
 
       <SpadeConsole
         eyebrow={`${scopeWord} Operations`}
-        title="Club And Union Diamond Costs"
+        title="Diamond Costs"
         titleId="diamond-costs-title"
         pill={accessPill}
         pillInk={accessInk}
@@ -1561,10 +1787,10 @@ function DiamondCostsConsole({
             <>
               <Row
                 label="Free Month Ends"
-                value={when(trial.trial_end)}
+                value={dateWord(trial.trial_end)}
                 ink="blue"
                 wrap
-                meta={`${timeLeftWord(trialLeft)} Left. All Included Operating Software, No Service Fees. Chip Funding, Prizes And Player Purchases Are Unchanged.`}
+                meta={`At ${timeWord(trial.trial_end)}, ${timeLeftWord(trialLeft)} From Now. All Included Operating Software, No Service Fees. Chip Funding, Prizes And Player Purchases Are Unchanged.`}
               />
               <Row
                 label="When It Ends"
@@ -1573,7 +1799,7 @@ function DiamondCostsConsole({
                 wrap
                 meta={
                   trialAuth
-                    ? 'Your Authorized Service Starts Then And Is Charged Once, Only If The Published Price Is At Or Below Your Ceiling.'
+                    ? `${authorizedService(trialAuth)} Starts Then And Is Charged Once, Only If The Published Price Is At Or Below Your Ceiling.`
                     : 'Paid Operating Access Does Not Start On Its Own. Authorize A Service Under Paid Access To Continue Without Interruption.'
                 }
               />
@@ -1581,14 +1807,14 @@ function DiamondCostsConsole({
           ) : trial ? (
             <Row
               label="Free Month Ended"
-              value={when(trial.trial_end)}
+              value={dateWord(trial.trial_end)}
               ink="muted"
               wrap
-              meta={
+              meta={`At ${timeWord(trial.trial_end)}. ${
                 paidActive
                   ? 'Paid Operating Access Continues Below.'
                   : 'Choose A Service Under Diamond Prices To Keep Operating.'
-              }
+              }`}
             />
           ) : (
             <>
@@ -1622,10 +1848,10 @@ function DiamondCostsConsole({
           {nextRenewal?.renewal ? (
             <Row
               label="Next Renewal"
-              value={when(nextRenewal.renewal.due_at)}
-              ink="blue"
+              value={dateWord(nextRenewal.renewal.due_at)}
+              ink={renewalInk(nextRenewal)}
               wrap
-              meta={`${entitlementTitle(nextRenewal, catalog)}. ${renewalNote(nextRenewal)}`}
+              meta={`At ${timeWord(nextRenewal.renewal.due_at)}. ${entitlementTitle(nextRenewal, catalog)}. ${renewalNote(nextRenewal)}`}
             />
           ) : null}
           {scopeKind === 'club' ? (
@@ -1651,7 +1877,13 @@ function DiamondCostsConsole({
         </p>
       </SpadeConsole>
 
-      <SpadeConsole eyebrow="Rights" title="Paid Access" foot="foot">
+      <SpadeConsole
+        eyebrow="Rights"
+        title="Paid Access"
+        pill={activeRights > 0 ? `${activeRights.toLocaleString()} Active` : 'None'}
+        pillInk={activeRights > 0 ? 'green' : 'muted'}
+        foot="foot"
+      >
         <div className={styles.rows}>
           {rights.length === 0 ? <Row label="No Rights On File" value="" /> : null}
           {rights.map((e) => {
@@ -1691,10 +1923,10 @@ function DiamondCostsConsole({
                     {r?.state === 'authorized' ? (
                       <Row
                         label="Renews"
-                        value={when(r.due_at)}
-                        ink="blue"
+                        value={dateWord(r.due_at)}
+                        ink={renewalInk(e)}
                         wrap
-                        meta={renewalNote(e)}
+                        meta={`At ${timeWord(r.due_at)}. ${renewalNote(e)}`}
                       />
                     ) : r?.state === 'completed' ? (
                       <Row
@@ -1722,7 +1954,9 @@ function DiamondCostsConsole({
                           label="Authorize Renewal Up To (Diamonds)"
                           value={
                             renewDrafts[e.id] ??
-                            (renewalPrice(e) !== null ? String(renewalPrice(e)) : '')
+                            (renewalPrice(e) !== null
+                              ? Number(renewalPrice(e)).toLocaleString()
+                              : '')
                           }
                           onChange={(v) => setRenewDrafts((d) => ({ ...d, [e.id]: v }))}
                           disabled={busy}
@@ -1748,7 +1982,7 @@ function DiamondCostsConsole({
                         value={`Up To ${diamonds(r.max_diamonds)}`}
                         ink="green"
                         wrap
-                        meta={`Charged Once At ${when(r.due_at)}, Only If The Published Price Is At Or Below This Ceiling.`}
+                        meta={`${authorizedService(r)}. Charged Once At ${when(r.due_at)}, Only If The Published Price Is At Or Below This Ceiling.`}
                       />
                     ) : (
                       attention
@@ -1822,7 +2056,8 @@ function DiamondCostsConsole({
                         <Field
                           label="Authorize Up To (Diamonds)"
                           value={
-                            renewDrafts[e.id] ?? (trialPrice !== null ? String(trialPrice) : '')
+                            renewDrafts[e.id] ??
+                            (trialPrice !== null ? trialPrice.toLocaleString() : '')
                           }
                           onChange={(v) => setRenewDrafts((d) => ({ ...d, [e.id]: v }))}
                           disabled={busy}
@@ -1849,7 +2084,7 @@ function DiamondCostsConsole({
       <SpadeConsole
         eyebrow="Catalog"
         title="Diamond Prices"
-        pill={catalog ? catalog.catalog_version.replace('catalog:', 'V ') : undefined}
+        pill={catalog ? (catalogWord(catalog.catalog_version) ?? undefined) : undefined}
         pillInk="muted"
         plates={
           canBuy
@@ -1902,9 +2137,9 @@ function DiamondCostsConsole({
               <ChoiceRow
                 key={p.sku}
                 label={p.title}
-                meta={`${periodWord(p)}. ${p.included_note}${note}`}
+                meta={`${periodWord(p)}.${sentence(p.included_note)}${note}`}
                 value={p.supported ? priceWord(p) : 'Not Yet Available'}
-                ink={selectedSku === p.sku ? 'blue' : p.supported ? 'silver' : 'muted'}
+                ink={selectedSku === p.sku ? 'blue' : p.supported && !tooSmall ? 'silver' : 'muted'}
                 pressed={selectedSku === p.sku}
                 disabled={!p.supported || !p.price || !canBuy || tooSmall || locked}
                 onClick={() => chooseProduct(p)}
@@ -1939,7 +2174,7 @@ function DiamondCostsConsole({
                 editInputs();
                 if (!renewOn && renewMax === '') {
                   const price = listPrice(selected, coveredQuantity(selected, quantity) ?? 1);
-                  if (price !== null) setRenewMax(String(price));
+                  if (price !== null) setRenewMax(price.toLocaleString());
                 }
                 setRenewOn((v) => !v);
               }}
@@ -2024,6 +2259,7 @@ function DiamondCostsConsole({
               }
         }
         onGetDiamonds={() => navigate(BUY_DIAMONDS)}
+        notice={upgradeNotice}
       />
 
       <ReceiptConsole order={order} sectionId="diamond-costs-receipt" />
@@ -2034,6 +2270,8 @@ function DiamondCostsConsole({
         <SpadeConsole
           eyebrow="Sponsorship"
           title="Sponsor Your Clubs"
+          pill={activeSponsorships > 0 ? `${activeSponsorships.toLocaleString()} Active` : 'None'}
+          pillInk={activeSponsorships > 0 ? 'green' : 'muted'}
           plates={{
             secondary: {
               label: 'Clear',
@@ -2107,10 +2345,24 @@ function DiamondCostsConsole({
           onSettled={async () => {
             if (scopeId) await load(scopeId);
           }}
+          receipts={receipts}
+          receiptsKnown={!receiptsFailed}
         />
       ) : null}
 
-      <SpadeConsole eyebrow="Records" title="Receipts" foot="foot">
+      <SpadeConsole
+        eyebrow="Records"
+        title="Receipts"
+        pill={
+          receiptsFailed
+            ? 'Not Read'
+            : listedReceipts.length > 0
+              ? `${listedReceipts.length.toLocaleString()} On File`
+              : 'None'
+        }
+        pillInk={receiptsFailed ? 'gold' : 'muted'}
+        foot="foot"
+      >
         <div className={styles.rows}>
           {receiptsFailed ? (
             <ChoiceRow

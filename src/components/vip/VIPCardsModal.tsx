@@ -33,8 +33,10 @@ interface VIPInfoModalProps {
  *
  *   "Available Themes: 3"          nothing reads it; Table Studio sells themes
  *                                  one at a time and does not meter a VIP.
- *   "Club Creation Limit: 3"       fn_get_club_creation_eligibility caps
- *                                  EVERYONE at 4 club memberships. Not a VIP
+ *   "Club Creation Limit: 3"       The club membership cap is the same for
+ *                                  everyone and the server owns the number;
+ *                                  fn_get_club_creation_eligibility is the
+ *                                  preflight that reports it. Not a VIP
  *                                  benefit, and not the number 3.
  *   "Score Leaderboard Boost: 6%"  LeaderboardService applies no boost at all.
  */

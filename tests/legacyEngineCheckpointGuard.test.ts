@@ -2861,6 +2861,184 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.calls).toEqual([]);
   });
 
+  /* A RESTORED BANK NO ROSTER WILL EVER CLAIM (2026-09-24).
+
+     Run 36000655625 refused `captureEngine.parked_bank_invalid` on b027e4cf
+     with `stopped=true terminal=true seats=0 banks=0 meta=0 parked=2`: an
+     engine that started, read its two parked banks from
+     `engine_presence_parked`, and was stopped before the wait-for-players loop
+     ever adopted a roster. `applyParkedTimeBanks` is the only thing that
+     empties that map and `adoptSeatRoster` is its only caller, so a stopped
+     terminal engine holds those banks for ever. */
+  const restoredBank = (n: number) => ({
+    occupancyId: uuid(77000 + n),
+    remainingSeconds: 75,
+    usesRemaining: 2,
+    initialSeconds: 90,
+    baseSeconds: 30,
+    dbConsumedSeconds: 15,
+    unlimitedActivations: false,
+  });
+  const parkedNoRoster = (f: any, n: number, banks = 1) => {
+    const { e } = quarantined(f, n);
+    e.seatedPlayers = [];
+    e.timeBankMeta.clear();
+    e.timeBankEngine.playerBanks.clear();
+    e.parkedTimeBanks = Object.fromEntries(
+      Array.from({ length: banks }, (_, i) => [uuid(76000 + n + i), restoredBank(n + i)])
+    );
+    return e;
+  };
+
+  it('a restored bank no roster will ever claim is deferred and proved from rows', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 640, 2);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.unresolvableCustody).toContain(`${e.tableId}:parkedNoRoster:2`);
+    // It asked the database, per table, with the one predicate this file has.
+    expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([e.tableId]);
+    // And the row it writes is the row it read: the same banks, same hand.
+    expect(f.rows.get(e.tableId).time_bank_snapshot.players).toEqual(e.parkedTimeBanks);
+    expect(f.rows.get(e.tableId).time_bank_snapshot.handNumber).toBe(e.handCount);
+  });
+
+  it('a hand in the air on that table refuses the restored bank too', async () => {
+    const f: any = mixedFixture();
+    parkedNoRoster(f, 641);
+    f.onSnapshots((ids: string[]) => ({
+      data: [
+        { table_id: ids[0], hand_number: 9, stage: 'flop', updated_at: new Date().toISOString() },
+      ],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a LIVE engine with a restored bank keeps the flat occupancy equality', async () => {
+    const f: any = mixedFixture();
+    const e: any = new f.Table(642);
+    // Empty, parked and live: every OTHER conjunct of the deferral holds, so
+    // only "this engine can still adopt a roster" refuses it.
+    e.seatedPlayers = [];
+    e.timeBankMeta.clear();
+    e.timeBankEngine.playerBanks.clear();
+    e.parkedTimeBanks = { [uuid(76642)]: restoredBank(642) };
+    f.server.tableEngines.set(e.tableId, e);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'parked_bank_invalid',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('parkedFault=unseated');
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a dead engine that still seats the player keeps the flat occupancy equality', async () => {
+    const f: any = mixedFixture();
+    const { e, seated } = quarantined(f, 643);
+    e.timeBankMeta.clear();
+    e.parkedTimeBanks = { [seated]: { ...restoredBank(643), occupancyId: uuid(79643) } };
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'parked_bank_invalid',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('parkedFault=occupancy_mismatch');
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a dead engine that still holds a live bank refuses the restored bank', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 644);
+    const orphan = uuid(78644);
+    e.timeBankEngine.playerBanks.set(`${e.tableId}:${orphan}`, {
+      tableId: e.tableId,
+      playerId: orphan,
+      remainingSeconds: 75,
+      usesRemaining: 2,
+      isActive: false,
+      unlimitedActivations: false,
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'parked_bank_invalid',
+      failedTable: e.tableId,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a dead engine that still holds bank metadata refuses the restored bank', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 645);
+    e.timeBankMeta.set(uuid(78645), {
+      initialSeconds: 90,
+      baseSeconds: 30,
+      dbConsumedSeconds: 15,
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'parked_bank_invalid',
+      failedTable: e.tableId,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('an unrestorable restored bank refuses on every engine, dead or not', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 646);
+    e.parkedTimeBanks = { [uuid(76646)]: { ...restoredBank(646), remainingSeconds: 900 } };
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'parked_bank_invalid',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('parkedFault=bank_not_restorable');
+    expect(f.calls).toEqual([]);
+  });
+
+  /* ONE REFUSED RELEASE, THE WHOLE BLOCKING SET. The release only ever named
+     the table that refused FIRST, so a fleet holding several shapes cost one
+     maintenance break per shape to read. The walk now finishes and counts. */
+  it('names every table the capture would refuse, not only the first', async () => {
+    const f: any = mixedFixture();
+    const first = parkedNoRoster(f, 647);
+    const second: any = new f.Table(648);
+    second.seatedPlayers = [];
+    second.timeBankMeta.clear();
+    second.timeBankEngine.playerBanks.clear();
+    second.parkedTimeBanks = { [uuid(76648)]: restoredBank(648) };
+    f.server.tableEngines.set(second.tableId, second);
+    const third: any = new f.Table(649);
+    third.actionLock = true;
+    f.server.tableEngines.set(third.tableId, third);
+    const result: any = await f.run();
+    // The first refusal still decides the outcome and still carries the detail.
+    expect(result).toMatchObject({ ok: false, failedTable: second.tableId });
+    expect(result.reason).toBe('parked_bank_invalid');
+    // And the census names the other one, with a count per code.
+    expect(result.refusalCensus).toContain('refusedTables=2');
+    expect(result.refusalCensus).toContain('parked_bank_invalid=1');
+    expect(result.refusalCensus).toContain('engine_work_not_drained=1');
+    expect(result.refusalCensus).toContain(second.tableId.slice(0, 8));
+    expect(result.refusalCensus).toContain(third.tableId.slice(0, 8));
+    // It survives the publisher's carrier, like every other observation.
+    expect(result.refusalCensus).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(result.refusalCensus.length).toBeLessThanOrEqual(512);
+    // Nothing is captured, proved or written after the first refusal.
+    expect(result).toMatchObject({ attemptedTables: 0, checkpointOutcome: 'not_started' });
+    expect(f.calls).toEqual([]);
+    expect(f.snapshotReads).toEqual([]);
+    expect(first.tableId).not.toBe(second.tableId);
+  });
+
   it('refuses residue that moves between observations', async () => {
     const f: any = mixedFixture();
     const { e } = cashedOut(f, 600);

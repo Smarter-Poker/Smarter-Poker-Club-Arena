@@ -2705,9 +2705,10 @@ function TrialReviewsPanel({ me }: { me: string | null }) {
         </button>
       </div>
       <p className={s.copy}>
-        An Operator&apos;s Later Clubs Share The First Free Month&apos;s End. When An Owner Says A
-        Club Is A Genuinely New, Independent Operation, Approve A Fresh 30 Day Free Month For That
-        One Club Or Union, Or Decline With A Note. Each Club Or Union Is Granted At Most Once.
+        Later Clubs Of One Operator Share The End Of The First Free Month That Operator Got. When An
+        Owner Says A Club Is A Genuinely New, Independent Operation, Approve A Fresh 30 Day Free
+        Month For That One Club Or Union, Or Decline With A Note. Each Club Or Union Is Granted At
+        Most Once.
       </p>
       {list && !error && (
         <Row label="Awaiting A Decision" value={whole(open)} tone={open ? 'gold' : 'muted'} />

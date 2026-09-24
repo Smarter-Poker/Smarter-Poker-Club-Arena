@@ -95,4 +95,34 @@ service-role route, and no page or engine path calls the refund door.
 
 ## Delivery record
 
-Filled in as each step is verified.
+- PR #5164, every required check green (all four client unit shards, engine
+  shards, CSS Beat E2E, PostgreSQL 17 accounting suite), squash-merged
+  2026-09-24 04:52 UTC as `a886fbbe69a82dc0684c60c3631edddb3965f8a1`.
+- Full client suite on main plus these commits before merge: 26,467 passed;
+  the one failure was main's own duplicate anon allowlist entry, fixed on main
+  by #5167.
+- Migration: `Apply Merged Migration` run 35958324928 on main `ceb59aa60`,
+  05:04 UTC: "not present in schema_migrations; applying as ONE transaction",
+  committed in 359 ms, recorded `20260924033509
+club_and_union_diamond_commerce_fixes`.
+- Readback: all 35 `fn_ca_commerce_*` bodies in production are byte-identical
+  (md5 of prosrc) to the qualified build of both files; the mandate key is
+  `ca_commerce_renewal_mandates_entitlement_id_key`; no commerce function is
+  executable by anon; the 15 browser doors are executable by authenticated;
+  0 purchases, 0 trials.
+- Client: `Publish Club Arena` run 35957482468 for `a886fbbe6` succeeded;
+  `ca-static.smarter.poker/build-info.json` and
+  `smarter.poker/hub/club-arena/build-info.json` both serve `abea9a1af`,
+  one commit ahead of the merge and containing it. The served chunk
+  `ClubDiamondCostsPage-DtL3iof--v6.js` carries the new code (Buy For A
+  Covered Club, Retry Same Order, Authorize At Trial End, the new refusal
+  copy).
+- Page render: headless at 393px and 1280px with RPCs mocked from the two
+  migrations; twelve visual defects found and fixed in `30d297b96`, no
+  horizontal overflow, no decimals, no em dash in any state.
+- Engine: the renewal consumer (in main since #5077) is not live yet. Every
+  engine release since 2026-09-21 fails at "Publish Through Hetzner" (legacy
+  checkpoint cleanup refused), owned by the release workstream (#5161). The
+  engine is `8825af51`. The production-doors gate that refused builds while
+  the commerce functions were missing now passes. Nothing is due: no mandate
+  exists.

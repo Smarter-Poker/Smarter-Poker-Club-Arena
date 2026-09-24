@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Assignment CA-DIAMOND-COMMERCE-2026-09-22 (R2), sections 4.4, 6.4 and 7.3.
- * Four jobs, one tab each:
+ * Seven jobs, one tab each:
  *
  *   Refund Queue         every request by state, with the policy figures the
  *                        request door computed, and Approve / Decline. The
@@ -18,6 +18,15 @@
  *   Admission            what the recorded shadow decisions say enforcement
  *                        would refuse, per door and per club, read before
  *                        anyone switches enforcement on (20260924102056).
+ *   Written Quotes       an owner asks for more than 2,500 members; staff offer
+ *                        a capacity and whole diamond price valid for 1 to 30
+ *                        days, or decline with a note (20260924182605).
+ *   Free Month Reviews   an owner whose later club inherited an ended free
+ *                        month asks for its own; staff approve (a fresh 30 day
+ *                        free month for that one scope) or decline with a note.
+ *   Metrics              the operating measures of R2 7.5 (20260924183529):
+ *                        net paid diamonds kept apart from proposed quotes,
+ *                        free month waivers, refunds, retries and replays.
  *
  * PLATFORM STAFF ONLY. The route sits behind PlatformStaffGuard and every door
  * checks fn_is_platform_admin() again, so the guard is a courtesy and the
@@ -73,6 +82,15 @@ import CommerceDeskService, {
   type PriceStatus,
   type RefundRequest,
   type RefundState,
+  TRIAL_REVIEW_STATE_LABEL,
+  WRITTEN_QUOTE_LIMITS,
+  WRITTEN_QUOTE_STATE_LABEL,
+  type CommerceMetrics,
+  type ScopeKind,
+  type TrialReview,
+  type TrialReviewState,
+  type WrittenQuote,
+  type WrittenQuoteState,
 } from '../../services/CommerceDeskService';
 import s from './CommerceDeskPage.module.css';
 
@@ -262,21 +280,22 @@ function WhenPicker({
    THE PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-type TabKey = 'refunds' | 'catalog' | 'evidence' | 'admission';
+type TabKey = 'refunds' | 'written' | 'reviews' | 'catalog' | 'evidence' | 'admission' | 'metrics';
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'refunds', label: 'Refund Queue' },
+  { key: 'written', label: 'Written Quotes' },
+  { key: 'reviews', label: 'Free Month Reviews' },
   { key: 'catalog', label: 'Catalog' },
   { key: 'evidence', label: 'Comparison Evidence' },
   { key: 'admission', label: 'Admission' },
+  { key: 'metrics', label: 'Metrics' },
 ];
+const TAB_KEYS = new Set<string>(TABS.map((t) => t.key));
 
 export default function CommerceDeskPage() {
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab: TabKey =
-    tabParam === 'catalog' || tabParam === 'evidence' || tabParam === 'admission'
-      ? tabParam
-      : 'refunds';
+  const tab: TabKey = tabParam && TAB_KEYS.has(tabParam) ? (tabParam as TabKey) : 'refunds';
   const setTab = (next: TabKey) => {
     const p = new URLSearchParams(params);
     if (next === 'refunds') p.delete('tab');
@@ -287,6 +306,18 @@ export default function CommerceDeskPage() {
   const { user } = useAuthUser();
   const me = user?.id ?? null;
   const isMounted = useIsMounted();
+
+  /* Seven tabs scroll sideways on a phone; a deep link to a later one
+     (?tab=metrics) must not open with the current tab off screen. */
+  const tabsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const strip = tabsRef.current;
+    const on = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !on) return;
+    const left = on.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + on.offsetWidth > strip.scrollLeft + strip.clientWidth)
+      strip.scrollLeft = Math.max(0, left + on.offsetWidth - strip.clientWidth);
+  }, [tab]);
 
   /* The catalog and every price version are shared by the Catalog and
      Evidence tabs, and are read together so a product's price in effect and
@@ -366,12 +397,13 @@ export default function CommerceDeskPage() {
           Commerce Desk
         </h1>
         <p className={s.lede}>
-          Club And Union Diamond Refunds, Catalog Prices, Comparison Evidence And Admission. Every
-          Change Here Is Checked Again By The Server And Recorded With Your Name.
+          Club And Union Diamond Refunds, Written Quotes, Free Month Reviews, Catalog Prices,
+          Comparison Evidence, Admission And Metrics. Every Change Here Is Checked Again By The
+          Server And Recorded With Your Name.
         </p>
       </header>
 
-      <nav className={s.tabs} aria-label="Commerce Desk Sections">
+      <nav ref={tabsRef} className={s.tabs} aria-label="Commerce Desk Sections">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -410,6 +442,9 @@ export default function CommerceDeskPage() {
         />
       )}
       {tab === 'admission' && <AdmissionPanel />}
+      {tab === 'written' && <WrittenQuotesPanel />}
+      {tab === 'reviews' && <TrialReviewsPanel me={me} />}
+      {tab === 'metrics' && <MetricsPanel />}
     </main>
   );
 }
@@ -522,16 +557,27 @@ function RefundQueue({ me }: { me: string | null }) {
   );
 }
 
-function scopeName(r: RefundRequest, names: DeskNames): React.ReactNode {
-  const name = r.scope_kind === 'club' ? names.clubs[r.scope_id] : names.unions[r.scope_id];
-  const kind = r.scope_kind === 'club' ? 'Club' : 'Union';
+function scopeTitle(scopeKind: ScopeKind, scopeId: string, names: DeskNames): React.ReactNode {
+  const name = scopeKind === 'club' ? names.clubs[scopeId] : names.unions[scopeId];
+  const kind = scopeKind === 'club' ? 'Club' : 'Union';
   return name ? (
     `${titleCase(name)} (${kind})`
   ) : (
     <>
-      {kind} <Code>{shortId(r.scope_id)}</Code>
+      {kind} <Code>{shortId(scopeId)}</Code>
     </>
   );
+}
+
+/** The same name as plain text, for an accessible label or a dialog. */
+function scopeText(scopeKind: ScopeKind, scopeId: string, names: DeskNames): string {
+  const name = scopeKind === 'club' ? names.clubs[scopeId] : names.unions[scopeId];
+  const kind = scopeKind === 'club' ? 'Club' : 'Union';
+  return name ? `${titleCase(name)} (${kind})` : `${kind} ${shortId(scopeId).toUpperCase()}`;
+}
+
+function scopeName(r: RefundRequest, names: DeskNames): React.ReactNode {
+  return scopeTitle(r.scope_kind, r.scope_id, names);
 }
 
 /** A handle that is an identifier (snake_case) prints as one, never lower case. */
@@ -2168,6 +2214,962 @@ function AdmissionPanel() {
               })}
             </div>
           )}
+        </section>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. WRITTEN QUOTES (above 2,500 members, 20260924182605)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const WRITTEN_TONE: Record<WrittenQuoteState, Tone> = {
+  requested: 'blue',
+  offered: 'gold',
+  accepted: 'green',
+  expired: 'muted',
+  declined: 'muted',
+  withdrawn: 'muted',
+};
+
+const REVIEW_TONE: Record<TrialReviewState, Tone> = {
+  requested: 'blue',
+  approved: 'green',
+  declined: 'muted',
+};
+
+const EMPTY_NAMES: DeskNames = { people: {}, clubs: {}, unions: {} };
+
+/** A whole number typed with or without thousands separators, or null. */
+function parseWhole(raw: string): number | null {
+  const t = raw.trim().replace(/,/g, '');
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+const EM_DASH = String.fromCharCode(0x2014);
+
+/** A staff note the server will accept, or the reason it would not. */
+function noteProblem(note: string): string | null {
+  if (note.length > WRITTEN_QUOTE_LIMITS.maxNote) return deskRefusalCopy('note_too_long');
+  if (note.includes(EM_DASH)) return 'A Note Cannot Contain An Em Dash. Use A Comma Or A Full Stop';
+  return null;
+}
+
+/** A person's handle from the lookup, or their short id. */
+function handleOf(id: string | null, names: DeskNames): React.ReactNode {
+  if (!id) return 'Unknown';
+  return personName(id, names);
+}
+
+/** Club names and poker handles for a queue. Best effort, never blocking. */
+async function lookupQueueNames(
+  scopes: ReadonlyArray<{ scope_kind: ScopeKind; scope_id: string }>,
+  people: ReadonlyArray<string | null>
+): Promise<DeskNames> {
+  const [n, h] = await Promise.all([lookupScopeNames(scopes), lookupHandles(people)]);
+  return { ...n, people: h };
+}
+
+function WrittenQuotesPanel() {
+  const isMounted = useIsMounted();
+  const [list, setList] = useState<WrittenQuote[] | null>(null);
+  const [names, setNames] = useState<DeskNames>(EMPTY_NAMES);
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    setList(null);
+    setError(null);
+    try {
+      const res = await CommerceDeskService.writtenQuotes();
+      if (!isMounted.current || mine !== seq.current) return;
+      if (isRefusal(res)) {
+        setError(deskRefusalCopy(res.error, 'The Written Quotes Could Not Be Read'));
+        setList([]);
+        return;
+      }
+      const rows = Array.isArray(res.written_quotes) ? res.written_quotes : [];
+      setList(rows);
+      const n = await lookupQueueNames(
+        rows,
+        rows.flatMap((w) => [w.requested_by, w.decided_by])
+      );
+      if (!isMounted.current || mine !== seq.current) return;
+      setNames(n);
+    } catch (e) {
+      if (!isMounted.current || mine !== seq.current) return;
+      reportUnexpected(e, 'CommerceDeskPage.WrittenQuotes.load');
+      setError(failureText(e, 'The Written Quotes Could Not Be Read'));
+      setList([]);
+    }
+  }, [isMounted]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const replace = useCallback((w: WrittenQuote) => {
+    setList((prev) => (prev ?? []).map((x) => (x.written_quote_id === w.written_quote_id ? w : x)));
+  }, []);
+
+  // Open requests first (the server's order too), then newest first.
+  const ordered = useMemo(
+    () =>
+      [...(list ?? [])].sort(
+        (a, b) =>
+          Number(b.state === 'requested') - Number(a.state === 'requested') ||
+          String(b.created_at).localeCompare(String(a.created_at))
+      ),
+    [list]
+  );
+  const open = ordered.filter((w) => w.state === 'requested').length;
+
+  return (
+    <section className={s.section} aria-labelledby="desk-written-title">
+      <div className={s.sectionHead}>
+        <h2 id="desk-written-title" className={s.sectionTitle}>
+          Written Quotes
+        </h2>
+        <button type="button" className={s.link} onClick={() => void load()}>
+          Refresh
+        </button>
+      </div>
+      <p className={s.copy}>
+        Above 2,500 Approved Members A Club Owner Asks For A Written Quote. Offer A Tested Capacity
+        And A Whole Diamond Price For 30 Days, Valid For 1 To 30 Days, Or Decline With A Note. The
+        Offer Is A Private Product For That Club Only, And The Owner Is Told Either Way.
+      </p>
+      {list && !error && (
+        <Row label="Awaiting An Answer" value={whole(open)} tone={open ? 'gold' : 'muted'} />
+      )}
+      {error && (
+        <p className={s.alert} role="alert">
+          {error}
+        </p>
+      )}
+      {list === null && <LoadingState message="Reading Written Quotes" />}
+      {list !== null && list.length === 0 && !error && (
+        <p className={s.empty}>No Written Quote Requests Yet</p>
+      )}
+      {ordered.length > 0 && (
+        <div className={s.cardGrid}>
+          {ordered.map((w) => (
+            <WrittenQuoteCard key={w.written_quote_id} w={w} names={names} onChanged={replace} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WrittenQuoteCard({
+  w,
+  names,
+  onChanged,
+}: {
+  w: WrittenQuote;
+  names: DeskNames;
+  onChanged: (w: WrittenQuote) => void;
+}) {
+  const toast = useToast();
+  const isMounted = useIsMounted();
+  const inFlight = useRef(false);
+  const [busy, setBusy] = useState<'offer' | 'decline' | null>(null);
+  const [capacity, setCapacity] = useState(
+    /* Printed as the owner asked it, grouped; parseWhole reads the commas. */
+    w.requested_capacity == null ? '' : Number(w.requested_capacity).toLocaleString('en-US')
+  );
+  const [price, setPrice] = useState('');
+  const [days, setDays] = useState(String(WRITTEN_QUOTE_LIMITS.defaultValidDays));
+  const [note, setNote] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const open = w.state === 'requested';
+  const where = scopeText(w.scope_kind, w.scope_id, names);
+  const idp = `wq-${w.written_quote_id}`;
+
+  const settle = (res: { written_quote?: WrittenQuote } | null | undefined) => {
+    if (res?.written_quote) onChanged(res.written_quote);
+  };
+
+  const offer = async () => {
+    if (inFlight.current) return;
+    setProblem(null);
+    const cap = parseWhole(capacity);
+    if (
+      cap === null ||
+      cap <= WRITTEN_QUOTE_LIMITS.minCapacityExclusive ||
+      cap > WRITTEN_QUOTE_LIMITS.maxCapacity
+    )
+      return setProblem(deskRefusalCopy('written_quote_capacity_out_of_range'));
+    const dia = parseWhole(price);
+    if (dia === null || dia <= 0 || dia > WRITTEN_QUOTE_LIMITS.maxDiamonds)
+      return setProblem(
+        `Enter A Whole Diamond Price From 1 To ${whole(WRITTEN_QUOTE_LIMITS.maxDiamonds)}`
+      );
+    const valid = parseWhole(days);
+    if (
+      valid === null ||
+      valid < WRITTEN_QUOTE_LIMITS.minValidDays ||
+      valid > WRITTEN_QUOTE_LIMITS.maxValidDays
+    )
+      return setProblem(deskRefusalCopy('written_quote_validity_out_of_range'));
+    const text = note.trim();
+    const bad = noteProblem(text);
+    if (bad) return setProblem(bad);
+    const ok = await confirmDialog({
+      title: 'Offer Written Quote',
+      message: `Offer ${where} Up To ${whole(cap)} Approved Members For ${diamonds(dia)} For 30 Days, Valid For ${whole(valid)} ${valid === 1 ? 'Day' : 'Days'}? The Owner Is Told Now.`,
+      confirmText: 'Offer',
+    });
+    if (!ok) return;
+    inFlight.current = true;
+    setBusy('offer');
+    try {
+      const res = await CommerceDeskService.offerWrittenQuote(
+        w.written_quote_id,
+        cap,
+        dia,
+        valid,
+        text || null
+      );
+      if (!isMounted.current) return;
+      if (isRefusal(res)) {
+        setProblem(deskRefusalCopy(res.error));
+        settle(res as { written_quote?: WrittenQuote });
+        return;
+      }
+      settle(res);
+      toast.success(`Written Quote Offered: ${diamonds(dia)}`);
+    } catch (e) {
+      if (!isMounted.current) return;
+      reportUnexpected(e, 'CommerceDeskPage.WrittenQuote.offer');
+      setProblem(failureText(e, 'The Offer Could Not Be Saved'));
+    } finally {
+      inFlight.current = false;
+      if (isMounted.current) setBusy(null);
+    }
+  };
+
+  const decline = async () => {
+    if (inFlight.current) return;
+    setProblem(null);
+    const text = note.trim();
+    if (!text) return setProblem(deskRefusalCopy('note_required'));
+    const bad = noteProblem(text);
+    if (bad) return setProblem(bad);
+    const ok = await confirmDialog({
+      title: 'Decline Written Quote',
+      message: `Decline The Request From ${where} For ${whole(w.requested_capacity)} Members? The Owner Reads Your Note.`,
+      confirmText: 'Decline',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    inFlight.current = true;
+    setBusy('decline');
+    try {
+      const res = await CommerceDeskService.declineWrittenQuote(w.written_quote_id, text);
+      if (!isMounted.current) return;
+      if (isRefusal(res)) {
+        setProblem(deskRefusalCopy(res.error));
+        settle(res as { written_quote?: WrittenQuote });
+        return;
+      }
+      settle(res);
+      toast.success('Written Quote Declined');
+    } catch (e) {
+      if (!isMounted.current) return;
+      reportUnexpected(e, 'CommerceDeskPage.WrittenQuote.decline');
+      setProblem(failureText(e, 'The Decline Could Not Be Saved'));
+    } finally {
+      inFlight.current = false;
+      if (isMounted.current) setBusy(null);
+    }
+  };
+
+  const priced = w.offered_diamonds !== null && w.offered_capacity !== null;
+
+  return (
+    <article className={s.card} aria-labelledby={idp}>
+      <div className={s.cardHead}>
+        <h3 id={idp} className={s.cardTitle}>
+          {whole(w.requested_capacity)} Members For {scopeTitle(w.scope_kind, w.scope_id, names)}
+        </h3>
+        <span className={`${s.pill} ${s[`ink_${WRITTEN_TONE[w.state] ?? 'muted'}`]}`}>
+          {WRITTEN_QUOTE_STATE_LABEL[w.state] ?? titleCase(String(w.state))}
+        </span>
+      </div>
+      <Row label="Requested" value={when(w.created_at)} />
+      <Row label="Requested By" value={handleOf(w.requested_by, names)} />
+      <Row label="Capacity Asked" value={`${whole(w.requested_capacity)} Approved Members`} />
+      {w.request_note && <Row label="Owner's Note" value={titleCase(w.request_note)} prose />}
+
+      {!open && (
+        <>
+          <p className={s.subhead}>Answer</p>
+          {priced && (
+            <>
+              <Row
+                label="Offered Capacity"
+                value={`${whole(w.offered_capacity)} Approved Members`}
+              />
+              <Row
+                label="Price"
+                value={`${diamonds(w.offered_diamonds)} For 30 Days`}
+                tone="silver"
+              />
+              <Row
+                label={w.state === 'expired' ? 'Expired' : 'Valid Until'}
+                value={when(w.valid_until)}
+                tone={w.state === 'expired' ? 'muted' : undefined}
+              />
+            </>
+          )}
+          <Row
+            label={
+              w.state === 'withdrawn'
+                ? 'Withdrawn By The Owner'
+                : w.state === 'declined'
+                  ? 'Declined'
+                  : 'Offered'
+            }
+            value={when(w.decided_at)}
+          />
+          {w.state !== 'withdrawn' && w.decided_by && (
+            <Row label="Answered By" value={handleOf(w.decided_by, names)} />
+          )}
+          {w.state === 'accepted' && (
+            <Row label="Bought" value="The Club Holds This Capacity" tone="green" />
+          )}
+          {w.staff_note && <Row label="Staff Note" value={titleCase(w.staff_note)} prose />}
+          {w.sku && <Row label="Private Product" value={<Code>{w.sku}</Code>} prose />}
+        </>
+      )}
+
+      {open && (
+        <div className={s.decide}>
+          <div className={s.pair}>
+            <label className={s.field} htmlFor={`${idp}-capacity`}>
+              <span className={s.fieldLabel}>Capacity To Offer</span>
+              <input
+                id={`${idp}-capacity`}
+                className={s.input}
+                inputMode="numeric"
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+              />
+            </label>
+            <label className={s.field} htmlFor={`${idp}-price`}>
+              <span className={s.fieldLabel}>Diamonds For 30 Days</span>
+              <input
+                id={`${idp}-price`}
+                className={s.input}
+                inputMode="numeric"
+                value={price}
+                placeholder="Whole Diamonds"
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className={s.field}>
+            <label className={s.fieldLabel} htmlFor={`${idp}-days`}>
+              Valid For (Days)
+            </label>
+            <input
+              id={`${idp}-days`}
+              className={s.input}
+              inputMode="numeric"
+              value={days}
+              onChange={(e) => setDays(e.target.value)}
+              aria-describedby={`${idp}-days-hint`}
+            />
+            <span id={`${idp}-days-hint`} className={s.hint}>
+              1 To 30 Days. The Owner Can Buy The Offer Until Then.
+            </span>
+          </div>
+          <label className={s.field} htmlFor={`${idp}-note`}>
+            <span className={s.fieldLabel}>Note To The Owner</span>
+            <textarea
+              id={`${idp}-note`}
+              className={s.textarea}
+              rows={2}
+              maxLength={WRITTEN_QUOTE_LIMITS.maxNote}
+              value={note}
+              placeholder="Optional With An Offer, Required To Decline"
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+          {problem && (
+            <p className={s.alert} role="alert">
+              {problem}
+            </p>
+          )}
+          <div className={s.actions}>
+            <button
+              type="button"
+              className={s.danger}
+              disabled={busy !== null}
+              onClick={() => void decline()}
+            >
+              {busy === 'decline' ? 'Declining' : 'Decline'}
+            </button>
+            <button
+              type="button"
+              className={s.primary}
+              disabled={busy !== null}
+              onClick={() => void offer()}
+            >
+              {busy === 'offer' ? 'Offering' : 'Offer'}
+            </button>
+          </div>
+        </div>
+      )}
+      {!open && problem && (
+        <p className={s.alert} role="alert">
+          {problem}
+        </p>
+      )}
+    </article>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. FREE MONTH REVIEWS (20260924182605)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function TrialReviewsPanel({ me }: { me: string | null }) {
+  const isMounted = useIsMounted();
+  const [list, setList] = useState<TrialReview[] | null>(null);
+  const [names, setNames] = useState<DeskNames>(EMPTY_NAMES);
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    setList(null);
+    setError(null);
+    try {
+      const res = await CommerceDeskService.trialReviews();
+      if (!isMounted.current || mine !== seq.current) return;
+      if (isRefusal(res)) {
+        setError(deskRefusalCopy(res.error, 'The Free Month Reviews Could Not Be Read'));
+        setList([]);
+        return;
+      }
+      const rows = Array.isArray(res.reviews) ? res.reviews : [];
+      setList(rows);
+      const n = await lookupQueueNames(
+        rows,
+        rows.flatMap((r) => [r.operator_id, r.requested_by, r.decided_by])
+      );
+      if (!isMounted.current || mine !== seq.current) return;
+      setNames(n);
+    } catch (e) {
+      if (!isMounted.current || mine !== seq.current) return;
+      reportUnexpected(e, 'CommerceDeskPage.TrialReviews.load');
+      setError(failureText(e, 'The Free Month Reviews Could Not Be Read'));
+      setList([]);
+    }
+  }, [isMounted]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const replace = useCallback((r: TrialReview) => {
+    setList((prev) => (prev ?? []).map((x) => (x.review_id === r.review_id ? r : x)));
+  }, []);
+
+  const ordered = useMemo(
+    () =>
+      [...(list ?? [])].sort(
+        (a, b) =>
+          Number(b.state === 'requested') - Number(a.state === 'requested') ||
+          String(b.created_at).localeCompare(String(a.created_at))
+      ),
+    [list]
+  );
+  const open = ordered.filter((r) => r.state === 'requested').length;
+
+  return (
+    <section className={s.section} aria-labelledby="desk-reviews-title">
+      <div className={s.sectionHead}>
+        <h2 id="desk-reviews-title" className={s.sectionTitle}>
+          Free Month Reviews
+        </h2>
+        <button type="button" className={s.link} onClick={() => void load()}>
+          Refresh
+        </button>
+      </div>
+      <p className={s.copy}>
+        Later Clubs Of One Operator Share The End Of The First Free Month That Operator Got. When An
+        Owner Says A Club Is A Genuinely New, Independent Operation, Approve A Fresh 30 Day Free
+        Month For That One Club Or Union, Or Decline With A Note. Each Club Or Union Is Granted At
+        Most Once.
+      </p>
+      {list && !error && (
+        <Row label="Awaiting A Decision" value={whole(open)} tone={open ? 'gold' : 'muted'} />
+      )}
+      {error && (
+        <p className={s.alert} role="alert">
+          {error}
+        </p>
+      )}
+      {list === null && <LoadingState message="Reading Free Month Reviews" />}
+      {list !== null && list.length === 0 && !error && (
+        <p className={s.empty}>No Free Month Reviews Yet</p>
+      )}
+      {ordered.length > 0 && (
+        <div className={s.cardGrid}>
+          {ordered.map((r) => (
+            <TrialReviewCard key={r.review_id} r={r} me={me} names={names} onDecided={replace} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TrialReviewCard({
+  r,
+  me,
+  names,
+  onDecided,
+}: {
+  r: TrialReview;
+  me: string | null;
+  names: DeskNames;
+  onDecided: (r: TrialReview) => void;
+}) {
+  const toast = useToast();
+  const isMounted = useIsMounted();
+  const inFlight = useRef(false);
+  const [busy, setBusy] = useState<'approve' | 'decline' | null>(null);
+  const [note, setNote] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const open = r.state === 'requested';
+  const own = !!me && me === r.operator_id;
+  const where = scopeText(r.scope_kind, r.scope_id, names);
+  const idp = `review-${r.review_id}`;
+
+  const decide = async (approve: boolean) => {
+    if (inFlight.current) return;
+    setProblem(null);
+    const text = note.trim();
+    if (!approve && !text) return setProblem(deskRefusalCopy('note_required'));
+    const bad = noteProblem(text);
+    if (bad) return setProblem(bad);
+    const ok = await confirmDialog(
+      approve
+        ? {
+            title: 'Approve Free Month',
+            message: `Grant ${where} A Fresh 30 Day Free Month Starting Now? The Owner Is Told Now And Gets The Usual Reminders.`,
+            confirmText: 'Approve',
+          }
+        : {
+            title: 'Decline Free Month',
+            message: `Decline The Free Month Review For ${where}? The Owner Reads Your Note.`,
+            confirmText: 'Decline',
+            variant: 'danger',
+          }
+    );
+    if (!ok) return;
+    inFlight.current = true;
+    setBusy(approve ? 'approve' : 'decline');
+    try {
+      const res = await CommerceDeskService.decideTrialReview(r.review_id, approve, text || null);
+      if (!isMounted.current) return;
+      if (isRefusal(res)) {
+        setProblem(deskRefusalCopy(res.error));
+        const current = (res as { review?: TrialReview }).review;
+        if (current) onDecided(current);
+        return;
+      }
+      onDecided(res.review);
+      toast.success(
+        approve
+          ? `Free Month Approved Until ${when(res.review.granted_trial_end)}`
+          : 'Free Month Review Declined'
+      );
+    } catch (e) {
+      if (!isMounted.current) return;
+      reportUnexpected(e, 'CommerceDeskPage.TrialReview.decide');
+      setProblem(failureText(e, 'The Decision Could Not Be Saved'));
+    } finally {
+      inFlight.current = false;
+      if (isMounted.current) setBusy(null);
+    }
+  };
+
+  return (
+    <article className={s.card} aria-labelledby={idp}>
+      <div className={s.cardHead}>
+        <h3 id={idp} className={s.cardTitle}>
+          Free Month For {scopeTitle(r.scope_kind, r.scope_id, names)}
+        </h3>
+        <span className={`${s.pill} ${s[`ink_${REVIEW_TONE[r.state] ?? 'muted'}`]}`}>
+          {TRIAL_REVIEW_STATE_LABEL[r.state] ?? titleCase(String(r.state))}
+        </span>
+      </div>
+      <Row label="Requested" value={when(r.created_at)} />
+      <Row label="Operator" value={handleOf(r.operator_id, names)} />
+      {r.requested_by !== r.operator_id && (
+        <Row label="Requested By" value={handleOf(r.requested_by, names)} />
+      )}
+      <Row label="Owner's Statement" value={titleCase(r.statement)} prose />
+
+      {!open && (
+        <>
+          <p className={s.subhead}>Decision</p>
+          <Row
+            label={r.state === 'approved' ? 'Approved' : 'Declined'}
+            value={when(r.decided_at)}
+          />
+          {r.decided_by && <Row label="Decided By" value={handleOf(r.decided_by, names)} />}
+          {r.state === 'approved' && (
+            <Row label="Free Month Ends" value={when(r.granted_trial_end)} tone="green" />
+          )}
+          {r.staff_note && <Row label="Staff Note" value={titleCase(r.staff_note)} prose />}
+        </>
+      )}
+
+      {open && own && <p className={s.notice}>{deskRefusalCopy('own_request')}.</p>}
+
+      {open && !own && (
+        <div className={s.decide}>
+          <label className={s.field} htmlFor={`${idp}-note`}>
+            <span className={s.fieldLabel}>Note To The Owner</span>
+            <textarea
+              id={`${idp}-note`}
+              className={s.textarea}
+              rows={2}
+              maxLength={WRITTEN_QUOTE_LIMITS.maxNote}
+              value={note}
+              placeholder="Optional To Approve, Required To Decline"
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+          {problem && (
+            <p className={s.alert} role="alert">
+              {problem}
+            </p>
+          )}
+          <div className={s.actions}>
+            <button
+              type="button"
+              className={s.danger}
+              disabled={busy !== null}
+              onClick={() => void decide(false)}
+            >
+              {busy === 'decline' ? 'Declining' : 'Decline'}
+            </button>
+            <button
+              type="button"
+              className={s.primary}
+              disabled={busy !== null}
+              onClick={() => void decide(true)}
+            >
+              {busy === 'approve' ? 'Approving' : 'Approve'}
+            </button>
+          </div>
+        </div>
+      )}
+      {!(open && !own) && problem && (
+        <p className={s.alert} role="alert">
+          {problem}
+        </p>
+      )}
+    </article>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. METRICS (R2 7.5, 20260924183529)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const METRIC_WINDOWS = [7, 30, 90] as const;
+
+/** An age in whole hours: hours under two days, whole days after. */
+function age(hours: number | null | undefined): string {
+  if (hours === null || hours === undefined) return 'None';
+  const h = Math.max(0, Math.trunc(Number(hours)));
+  if (h < 48) return `${whole(h)} ${h === 1 ? 'Hour' : 'Hours'}`;
+  const d = Math.floor(h / 24);
+  return `${whole(d)} Days`;
+}
+
+const count = (n: number | null | undefined, one: string, many: string) =>
+  `${whole(n)} ${Number(n) === 1 ? one : many}`;
+
+function MetricCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <article className={s.card} aria-label={title}>
+      <div className={s.cardHead}>
+        <h3 className={s.cardTitle}>{title}</h3>
+      </div>
+      {children}
+    </article>
+  );
+}
+
+function MetricsPanel() {
+  const isMounted = useIsMounted();
+  const [days, setDays] = useState<(typeof METRIC_WINDOWS)[number]>(30);
+  const [m, setM] = useState<CommerceMetrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(
+    async (window: number) => {
+      const mine = ++seq.current;
+      setM(null);
+      setError(null);
+      try {
+        const res = await CommerceDeskService.metrics(window);
+        if (!isMounted.current || mine !== seq.current) return;
+        if (isRefusal(res)) {
+          setError(deskRefusalCopy(res.error, 'The Metrics Could Not Be Read'));
+          return;
+        }
+        setM(res);
+      } catch (e) {
+        if (!isMounted.current || mine !== seq.current) return;
+        reportUnexpected(e, 'CommerceDeskPage.MetricsPanel.load');
+        setError(failureText(e, 'The Metrics Could Not Be Read'));
+      }
+    },
+    [isMounted]
+  );
+
+  useEffect(() => {
+    void load(days);
+  }, [days, load]);
+
+  const p = m?.purchases;
+  const rr = m?.refund_requests;
+  const sp = m?.sponsorships;
+  const used =
+    sp && sp.budget_diamonds > 0
+      ? `${whole(Math.round((sp.committed_diamonds * 100) / sp.budget_diamonds))}%`
+      : 'None';
+  const failures = m ? Number(m.postconditions.renewal) + Number(m.postconditions.refund) : 0;
+
+  return (
+    <>
+      <section className={s.section} aria-labelledby="desk-metrics-title">
+        <div className={s.sectionHead}>
+          <h2 id="desk-metrics-title" className={s.sectionTitle}>
+            Metrics
+          </h2>
+          <button type="button" className={s.link} onClick={() => void load(days)}>
+            Refresh
+          </button>
+        </div>
+        <p className={s.copy}>
+          What The Commerce Records Say. Net Paid Diamonds Count Only Receipts That Charged, Kept
+          Apart From Proposed Quotes, Free Month Waivers, Refunds, Retries And Replays. Counts Are
+          For The Window; Queues And Ages Are As Of Now.
+        </p>
+        <div className={s.chips} role="radiogroup" aria-label="Metrics Window">
+          {METRIC_WINDOWS.map((w) => (
+            <button
+              key={w}
+              type="button"
+              role="radio"
+              aria-checked={days === w}
+              className={`${s.chip} ${days === w ? s.chipOn : ''}`}
+              onClick={() => setDays(w)}
+            >
+              Last {w} Days
+            </button>
+          ))}
+        </div>
+        {error && (
+          <p className={s.alert} role="alert">
+            {error}
+          </p>
+        )}
+        {!error && m === null && <LoadingState message="Reading The Metrics" />}
+        {m && p && (
+          <>
+            <Row label="Net Paid Diamonds" value={diamonds(p.net_paid_diamonds)} tone="silver" />
+            <Row label="As Of" value={when(m.as_of)} />
+            <Row
+              label="Accounting Postcondition Failures"
+              value={whole(failures)}
+              tone={failures ? 'red' : 'green'}
+            />
+          </>
+        )}
+      </section>
+
+      {m && p && rr && sp && (
+        <section className={s.section} aria-label="Measures">
+          <div className={s.cardGrid}>
+            <MetricCard title="Payments">
+              <Row label="Receipts Committed" value={whole(p.committed)} />
+              <Row label="Receipts That Charged" value={whole(p.paid)} />
+              <Row label="Net Paid" value={diamonds(p.net_paid_diamonds)} tone="silver" />
+              <Row label="Zero Net Receipts" value={whole(p.zero_net)} />
+              <Row
+                label="Purchases"
+                value={`${whole(p.by_kind.purchase.committed)} For ${diamonds(p.by_kind.purchase.net_paid_diamonds)}`}
+              />
+              <Row
+                label="Upgrades"
+                value={`${whole(p.by_kind.upgrade.committed)} For ${diamonds(p.by_kind.upgrade.net_paid_diamonds)}`}
+              />
+              <Row
+                label="Renewals"
+                value={`${whole(p.by_kind.renewal.committed)} For ${diamonds(p.by_kind.renewal.net_paid_diamonds)}`}
+              />
+              <Row label="Paid By Sponsors" value={diamonds(p.sponsored_net_diamonds)} />
+              <Row label="Waived On Receipts" value={diamonds(p.trial_waiver_diamonds)} />
+            </MetricCard>
+
+            <MetricCard title="Quotes">
+              <Row label="Priced" value={whole(m.quotes.priced)} />
+              <Row
+                label="Proposed, Not Paid"
+                value={diamonds(m.quotes.proposed_diamonds)}
+                tone="muted"
+              />
+              <Row label="Bought" value={whole(m.quotes.consumed)} />
+              <Row label="Still Open" value={whole(m.quotes.open)} />
+              <Row label="Expired" value={whole(m.quotes.expired)} />
+              <Row label="Withdrawn" value={whole(m.quotes.withdrawn)} />
+            </MetricCard>
+
+            <MetricCard title="Free Months">
+              <Row label="Clubs And Unions Granted" value={whole(m.trial_waivers.scopes)} />
+              <Row label="Free Months" value={whole(m.trial_waivers.trials)} />
+              <Row
+                label="Diamonds Charged"
+                value={diamonds(m.trial_waivers.net_paid_diamonds)}
+                tone="muted"
+              />
+            </MetricCard>
+
+            <MetricCard title="Refunds">
+              <Row label="Refunds Committed" value={whole(m.refunds.committed)} />
+              <Row label="Returned" value={diamonds(m.refunds.gross_diamonds)} tone="silver" />
+              <Row
+                label="Applied To Existing Debt"
+                value={diamonds(m.refunds.debt_settled_diamonds)}
+              />
+              <Row
+                label="Added To Available Balance"
+                value={diamonds(m.refunds.added_to_balance_diamonds)}
+              />
+              <Row
+                label="Awaiting A Decision"
+                value={whole(rr.awaiting_decision)}
+                tone={rr.awaiting_decision ? 'gold' : undefined}
+              />
+              <Row
+                label="Oldest Awaiting A Decision"
+                value={age(rr.oldest_awaiting_decision_hours)}
+              />
+              <Row
+                label="Approved, Not Yet Returned"
+                value={`${whole(rr.awaiting_execution)} For ${diamonds(rr.awaiting_execution_diamonds)}`}
+                tone={rr.awaiting_execution ? 'gold' : undefined}
+              />
+              <Row
+                label="Oldest Not Yet Returned"
+                value={age(rr.oldest_awaiting_execution_hours)}
+              />
+              {REFUND_STATES.map((k) => (
+                <Row
+                  key={k}
+                  label={`${REFUND_STATE_LABEL[k]} Requests`}
+                  value={whole(rr.by_state?.[k])}
+                />
+              ))}
+            </MetricCard>
+
+            <MetricCard title="Renewals">
+              <Row label="Authorized" value={whole(m.renewals.authorized)} />
+              <Row
+                label="Due Now"
+                value={whole(m.renewals.due_now)}
+                tone={m.renewals.due_now ? 'gold' : undefined}
+              />
+              <Row label="Oldest Overdue" value={age(m.renewals.oldest_overdue_hours)} />
+              <Row
+                label="Needing Attention"
+                value={whole(m.renewals.needs_attention)}
+                tone={m.renewals.needs_attention ? 'gold' : undefined}
+              />
+              <Row label="Renewed In The Window" value={whole(m.renewals.renewed)} />
+              <Row label="Not Completed In The Window" value={whole(m.renewals.not_completed)} />
+            </MetricCard>
+
+            <MetricCard title="Sponsorships">
+              <Row label="Active" value={whole(sp.active)} />
+              <Row label="Budget" value={diamonds(sp.budget_diamonds)} />
+              <Row label="Committed" value={diamonds(sp.committed_diamonds)} tone="silver" />
+              <Row label="Used" value={used} />
+            </MetricCard>
+
+            <MetricCard title="Notices">
+              <Row
+                label="Due, Not Delivered"
+                value={whole(m.notices.undelivered_due)}
+                tone={m.notices.undelivered_due ? 'gold' : undefined}
+              />
+              <Row label="Oldest Undelivered" value={age(m.notices.oldest_undelivered_hours)} />
+              <Row label="Scheduled" value={whole(m.notices.scheduled)} />
+              <Row label="Suppressed In The Window" value={whole(m.notices.suppressed)} />
+            </MetricCard>
+
+            <MetricCard title="Replays, Retries And Failures">
+              <Row
+                label="Refund Executions Answered As Replays"
+                value={whole(m.duplicates.refund_execution_replays)}
+              />
+              <Row
+                label="Renewal Debits Refused As Repeats"
+                value={whole(m.duplicates.renewal_debit_reference_reused)}
+              />
+              <Row
+                label="Purchase Replays"
+                value={
+                  m.duplicates.purchase_replays_recorded
+                    ? 'Recorded'
+                    : 'Answered From The Receipt, Not Recorded'
+                }
+                tone="muted"
+              />
+              <Row
+                label="Refund Execution Retries"
+                value={whole(m.retries.refund_execution_retries)}
+              />
+              <Row label="Renewal Claim Retries" value={whole(m.retries.renewal_claim_retries)} />
+              <Row
+                label="Renewal Postcondition Failures"
+                value={count(m.postconditions.renewal, 'Failure', 'Failures')}
+                tone={m.postconditions.renewal ? 'red' : undefined}
+              />
+              <Row
+                label="Refund Postcondition Failures"
+                value={count(m.postconditions.refund, 'Failure', 'Failures')}
+                tone={m.postconditions.refund ? 'red' : undefined}
+              />
+              <Row
+                label="Owner Purchase Failures"
+                value={
+                  m.postconditions.purchase_failures_recorded
+                    ? 'Recorded'
+                    : 'Rolled Back Whole, Not Recorded'
+                }
+                tone="muted"
+              />
+            </MetricCard>
+          </div>
         </section>
       )}
     </>

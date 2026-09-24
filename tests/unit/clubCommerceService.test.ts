@@ -37,7 +37,14 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
       rpc.calls.push({ fn, args });
-      return { data: fn === 'fn_ca_commerce_receipts' ? [] : { success: true }, error: null };
+      if (fn === 'fn_ca_commerce_receipts') return { data: [], error: null };
+      if (fn === 'fn_ca_commerce_written_quotes')
+        return { data: { success: true, written_quotes: [] }, error: null };
+      if (fn === 'fn_ca_commerce_trial_reviews')
+        return { data: { success: true, reviews: [] }, error: null };
+      if (fn === 'fn_ca_commerce_policies')
+        return { data: { success: true, policies: [] }, error: null };
+      return { data: { success: true }, error: null };
     }),
   },
 }));
@@ -165,7 +172,18 @@ async function exerciseEveryDoor() {
   await ClubCommerceService.refundRequest(scope, 0, 'scope_closed', 'refund-key-0001', null);
   await ClubCommerceService.refundRequest(scope, 1, 'purchase_in_error', 'refund-key-0002', 'x');
   await ClubCommerceService.policies('refund');
+  await ClubCommerceService.policies('service_terms');
   await ClubCommerceService.policies();
+  /* 20260924182605: written quotes and free month reviews */
+  await ClubCommerceService.writtenQuotes('club', scope);
+  await ClubCommerceService.requestWrittenQuote('club', scope, 3000, null);
+  await ClubCommerceService.requestWrittenQuote('club', scope, 3000, 'Three Towns');
+  await ClubCommerceService.withdrawWrittenQuote(scope);
+  await ClubCommerceService.trialReviews('union', scope);
+  await ClubCommerceService.requestTrialReview('club', scope, 'A New Independent Operation');
+  /* 20260924183657: settled earnings coverage */
+  await ClubCommerceService.earningsCoverage('club', scope);
+  await ClubCommerceService.earningsCoverage('union', scope, 60);
 }
 
 describe('ClubCommerceService: every RPC matches the migration signature', () => {
@@ -175,6 +193,8 @@ describe('ClubCommerceService: every RPC matches the migration signature', () =>
       '20260924033509_club_and_union_diamond_commerce_fixes.sql',
       '20260924102040_diamond_commerce_refunds_notices_and_catalog_lifecycle.sql',
       '20260924102056_diamond_commerce_admission_is_wired_in_shadow.sql',
+      '20260924182605_diamond_commerce_catalog_terms_written_quotes_and_trial_reviews.sql',
+      '20260924183657_diamond_commerce_settled_earnings_coverage.sql',
     ])
       expect(COMMERCE_FILES).toContain(f);
     expect([...COMMERCE_FILES].sort()).toEqual(COMMERCE_FILES);
@@ -271,6 +291,32 @@ describe('ClubCommerceService: every RPC matches the migration signature', () =>
     expect(GRANTED_TO_AUTHENTICATED.has('fn_ca_commerce_refund_policy')).toBe(false);
   });
 
+  it('the new doors send every declared key, optional ones as null or their default', async () => {
+    const club = '00000000-0000-4000-8000-0000000000d1';
+    await ClubCommerceService.requestWrittenQuote('club', club, 4000);
+    await ClubCommerceService.withdrawWrittenQuote(club);
+    await ClubCommerceService.writtenQuotes('club', club);
+    await ClubCommerceService.requestTrialReview('union', club, 'A New Independent Operation');
+    await ClubCommerceService.trialReviews('club', club);
+    await ClubCommerceService.earningsCoverage('club', club);
+    for (const { fn, args } of rpc.calls)
+      expect(Object.keys(args).sort(), fn).toEqual(
+        SIGNATURES.get(fn)!
+          .map((p) => p.name)
+          .sort()
+      );
+    expect(rpc.calls[0].args).toEqual({
+      p_scope_kind: 'club',
+      p_scope_id: club,
+      p_requested_capacity: 4000,
+      p_note: null,
+    });
+    expect(rpc.calls[5].args).toEqual({ p_scope_kind: 'club', p_scope_id: club, p_days: 30 });
+    /* The staff doors stay off the owner's page. */
+    expect(GRANTED_TO_AUTHENTICATED.has('fn_ca_commerce_written_quote_offer')).toBe(true);
+    expect(Object.keys(ClubCommerceService)).not.toContain('offerWrittenQuote');
+  });
+
   it('reads every receipt of the viewer with both scope arguments null', async () => {
     await ClubCommerceService.receipts(null, null);
     expect(rpc.calls[0]).toEqual({
@@ -319,6 +365,14 @@ describe('REFUSAL_COPY: every code the migration can return has operator copy', 
       'operating_access_required',
       'consumer_not_running',
       'unexpected_error',
+      /* 20260924182605 and 20260924183657 */
+      'catalog_not_visible',
+      'rate_limited',
+      'written_quote_expired',
+      'written_quote_already_requested',
+      'statement_too_short',
+      'trial_review_already_requested',
+      'invalid_window',
     ])
       expect(codes).toContain(known);
   });

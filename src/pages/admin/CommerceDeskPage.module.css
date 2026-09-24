@@ -199,7 +199,9 @@
 }
 
 .rowValue {
-  flex: 1 1 12ch;
+  /* Its own width, so a one digit count stays beside a long label and a long
+     value takes its own line whole instead of being squeezed to 12ch. */
+  flex: 1 1 auto;
   min-width: 0;
   text-align: right;
   color: var(--desk-silver);

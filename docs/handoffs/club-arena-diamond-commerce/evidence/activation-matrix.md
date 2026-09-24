@@ -7,19 +7,21 @@ This file serves two R2 requirements:
 
 Short names (M1 to M4, RM, RR, RA, Engine, Page, Service) follow `c1-wiring-map.md`.
 
+**Update, 2026-09-24 19:40 UTC.** M3 (`20260924102040`) and M4 (`20260924102056`) are installed and read back (14:15 and 14:16 UTC), so Step 1 is done, the heartbeat column exists, the launch cohort has its heartbeat guard, admission is in shadow at seven doors, and the union SKUs are withdrawn from sale. The client carrying the Commerce Desk and the owner page growth is published (`4c1aa6e0`). Three further migrations (M5 `20260924182605`, M6 `20260924183529`, M7 `20260924183657`) come with the operator-completion pull request; Step 1b covers them. The rest of this section is the original record.
+
 **Source of the production state.** This document had no production access. Every production statement below comes from the repository record: `CHECKPOINT.md` and `docs/changelog/2026-09-24-club-and-union-diamond-commerce-fixes.md` ("Delivery record", readback at 2026-09-24 05:04 UTC). Nothing later was read. Anything that may have changed since is marked Unknown.
 
 ## 1. Global switches, as installed
 
 All four switches live in the single row `ca_commerce_settings` (M1:62-74). The repository records no `settings_changed` event, so each switch is taken at its installed value. The last recorded readback (2026-09-24 05:04 UTC) found 0 purchases and 0 trials.
 
-| Switch             | Column                       | Installed value                                          | Who changes it                                                           |
-| ------------------ | ---------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Catalog visible    | `catalog_visible`            | `true` (M1:64)                                           | Staff, via `fn_ca_commerce_settings_set` (M1:1974)                       |
-| Checkout enabled   | `checkout_enabled`           | `true` (M1:65)                                           | Staff, via the same door                                                 |
-| Admission enforced | `admission_enforced_from`    | `NULL`, which means shadow (M1:66)                       | Staff, via the same door. M4 refuses to install if it is set (M4:78-80). |
-| Launch cohort      | `launch_cohort_activated_at` | `NULL`, which means not run (M1:67)                      | Staff, via `fn_ca_commerce_activate_launch_cohort`                       |
-| Consumer heartbeat | `consumer_heartbeat_at`      | The column does not exist until M3 is installed (M3:158) | Stamped on every claim by the Engine (M3:714)                            |
+| Switch             | Column                       | Installed value                                                                                                       | Who changes it                                                           |
+| ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Catalog visible    | `catalog_visible`            | `true` (M1:64). Stored only until M5; from M5 it hides prices from owners and the quote refuses `catalog_not_visible` | Staff, via `fn_ca_commerce_settings_set` (M1:1974)                       |
+| Checkout enabled   | `checkout_enabled`           | `true` (M1:65)                                                                                                        | Staff, via the same door                                                 |
+| Admission enforced | `admission_enforced_from`    | `NULL`, which means shadow (M1:66)                                                                                    | Staff, via the same door. M4 refuses to install if it is set (M4:78-80). |
+| Launch cohort      | `launch_cohort_activated_at` | `NULL`, which means not run (M1:67)                                                                                   | Staff, via `fn_ca_commerce_activate_launch_cohort`                       |
+| Consumer heartbeat | `consumer_heartbeat_at`      | The column does not exist until M3 is installed (M3:158)                                                              | Stamped on every claim by the Engine (M3:714)                            |
 
 ## 2. Matrix: channel by scope by state
 
@@ -83,6 +85,14 @@ The page makes no platform check before offering checkout. A native build that c
   - M3's post-conditions: three policies, the one-open-request index, the heartbeat stamp (M3:1622-1663).
   - M4's post-conditions: exactly seven doors call `fn_ca_commerce_admit` (the four owner doors plus `fn_join_club`, `fn_redeem_club_invite_code` and `fn_agent_attach_player`), and no commerce trigger sits in the gameplay path (M4:443-503).
 
+### Step 1b: install M5, M6 and M7, in that order
+
+- **Preconditions.** Protected merge of the operator-completion pull request; its runners pass (completion 17, metrics 52, earnings 9, recovery 36, and the base, refunds and admission runners unchanged); outside :50 to :03 UTC and outside a maintenance thaw.
+- **M5 baseline pins.** `fn_ca_commerce_quote` md5 `2b5999d2...`, `fn_ca_commerce_catalog` md5 `196868d0...`, `fn_ca_commerce_activate_trial_impl` md5 `c1a16474...`.
+- **Order.** M6 and M7 each check that M5 is installed.
+- **Readback.** The function md5s against the qualified build, the `service_terms` policy v1, and the two new tables empty.
+- **Effect on activation.** None of the switches change. From M5, `catalog_visible` is a real switch.
+
 ### Step 2: an engine release carrying the consumer
 
 - **Blocking issue.** Engine releases fail at "Publish Through Hetzner" (#5161, release workstream).
@@ -134,5 +144,5 @@ The page makes no platform check before offering checkout. A native build that c
    - An owner can press "Start Free Month" now. The day 21 and day 27 reminders (M1:707-716) will sit undelivered until Step 2.
    - When the consumer starts, `fn_ca_commerce_deliver_due_notices` delivers every overdue notice. Fixed in M3: a trial reminder is retitled at delivery with the days actually left, and one for a trial that already ended is suppressed on record (`trial_already_ended`), never sent.
    - A post-trial authorization due at the trial end waits for the consumer. If the consumer first claims it more than 24 hours late, it ends in `needs_attention` with no charge (M2:841-842), which is the intended safe result.
-2. **Before M3, the launch cohort has no heartbeat guard** (M1:741-771).
-3. **Before M4, the admission read leaks.** The installed `fn_ca_commerce_admission` answers any signed-in caller with any club's roster count and capacity (`CHECKPOINT.md:191-192`; tightened at M4:205-223).
+2. **Before M3, the launch cohort had no heartbeat guard** (M1:741-771). Resolved: M3 is installed.
+3. **Before M4, the admission read leaked.** Resolved: M4 is installed. The installed `fn_ca_commerce_admission` answers any signed-in caller with any club's roster count and capacity (`CHECKPOINT.md:191-192`; tightened at M4:205-223).

@@ -22,6 +22,14 @@
  * platform staff decide; the engine's commerce consumer executes. The page
  * never computes a refund: the server returns the policy amount and its basis
  * with the request, under a versioned refund policy read by policies().
+ *
+ * WRITTEN QUOTES AND FREE MONTH REVIEWS (20260924182605). The owner asks;
+ * platform staff decide on the Commerce Desk (never from this service). An
+ * offer is bought through quote() and purchase() like any capacity.
+ *
+ * SETTLED EARNINGS (20260924183657). earningsCoverage() reads a comparison of
+ * the owner's settled Diamond Spins earnings with operating purchases; it
+ * never says which diamonds paid.
  */
 
 import { supabase } from '../lib/supabase';
@@ -52,6 +60,11 @@ export interface CatalogProduct {
   quantity_unit: 'flat' | 'covered_club';
   supported: boolean;
   included_note: string;
+  /** The platform capability this product sells, and whether it is available
+      now (20260924182605). Null when the product sells no platform capability. */
+  platform_capability_id?: string | null;
+  platform_available?: boolean | null;
+  /** Null while the catalog is not visible to this reader. */
   price: CatalogPrice | null;
 }
 
@@ -60,6 +73,8 @@ export interface Catalog {
   catalog_visible: boolean;
   checkout_enabled: boolean;
   nominal_cents_per_diamond: number;
+  /** The Operating Service Terms version in effect (20260924182605). */
+  service_terms_version?: number | null;
   products: CatalogProduct[];
 }
 
@@ -220,7 +235,7 @@ export interface RefundRequestResult {
 /** One versioned policy text (fn_ca_commerce_policies). Never edited. */
 export interface Policy {
   policy_id: string;
-  kind: 'refund' | 'renewal_terms' | 'renewal_ceiling';
+  kind: 'refund' | 'renewal_terms' | 'renewal_ceiling' | 'service_terms';
   version: number;
   title: string;
   body: string;
@@ -317,6 +332,9 @@ export interface Quote {
   trial_end: string | null;
   available_balance: number;
   renewal_max_diamonds: number | null;
+  /** True when the owner never had a free month (20260924182605). It never
+      refuses a purchase; the page offers the free month beside it. */
+  free_month_available?: boolean;
 }
 
 export interface Receipt {
@@ -422,6 +440,93 @@ export interface Admission {
 }
 
 export type Selection = { sku: string; quantity?: number };
+
+/**
+ * A written quote above 2,500 members (20260924182605). 'accepted' and
+ * 'expired' are read states: an offer the club bought, or one that lapsed.
+ */
+export type WrittenQuoteState =
+  | 'requested'
+  | 'offered'
+  | 'accepted'
+  | 'expired'
+  | 'declined'
+  | 'withdrawn';
+
+export interface WrittenQuote {
+  written_quote_id: string;
+  scope_kind: 'club';
+  scope_id: string;
+  requested_by: string;
+  requested_capacity: number;
+  request_note: string | null;
+  state: WrittenQuoteState;
+  offered_capacity: number | null;
+  offered_diamonds: number | null;
+  /** The private capacity product the offer is sold as, for this club only. */
+  sku: string | null;
+  price_version_id: string | null;
+  valid_until: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  staff_note: string | null;
+  created_at: string;
+}
+
+export type TrialReviewState = 'requested' | 'approved' | 'declined';
+
+export interface TrialReview {
+  review_id: string;
+  scope_kind: ScopeKind;
+  scope_id: string;
+  operator_id: string;
+  requested_by: string;
+  statement: string;
+  state: TrialReviewState;
+  decided_by: string | null;
+  decided_at: string | null;
+  staff_note: string | null;
+  granted_trial_id: string | null;
+  granted_trial_end: string | null;
+  created_at: string;
+}
+
+/**
+ * fn_ca_commerce_earnings_coverage (20260924183657): the owner's settled
+ * Diamond Spins earnings beside the operating diamonds paid for this scope in
+ * the same window. An explanation only: it never says which diamonds paid.
+ */
+export interface EarningsCoverage {
+  success: true;
+  scope_kind: ScopeKind;
+  scope_id: string;
+  owner_id: string;
+  days: number;
+  window_start: string;
+  window_end: string;
+  earnings: {
+    source: string;
+    settled_days: number;
+    credited: number;
+    debited: number;
+    applied_to_debt: number;
+    net_settled: number;
+    unmatched_days: number;
+    pending_unsettled: number;
+    scope: string;
+  };
+  operating: {
+    purchases: number;
+    paid: number;
+    refunded: number;
+    net_paid: number;
+    paid_by_others: number;
+    owner_all_scopes_net_paid: number;
+  };
+  comparison_covered: number;
+  lot_provenance: false;
+  basis: string;
+}
 
 /** The server answered a well-formed refusal rather than a result. */
 export function isRefusal(value: unknown): value is Refusal {
@@ -594,6 +699,32 @@ export const REFUSAL_COPY: Record<string, string> = {
   second_staff_member_required: 'A Second Staff Member Verifies The Comparison',
   price_version_not_current: 'Only A Validated Or Published Price Can Be Verified',
   evidence_already_verified: 'That Evidence Was Already Verified',
+
+  /* Catalog visibility and quote limits (20260924182605) */
+  catalog_not_visible: 'Diamond Prices Are Not Published Yet',
+  rate_limited: 'Too Many Price Checks. Wait A Few Minutes And Try Again',
+
+  /* Written quotes above 2,500 members (20260924182605) */
+  written_quote_expired: 'This Written Quote Has Expired. Ask For A New One',
+  written_quote_club_only: 'Written Quotes Are For Clubs',
+  written_quote_capacity_out_of_range: 'Ask For More Than 2,500 Members, Up To 1,000,000',
+  written_quote_already_requested: 'A Written Quote Request Is Already Open For This Club',
+  written_quote_already_decided: 'This Written Quote Was Already Decided',
+  written_quote_not_found: 'That Written Quote Was Not Found',
+  written_quote_validity_out_of_range: 'An Offer Is Valid For 1 To 30 Days',
+
+  /* Free month reviews (20260924182605) */
+  statement_too_short: 'Explain In At Least 20 Characters',
+  trial_still_running: 'Your Free Month Is Still Running',
+  free_month_available: 'Your Free Month Is Still Available. Start It Instead',
+  trial_review_already_requested: 'A Free Month Review Is Already Open',
+  trial_review_already_granted: 'A Free Month Was Already Granted On Review Here',
+  trial_review_already_decided: 'This Review Was Already Decided',
+  trial_review_not_found: 'That Review Was Not Found',
+  own_request: 'A Review Of Your Own Operation Is Decided By Another Staff Member',
+
+  /* Settled earnings coverage (20260924183657) */
+  invalid_window: 'Choose A Window Of 1 To 365 Days',
 };
 
 /**
@@ -853,6 +984,74 @@ const ClubCommerceService = {
       p_scope_kind: scopeKind,
       p_scope_id: scopeId,
       p_action: action,
+    });
+  },
+
+  /** A club's written quotes, open requests first. Clubs only. */
+  async writtenQuotes(scopeKind: ScopeKind, scopeId: string): Promise<WrittenQuote[]> {
+    const r = await call<{ success: true; written_quotes: WrittenQuote[] } | Refusal>(
+      'fn_ca_commerce_written_quotes',
+      { p_scope_kind: scopeKind, p_scope_id: scopeId }
+    );
+    if (isRefusal(r)) throw new Error(r.error || 'fn_ca_commerce_written_quotes refused');
+    return Array.isArray(r.written_quotes) ? r.written_quotes : [];
+  },
+
+  /** The owner asks for a written quote above 2,500 members. */
+  async requestWrittenQuote(
+    scopeKind: ScopeKind,
+    scopeId: string,
+    capacity: number,
+    note: string | null = null
+  ): Promise<{ success: true; written_quote: WrittenQuote } | Refusal> {
+    return call('fn_ca_commerce_written_quote_request', {
+      p_scope_kind: scopeKind,
+      p_scope_id: scopeId,
+      p_requested_capacity: capacity,
+      p_note: note,
+    });
+  },
+
+  /** The owner withdraws an open written quote request. */
+  async withdrawWrittenQuote(
+    writtenQuoteId: string
+  ): Promise<{ success: true; written_quote: WrittenQuote } | Refusal> {
+    return call('fn_ca_commerce_written_quote_withdraw', { p_written_quote_id: writtenQuoteId });
+  },
+
+  /** The free month reviews asked for on this scope, open ones first. */
+  async trialReviews(scopeKind: ScopeKind, scopeId: string): Promise<TrialReview[]> {
+    const r = await call<{ success: true; reviews: TrialReview[] } | Refusal>(
+      'fn_ca_commerce_trial_reviews',
+      { p_scope_kind: scopeKind, p_scope_id: scopeId }
+    );
+    if (isRefusal(r)) throw new Error(r.error || 'fn_ca_commerce_trial_reviews refused');
+    return Array.isArray(r.reviews) ? r.reviews : [];
+  },
+
+  /** The owner asks platform staff to review a free month for this scope. */
+  async requestTrialReview(
+    scopeKind: ScopeKind,
+    scopeId: string,
+    statement: string
+  ): Promise<{ success: true; review: TrialReview } | Refusal> {
+    return call('fn_ca_commerce_trial_review_request', {
+      p_scope_kind: scopeKind,
+      p_scope_id: scopeId,
+      p_statement: statement,
+    });
+  },
+
+  /** Settled earnings beside operating purchases, owner or staff only. */
+  async earningsCoverage(
+    scopeKind: ScopeKind,
+    scopeId: string,
+    days = 30
+  ): Promise<EarningsCoverage | Refusal> {
+    return call<EarningsCoverage | Refusal>('fn_ca_commerce_earnings_coverage', {
+      p_scope_kind: scopeKind,
+      p_scope_id: scopeId,
+      p_days: days,
     });
   },
 };

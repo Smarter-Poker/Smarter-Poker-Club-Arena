@@ -2805,10 +2805,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
       // ── Batch: tables + tournaments + BBJ in parallel ──
       // Build table query: use union_id for union clubs, club_id for standalone
+      // KILL POTS (kill-v1): kill_mode and kill_threshold_bb feed the Kill /
+      // Half Kill medallion and the LIMIT tab's Kill Pot chip. get_club_home's
+      // first paint does not carry them, and the chip reads that as "cannot
+      // tell", never as "no".
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.

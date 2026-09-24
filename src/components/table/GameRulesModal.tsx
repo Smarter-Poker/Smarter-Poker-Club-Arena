@@ -27,6 +27,7 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import { CardImage } from './CardImage';
 import { bettingStructureFor } from '../../lib/bettingStructure';
 import { holeCardCountFor } from '../../lib/holeCardCount';
+import { killPotName, killRuleRows, type KillTableRule } from '../../utils/killPot';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -93,6 +94,12 @@ export interface GameRulesModalProps {
    */
   canEditBombSettings?: boolean;
   onEditBombSettings?: () => void;
+  /**
+   * KILL POTS (rule manifest kill-v1): the table's kill rule, read from its
+   * own row. Null when the table runs none or the read could not say, and
+   * then nothing about kills is printed.
+   */
+  killPotRules?: KillTableRule | null;
 }
 
 type TabType = 'info' | 'rules' | 'limits' | 'rankings';
@@ -352,6 +359,7 @@ export function GameRulesModal({
   onManualBombPot,
   canEditBombSettings = false,
   onEditBombSettings,
+  killPotRules = null,
 }: GameRulesModalProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('rules');
@@ -676,6 +684,21 @@ export function GameRulesModal({
                   </div>
                 )}
 
+                {/* KILL POTS (kill-v1): only on a table that runs them. */}
+                {isFixedLimit && killPotRules && (
+                  <div className="rules-modal__section">
+                    <h3 className="rules-modal__section-title">{killPotName(killPotRules.mode)}</h3>
+                    <div className="rules-modal__grid">
+                      {killRuleRows(killPotRules).map((r) => (
+                        <div className="rules-modal__item" key={r.label}>
+                          <span className="rules-modal__label">{r.label}</span>
+                          <span className="rules-modal__value">{r.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* CHIP CONTINUITY - the only three sentences allowed (s6.1) */}
                 {isCashTable && (
                   <div className="rules-modal__section">
@@ -869,6 +892,18 @@ export function GameRulesModal({
                       A Player May Call All-In For Less. They Can Win Only The Pots Covered By Their
                       Contribution; Other Eligible Players Contest The Side Pots.
                     </p>
+                    {killPotRules && (
+                      <p className="rules-modal__text">
+                        {killPotRules.mode === 'full'
+                          ? 'This Table Plays Kill Pots. '
+                          : 'This Table Plays Half Kill Pots. '}
+                        When One Player Wins Every Pot Of A Hand Worth{' '}
+                        {killPotRules.thresholdBb.toLocaleString()} Big Blinds Or More, The Next
+                        Hand Is A Kill Hand: That Player Posts A Live Kill Blind And Every Bet Is{' '}
+                        {killPotRules.mode === 'full' ? 'Doubled' : 'One And A Half Times'} The
+                        Usual Size. The Small And Big Blinds Do Not Change.
+                      </p>
+                    )}
                   </>
                 ) : isPotLimit ? (
                   <>

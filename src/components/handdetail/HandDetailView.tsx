@@ -327,6 +327,67 @@ function ShowdownRow({
   );
 }
 
+/**
+ * KILL POTS (rule manifest kill-v1): what the record says about kills on this
+ * hand, in the drop row's grammar. A kill hand states its effective limits
+ * beside the base ones, the kill blind and the killer; the hand that set the
+ * next kill names the killer; a kill that did not play says why. Every figure
+ * is the record's own. Nothing renders on a hand with no kill facts.
+ */
+function KillPotFacts({ model }: { model: ReplayModel }) {
+  const k = model.killPot;
+  if (!k) return null;
+  return (
+    <>
+      {k.hand && (
+        <div className="hdv__drop hdv__kill" aria-label={k.hand.name}>
+          <strong>{k.hand.name}</strong>
+          <span>
+            Limits <strong>{k.hand.effectiveLimits}</strong>
+          </span>
+          <span>
+            Base <strong>{k.hand.baseLimits}</strong>
+          </span>
+          <span>
+            Kill Blind <strong>{money(k.hand.killBlind)}</strong>
+          </span>
+          <span>
+            Killer{' '}
+            <strong>
+              {k.hand.killerName}, Seat {k.hand.killerSeat}
+            </strong>
+          </span>
+        </div>
+      )}
+      {k.cancelled && (
+        <div className="hdv__drop hdv__kill">
+          <strong>Kill Cancelled</strong>
+          <span>{k.cancelled.reasonText}</span>
+          {k.cancelled.killerSeat > 0 && (
+            <span>
+              Killer{' '}
+              <strong>
+                {k.cancelled.killerName}, Seat {k.cancelled.killerSeat}
+              </strong>
+            </span>
+          )}
+        </div>
+      )}
+      {k.next && (
+        <div className="hdv__drop hdv__kill">
+          <strong>Next Hand: {k.next.name}</strong>
+          <span>
+            Killer{' '}
+            <strong>
+              {k.next.killerName}, Seat {k.next.killerSeat}
+            </strong>
+          </span>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function HandDetailView({
   model,
   currentUserId,
@@ -358,6 +419,8 @@ export function HandDetailView({
         </span>
         <span className="hdv__meta-sn">SN: {model.handNumber ?? ''}</span>
       </div>
+
+      <KillPotFacts model={model} />
 
       {/* Six cells over a six-track grid, so each word sits above the column it
           names. It used to be three cells over a six-track row. */}

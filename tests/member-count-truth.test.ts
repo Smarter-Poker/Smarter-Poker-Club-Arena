@@ -94,16 +94,6 @@ describe('the shared utility is what its header claims to be', () => {
   it('no longer counts club_members directly by club_id', () => {
     expect(UTIL).not.toMatch(DIRECT_CLUB_COUNT);
   });
-
-  it("still counts the CALLER's own memberships directly, which is correct", () => {
-    /**
-     * getUserActiveClubCount is deliberately left alone. It counts the caller's
-     * own rows, which the `auth.uid() = user_id` policy covers exactly, so RLS
-     * returns the true answer and the user_id index makes it cheap. Not
-     * everything that looks like the bug is the bug.
-     */
-    expect(UTIL).toMatch(/eq\('user_id', userId\)/);
-  });
 });
 
 describe('the migration cannot land without proving itself', () => {

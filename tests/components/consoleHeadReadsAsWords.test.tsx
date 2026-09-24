@@ -60,6 +60,6 @@ describe('a painted console head reads as words', () => {
     expect(panel).not.toBeNull();
     expect(panel!.textContent).toMatch(/Tournament Lobby/i);
     // And the door out is still named, one word away from the head.
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Close' })[0]).toBeInTheDocument();
   });
 });

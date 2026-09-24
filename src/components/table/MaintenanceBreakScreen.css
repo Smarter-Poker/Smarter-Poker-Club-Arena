@@ -227,9 +227,16 @@
 
 /* ── Minimized badge ────────────────────────────────────────────────────── */
 
+/* AT THE BOTTOM OF THE PAGE (Dan 2026-09-23, screenshot of the pill sitting in
+   the iPhone status bar over the clock and the signal): "THE 'MAINTENANCE
+   BREAK' CAN NEVER BE DISPLAYED ABOVE THE ACTION BAR. IT SHOULD ALWAYS BE AT
+   THE BOTTOM OF THE PAGE." It was `top: 12px`, the one place on a phone that
+   is already spoken for. It hangs from the bottom edge now, inside the home
+   indicator's inset, in the lane the action bar owns - during a break there is
+   nothing to act on, and the pill is the one thing a player needs to find. */
 .maintenance-break__minimized {
   position: fixed;
-  top: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 721;

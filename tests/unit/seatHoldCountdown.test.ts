@@ -131,3 +131,26 @@ describe('a lapsed hold never renders as a queue position', () => {
     expect(renderable(gone)).toBe(false);
   });
 });
+
+describe('the clock is internal (Dan 2026-09-23)', () => {
+  /* 'THE "SEAT HELD" SHOULD BE AN "INTERNAL CLOCK" NOT A FORWARD FACING CLOCK
+     COUNTING DOWN.' The hold still expires on the server's instant and the
+     card still turns urgent inside the last ten seconds, but the seconds are
+     not printed to the player, in the card or in its spoken label. */
+  it('the banner prints no countdown and announces no seconds', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const src = readFileSync(
+      resolve(__dirname, '../../src/components/common/WaitlistBanner.tsx'),
+      'utf8'
+    );
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/padStart\(2, '0'\)/);
+    expect(code).not.toContain('waitlist-hold-countdown');
+    expect(code).not.toMatch(/Held For \$\{/);
+    expect(code).toContain("'Your Seat Is Held. Tap To Take It.'");
+    // and the expiry logic that makes the clock internal is still there
+    expect(code).toContain('secondsLeft(e.holdExpiresAt) > 0');
+    expect(code).toContain('left <= 10');
+  });
+});

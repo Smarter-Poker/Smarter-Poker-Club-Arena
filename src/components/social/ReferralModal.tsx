@@ -71,6 +71,7 @@ export function ReferralModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Club Referrals"
           title="Invite & Earn"
           titleId="referral-title"

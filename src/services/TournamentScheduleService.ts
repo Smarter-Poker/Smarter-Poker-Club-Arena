@@ -21,6 +21,10 @@
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
+import {
+  TOURNAMENT_CREATE_ERRORS,
+  assertTournamentRpcConfig,
+} from '../lib/tournamentCreationRules';
 
 export interface TournamentScheduleRow {
   id: string;
@@ -71,13 +75,26 @@ const SCHEDULE_ERRORS: Record<string, string> = {
   interval_minutes_out_of_range: 'The repeat interval must be 5 to 1440 minutes.',
 };
 
+/**
+ * A schedule's configuration is refused with the same codes, and the same
+ * sentences, as a hand-created tournament (fn_tournament_config_refusal,
+ * 20260924033701), so an unmapped schedule code falls through to that map.
+ */
 function scheduleErrorText(code: string | undefined): string {
-  return SCHEDULE_ERRORS[code ?? ''] ?? 'Could not save the schedule.';
+  return (
+    SCHEDULE_ERRORS[code ?? ''] ??
+    TOURNAMENT_CREATE_ERRORS[code ?? ''] ??
+    'Could not save the schedule.'
+  );
 }
 
 class TournamentScheduleService {
   /** Create or update a schedule. Returns the schedule id. Throws on refusal. */
   async upsert(draft: TournamentScheduleDraft): Promise<string> {
+    // The shared creation rules, schedule surface: refused here with the
+    // owner-facing reason before the round trip, and again by
+    // fn_upsert_tournament_schedule for any caller that skips this.
+    assertTournamentRpcConfig(draft.config, { surface: 'schedule' });
     const { data, error } = await supabase.rpc('fn_upsert_tournament_schedule', {
       p_schedule: {
         id: draft.id ?? null,

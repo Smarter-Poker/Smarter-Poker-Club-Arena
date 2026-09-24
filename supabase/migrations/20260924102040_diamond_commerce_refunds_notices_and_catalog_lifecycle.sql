@@ -1067,6 +1067,8 @@ DECLARE
   v_title text;
   v_message text;
   v_suppress text;
+  v_trial_end timestamptz;
+  v_days integer;
 BEGIN
   IF COALESCE(auth.role(), '') <> 'service_role' AND session_user <> 'postgres' THEN
     RAISE EXCEPTION 'Service Role Required';
@@ -1114,6 +1116,23 @@ BEGIN
         CONTINUE;
       END IF;
       v_n.payload := v_n.payload || jsonb_build_object('price', v_amount, 'balance', v_balance, 'shortfall', v_amount - v_balance, 'checked_at', now());
+    END IF;
+    -- A trial reminder says how long is left NOW, from the trial row, not the
+    -- day count it was written with: the consumer can deliver late (the
+    -- reminders wait for it), and "Ends In 9 Days" after the trial ended is
+    -- false. An ended trial's reminder is suppressed, not sent.
+    IF v_n.kind = 'club_commerce_trial_reminder' THEN
+      SELECT t.trial_end INTO v_trial_end FROM public.ca_commerce_trials t WHERE t.id = NULLIF(v_n.payload->>'trial_id', '')::uuid;
+      IF v_trial_end IS NULL OR v_trial_end <= now() THEN
+        UPDATE public.ca_commerce_notices
+           SET suppressed_at = now(), suppressed_reason = 'trial_already_ended',
+               payload = v_n.payload || jsonb_build_object('checked_at', now(), 'trial_end', v_trial_end)
+         WHERE id = v_n.id;
+        CONTINUE;
+      END IF;
+      v_days := CEIL(EXTRACT(EPOCH FROM (v_trial_end - now())) / 86400.0)::integer;
+      v_title := 'Your Operating Trial Ends In ' || v_days::text || CASE WHEN v_days = 1 THEN ' Day' ELSE ' Days' END;
+      v_n.payload := v_n.payload || jsonb_build_object('days_left', v_days, 'checked_at', now());
     END IF;
     INSERT INTO public.notifications (user_id, type, title, message, data, action_url, read)
     VALUES (v_n.user_id, v_n.kind, v_title, v_message, v_n.payload, v_n.action_url, false)

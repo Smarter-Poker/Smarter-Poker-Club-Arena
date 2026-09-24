@@ -81,7 +81,7 @@ The page makes no platform check before offering checkout. A native build that c
 - **Readback.**
   - The function md5s and grants.
   - M3's post-conditions: three policies, the one-open-request index, the heartbeat stamp (M3:1622-1663).
-  - M4's post-conditions: exactly four doors call `fn_ca_commerce_admit`, and no commerce trigger sits in the gameplay path (M4:443-503).
+  - M4's post-conditions: exactly seven doors call `fn_ca_commerce_admit` (the four owner doors plus `fn_join_club`, `fn_redeem_club_invite_code` and `fn_agent_attach_player`), and no commerce trigger sits in the gameplay path (M4:443-503).
 
 ### Step 2: an engine release carrying the consumer
 
@@ -119,7 +119,8 @@ The page makes no platform check before offering checkout. A native build that c
   1. **M4 is installed** (Step 1). Without it, setting the date changes only what `scope_status` displays: no door consults admission.
   2. **The cohort's trials have run their 30 days.** Set `<enforce_from>` no earlier than the cohort's `p_effective_at + 720 hours`. Enforcement is global, but any scope inside its trial is still answered `trial` (M4:185-186). Before that date, enforcement bites only on scopes with no trial: clubs created after the cohort whose owners never pressed "Start Free Month" (`no_effective_entitlement`, M4:187-188).
   3. **The direct-table-write bypasses listed in the admission changelog are closed first**:
-     - RLS `club_members_update` (`supabase/migrations/20260126100_rls_verification.sql:174-178`) lets a club admin update a member's `status` through PostgREST without calling `fn_review_join_request`.
+     - Closed since 2026-09-24 by another workstream: production's `trg_club_members_status_guard` (`20260924045900`) refuses a browser change of `club_members.status` outside `fn_club_set_member_status`.
+     - RLS `Users can join clubs` lets a player insert their own `club_members` row directly, which in a club that admits automatically is an approved member without `fn_join_club`.
      - RLS `tables_insert_owner_or_admin` (`supabase/migrations/20260906091511_phase_1_table_management_authority_recertified.sql:29-33`) lets a creator insert a `tables` row without calling `fn_cash_game_create`.
      - Both must move behind the doors. The changelog rules out a trigger (D21, D28).
   4. **Client copy for the refusal is shipped.** `TOURNAMENT_CREATE_ERRORS` and the schedule error map need `operating_access_required`, and `tests/unit/cashGamesVocabulary.test.ts` `LIVE_REFUSALS` needs the cash sentence (admission changelog, "Client copy"). Working-tree edits by another agent touch these files: client surface: see PR.
@@ -131,7 +132,7 @@ The page makes no platform check before offering checkout. A native build that c
 
 1. **Checkout and self-serve trials are live today while no consumer runs.**
    - An owner can press "Start Free Month" now. The day 21 and day 27 reminders (M1:707-716) will sit undelivered until Step 2.
-   - When the consumer starts, `fn_ca_commerce_deliver_due_notices` delivers every overdue notice, with no staleness check (M3:1014-1017). A reminder titled "Your Operating Trial Ends In 9 Days" (M1:708) could therefore arrive after the trial has ended.
+   - When the consumer starts, `fn_ca_commerce_deliver_due_notices` delivers every overdue notice. Fixed in M3: a trial reminder is retitled at delivery with the days actually left, and one for a trial that already ended is suppressed on record (`trial_already_ended`), never sent.
    - A post-trial authorization due at the trial end waits for the consumer. If the consumer first claims it more than 24 hours late, it ends in `needs_attention` with no charge (M2:841-842), which is the intended safe result.
 2. **Before M3, the launch cohort has no heartbeat guard** (M1:741-771).
 3. **Before M4, the admission read leaks.** The installed `fn_ca_commerce_admission` answers any signed-in caller with any club's roster count and capacity (`CHECKPOINT.md:191-192`; tightened at M4:205-223).

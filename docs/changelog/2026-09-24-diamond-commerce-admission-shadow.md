@@ -15,16 +15,41 @@ another club's roster count and capacity.
 
 ## What changes
 
-1. Four owner doors now consult admission on the server, after their own
+1. Seven doors now consult admission on the server, after their own
    authorization and before they write anything:
 
-   | Prospective owner action       | Door                                                                            | Admission action    |
-   | ------------------------------ | ------------------------------------------------------------------------------- | ------------------- |
-   | Approve a new club member      | `fn_review_join_request` (approve only, and only when a pending request exists) | `approve_member`    |
-   | Open a new table               | `fn_cash_game_create`                                                           | `open_table`        |
-   | Offer insurance on a new table | `fn_cash_game_create` when the insurance option is on                           | `club_insurance`    |
-   | Create a tournament            | `fn_create_tournament`                                                          | `create_tournament` |
-   | Create a recurring schedule    | `fn_upsert_tournament_schedule` (new schedules only)                            | `create_tournament` |
+   | Prospective action                              | Door                                                                            | Admission action    |
+   | ----------------------------------------------- | ------------------------------------------------------------------------------- | ------------------- |
+   | Approve a new club member                       | `fn_review_join_request` (approve only, and only when a pending request exists) | `approve_member`    |
+   | A player joins a club that admits automatically | `fn_join_club` (a new or returning member only; never the owner)                | `join_member`       |
+   | An invite link admits a pending member          | `fn_redeem_club_invite_code` (pending only)                                     | `join_member`       |
+   | An agent or club staff adds a player            | `fn_agent_attach_player` (a new or pending player only)                         | `approve_member`    |
+   | Open a new table                                | `fn_cash_game_create`                                                           | `open_table`        |
+   | Offer insurance on a new table                  | `fn_cash_game_create` when the insurance option is on                           | `club_insurance`    |
+   | Create a tournament                             | `fn_create_tournament`                                                          | `create_tournament` |
+   | Create a recurring schedule                     | `fn_upsert_tournament_schedule` (new schedules only)                            | `create_tournament` |
+
+   Why four member doors and not one: on 2026-09-24, 3 of the 5 live clubs
+   admit members automatically (`requires_approval` false). In those clubs a
+   join makes an approved member with no review at all, and an invite link
+   promotes a pending join in the others without the owner. The first cut
+   wired only the owner review, so most roster growth would never have been
+   decided and capacity would have meant nothing for most clubs. The only
+   client call of `fn_review_join_request` is in `ClubDetailPage.tsx`, which
+   nothing imports (`tests/unit/orphanModuleRatchet.test.ts`), so the review
+   door answers whichever client calls it; the member doors are the ones this
+   client uses (`JoinClubModal`, `InvitePage`, `PlayerInviteModal`).
+
+   Once enforced, a refused automatic join tells the player "This Club Is Full
+   And Cannot Accept New Members Right Now. Please Contact The Club." (or
+   "This Club Cannot Accept New Members Right Now. Please Contact The Club."
+   without operating access) and writes nothing. A refused invite still
+   attaches the invite and upline and leaves the member pending, so the owner
+   decides at the review door. A refused agent add answers the owner sentence.
+   Every join door takes the joining player's membership lock before the
+   commerce scope lock (`fn_join_club_atomic` already holds it), and no path
+   holding the scope lock asks for a membership lock, so the two cannot
+   deadlock; two joins racing for the last seat land exactly one.
 
 2. Every decision is recorded in `ca_commerce_admission_decisions`: scope,
    action, door, would_allow, enforced, allowed, reason, actor id, subject id
@@ -61,15 +86,19 @@ another club's roster count and capacity.
 
 Spec 1137 asks for this distinction to be published. The admission check
 applies only to a new operation that an owner or staff member starts through
-one of the four doors above. The following are existing obligations and are
+one of the seven doors above. The following are existing obligations and are
 never checked:
 
 - Betting, dealing, seating, buy-ins, rebuys, add-ons, cash-outs, payouts,
   settlement, withdrawals and records (spec 1143).
 - A player registering for a tournament, joining a waitlist or taking a seat.
 - Members who are already approved. A downgrade or lapse never removes a
-  member. Re-approving an active member is not an admission. Denying a
-  request is never checked.
+  member. Re-approving an active member, joining a club you are already in,
+  reinstating a suspended member (`fn_club_set_member_status`) and moving a
+  member between downlines (`fn_assign_player_to_agent`) are not admissions.
+  Denying a request is never checked.
+- Chip movements that happen to write a membership row (`fn_credit_chips`,
+  `fn_transfer_chips`, table unlocks): money paths are never consulted.
 - Tables that are already open and tournaments that are already created,
   including multi-day events and their stages (D52, D53).
 - Recurring schedules that already exist, and every tournament they spawn.
@@ -82,8 +111,8 @@ never checked:
   A horse joining is system plumbing, not an owner action, so the join itself
   is never checked.
 
-No trigger was added. The gate lives only in the four doors, and each door
-refuses a caller who is not signed in. The D21 / D28 harness check (no
+No trigger was added. The gate lives only in the seven doors, each a browser
+door behind its own authorization. The D21 / D28 harness check (no
 commerce trigger on `tables`, `table_seats`, `tournaments`,
 `tournament_players` or `club_members`) stays true. The migration also asserts
 that no trigger function on those tables mentions commerce.
@@ -112,11 +141,34 @@ The migration refuses to apply in these cases:
 
 It never sets `admission_enforced_from`.
 
+## Commerce's reference on an accepted event (Prompt 1 contract)
+
+Prompt 1's `20260924025555` records every tournament's acceptance in
+`accepted_event_operations`, and its contract
+(`docs/handoffs/club-arena-product-completion/CAPABILITY-CONTRACT.md`,
+section 4 rule 4) asks commerce to record its plan or trial reference there.
+`fn_create_tournament` now calls the internal
+`fn_ca_commerce_record_event_basis` after the event is written. It replaces
+only a basis the acceptance trigger wrote, keeps that basis inside as
+`accepted_basis`, and records `operator_access` (`commerce_shadow` today,
+`commerce` once enforced), `would_allow`, `reason`, `entitlement_id`, `trial`
+and the policy version. It never raises (D28). Spawned and system
+tournaments keep the trigger's own `legacy_free` basis. Rule 1 (an accepted
+event continues through its conclusion) needs nothing more from commerce:
+admission never checks an existing event, only a new one.
+
+## The shadow report
+
+`fn_ca_commerce_admission_report(p_days)` (platform staff or the service role)
+answers, over 1 to 90 days, each door's decisions, would-deny, refused and
+undecided counts, and the clubs a would-deny fell on with the reasons. The
+Commerce Desk's Admission tab prints it, so the switch is made on evidence.
+
 ## Turning enforcement on later
 
 Enforcement is a separate, recorded staff event:
 `fn_ca_commerce_settings_set(NULL, NULL, <from>, false)`. Before switching it
-on, read the shadow record:
+on, read the Admission tab, or the shadow record directly:
 
 ```sql
 SELECT action, reason, count(*) FILTER (WHERE would_allow IS FALSE) AS would_deny, count(*)
@@ -139,26 +191,23 @@ SELECT action, reason, count(*) FILTER (WHERE would_allow IS FALSE) AS would_den
   admission point has to be defined with the union product before it can be
   wired.
 
-- **Direct table writes bypass the doors.** The RLS policies
-  `club_members_update` and `tables_insert_owner_or_admin` let a club admin
-  write a member's status or insert a table through PostgREST without calling
-  any door. Before enforcement, those browser privileges need to move behind
-  the doors. A trigger is not the answer (D21, D28).
-- **Joins without owner approval are not admissions.** A player joining an
-  open club (`requires_approval = false`), or redeeming an invite, joins
-  without an owner approval. Those joins are player actions and are not
-  checked. They do count in the roster, so the next owner approval sees them.
+- **Direct table writes bypass the doors.** Status changes are closed:
+  production's `trg_club_members_status_guard` (20260924045900, another
+  workstream) refuses any browser change of `club_members.status` outside
+  `fn_club_set_member_status`. Two browser inserts remain before enforcement:
+  `Users can join clubs` lets a player insert their own membership row
+  directly (active in a club that admits automatically, without
+  `fn_join_club`), and `tables_insert_owner_or_admin` lets a creator insert a
+  `tables` row without `fn_cash_game_create`. Both browser privileges need to
+  move behind the doors first. A trigger is not the answer (D21, D28).
 - **Games in a union's house club are checked against that club.** The club's
   own trial or capacity applies, not the union's. Shadow data will show
   whether a union mapping is needed before enforcement.
-- **Client copy.**
-  - `TOURNAMENT_CREATE_ERRORS` and the schedule error map need an
-    `operating_access_required` entry, which should use the `message` field.
-  - `tests/unit/cashGamesVocabulary.test.ts` (`LIVE_REFUSALS`) needs a row
-    for the new cash sentence.
-
-  Until then, the tournament and schedule surfaces show their generic
-  fallback. That can only happen after enforcement is switched on.
+- **Client copy** is shipped: `TOURNAMENT_CREATE_ERRORS` and the schedule
+  map read `operating_access_required` with the server's `message`, the cash
+  create flow shows the raised sentence (`LIVE_REFUSALS` pins it), the join
+  modal and invite page print the raised join sentence, and the agent add
+  prints `error` (`tests/unit/commerceDeskAdmissionCopy.test.ts`).
 
 ## Proof
 
@@ -166,13 +215,20 @@ SELECT action, reason, count(*) FILTER (WHERE would_allow IS FALSE) AS would_den
 
 The harness checks:
 
-- The fixture is byte-identical to production.
-- Each of the eight scenarios fails on a copy without the migration and
-  passes with it.
+- The fixture is byte-identical to production: all seven doors and the
+  membership helpers they call (md5 of `pg_get_functiondef`). The two
+  tournament doors were re-captured at 13:10 UTC after production's
+  `20260924033701` and `20260924045822` amended them; both anchors held.
+- Prompt 1's real `20260924025555` is installed first, as in production.
+- Each of the eleven scenarios fails on a copy without the migration and
+  passes with it, including the member doors in shadow and enforced, two
+  joins racing for the last seat, the event basis and the staff report.
 - The migration's safety cases hold: a double apply, enforcement already on,
   a moved anchor, a concurrent change, and doors that only gain lines.
-- The original 155-scenario commerce harness still passes with the migration
-  on top.
+- The original commerce harness (159 scenarios) still passes with the
+  migration on top.
+
+30 checks pass.
 
 The scope lock was proved separately: without it, two concurrent approvals
 for the last seat both landed (61 of 60).

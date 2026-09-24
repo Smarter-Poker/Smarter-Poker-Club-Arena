@@ -112,6 +112,29 @@ other steps in the same wake. This covers the case where the refund door is
 not installed yet, so the engine can be released before or after the
 migration.
 
+**Commerce sells only what the platform can do.** Prompt 1's capability
+registry (`20260924025555`, contract
+`docs/handoffs/club-arena-product-completion/CAPABILITY-CONTRACT.md` section 2)
+says commerce must not sell, enable or advertise a capability that is not
+available. Both insurance modules now name the capability they sell,
+`cash.insurance_ev_cashout` (deployed today), in
+`ca_commerce_products.platform_capability_id`. The quote refuses such a
+product with `sku_not_available` (and the capability id) while
+`fn_capability_available` says no. Every purchase, upgrade and renewal quotes
+first, so none of them can charge for it either; a renewal meeting it stops at
+`needs_attention` without a charge. Staff cannot mark it supported meanwhile
+(`capability_unavailable`). The quote is amended by anchor insert, pinned to
+its installed md5, so nothing else in it changes. Capacity, reports and assets
+sell no capability of the registry. This migration now needs the registry
+installed first (it is, since 2026-09-24 02:55 UTC).
+
+**A late trial reminder tells the truth.** Reminders wait for the consumer,
+which is not running yet. A reminder delivered late used to say "Ends In 9
+Days" whatever was left, and one reached after the trial ended was still sent.
+Delivery now reads the trial row: the title states the days actually left, and
+a reminder for a trial that already ended is suppressed on record
+(`trial_already_ended`), never sent.
+
 ## Evidence
 
 - `python3 tests/sql/run-diamond-club-commerce-refunds.py`: 135 checks pass on
@@ -119,10 +142,12 @@ migration.
 - Every fix was also reverted one at a time. Each revert made the runner fail,
   either at its own check or at the migration's own post-condition or a table
   constraint.
-- `python3 tests/sql/run-diamond-club-commerce.py` (base + fixes + this
-  migration, with a validate step after each draft): 155 pass.
-- `tests/sql/run-diamond-club-commerce-admission.py`: 24 pass, including its
-  155-scenario regression.
+- `python3 tests/sql/run-diamond-club-commerce.py` (Prompt 1's registry, then
+  base + fixes + this migration, with a validate step after each draft): 159
+  pass, including the capability refusal and restore through the registry's
+  own writer, and the truthful and suppressed trial reminders.
+- `tests/sql/run-diamond-club-commerce-admission.py`: 30 pass, including its
+  159-scenario regression.
 - The consumer's unit tests (14) cover the wake order (claim with heartbeat,
   then renewals, then refunds, then notices), freeze gating (refunds never run
   during the freeze; notices still do), lifecycle fencing, and each step failing

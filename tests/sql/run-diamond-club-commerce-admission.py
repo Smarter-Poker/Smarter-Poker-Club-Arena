@@ -264,6 +264,12 @@ def decisions(db, cid, where='true'):
       WHERE scope_kind='club' AND scope_id='{cid}' AND {where}"""))
 
 
+def basis(db, cid):
+    """Prompt 1's acceptance record of every tournament in a club, oldest first."""
+    return json.loads(scalar(db, f"""SELECT COALESCE(jsonb_agg(a.authorization_basis ORDER BY a.accepted_at, a.event_id), '[]')
+      FROM public.accepted_event_operations a WHERE a.event_kind='tournament' AND a.club_id='{cid}'"""))
+
+
 def enforce(db, on):
     staff = base.S
     r = rpc(db, 'fn_ca_commerce_settings_set', "NULL,NULL,now() - interval '1 minute',false" if on else "NULL,NULL,NULL,true", staff)
@@ -305,6 +311,11 @@ def s_shadow_records_and_allows(db, t):
     ck(all(x['allowed'] and x['would_allow'] is False and x['enforced'] is False and x['reason'] == 'no_effective_entitlement' and x['actor'] == o for x in d),
        'shadow: every decision says would-deny, not enforced, allowed, and names the owner', d)
     ck(d[0]['subject'] == q and all(x['subject'] is None for x in d[1:]), 'shadow: the approval names the applicant id, nothing else personal', d)
+    b = basis(db, k)
+    ck(len(b) == 1 and b[0].get('operator_access') == 'commerce_shadow' and b[0].get('recorded_by') == 'commerce_admission'
+       and b[0].get('would_allow') is False and b[0].get('reason') == 'no_effective_entitlement' and b[0].get('trial') is False
+       and b[0].get('accepted_basis') == {'operator_access': 'legacy_free', 'recorded_by': 'acceptance_trigger'},
+       'shadow: the tournament\'s acceptance record names the admission answer it was created under, keeping the trigger\'s basis inside', b)
     return 'shadow records a would-deny for approve/table/insurance/tournament/schedule and every action proceeds'
 
 
@@ -360,7 +371,13 @@ def s_effective_right_allowed(db, t):
     q2 = pending(db, k2, t + 'q3b')
     r = approve(db, o2, k2, q2)
     ck(r.get('success') and decisions(db, k2)[0]['reason'] == 'trial', 'trial: the included month admits new operation', r)
-    return 'a purchased right (and a trial) admits; insurance needs its own module'
+    ck(tournament(db, o2, k2, 'Trial Event').get('success'), 'trial: a tournament is created in the free month')
+    b, b2 = basis(db, k), basis(db, k2)
+    ck(len(b) == 1 and b[0].get('operator_access') == 'commerce' and b[0].get('would_allow') is True and b[0].get('reason') == 'entitled'
+       and b[0].get('entitlement_id') and b[0].get('trial') is False
+       and len(b2) == 1 and b2[0].get('operator_access') == 'commerce' and b2[0].get('reason') == 'trial' and b2[0].get('trial') is True,
+       'entitled: the acceptance record names the right (or the free month) the event was created under', {'paid': b, 'trial': b2})
+    return 'a purchased right (and a trial) admits and is named on the accepted event; insurance needs its own module'
 
 
 def s_existing_obligations_untouched(db, t):
@@ -371,7 +388,7 @@ def s_existing_obligations_untouched(db, t):
     system(db, f"INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{k}','{existing}','player','active',0)")
     tid = scalar(db, f"INSERT INTO public.tables(club_id,name,status) VALUES ('{k}','Running Main','playing') RETURNING id")
     system(db, f"INSERT INTO public.table_seats(table_id,user_id,seat_number,stack) VALUES ('{tid}','{existing}',1,100)")
-    tour = scalar(db, f"INSERT INTO public.tournaments(club_id,name,status,buy_in_amount,buy_in_fee,start_time,max_players) VALUES ('{k}','Running Event','running',0,0,now(),9) RETURNING id")
+    tour = scalar(db, f"INSERT INTO public.tournaments(club_id,name,status,buy_in_amount,buy_in_fee,start_time,max_players) VALUES ('{k}','Running Event','RUNNING',0,0,now(),9) RETURNING id")
     sch = scalar(db, f"INSERT INTO public.tournament_schedules(club_id,name,active,days_of_week,start_times_utc,config) VALUES ('{k}','Old Weekly',false,'{{1}}','{{20:00}}','{{\"type\":\"mtt\"}}') RETURNING id")
     before = count(db, f"public.club_members WHERE club_id='{k}' AND status='active'")
     q = pending(db, k, t + 'q4')
@@ -388,7 +405,7 @@ def s_existing_obligations_untouched(db, t):
     ck(count(db, f"public.club_members WHERE club_id='{k}' AND status='active'") == before, 'existing: every approved member is still active')
     ck(scalar(db, f"SELECT status FROM public.tables WHERE id='{tid}'") == 'playing' and count(db, f"public.table_seats WHERE table_id='{tid}'") == 1,
        'existing: the running table and its seated player are untouched')
-    ck(scalar(db, f"SELECT status FROM public.tournaments WHERE id='{tour}'") == 'running', 'existing: the running tournament is untouched')
+    ck(scalar(db, f"SELECT status FROM public.tournaments WHERE id='{tour}'") == 'RUNNING', 'existing: the running tournament is untouched')
     d = decisions(db, k)
     ck([x['action'] for x in d] == ['approve_member'], 'existing: only the one new admission was decided; edits, denials and re-approvals were not', d)
     return 'existing members, running tables/tournaments/seats and existing schedules are untouched; only new admission is refused'
@@ -497,7 +514,7 @@ def s_system_paths_not_gated(db, t):
     system(db, f"""
       INSERT INTO public.tables(club_id,name,status) VALUES ('{k}','Auto Feeder 2','waiting');
       INSERT INTO public.tables(club_id,name,status) VALUES ('{k}','Balanced Table 3','playing');
-      INSERT INTO public.tournaments(club_id,name,status,buy_in_amount,buy_in_fee,start_time,max_players) VALUES ('{k}','Spawned Weekly','registering',0,0,now() + interval '1 hour',9);
+      INSERT INTO public.tournaments(club_id,name,status,buy_in_amount,buy_in_fee,start_time,max_players) VALUES ('{k}','Spawned Weekly','REGISTERING',0,0,now() + interval '1 hour',9);
       INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{k}','{horse}','player','active',0);
       INSERT INTO public.table_seats(table_id,user_id,seat_number,stack) SELECT id,'{horse}',1,100 FROM public.tables WHERE club_id='{k}' AND name='Auto Feeder 2';
       INSERT INTO public.tournament_players(tournament_id,user_id) SELECT id,'{player}' FROM public.tournaments WHERE club_id='{k}';""")
@@ -505,6 +522,8 @@ def s_system_paths_not_gated(db, t):
        and count(db, f"public.table_seats s JOIN public.tables x ON x.id=s.table_id WHERE x.club_id='{k}'") == 1,
        'system: auto-spawn, balancing, the scheduled spawner, seating and registration all land under enforcement')
     ck(decisions(db, k) == [], 'system: no engine path made a decision (and the refused cash door rolled its own back)', decisions(db, k))
+    ck(basis(db, k) == [{'operator_access': 'legacy_free', 'recorded_by': 'acceptance_trigger'}],
+       'system: a spawned tournament keeps the acceptance trigger\'s own basis; commerce writes none', basis(db, k))
     r = rpc(db, 'fn_create_tournament', f"'{k}','{{\"type\":\"mtt\"}}'::jsonb", None, role='service_role')
     ck(r.get('error') == 'not_authenticated', 'system: the owner doors are browser doors; the engine cannot and does not use them', r)
     callers = json.loads(scalar(db, """SELECT COALESCE(jsonb_agg(p.proname ORDER BY p.proname),'[]') FROM pg_proc p
@@ -730,6 +749,7 @@ def main():
     try:
         base.start_cluster()
         base.load_fixture()
+        base.install_registry()
         base.apply_migration()
         for f in ('door-dependencies.sql', 'live-doors.sql'):
             r = base.run(base.PSQL + ['-d', TEMPLATE, '-f', str(FIXTURE / f)])

@@ -185,15 +185,30 @@ wallet ceiling path (D64) rather than the reserve path itself.
 2. Launch cohort: runs only when the consumer's heartbeat proves it is live
    (the function refuses otherwise). It is run by the owning task after the
    first successful engine release, and recorded here.
-3. Admission: shadow at the four owner doors; enforcement is switched on only
-   after the cohort's trials have run and the direct-table-write bypasses in
-   the admission changelog are closed.
-4. Reports and artwork: not for sale until their rights are established
+3. Admission: shadow at seven doors (the four owner doors, plus the three a
+   club gains a member through: automatic joins, invite admissions and agent
+   adds; 3 of 5 live clubs admit automatically). Enforcement is switched on
+   only after the cohort's trials have run, the shadow report on the Commerce
+   Desk has been read, and the two remaining browser-insert bypasses in the
+   admission changelog are closed.
+4. Prompt 1 integration (their `CAPABILITY-CONTRACT.md`, installed
+   2026-09-24): insurance modules are sold only while
+   `cash.insurance_ev_cashout` is available; `fn_create_tournament` records
+   commerce's reference on the acceptance record; nothing in commerce checks
+   an existing event (`evidence/prompt1-shared-interface.md`, version 2).
+5. Delivery is split in two because the whole-app bundle ceiling (2,800 kB
+   gz; main measured 2,794) cannot hold the staff Commerce Desk and the owner
+   page growth (+22 kB gz, no duplicated vendor left after removing the
+   second immer), and raising the ceiling was refused by this session's
+   safety check. The server, harness, engine and service changes ship first
+   (they fit: 2,795 kB); the two pages wait for the owner's call on the
+   ceiling.
+6. Reports and artwork: not for sale until their rights are established
    (`evidence/unsupported-offerings.md`).
-5. Union back office and union insurance: withdrawn from sale after install,
+7. Union back office and union insurance: withdrawn from sale after install,
    because no union admission point is defined yet, so a purchase would grant
    nothing. Re-enabled when the union tools door exists.
-6. Comparison claims: none shown; the competitor register supports no global
+8. Comparison claims: none shown; the competitor register supports no global
    claim and no per-SKU claim from a primary source for the low tiers.
 
 ## Remaining scope

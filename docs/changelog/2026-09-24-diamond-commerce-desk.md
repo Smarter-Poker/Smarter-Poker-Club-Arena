@@ -72,13 +72,22 @@ the two staff reads.
 
 ## Admission copy (20260924102056)
 
-Once staff enforce admission, four owner doors refuse a new action with a
+Once staff enforce admission, the admission doors refuse a new action with a
 finished Title Case sentence from `fn_ca_commerce_admission_message`. Each
-surface now shows that sentence exactly as the server wrote it:
+surface this client ships shows that sentence exactly as the server wrote it:
 
-- **Member approval** (`ClubDetailPage`, `fn_review_join_request`): the answer
-  has `code: 'operating_access_required'` and the sentence in `error`. It used
-  to be dropped for "Failed To Approve Member".
+- **Joining a club** (`JoinClubModal`, `InvitePage` through
+  `ClubJoinService`, door `fn_join_club`): the raised sentence is the thrown
+  message the modal and the invite page print. An invite that meets a full
+  club leaves the member pending; nothing is refused there.
+- **An agent adds a player** (`PlayerInviteModal` through
+  `AgentService.attachPlayerToAgent`, door `fn_agent_attach_player`): the
+  answer carries `code: 'operating_access_required'` and the sentence in
+  `error`, which the modal prints.
+- **Member approval** (`fn_review_join_request`): the same shape. The only
+  client call of this door is in `ClubDetailPage.tsx`, which nothing imports
+  (`tests/unit/orphanModuleRatchet.test.ts`), so it ships to nobody; the
+  shape is pinned for whichever client calls the door.
 - **Tournament creation** (`fn_create_tournament`): `error:
 'operating_access_required'` with `message`. `tournamentCreateErrorMessage`
   takes the server message for that code, and `TOURNAMENT_CREATE_ERRORS`
@@ -92,3 +101,13 @@ surface now shows that sentence exactly as the server wrote it:
 
 `tests/unit/commerceDeskAdmissionCopy.test.ts` reads every sentence out of the
 migration and checks each surface shows it verbatim.
+
+## Admission tab
+
+The fourth tab prints `fn_ca_commerce_admission_report`: whether enforcement
+is off, scheduled or on; the decisions, would-refuse and refused totals for
+the last 7, 30 or 90 days; each door in words ("Player Joins A Club That
+Admits Automatically") with its counts; and the clubs a would-refuse fell on,
+by name, with the reasons in words. Staff read what enforcement would do
+before anyone switches it on. `tests/unit/commerceDeskAdmissionReport.test.tsx`
+renders it from the migration's JSON shape.

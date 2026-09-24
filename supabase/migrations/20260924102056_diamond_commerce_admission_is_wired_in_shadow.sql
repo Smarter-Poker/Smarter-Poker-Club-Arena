@@ -57,6 +57,14 @@
 -- 4. fn_ca_commerce_admission_report (staff only) shows, per door and per
 --    scope, what the recorded shadow decisions say enforcement would refuse,
 --    so the switch is made on evidence, not on a guess.
+-- 5. A tournament an owner creates records commerce's reference in Prompt 1's
+--    acceptance record (accepted_event_operations.authorization_basis,
+--    20260924025555; CAPABILITY-CONTRACT.md section 4 rule 4): the admission
+--    answer it was created under (shadow or enforced, would_allow, reason,
+--    the entitlement or the free month), keeping the acceptance trigger's
+--    own basis inside it. Recording it can never block the creation (D28).
+--    Continuation (rule 1) needs nothing from commerce: admission never
+--    checks an existing event, only a new one.
 --
 -- How the doors are amended: the anchor-insert pattern of
 -- 20260914120854. Each door is read with pg_get_functiondef at apply time,
@@ -78,6 +86,7 @@
 -- The door amendments create no object of their own, so they state their proof:
 -- @live-proof: (SELECT count(*) = 7 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc LIKE '%fn_ca_commerce_admit(%' AND p.proname IN ('fn_review_join_request','fn_join_club','fn_redeem_club_invite_code','fn_agent_attach_player','fn_cash_game_create','fn_create_tournament','fn_upsert_tournament_schedule'))
 -- @live-proof: (SELECT strpos(pg_get_functiondef('public.fn_ca_commerce_admission(text,uuid,text)'::regprocedure), 'access_denied') > 0)
+-- @live-proof: (SELECT strpos(pg_get_functiondef('public.fn_create_tournament(uuid,jsonb)'::regprocedure), 'fn_ca_commerce_record_event_basis(') > 0)
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -98,11 +107,15 @@ BEGIN
   IF (SELECT admission_enforced_from FROM public.ca_commerce_settings WHERE id = 1) IS NOT NULL THEN
     RAISE EXCEPTION 'admission_enforced_from is already set; wire admission in shadow first, then enforce by a separate recorded staff event';
   END IF;
+  IF to_regclass('public.accepted_event_operations') IS NULL THEN
+    RAISE EXCEPTION 'the accepted-event record (20260924025555) must be installed first';
+  END IF;
   IF to_regclass('public.ca_commerce_admission_decisions') IS NOT NULL
      OR to_regprocedure('public.fn_ca_commerce_admit(text,uuid,text,text,uuid)') IS NOT NULL
      OR to_regprocedure('public.fn_ca_commerce_admission_decide(text,uuid,text)') IS NOT NULL
      OR to_regprocedure('public.fn_ca_commerce_admission_message(text,text)') IS NOT NULL
-     OR to_regprocedure('public.fn_ca_commerce_admission_report(integer)') IS NOT NULL THEN
+     OR to_regprocedure('public.fn_ca_commerce_admission_report(integer)') IS NOT NULL
+     OR to_regprocedure('public.fn_ca_commerce_record_event_basis(text,uuid,text,uuid,text)') IS NOT NULL THEN
     RAISE EXCEPTION 'admission wiring objects already exist; this migration has run or collided';
   END IF;
   -- The helpers the decision reads, and the append-only guard it reuses.
@@ -377,6 +390,37 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
+-- 6b. Commerce's reference on an accepted event (internal; header item 5).
+-- Replaces only a basis the acceptance trigger wrote in this transaction's
+-- event, keeps that basis inside, and never raises.
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION public.fn_ca_commerce_record_event_basis(p_event_kind text, p_event_id uuid, p_scope_kind text, p_scope_id uuid, p_action text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_d jsonb;
+BEGIN
+  IF p_event_id IS NULL OR p_scope_id IS NULL THEN RETURN; END IF;
+  v_d := public.fn_ca_commerce_admission_decide(p_scope_kind, p_scope_id, p_action);
+  UPDATE public.accepted_event_operations a
+     SET authorization_basis = jsonb_build_object(
+           'operator_access', CASE WHEN COALESCE((v_d->>'enforced')::boolean, false) THEN 'commerce' ELSE 'commerce_shadow' END,
+           'recorded_by', 'commerce_admission',
+           'scope_kind', p_scope_kind,
+           'scope_id', p_scope_id,
+           'action', p_action,
+           'would_allow', v_d->'would_allow',
+           'reason', v_d->>'reason',
+           'entitlement_id', v_d->'entitlement_id',
+           'trial', COALESCE(v_d->'trial', 'false'::jsonb),
+           'policy_version', (SELECT s.policy_version FROM public.ca_commerce_settings s WHERE s.id = 1),
+           'accepted_basis', a.authorization_basis)
+   WHERE a.event_kind = p_event_kind AND a.event_id = p_event_id
+     AND a.authorization_basis->>'recorded_by' = 'acceptance_trigger';
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'ca_commerce event basis not recorded for % % (%): %', p_event_kind, p_event_id, SQLSTATE, SQLERRM;
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- 7. The doors. Anchor-insert, one anchor per door (see the header).
 -- ---------------------------------------------------------------------------
 DO $wire$
@@ -543,6 +587,20 @@ $a3$,
   END;
   v_res := public.fn_create_tournament_governed_legacy(p_club_id,p_config);
 $n3$),
+    -- The same door, after the event is written: commerce's reference on
+    -- Prompt 1's acceptance record (header item 5).
+    ('public.fn_create_tournament(uuid,jsonb)',
+     'fn_can_create_games(p_club_id,v_uid)',
+     $a8$
+  RETURN v_res;
+END$a8$,
+     $n8$
+  -- ca-commerce-admission: the acceptance record names the admission answer
+  -- this event was created under (CAPABILITY-CONTRACT.md 4.4). Never raises.
+  PERFORM public.fn_ca_commerce_record_event_basis('tournament', v_id, 'club', p_club_id, 'create_tournament');
+
+  RETURN v_res;
+END$n8$),
     -- Create a NEW recurring schedule. Editing, pausing or re-activating an
     -- existing schedule, and every tournament it spawns, are existing
     -- obligations and are never gated.
@@ -598,6 +656,7 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_commerce_admission(text, uuid, text) TO a
 REVOKE ALL ON FUNCTION public.fn_ca_commerce_admission_report(integer) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_ca_commerce_admission_report(integer) TO authenticated, service_role;
 REVOKE ALL ON FUNCTION
+  public.fn_ca_commerce_record_event_basis(text, uuid, text, uuid, text),
   public.fn_ca_commerce_admission_decide(text, uuid, text),
   public.fn_ca_commerce_admission_message(text, text),
   public.fn_ca_commerce_admit(text, uuid, text, text, uuid)
@@ -629,6 +688,10 @@ BEGIN
                            to_regprocedure('public.fn_create_tournament(uuid,jsonb)'),
                            to_regprocedure('public.fn_upsert_tournament_schedule(jsonb)'))) THEN
     RAISE EXCEPTION 'the admission gate must be called by exactly the seven admission doors, found %', v_count;
+  END IF;
+  IF strpos(pg_get_functiondef('public.fn_create_tournament(uuid,jsonb)'::regprocedure), 'fn_ca_commerce_record_event_basis(') = 0
+     OR has_function_privilege('authenticated', 'public.fn_ca_commerce_record_event_basis(text,uuid,text,uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'fn_create_tournament must record commerce''s basis through the internal helper';
   END IF;
   -- Never in the gameplay or seating path (spec 1143, D21, D28): no trigger on
   -- these relations runs a function that mentions commerce.

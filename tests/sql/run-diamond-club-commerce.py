@@ -150,17 +150,22 @@ def load_fixture():
     INSERT INTO public.feature_pricing(feature,diamond_cost,usage_type,description) VALUES ('club_creation',100,'permanent','Create Club'),('rabbit_hunt',5,'per_use','Rabbit Hunt');
     CREATE FUNCTION public.fn_is_platform_admin() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
       SELECT EXISTS(SELECT 1 FROM public.profiles p WHERE p.id=auth.uid() AND p.role IN ('admin','superadmin','god')) $$;
-    -- STAND-IN for Prompt 1's capability registry (20260924025555), with the
-    -- contract's semantics (CAPABILITY-CONTRACT.md 2, 3): available means
-    -- deployed or production_verified, an unknown id is false. Seeded with
-    -- production's readiness of the one capability commerce sells.
-    CREATE TABLE public.platform_capabilities(capability_id text PRIMARY KEY, readiness text NOT NULL);
-    INSERT INTO public.platform_capabilities VALUES ('cash.insurance_ev_cashout','deployed'),('variant.ofc','excluded');
-    CREATE FUNCTION public.fn_capability_available(p_capability_id text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
-      SELECT COALESCE((SELECT readiness IN ('deployed','production_verified') FROM public.platform_capabilities
-                        WHERE capability_id = p_capability_id), false) $$;
-    GRANT EXECUTE ON FUNCTION public.fn_capability_available(text) TO authenticated, service_role;
     """)
+
+
+REGISTRY = ROOT / 'supabase/migrations/20260924025555_one_capability_registry_and_accepted_event_continuation.sql'
+
+
+def install_registry():
+    """Prompt 1's capability registry, the real migration production installed
+    before commerce's (20260924025555). It checks the tournament status
+    vocabulary production carries, which the captured fixture does not declare,
+    so that constraint is stated first, exactly as production has it."""
+    sql("""ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_status_check
+      CHECK (status = ANY (ARRAY['ANNOUNCED'::text, 'REGISTERING'::text, 'LATE_REG'::text, 'RUNNING'::text, 'COMPLETING'::text, 'COMPLETED'::text, 'CANCELLED'::text]))""")
+    r = run(PSQL + ['-d', DB, '-f', str(REGISTRY)])
+    if r.returncode:
+        raise SystemExit('capability registry failed:\n' + r.stderr)
 
 
 def apply_migration():
@@ -312,12 +317,20 @@ def scenarios():
     delivered = int(sql("SELECT public.fn_ca_commerce_deliver_due_notices(50)", role='service_role'))
     delivered2 = int(sql("SELECT public.fn_ca_commerce_deliver_due_notices(50)", role='service_role'))
     check(delivered == 1 and delivered2 == 0 and count("public.notifications") == 1, 'D27 a due reminder is delivered exactly once')
+    title = sql("SELECT title FROM public.notifications WHERE type='club_commerce_trial_reminder'")
+    check(title == 'Your Operating Trial Ends In 30 Days',
+          'D27 a trial reminder states the time actually left when it is delivered, not the count it was written with', title)
 
     # ---- Simulated clock: the trial ends; the consumer buys the first period --
     sql(f"UPDATE public.ca_commerce_trials SET trial_start = trial_start - interval '721 hours', trial_end = trial_end - interval '721 hours' WHERE operator_id='{A}'")
     sql(f"UPDATE public.ca_commerce_entitlements SET starts_at = starts_at - interval '721 hours', ends_at = ends_at - interval '721 hours' WHERE trial_id=(SELECT id FROM public.ca_commerce_trials WHERE operator_id='{A}')")
     sql(f"UPDATE public.ca_commerce_renewal_mandates SET due_at = due_at - interval '721 hours' WHERE scope_id='{C1}'")
     trial_end = sql(f"SELECT trial_end FROM public.ca_commerce_trials WHERE operator_id='{A}'")
+    sql("UPDATE public.ca_commerce_notices SET due_at = now() - interval '1 minute' WHERE dedupe_key LIKE 'trial-reminder-27:%'")
+    late = int(sql("SELECT public.fn_ca_commerce_deliver_due_notices(50)", role='service_role'))
+    check(late == 0 and count("public.notifications WHERE type='club_commerce_trial_reminder'") == 1
+          and count("public.ca_commerce_notices WHERE dedupe_key LIKE 'trial-reminder-27:%' AND suppressed_reason='trial_already_ended'") == 1,
+          'D27 a trial reminder the consumer reaches after the trial ended is suppressed, never sent late')
     adm = rpc('fn_ca_commerce_admission', f"'club','{C1}','open_table'", A)
     check(adm['allowed'] and (not adm['would_allow']) and adm['reason'] == 'no_effective_entitlement' and not adm['enforced'],
           'D22 after expiry with enforcement in shadow the answer names the refusal without refusing')
@@ -794,17 +807,20 @@ def scenarios():
     check(caps == {'club_insurance_module': 'cash.insurance_ev_cashout', 'union_insurance_module': 'cash.insurance_ev_cashout'},
           'CAP both insurance modules name the platform capability they sell; capacity, reports and assets name none', caps)
     ok_q = quote(X, 'club', C4, 'club_insurance_module')
-    sql("UPDATE public.platform_capabilities SET readiness='tested' WHERE capability_id='cash.insurance_ev_cashout'")
+    # Readiness moves only through the registry's own writer (contract section 6).
+    rev = int(sql("SELECT revision FROM public.platform_capabilities WHERE capability_id='cash.insurance_ev_cashout'"))
+    down = rpc('fn_set_capability_readiness', f"'cash.insurance_ev_cashout','tested','insurance-v1',{rev},'{{}}'::jsonb", None, role='service_role')
     no_q = quote(X, 'club', C4, 'club_insurance_module')
     cap_q = quote(X, 'club', C4, 'capacity_60')
     sup = rpc('fn_ca_commerce_product_support', "'club_insurance_module',true", S)
-    sql("UPDATE public.platform_capabilities SET readiness='deployed' WHERE capability_id='cash.insurance_ev_cashout'")
+    rev = int(sql("SELECT revision FROM public.platform_capabilities WHERE capability_id='cash.insurance_ev_cashout'"))
+    up = rpc('fn_set_capability_readiness', f"'cash.insurance_ev_cashout','deployed','insurance-v1',{rev},'{{\"harness\":\"restored\"}}'::jsonb", None, role='service_role')
     again = quote(X, 'club', C4, 'club_insurance_module')
     check(ok_q.get('success') is True and no_q.get('error') == 'sku_not_available' and no_q.get('capability') == 'cash.insurance_ev_cashout'
           and cap_q.get('success') and sup == {'success': False, 'error': 'capability_unavailable', 'sku': 'club_insurance_module'}
           and again.get('success') is True,
           'CAP commerce never quotes (so never sells or renews) a capability the registry calls unavailable, staff cannot mark it supported meanwhile, and it sells again once deployed',
-          {'ok': ok_q.get('error'), 'no': no_q, 'cap': cap_q.get('error'), 'sup': sup, 'again': again.get('error')})
+          {'ok': ok_q.get('error'), 'no': no_q, 'cap': cap_q.get('error'), 'sup': sup, 'again': again.get('error'), 'down': down, 'up': up})
 
     # ---- D20 conservation ---------------------------------------------------------
     conservation = json.loads(sql("""
@@ -835,6 +851,7 @@ def main():
     try:
         start_cluster()
         load_fixture()
+        install_registry()
         apply_migration()
         seed()
         scenarios()

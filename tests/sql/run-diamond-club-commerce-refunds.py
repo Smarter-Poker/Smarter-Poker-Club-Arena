@@ -741,6 +741,7 @@ def main():
     try:
         h.start_cluster()
         h.load_fixture()
+        h.install_registry()
         apply_migrations()
         seed()
         install_facts()

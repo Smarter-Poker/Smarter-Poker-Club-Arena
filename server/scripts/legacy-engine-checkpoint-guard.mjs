@@ -153,6 +153,44 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let custodyCommitAttempted = false;
   let completedCalls = 0;
   let verifiedTables = 0;
+  /* ═══ AN OUTCOME THE CLIENT LOST STILL SAYS HOW FAR IT GOT (2026-09-24) ═══
+
+     Run 36041108119 (the 17:55 break) is the measurement: the transport
+     reported `inspector operation outcome unknown` with `checkpointInvoked:
+     true` and nothing else. The guard's call outlived the publisher's 20000ms
+     work budget, and because the summary travels only as the call's return
+     value, the one fact that decides the next fix - which stage was running,
+     how many tables it had written, for how long - reached nobody. That is
+     10.86 rule 1: "I could not tell" has to say what it does know.
+
+     Observability only. The guard keeps a small record of its own progress
+     on the predecessor's global object, stamped at every stage change and
+     every table it writes or verifies. The client reads it back with one
+     `Runtime.evaluate` on the cleanup path it already walks, and only when
+     the outcome is unknown. Nothing here is read by a decision, nothing here
+     names a player, a bank or a row, and the predecessor is the process that
+     is about to be replaced. */
+  const progressStartedAt = Date.now();
+  let progressNote = 'start';
+  const progress = (note) => {
+    try {
+      if (typeof note === 'string') progressNote = note;
+      globalThis.__legacyEngineCheckpointProgress = {
+        schema: 'legacy-engine-checkpoint-progress/v1',
+        startedAt: progressStartedAt,
+        elapsedMs: Date.now() - progressStartedAt,
+        stage,
+        note: progressNote,
+        attemptedTables,
+        completedCalls,
+        verifiedTables,
+        reason,
+      };
+    } catch {
+      // Progress is a courtesy to the reader, never a condition.
+    }
+  };
+  progress('start');
   let bankCount = 0;
   let uninitializedSeats = 0;
   // Observability only: which tables were PROVED abandoned from rows, and how
@@ -175,6 +213,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let unresolvableCustody = null;
   const refuse = (code) => {
     if (reason === null) reason = code;
+    progress('refused');
     throw new Error('legacy_checkpoint_refused');
   };
   const require = (condition, code) => {
@@ -1783,6 +1822,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     async function proveAbandonedBoundaries(checkAll) {
       if (deferredAbandonedBoundaries.size === 0) return;
       stage = 'mixed_custody';
+      progress('mixed_custody');
       const ids = [...deferredAbandonedBoundaries.keys()].sort();
       require(ids.length <= maxTables, 'mixed_abandoned_generation_unproven');
       const since = new Date(Date.now() - inflightWindowMs).toISOString();
@@ -1810,6 +1850,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
 
     async function sealAndRetireOriginals(checkAll) {
       stage = 'mixed_custody';
+      progress('mixed_custody');
       for (const capture of retainedManagers) {
         const { manager, proposal, local } = capture;
         const input = {
@@ -2778,6 +2819,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         writeEndedAt: null,
       };
     };
+    progress('captureMixedOriginals');
     const retainedEngines = retained8825 ? await captureMixedOriginals() : new Set();
     /* ═══ AN ENGINE THAT NEVER STARTED HOLDS NOTHING TO CHECKPOINT (2026-09-21) ═══
 
@@ -3136,9 +3178,46 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           ]
         : [{ capture, join: 'presenceSave' }]
     );
+    /* ═══ A JOIN THAT NEVER COMES BACK IS NOT WAITED FOR (2026-09-24) ═══
+
+       Run 36041108119 (the 17:55 break) is the measurement: the first release
+       whose capture walk admitted or deferred every table and whose join
+       named its members (#5198, #5201, #5202), and it ended as `inspector
+       operation outcome unknown` - the guard's call outlived the publisher's
+       20000ms work budget, and the only unbounded wait between the capture
+       walk and that budget is this `Promise.allSettled`. A promise that will
+       settle does so on the next tick: a park write that finished at the
+       announcement, a teardown that finished when the table broke. One that
+       is still pending seconds later is either a Supabase write the engine's
+       client is still retrying (`persistPresenceForRestart` waits 5 s and
+       tries once more) or a teardown a dead process will never finish, and
+       waiting on it does not change which - it only turns a refusal this guard
+       could NAME into an outcome nobody can read. So the join is bounded:
+       every promise is raced against one shared budget, and a join that has
+       not settled by then is reported like a rejection, with its table and
+       its kind, by the code below. A pending `presenceSave` refuses (the
+       engine's own write may still land, and this guard's must queue behind
+       it); a pending `teardown` on a stopped engine that has already released
+       process ownership - the only shape the capture admits - is dead work in
+       exactly the sense the failed-teardown note above defines, and takes the
+       same rows-proved deferral. The budget is what a join that is going to
+       settle can never need (milliseconds) and what leaves the publisher's
+       work budget its reads, its writes and its readback: 5000 of 20000 ms. */
+    progress('joinPreviousWork');
+    const joinBudgetMs = 5000;
+    const pendingJoin = Object.assign(new Error('join did not settle within its budget'), {
+      name: 'PendingJoin',
+    });
+    let joinTimer = null;
+    const joinBudget = new Promise((_, reject) => {
+      joinTimer = setTimeout(() => reject(pendingJoin), joinBudgetMs);
+    });
+    joinBudget.catch(() => undefined);
     const previousWork = await Promise.allSettled(
-      previousJoins.map(({ capture, join }) => capture[join])
+      previousJoins.map(({ capture, join }) => Promise.race([capture[join], joinBudget]))
     );
+    clearTimeout(joinTimer);
+    progress('joinedPreviousWork');
     /* ═══ A JOIN THAT DID NOT COME BACK NAMES NOTHING (2026-09-24) ═══
 
        Run 36008454881 is the measurement. It is the first release since
@@ -3340,9 +3419,45 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     const rejected = previousWork
       .map((entry, index) => ({ entry, ...previousJoins[index] }))
       .filter(({ entry }) => entry.status !== 'fulfilled');
+    // A teardown still pending after the join budget on an engine the capture
+    // admitted as stopped and released: see the bounded join above. The same
+    // predicates as the failed case, minus the rejection it never produced.
+    const deadTeardownPendingDeferred = (capture, failure) => {
+      try {
+        const engine = capture.engine;
+        const tableId = capture.tableId;
+        if (
+          failure !== pendingJoin ||
+          !retained8825 ||
+          capture.stopped !== true ||
+          engine.teardownPromise !== capture.teardown ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.terminalTeardownComplete !== false ||
+          engine.hasReleasedProcessOwnership() !== true ||
+          engine.handController !== null ||
+          engine.dealingLoopPromise !== null ||
+          engine.f06RecoveryInFlight !== false ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0
+        )
+          return false;
+        const label = 'pendingTeardown';
+        const prior = deferredUnresolvableCustody.get(tableId);
+        deferredUnresolvableCustody.set(tableId, prior === undefined ? label : `${prior}+${label}`);
+        return true;
+      } catch {
+        // Unreadable is never "dead". It keeps the original refusal.
+        return false;
+      }
+    };
     const unfulfilled = rejected.filter(
       ({ entry, capture, join }) =>
-        !(join === 'teardown' && deadTeardownFailureDeferred(capture, entry.reason))
+        !(
+          join === 'teardown' &&
+          (deadTeardownFailureDeferred(capture, entry.reason) ||
+            deadTeardownPendingDeferred(capture, entry.reason))
+        )
     );
     if (rejected.length > 0) {
       try {
@@ -3420,11 +3535,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // Order is load-bearing: the rows prove that the residue and the disposed
     // banks hold nothing, and that no deferred unresolvable permit has a hand
     // in the air, BEFORE any presence or bank row is written.
+    progress('proveUnresolvableCustody');
     await proveUnresolvableCustody(checkAll);
+    progress('proveBanksHeldNothing');
     if (retained8825) await proveBanksHeldNothing(checkAll);
     bankCount = captures.reduce((sum, capture) => sum + Object.keys(capture.banks).length, 0);
     uninitializedSeats = captures.reduce((sum, capture) => sum + capture.uninitialized, 0);
     stage = 'checkpoint';
+    progress('checkpoint');
     let next = 0;
     const run = async () => {
       while (reason === null && next < captures.length) {
@@ -3435,12 +3553,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           if (!captured.requiresRow) continue;
           captured.writeStartedAt = Date.now();
           attemptedTables++;
+          progress();
           const operation = captured.engine.persistPresenceForRestart('parked');
           // The native method synchronously installs this exact queue tail before
           // its first await. A later announcement/park replaces it and is refused.
           captured.presenceSave = captured.engine.presenceSave;
           await operation;
           completedCalls++;
+          progress();
           captured.writeEndedAt = Date.now();
           checkMaintenance();
           checkEngine(captured);
@@ -3455,6 +3575,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     checkAll();
 
     stage = 'readback';
+    progress('readback');
     const written = captures.filter((capture) => capture.requiresRow);
     for (let offset = 0; offset < written.length; offset += readPageSize) {
       checkAll();
@@ -3496,13 +3617,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           canonical(row.disconnect_states) ===
             canonical(captured.states), 'checkpoint_readback_mismatch');
         verifiedTables++;
+        progress();
       }
       checkAll();
     }
     if (retained8825) {
       // Order is load-bearing: the row proof comes first, and a refusal there
       // means nothing was retired and no custody was transferred.
+      progress('proveAbandonedBoundaries');
       await proveAbandonedBoundaries(checkAll);
+      progress('sealAndRetireOriginals');
       await sealAndRetireOriginals(checkAll);
     }
     verifyFiles();
@@ -3522,6 +3646,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       restartHeldOnlyByProvenUnresolvableCustody(), 'native_readiness_refused');
     const remaining = checkAll();
     stage = 'complete';
+    progress('complete');
     return result(true, remaining);
   } catch {
     if (reason === null) reason = 'guard_failed';

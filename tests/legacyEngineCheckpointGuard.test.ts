@@ -3239,6 +3239,53 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     for (const tableId of observedTables) expect(f.rows.has(tableId)).toBe(false);
   });
 
+  /* A JOIN THAT NEVER COMES BACK IS NOT WAITED FOR (2026-09-24). Run
+     36041108119 outlived the publisher's 20000ms work budget with every
+     capture admitted or deferred, and the only unbounded wait on that path
+     was the previous-work join. It is bounded now, and a promise still
+     pending at the budget is named like a rejection. */
+  const pendingForever = () => new Promise<void>(() => undefined);
+
+  it('a stopped engine whose teardown never settles is dead work: deferred, proved from rows', async () => {
+    const f: any = mixedFixture();
+    const e = deadTeardown(f, 680, observedTables[0], undefined);
+    e.teardownPromise = pendingForever();
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.unresolvableCustody).toContain(`${e.tableId}:pendingTeardown`);
+    expect(f.snapshotReads.flatMap((read: any) => read.ids)).toContain(e.tableId);
+    expect(f.rows.has(e.tableId)).toBe(false);
+  }, 20_000);
+
+  it('a park write that never settles refuses, and names its table and its join', async () => {
+    const f: any = mixedFixture();
+    f.first.presenceSave = pendingForever();
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      failedCheck: 'previousNativeWork.presenceSave',
+      failedTable: f.first.tableId,
+    });
+    expect(result.nativeWorkMembers).toContain('r.PendingJoin(none)=1');
+    expect(f.calls).toEqual([]);
+  }, 20_000);
+
+  it('the guard leaves its progress on the global object, for the client to read when the outcome is lost', async () => {
+    const f: any = mixedFixture();
+    const result: any = await f.run();
+    expect(result.ok).toBe(true);
+    const progress = (globalThis as any).__legacyEngineCheckpointProgress;
+    expect(progress).toMatchObject({
+      schema: 'legacy-engine-checkpoint-progress/v1',
+      stage: 'complete',
+      note: 'complete',
+      reason: null,
+    });
+    expect(progress.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(progress.verifiedTables).toBe(result.verifiedTables);
+  });
+
   it('a teardown that failed in several operations is the same dead teardown', async () => {
     const f: any = mixedFixture();
     const e = deadTeardown(

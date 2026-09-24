@@ -1053,6 +1053,31 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.calls).toEqual([]);
   });
 
+  /* A TEARDOWN A DEAD PROCESS CAN NEVER FINISH is answered from rows on 8825
+     ONLY. A later predecessor's `performStop` also records a failure to
+     capture a stopped table's time banks in the same AggregateError, so on it
+     the exact 8825 sentence can hide an uncaptured bank: it still refuses. */
+  it('a later predecessor with the same failed teardown still refuses the join', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    const failure = new AggregateError(
+      [new Error('Stopped time bank has no original occupancy')],
+      `Table engine ${f.first.tableId} teardown failed in 1 operation(s)`
+    );
+    const teardownPromise = Promise.reject(failure);
+    teardownPromise.catch(() => undefined);
+    Object.assign(f.first, { teardownPromise, terminalTeardownComplete: false });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      failedCheck: 'previousNativeWork.teardown',
+      failedTable: f.first.tableId,
+    });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
   it('adds no detail when every join comes back', async () => {
     const f = fixture(2);
     stopEmpty(f);
@@ -3045,6 +3070,226 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
       failedTable: e.tableId,
     });
     expect(result.observedDetail).toContain('parkedFault=bank_not_restorable');
+    expect(f.calls).toEqual([]);
+  });
+
+  /* A TEARDOWN A DEAD PROCESS CAN NEVER FINISH (2026-09-24).
+
+     Run 36015361207 cleared every capture refusal and stopped on the join,
+     verbatim:
+
+       failedCheck previousNativeWork.teardown
+       failedTable 6557ebd8-b75e-4ad6-a9b6-80948ebc5f4e
+       unfulfilled=8,joined=738,presenceSave=0,teardown=8,stopped=true,
+       scope=tournament,tournament=056e5fc8-08e0-4308-a8fb-9f09e5fc182e,
+       reason=Table engine ... teardown failed in operation,
+       tables=6557ebd8:teardown/0af45012:teardown/d6d591fb:teardown/
+         c021b81c:teardown/345fc387:teardown/2e389f6e:teardown/
+         c1024195:teardown/6862a6e5:teardown
+
+     Eight stopped engines of one tournament whose lease the process lost.
+     8825 `stop()` memoizes the rejected teardown, so it is rejected for ever. */
+  const observedTournament = '056e5fc8-08e0-4308-a8fb-9f09e5fc182e';
+  const observedTables = [
+    '6557ebd8-b75e-4ad6-a9b6-80948ebc5f4e',
+    '0af45012-0000-4000-8000-000000000002',
+    'd6d591fb-0000-4000-8000-000000000003',
+    'c021b81c-0000-4000-8000-000000000004',
+    '345fc387-0000-4000-8000-000000000005',
+    '2e389f6e-0000-4000-8000-000000000006',
+    'c1024195-0000-4000-8000-000000000007',
+    '6862a6e5-0000-4000-8000-000000000008',
+  ];
+  // The exact rejection 8825 `performStop` raises at its end
+  // (ServerTableEngineBase.ts:3613), after every cleanup step has run.
+  const failedTeardown = (
+    tableId: string,
+    failures: unknown[] = [new Error('snapshot write failed')]
+  ) =>
+    new AggregateError(
+      failures,
+      `Table engine ${tableId} teardown failed in ${failures.length} operation(s)`
+    );
+  const rejected = (reason: unknown) => {
+    const promise = Promise.reject(reason);
+    promise.catch(() => undefined);
+    return promise;
+  };
+  const deadTeardown = (
+    f: any,
+    n: number,
+    tableId: string,
+    reason: unknown = failedTeardown(tableId)
+  ) => {
+    // `quarantined` above, on the observed table and tournament.
+    const e: any = new f.Table(n);
+    const authority = { tournamentId: observedTournament, leaseGeneration: uuid(73000 + n) };
+    Object.assign(e, {
+      tableId,
+      running: false,
+      terminal: true,
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+      engineLeaseScope: 'tournament',
+      engineLeaseVerified: true,
+      engineLeaseTournamentId: authority.tournamentId,
+      engineLeaseGeneration: authority.leaseGeneration,
+    });
+    dataActorContext.bindTournamentDataAuthorityMethods(authority, e);
+    e.seatedPlayers = [];
+    e.timeBankMeta.clear();
+    e.timeBankEngine.playerBanks.clear();
+    e.terminalTeardownComplete = false;
+    e.handController = null;
+    e.teardownPromise = rejected(reason);
+    f.server.tableEngines.set(e.tableId, e);
+    return e;
+  };
+  const observedFleet = (f: any) =>
+    observedTables.map((tableId, i) => deadTeardown(f, 660 + i, tableId));
+
+  it('the observed eight dead teardowns are deferred and proved from rows', async () => {
+    const f: any = mixedFixture();
+    observedFleet(f);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    for (const tableId of observedTables)
+      expect(result.unresolvableCustody).toContain(`${tableId}:failedTeardown:1`);
+    // It asked the database for every one of them, with the one predicate.
+    const asked = f.snapshotReads.flatMap((read: any) => read.ids);
+    for (const tableId of observedTables) expect(asked).toContain(tableId);
+    // Nothing is written for an engine that holds nothing.
+    for (const tableId of observedTables) expect(f.rows.has(tableId)).toBe(false);
+  });
+
+  it('a teardown that failed in several operations is the same dead teardown', async () => {
+    const f: any = mixedFixture();
+    const e = deadTeardown(
+      f,
+      670,
+      observedTables[0],
+      failedTeardown(observedTables[0], [new Error('settlement'), new Error('dispose')])
+    );
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.unresolvableCustody).toContain(`${e.tableId}:failedTeardown:2`);
+  });
+
+  it('a hand in the air on one of those tables still refuses, from rows', async () => {
+    const f: any = mixedFixture();
+    observedFleet(f);
+    f.onSnapshots((ids: string[]) => ({
+      data: ids.includes(observedTables[3])
+        ? [
+            {
+              table_id: observedTables[3],
+              hand_number: 9,
+              stage: 'flop',
+              updated_at: new Date().toISOString(),
+            },
+          ]
+        : [],
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a row proof that cannot tell still refuses', async () => {
+    const f: any = mixedFixture();
+    observedFleet(f);
+    f.onSnapshots(() => ({ data: null, error: { message: 'timeout' } }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_unresolvable_unproven',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a rejection that is not the 8825 sentence (a cashout on the seat boundary)',
+      (id: string) => new Error(`cash out failed for ${id}`),
+    ],
+    ['the 8825 sentence for another table', () => failedTeardown(observedTables[1])],
+    [
+      'a count that does not match its errors',
+      (id: string) =>
+        new AggregateError(
+          [new Error('x')],
+          `Table engine ${id} teardown failed in 2 operation(s)`
+        ),
+    ],
+    [
+      'an AggregateError with no errors',
+      (id: string) =>
+        new AggregateError([], `Table engine ${id} teardown failed in 0 operation(s)`),
+    ],
+  ])('%s still refuses the join, and no row is read', async (_label, reason) => {
+    const f: any = mixedFixture();
+    deadTeardown(f, 671, observedTables[0], reason(observedTables[0]));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      failedCheck: 'previousNativeWork.teardown',
+      failedTable: observedTables[0],
+    });
+    expect(result.observedDetail).toContain('teardownDeferred=0');
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each([
+    ['a teardown the engine says completed', (e: any) => (e.terminalTeardownComplete = true)],
+    [
+      'an engine that does not carry the completion field',
+      (e: any) => delete e.terminalTeardownComplete,
+    ],
+  ])('%s still refuses the join with the same code', async (_label, mutate) => {
+    const f: any = mixedFixture();
+    const e = deadTeardown(f, 672, observedTables[0]);
+    mutate(e);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      failedCheck: 'previousNativeWork.teardown',
+      failedTable: observedTables[0],
+      restartAuthorized: false,
+    });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a stopped engine with a recovery in flight is not dead and refuses as before', async () => {
+    const f: any = mixedFixture();
+    const e = deadTeardown(f, 673, observedTables[0]);
+    e.f06RecoveryInFlight = true;
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'f06_custody_not_drained' });
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('only the dead teardowns are deferred: one failed presence write still refuses the release', async () => {
+    const f: any = mixedFixture();
+    observedFleet(f);
+    const live: any = new f.Table(679);
+    live.presenceSave = rejected(failedTeardown(live.tableId));
+    f.server.tableEngines.set(live.tableId, live);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      failedCheck: 'previousNativeWork.presenceSave',
+      failedTable: live.tableId,
+    });
+    expect(result.observedDetail).toContain('unfulfilled=1');
+    expect(result.observedDetail).toContain('teardownDeferred=8');
     expect(f.calls).toEqual([]);
   });
 

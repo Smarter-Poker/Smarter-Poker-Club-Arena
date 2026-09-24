@@ -91,21 +91,42 @@ For price comparisons, staff record evidence with
 - A former owner can still read the receipts they paid for. The new owner sees
   none of them.
 
+**Withdrawing a product stops its open quotes (D06).** Before this change,
+`fn_ca_commerce_product_support(sku, false)` stopped new quotes for a product,
+but a quote already taken stayed open and could still be bought. It now marks
+every open quote whose lines contain that product `withdrawn`, in the same
+transaction. The purchase boundary refuses such a quote as it refuses any
+quote that is no longer open (`quote_expired`, requote) and charges nothing.
+The audit event and the response carry `quotes_withdrawn`.
+
+**Staff reads for the Commerce Desk.** `fn_ca_commerce_price_versions(p_sku)`
+lists every price version, newest first. `fn_ca_commerce_comparison_list(p_sku)`
+lists recorded comparison evidence with its recorder, its verifier and whether
+it is verified. Both are for platform staff or the service role; anyone else
+gets `staff_required`.
+
+**Consumer steps are independent.** Renewals, refunds and notices each run in
+their own error boundary. A failure in one step is recorded in
+`status.stepErrors`, reported under that step's name, and does not stop the
+other steps in the same wake. This covers the case where the refund door is
+not installed yet, so the engine can be released before or after the
+migration.
+
 ## Evidence
 
-- `python3 tests/sql/run-diamond-club-commerce-refunds.py`: 123 checks pass on
+- `python3 tests/sql/run-diamond-club-commerce-refunds.py`: 135 checks pass on
   base + fixes + this migration, in a private socket-only cluster.
 - Every fix was also reverted one at a time. Each revert made the runner fail,
   either at its own check or at the migration's own post-condition or a table
   constraint.
-- `python3 tests/sql/run-diamond-club-commerce.py`: unchanged, 155 pass on
-  base + fixes.
-- With this migration added to the base harness, all 155 still pass once a
-  `fn_ca_commerce_price_validate` step follows each draft. A draft is no longer
-  publishable directly.
-- The consumer's unit tests cover the wake order (claim with heartbeat, then
-  renewals, then refunds, then notices), freeze gating (refunds never run during
-  the freeze; notices still do), lifecycle fencing and refused runs.
+- `python3 tests/sql/run-diamond-club-commerce.py` (base + fixes + this
+  migration, with a validate step after each draft): 155 pass.
+- `tests/sql/run-diamond-club-commerce-admission.py`: 24 pass, including its
+  155-scenario regression.
+- The consumer's unit tests (14) cover the wake order (claim with heartbeat,
+  then renewals, then refunds, then notices), freeze gating (refunds never run
+  during the freeze; notices still do), lifecycle fencing, and each step failing
+  on its own. All six step-isolation tests fail against the previous consumer.
 
 ## Not done here
 

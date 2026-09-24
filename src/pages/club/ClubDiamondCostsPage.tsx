@@ -40,15 +40,25 @@ import { useToast } from '../../components/common/Toast';
 import { LoadingState } from '../../components/common/EmptyState';
 import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
 import ClubCommerceService, {
+  REFUND_REASONS,
+  ceilingSentence,
   isRefusal,
   listPrice,
+  owedReasonWords,
+  refundReasonWord,
   refusalCopy,
+  type BalanceBreakdown,
   type Catalog,
   type CatalogProduct,
   type Entitlement,
+  type Policy,
   type PurchaseKind,
   type Quote,
+  type QuoteLine,
   type Receipt,
+  type ReceiptRight,
+  type RefundReason,
+  type RefundRequest,
   type Refusal,
   type RenewalChange,
   type ScopeKind,
@@ -56,6 +66,7 @@ import ClubCommerceService, {
   type Sponsorship,
 } from '../../services/ClubCommerceService';
 import { isUUID, resolveClubUUIDStrict } from '../../utils/clubIdResolver';
+import { titleCase } from '../../utils/titleCase';
 import { reportError } from '../../utils/errorReporter';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -294,6 +305,164 @@ function entitlementTitle(e: Entitlement, catalog: Catalog | null): string {
   return e.sku ?? e.kind;
 }
 
+/** "Refunds Follow Refund Policy Version 1." with the version the server has in effect. */
+function refundPolicyLine(version: number | null | undefined): string {
+  return typeof version === 'number' && version > 0
+    ? `Refunds Follow Refund Policy Version ${version}.`
+    : 'Refunds Follow The Current Refund Policy.';
+}
+
+/** The current version of one policy kind, or null when it was not read. */
+function currentPolicy(policies: Policy[] | null, kind: Policy['kind']): Policy | null {
+  const ofKind = (policies ?? []).filter((p) => p.kind === kind);
+  return ofKind.find((p) => p.current) ?? ofKind.sort((a, b) => b.version - a.version)[0] ?? null;
+}
+
+/**
+ * The truth about operating access while admission is wired in shadow
+ * (20260924102056). Until staff set admission_enforced_from and it passes,
+ * every owner action proceeds, so nothing on this page may say "No Access".
+ */
+type AccessTruth = {
+  /** The announced date, when there is one. */
+  enforcedFrom: number | null;
+  /** True only once that date has passed. */
+  enforced: boolean;
+};
+
+function accessTruth(status: ScopeStatus, serverNow: number): AccessTruth {
+  const from = status.admission_enforced_from ? Date.parse(status.admission_enforced_from) : NaN;
+  if (!Number.isFinite(from)) return { enforcedFrom: null, enforced: false };
+  return { enforcedFrom: from, enforced: from <= serverNow };
+}
+
+/** What of one receipt line can still be returned, from the server's rights. */
+function refundableFor(r: Receipt, index: number): number {
+  const right = (r.rights ?? []).find((x) => x.line_index === index);
+  if (right && typeof right.refundable === 'number') return Math.max(0, right.refundable);
+  const line = (r.lines ?? []).find((l) => l.index === index);
+  const refunded = (r.refunds ?? [])
+    .filter((f) => f.line_index === index)
+    .reduce((n, f) => n + Number(f.gross ?? 0), 0);
+  return Math.max(0, Number(line?.net ?? 0) - refunded);
+}
+
+const OPEN_REFUND_STATES = new Set(['requested', 'approved', 'owed']);
+
+/** How the policy reached its amount, in words, never with a decimal. */
+function basisWord(q: RefundRequest): string {
+  if (q.policy_basis === 'error_full') return 'Full Refund Of A Purchase Made In Error';
+  const unused = Math.floor(Number(q.policy_detail?.unused_days ?? 0));
+  const period = Math.round(Number(q.policy_detail?.period_days ?? 0));
+  const days = `${unused.toLocaleString()} Unused Whole ${unused === 1 ? 'Day' : 'Days'}`;
+  return period > 0 ? `${days} Of ${period.toLocaleString()}, Pro Rata` : `${days}, Pro Rata`;
+}
+
+/** A refund request's state as its payer reads it: the value, its ink and the note. */
+function refundStateView(q: RefundRequest): { value: string; ink: ConsoleInk; meta: string } {
+  const approved = q.approved_amount ?? q.policy_amount;
+  const reason = refundReasonWord(q.reason_code);
+  switch (q.state) {
+    case 'requested':
+      return {
+        value: 'Requested',
+        ink: 'blue',
+        meta: `${reason}. ${diamonds(q.policy_amount)} Under Refund Policy Version ${q.policy_version}: ${basisWord(q)}. With Platform Staff For A Decision. Asked ${when(q.created_at)}.`,
+      };
+    case 'approved':
+      return {
+        value: 'Approved',
+        ink: 'green',
+        meta: `${reason}. ${diamonds(approved)} Approved ${when(q.decided_at)}. Being Returned To Your Diamond Balance.`,
+      };
+    case 'owed':
+      return {
+        value: 'Owed',
+        ink: 'gold',
+        meta: `${reason}. ${diamonds(approved)} Approved And Owed To You. Not Added Yet: ${owedReasonWords(q.owed_reason)}. It Is Paid As Soon As Your Balance Can Receive It.`,
+      };
+    case 'refunded':
+      return {
+        value: 'Refunded',
+        ink: 'green',
+        meta: `${reason}. ${diamonds(approved)} Returned To Your Diamond Balance ${when(q.executed_at)}.`,
+      };
+    case 'declined': {
+      const note = titleCase(String(q.decision_note ?? '').trim()).replace(/[.\s]+$/, '');
+      return {
+        value: 'Declined',
+        ink: 'red',
+        meta: `${reason}. ${note ? `Note From Platform Staff: ${note}.` : 'Declined By Platform Staff.'} Declined ${when(q.decided_at)}.`,
+      };
+    }
+    case 'failed':
+    default:
+      return {
+        value: 'Failed',
+        ink: 'red',
+        meta: `${reason}. The Approved Refund Could Not Be Completed: ${owedReasonWords(q.last_error)}. Platform Staff Can See This Request.`,
+      };
+  }
+}
+
+function RefundStateRow({ request }: { request: RefundRequest }) {
+  const v = refundStateView(request);
+  return <Row label="Refund Request" value={v.value} ink={v.ink} wrap meta={v.meta} />;
+}
+
+/**
+ * The reader's wallet in the server's own figures (scope_status
+ * balance_breakdown). Available, reserved and pending are distinct and are
+ * never added together; owed is the part of pending that is waiting on the
+ * wallet. Without a breakdown (an older server) the single balance prints.
+ */
+function BalanceRows({
+  breakdown,
+  balance,
+}: {
+  breakdown: BalanceBreakdown | null | undefined;
+  balance: number | null;
+}) {
+  if (breakdown) {
+    const pending = Number(breakdown.pending_refunds ?? 0);
+    const owed = Number(breakdown.owed_refunds ?? 0);
+    return (
+      <>
+        <Row
+          label="Available Diamonds"
+          value={Number(breakdown.available ?? 0).toLocaleString()}
+          ink="silver"
+          wrap
+          meta="Spendable Now. Every Charge On This Page Comes From Here."
+        />
+        <Row
+          label="Reserved (Diamond Arena)"
+          value={Number(breakdown.reserved ?? 0).toLocaleString()}
+          ink="muted"
+          wrap
+          meta="Held For Your Open Diamond Arena Purchases. Shown Apart From Available And Never Added To It."
+        />
+        <Row
+          label="Pending Refunds"
+          value={pending.toLocaleString()}
+          ink={pending > 0 ? 'blue' : 'muted'}
+          wrap
+          meta="Requested, Approved Or Owed To You, And Not Yet In Your Balance."
+        />
+        <Row
+          label="Owed Refunds"
+          value={owed.toLocaleString()}
+          ink={owed > 0 ? 'gold' : 'muted'}
+          wrap
+          meta="Approved Refunds Waiting Until Your Balance Can Receive Them. Part Of Pending Refunds."
+        />
+      </>
+    );
+  }
+  if (balance === null) return null;
+  return <Row label="Available Diamonds" value={balance.toLocaleString()} ink="silver" />;
+}
+
 /* ══ One order: quote, key, confirm, recover ═══════════════════════════════
    Shared by the scope's own catalog and by a sponsor buying for a covered
    club, so both keep the same rules: ONE ORDER KEY PER QUOTE (minted when the
@@ -491,6 +660,7 @@ function QuoteConsole({
   trialAction,
   onGetDiamonds,
   notice,
+  refundPolicyVersion,
 }: {
   order: CommerceOrder;
   sectionId: string;
@@ -505,6 +675,8 @@ function QuoteConsole({
   onGetDiamonds: () => void;
   /** A consequence of this order the caller knows and the quote does not. */
   notice?: { label: string; value: string; ink: ConsoleInk; meta: string } | null;
+  /** The refund policy version in effect, from fn_ca_commerce_policies. */
+  refundPolicyVersion: number | null;
 }) {
   const quote = order.quote;
   const quoteId = quote?.quote_id ?? null;
@@ -665,8 +837,8 @@ function QuoteConsole({
       </div>
       <p className="sc-copy">
         Confirming Charges Your Diamonds Once. If The Connection Drops, Retrying Sends The Same
-        Order Key And Never Charges Twice. Refunds Follow The Displayed Policy And Return To The
-        Original Payer.
+        Order Key And Never Charges Twice. {refundPolicyLine(refundPolicyVersion)} A Refund Returns
+        To The Original Payer.
       </p>
     </SpadeConsole>
   );
@@ -755,6 +927,470 @@ function ReceiptConsole({
   );
 }
 
+/* ══ Refund requests (20260924102040) ═════════════════════════════════════
+   The payer of a paid line asks; platform staff decide; the engine's
+   commerce consumer returns the diamonds. The page computes nothing: the
+   policy amount and its basis come back with the request.
+
+   ONE REQUEST KEY PER OPEN ATTEMPT, by the order key's rules: the key is
+   minted when the console opens (it is keyed per opening, so a new opening
+   mounts a new key), every send from that opening carries it, and an unknown
+   outcome re-reads the receipts and then offers only a retry with the same
+   key, which the server answers with the one request it recorded. */
+
+type RefundTarget = { receipt: Receipt; line: QuoteLine; opened: number };
+
+function RefundRequestConsole({
+  target,
+  forName,
+  refundPolicy,
+  readReceipts,
+  onSettled,
+  onClose,
+}: {
+  target: RefundTarget;
+  /** The club a sponsored purchase was for, when the page knows its name. */
+  forName?: string;
+  refundPolicy: Policy | null;
+  readReceipts: () => Promise<Receipt[]>;
+  onSettled: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const isMountedRef = useIsMounted();
+  const sectionId = 'diamond-costs-refund';
+  const titleId = `${sectionId}-title`;
+  const detailsId = useId();
+  /* Minted once per opening of this console, never on a render. */
+  const keyRef = useRef<string>('');
+  if (!keyRef.current) keyRef.current = uuid();
+  const sendingRef = useRef(false);
+  const [reason, setReason] = useState<RefundReason | null>(null);
+  const [details, setDetails] = useState('');
+  const [sending, setSending] = useState(false);
+  const [unknown, setUnknown] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [result, setResult] = useState<RefundRequest | null>(null);
+  const [foundOnFile, setFoundOnFile] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
+  const { receipt, line } = target;
+  const refundable = refundableFor(receipt, line.index);
+  const locked = sending || unknown || recovering;
+  const resultId = result?.request_id ?? null;
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => document.getElementById(sectionId)?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [resultId]);
+
+  /** The outcome is unknown: a request for this line on file means it was recorded. */
+  const recover = async (sent: RefundReason) => {
+    setRecovering(true);
+    try {
+      const onFile = await readReceipts();
+      if (!isMountedRef.current) return;
+      const found = (
+        onFile.find((x) => x.purchase_id === receipt.purchase_id)?.refund_requests ?? []
+      )
+        .filter(
+          (q) =>
+            q.line_index === line.index && q.reason_code === sent && OPEN_REFUND_STATES.has(q.state)
+        )
+        .pop();
+      if (found) {
+        setResult(found);
+        setFoundOnFile(true);
+        setUnknown(false);
+        toast.info('Your Refund Request Was Found On File. It Was Recorded Once');
+        await onSettled();
+      } else {
+        setUnknown(true);
+        toast.error('The Request Outcome Is Unknown. Retry Uses The Same Request Key');
+      }
+    } catch (e) {
+      reportError(e, 'ClubDiamondCostsPage.refundRecover');
+      if (!isMountedRef.current) return;
+      setUnknown(true);
+      toast.error('Your Request Could Not Be Checked. Retry Uses The Same Request Key');
+    } finally {
+      if (isMountedRef.current) setRecovering(false);
+    }
+  };
+
+  const send = async () => {
+    if (!reason || sendingRef.current) return;
+    const note = details.trim();
+    if (note.length > 2000) return toast.error(refusalCopy('details_too_long'));
+    sendingRef.current = true;
+    setSending(true);
+    setRefused(null);
+    try {
+      const r = await ClubCommerceService.refundRequest(
+        receipt.purchase_id,
+        line.index,
+        reason,
+        keyRef.current,
+        note || null
+      );
+      if (!isMountedRef.current) return;
+      /* Any answer from the server is a known outcome. */
+      setUnknown(false);
+      if (isRefusal(r)) {
+        const open = r.request as RefundRequest | undefined;
+        if (r.error === 'request_already_open' && open && typeof open === 'object') {
+          setResult(open);
+          toast.info(refusalCopy(r.error));
+          await onSettled();
+          return;
+        }
+        let copy = refusalCopy(r.error, 'The Refund Request Was Refused');
+        if (r.error === 'error_window_passed' && typeof r.purchased_at === 'string')
+          copy += `. Purchased ${when(r.purchased_at)}`;
+        setRefused(copy);
+        toast.error(copy);
+        return;
+      }
+      setResult(r.request);
+      setFoundOnFile(false);
+      toast.success(
+        r.is_replay
+          ? 'This Refund Request Was Already Received'
+          : 'Refund Request Sent To Platform Staff'
+      );
+      await onSettled();
+    } catch (e) {
+      /* An unknown outcome is never a second request with a new key. */
+      reportError(e, 'ClubDiamondCostsPage.refundRequest');
+      if (isMountedRef.current) await recover(reason);
+    } finally {
+      sendingRef.current = false;
+      if (isMountedRef.current) setSending(false);
+    }
+  };
+
+  const policyVersion = result?.policy_version ?? refundPolicy?.version ?? null;
+  const orderLine = `Order ${orderRef(receipt.purchase_id)}, Paid ${when(receipt.committed_at)}.${
+    forName ? ` For ${forName}.` : ''
+  }`;
+
+  if (result) {
+    const v = refundStateView(result);
+    return (
+      <SpadeConsole
+        id={sectionId}
+        tabIndex={-1}
+        aria-labelledby={titleId}
+        eyebrow="Refund"
+        title="Refund Request"
+        titleId={titleId}
+        pill={v.value}
+        pillInk={v.ink}
+        foot="foot"
+      >
+        <div className={styles.rows}>
+          <Row label={titleCase(line.title)} value={diamonds(line.net)} wrap meta={orderLine} />
+          <RefundStateRow request={result} />
+          <Row
+            label="Policy Amount"
+            value={diamonds(result.policy_amount)}
+            ink="gold"
+            wrap
+            meta={`Refund Policy Version ${result.policy_version}. ${basisWord(result)}. Computed By The Server When You Asked.`}
+          />
+          {foundOnFile ? (
+            <Row
+              label="Found On File"
+              value="Recorded Once"
+              ink="green"
+              wrap
+              meta="The Connection Dropped Before The Answer. The Request Was Found On File And Was Recorded Once."
+            />
+          ) : null}
+          <ChoiceRow
+            label="Done"
+            meta="Its State Stays On This Receipt Until The Refund Is Complete."
+            value="Close"
+            ink="blue"
+            onClick={onClose}
+          />
+        </div>
+        <p className="sc-copy">
+          Platform Staff Review Every Request. An Approved Refund Returns To You As The Original
+          Payer, And You Are Told At Each Step.
+        </p>
+      </SpadeConsole>
+    );
+  }
+
+  return (
+    <SpadeConsole
+      id={sectionId}
+      tabIndex={-1}
+      aria-labelledby={titleId}
+      eyebrow="Refund"
+      title="Request A Refund"
+      titleId={titleId}
+      pill={unknown ? 'Unknown' : policyVersion ? `Version ${policyVersion}` : 'Policy'}
+      pillInk={unknown ? 'gold' : 'blue'}
+      plates={{
+        secondary: unknown
+          ? {
+              label: recovering ? 'Checking' : 'Check Again',
+              onClick: () => {
+                if (reason) void recover(reason);
+              },
+              disabled: sending || recovering,
+            }
+          : { label: 'Close', onClick: onClose, disabled: sending },
+        primary: unknown
+          ? {
+              label: sending ? 'Retrying' : 'Retry Same Request',
+              ink: 'white',
+              onClick: () => void send(),
+              disabled: sending || recovering,
+            }
+          : {
+              label: sending ? 'Sending' : 'Send Request',
+              ink: 'white',
+              onClick: () => void send(),
+              disabled: sending || !reason,
+            },
+      }}
+    >
+      <div className={styles.rows}>
+        <Row
+          label={titleCase(line.title)}
+          value={diamonds(line.net)}
+          wrap
+          meta={`${orderLine} Up To ${diamonds(refundable)} Can Still Be Returned.`}
+        />
+        {REFUND_REASONS.map((r) => (
+          <ChoiceRow
+            key={r.code}
+            label={r.label}
+            meta={r.note}
+            value={reason === r.code ? 'Selected' : 'Choose'}
+            ink={reason === r.code ? 'blue' : 'silver'}
+            pressed={reason === r.code}
+            disabled={locked}
+            onClick={() => {
+              setRefused(null);
+              setReason(r.code);
+            }}
+          />
+        ))}
+      </div>
+      <div className={styles.fields}>
+        <label className={styles.field}>
+          <span className="sc-label sc-ink--blue">Details (Optional)</span>
+          <textarea
+            className={`${styles.fieldInput} ${own.detailsInput}`}
+            value={details}
+            maxLength={2000}
+            rows={3}
+            disabled={locked}
+            aria-describedby={detailsId}
+            onChange={(e) => setDetails(e.target.value)}
+          />
+          <span id={detailsId} className="sc-copy sc-ink--muted">
+            Up To 2,000 Characters. Platform Staff Read Them With Your Request.
+          </span>
+        </label>
+      </div>
+      <div className={styles.rows}>
+        <Row
+          label="Refund Policy"
+          value={policyVersion ? `Version ${policyVersion}` : 'Current'}
+          ink="blue"
+          wrap
+          meta="Platform Staff Review Every Request. The Amount Under This Policy Is Computed By The Server When You Send It, And Shown Here."
+        />
+        {refused ? (
+          <Row label="Not Sent" value="Refused" ink="red" wrap meta={`${refused}.`} />
+        ) : null}
+        {unknown ? (
+          <Row
+            label="Outcome Unknown"
+            value="Checking"
+            ink="gold"
+            wrap
+            meta="The Connection Dropped Before The Answer. Retrying Sends The Same Request Key, So Only One Request Is Recorded."
+          />
+        ) : null}
+      </div>
+    </SpadeConsole>
+  );
+}
+
+/**
+ * Every receipt on file, each line with its refund requests and, for the
+ * payer, the way to ask for a refund. Shared by the owner's page and by a
+ * former owner who can no longer read the scope but still reads what they
+ * paid (fn_ca_commerce_receipts keeps it readable to the payer).
+ */
+function ReceiptsConsole({
+  receipts,
+  failed,
+  retryDisabled,
+  onRetry,
+  describe,
+  viewerId,
+  requestsFor,
+  refundPolicyVersion,
+  refundOpenFor,
+  onRequestRefund,
+}: {
+  receipts: Receipt[];
+  failed: boolean;
+  retryDisabled: boolean;
+  onRetry: () => void;
+  describe: (r: Receipt) => string;
+  viewerId: string | null;
+  requestsFor: (r: Receipt, lineIndex: number) => RefundRequest[];
+  refundPolicyVersion: number | null;
+  /** The purchase line whose request console is open, as "purchase:line". */
+  refundOpenFor: string | null;
+  onRequestRefund: (r: Receipt, line: QuoteLine) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? receipts : receipts.slice(0, RECEIPTS_SHOWN);
+  return (
+    <SpadeConsole
+      eyebrow="Records"
+      title="Receipts"
+      pill={
+        failed
+          ? 'Not Read'
+          : receipts.length > 0
+            ? `${receipts.length.toLocaleString()} On File`
+            : 'None'
+      }
+      pillInk={failed ? 'gold' : 'muted'}
+      foot="foot"
+    >
+      <div className={styles.rows}>
+        {failed ? (
+          <ChoiceRow
+            label="Receipts Could Not Be Read"
+            meta="Your Orders Are Safe On File. Read Them Again."
+            value="Retry"
+            ink="gold"
+            disabled={retryDisabled}
+            onClick={onRetry}
+          />
+        ) : null}
+        {!failed && receipts.length === 0 ? <Row label="No Receipts On File" value="" /> : null}
+        {shown.map((r) => (
+          <div key={r.purchase_id}>
+            <Row
+              label={`${r.kind === 'renewal' ? 'Renewal' : r.kind === 'upgrade' ? 'Upgrade' : 'Order'} ${orderRef(r.purchase_id)}`}
+              value={diamonds(r.original_total_diamonds)}
+              wrap
+              meta={describe(r)}
+            />
+            {(r.lines ?? []).map((l) => {
+              const requests = requestsFor(r, l.index);
+              const open = requests.some((q) => OPEN_REFUND_STATES.has(q.state));
+              const lineKey = `${r.purchase_id}:${l.index}`;
+              const canAsk =
+                viewerId !== null &&
+                r.payer_id === viewerId &&
+                Number(l.net) > 0 &&
+                refundableFor(r, l.index) > 0 &&
+                !open;
+              return (
+                <div key={lineKey}>
+                  <Row
+                    label={titleCase(l.title)}
+                    value={diamonds(l.net)}
+                    ink="muted"
+                    wrap
+                    meta={`${when(l.starts_at)} To ${when(l.ends_at)}`}
+                  />
+                  {requests.map((q) => (
+                    <RefundStateRow key={q.request_id} request={q} />
+                  ))}
+                  {canAsk ? (
+                    <ChoiceRow
+                      label="Request A Refund"
+                      meta={`For ${titleCase(l.title)}. Up To ${diamonds(refundableFor(r, l.index))} Can Still Be Returned. ${refundPolicyLine(refundPolicyVersion)}`}
+                      value={refundOpenFor === lineKey ? 'Open' : 'Request'}
+                      ink="blue"
+                      pressed={refundOpenFor === lineKey}
+                      disabled={refundOpenFor === lineKey}
+                      onClick={() => onRequestRefund(r, l)}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+            {(r.refunds ?? []).map((f) => (
+              <Row
+                key={f.id}
+                label="Refund"
+                value={diamonds(f.gross)}
+                ink="green"
+                wrap
+                meta={`Applied To Existing Debt: ${Number(f.debt_settled).toLocaleString()}; Added To Available Balance: ${Number(f.net_increase).toLocaleString()}. ${when(f.created_at)}.`}
+              />
+            ))}
+          </div>
+        ))}
+        {receipts.length > RECEIPTS_SHOWN ? (
+          <ChoiceRow
+            label={showAll ? 'Show Fewer Receipts' : 'Show All Receipts'}
+            meta={`${receipts.length.toLocaleString()} Receipts On File`}
+            value={showAll ? 'Fewer' : 'All'}
+            ink="blue"
+            pressed={showAll}
+            onClick={() => setShowAll((v) => !v)}
+          />
+        ) : null}
+      </div>
+      <p className="sc-copy">
+        A Receipt Is Permanent Transaction Evidence. Your Wallet Balance Is Read Separately And May
+        Have Changed Since. {refundPolicyLine(refundPolicyVersion)}
+      </p>
+    </SpadeConsole>
+  );
+}
+
+/** The refund policy in effect, and the renewal terms a renewal accepts. */
+function PolicyConsole({ refund, terms }: { refund: Policy | null; terms: Policy | null }) {
+  if (!refund && !terms) return null;
+  return (
+    <SpadeConsole
+      eyebrow="Policies"
+      title={refund ? titleCase(refund.title) : 'Refund Policy'}
+      pill={refund ? `Version ${refund.version}` : undefined}
+      pillInk="blue"
+      foot="foot"
+    >
+      {refund ? <p className="sc-copy">{titleCase(refund.body)}</p> : null}
+      <div className={styles.rows}>
+        {refund ? (
+          <Row
+            label="In Effect Since"
+            value={dateWord(refund.effective_from)}
+            ink="silver"
+            wrap
+            meta="A Policy Version Is Never Edited. A Change Is Published As A New Version, And Each Request Records The Version It Was Made Under."
+          />
+        ) : null}
+        {terms ? (
+          <Row
+            label={titleCase(terms.title)}
+            value={`Version ${terms.version}`}
+            ink="blue"
+            wrap
+            meta={titleCase(terms.body)}
+          />
+        ) : null}
+      </div>
+    </SpadeConsole>
+  );
+}
+
 /** A sponsorship the viewer pays for, active and in its effective window. */
 function sponsorshipIsEffective(s: Sponsorship, serverNow: number): boolean {
   if (s.state !== 'active') return false;
@@ -783,6 +1419,7 @@ function SponsorBuyConsole({
   onSettled,
   receipts,
   receiptsKnown,
+  refundPolicyVersion,
 }: {
   status: ScopeStatus;
   clubProducts: CatalogProduct[];
@@ -795,6 +1432,7 @@ function SponsorBuyConsole({
   receipts: Receipt[];
   /** False when the receipts could not be read, so a club's sponsored spend is unknown. */
   receiptsKnown: boolean;
+  refundPolicyVersion: number | null;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -1085,6 +1723,7 @@ function SponsorBuyConsole({
           note: `Nothing Can Be Charged Before ${when(order.quote?.trial_end)}. Buy Its Capacity Once The Free Month Ends.`,
         }}
         onGetDiamonds={() => navigate(BUY_DIAMONDS)}
+        refundPolicyVersion={refundPolicyVersion}
       />
       <ReceiptConsole
         order={order}
@@ -1204,7 +1843,16 @@ function DiamondCostsConsole({
   const [clubCatalog, setClubCatalog] = useState<CatalogProduct[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [receiptsFailed, setReceiptsFailed] = useState(false);
-  const [showAllReceipts, setShowAllReceipts] = useState(false);
+  /* The versioned policy texts; null when they could not be read. */
+  const [policies, setPolicies] = useState<Policy[] | null>(null);
+  /* scope_status refused this reader (access_denied), but they paid for
+     something here: their receipts stay readable, and nothing else is shown. */
+  const [formerOwner, setFormerOwner] = useState(false);
+  /* The paid line whose refund request console is open. */
+  const [refundTarget, setRefundTarget] = useState<RefundTarget | null>(null);
+  /* Accepted ceiling sentences returned by set_renewal, per right, for the
+     sponsor's renewals (the receipts read does not project the sentence). */
+  const [acceptedTexts, setAcceptedTexts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /* Server clock minus this device's clock, from the last status read, so a
@@ -1236,7 +1884,7 @@ function DiamondCostsConsole({
     async (id: string) => {
       const seq = ++loadSeq.current;
       try {
-        const [s, c, r, cc] = await Promise.all([
+        const [s, c, r, cc, pol] = await Promise.all([
           ClubCommerceService.scopeStatus(scopeKind, id),
           ClubCommerceService.catalog(scopeKind),
           /* Receipts failing must not hide the rest of the page. A union page
@@ -1255,12 +1903,33 @@ function DiamondCostsConsole({
                 return null;
               })
             : Promise.resolve(null),
+          /* The policy texts are read beside the page; failing hides only them. */
+          ClubCommerceService.policies().catch((e: unknown) => {
+            reportError(e, 'ClubDiamondCostsPage.policies');
+            return null;
+          }),
         ]);
         if (!isMountedRef.current || seq !== loadSeq.current) return;
         if (isRefusal(s)) {
+          /* A former owner (or any payer who lost their role) is refused the
+             scope, but fn_ca_commerce_receipts still names what they paid
+             here. Show those, read only, instead of an error. */
+          const mine = (r ?? []).filter((x) => x.scope_kind === scopeKind && x.scope_id === id);
+          if (s.error === 'access_denied' && mine.length > 0) {
+            setReceipts(mine);
+            setReceiptsFailed(false);
+            setPolicies(pol);
+            setStatus(null);
+            setFormerOwner(true);
+            setError(null);
+            hasLoaded.current = true;
+            return;
+          }
           setError(refusalCopy(s.error, 'This Page Could Not Be Read'));
           return;
         }
+        setFormerOwner(false);
+        setPolicies(pol);
         const serverNow = Date.parse(s.server_time);
         if (Number.isFinite(serverNow)) setSkewMs(serverNow - Date.now());
         setNowMs(Date.now());
@@ -1626,6 +2295,121 @@ function DiamondCostsConsole({
     await load(scopeId);
   };
 
+  /** The receipts a refund request's unknown outcome is checked against. */
+  const readScopeReceipts = () =>
+    scopeKind === 'union'
+      ? ClubCommerceService.receipts(null, null)
+      : ClubCommerceService.receipts(scopeKind, scopeId);
+
+  /**
+   * A sponsor authorizes or cancels the renewal of a right their sponsorship
+   * paid for (fn_ca_commerce_set_renewal's sponsor path, 20260924102040). The
+   * renewal is charged to the sponsor within that sponsorship; the club owner
+   * can never put the sponsor's diamonds behind it.
+   */
+  const sponsorRenewal = async (entitlementId: string, enabled: boolean, max: number | null) => {
+    if (!scopeId || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const r = await ClubCommerceService.setRenewal(entitlementId, enabled, max, null, null);
+      if (!isMountedRef.current) return;
+      if (isRefusal(r)) {
+        toast.error(
+          refusalCopy(
+            r.error,
+            enabled ? 'The Renewal Could Not Be Changed' : 'The Renewal Could Not Be Cancelled'
+          )
+        );
+        return;
+      }
+      if (enabled) {
+        const accepted = r.accepted_ceiling_text;
+        if (accepted) setAcceptedTexts((t) => ({ ...t, [entitlementId]: accepted }));
+        setRenewDrafts((d) => {
+          const next = { ...d };
+          delete next[entitlementId];
+          return next;
+        });
+        toast.success(`Sponsored Renewal Authorized, Up To ${diamonds(r.max_diamonds ?? max)}`);
+      } else if (r.state === 'none') {
+        toast.info('There Was No Renewal To Cancel');
+      } else if (r.state === 'completed') {
+        toast.info('This Period Was Already Renewed. Cancel The New Period Instead');
+      } else {
+        toast.success('Sponsored Renewal Cancelled. The Club Keeps Its Current Paid Period');
+      }
+      await load(scopeId);
+    } catch (err) {
+      reportError(err, 'ClubDiamondCostsPage.sponsorRenewal');
+      if (isMountedRef.current) toast.error('The Renewal Could Not Be Changed');
+    } finally {
+      busyRef.current = false;
+      if (isMountedRef.current) setBusy(false);
+    }
+  };
+
+  const openRefund = (r: Receipt, line: QuoteLine) =>
+    setRefundTarget({ receipt: r, line, opened: Date.now() });
+
+  const refundPolicy = currentPolicy(policies, 'refund');
+  const termsPolicy = currentPolicy(policies, 'renewal_terms');
+  const ceilingPolicy = currentPolicy(policies, 'renewal_ceiling');
+
+  /**
+   * Every refund request for one purchase line: the receipt's own, and the
+   * scope status's (so a request still shows when the receipts were not
+   * read), newest state kept once per request, oldest request first.
+   */
+  const requestsFor = (r: Receipt, lineIndex: number): RefundRequest[] => {
+    const byId = new Map<string, RefundRequest>();
+    for (const q of [...(r.refund_requests ?? []), ...(status?.refund_requests ?? [])]) {
+      if (q.purchase_id !== r.purchase_id || q.line_index !== lineIndex) continue;
+      const had = byId.get(q.request_id);
+      if (!had || Date.parse(q.updated_at) >= Date.parse(had.updated_at)) byId.set(q.request_id, q);
+    }
+    return [...byId.values()].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  };
+
+  /** The sentence a payer accepts by authorizing, with its terms version. */
+  const acceptanceNote = (product: string, qty: number, max: number | null, sponsored: boolean) => {
+    const sentence =
+      max !== null && max > 0
+        ? ceilingSentence(ceilingPolicy?.body, product, qty, max, sponsored)
+        : null;
+    if (!sentence) return null;
+    return `By Authorizing You Accept: "${titleCase(sentence)}"${
+      termsPolicy ? ` Renewal Terms Version ${termsPolicy.version}.` : ''
+    }`;
+  };
+
+  /** What a payer already accepted, as the server rebuilt it. */
+  const acceptedNote = (text: string | null | undefined, termsVersion?: number | null) =>
+    text
+      ? ` You Accepted: "${titleCase(text)}"${termsVersion ? ` Renewal Terms Version ${termsVersion}.` : ''}`
+      : '';
+
+  const refundConsole = refundTarget ? (
+    <RefundRequestConsole
+      key={`${refundTarget.receipt.purchase_id}:${refundTarget.line.index}:${refundTarget.opened}`}
+      target={refundTarget}
+      forName={
+        refundTarget.receipt.scope_kind === 'club' && scopeKind === 'union'
+          ? status?.covered_clubs?.find((c) => c.club_id === refundTarget.receipt.scope_id)?.name
+          : undefined
+      }
+      refundPolicy={refundPolicy}
+      readReceipts={readScopeReceipts}
+      onSettled={async () => {
+        if (scopeId) await load(scopeId);
+      }}
+      onClose={() => setRefundTarget(null)}
+    />
+  ) : null;
+  const refundOpenFor = refundTarget
+    ? `${refundTarget.receipt.purchase_id}:${refundTarget.line.index}`
+    : null;
+
   const backPath =
     scopeKind === 'club' ? `/clubs/${routeId}/operations` : `/unions/${routeId}/operations`;
   if (loading) {
@@ -1638,6 +2422,49 @@ function DiamondCostsConsole({
         message="Reading Diamond Costs"
         onRetry={onRetry}
       />
+    );
+  }
+  if (formerOwner && !error) {
+    const word = scopeKind === 'union' ? 'Union' : 'Club';
+    return (
+      <div className={styles.page}>
+        <SpadeConsole
+          eyebrow={`${word} Records`}
+          title="Diamond Costs"
+          titleId="diamond-costs-title"
+          pill="Receipts Only"
+          pillInk="muted"
+          foot="foot"
+        >
+          <p className="sc-copy">
+            You No Longer Manage This {word}. The Receipts For What You Paid Here Stay Available To
+            You, And A Refund Still Returns To You As The Original Payer.
+          </p>
+          <div className={styles.rows}>
+            <ChoiceRow
+              label="Back To Home"
+              meta="Diamond Prices, Rights And Renewals Belong To The Current Owner."
+              value="Home"
+              ink="blue"
+              onClick={() => navigate('/')}
+            />
+          </div>
+        </SpadeConsole>
+        <ReceiptsConsole
+          receipts={receipts}
+          failed={false}
+          retryDisabled={busy}
+          onRetry={() => void reloadReceipts()}
+          describe={(r) => when(r.committed_at)}
+          viewerId={viewerId}
+          requestsFor={requestsFor}
+          refundPolicyVersion={refundPolicy?.version ?? null}
+          refundOpenFor={refundOpenFor}
+          onRequestRefund={openRefund}
+        />
+        {refundConsole}
+        <PolicyConsole refund={refundPolicy} terms={termsPolicy} />
+      </div>
     );
   }
   if (error || !status) {
@@ -1657,8 +2484,52 @@ function DiamondCostsConsole({
   const activeRights = rights.filter((r) => r.active).length;
   const activeSponsorships = (status.sponsorships ?? []).filter((x) => x.state === 'active').length;
   const paidActive = rights.some((r) => r.active && r.source !== 'trial');
-  const accessPill = trialActive ? 'Free Month' : paidActive ? 'Paid' : 'No Access';
-  const accessInk: ConsoleInk = trialActive ? 'blue' : paidActive ? 'green' : 'gold';
+  /* Admission is wired in shadow (20260924102056): until an announced date
+     passes, no owner action is refused, so "No Access" would be false. */
+  const access = accessTruth(status, serverNow);
+  const accessPill = trialActive
+    ? 'Free Month'
+    : paidActive
+      ? 'Paid'
+      : access.enforced
+        ? 'No Access'
+        : trial
+          ? 'Not Required Yet'
+          : 'Not Started';
+  const accessInk: ConsoleInk = trialActive
+    ? 'blue'
+    : paidActive
+      ? 'green'
+      : access.enforced
+        ? 'gold'
+        : 'blue';
+  /* The one place the page explains operating access. */
+  const accessRow = (() => {
+    if (access.enforcedFrom === null)
+      return {
+        value: 'Not Required Yet',
+        ink: 'blue' as ConsoleInk,
+        meta: 'Paid Operating Access Will Be Required From A Date That Will Be Announced. Until Then, Approving Members, Opening Tables And Creating Tournaments Are Not Limited By It.',
+      };
+    if (!access.enforced)
+      return {
+        value: dateWord(new Date(access.enforcedFrom).toISOString()),
+        ink: 'gold' as ConsoleInk,
+        meta: `Required From ${when(new Date(access.enforcedFrom).toISOString())}. From Then, Approving New Members, Opening New Tables And Creating New Tournaments Need Active Access. Existing Games And Members Are Not Affected.`,
+      };
+    const since = when(new Date(access.enforcedFrom).toISOString());
+    return trialActive || paidActive
+      ? {
+          value: 'Active',
+          ink: 'green' as ConsoleInk,
+          meta: `Required Since ${since}. Your ${trialActive ? 'Free Month' : 'Paid Access'} Covers New Members, Tables And Tournaments.`,
+        }
+      : {
+          value: 'Required',
+          ink: 'gold' as ConsoleInk,
+          meta: `Required Since ${since}. Choose A Service Under Diamond Prices To Approve New Members, Open New Tables Or Create New Tournaments. Existing Games And Members Are Not Affected.`,
+        };
+  })();
   const trialEnd = trial ? Date.parse(trial.trial_end) : NaN;
   const trialLeft = trialEnd - serverNow;
   const trialAuth = trialRight?.renewal?.state === 'authorized' ? trialRight.renewal : null;
@@ -1745,7 +2616,24 @@ function DiamondCostsConsole({
     if (!name) return when(r.committed_at);
     return `${r.sponsorship_id ? 'Sponsored For' : 'Paid By You For'} ${name}. ${when(r.committed_at)}`;
   };
-  const shownReceipts = showAllReceipts ? listedReceipts : listedReceipts.slice(0, RECEIPTS_SHOWN);
+  /* A sponsor's renewable rights: every sponsored club right this viewer's
+     sponsorship paid for that is still in its period (receipts rights). */
+  const sponsoredRights: Array<{ receipt: Receipt; right: ReceiptRight; line: QuoteLine | null }> =
+    scopeKind === 'union' && viewerId
+      ? listedReceipts
+          .filter((r) => r.scope_kind === 'club' && r.sponsorship_id && r.payer_id === viewerId)
+          .flatMap((r) =>
+            (r.rights ?? [])
+              .filter(
+                (x) => x.state === 'effective' && x.ends_at && Date.parse(x.ends_at) > serverNow
+              )
+              .map((x) => ({
+                receipt: r,
+                right: x,
+                line: (r.lines ?? []).find((l) => l.index === x.line_index) ?? null,
+              }))
+          )
+      : [];
   /* The viewer's own active sponsorships of this union: the payer, and only
      the payer, can buy capacity for a covered club with them. */
   const payerSponsorships =
@@ -1800,7 +2688,9 @@ function DiamondCostsConsole({
                 meta={
                   trialAuth
                     ? `${authorizedService(trialAuth)} Starts Then And Is Charged Once, Only If The Published Price Is At Or Below Your Ceiling.`
-                    : 'Paid Operating Access Does Not Start On Its Own. Authorize A Service Under Paid Access To Continue Without Interruption.'
+                    : access.enforcedFrom !== null
+                      ? 'Paid Operating Access Does Not Start On Its Own. Authorize A Service Under Paid Access To Continue Without Interruption.'
+                      : 'Paid Operating Access Does Not Start On Its Own. Authorize A Service Under Paid Access If You Want One Then.'
                 }
               />
             </>
@@ -1813,7 +2703,9 @@ function DiamondCostsConsole({
               meta={`At ${timeWord(trial.trial_end)}. ${
                 paidActive
                   ? 'Paid Operating Access Continues Below.'
-                  : 'Choose A Service Under Diamond Prices To Keep Operating.'
+                  : access.enforced
+                    ? 'Choose A Service Under Diamond Prices To Keep Operating.'
+                    : 'Paid Access Is Not Required Yet; See Operating Access.'
               }`}
             />
           ) : (
@@ -1836,6 +2728,13 @@ function DiamondCostsConsole({
               ) : null}
             </>
           )}
+          <Row
+            label="Operating Access"
+            value={accessRow.value}
+            ink={accessRow.ink}
+            wrap
+            meta={accessRow.meta}
+          />
           {activeCapacity ? (
             <Row
               label="Current Capacity"
@@ -1867,9 +2766,7 @@ function DiamondCostsConsole({
               meta="Affiliated Clubs In This Union"
             />
           )}
-          {balance !== null ? (
-            <Row label="Available Diamonds" value={balance.toLocaleString()} ink="silver" />
-          ) : null}
+          <BalanceRows breakdown={status.balance_breakdown} balance={balance} />
         </div>
         <p className="sc-copy">
           One Diamond Has A Nominal Catalog Value Of One Cent. Operating Access Expires With Its
@@ -1896,7 +2793,9 @@ function DiamondCostsConsole({
               e.source === 'trial'
                 ? 'No Charge.'
                 : e.source === 'sponsor'
-                  ? 'Paid By Your Union Sponsor; Renews Through A New Sponsored Order.'
+                  ? r?.state === 'authorized'
+                    ? 'Paid By Your Union Sponsor, Who Also Authorized Its Renewal.'
+                    : 'Paid By Your Union Sponsor. Only The Sponsor Can Authorize Its Renewal.'
                   : `Paid ${diamonds(e.net_paid)}.`;
             const live = e.active || e.scheduled;
             const attention =
@@ -1926,7 +2825,7 @@ function DiamondCostsConsole({
                         value={dateWord(r.due_at)}
                         ink={renewalInk(e)}
                         wrap
-                        meta={`At ${timeWord(r.due_at)}. ${renewalNote(e)}`}
+                        meta={`At ${timeWord(r.due_at)}. ${renewalNote(e)}${acceptedNote(r.accepted_ceiling_text, r.terms_version)}`}
                       />
                     ) : r?.state === 'completed' ? (
                       <Row
@@ -1964,7 +2863,16 @@ function DiamondCostsConsole({
                         />
                         <ChoiceRow
                           label="Authorize Renewal"
-                          meta="Optional. You Can Cancel Any Time Before The Due Time."
+                          meta={`Optional. You Can Cancel Any Time Before The Due Time.${(() => {
+                            const p = productOf(e.sku);
+                            const note = acceptanceNote(
+                              p ? p.title : entitlementTitle(e, catalog),
+                              p ? e.quantity || 1 : 1,
+                              parseWhole(renewDrafts[e.id] ?? String(renewalPrice(e) ?? '')),
+                              false
+                            );
+                            return note ? ` ${note}` : '';
+                          })()}`}
                           value={busy ? 'Saving' : 'Authorize'}
                           ink="green"
                           disabled={busy}
@@ -1974,6 +2882,15 @@ function DiamondCostsConsole({
                     ) : null}
                   </>
                 ) : null}
+                {e.source === 'sponsor' && e.ends_at && live && r?.state === 'authorized' ? (
+                  <Row
+                    label="Renews"
+                    value={dateWord(r.due_at)}
+                    ink="blue"
+                    wrap
+                    meta={`At ${timeWord(r.due_at)}. Charged To Your Union Sponsor Within Its Sponsorship, Up To ${diamonds(r.max_diamonds)}. Nothing Is Charged To You.`}
+                  />
+                ) : null}
                 {e.kind === 'trial_operating' && trialActive ? (
                   <>
                     {r?.state === 'authorized' ? (
@@ -1982,7 +2899,7 @@ function DiamondCostsConsole({
                         value={`Up To ${diamonds(r.max_diamonds)}`}
                         ink="green"
                         wrap
-                        meta={`${authorizedService(r)}. Charged Once At ${when(r.due_at)}, Only If The Published Price Is At Or Below This Ceiling.`}
+                        meta={`${authorizedService(r)}. Charged Once At ${when(r.due_at)}, Only If The Published Price Is At Or Below This Ceiling.${acceptedNote(r.accepted_ceiling_text, r.terms_version)}`}
                       />
                     ) : (
                       attention
@@ -2065,7 +2982,17 @@ function DiamondCostsConsole({
                         />
                         <ChoiceRow
                           label="Authorize First Paid Period"
-                          meta="Your Diamonds Are Not Touched Until The Free Month Ends."
+                          meta={`Your Diamonds Are Not Touched Until The Free Month Ends.${(() => {
+                            const note = trialProduct
+                              ? acceptanceNote(
+                                  trialProduct.title,
+                                  trialQuantity ?? 1,
+                                  parseWhole(renewDrafts[e.id] ?? String(trialPrice ?? '')),
+                                  false
+                                )
+                              : null;
+                            return note ? ` ${note}` : '';
+                          })()}`}
                           value={busy ? 'Saving' : 'Authorize'}
                           ink="green"
                           disabled={busy || !trialProduct}
@@ -2188,7 +3115,15 @@ function DiamondCostsConsole({
                   setRenewMax(v);
                 }}
                 disabled={locked}
-                hint="Charged Once When The Period Ends, Only If The Published Price Is At Or Below This Ceiling."
+                hint={`Charged Once When The Period Ends, Only If The Published Price Is At Or Below This Ceiling.${(() => {
+                  const note = acceptanceNote(
+                    selected.title,
+                    coveredQuantity(selected, quantity) ?? 1,
+                    parseWhole(renewMax),
+                    false
+                  );
+                  return note ? ` ${note}` : '';
+                })()}`}
               />
             ) : null}
           </div>
@@ -2260,6 +3195,7 @@ function DiamondCostsConsole({
         }
         onGetDiamonds={() => navigate(BUY_DIAMONDS)}
         notice={upgradeNotice}
+        refundPolicyVersion={refundPolicy?.version ?? null}
       />
 
       <ReceiptConsole order={order} sectionId="diamond-costs-receipt" />
@@ -2347,82 +3283,145 @@ function DiamondCostsConsole({
           }}
           receipts={receipts}
           receiptsKnown={!receiptsFailed}
+          refundPolicyVersion={refundPolicy?.version ?? null}
         />
       ) : null}
 
-      <SpadeConsole
-        eyebrow="Records"
-        title="Receipts"
-        pill={
-          receiptsFailed
-            ? 'Not Read'
-            : listedReceipts.length > 0
-              ? `${listedReceipts.length.toLocaleString()} On File`
-              : 'None'
-        }
-        pillInk={receiptsFailed ? 'gold' : 'muted'}
-        foot="foot"
-      >
-        <div className={styles.rows}>
-          {receiptsFailed ? (
-            <ChoiceRow
-              label="Receipts Could Not Be Read"
-              meta="Your Orders Are Safe On File. Read Them Again."
-              value="Retry"
-              ink="gold"
-              disabled={busy || locked}
-              onClick={() => void reloadReceipts()}
-            />
-          ) : null}
-          {!receiptsFailed && listedReceipts.length === 0 ? (
-            <Row label="No Receipts On File" value="" />
-          ) : null}
-          {shownReceipts.map((r) => (
-            <div key={r.purchase_id}>
-              <Row
-                label={`${r.kind === 'renewal' ? 'Renewal' : r.kind === 'upgrade' ? 'Upgrade' : 'Order'} ${orderRef(r.purchase_id)}`}
-                value={diamonds(r.original_total_diamonds)}
-                wrap
-                meta={receiptFor(r)}
-              />
-              {(r.lines ?? []).map((l) => (
-                <Row
-                  key={`${r.purchase_id}:${l.index}`}
-                  label={l.title}
-                  value={diamonds(l.net)}
-                  ink="muted"
-                  wrap
-                  meta={`${when(l.starts_at)} To ${when(l.ends_at)}`}
-                />
-              ))}
-              {(r.refunds ?? []).map((f) => (
-                <Row
-                  key={f.id}
-                  label="Refund"
-                  value={diamonds(f.gross)}
-                  ink="green"
-                  wrap
-                  meta={`Applied To Existing Debt: ${Number(f.debt_settled).toLocaleString()}; Added To Available Balance: ${Number(f.net_increase).toLocaleString()}. ${when(f.created_at)}.`}
-                />
-              ))}
-            </div>
-          ))}
-          {listedReceipts.length > RECEIPTS_SHOWN ? (
-            <ChoiceRow
-              label={showAllReceipts ? 'Show Fewer Receipts' : 'Show All Receipts'}
-              meta={`${listedReceipts.length.toLocaleString()} Receipts On File`}
-              value={showAllReceipts ? 'Fewer' : 'All'}
-              ink="blue"
-              pressed={showAllReceipts}
-              onClick={() => setShowAllReceipts((v) => !v)}
-            />
-          ) : null}
-        </div>
-        <p className="sc-copy">
-          A Receipt Is Permanent Transaction Evidence. Your Wallet Balance Is Read Separately And
-          May Have Changed Since.
-        </p>
-      </SpadeConsole>
+      {sponsoredRights.length > 0 ? (
+        <SpadeConsole
+          eyebrow="Sponsorship"
+          title="Renewals"
+          pill={
+            sponsoredRights.length === 1
+              ? '1 Right'
+              : `${sponsoredRights.length.toLocaleString()} Rights`
+          }
+          pillInk="blue"
+          foot="foot"
+        >
+          <div className={styles.rows}>
+            {sponsoredRights.map(({ receipt: sr, right, line }) => {
+              const renewal = right.renewal;
+              const product =
+                clubCatalog.find((p) => p.sku === (renewal?.sku ?? right.sku)) ?? null;
+              const qty = renewal?.quantity ?? line?.quantity ?? 1;
+              const price = listPrice(product, qty);
+              const title = product?.title ?? (line ? titleCase(line.title) : 'Club Service');
+              const clubName = clubNames.get(sr.scope_id) ?? 'Covered Club';
+              const draft =
+                renewDrafts[right.entitlement_id] ?? (price !== null ? price.toLocaleString() : '');
+              const typed = parseWhole(draft);
+              const accepted = acceptedTexts[right.entitlement_id];
+              const inkFor: ConsoleInk =
+                renewal && price !== null && price > renewal.max_diamonds ? 'red' : 'blue';
+              return (
+                <div key={right.entitlement_id}>
+                  <Row
+                    label={clubName}
+                    value={dateWord(right.ends_at)}
+                    ink="silver"
+                    wrap
+                    meta={`${title}. Paid Through ${when(right.ends_at)} From Your Sponsorship, Order ${orderRef(sr.purchase_id)}.`}
+                  />
+                  {renewal?.state === 'authorized' ? (
+                    <>
+                      <Row
+                        label="Renews"
+                        value={dateWord(renewal.due_at)}
+                        ink={inkFor}
+                        wrap
+                        meta={`At ${timeWord(renewal.due_at)}. Ceiling: ${diamonds(renewal.max_diamonds)}.${
+                          price !== null ? ` Today's Price: ${diamonds(price)}.` : ''
+                        }${
+                          price !== null && price > renewal.max_diamonds
+                            ? ' That Is Above Your Ceiling, So The Renewal Would Not Complete.'
+                            : ''
+                        } Charged To You Within The Sponsorship Budget.${acceptedNote(accepted, termsPolicy?.version)}`}
+                      />
+                      <ChoiceRow
+                        label="Cancel Sponsored Renewal"
+                        meta="Stops The Next Sponsored Charge. The Club Keeps Its Current Paid Period."
+                        value={busy ? 'Saving' : 'Cancel'}
+                        ink="red"
+                        disabled={busy}
+                        onClick={() => void sponsorRenewal(right.entitlement_id, false, null)}
+                      />
+                    </>
+                  ) : renewal?.state === 'completed' ? (
+                    <Row
+                      label="Renewed"
+                      value="On File"
+                      ink="green"
+                      meta="The Next Period Carries Its Own Renewal Setting."
+                    />
+                  ) : (
+                    <>
+                      {renewal?.state === 'needs_attention' ? (
+                        <Row
+                          label="Renewal Not Completed"
+                          value="Attention"
+                          ink="red"
+                          wrap
+                          meta="The Last Sponsored Renewal Did Not Complete. The Club's Current Paid Period Is Unchanged. Authorize Again To Renew."
+                        />
+                      ) : null}
+                      <div className={styles.fields}>
+                        <Field
+                          label="Authorize Renewal Up To (Diamonds)"
+                          value={draft}
+                          onChange={(v) =>
+                            setRenewDrafts((d) => ({ ...d, [right.entitlement_id]: v }))
+                          }
+                          disabled={busy}
+                          hint={`Charged To You Once At ${when(right.ends_at)}, Within The Sponsorship Budget, Only If The Published Price Is At Or Below This Ceiling.`}
+                        />
+                        <ChoiceRow
+                          label="Authorize Sponsored Renewal"
+                          meta={`Optional. Cancel Any Time Before It Is Due.${(() => {
+                            const note = acceptanceNote(title, qty, typed, true);
+                            return note ? ` ${note}` : '';
+                          })()}`}
+                          value={busy ? 'Saving' : 'Authorize'}
+                          ink="green"
+                          disabled={busy}
+                          onClick={() => {
+                            const problem = ceilingCheck(typed, price);
+                            if (problem || typed === null)
+                              return toast.error(problem ?? 'Enter A Ceiling');
+                            void sponsorRenewal(right.entitlement_id, true, typed);
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="sc-copy">
+            A Sponsored Renewal Buys The Next Period Of That Club From Your Diamond Balance Within
+            The Same Sponsorship Budget, Only At Or Below Your Ceiling. The Club Owner Is Never
+            Charged For It.
+          </p>
+        </SpadeConsole>
+      ) : null}
+
+      <ReceiptsConsole
+        receipts={listedReceipts}
+        failed={receiptsFailed}
+        retryDisabled={busy || locked}
+        onRetry={() => void reloadReceipts()}
+        describe={receiptFor}
+        viewerId={viewerId}
+        requestsFor={requestsFor}
+        refundPolicyVersion={refundPolicy?.version ?? null}
+        refundOpenFor={refundOpenFor}
+        onRequestRefund={openRefund}
+      />
+
+      {refundConsole}
+
+      <PolicyConsole refund={refundPolicy} terms={termsPolicy} />
     </div>
   );
 }

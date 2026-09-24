@@ -7,7 +7,7 @@
 --
 -- Assignment CA-DIAMOND-COMMERCE-2026-09-22 R2, the refunds, notices and
 -- catalog-lifecycle increment. It builds on 20260922143541 (base) and
--- 20260924033509 (fixes) and replaces nine of their functions, each pinned to
+-- 20260924033509 (fixes) and replaces ten of their functions, each pinned to
 -- its live body below. Every change is pinned by a check in
 -- tests/sql/run-diamond-club-commerce-refunds.py that fails without it.
 --
@@ -45,6 +45,11 @@
 --     balance breakdown and the open refund requests; receipts stay readable
 --     by the person who paid after they lose their role on the scope, and
 --     name only what that person paid for.
+--  8. Withdrawing a product (fn_ca_commerce_product_support false) withdraws
+--     every open quote that sells it in the same transaction, so a quote
+--     taken before the withdrawal can no longer be bought (R2 D06). Staff
+--     reads for the Commerce Desk list every price version and every piece
+--     of comparison evidence.
 --
 -- Not a repair job (CLAUDE.md 10.12): nothing here sweeps, back-pays or
 -- re-drives. The owed refund is the consumer's own obligation, executed by
@@ -75,7 +80,8 @@ BEGIN
     ('fn_ca_commerce_scope_status', 'f57845b8fb87f1c1f32f94ee771c821f'),
     ('fn_ca_commerce_price_draft', '5c82a8ad9fcfc5791f6c3163d85e1ef6'),
     ('fn_ca_commerce_price_publish', '3a21220f50fe66cd21bcc9d542ce8527'),
-    ('fn_ca_commerce_activate_launch_cohort', '87826fae6c5be1d47bb140faa261ada2')
+    ('fn_ca_commerce_activate_launch_cohort', '87826fae6c5be1d47bb140faa261ada2'),
+    ('fn_ca_commerce_product_support', '7294f3eb813de69ec155a9abac2b7c89')
   ) AS t(fn, md5) LOOP
     IF (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = r.fn) IS DISTINCT FROM r.md5 THEN
       RAISE EXCEPTION 'commerce baseline changed: % is not the live body this migration replaces', r.fn;
@@ -1561,6 +1567,80 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
+-- 18b. Replaced: product support. Unchanged, except that withdrawing a
+-- product also withdraws every open quote that sells it, in the same
+-- transaction (R2 D06): a quote taken before the withdrawal is refused by
+-- the purchase boundary exactly as any other non-open quote is, and nothing
+-- is charged for a product no longer on sale. A purchase already holding
+-- the quote row commits first and this waits for it; one that arrives after
+-- reads the withdrawn row. Accepted purchases and their rights are untouched.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_ca_commerce_product_support(p_sku text, p_supported boolean) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_withdrawn integer := 0;
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' AND NOT public.fn_is_platform_admin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'staff_required');
+  END IF;
+  UPDATE public.ca_commerce_products SET supported = p_supported WHERE sku = p_sku;
+  IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'unknown_sku'); END IF;
+  IF p_supported IS NOT TRUE THEN
+    UPDATE public.ca_commerce_quotes q SET status = 'withdrawn'
+     WHERE q.status = 'open'
+       AND EXISTS (SELECT 1 FROM jsonb_array_elements(q.lines) l WHERE l->>'sku' = p_sku);
+    GET DIAGNOSTICS v_withdrawn = ROW_COUNT;
+  END IF;
+  INSERT INTO public.ca_commerce_events (kind, actor_id, detail) VALUES ('product_support_changed', v_actor,
+    jsonb_build_object('sku', p_sku, 'supported', p_supported, 'quotes_withdrawn', v_withdrawn));
+  RETURN jsonb_build_object('success', true, 'sku', p_sku, 'supported', p_supported, 'quotes_withdrawn', v_withdrawn);
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 18c. Staff reads for the Commerce Desk. Platform staff or the service role.
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION public.fn_ca_commerce_price_versions(p_sku text DEFAULT NULL) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' AND NOT public.fn_is_platform_admin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'staff_required');
+  END IF;
+  RETURN jsonb_build_object('success', true, 'price_versions', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'price_version_id', v.id, 'sku', v.sku, 'version', v.version, 'status', v.status,
+             'diamonds', v.diamonds, 'price_rule', v.price_rule, 'cap_diamonds', v.cap_diamonds,
+             'price_authority', v.price_authority, 'effective_from', v.effective_from, 'effective_to', v.effective_to,
+             'created_by', v.created_by, 'published_by', v.published_by, 'published_at', v.published_at,
+             'comparison_verified', v.comparison_verified, 'comparison_evidence', v.comparison_evidence,
+             'in_effect', v.status = 'published' AND v.effective_from <= now() AND (v.effective_to IS NULL OR v.effective_to > now()),
+             'created_at', v.created_at)
+             ORDER BY v.created_at DESC, v.sku, v.version DESC)
+      FROM public.ca_commerce_price_versions v
+     WHERE p_sku IS NULL OR v.sku = p_sku), '[]'::jsonb));
+END $$;
+
+CREATE FUNCTION public.fn_ca_commerce_comparison_list(p_sku text DEFAULT NULL) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' AND NOT public.fn_is_platform_admin() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'staff_required');
+  END IF;
+  RETURN jsonb_build_object('success', true, 'evidence', COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'evidence_id', e.id, 'sku', e.sku, 'source_name', e.source_name, 'source_url', e.source_url,
+             'observed_price', e.observed_price, 'observed_unit', e.observed_unit, 'observed_at', e.observed_at,
+             'conversion_note', e.conversion_note, 'price_version_id', e.price_version_id,
+             'recorded_by', e.recorded_by, 'recorded_by_name', (SELECT p.username FROM public.profiles p WHERE p.id = e.recorded_by),
+             'recorded_at', e.recorded_at,
+             'verified_by', e.verified_by, 'verified_by_name', (SELECT p.username FROM public.profiles p WHERE p.id = e.verified_by),
+             'verified_at', e.verified_at, 'verified', e.verified_by IS NOT NULL)
+             ORDER BY e.recorded_at DESC, e.id)
+      FROM public.ca_commerce_comparison_evidence e
+     WHERE p_sku IS NULL OR e.sku = p_sku), '[]'::jsonb));
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- 19. Grants, restated for every function this migration creates or
 -- replaces. Browser doors ask auth themselves; internal helpers and the
 -- consumer doors are private. A REVOKE names every role.
@@ -1589,7 +1669,10 @@ REVOKE ALL ON FUNCTION
   public.fn_ca_commerce_comparison_record(text, text, text, numeric, text, timestamptz, text, uuid),
   public.fn_ca_commerce_comparison_verify(uuid, uuid),
   public.fn_ca_commerce_receipts(text, uuid),
-  public.fn_ca_commerce_scope_status(text, uuid)
+  public.fn_ca_commerce_scope_status(text, uuid),
+  public.fn_ca_commerce_product_support(text, boolean),
+  public.fn_ca_commerce_price_versions(text),
+  public.fn_ca_commerce_comparison_list(text)
 FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
@@ -1606,7 +1689,10 @@ GRANT EXECUTE ON FUNCTION
   public.fn_ca_commerce_comparison_record(text, text, text, numeric, text, timestamptz, text, uuid),
   public.fn_ca_commerce_comparison_verify(uuid, uuid),
   public.fn_ca_commerce_receipts(text, uuid),
-  public.fn_ca_commerce_scope_status(text, uuid)
+  public.fn_ca_commerce_scope_status(text, uuid),
+  public.fn_ca_commerce_product_support(text, boolean),
+  public.fn_ca_commerce_price_versions(text),
+  public.fn_ca_commerce_comparison_list(text)
 TO authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
@@ -1635,6 +1721,9 @@ BEGIN
   END IF;
   IF strpos((SELECT prosrc FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'fn_ca_commerce_claim_due_renewals'), 'consumer_heartbeat_at') = 0 THEN
     RAISE EXCEPTION 'the claim door does not stamp the consumer heartbeat';
+  END IF;
+  IF strpos((SELECT prosrc FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'fn_ca_commerce_product_support'), 'withdrawn') = 0 THEN
+    RAISE EXCEPTION 'withdrawing a product does not withdraw its open quotes';
   END IF;
   IF strpos((SELECT prosrc FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'fn_ca_commerce_price_draft'), '''draft''') = 0 THEN
     RAISE EXCEPTION 'a price draft is not created as a draft';

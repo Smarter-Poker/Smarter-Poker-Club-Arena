@@ -120,16 +120,129 @@ describe('the durable renewal consumer', () => {
     expect(doors.deliverNotices).toHaveBeenCalledTimes(2);
   });
 
-  it('a refused refund run is reported, not swallowed, and notices wait for the next wake', async () => {
+  it('a refused refund run is reported, not swallowed, and notices are still delivered in the same wake', async () => {
     const { doors } = fakeDoors({
       executeRefunds: vi.fn(async () => ({ success: false, error: 'lease_token_required' })),
     });
     consumer.__setCommerceConsumerDoors(doors);
     consumer.startCommerceRenewalConsumer();
     await vi.advanceTimersByTimeAsync(0);
-    expect(consumer.commerceRenewalConsumerStatus().lastError).toContain('lease_token_required');
+    const status = consumer.commerceRenewalConsumerStatus();
+    expect(status.lastError).toContain('lease_token_required');
+    expect(status.stepErrors.refunds).toContain('lease_token_required');
+    expect(status.stepErrors.renewals).toBeNull();
+    expect(status.stepErrors.notices).toBeNull();
     expect(mocked.report).toHaveBeenCalledTimes(1);
-    expect(doors.deliverNotices).not.toHaveBeenCalled();
+    expect(mocked.report.mock.calls[0][1]).toBe('CommerceRenewalConsumer.refunds');
+    expect(doors.deliverNotices).toHaveBeenCalledTimes(1);
+    expect(status.lastNoticesDelivered).toBe(3);
+  });
+
+  it('a thrown refund step (for example the door not installed yet) does not stop the notices', async () => {
+    const { doors } = fakeDoors({
+      executeRefunds: vi.fn(async () => {
+        throw new Error('fn_ca_commerce_execute_approved_refunds: function does not exist');
+      }),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    const status = consumer.commerceRenewalConsumerStatus();
+    expect(doors.execute).toHaveBeenCalledTimes(2);
+    expect(doors.deliverNotices).toHaveBeenCalledTimes(1);
+    expect(status.lastRenewals).toEqual({ claimed: 2, renewed: 1, attention: 1, leaseLost: 0 });
+    expect(status.stepErrors).toEqual({
+      renewals: null,
+      refunds: 'fn_ca_commerce_execute_approved_refunds: function does not exist',
+      notices: null,
+    });
+    expect(mocked.report).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed claim does not stop the refunds or the notices in the same wake', async () => {
+    const { doors } = fakeDoors({
+      claim: vi.fn(async () => {
+        throw new Error('claim down');
+      }),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    const status = consumer.commerceRenewalConsumerStatus();
+    expect(doors.execute).not.toHaveBeenCalled();
+    expect(doors.executeRefunds).toHaveBeenCalledTimes(1);
+    expect(doors.deliverNotices).toHaveBeenCalledTimes(1);
+    expect(status.lastRefunds).toEqual({ claimed: 2, refunded: 1, owed: 1, failed: 0 });
+    expect(status.lastNoticesDelivered).toBe(3);
+    expect(status.stepErrors).toEqual({ renewals: 'claim down', refunds: null, notices: null });
+    expect(mocked.report).toHaveBeenCalledTimes(1);
+    expect(mocked.report.mock.calls[0][1]).toBe('CommerceRenewalConsumer.renewals');
+  });
+
+  it('a renewal execution that throws mid-batch does not stop the refunds or the notices', async () => {
+    const { doors } = fakeDoors({
+      execute: vi.fn(async () => {
+        throw new Error('execute down');
+      }),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(doors.execute).toHaveBeenCalledTimes(1);
+    expect(doors.executeRefunds).toHaveBeenCalledTimes(1);
+    expect(doors.deliverNotices).toHaveBeenCalledTimes(1);
+    expect(consumer.commerceRenewalConsumerStatus().stepErrors.renewals).toBe('execute down');
+  });
+
+  it('a failed notice delivery is reported on its own and leaves the money steps reported clean', async () => {
+    const { doors } = fakeDoors({
+      deliverNotices: vi.fn(async () => {
+        throw new Error('notices down');
+      }),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    const status = consumer.commerceRenewalConsumerStatus();
+    expect(status.lastRenewals?.renewed).toBe(1);
+    expect(status.lastRefunds?.refunded).toBe(1);
+    expect(status.stepErrors).toEqual({ renewals: null, refunds: null, notices: 'notices down' });
+    expect(status.lastError).toBe('notices down');
+    expect(mocked.report.mock.calls.map((c) => c[1])).toEqual(['CommerceRenewalConsumer.notices']);
+  });
+
+  it('every failing step reports separately, and each clears on its own next success', async () => {
+    let wake = 0;
+    const { doors } = fakeDoors({
+      claim: vi.fn(async () => {
+        wake += 1;
+        if (wake === 1) throw new Error('claim down');
+        return [];
+      }),
+      executeRefunds: vi.fn(async () => {
+        if (wake === 1) throw new Error('refunds down');
+        return { success: true, claimed: 0, refunded: 0, owed: 0, failed: 0 };
+      }),
+      deliverNotices: vi.fn(async () => {
+        if (wake <= 2) throw new Error('notices down');
+        return 0;
+      }),
+    });
+    consumer.__setCommerceConsumerDoors(doors);
+    consumer.startCommerceRenewalConsumer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumer.commerceRenewalConsumerStatus().lastError).toBe(
+      'claim down; refunds down; notices down'
+    );
+    expect(mocked.report).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(consumer.COMMERCE_RENEWAL_POLL_MS + 1);
+    expect(consumer.commerceRenewalConsumerStatus().stepErrors).toEqual({
+      renewals: null,
+      refunds: null,
+      notices: 'notices down',
+    });
+    await vi.advanceTimersByTimeAsync(consumer.COMMERCE_RENEWAL_POLL_MS + 1);
+    expect(consumer.commerceRenewalConsumerStatus().lastError).toBeNull();
   });
 
   it('a stale lease is counted, not retried, and a stop fences the rest of the batch', async () => {

@@ -28,6 +28,12 @@
  *   4. delivers due notices (fn_ca_commerce_deliver_due_notices), deciding a
  *      balance check against the price in effect that day.
  *
+ * The three steps are independent: a failure in one (a database error, or a
+ * door the engine calls before its migration is installed) is recorded in
+ * status.stepErrors, reported with that step's name, and the other steps still
+ * run in the same wake. The engine is therefore safe to release before or
+ * after the migration that adds a door.
+ *
  * The interval is a WAKE SIGNAL, never the record (EVENT-DRIVEN-EXECUTION.md).
  * Nothing here repairs, back-pays or retries a charge on its own: a mandate
  * that could not be executed leaves a visible needs_attention state and a
@@ -55,6 +61,9 @@ export interface CommerceConsumerStatus {
   lastRenewals: { claimed: number; renewed: number; attention: number; leaseLost: number } | null;
   lastRefunds: { claimed: number; refunded: number; owed: number; failed: number } | null;
   lastNoticesDelivered: number | null;
+  /** Each step's own last error; null when its last run succeeded. */
+  stepErrors: { renewals: string | null; refunds: string | null; notices: string | null };
+  /** Every step error of the latest runs, joined; null when all succeeded. */
   lastError: string | null;
 }
 
@@ -138,6 +147,7 @@ const status: CommerceConsumerStatus = {
   lastRenewals: null,
   lastRefunds: null,
   lastNoticesDelivered: null,
+  stepErrors: { renewals: null, refunds: null, notices: null },
   lastError: null,
 };
 
@@ -145,7 +155,7 @@ const lifecycleIsCurrent = (generation: number): boolean =>
   lifecycleActive && lifecycleGeneration === generation;
 
 export function commerceRenewalConsumerStatus(): CommerceConsumerStatus {
-  return { ...status };
+  return { ...status, stepErrors: { ...status.stepErrors } };
 }
 
 /** Test seam: replace the database doors. Never called in production. */
@@ -153,23 +163,50 @@ export function __setCommerceConsumerDoors(next: CommerceConsumerDoors | null): 
   doors = next ?? rpcDoors;
 }
 
+/** The three independent steps of a wake. */
+export type CommerceConsumerStep = 'renewals' | 'refunds' | 'notices';
+
+/**
+ * Runs one step in isolation: its failure is recorded against that step,
+ * reported with the step's name, and never stops the steps after it. A
+ * success clears that step's previous error. This is what makes the engine
+ * safe to release before or after the database migration it calls: a door
+ * that does not exist yet fails its own step and nothing else.
+ */
+async function runStep(step: CommerceConsumerStep, work: () => Promise<void>): Promise<void> {
+  try {
+    await work();
+    status.stepErrors = { ...status.stepErrors, [step]: null };
+  } catch (err) {
+    status.stepErrors = {
+      ...status.stepErrors,
+      [step]: err instanceof Error ? err.message : String(err),
+    };
+    reportError(err, `CommerceRenewalConsumer.${step}`);
+  }
+  const errors = Object.values(status.stepErrors).filter((e): e is string => e !== null);
+  status.lastError = errors.length > 0 ? errors.join('; ') : null;
+}
+
 /**
  * One wake: claim due mandates under a fresh lease (stamping the heartbeat)
  * and execute each once, then execute approved refunds, then deliver due
- * notices. Every step is fenced on the lifecycle generation and on the
- * maintenance freeze, so a stopped consumer never executes a mandate it
- * claimed before the stop (the lease expires and a live leader reclaims it)
- * and nothing moves diamonds while the platform is frozen.
+ * notices. The three steps are independent: a failure in one is reported
+ * and the others still run in the same wake. Every step is fenced on the
+ * lifecycle generation and money steps on the maintenance freeze, so a
+ * stopped consumer never executes a mandate it claimed before the stop (the
+ * lease expires and a live leader reclaims it) and nothing moves diamonds
+ * while the platform is frozen.
  */
 export async function wakeCommerceConsumer(generation: number): Promise<void> {
   if (!lifecycleIsCurrent(generation)) return;
   status.lastWakeAt = new Date().toISOString();
   if (doors.frozen()) return;
   const leaseToken = crypto.randomUUID();
-  const summary = { claimed: 0, renewed: 0, attention: 0, leaseLost: 0 };
-  try {
+
+  await runStep('renewals', async () => {
+    const summary = { claimed: 0, renewed: 0, attention: 0, leaseLost: 0 };
     const claimed = await doors.claim(leaseToken, CLAIM_LIMIT);
-    if (!lifecycleIsCurrent(generation)) return;
     summary.claimed = claimed.length;
     for (const mandate of claimed) {
       if (!lifecycleIsCurrent(generation) || doors.frozen()) break;
@@ -184,10 +221,13 @@ export async function wakeCommerceConsumer(generation: number): Promise<void> {
       );
     }
     status.lastRenewals = summary;
-    if (!lifecycleIsCurrent(generation)) return;
-    // A refund is a money movement: never during the freeze. The notices
-    // below are not, so a freeze that began mid-wake still lets them go out.
-    if (!doors.frozen()) {
+  });
+
+  if (!lifecycleIsCurrent(generation)) return;
+  // A refund is a money movement: never during the freeze. The notices
+  // below are not, so a freeze that began mid-wake still lets them go out.
+  if (!doors.frozen()) {
+    await runStep('refunds', async () => {
       const refunds = await doors.executeRefunds(leaseToken, REFUND_LIMIT);
       if (refunds.success === false) {
         throw new Error(
@@ -205,14 +245,13 @@ export async function wakeCommerceConsumer(generation: number): Promise<void> {
           `[CommerceRenewal] refunds claimed ${status.lastRefunds.claimed}: refunded ${status.lastRefunds.refunded}, owed ${status.lastRefunds.owed}, failed ${status.lastRefunds.failed}`
         );
       }
-    }
-    if (!lifecycleIsCurrent(generation)) return;
-    status.lastNoticesDelivered = await doors.deliverNotices(NOTICE_LIMIT);
-    status.lastError = null;
-  } catch (err) {
-    status.lastError = err instanceof Error ? err.message : String(err);
-    reportError(err, 'CommerceRenewalConsumer.wake');
+    });
   }
+
+  if (!lifecycleIsCurrent(generation)) return;
+  await runStep('notices', async () => {
+    status.lastNoticesDelivered = await doors.deliverNotices(NOTICE_LIMIT);
+  });
 }
 
 function launchWake(): void {

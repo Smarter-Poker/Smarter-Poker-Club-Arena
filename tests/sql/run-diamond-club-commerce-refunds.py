@@ -666,6 +666,60 @@ def catalog_lifecycle_and_comparison():
     check(rpc('fn_ca_commerce_comparison_verify', f"'{e['evidence_id']}','{pv}'", ST2).get('is_replay'), 'comparison: a repeated verification is a replay')
 
 
+def withdrawn_product_stops_open_quotes():
+    # D06: a quote taken before a product is withdrawn must not be buyable.
+    q = h.quote(O1, 'club', K1, 'club_insurance_module')
+    other = h.quote(O4, 'club', K4, 'capacity_60')
+    check(q.get('success') and other.get('success'), 'fixture: an open quote for the product and one for another product', {'q': q, 'other': other})
+    r = rpc('fn_ca_commerce_product_support', "'club_insurance_module',false", O1)
+    check(r.get('error') == 'staff_required' and sql(f"SELECT status FROM public.ca_commerce_quotes WHERE id='{q['quote_id']}'") == 'open',
+          'D06: only staff withdraw a product', r)
+    ws = rpc('fn_ca_commerce_product_support', "'club_insurance_module',false", ST1)
+    check(ws.get('success') and ws['quotes_withdrawn'] >= 1
+          and sql(f"SELECT status FROM public.ca_commerce_quotes WHERE id='{q['quote_id']}'") == 'withdrawn'
+          and sql(f"SELECT status FROM public.ca_commerce_quotes WHERE id='{other['quote_id']}'") == 'open'
+          and count("public.ca_commerce_quotes WHERE status='open' AND lines @> '[{\"sku\":\"club_insurance_module\"}]'") == 0,
+          'D06: withdrawing a product withdraws every open quote that sells it, and only those, in the same transaction', ws)
+    before, before_p, before_tx = balance(O1), count('public.ca_commerce_purchases'), count(f"public.diamond_transactions WHERE user_id='{O1}'")
+    b = h.buy(O1, q['quote_id'], 'o1-withdrawn-quote-0001')
+    check(not b.get('success') and b.get('requote') and balance(O1) == before and count('public.ca_commerce_purchases') == before_p
+          and count(f"public.diamond_transactions WHERE user_id='{O1}'") == before_tx,
+          'D06: the purchase refuses a quote for a withdrawn product and nothing is charged', b)
+    ev = js("SELECT detail FROM public.ca_commerce_events WHERE kind='product_support_changed' ORDER BY id DESC LIMIT 1")
+    check(ev == {'sku': 'club_insurance_module', 'supported': False, 'quotes_withdrawn': ws['quotes_withdrawn']}, 'D06: the withdrawal is audited with the quotes it withdrew', ev)
+    rs = rpc('fn_ca_commerce_product_support', "'club_insurance_module',true", ST1)
+    q2 = h.quote(O1, 'club', K1, 'club_insurance_module')
+    check(rs.get('success') and rs['quotes_withdrawn'] == 0 and q2.get('success') and sql(f"SELECT status FROM public.ca_commerce_quotes WHERE id='{q2['quote_id']}'") == 'open',
+          'D06: restoring support withdraws nothing and the product can be quoted again', rs)
+
+
+def commerce_desk_reads():
+    r = rpc('fn_ca_commerce_price_versions', 'NULL', O1)
+    check(r.get('error') == 'staff_required', 'commerce desk: price versions are staff only', r)
+    r = rpc('fn_ca_commerce_comparison_list', 'NULL', O2)
+    check(r.get('error') == 'staff_required', 'commerce desk: comparison evidence is staff only', r)
+    allv = rpc('fn_ca_commerce_price_versions', 'NULL', ST1)
+    total = count('public.ca_commerce_price_versions')
+    keys = {'price_version_id', 'sku', 'version', 'status', 'diamonds', 'price_rule', 'cap_diamonds', 'price_authority', 'effective_from', 'effective_to',
+            'published_by', 'published_at', 'comparison_verified', 'comparison_evidence', 'created_at'}
+    created = [v['created_at'] for v in allv['price_versions']]
+    check(allv.get('success') and len(allv['price_versions']) == total and all(keys <= set(v) for v in allv['price_versions'])
+          and created == sorted(created, reverse=True),
+          'commerce desk: every price version with its full record, newest first', len(allv.get('price_versions', [])))
+    c250 = rpc('fn_ca_commerce_price_versions', "'capacity_250'", None, role='service_role')
+    statuses = sorted(v['status'] for v in c250['price_versions'])
+    check(c250.get('success') and all(v['sku'] == 'capacity_250' for v in c250['price_versions'])
+          and statuses == sorted(js("SELECT jsonb_agg(status) FROM public.ca_commerce_price_versions WHERE sku='capacity_250'"))
+          and {'draft', 'published', 'retired'} <= set(statuses) and sum(1 for v in c250['price_versions'] if v['in_effect']) == 1,
+          'commerce desk: filtered by product (service role too), drafts and retired versions included, one in effect', statuses)
+    ev = rpc('fn_ca_commerce_comparison_list', "'capacity_60'", ST2)
+    item = ev['evidence'][0] if ev.get('evidence') else {}
+    check(ev.get('success') and len(ev['evidence']) == 1 and item['verified'] and item['recorded_by'] == ST1 and item['recorded_by_name'] == 'refunds_staff_one'
+          and item['verified_by'] == ST2 and item['verified_by_name'] == 'refunds_staff_two' and item['source_url'] == 'https://example.com/pricing',
+          'commerce desk: comparison evidence names its recorder and its verifier and whether it is verified', ev)
+    check(rpc('fn_ca_commerce_comparison_list', "'capacity_100'", ST1) == {'success': True, 'evidence': []}, 'commerce desk: a product with no evidence lists none')
+
+
 def conservation():
     c = js("""SELECT jsonb_build_object(
         'purchases_net', (SELECT COALESCE(SUM(net),0) FROM public.ca_commerce_purchases),
@@ -696,6 +750,8 @@ def main():
         refunds()
         former_owner_reads()
         catalog_lifecycle_and_comparison()
+        withdrawn_product_stops_open_quotes()
+        commerce_desk_reads()
         conservation()
         print(f'PASS {h.passed} scenarios: diamond commerce refunds, notices and catalog lifecycle qualified in isolation')
     except AssertionError as e:

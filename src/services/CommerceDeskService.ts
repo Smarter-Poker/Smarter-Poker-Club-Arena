@@ -18,6 +18,11 @@
  *                   staff reads fn_ca_commerce_price_versions and
  *                   fn_ca_commerce_comparison_list; fn_ca_commerce_product_support
  *                   is replaced there and now counts the open quotes it withdraws
+ *   20260924182605  fn_ca_commerce_written_quotes, fn_ca_commerce_written_quote_offer
+ *                   and _decline (capacity above 2,500 members), and
+ *                   fn_ca_commerce_trial_reviews and fn_ca_commerce_trial_review_decide
+ *                   (a free month for a genuinely new operation)
+ *   20260924183529  fn_ca_commerce_metrics, the staff operating metrics (R2 7.5)
  * The route guard (PlatformStaffGuard) is a courtesy; the doors are the lock.
  *
  * NOTHING IS DECIDED HERE. A refusal comes back as { success: false, error }
@@ -310,6 +315,155 @@ export function admissionWords(table: Readonly<Record<string, string>>, code: st
   return hasOwn(table, code) ? table[code] : enumToTitleCase(code);
 }
 
+/* ── Written quotes (fn_ca_commerce_written_quote_json, 20260924182605) ──── */
+
+/**
+ * 'accepted' and 'expired' are read, not stored: an offer whose private
+ * product the club holds reads accepted, and an unbought offer past its
+ * validity reads expired.
+ */
+export type WrittenQuoteState =
+  | 'requested'
+  | 'offered'
+  | 'accepted'
+  | 'expired'
+  | 'declined'
+  | 'withdrawn';
+
+export const WRITTEN_QUOTE_STATE_LABEL: Readonly<Record<WrittenQuoteState, string>> = {
+  requested: 'Requested',
+  offered: 'Offered',
+  accepted: 'Accepted',
+  expired: 'Expired',
+  declined: 'Declined',
+  withdrawn: 'Withdrawn',
+};
+
+export interface WrittenQuote {
+  written_quote_id: string;
+  scope_kind: 'club';
+  scope_id: string;
+  requested_by: string;
+  requested_capacity: number;
+  request_note: string | null;
+  state: WrittenQuoteState;
+  offered_capacity: number | null;
+  offered_diamonds: number | null;
+  sku: string | null;
+  price_version_id: string | null;
+  valid_until: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  staff_note: string | null;
+  created_at: string;
+}
+
+/** The bounds fn_ca_commerce_written_quote_offer enforces. */
+export const WRITTEN_QUOTE_LIMITS = {
+  minCapacityExclusive: 2500,
+  maxCapacity: 1_000_000,
+  maxDiamonds: 100_000_000,
+  minValidDays: 1,
+  maxValidDays: 30,
+  defaultValidDays: 14,
+  maxNote: 2000,
+} as const;
+
+/* ── Free month reviews (fn_ca_commerce_trial_review_json, 20260924182605) ─ */
+
+export type TrialReviewState = 'requested' | 'approved' | 'declined';
+
+export const TRIAL_REVIEW_STATE_LABEL: Readonly<Record<TrialReviewState, string>> = {
+  requested: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+};
+
+export interface TrialReview {
+  review_id: string;
+  scope_kind: ScopeKind;
+  scope_id: string;
+  operator_id: string;
+  requested_by: string;
+  statement: string;
+  state: TrialReviewState;
+  decided_by: string | null;
+  decided_at: string | null;
+  staff_note: string | null;
+  granted_trial_id: string | null;
+  granted_trial_end: string | null;
+  created_at: string;
+}
+
+/* ── Operating metrics (fn_ca_commerce_metrics, 20260924183529) ─────────── */
+
+export interface CommerceMetrics {
+  days: number;
+  since: string;
+  as_of: string;
+  quotes: {
+    priced: number;
+    proposed_diamonds: number;
+    consumed: number;
+    open: number;
+    expired: number;
+    withdrawn: number;
+  };
+  purchases: {
+    committed: number;
+    paid: number;
+    zero_net: number;
+    net_paid_diamonds: number;
+    sponsored_net_diamonds: number;
+    trial_waiver_diamonds: number;
+    by_kind: Record<
+      'purchase' | 'upgrade' | 'renewal',
+      { committed: number; net_paid_diamonds: number }
+    >;
+  };
+  trial_waivers: { scopes: number; trials: number; net_paid_diamonds: number };
+  refunds: {
+    committed: number;
+    gross_diamonds: number;
+    debt_settled_diamonds: number;
+    added_to_balance_diamonds: number;
+  };
+  refund_requests: {
+    by_state: Record<RefundState, number>;
+    awaiting_decision: number;
+    oldest_awaiting_decision_at: string | null;
+    oldest_awaiting_decision_hours: number | null;
+    awaiting_execution: number;
+    awaiting_execution_diamonds: number;
+    oldest_awaiting_execution_at: string | null;
+    oldest_awaiting_execution_hours: number | null;
+  };
+  renewals: {
+    authorized: number;
+    due_now: number;
+    oldest_due_at: string | null;
+    oldest_overdue_hours: number | null;
+    needs_attention: number;
+    renewed: number;
+    not_completed: number;
+  };
+  sponsorships: { active: number; budget_diamonds: number; committed_diamonds: number };
+  notices: {
+    undelivered_due: number;
+    oldest_undelivered_due_at: string | null;
+    oldest_undelivered_hours: number | null;
+    scheduled: number;
+    suppressed: number;
+  };
+  duplicates: {
+    refund_execution_replays: number;
+    renewal_debit_reference_reused: number;
+    purchase_replays_recorded: boolean;
+  };
+  postconditions: { renewal: number; refund: number; purchase_failures_recorded: boolean };
+  retries: { refund_execution_retries: number; renewal_claim_retries: number };
+}
+
 /* ── Door answers ─────────────────────────────────────────────────────────── */
 
 export interface Refusal {
@@ -532,6 +686,81 @@ const CommerceDeskService = {
       'Verify The Evidence'
     );
   },
+  /**
+   * Written quote requests above 2,500 members. Both scope keys are sent as
+   * null: with no scope, staff read every request, open ones first.
+   */
+  writtenQuotes(): Promise<DeskAnswer<{ written_quotes: WrittenQuote[] }>> {
+    return call(
+      'fn_ca_commerce_written_quotes',
+      { p_scope_kind: null, p_scope_id: null },
+      'Read Written Quotes'
+    );
+  },
+
+  /**
+   * Offer a capacity and a whole diamond price, valid for 1 to 30 days. The
+   * server makes it a private product for that club, priced through the
+   * ordinary draft, validate and publish doors.
+   */
+  offerWrittenQuote(
+    writtenQuoteId: string,
+    capacity: number,
+    diamonds: number,
+    validDays: number,
+    note: string | null
+  ): Promise<DeskAnswer<{ written_quote: WrittenQuote }>> {
+    return call(
+      'fn_ca_commerce_written_quote_offer',
+      {
+        p_written_quote_id: writtenQuoteId,
+        p_capacity: capacity,
+        p_diamonds: diamonds,
+        p_valid_days: validDays,
+        p_note: note,
+      },
+      'Offer The Written Quote'
+    );
+  },
+
+  /** Decline an open request. The note is required and is sent to the owner. */
+  declineWrittenQuote(
+    writtenQuoteId: string,
+    note: string
+  ): Promise<DeskAnswer<{ written_quote: WrittenQuote }>> {
+    return call(
+      'fn_ca_commerce_written_quote_decline',
+      { p_written_quote_id: writtenQuoteId, p_note: note },
+      'Decline The Written Quote'
+    );
+  },
+
+  /** Free month review requests, every scope, open ones first. */
+  trialReviews(): Promise<DeskAnswer<{ reviews: TrialReview[] }>> {
+    return call(
+      'fn_ca_commerce_trial_reviews',
+      { p_scope_kind: null, p_scope_id: null },
+      'Read Free Month Reviews'
+    );
+  },
+
+  /** Approve (a fresh free month for that one scope) or decline with a note. */
+  decideTrialReview(
+    reviewId: string,
+    approve: boolean,
+    note: string | null
+  ): Promise<DeskAnswer<{ review: TrialReview }>> {
+    return call(
+      'fn_ca_commerce_trial_review_decide',
+      { p_review_id: reviewId, p_approve: approve, p_note: note },
+      'Decide The Free Month Review'
+    );
+  },
+
+  /** The staff operating metrics for the last 1 to 90 days (R2 7.5). */
+  metrics(days = 30): Promise<DeskAnswer<CommerceMetrics>> {
+    return call('fn_ca_commerce_metrics', { p_days: days }, 'Read The Metrics');
+  },
 };
 
 export default CommerceDeskService;
@@ -663,14 +892,14 @@ export const DESK_REFUSAL_COPY: Readonly<Record<string, string>> = {
   already_decided: 'Another Staff Member Already Decided This Request. Refresh The Queue',
   amount_required: 'Enter A Whole Diamond Amount Greater Than 0',
   exceeds_refundable: 'That Is More Than Is Left To Refund On This Purchase Line',
-  note_required: 'A Decline Needs A Note Of At Least 5 Characters For The Payer',
+  note_required: 'A Decline Needs A Note Saying Why. A Refund Decline Needs At Least 5 Characters',
 
   // fn_ca_commerce_price_draft
   unknown_sku: 'That Product Is Not In The Catalog',
   capability_unavailable:
     'This Product Sells A Platform Capability That Is Not Available Yet. The Capability Registry Must Show It Deployed First',
   invalid_price:
-    'The Price Is Not Valid. Use A Whole Number Of Diamonds, A Listed Price Rule And A Price Authority Of At Least 10 Characters',
+    'The Price Is Not Valid. Use A Whole Number Of Diamonds In Range, And For A Catalog Price A Listed Price Rule And A Price Authority Of At Least 10 Characters',
 
   // fn_ca_commerce_price_validate
   price_version_not_found: 'That Price Version Does Not Exist',
@@ -708,6 +937,24 @@ export const DESK_REFUSAL_COPY: Readonly<Record<string, string>> = {
   second_staff_member_required: 'You Recorded This Evidence. A Second Staff Member Must Verify It',
   price_version_not_current: 'Evidence Can Only Verify A Validated Or Published Price',
   evidence_already_verified: 'This Evidence Already Verified Another Price Version',
+
+  // fn_ca_commerce_written_quotes, fn_ca_commerce_trial_reviews (a scoped
+  // read by someone with no role there; the desk reads without a scope)
+  access_denied: 'You Do Not Have Access To That Club Or Union',
+
+  // fn_ca_commerce_written_quote_offer / _decline
+  written_quote_not_found: 'That Written Quote Request No Longer Exists. Refresh The Queue',
+  written_quote_already_decided:
+    'This Written Quote Request Was Already Answered Or Withdrawn. Refresh The Queue',
+  written_quote_capacity_out_of_range: 'Offer More Than 2,500 And Up To 1,000,000 Members',
+  written_quote_validity_out_of_range: 'An Offer Is Valid For 1 To 30 Days',
+
+  // fn_ca_commerce_trial_review_decide
+  trial_review_not_found: 'That Free Month Review No Longer Exists. Refresh The Queue',
+  own_request:
+    'You Cannot Decide A Review Of Your Own Club Or Union. Another Staff Member Decides It',
+  trial_review_already_decided:
+    'Another Staff Member Already Decided This Review. Refresh The Queue',
 };
 
 const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);

@@ -7,6 +7,8 @@
  *   20260922143541_club_and_union_diamond_commerce.sql
  *   20260924033509_club_and_union_diamond_commerce_fixes.sql
  *   20260924102040_diamond_commerce_refunds_notices_and_catalog_lifecycle.sql
+ *   20260924182605_diamond_commerce_catalog_terms_written_quotes_and_trial_reviews.sql
+ *   20260924183529_diamond_commerce_staff_metrics.sql
  * install, and several of those doors are replaced by a later file. PostgREST
  * resolves an RPC by its name AND its argument names, so one renamed `p_` key
  * is not a type error anywhere: it is a 404 at the moment staff press Approve.
@@ -72,6 +74,8 @@ const MIGRATIONS = [
   '20260924033509_club_and_union_diamond_commerce_fixes.sql',
   '20260924102040_diamond_commerce_refunds_notices_and_catalog_lifecycle.sql',
   '20260924102056_diamond_commerce_admission_is_wired_in_shadow.sql',
+  '20260924182605_diamond_commerce_catalog_terms_written_quotes_and_trial_reviews.sql',
+  '20260924183529_diamond_commerce_staff_metrics.sql',
 ].map((f) => ({ file: f, sql: readFileSync(resolve(ROOT, 'supabase/migrations', f), 'utf8') }));
 const EM_DASH = String.fromCharCode(0x2014);
 
@@ -191,6 +195,15 @@ async function exerciseEveryDoor() {
   await CommerceDeskService.priceVersions('capacity_100');
   await CommerceDeskService.comparisonList(null);
   await CommerceDeskService.comparisonList('capacity_100');
+  await CommerceDeskService.writtenQuotes();
+  await CommerceDeskService.offerWrittenQuote(SCOPE, 3000, 9000, 14, null);
+  await CommerceDeskService.offerWrittenQuote(SCOPE, 5000, 14000, 1, 'Priced For Three Towns');
+  await CommerceDeskService.declineWrittenQuote(SCOPE, 'Not Available At That Size Yet');
+  await CommerceDeskService.trialReviews();
+  await CommerceDeskService.decideTrialReview(SCOPE, true, null);
+  await CommerceDeskService.decideTrialReview(SCOPE, false, 'Same Operation As Your First Club');
+  await CommerceDeskService.metrics();
+  await CommerceDeskService.metrics(90);
 }
 
 beforeEach(() => {
@@ -296,6 +309,12 @@ describe('DESK_REFUSAL_COPY: every code the desk doors can return has staff copy
     'fn_ca_commerce_price_versions',
     'fn_ca_commerce_comparison_list',
     'fn_ca_commerce_admission_report',
+    'fn_ca_commerce_written_quotes',
+    'fn_ca_commerce_written_quote_offer',
+    'fn_ca_commerce_written_quote_decline',
+    'fn_ca_commerce_trial_reviews',
+    'fn_ca_commerce_trial_review_decide',
+    'fn_ca_commerce_metrics',
   ];
   const codes = new Set(DOORS.flatMap((d) => [...refusalCodes(d)]));
 
@@ -322,6 +341,12 @@ describe('DESK_REFUSAL_COPY: every code the desk doors can return has staff copy
       'second_staff_member_required',
       'evidence_already_verified',
       'invalid_source_url',
+      'written_quote_capacity_out_of_range',
+      'written_quote_validity_out_of_range',
+      'written_quote_already_decided',
+      'own_request',
+      'trial_review_already_decided',
+      'access_denied',
     ])
       expect(codes).toContain(known);
   });
@@ -542,6 +567,154 @@ describe('helpers', () => {
     expect(isRefusal({ success: false, error: 'not_draft' })).toBe(true);
     expect(isRefusal({ success: true })).toBe(false);
     expect(isRefusal(null)).toBe(false);
+  });
+});
+
+describe('written quotes, free month reviews and metrics speak the migrations', () => {
+  const keysIn = (fn: string) =>
+    new Set([...LATEST.get(fn)!.body.matchAll(/'([a-z_]+)',\s/g)].map((m) => m[1]));
+
+  it('the latest definitions come from the completion and metrics migrations', () => {
+    for (const fn of [
+      'fn_ca_commerce_written_quotes',
+      'fn_ca_commerce_written_quote_offer',
+      'fn_ca_commerce_written_quote_decline',
+      'fn_ca_commerce_trial_reviews',
+      'fn_ca_commerce_trial_review_decide',
+    ])
+      expect(LATEST.get(fn)?.file, fn).toMatch(/^20260924182605_/);
+    expect(LATEST.get('fn_ca_commerce_metrics')?.file).toMatch(/^20260924183529_/);
+    expect(LATEST.get('fn_ca_commerce_metrics')?.params).toEqual([
+      { name: 'p_days', hasDefault: true },
+    ]);
+    expect([...refusalCodes('fn_ca_commerce_metrics')]).toEqual(['staff_required']);
+  });
+
+  it('the staff queues are read with no scope, so both keys are sent as null', async () => {
+    await CommerceDeskService.writtenQuotes();
+    await CommerceDeskService.trialReviews();
+    expect(rpc.calls).toEqual([
+      { fn: 'fn_ca_commerce_written_quotes', args: { p_scope_kind: null, p_scope_id: null } },
+      { fn: 'fn_ca_commerce_trial_reviews', args: { p_scope_kind: null, p_scope_id: null } },
+    ]);
+    for (const fn of ['fn_ca_commerce_written_quotes', 'fn_ca_commerce_trial_reviews'])
+      expect(LATEST.get(fn)!.body).toContain('IF p_scope_id IS NULL THEN');
+  });
+
+  it('an offer sends all five keys, a validity included', async () => {
+    await CommerceDeskService.offerWrittenQuote(SCOPE, 3000, 9000, 7, null);
+    expect(rpc.calls[0]).toEqual({
+      fn: 'fn_ca_commerce_written_quote_offer',
+      args: {
+        p_written_quote_id: SCOPE,
+        p_capacity: 3000,
+        p_diamonds: 9000,
+        p_valid_days: 7,
+        p_note: null,
+      },
+    });
+    const body = LATEST.get('fn_ca_commerce_written_quote_offer')!.body;
+    expect(body).toContain('p_capacity <= 2500 OR p_capacity > 1000000');
+    expect(body).toContain('p_valid_days < 1 OR p_valid_days > 30');
+    expect(body).toContain('p_diamonds <= 0 OR p_diamonds > 100000000');
+  });
+
+  it('the JSON the desk prints is what the SQL builds', async () => {
+    const { WRITTEN_QUOTE_STATE_LABEL, TRIAL_REVIEW_STATE_LABEL } =
+      await import('../../src/services/CommerceDeskService');
+    const wq = keysIn('fn_ca_commerce_written_quote_json');
+    for (const key of [
+      'written_quote_id',
+      'scope_kind',
+      'scope_id',
+      'requested_by',
+      'requested_capacity',
+      'request_note',
+      'state',
+      'offered_capacity',
+      'offered_diamonds',
+      'sku',
+      'valid_until',
+      'decided_by',
+      'decided_at',
+      'staff_note',
+      'created_at',
+    ])
+      expect(wq, key).toContain(key);
+    // Stored states plus the two read ones.
+    const table = MIGRATIONS[4].sql.match(
+      /CREATE TABLE public\.ca_commerce_written_quotes \(([\s\S]*?)\n\);/
+    )![1];
+    const stored = [
+      ...table.match(/state text[^\n]*CHECK \(state IN \(([^)]*)\)\)/)![1].matchAll(/'([a-z_]+)'/g),
+    ].map((m) => m[1]);
+    expect(Object.keys(WRITTEN_QUOTE_STATE_LABEL).sort()).toEqual(
+      [...stored, 'accepted', 'expired'].sort()
+    );
+    const tr = keysIn('fn_ca_commerce_trial_review_json');
+    for (const key of [
+      'review_id',
+      'scope_kind',
+      'scope_id',
+      'operator_id',
+      'statement',
+      'state',
+      'decided_at',
+      'staff_note',
+      'granted_trial_end',
+      'created_at',
+    ])
+      expect(tr, key).toContain(key);
+    expect(Object.keys(TRIAL_REVIEW_STATE_LABEL).sort()).toEqual([
+      'approved',
+      'declined',
+      'requested',
+    ]);
+  });
+
+  it('every metric the desk prints is built by fn_ca_commerce_metrics', () => {
+    const keys = keysIn('fn_ca_commerce_metrics');
+    for (const key of [
+      'quotes',
+      'proposed_diamonds',
+      'purchases',
+      'net_paid_diamonds',
+      'zero_net',
+      'sponsored_net_diamonds',
+      'trial_waiver_diamonds',
+      'by_kind',
+      'trial_waivers',
+      'refunds',
+      'added_to_balance_diamonds',
+      'refund_requests',
+      'oldest_awaiting_decision_hours',
+      'oldest_awaiting_execution_hours',
+      'awaiting_execution_diamonds',
+      'renewals',
+      'due_now',
+      'oldest_overdue_hours',
+      'not_completed',
+      'sponsorships',
+      'budget_diamonds',
+      'committed_diamonds',
+      'notices',
+      'undelivered_due',
+      'oldest_undelivered_hours',
+      'duplicates',
+      'refund_execution_replays',
+      'renewal_debit_reference_reused',
+      'purchase_replays_recorded',
+      'postconditions',
+      'purchase_failures_recorded',
+      'retries',
+      'refund_execution_retries',
+      'renewal_claim_retries',
+    ])
+      expect(keys, key).toContain(key);
+    // Net paid counts only receipts that charged.
+    expect(LATEST.get('fn_ca_commerce_metrics')!.body).toContain(
+      "'net_paid_diamonds', COALESCE(sum(p.net) FILTER (WHERE p.net > 0), 0)"
+    );
   });
 });
 

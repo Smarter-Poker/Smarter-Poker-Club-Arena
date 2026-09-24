@@ -1443,6 +1443,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
+      - name: "Club membership cap: one count, one lock, one limit"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-membership-cap.py --output artifacts/club-membership-cap
       - name: Kill pot table settings refuse what the engine cannot honour
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

@@ -1327,6 +1327,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-engine-recovery-postgres.py
+      # Depends on the capability registry migration 20260924025555, which
+      # merges first; the harness exits 2 naming it when it is absent.
+      - name: Multi-day stage foundation keeps every stack through a bag and a resume (needs capability registry 20260924025555)
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-stage-foundation.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

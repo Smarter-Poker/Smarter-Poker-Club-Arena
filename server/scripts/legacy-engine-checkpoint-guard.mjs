@@ -2800,8 +2800,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          then refuse `engine_state_changed` on the re-verification after the
          write - naming nothing, because that require was the process-wide
          one. Every part of this signature but one is frozen by the break
-         itself: the hand number (parked), the roster and stacks (the Postgres
-         freeze guard refuses every seat write), the banks (no hand, no
+         itself: the hand number (parked), the roster and stacks (the engine's own
+         half of the freeze, immediately below), the banks (no hand, no
          timer), and the residue and disposed sets that derive from them. The
          one part the freeze does not touch is the disconnect FSM: a player's
          socket drops or comes back during the five minutes exactly as it does
@@ -2821,6 +2821,41 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          roster event the freeze forbids, and that still refuses. The readback
          holds the row's presence to the same rule: the same players, each
          with a record, not the same bytes. */
+      /* ═══ WHICH HALF OF THE FREEZE HOLDS THE ROSTER STILL (2026-09-24) ═══
+
+         The paragraph above named the Postgres half. For the roster it is the
+         wrong half twice over, and the correction matters because the whole
+         argument for keeping seats and stacks in `custody` rests on it.
+
+         FIRST, the Postgres half does not apply to this process.
+         `fn_refuse_while_frozen`, the function behind `zz_freeze_guard` on
+         `table_seats`, returns early when the caller's `request.jwt.claims`
+         carry the service role, which is exactly what this engine presents.
+         Verified against the live database on 2026-09-24. That guard holds
+         back browsers and pg_cron, which is what `freezeState.ts` says it is
+         for ("the engine is dead for ~2 of the 5 minutes and pg_cron and
+         browsers do not stop when it does"). It was never the engine's leash.
+
+         SECOND, the signature does not read a row. `custody.roster` below
+         reads `engine.seatedPlayers`, an in-memory array, and no trigger on
+         any table can hold an array in this heap still.
+
+         What does hold it is the ENGINE's half: the process-wide flag in
+         `maintenance/freezeState.ts`, set from the ANNOUNCEMENT at :53 rather
+         than the countdown at :55, and read on both paths that could move a
+         seat under this walk. A top-up answers `Scheduled maintenance is in
+         progress` on the first line of `addChips`, before it finds the seat
+         and before any debit, so neither the stack nor the pending-add-on
+         cache moves. And the wait-for-players sweep, the only caller that
+         replaces `seatedPlayers` wholesale, meets the pause gate at the top
+         of its loop before it reads seats or adopts a roster, so an arrival,
+         a departure and an expired sit-out all wait for the resume.
+
+         Both gates are now pinned by
+         `tests/a-seat-does-not-move-under-a-release-walk.law.test.ts`, which
+         also pins this signature's dependency on them. Before it, deleting
+         either gate left every suite green and turned the next release back
+         into the lottery #5215 had just removed. */
       const custody = {
         handNumber: engine.handCount,
         roster: engine.seatedPlayers.map((seat) => [

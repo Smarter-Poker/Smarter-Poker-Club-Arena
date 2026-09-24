@@ -1957,7 +1957,7 @@ export function ThemeSettingsModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
-          onClose={onClose}
+          onClose={saving || modeSaving || purchaseBusy ? undefined : onClose}
           eyebrow="Player Table Studio"
           title="Make The Table Yours"
           titleId="theme-studio-title"
@@ -2651,7 +2651,10 @@ export function ThemeSettingsModal({
                   it did on the upgrade button, even though the steel plate
                   comes first in the DOM. */}
               <SpadeConsole
-                onClose={onClose}
+                /* The X is the Cancel plate: it cancels the PROMPT (clearing the
+                   checkout intent and stopping the balance poll), never the whole
+                   studio, and it is gone while the purchase is in flight. */
+                onClose={purchaseBusy ? undefined : cancelPendingAssetPurchase}
                 eyebrow="Table Studio"
                 title={`Unlock ${pendingAssetPurchase.name}`}
                 titleId="theme-purchase-title"

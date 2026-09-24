@@ -13,7 +13,7 @@
  * Dan: "THE VPIP EXTERIOR AND INTERIOR FRAMES NEED TO BE REMOVED AND IT SHOULD
  * JUST DISPLAY 'VPIP', UNDER IT THE ACTUAL PERCENTAGE, AND UNDER THAT THE
  * 'TABLE MIN'." The plaque below this note is history; the badge is now three
- * text rows on the felt - VPIP, the live figure, MIN N% - with no bezel, no
+ * text rows on the felt - VPIP, the live figure, TABLE MIN N% - with no bezel, no
  * face, no readout window, no blue accents and no CURRENT caption. The rules
  * that outlast the plaque are kept: one dynamic field, one size input, no
  * pass/fail colouring, no animation but a fade, the value a real text node.
@@ -170,7 +170,7 @@ function VpipRequirementBadgeInner({
         {displayVpip}
       </div>
       <div className="vpipBadge__minimum">
-        <span className="vpipBadge__minText">MIN {minimumVpip}%</span>
+        <span className="vpipBadge__minText">TABLE MIN {minimumVpip}%</span>
       </div>
     </div>
   );

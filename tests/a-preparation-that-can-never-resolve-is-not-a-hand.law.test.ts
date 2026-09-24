@@ -444,3 +444,77 @@ describe('4. the legacy checkpoint bounds the same condition, the same way', () 
     expect(PUBLISHER).toContain("'unresolvableCustody',");
   });
 });
+
+/* A STICKY "DID NOT SUCCEED" ON A PROCESS THAT IS ALREADY DEAD (2026-09-24).
+
+   Run 35956154940 cleared the boundary-count refusal #5155 bounded and then
+   stopped on the LAST conjunct of the same proof, on table 6557ebd8, with
+   `boundary=0/true, permitPhase=attempted`: an EMPTY pending set and a set
+   `terminalBoundaryPersistenceFailed`. That flag is cleared only by
+   `beginTerminalBoundaryPersistence`, which runs immediately before
+   `HandController.start`, so a stopped terminal engine can never reach it and
+   the refusal blocks the process replacement that is its only resolution. */
+describe('a flag a dead process can never clear is answered from rows', () => {
+  const sticky = GUARD.slice(
+    GUARD.indexOf('const deadBoundaryFailureDeferred = ('),
+    GUARD.indexOf('const captureEngine = (')
+  );
+
+  it('the drain proof no longer ends on a flat sticky flag', () => {
+    const drain = GUARD.slice(
+      GUARD.indexOf('require(engine.settlementInFlight instanceof Set &&'),
+      GUARD.indexOf("'engine_work_not_drained');")
+    );
+    expect(drain).toContain(
+      '(engine.terminalBoundaryPersistenceFailed === false ||\n          deadBoundaryFailureDeferred(tableId, engine))'
+    );
+  });
+
+  it('only a resolved failure on a fenced, drained, bank-free engine is deferred', () => {
+    for (const conjunct of [
+      'engine.terminalBoundaryPersistenceFailed !== true ||',
+      'engine.terminalBoundaryPendingGenerations.size !== 0 ||',
+      'engine.running !== false ||',
+      'engine.terminal !== true ||',
+      'engine.handController !== null ||',
+      'engine.f06RecoveryInFlight !== false ||',
+      'engine.postHandTasksPromise !== null ||',
+      'engine.settlementInFlight.size !== 0 ||',
+      'engine.timeBankEngine.playerBanks.size !== 0',
+    ])
+      expect(sticky).toContain(conjunct);
+    // A permit in a phase this guard cannot reason from is an engine we do not
+    // understand, and it refuses rather than deferring.
+    expect(sticky).toContain("if (phase !== 'attempted' && phase !== 'none') return false;");
+    // Unreadable is never "dead".
+    expect(sticky).toContain('catch {');
+    expect(sticky).toContain('return false;');
+  });
+
+  it('a deferral is never a waiver: the same row proof answers for it', () => {
+    expect(sticky).toContain('deferredUnresolvableCustody.set(tableId, `failedBoundary:${phase}`)');
+    expect(sticky).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
+  });
+
+  it('a still-pending generation keeps refusing one conjunct earlier, with no row read', () => {
+    const boundary = GUARD.slice(
+      GUARD.indexOf('const boundaryGenerationsAllowed = ('),
+      GUARD.indexOf('const deadBoundaryFailureDeferred = (')
+    );
+    expect(boundary).toContain('engine.terminalBoundaryPersistenceFailed !== false ||');
+  });
+
+  it('an engine_work_not_drained refusal now names every field it turns on', () => {
+    const detail = GUARD.slice(
+      GUARD.indexOf('const engineRefusalDetail = ('),
+      GUARD.indexOf('const deadEngineCustody = (')
+    );
+    for (const term of [
+      '`settling=${sizeOf(engine?.settlementInFlight)}`',
+      '`postTasks=${engine?.postHandTasksPromise != null}`',
+      '`moves=${sizeOf(engine?.tournamentMoveOperations)}`',
+      '`actionLock=${engine?.actionLock === true}`',
+    ])
+      expect(detail).toContain(term);
+  });
+});

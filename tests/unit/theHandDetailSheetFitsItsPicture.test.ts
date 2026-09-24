@@ -40,7 +40,9 @@ describe('the sheet, the console, the page', () => {
     expect(console_).toMatch(/min-height:\s*0/);
     expect(rule('.hdm-console .sc__body')).toMatch(/flex:\s*1 1 auto/);
     expect(rule('.hdm-console .sc__body')).toMatch(/min-height:\s*0/);
-    expect(rule('.hdm-console .sc__body')).toMatch(/overflow:\s*hidden/);
+    // x hidden, y auto: the glass scrolls only when the fixed rows and the
+    // page's floor no longer fit (2026-09-24, phone landscape and the SE).
+    expect(rule('.hdm-console .sc__body')).toMatch(/overflow:\s*hidden auto/);
   });
 
   it('the painted head and foot keep their ratio', () => {
@@ -51,7 +53,7 @@ describe('the sheet, the console, the page', () => {
   it('the page is the one scroller, sized by what is left, never by the viewport', () => {
     const body = rule('.hdm-body');
     expect(body).toMatch(/flex:\s*1 1 auto/);
-    expect(body).toMatch(/min-height:\s*0/);
+    expect(body).toMatch(/min-height:\s*120px/);
     expect(body).toMatch(/overflow-y:\s*auto/);
     expect(body).not.toMatch(/max-height/);
     expect(CSS).not.toMatch(/\.hdm-body\s*\{[^}]*max-height:\s*\d+dvh/);

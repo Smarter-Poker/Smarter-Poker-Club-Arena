@@ -38,11 +38,21 @@ function defaultFormat(n: number): string {
   return '0';
 }
 
+/** A figure squared off at the cent. The chips a pot is made of never carry a
+    third decimal; anything past it is float noise from a rake split or a
+    subtraction (5.000000000000001, 0.30000000000000004). */
+const toCents = (n: number): number => Math.round(n * 100) / 100;
+
 /** The grid an intermediate frame may land on: whole chips when both ends of
     the count are whole, cents otherwise. A chip divides into cents and no
-    further, so no frame ever needs a third decimal. */
+    further, so no frame ever needs a third decimal.
+
+    Judged on the cent-squared values, not the raw ones (2026-09-24): the pot
+    pill is fed `mainPot - streetBets` straight from the snapshot, and a 5
+    that arrives as 5.000000000000001 is not an integer to `Number.isInteger`,
+    which put the count back on the cent grid and printed 4.97 again. */
 export function countGrid(from: number, to: number): number {
-  return Number.isInteger(from) && Number.isInteger(to) ? 1 : 0.01;
+  return Number.isInteger(toCents(from)) && Number.isInteger(toCents(to)) ? 1 : 0.01;
 }
 
 /** `raw` snapped to `grid`, squared off at the cent so float noise from the

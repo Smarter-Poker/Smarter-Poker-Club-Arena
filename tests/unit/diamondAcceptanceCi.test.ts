@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE SIXTEEN RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE SEVENTEEN RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -52,6 +52,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-bomb-pot.py',
   'run-diamond-cash-admission.py',
   'run-diamond-cash-custody.py',
+  'run-diamond-club-commerce.py',
   'run-diamond-controlled-play.py',
   'run-diamond-incident-resolution.py',
   'run-diamond-plain-cash-rule.py',
@@ -65,15 +66,16 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The three that stand up a cluster of their own. Declared in the wrapper and
+/* The four that stand up a cluster of their own. Declared in the wrapper and
    repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
+  'run-diamond-club-commerce.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 16;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 3;
+const HOW_MANY_RUNNERS = 17;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 4;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -92,14 +94,14 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     expect(findDiamondRunnerProblems(root)).toEqual([]);
   });
 
-  it('is the sixteen runners this file names, counted the same two ways', () => {
+  it('is the seventeen runners this file names, counted the same two ways', () => {
     expect(runnersOnDisk(root)).toEqual(EVERY_DIAMOND_RUNNER);
     expect(EVERY_DIAMOND_RUNNER).toHaveLength(HOW_MANY_RUNNERS);
     expect(runnersOnDisk(root)).toHaveLength(HOW_MANY_RUNNERS);
     expect(HOW_MANY_ON_A_PRIVATE_CLUSTER + HOW_MANY_ON_THE_WRAPPER_CLUSTER).toBe(HOW_MANY_RUNNERS);
   });
 
-  it('names the sixteen runners and the arena access script explicitly', () => {
+  it('names the seventeen runners and the arena access script explicitly', () => {
     const listed = runnersListedInWrapper(wrapper);
     expect(listed).toEqual(expect.arrayContaining(runnersOnDisk(root)));
     expect(listed).toHaveLength(runnersOnDisk(root).length);
@@ -252,7 +254,7 @@ const socketPort = /^PORT = '([0-9]+)'$/m.exec(wrapper)?.[1];
 
 /* TWO SHAPES OF RUNNER, AND EVERY RUNNER IS EXACTLY ONE OF THEM.
  *
- * Thirteen are hard-wired to the wrapper's socket and port. Three stand up a
+ * Thirteen are hard-wired to the wrapper's socket and port. Four stand up a
  * private cluster of their own, because they load the estate's historical
  * schema base and pin the installed doors against it: they need a cluster
  * nothing else has written to, and two postmasters cannot own one socket and

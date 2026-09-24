@@ -53,7 +53,24 @@
   }
 }
 
-/* The sheet is the space the picture stands in, and paints nothing itself. */
+/* The sheet is the space the picture stands in, and paints nothing itself.
+
+   ── THE PICTURE FITS THE SHEET (Dan 2026-09-23) ───────────────────────────
+   "PREVIOUS HAND IS CUT OFF AND DOESN'T DISPLAY PROPERLY." His screenshot: the
+   phone sheet open with its rails running off the top edge - no crest, no
+   HAND DETAIL, no date line - and the plates at the foot. The console was
+   TALLER than the sheet: head (34.8vw) + foot (27.7vw) + the strip + four
+   fixed rows + a 34dvh page came to ~740px inside a 633px sheet, and the
+   sheet was the scroller, so what fit was whichever end the browser settled
+   on. On his phone that was the bottom.
+
+   The sheet no longer scrolls at all. The console is the sheet's flex item
+   and fills it; its head and foot keep their painted ratio; its body takes
+   whatever height is left, and the ONE thing inside it that scrolls is the
+   page (.hdm-body), exactly as that rule's own heading says: "scrolls inside
+   the rails, so the plates never leave". The crest cannot leave either now,
+   because nothing above the page can be pushed out of a box it fits by
+   construction. */
 .hdm-panel {
   display: flex;
   flex-direction: column;
@@ -66,9 +83,8 @@
   background: transparent !important;
   background-image: none !important;
   box-shadow: none !important;
-  overflow: hidden auto;
+  overflow: hidden;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
   animation: hdmSlideIn calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -128,7 +144,22 @@
 }
 
 .hdm-console {
+  /* Fills the sheet under the strip and never overflows it; see .hdm-panel. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The painted head and foot keep their ratio; the body between them is the
+   part that gives. `.sc` is already a flex column (SpadeConsole.css). */
+.hdm-console .sc__head,
+.hdm-console .sc__foot {
   flex: 0 0 auto;
+}
+
+.hdm-console .sc__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── When, at what stakes, in what game ───────────────────────────────── */
@@ -231,7 +262,12 @@
   display: flex;
   flex-direction: column;
   gap: 2.6cqw;
-  max-height: 46dvh;
+  /* Was `max-height: 46dvh` (34dvh on a phone): a fixed share of the
+     viewport that did not know how tall the head, the foot and the fixed
+     rows around it were, which is how the console outgrew its sheet. It is
+     the flexible row of the console's body now and takes exactly what is
+     left (Dan 2026-09-23, see .hdm-panel). */
+  flex: 1 1 auto;
   min-height: 0;
   padding-right: 1cqw;
   overflow-y: auto;
@@ -932,10 +968,6 @@
 
   .hdm-header {
     padding-top: calc(12px + env(safe-area-inset-top, 0px));
-  }
-
-  .hdm-body {
-    max-height: 34dvh;
   }
 }
 

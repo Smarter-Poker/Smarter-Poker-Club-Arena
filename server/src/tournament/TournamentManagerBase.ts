@@ -675,8 +675,37 @@ export abstract class TournamentManagerBase {
    * carries no end time yet -- see the break-recovery block there.
    */
   static readonly BREAK_DURATION_MS = 5 * 60 * 1000;
+  /**
+   * How long a level that came due against a tournament dealing nothing waits
+   * before it asks again. Purely local: no database request, no broadcast.
+   * Short enough that the level goes up promptly once a hand lands, long
+   * enough that a multi-day stall is not a per-second wake. See
+   * A_LEVEL_IS_NOT_SPENT_ON_A_HAND_THAT_WAS_NEVER_DEALT in advanceBlindLevel.
+   */
+  static readonly STALLED_LEVEL_RECHECK_MS = 15 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
+  /**
+   * Wall clock of the last hand this manager watched finish on any table it
+   * owns. ZERO until it has watched one, deliberately.
+   *
+   * This is the witness advanceBlindLevel consults before spending a level.
+   * It is an assignment inside a callback that already fires on every hand -
+   * it adds no wake and no query, and deliberately does NOT go through
+   * requestEliminationSweep, whose zero-stack gate exists to keep the
+   * scheduler's fan-out small.
+   *
+   * Seeding it to `Date.now()` instead would be the trap one level up
+   * (CLAUDE.md 10.86 rule 4): a replacement manager adopting a long-stalled
+   * event would inherit a clean witness, find its overdue level due at once
+   * and spend it on a table that has still dealt nothing - so the very first
+   * thing a recovery did would be the burn this guard exists to stop. Zero
+   * costs a healthy restart at most one recheck interval, because its tables
+   * deal within seconds of adoption.
+   */
+  protected lastObservedHandCompletedAtMs = 0;
+  /** One line per held level, not one per recheck. */
+  private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
   /**
    * True once beginBreakCountdown has stamped an end time on THIS break.
    *
@@ -1955,6 +1984,9 @@ export abstract class TournamentManagerBase {
    */
   protected wireEliminationWake(engine: ServerTableEngine): void {
     engine.onHandComplete((_tableId, finalStacks) => {
+      // The blind clock's witness. Every hand, not just the zero-stack shape
+      // below: a level is spent by play, and play is what this records.
+      this.lastObservedHandCompletedAtMs = Date.now();
       if (finalStacks.some((player) => Number(player.stack) <= 0)) {
         if (this.isCohortSatellite()) {
           const tableId = this.tableIdForManagedEngine(engine);
@@ -7281,6 +7313,56 @@ export abstract class TournamentManagerBase {
       if (isMaintenanceFrozen()) {
         this.blindClockNeedsThawResync = true;
         deferredWakeMs = 1000;
+        return;
+      }
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A LEVEL IS NOT SPENT ON A HAND THAT WAS NEVER DEALT (2026-09-23)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The two guards above already say this twice: a level that comes due
+       * during a break is owed, not spent, and a level that comes due inside
+       * the maintenance freeze is owed, not spent. Both exist because a blind
+       * level is a wall-clock deadline a PLAYER loses to, and CLAUDE.md 13
+       * invariant 4 is explicit that such a deadline is thawed, never burned.
+       *
+       * There is a third way the field cannot play and it was not covered:
+       * the tournament's own tables stop dealing. The level clock is a local
+       * setTimeout chain and it keeps its own time perfectly well while every
+       * table under it is dead, so the blinds climb against stacks that
+       * cannot act. Measured on production 2026-09-23, on an engine that had
+       * been unable to restart for five days:
+       *
+       *   Evening Mystery Bounty (PLO5) 95a31bb1 - last hand 09-22 13:28:45
+       *     at 2,000/4,000, two players holding 30,000 each (7.5 BB). The
+       *     level clock ran on unattended to 09-22 16:56 and stopped at
+       *     500,000/1,000,000 with a 150,000 ante: 0.03 BB apiece, and less
+       *     than a quarter of one ante. Resuming that would not have been the
+       *     game they were playing - the first hand posts every chip either
+       *     of them owns before a card is read.
+       *   $100 Freeroll 12:00 AM 37f7d04b - four days of unattended levels,
+       *     30 BB average down to 2.86 BB.
+       *   $100 Freeroll 6:00 AM 6915596c - 12.83 BB down to 0.16 BB.
+       *   Breakfast Turbo 019b6263 - 5.80 BB down to 0.15 BB.
+       *
+       * Twelve events in all. So: the level is owed, exactly as it is owed
+       * across a break, and it goes up the instant a hand lands. This is the
+       * hard-coded fix (10.11/10.12) - it prevents the outcome rather than
+       * repairing stacks afterwards, and there is no sweep behind it.
+       *
+       * The hold is announced once per level so that a hold which never ends
+       * is a line somebody can read, rather than a tournament whose blinds
+       * mysteriously stopped (10.83, 10.86 rule 4).
+       */
+      if (this.lastObservedHandCompletedAtMs < this.blindTimerStartedAt) {
+        if (!this.stalledLevelHoldAnnouncedFor.has(this.currentLevel)) {
+          this.stalledLevelHoldAnnouncedFor.add(this.currentLevel);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel} came due with no hand dealt since it began - holding it until this tournament deals again`
+          );
+        }
+        deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
         return;
       }
       if (this.blindClockNeedsThawResync) {

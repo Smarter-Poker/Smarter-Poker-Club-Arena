@@ -72,10 +72,16 @@
     var(--sp-nickel) border-box;
   /* Dan 2026-09-11, with the plate in front of him: "THE BBJ FRAME NEEDS TO BE
      THINNER, ITS TOO THICK." 5px -> 2px. The bezel is still milled nickel
-     painted in the border box; it is a frame now rather than a slab. The inner
-     bezel (::before) thins with it, 1.5px -> 1px, so the recess cue keeps its
-     proportion to the frame. */
-  border: 2px solid transparent;
+     painted in the border box; it is a frame now rather than a slab.
+
+     Dan 2026-09-23, same plate, same words: "THE FRAME AROUND BBJ IS TOO
+     THICK." What he was measuring was never the border alone: the 2px outer
+     bezel, the 1px inner bezel (::before) flush against it and the 1px white
+     highlight shadow outside it painted as ONE 4px band of light metal. The
+     border is a hairline now, the inner bezel is retired (a second ring inside
+     a 1px ring is a thicker ring), and the plate keeps its nickel edge, its
+     navy face and its depth from the shadows below. */
+  border: 1px solid transparent;
   border-radius: 9px;
   padding: 4px 14px;
   cursor: pointer;
@@ -97,21 +103,13 @@
   isolation: isolate;
 }
 
-/* Inner nickel bezel — the machined-recess cue. */
+/* Inner nickel bezel — RETIRED 2026-09-23 (Dan: "THE FRAME AROUND BBJ IS TOO
+   THICK"). It was a 1px nickel ring drawn flush inside the outer bezel, which
+   the eye reads as part of the frame; with the outer bezel at a hairline the
+   recess cue is the shadow, not a second ring. The pseudo-element is
+   declared empty here, so nothing can quietly draw into it again. */
 .bbj-widget::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 7px;
-  padding: 1px;
-  background: var(--sp-nickel-inner);
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
+  content: none;
 }
 
 /* Specular sheen across the upper half — implies a light source above, which
@@ -730,7 +728,7 @@
        triangular slivers of felt against the bar's straight edge — which is
        the very gap round one was worried about, and the only way to actually
        produce it. */
-    border-width: 2px;
+    border-width: 1px;
     border-radius: 0 0 9px 9px;
 
     /* No vertical padding: the fixed height plus `align-items: center` is what
@@ -746,15 +744,9 @@
     max-width: calc(100% - 110px);
   }
 
-  /* The inner bezel follows the outer one. It now has a top run again, which
-     is the second half of the "cut off" report: with no outer top border, this
-     1.5px nickel line was the plate's entire top edge and it sat 0.5px above
-     the lettering, reading as a blade through the tops of the glyphs. With
-     2px of outer bezel and the row centred in a 22px plate there is ~4px of
-     air above the text and the line reads as the frame it is. */
-  .bbj-widget::before {
-    border-radius: 0 0 7px 7px;
-  }
+  /* The inner bezel is retired (2026-09-23, see the base rule): the plate's
+     top edge is the 1px outer bezel, and the row centred in a 22px plate has
+     ~5px of air above the text. */
 
   /* ── ONE SIZE FOR BOTH (Dan 2026-08-25, round 2) ─────────────────────────
      "BAD BEAT JACKPOT AND TOTAL SHOULD BE THE SAME FONT SIZES AS WELL."

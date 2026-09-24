@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/cowork-dspins/d3-settle; migrations 20260921202827 (quiet ledger) and 20260921202834 (daily profit burn), owner rulings 2026-09-21 R14/R16/R17. Candidate declarations, not installation evidence.",
+  "columns": {
+    "diamond_spin_days": ["profit_burn_bps", "profit_burn", "credited_net"]
+  },
+  "functions": [
+    "fn_diamond_spin_ledger_category",
+    "fn_diamond_spin_profit_burn_bps",
+    "fn_diamond_spin_profit_burn"
+  ]
+}

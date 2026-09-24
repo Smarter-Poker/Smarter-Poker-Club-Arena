@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-09-21T20:40:00Z",
+  "source": "supabase/migrations/20260914102113_road_crossing_and_mines_keep_each_round_under_seal.sql lines 247-269 (fn_diamond_spins_owner_terms), copied verbatim; the function has never been redefined since. Installed-definition md5 computed by loading that text into the private PostgreSQL 17 fixture.",
+  "purpose": "Migration 20260921202834 (daily profit burn, owner ruling 2026-09-21 R14) replaces fn_diamond_spins_owner_terms behind an md5 preimage guard; the fixture must carry the exact installed definition for the guard to pass and for tests/sql/diamond-spins-daily-profit-burn.sql to exercise the addendum receipt.",
+  "functions": [
+    {
+      "name": "public.fn_diamond_spins_owner_terms(uuid,boolean)",
+      "installed_definition_md5": "3240b38f3ac4818a7e6ada0342a4dd1c",
+      "acl": "REVOKE PUBLIC, anon, authenticated; GRANT EXECUTE TO authenticated, service_role"
+    }
+  ],
+  "preimages_pinned_by_20260921202834": {
+    "public.fn_diamond_spin_settle_day(uuid,date)": "5ba56d462ed9f00569618fc78a50b949",
+    "public.fn_diamond_spin_settlement_receipt()": "524756408765b727ee2320e35705384e",
+    "public.fn_diamond_spin_statements(date)": "ee2f7f94ed652b3a7748472ba3d7cea8",
+    "public.fn_diamond_spins_owner_terms(uuid,boolean)": "3240b38f3ac4818a7e6ada0342a4dd1c"
+  }
+}

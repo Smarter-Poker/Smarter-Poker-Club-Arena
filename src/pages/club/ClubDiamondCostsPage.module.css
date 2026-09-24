@@ -1,0 +1,39 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB AND UNION DIAMOND COSTS - the wrapping rules for the rows on the glass
+
+   The shared diamond-games rows print a label and a value on one line each,
+   which suits a game readout. This page prints prices ("250 Diamonds Per
+   Covered Club, Up To 5,000"), long product titles and exact local dates, and
+   at 375px a no-wrap value squeezed its label to nothing. These rules let the
+   words wrap inside the same row. Nothing is drawn: no frame, no radius, no
+   gradient (#ClubArenaConsole).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+span.wrapLabel {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+span.wrapValue {
+  max-width: 46cqw;
+  text-align: right;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* A row's note is its own full-width line under the label and the value.
+   Nested inside the label it shared the label's column, so a wide value (a
+   date, a per-club price) squeezed a sentence into seven lines beside empty
+   glass (rendered at 393px, 2026-09-23). The row keeps its column gap; only
+   the gap between the first line and the note is tightened. */
+div.rowWithMeta,
+button.rowWithMeta {
+  row-gap: 0;
+}
+
+span.metaFull {
+  grid-column: 1 / -1;
+  min-width: 0;
+}

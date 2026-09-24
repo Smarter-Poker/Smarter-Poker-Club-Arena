@@ -1,4 +1,11 @@
-import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
+import type {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  CSSProperties,
+  HTMLAttributes,
+  ReactNode,
+  Ref,
+} from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
 
@@ -58,6 +65,10 @@ export const SPADE_CONSOLE_ZONES = {
   titleBesidePill: { x: 100, y: 166, width: 470, height: 86 },
   subtitle: { x: 102, y: 262, width: 540, height: 42 },
   pill: { x: 673, y: 190, width: 197, height: 54 },
+  /** THE X (Dan 2026-09-23): the clear glass in the head's top-right corner,
+      above the pill slot and inside the rail - x 848-908, y 108-164 on top.png.
+      See `onClose` on SpadeConsole. */
+  close: { x: 848, y: 108, width: 60, height: 56 },
   /* Relative to bottom-plates.png (master y minus 700). */
   plateSecondary: { x: 100, y: 46, width: 381, height: 129 },
   platePrimary: { x: 520, y: 46, width: 381, height: 129 },
@@ -72,13 +83,54 @@ export const SPADE_CONSOLE_ZONES = {
 export const SHARK_CONSOLE_W = 733;
 export const SHARK_CONSOLE_TOP_H = 154;
 export const SHARK_CONSOLE_FOOT_H = 172;
+/**
+ * THE SHARK HEAD IS SHORT, AND A THIRD LINE RE-MEASURES ALL THREE
+ * (2026-09-22).
+ *
+ * Measured off top.png: the header glass runs y 47 to y 149, closed by the
+ * hairline at y 150, so this head has 102 rows to print in. The spade head
+ * has 219 on a wider master, and both print at the same cqw type, so the
+ * shark spends 1.66x as much of its head on every line. `title` at height 66
+ * plus `subtitle` at y 126 therefore claimed y 76-142 and y 126-148 of those
+ * 102 rows: the two rectangles INTERSECTED over 16 rows, and a shark console
+ * given both printed the second through the bottom of the first. The
+ * subtitle band was also shorter than the line box it holds, so what did
+ * print was cut off below the letters. Neither was ever seen by a player,
+ * because neither live caller on this family passes a subtitle.
+ *
+ * TWO HEADS, NOT ONE. Without a subtitle the head is unchanged, down to the
+ * pixel: `eyebrow` and `title` keep the bands every live surface renders in
+ * today. With a subtitle all three lines move to the `WithSubtitle` bands,
+ * the same way the title already steps aside for a pill, and the stack is
+ * centred on the glass: ink at y 53-66, y 78-117 and y 128-144, with 12 rows
+ * of leading between them and about 6 rows of air top and bottom.
+ *
+ * THE BAND IS SIZED TO THE INK, AND THE INK IS NOT THE BAND. A zone clips
+ * what it holds and the text sits from the TOP of the zone once the line box
+ * is taller than it, so a band has to reach the bottom of the ink or it cuts
+ * the letters. Measured at 393px on the rendered page: the ink of a line
+ * ends 0.97 of its font size below the band top for the title (line-height
+ * 1.2) and 1.10 for the eyebrow, subtitle and pill (line-height 1.6).
+ * `tests/painted-zones-never-overlap.law.test.ts` reads those font sizes out
+ * of SpadeConsole.css and holds every band to them.
+ */
 export const SHARK_CONSOLE_ZONES = {
+  /* The two-line head: an eyebrow over a title. Unchanged, and live. */
   eyebrow: { x: 70, y: 50, width: 440, height: 26 },
   title: { x: 70, y: 76, width: 590, height: 66 },
   titleBesidePill: { x: 70, y: 76, width: 440, height: 66 },
-  subtitle: { x: 70, y: 126, width: 440, height: 22 },
+  /* The three-line head: the same lines, re-measured to make room below. */
+  eyebrowWithSubtitle: { x: 70, y: 46, width: 440, height: 21 },
+  titleWithSubtitle: { x: 70, y: 67, width: 590, height: 51 },
+  titleBesidePillWithSubtitle: { x: 70, y: 67, width: 440, height: 51 },
+  /** The glass under the title, stopping clear of the hairline at y 150. */
+  subtitle: { x: 70, y: 118, width: 440, height: 31 },
   /** The rounded slot at the right of the well, x 527-642 y 70-122. */
   pill: { x: 537, y: 79, width: 96, height: 36 },
+  /** THE X (Dan 2026-09-23): the sliver of glass between the pill slot and
+      the right rail, x 644-672 y 74-118. Narrow, so the glyph is small; the
+      hit area is padded to 44px by the stylesheet. */
+  close: { x: 642, y: 74, width: 32, height: 44 },
   /** The one blue plate's face, inside its chamfered rim. */
   plate: { x: 110, y: 18, width: 512, height: 76 },
 } as const;
@@ -95,12 +147,28 @@ export const RIVETED_CONSOLE_W = 729;
 export const RIVETED_CONSOLE_TOP_H = 209;
 export const RIVETED_CONSOLE_FOOT_H = 333;
 export const RIVETED_CONSOLE_ZONES = {
+  /* The two-line head: an eyebrow over a title. Unchanged, and live. */
   eyebrow: { x: 88, y: 72, width: 350, height: 26 },
   title: { x: 88, y: 100, width: 555, height: 72 },
   titleBesidePill: { x: 88, y: 100, width: 350, height: 72 },
-  subtitle: { x: 88, y: 168, width: 350, height: 24 },
+  /* The three-line head, re-measured 2026-09-22. This head's glass runs y 67
+     to y 190 on top.png, which is room for all three lines, but the bands as
+     drawn were wrong in the same two ways the shark's were: `title` claimed
+     72 rows to y 172 while `subtitle` began at y 168, so the rectangles
+     intersected over four rows, and the 24-row subtitle band was one row
+     shorter than the ink it holds, which cut the bottom off the letters
+     (measured: 13.9 rows of ink printed where the line is 15.7). All three
+     lines now sit on measured bands, centred on the glass: ink at y 83-96,
+     y 108-147 and y 158-174. */
+  eyebrowWithSubtitle: { x: 88, y: 76, width: 350, height: 21 },
+  titleWithSubtitle: { x: 88, y: 97, width: 555, height: 51 },
+  titleBesidePillWithSubtitle: { x: 88, y: 97, width: 350, height: 51 },
+  subtitle: { x: 88, y: 148, width: 350, height: 31 },
   /** The chrome capsule at the right of the well, x 455-645 y 85-145. */
   pill: { x: 472, y: 97, width: 156, height: 38 },
+  /** THE X (Dan 2026-09-23): the glass under the capsule's right end, above
+      the rail - x 604-648 y 150-186. */
+  close: { x: 604, y: 150, width: 44, height: 36 },
   /** The two bolted plates' faces, inside their rims. */
   plateSecondary: { x: 80, y: 82, width: 235, height: 98 },
   platePrimary: { x: 380, y: 82, width: 260, height: 98 },
@@ -133,6 +201,69 @@ const FAMILY = {
     plates: 2,
   },
 } as const;
+
+/** What the head is being asked to print. The zones follow from it. */
+export interface ConsoleHeadContent {
+  eyebrow: boolean;
+  subtitle: boolean;
+  pill: boolean;
+}
+
+/** Only the head zones this content actually paints, keyed by what they hold. */
+export type ConsoleHeadLayout = Partial<Record<'eyebrow' | 'title' | 'subtitle' | 'pill', Zone>> & {
+  title: Zone;
+};
+
+interface HeadZoneTable {
+  eyebrow: Zone;
+  title: Zone;
+  titleBesidePill: Zone;
+  subtitle: Zone;
+  pill: Zone;
+  /** Only where a head has to re-measure its lines to fit a third one. */
+  eyebrowWithSubtitle?: Zone;
+  titleWithSubtitle?: Zone;
+  titleBesidePillWithSubtitle?: Zone;
+}
+
+/**
+ * ONE PLACE DECIDES WHICH RECTANGLES A HEAD PAINTS (2026-09-22).
+ *
+ * A zone table is a set of rectangles on one piece of art, and most of them
+ * are alternatives: `title` and `titleBesidePill` are the same line, and the
+ * wide one deliberately runs under the pill slot because it is only ever used
+ * when there is no pill. So "do these two rectangles overlap" is not a
+ * question you can ask the table. It can only be asked of the SET a given
+ * head really paints, which is what this returns.
+ *
+ * The component prints exactly what comes back from here, and
+ * `tests/painted-zones-never-overlap.law.test.ts` reads the same function for
+ * every combination of head content. That is the point of routing the
+ * component through it: a selector the test derives for itself would have
+ * gone on agreeing with the old, overlapping table for as long as nobody
+ * looked, which is how the shark's title and subtitle sat on top of one
+ * another from the day the family was cut.
+ */
+export function consoleHeadZones(
+  family: ConsoleFamily,
+  content: ConsoleHeadContent
+): ConsoleHeadLayout {
+  const zones = FAMILY[family].zones as HeadZoneTable;
+  const title = content.subtitle
+    ? content.pill
+      ? (zones.titleBesidePillWithSubtitle ?? zones.titleBesidePill)
+      : (zones.titleWithSubtitle ?? zones.title)
+    : content.pill
+      ? zones.titleBesidePill
+      : zones.title;
+  const eyebrow = content.subtitle ? (zones.eyebrowWithSubtitle ?? zones.eyebrow) : zones.eyebrow;
+  return {
+    title,
+    ...(content.eyebrow ? { eyebrow } : {}),
+    ...(content.subtitle ? { subtitle: zones.subtitle } : {}),
+    ...(content.pill ? { pill: zones.pill } : {}),
+  };
+}
 
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
   return {
@@ -187,7 +318,15 @@ export function ZoneText({
 }: {
   text: string;
   className?: string;
-  as?: 'span' | 'h2' | 'h3' | 'strong';
+  /**
+   * The element the zone prints into. 'h1' exists for ONE case: the public
+   * landing page at the arena root, where the console's painted title zone is
+   * the document's only top level heading and the prerendered HTML a crawler
+   * reads has to carry it (scripts/prerender-public-routes.mjs refuses to
+   * publish a page with no h1). Everywhere else a console lives inside a page
+   * that already owns its h1, so the default stays h2.
+   */
+  as?: 'span' | 'h1' | 'h2' | 'h3' | 'strong';
   id?: string;
   minRatio?: number;
   /**
@@ -206,7 +345,21 @@ export function ZoneText({
   const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio);
   return (
     <Tag className={`sc-zone ${className}`.trim()} id={id} style={style}>
-      <span ref={ref}>{text}</span>
+      {/* A ZONE'S TEXT ENDS ON A WORD BOUNDARY (2026-09-23).
+          Every zone is absolutely positioned, so a head's eyebrow, title,
+          subtitle and pill print inches apart on the art while sitting
+          immediately adjacent in the DOM. Nothing separated them, so the
+          tournament lobby's head - eyebrow "Tournament" over title "Lobby" -
+          had a text content of "TournamentLobby": a panel that reads
+          "TOURNAMENT / LOBBY" on screen announced itself as one nonsense word
+          to anything that reads text rather than pixels, which is every screen
+          reader, every crawler and every end to end check.
+          The trailing space costs nothing. .sc-zone is `display: grid`, and a
+          grid container does not render a child text run that is only white
+          space, so the separator is in the DOM, where text is read, and in no
+          box, so it moves no pixel. useFitText measures the span below, never
+          this. */}
+      <span ref={ref}>{text}</span>{' '}
     </Tag>
   );
 }
@@ -214,6 +367,7 @@ export function ZoneText({
 export function SpadeConsole({
   eyebrow,
   title,
+  titleAs = 'h2',
   titleId,
   subtitle,
   pill,
@@ -225,10 +379,13 @@ export function SpadeConsole({
   children,
   className = '',
   as: Tag = 'section',
+  onClose,
   ...rest
 }: {
   eyebrow?: string;
   title: string;
+  /** See ZoneText's `as`. Only the public landing page asks for 'h1'. */
+  titleAs?: 'h1' | 'h2';
   titleId?: string;
   subtitle?: string;
   /** The word printed in the header's painted pill slot. */
@@ -248,6 +405,20 @@ export function SpadeConsole({
   className?: string;
   as?: 'section' | 'div' | 'article';
   /**
+   * THE X IN THE TOP RIGHT CORNER (Dan 2026-09-23). "FOR THE BBJ, TABLE
+   * SETTINGS OR ANYTHING ELSE THAT POPS UP, THERE SHOULD ALWAYS BE AN 'X' IN
+   * THE TOP RIGHT CORNER TO 'CLOSE THE PAGE'. YOU SHOULD NEVER HAVE TO GO TO
+   * THE BOTTOM OF THE PAGE TO CLOSE IT."
+   *
+   * Given, the head prints a lit x in its `close` zone - measured clear glass
+   * in each family's top-right corner - and tapping it calls this. It is an
+   * addition, never a replacement: a surface keeps whatever Close plate or
+   * word it already has at the foot, so nothing a player learned moves. A
+   * page that is not a popup (a lobby panel, a landing page) passes nothing
+   * and prints nothing.
+   */
+  onClose?: () => void;
+  /**
    * DOM passthrough, NOT an escape hatch (2026-09-11). This was
    * `& Record<string, unknown>`, which accepted any prop at all: on
    * feat/diamond-games, ArenaAccessBoundary asked for `crest="diamond"` against
@@ -262,6 +433,11 @@ export function SpadeConsole({
   const W = F.W;
   const TOP_H = F.TOP_H;
   const Z = F.zones;
+  const head = consoleHeadZones(family, {
+    eyebrow: Boolean(eyebrow),
+    subtitle: Boolean(subtitle),
+    pill: Boolean(pill),
+  });
   const onePlate = F.plates === 1;
   return (
     <Tag
@@ -269,15 +445,15 @@ export function SpadeConsole({
       {...rest}
     >
       <div className="sc__head">
-        {eyebrow && (
+        {eyebrow && head.eyebrow && (
           <ZoneText
             text={eyebrow}
             className="sc__eyebrow sc-ink--blue"
-            style={zonePct(Z.eyebrow, W, TOP_H)}
+            style={zonePct(head.eyebrow, W, TOP_H)}
           />
         )}
         <ZoneText
-          as="h2"
+          as={titleAs}
           id={titleId}
           text={title}
           className="sc__title sc-ink--silver"
@@ -288,21 +464,33 @@ export function SpadeConsole({
              thing the fit exists to prevent. The floor drops for titles only;
              every other zone keeps the default. */
           minRatio={0.44}
-          style={zonePct(pill ? Z.titleBesidePill : Z.title, W, TOP_H)}
+          style={zonePct(head.title, W, TOP_H)}
         />
-        {subtitle && (
+        {subtitle && head.subtitle && (
           <ZoneText
             text={subtitle}
             className="sc__subtitle sc-ink--muted"
-            style={zonePct(Z.subtitle, W, TOP_H)}
+            style={zonePct(head.subtitle, W, TOP_H)}
           />
         )}
-        {pill && (
+        {pill && head.pill && (
           <ZoneText
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
-            style={zonePct(Z.pill, W, TOP_H)}
+            style={zonePct(head.pill, W, TOP_H)}
           />
+        )}
+        {onClose && (
+          <button
+            type="button"
+            className="sc__close sc-ink--silver"
+            onClick={onClose}
+            aria-label="Close"
+            data-testid="sc-close"
+            style={zonePct((Z as { close: Zone }).close, W, TOP_H)}
+          >
+            <span aria-hidden="true">{'\u00D7'}</span>
+          </button>
         )}
       </div>
       {children !== undefined && children !== null && <div className="sc__body">{children}</div>}
@@ -345,6 +533,25 @@ export type PlateButtonProps = {
   ink?: ConsoleInk;
   /** The button element, for callers that manage focus (ConfirmModal). */
   buttonRef?: Ref<HTMLButtonElement>;
+  /**
+   * THE SAME PLATE, AS A LINK (2026-09-22).
+   *
+   * A plate that NAVIGATES is an anchor, not a button that calls location.
+   * The public landing page at the arena root is the case that forced it:
+   * both its ways in leave this app (the World Hub sign up form and the
+   * shared sign in route), it is prerendered for crawlers that never run the
+   * bundle, and a button is not a link to any of them. It also has to survive
+   * a middle click and a long press, which only an href does.
+   *
+   * The art, the zone and the fit are identical; only the element changes.
+   * This is one optional field rather than a second props type in a union,
+   * because a union costs every existing caller its contextual typing: the
+   * moment `plates` accepted two shapes, TypeScript could no longer infer the
+   * event parameter of an inline `onClick` and TournamentLobbyCard went red
+   * on an implicit any. Pass `href` only with anchor-shaped props; `disabled`
+   * and `type` have no meaning on a link.
+   */
+  href?: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 export function PlateButton({
@@ -354,6 +561,7 @@ export function PlateButton({
   label,
   ink = 'silver',
   buttonRef,
+  href,
   className = '',
   style,
   ...rest
@@ -363,19 +571,42 @@ export function PlateButton({
   canvasH: number;
 } & PlateButtonProps) {
   const ref = useFitText<HTMLSpanElement>(label, 1, 0.5);
+  const plateStyle = { ...zonePct(zone, canvasW, canvasH), ...style };
+  const face = (
+    <span className="sc-plate__well">
+      <span className={`sc-plate__text sc-ink--${ink}`} ref={ref}>
+        {label}
+      </span>
+    </span>
+  );
+
+  if (href !== undefined) {
+    /* The passthrough was declared against a button because that is what a
+       plate almost always is. An anchor takes the same global and event
+       attributes; the handful that differ (type, disabled, form*) are
+       meaningless on a link and documented as not-for-links above. */
+    const anchorRest = rest as AnchorHTMLAttributes<HTMLAnchorElement>;
+    return (
+      <a
+        className={`sc-plate sc-plate--link ${className}`.trim()}
+        href={href}
+        style={plateStyle}
+        {...anchorRest}
+      >
+        {face}
+      </a>
+    );
+  }
+
   return (
     <button
       type="button"
       ref={buttonRef}
       className={`sc-plate ${className}`.trim()}
-      style={{ ...zonePct(zone, canvasW, canvasH), ...style }}
+      style={plateStyle}
       {...rest}
     >
-      <span className="sc-plate__well">
-        <span className={`sc-plate__text sc-ink--${ink}`} ref={ref}>
-          {label}
-        </span>
-      </span>
+      {face}
     </button>
   );
 }

@@ -39,12 +39,23 @@ async function insideViewport(page: Page, selector: string) {
 for (const width of [320, 390, 1280]) {
   for (const kind of ['prize', 'bonus', 'upgrade', 'upgradechips'] as const) {
     test(`Diamond wheel ${kind} completes its reveal at ${width}px`, async ({ page }, testInfo) => {
+      // The flow has player steps now (Play Game, Open Upgrade Wheel, the swipe
+      // on the ring), each waited for at full length: give it a full minute.
+      test.setTimeout(60_000);
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
       const receipt = await mountDiamondWheel(page, kind, width);
       const wheel = page.getByRole('img', { name: 'Diamond Wheel', exact: true });
       const secondary = page.getByRole('img', { name: 'Upgrade Wheel', exact: true });
-      await expect(page.locator('[data-painted-band="loading"]')).toHaveCount(0);
+      // Sixty-four painted bands each decode an atlas texture on a canvas
+      // before they mount as <image>. On a software-rendered CI runner that
+      // takes longer than the 5s an assertion gets by default (measured
+      // 2026-09-24: 64 -> 50 -> 46 -> 27 -> 4 still loading at the 5s mark),
+      // and the test was failing on decode speed, not on the reveal it pins.
+      // The decode wait carries its own budget, well inside the test's minute.
+      await expect(page.locator('[data-painted-band="loading"]')).toHaveCount(0, {
+        timeout: 30_000,
+      });
       await expect(page.locator('[data-painted-band="cached"]')).toHaveCount(64);
       await expect(secondary.locator('[data-slot]')).toHaveCount(8);
       await expect(secondary).toBeVisible();
@@ -72,10 +83,10 @@ for (const width of [320, 390, 1280]) {
       // Both independent rotors share one centre and one uninterrupted aperture.
       expect(upperBox).toEqual(lowerBox);
       await expect(page.locator('[data-wheel-assembly="concentric"]')).toHaveCount(1);
-      await expect(secondary).toHaveAttribute('viewBox', '320 0 360 415');
-      await expect(wheel).toHaveAttribute('viewBox', '320 0 360 415');
-      await expect(secondary.locator('..')).toHaveAttribute('data-idle-direction', '-1');
-      await expect(wheel.locator('..')).toHaveAttribute('data-idle-direction', '1');
+      await expect(secondary).toHaveAttribute('data-presentation', 'assembly');
+      await expect(wheel).toHaveAttribute('data-presentation', 'assembly');
+      await expect(secondary).toHaveAttribute('data-idle-direction', '-1');
+      await expect(wheel).toHaveAttribute('data-idle-direction', '1');
       await expect(wheel.locator('[data-slot]')).toHaveCount(12);
       await expect(
         page.getByRole('region', { name: 'Wheel Prizes' }).getByRole('listitem')
@@ -95,16 +106,60 @@ for (const width of [320, 390, 1280]) {
         path: testInfo.outputPath(`wheel-idle-${width}.png`),
         fullPage: true,
       });
-      const idleRotation = await wheel.locator('[data-wheel-rotor]').getAttribute('transform');
-      await expect
-        .poll(() => wheel.locator('[data-wheel-rotor]').getAttribute('transform'))
-        .not.toBe(idleRotation);
+      // The rotor is a compositor layer: its idle drift is a Web Animation on
+      // the transform, with no frame callback and no attribute behind it.
+      const rotorRotation = () =>
+        wheel.locator('[data-wheel-rotor]').evaluate((rotor) => getComputedStyle(rotor).transform);
+      const idleRotation = await rotorRotation();
+      expect(idleRotation).toMatch(/^matrix\(/);
+      await expect.poll(rotorRotation).not.toBe(idleRotation);
+      expect(
+        await wheel.locator('[data-wheel-rotor]').evaluate((rotor) => rotor.getAnimations().length)
+      ).toBe(1);
+      await expect(wheel.locator('[data-wheel-rotor] svg [data-slot]')).toHaveCount(12);
       await page.getByRole('button', { name: 'Preview Spin', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Preview Spin', exact: true })).toBeDisabled();
       await expect(page.getByLabel('Diamonds To Spin')).toBeDisabled();
       await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
 
       if (kind.startsWith('upgrade')) {
+        // Owner ruling 2026-09-21 (R1, R19): the upgrade reveal waits for its
+        // plate, and the ring then waits under a flashing instruction for the
+        // player's own tap or swipe. Neither the reveal's animation end nor any
+        // clock starts the second spin; the pins below tap and swipe it.
+        const upgradeReveal = page.getByRole('dialog', { name: 'Bonus Upgrade' });
+        await expect(upgradeReveal).toBeVisible({ timeout: WHEEL_SPIN_MS + 1400 + 650 });
+        const openRing = upgradeReveal.getByRole('button', { name: 'Open Upgrade Wheel' });
+        await expect(openRing).toBeEnabled({ timeout: WHEEL_SPIN_MS + 1400 + 650 });
+        await page.evaluate(async () => {
+          const opening = document.querySelector('[role="dialog"] [data-motion="keep"]')!;
+          const duration = parseFloat(getComputedStyle(opening).animationDuration) * 1000;
+          await new Promise((resolve) => setTimeout(resolve, duration));
+        });
+        await expect(upgradeReveal).toBeVisible();
+        await openRing.click();
+        await expect(upgradeReveal).toHaveCount(0);
+        const ring = page.getByRole('button', { name: 'Swipe Or Tap The Wheel To Spin' });
+        await expect(ring).toBeVisible();
+        await expect(ring).toBeFocused();
+        await expect(page.locator('[data-awaiting-upgrade] [role="status"]')).toHaveText(
+          'Swipe Or Tap The Wheel To Spin'
+        );
+        // The ring has not turned by itself: no spinning upgrade state was
+        // recorded, now or after a further wait. Read from the fixture's own
+        // record, which follows the wheel wherever it carries its data-phase.
+        const ringTurned = () =>
+          page.evaluate(() => window.wheelProof.upgradeStates.some((s) => s.phase === 'spinning'));
+        expect(await ringTurned()).toBe(false);
+        await page.waitForTimeout(600);
+        expect(await ringTurned()).toBe(false);
+        await page.screenshot({ path: testInfo.outputPath(`wheel-awaiting-${width}.png`) });
+        const box = (await ring.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.up();
+        await expect(ring).toHaveCount(0);
         // The fixture runs at the player's 0.25 animation-speed setting. On a
         // software-rendered runner, sequential round trips can span the entire
         // secondary spin. Require all the same properties in ONE observed
@@ -148,6 +203,21 @@ for (const width of [320, 390, 1280]) {
         await expect(dialog).toHaveCount(0);
         await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
       } else {
+        // Owner ruling 2026-09-21 (R1, R9): a won game stays on its reveal until
+        // Play Game is tapped; a full extra reveal duration passes and nothing
+        // navigates.
+        const dialog = page.getByRole('dialog');
+        const play = dialog.getByRole('button', { name: 'Play Game', exact: true });
+        await expect(play).toBeEnabled({ timeout: WHEEL_SPIN_MS + 1400 + 650 });
+        await page.evaluate(async () => {
+          const opening = document.querySelector('[role="dialog"] [data-motion="keep"]')!;
+          const duration = parseFloat(getComputedStyle(opening).animationDuration) * 1000;
+          await new Promise((resolve) => setTimeout(resolve, duration));
+        });
+        await expect(dialog).toBeVisible();
+        expect(await page.evaluate(() => window.wheelProof.finished)).toBe(0);
+        await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
+        await play.click();
         await expect(page.getByRole('heading', { name: 'Earned Game Entry' })).toBeVisible();
         await expect(page.getByTestId('destination')).toHaveText(
           `/clubs/fixture/${receipt.bonus.game}?wheelAward=${receipt.bonus.id}`
@@ -225,7 +295,10 @@ for (const viewport of [
     const controls = page.getByRole('complementary', { name: 'Diamond Spins Controls' });
     await expect(controls).toBeVisible();
     await controls.getByRole('button', { name: 'Use Diamonds', exact: true }).click();
-    await controls.getByRole('button', { name: 'Hold Automatic Spin', exact: true }).click();
+    // Owner ruling 2026-09-21 (R1): there is no countdown plate to hold any more.
+    await expect(
+      controls.getByRole('button', { name: /Hold Automatic Spin|Auto Held/ })
+    ).toHaveCount(0);
     await expect(page.locator('#global-header')).toBeVisible();
     await expect(controls.getByText('Club Chips', { exact: true })).toBeVisible();
     await expect(controls.getByText('12.3K', { exact: true })).toBeVisible();

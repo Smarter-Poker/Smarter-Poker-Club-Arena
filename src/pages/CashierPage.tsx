@@ -73,6 +73,9 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { compactChips } from '../utils/format';
+import { enumToTitleCase } from '../utils/titleCase';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -155,6 +158,15 @@ function newOpId(): string {
   });
 }
 
+/**
+ * An exact ledger figure printed on the console glass. A whole balance prints
+ * whole ("12,500", never "12,500.00"); a fractional one keeps its cents, because
+ * a money desk never misstates a ledger. The painted head zones do not use
+ * this: they print compactChips().
+ */
+const chipFigure = (n: number): string =>
+  n.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+
 const CATEGORY_LABELS: Record<string, string> = {
   buyin: 'Buy-In',
   cashout: 'Cash-Out',
@@ -179,29 +191,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   withdrawal: 'Withdrawal',
   refund: 'Refund',
   bonus: 'Bonus',
-};
-
-const CATEGORY_ICONS: Record<string, string> = {
-  buyin: '▦',
-  cashout: '◉',
-  rake: '%',
-  prize: '★',
-  rebuy: '↺',
-  addon: '⊞',
-  mint: '◆',
-  settlement: '≡',
-  commission: '◈',
-  INSURANCE: '⊕',
-  funding: '→',
-  promotion: '↑',
-  promo: '★',
-  bbj: '♣',
-  horse_refill: '↺',
-  transfer: '→',
-  deposit: '+',
-  withdrawal: '-',
-  refund: '↻',
-  bonus: '★',
 };
 
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
@@ -523,6 +512,23 @@ function CashierContent() {
     setMyAgentWallet(null);
   }, [clubId]);
 
+  // Guards every async loader below against a club switch landing mid-flight.
+  // Without it a slow response for club A could resolve AFTER club B is on
+  // screen and overwrite B's role, union status, club name and recipient list.
+  // That is not cosmetic: userRole/isUnionOwner drive canSend/canMint/
+  // canDistribute and the tab set, so a stale 'owner' hands someone a Mint tab
+  // in a club where they are a member; and clubName is written verbatim into
+  // the ChipFlowService audit trail, so a send could be recorded against the
+  // wrong club's name. DynamicWallet already uses this exact pattern.
+  // Declared ABOVE every loader effect on purpose. React runs effects in
+  // declaration order: with the bump below the loadUserContext effect, each
+  // mount and club switch captured the version, bumped it, and then threw
+  // its own role read away as stale, so staff saw the player Cashier.
+  const contextVersionRef = useRef(0);
+  useEffect(() => {
+    contextVersionRef.current += 1;
+  }, [clubId]);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // LOAD ROLE, UNION STATUS, AND RECIPIENTS
   // ─────────────────────────────────────────────────────────────────────────────
@@ -584,19 +590,6 @@ function CashierContent() {
   }, [clubId, user?.id, isCashoutCurrent]);
 
   useVisibilityRefresh(() => loadPendingCashouts());
-
-  // Guards every async loader below against a club switch landing mid-flight.
-  // Without it a slow response for club A could resolve AFTER club B is on
-  // screen and overwrite B's role, union status, club name and recipient list.
-  // That is not cosmetic: userRole/isUnionOwner drive canSend/canMint/
-  // canDistribute and the tab set, so a stale 'owner' hands someone a Mint tab
-  // in a club where they are a member; and clubName is written verbatim into
-  // the ChipFlowService audit trail, so a send could be recorded against the
-  // wrong club's name. DynamicWallet already uses this exact pattern.
-  const contextVersionRef = useRef(0);
-  useEffect(() => {
-    contextVersionRef.current += 1;
-  }, [clubId]);
 
   const loadUserContext = async () => {
     if (!clubId || !user?.id) return;
@@ -1434,7 +1427,7 @@ function CashierContent() {
       type: 'success',
       text:
         receipt.status === 'pending'
-          ? `Cashout requested. ${value.toLocaleString()} chips are held for review. Your invoice is available in Messenger.`
+          ? `Cashout requested. ${chipFigure(value)} chips are held for review. Your invoice is available in Messenger.`
           : `This cashout is already ${receipt.status}. Check its invoice for details.`,
     });
     if (user?.id) void loadBalances(user.id);
@@ -1612,7 +1605,7 @@ function CashierContent() {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in your agent wallet. Available: ${myAgentWallet.toLocaleString()}`,
+                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet)}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -1648,8 +1641,8 @@ function CashierContent() {
             setMessage({
               type: 'success',
               text: sendRes.replayed
-                ? `That send had already gone through. ${value.toLocaleString()} chips are with ${recipient?.username || 'them'}`
-                : `Sent ${value.toLocaleString()} chips to ${recipient?.username || 'them'} from your agent wallet`,
+                ? `That send had already gone through. ${chipFigure(value)} chips are with ${recipient?.username || 'them'}`
+                : `Sent ${chipFigure(value)} chips to ${recipient?.username || 'them'} from your agent wallet`,
             });
           loadBalances(user.id);
           loadUserContext(); // the agent wallet figure on screen just changed
@@ -1681,7 +1674,7 @@ function CashierContent() {
           // was forgeable narration, not a record.
 
           if (isMounted.current)
-            setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
+            setMessage({ type: 'success', text: `Minted ${chipFigure(value)} chips` });
           loadBalances(user.id);
           notifyWalletChange(user.id, value);
         } else if (action === 'buyin') {
@@ -1752,7 +1745,7 @@ function CashierContent() {
               if (isMounted.current)
                 setMessage({
                   type: 'error',
-                  text: `Insufficient chips in this club. Available: ${myClubChips?.toLocaleString() ?? 'unavailable'}`,
+                  text: `Insufficient chips in this club. Available: ${myClubChips !== null ? chipFigure(myClubChips) : 'unavailable'}`,
                 });
               if (isMounted.current) setIsProcessing(false);
               return;
@@ -1851,7 +1844,7 @@ function CashierContent() {
         if (isMounted.current)
           setMessage({
             type: 'error',
-            text: `Insufficient chips in this club. Available: ${myClubChips?.toLocaleString() ?? 'unavailable'}`,
+            text: `Insufficient chips in this club. Available: ${myClubChips !== null ? chipFigure(myClubChips) : 'unavailable'}`,
           });
         if (isMounted.current) setIsProcessing(false);
         return;
@@ -1970,42 +1963,45 @@ function CashierContent() {
   // cleared — an permanent loading page reachable from the table menu.
   if (!clubId) {
     return (
-      <StandardContentLayout className={styles.page} title="Cashier">
-        <section className={styles.card}>
-          <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>◆</span>Cashier
-          </h2>
-          <div className={styles.cardBody}>
+      <StandardContentLayout className={styles.page}>
+        <SpadeConsole
+          eyebrow="Club Arena Cashier"
+          title="Cashier"
+          subtitle="Club Wallet Access"
+          pill={hasNoClubs ? 'No Club' : 'Loading'}
+          pillInk={hasNoClubs ? 'red' : 'gold'}
+          foot="foot"
+          className={styles.console}
+        >
+          <div className={styles.glass}>
             {hasNoClubs ? (
               <>
-                <div className={`${styles.message} ${styles.messageInfo}`}>
+                <p className="sc-copy">
                   The Cashier Belongs To A Club - Chips Are Held Per Club, So There Is No Cashier
                   Until You Join One.
-                </div>
-                <button type="button" className={styles.btnPrimary} onClick={() => navigate('/')}>
+                </p>
+                <button
+                  type="button"
+                  className={`${styles.wordAction} sc-ink--blue`}
+                  onClick={() => navigate('/')}
+                >
                   Find A Club
                 </button>
               </>
             ) : (
-              <div className={styles.loadingSkeleton} aria-busy="true">
-                <div className={styles.skeletonBar} style={{ width: '45%', height: '14px' }} />
-                <div className={styles.skeletonBar} style={{ width: '100%', height: '44px' }} />
-              </div>
+              <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
+                Finding Your Club
+              </p>
             )}
           </div>
-        </section>
+        </SpadeConsole>
       </StandardContentLayout>
     );
   }
 
   return (
     <StandardContentLayout className={styles.page}>
-      {/* Loading context skeleton — shown INSIDE content area, NOT blocking tabs/nav */}
-
-      {/* ── Club context bar — which club's cashier, with multi-club switcher ── */}
-      {clubId && <CashierClubSwitcher clubId={clubId} clubName={clubName} />}
-
-      {/* ── Wallet Display — always visible, real-time updates ── */}
+      {/* ── Wallet Display — a separate approved master, never nested in the console. ── */}
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet
@@ -2071,912 +2067,894 @@ function CashierContent() {
         </>
       )}
 
-      {/* Action Tabs */}
-      {/* Connection status indicator */}
-      {realtimeStatus !== 'connected' && (
-        <div className={styles.connectionBanner} role="status" aria-live="polite">
-          {realtimeStatus === 'reconnecting' ? (
-            <>
-              <span className={styles.connectionDot} style={{ background: '#6fdcff' }} />{' '}
-              Reconnecting To Live Updates…
-            </>
-          ) : (
-            <>
-              <span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live
-              Connection Lost - Data May Be Stale
-            </>
-          )}
-        </div>
-      )}
-
-      <nav
-        className={styles.tabNav}
-        role="tablist"
-        aria-label="Cashier Actions"
-        onKeyDown={handleTabKeyDown}
+      <SpadeConsole
+        eyebrow="Club Arena Cashier"
+        title="Cashier"
+        subtitle={clubName || 'Club Wallet'}
+        pill={realtimeStatus === 'connected' ? 'Live' : 'Syncing'}
+        pillInk={realtimeStatus === 'connected' ? 'green' : 'gold'}
+        foot="foot"
+        className={styles.console}
       >
-        {tabs.map((act) => (
-          <button
-            key={act}
-            role="tab"
-            tabIndex={action === act ? 0 : -1}
-            aria-selected={action === act}
-            aria-controls={`cashier-panel-${act}`}
-            className={`${styles.tab} ${action === act ? styles.tabActive : ''}`}
-            onClick={() => {
-              setAction(act);
-              setMessage(null);
-            }}
+        <div className={styles.glass}>
+          {/* Loading context skeleton — shown INSIDE content area, NOT blocking tabs/nav */}
+
+          {/* ── Club context bar — which club's cashier, with multi-club switcher ── */}
+          {clubId && <CashierClubSwitcher clubId={clubId} clubName={clubName} />}
+
+          {/* Action Tabs */}
+          {/* Connection status indicator */}
+          {realtimeStatus !== 'connected' && (
+            <p
+              className={`sc-copy ${realtimeStatus === 'reconnecting' ? 'sc-ink--gold' : 'sc-ink--red'}`}
+              role="status"
+              aria-live="polite"
+            >
+              {realtimeStatus === 'reconnecting'
+                ? 'Reconnecting To Live Updates…'
+                : 'Live Connection Lost - Data May Be Stale'}
+            </p>
+          )}
+
+          <nav
+            className={styles.tabNav}
+            role="tablist"
+            aria-label="Cashier Actions"
+            onKeyDown={handleTabKeyDown}
           >
-            {tabLabels[act]}
-          </button>
-        ))}
-      </nav>
-
-      {/* Financial Quick Links — visible to owners/admins/agents */}
-      {canSend && clubId && (
-        <div className={styles.quickLinks}>
-          {/* These were raw <a href="/clubs/..."> tags. The app mounts under
-              basename="/hub/club-arena" (main.tsx), and a plain href is NOT
-              basename-aware — so every one of them resolved to
-              smarter.poker/clubs/<id>/disputes, a path that does not exist.
-              All three chips were dead links to routes that were present and
-              working the whole time.
-              react-router's navigate() applies the basename, and it keeps the
-              SPA mounted instead of triggering a full document load that drops
-              the realtime subscriptions this page opens. Same pattern already
-              used for the jackpot link above. */}
-          <button
-            type="button"
-            onClick={() => clubId && navigate(`/clubs/${clubId}/disputes`)}
-            className={`${styles.quickLink} ${styles.quickLinkWarning}`}
-          >
-            Disputes
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/financial-alerts')}
-            className={`${styles.quickLink} ${styles.quickLinkDanger}`}
-          >
-            Alerts
-          </button>
-          <button
-            type="button"
-            onClick={() => clubId && navigate(`/clubs/${clubId}/financials`)}
-            className={`${styles.quickLink} ${styles.quickLinkPrimary}`}
-          >
-            Financials
-          </button>
-        </div>
-      )}
-
-      {/* Agent Promo Panel — visible to agents only */}
-      {(userRole === 'agent' || userRole === 'super_agent' || userRole === 'sub_agent') &&
-        clubId &&
-        user?.id && (
-          <AgentPromoPanel
-            clubId={clubId}
-            userId={user.id}
-            role={userRole}
-            onDistribute={() => loadBalances(user.id)}
-          />
-        )}
-
-      {/* Context Loading Skeleton — shown inside content while role/union data loads */}
-      {loadingContext && (
-        <div className={styles.card} aria-busy="true">
-          <div className={styles.loadingSkeleton}>
-            <div className={styles.skeletonBar} style={{ width: '45%', height: '14px' }} />
-            <div className={styles.skeletonBar} style={{ width: '70%', height: '44px' }} />
-            <div className={styles.skeletonBar} style={{ width: '100%', height: '44px' }} />
-            <div className={styles.skeletonBar} style={{ width: '100%', height: '48px' }} />
-          </div>
-        </div>
-      )}
-
-      {/* ═══ SEND CHIPS ═══ */}
-      {/* `canSend` guard added: `action` defaults to 'send', so a plain player
-          — who has no Send tab at all — was shown a fully rendered Send Chips
-          panel with a permanently empty recipient dropdown. */}
-      {action === 'send' && canSend && (
-        <section className={styles.card} id="cashier-panel-send" role="tabpanel">
-          <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>↗</span>Send Chips
-          </h2>
-          <div className={styles.cardBody}>
-            {/* Names the ACCOUNT and the SCOPE, both of which this line used to
-                get wrong: it said "your wallet" (it is the agent wallet) and it
-                described the recipients by role when the real rule is the
-                downline. Staff see everyone; the three agent roles see their
-                downline and their downline agents' downlines, nobody else. */}
-            <div className={`${styles.message} ${styles.messageInfo}`}>
-              Send Chips From Your Agent Wallet To{' '}
-              {isClubStaff(userRole) || isUnionOwner
-                ? 'Anyone In This Club'
-                : 'Your Downline, And Their Downlines'}
-              . You Can Claim A Send Back For Ten Minutes.
-            </div>
-
-            {/* Recipient Select */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>SEND TO:</label>
-              <input
-                type="text"
-                placeholder="Search Member, Role Or (You)..."
-                className={styles.input}
-                style={{ marginBottom: '8px' }}
-                value={recipientSearch}
-                onChange={(e) => setRecipientSearch(e.target.value)}
-                aria-label="Search Recipients"
-              />
-              {loadingRecipients ? (
-                <div className={styles.recipientSkeleton} aria-busy="true">
-                  <div className={styles.recipientSkeletonBar} />
-                </div>
-              ) : (
-                <select
-                  className={styles.select}
-                  value={selectedRecipient}
-                  onChange={(e) => setSelectedRecipient(e.target.value)}
-                >
-                  <option value="">Select Recipient</option>
-                  {filteredRecipients.map((r) => {
-                    const isSelf = r.id === user?.id;
-                    const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
-                    const roleTag =
-                      r.role === 'owner'
-                        ? 'OWNER'
-                        : r.role === 'co_owner'
-                          ? 'CO-OWNER'
-                          : r.role === 'admin'
-                            ? 'ADMIN'
-                            : r.role === 'super_agent'
-                              ? 'SA'
-                              : r.role === 'agent'
-                                ? 'AGT'
-                                : r.role === 'sub_agent'
-                                  ? 'SUB'
-                                  : '';
-                    const commInfo =
-                      isAgent && r.commissionRate ? ` ${(r.commissionRate * 100).toFixed(0)}%` : '';
-                    const typeInfo = isAgent ? (r.isPrepaid ? ' PP' : ' CR') : '';
-                    return (
-                      <option key={r.id} value={r.id}>
-                        {isSelf ? '(YOU) ' : ''}
-                        {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
-                        {r.username} (Bal: {r.balance.toLocaleString()})
-                      </option>
-                    );
-                  })}
-                </select>
-              )}
-            </div>
-
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel} htmlFor="cashier-send-amount">
-                AMOUNT:
-              </label>
-              <input
-                id="cashier-send-amount"
-                className={styles.input}
-                type="number"
-                placeholder="0"
-                value={amount}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                min={1}
-                step={1}
-                max={MAX_CHIP_AMOUNT}
-                inputMode="numeric"
-              />
-            </div>
-
-            {/* Quick amounts */}
-            <div className={styles.presetGrid}>
-              {preset.map((val) => (
-                <button
-                  key={val}
-                  className={styles.presetBtn}
-                  onClick={() => setAmount(val.toString())}
-                >
-                  {val.toLocaleString()}
-                </button>
-              ))}
-              {/* Max is the AGENT WALLET, because that is the account
-                  fn_agent_wallet_send debits. It used to prefill the global
-                  player wallet, which for most staff is a completely different
-                  (usually larger) number, so Max produced an amount the server
-                  refused every time. Disabled until the figure is known rather
-                  than offering a confident 0. */}
+            {tabs.map((act) => (
               <button
-                className={styles.presetBtn}
-                disabled={myAgentWallet === null}
-                onClick={() => setAmount(String(Math.floor(myAgentWallet ?? 0)))}
+                key={act}
+                role="tab"
+                tabIndex={action === act ? 0 : -1}
+                aria-selected={action === act}
+                aria-controls={`cashier-panel-${act}`}
+                className={`${styles.tab} ${action === act ? 'sc-ink--blue' : 'sc-ink--muted'}`}
+                onClick={() => {
+                  setAction(act);
+                  setMessage(null);
+                }}
               >
-                Max
+                {tabLabels[act]}
+              </button>
+            ))}
+          </nav>
+
+          {/* Financial Quick Links — visible to owners/admins/agents */}
+          {canSend && clubId && (
+            <div className={styles.quickLinks}>
+              {/* These were raw <a href="/clubs/..."> tags. The app mounts under
+                basename="/hub/club-arena" (main.tsx), and a plain href is NOT
+                basename-aware — so every one of them resolved to
+                smarter.poker/clubs/<id>/disputes, a path that does not exist.
+                All three chips were dead links to routes that were present and
+                working the whole time.
+                react-router's navigate() applies the basename, and it keeps the
+                SPA mounted instead of triggering a full document load that drops
+                the realtime subscriptions this page opens. Same pattern already
+                used for the jackpot link above. */}
+              <button
+                type="button"
+                onClick={() => clubId && navigate(`/clubs/${clubId}/disputes`)}
+                className={`${styles.quickLink} sc-ink--gold`}
+              >
+                Disputes
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/financial-alerts')}
+                className={`${styles.quickLink} sc-ink--red`}
+              >
+                Alerts
+              </button>
+              <button
+                type="button"
+                onClick={() => clubId && navigate(`/clubs/${clubId}/financials`)}
+                className={`${styles.quickLink} sc-ink--blue`}
+              >
+                Financials
               </button>
             </div>
+          )}
 
-            {/* Preview. The "before" figure is the AGENT WALLET, the account
-                this send debits - it quoted the global player wallet, so the
-                two lines described a movement between two accounts neither of
-                which was involved. Suppressed entirely while the float is
-                unknown rather than projecting a subtraction from nothing. */}
-            {selectedRecipientData &&
-              amount &&
-              parseFloat(amount) > 0 &&
-              myAgentWallet !== null && (
-                <div className={styles.transferPreview}>
-                  <div className={styles.previewRow}>
-                    <span>Your Agent Wallet</span>
-                    <span>
-                      {myAgentWallet.toLocaleString()} →{' '}
-                      {Math.max(0, myAgentWallet - parseFloat(amount)).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className={styles.previewRow}>
-                    <span>{selectedRecipientData.username}</span>
-                    <span>
-                      {selectedRecipientData.balance.toLocaleString()} →{' '}
-                      {(selectedRecipientData.balance + parseFloat(amount)).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className={styles.previewRow}>
-                    <span>Claim Back Window</span>
-                    <span>Ten Minutes</span>
-                  </div>
-                </div>
-              )}
-
-            {message && (
-              <div
-                className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
-              >
-                {formatPopupText(message.text)}
-              </div>
+          {/* Agent Promo Panel — visible to agents only */}
+          {(userRole === 'agent' || userRole === 'super_agent' || userRole === 'sub_agent') &&
+            clubId &&
+            user?.id && (
+              <AgentPromoPanel
+                clubId={clubId}
+                userId={user.id}
+                role={userRole}
+                onDistribute={() => loadBalances(user.id)}
+              />
             )}
 
-            <button
-              className={styles.btnPrimary}
-              aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
-              onClick={() => {
-                const value = parseFloat(amount);
-                if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
-                  setSendConfirm({
-                    show: true,
-                    value,
-                    recipientId: selectedRecipient,
-                    recipientName: selectedRecipientData.username,
-                  });
-                } else {
-                  handleAction();
-                }
-              }}
-              disabled={isProcessing || cooldown > 0 || !amount || !selectedRecipient}
-            >
-              {isProcessing ? (
-                <>
-                  <span className={styles.spinner} />
-                  Processing...
-                </>
-              ) : (
-                'CONFIRM SEND'
-              )}
-            </button>
-          </div>
-        </section>
-      )}
+          {/* Context Loading Skeleton — shown inside content while role/union data loads */}
+          {loadingContext && (
+            <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
+              Loading Your Cashier
+            </p>
+          )}
 
-      {/* ═══ DISTRIBUTE CHIPS ═══ */}
-      {action === 'distribute' && canDistribute && (
-        <section className={styles.card} id="cashier-panel-distribute" role="tabpanel">
-          <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>↓</span>Distribute Chips
-          </h2>
-          <div className={styles.cardBody}>
-            <div className={`${styles.message} ${styles.messageInfo}`}>
-              {['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner
-                ? 'Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution Is Logged With A Full Audit Trail.'
-                : 'Distribute Chips To Your Downline From Your Agent Wallet. Each Distribution Is Logged With A Full Audit Trail.'}
-            </div>
-
-            {/* Player Selector */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Recipient</label>
-              <input
-                type="text"
-                placeholder="Search Member, Role Or (You)..."
-                className={styles.input}
-                style={{ marginBottom: '8px' }}
-                value={recipientSearch}
-                onChange={(e) => setRecipientSearch(e.target.value)}
-                aria-label="Search Distribute Recipients"
-              />
-              {loadingRecipients ? (
-                <div className={styles.recipientSkeleton} aria-busy="true">
-                  <div className={styles.recipientSkeletonBar} />
+          {/* ═══ SEND CHIPS ═══ */}
+          {/* `canSend` guard added: `action` defaults to 'send', so a plain player
+            — who has no Send tab at all — was shown a fully rendered Send Chips
+            panel with a permanently empty recipient dropdown. */}
+          {action === 'send' && canSend && (
+            <section className={styles.panel} id="cashier-panel-send" role="tabpanel">
+              <h2 className={`${styles.panelTitle} sc-ink--silver`}>Send Chips</h2>
+              <div className={styles.stack}>
+                {/* Names the ACCOUNT and the SCOPE, both of which this line used to
+                  get wrong: it said "your wallet" (it is the agent wallet) and it
+                  described the recipients by role when the real rule is the
+                  downline. Staff see everyone; the three agent roles see their
+                  downline and their downline agents' downlines, nobody else. */}
+                <div className="sc-copy">
+                  Send Chips From Your Agent Wallet To{' '}
+                  {isClubStaff(userRole) || isUnionOwner
+                    ? 'Anyone In This Club'
+                    : 'Your Downline, And Their Downlines'}
+                  . You Can Claim A Send Back For Ten Minutes.
                 </div>
-              ) : (
-                <select
-                  className={styles.select}
-                  value={selectedRecipient}
-                  onChange={(e) => setSelectedRecipient(e.target.value)}
-                >
-                  <option value="">Select Player...</option>
-                  {filteredRecipients.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.id === user?.id ? '(YOU) ' : ''}
-                      {r.username} ({r.role}) - {r.balance.toLocaleString()} Chips
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
 
-            {/* Amount */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel} htmlFor="cashier-distribute-amount">
-                Amount
-              </label>
-              <input
-                id="cashier-distribute-amount"
-                className={styles.input}
-                type="number"
-                placeholder="Enter Chip Amount"
-                value={amount}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                min={1}
-                step={1}
-                max={MAX_CHIP_AMOUNT}
-                inputMode="numeric"
-              />
-            </div>
-
-            {message && (
-              <div
-                className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
-              >
-                {formatPopupText(message.text)}
-              </div>
-            )}
-
-            {/* Execute Button */}
-            <button
-              className={styles.btnPrimary}
-              disabled={isProcessing || cooldown > 0 || !selectedRecipient || !amount}
-              onClick={async () => {
-                const parsed = parseChipAmount(amount);
-                if (!parsed.ok) {
-                  setMessage({ type: 'error', text: parsed.error });
-                  return;
-                }
-                const value = parsed.value;
-                if (!user?.id || !selectedRecipient) return;
-
-                // DISTRIBUTE RATE LIMIT — prevent rapid-fire distributions (10s cooldown)
-                const now = Date.now();
-                const elapsed = now - lastDistributeRef.current;
-                if (elapsed < DISTRIBUTE_RATE_LIMIT_MS) {
-                  const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
-                  setMessage({
-                    type: 'error',
-                    text: `Please wait ${waitSec}s before distributing again`,
-                  });
-                  return;
-                }
-
-                setIsProcessing(true);
-                setMessage(null);
-
-                // SETTLEMENT FREEZE CHECK — Block distributions during settlement
-                if (clubId) {
-                  try {
-                    const lockResult = await checkSettlementLock(clubId);
-                    if (lockResult.locked) {
-                      if (isMounted.current)
-                        setMessage({
-                          type: 'error',
-                          text: `Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
-                        });
-                      if (isMounted.current) setIsProcessing(false);
-                      return;
-                    }
-                  } catch (e) {
-                    reportError(e, 'CashierPage');
-                    // Non-blocking: if settlement check fails, allow the action to proceed
-                  }
-                }
-
-                try {
-                  /**
-                   * THE TAB NOW DOES WHAT ITS OWN COPY SAYS (audit 2026-08-27).
-                   *
-                   * The card reads "Distribute Chips ... From The Club Bank",
-                   * but this called the distribute-promo World Hub route,
-                   * whose RPC (transfer_promo_agent_to_player) debits
-                   * club_members.promo_balance - a pool that is zero for
-                   * every member in production and that nothing funds. The
-                   * tab has NEVER moved a chip: zero ledger rows of that
-                   * type exist.
-                   *
-                   * It now routes by the caller's role onto the two
-                   * canonical RPCs. The four bank roles spend the CLUB BANK
-                   * (fn_club_bank_send - self-send permitted there, which is
-                   * how an owner funds their own float); an agent spends
-                   * their AGENT WALLET (fn_agent_wallet_send, downline
-                   * enforced server-side). Both derive the destination from
-                   * the recipient's role and write one ledger row.
-                   * promoOpIdRef is the page's per-INTENT key: held across a
-                   * failed attempt, rotated when the inputs change.
-                   */
-                  const resolvedForDistribute =
-                    (await resolveClubUUID(clubId || '')) || clubId || '';
-                  const recipientRow = recipients.find((r) => r.id === selectedRecipient);
-                  const viaClubBank =
-                    ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) ||
-                    isUnionOwner;
-                  const { data: distData, error: distError } = await supabase.rpc(
-                    viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
-                    {
-                      p_club_id: resolvedForDistribute,
-                      p_to_user_id: selectedRecipient,
-                      p_amount: value,
-                      p_destination: canHoldAgentWallet(recipientRow?.role)
-                        ? 'agent_wallet'
-                        : 'player_wallet',
-                      p_reason: viaClubBank
-                        ? 'Distributed From The Club Bank'
-                        : 'Distributed From The Agent Wallet',
-                      p_op_id: promoOpIdRef.current,
-                    }
-                  );
-                  if (distError) throw distError;
-                  const distRes = (Array.isArray(distData) ? distData[0] : distData) as {
-                    success?: boolean;
-                    error?: string;
-                  } | null;
-                  if (!distRes?.success) {
-                    throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
-                  }
-                  const recipient = recipientRow;
-                  if (isMounted.current)
-                    setMessage({
-                      type: 'success',
-                      text: `Distributed ${value.toLocaleString()} chips to ${recipient?.username || 'player'}`,
-                    });
-                  masterBus.emit('CHIPS_DISTRIBUTED', {
-                    clubId: clubId || '',
-                    amount: value,
-                    userId: selectedRecipient,
-                  });
-
-                  // chip_ledger narration REMOVED (2026-08-15): server-owned
-                  // now; the distribution RPC writes wallet_transactions.
-                  setAmount('');
-                  setSelectedRecipient('');
-                  loadBalances(user.id);
-                  loadRecipients(true); // Force refresh — distribution just changed recipient balances
-                  // Notify both sender and recipient for cross-page sync
-                  notifyWalletChange(user.id, value);
-                  notifyWalletChange(selectedRecipient, value);
-                  startCooldown();
-                  lastDistributeRef.current = Date.now();
-                } catch (err: unknown) {
-                  const msg =
-                    (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
-                  if (msg.includes('Rate limit')) {
-                    if (isMounted.current)
-                      setMessage({
-                        type: 'error',
-                        text: 'Too many distributions - please wait 60 seconds',
-                      });
-                  } else if (msg.includes('Insufficient promo')) {
-                    if (isMounted.current)
-                      setMessage({
-                        type: 'error',
-                        text: 'Insufficient promo balance for this distribution',
-                      });
-                  } else if (msg.includes('Player not found')) {
-                    if (isMounted.current)
-                      setMessage({ type: 'error', text: 'Player is not a member of this club' });
-                  } else if (msg.includes('Agent not found')) {
-                    if (isMounted.current)
-                      setMessage({
-                        type: 'error',
-                        text: 'Your agent record was not found - contact club owner',
-                      });
-                  } else {
-                    if (isMounted.current) setMessage({ type: 'error', text: msg });
-                  }
-                } finally {
-                  if (isMounted.current) setIsProcessing(false);
-                }
-              }}
-            >
-              {isProcessing
-                ? 'Distributing...'
-                : cooldown > 0
-                  ? `Wait ${cooldown}s`
-                  : `Distribute ${amount ? parseFloat(amount).toLocaleString() : '0'} Chips`}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ BUY-IN / CASH-OUT / MINT ═══ */}
-      {(action === 'buyin' || action === 'cashout' || action === 'mint') && (
-        <section className={styles.card} id={`cashier-panel-${action}`} role="tabpanel">
-          <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>
-              {action === 'cashout' && cashoutConfirmationVisible
-                ? '◈'
-                : action === 'buyin'
-                  ? '▶'
-                  : action === 'cashout'
-                    ? '◀'
-                    : '◆'}
-            </span>
-            {action === 'cashout' && cashoutConfirmationVisible
-              ? 'Escrow Verification'
-              : action === 'buyin'
-                ? 'Table Buy-In'
-                : action === 'cashout'
-                  ? 'Cash Out'
-                  : 'Mint Chips'}
-          </h2>
-          {action === 'cashout' && cashoutConfirmationVisible ? (
-            <div className={styles.escrowFlow}>
-              <div className={styles.escrowIcon}>◈</div>
-              <h3 className={styles.escrowTitle}>Security Verification Required</h3>
-              <p className={styles.escrowDesc}>
-                You Are Requesting A High-Value Cashout Of{' '}
-                <strong className={styles.escrowAmount}>
-                  {cashoutConfirm.value.toLocaleString()} Chips
-                </strong>
-                .<br />
-                This Amount Triggers Our Mandatory Escrow Protocols To Ensure Player Security.
-              </p>
-
-              {/* These three rows previously rendered "Anti-Money Laundering
-                  (AML) Check Passed" and "Identity Verification Confirmed"
-                  with green ticks, hardcoded. No AML or identity check is
-                  performed here or in cashoutService.requestCashout — the app
-                  was asserting a compliance result it had never computed, at
-                  the exact moment of a large withdrawal. Replaced with what
-                  actually happens to the request. */}
-              <div className={styles.escrowChecklist}>
-                <div className={styles.escrowCheckItem}>
-                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckGreen}`}>✓</div>
-                  <span className={styles.escrowCheckLabel}>
-                    Request Amount Confirmed Against Your Club Balance
-                  </span>
-                </div>
-                <div className={styles.escrowCheckItem}>
-                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
-                  <span className={styles.escrowCheckLabel}>
-                    Chips Will Be Held After You Confirm This Request
-                  </span>
-                </div>
-                <div className={styles.escrowCheckItem}>
-                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
-                  <span className={styles.escrowCheckLabel}>
-                    Club Agent Review Follows The Verified Hold
-                  </span>
-                </div>
-              </div>
-
-              <div className={styles.btnRow}>
-                <button
-                  className={styles.btnGhost}
-                  onClick={() => {
-                    cashoutPreparations.invalidate();
-                    setCashoutConfirm({ show: false, value: 0 });
-                  }}
-                  disabled={isProcessing}
-                >
-                  CANCEL
-                </button>
-                <button
-                  className={styles.btnPrimary}
-                  onClick={() => processHighValueCashout(cashoutConfirm.value)}
-                  disabled={isProcessing || !isCashoutStartCurrent(cashoutConfirm.start ?? null)}
-                >
-                  {isProcessing ? (
-                    <>
-                      <span className={styles.spinner} />
-                      Processing...
-                    </>
+                {/* Recipient Select */}
+                <div className={styles.formGroup}>
+                  <label className="sc-label sc-ink--blue">SEND TO:</label>
+                  <input
+                    type="text"
+                    placeholder="Search Member, Role Or (You)..."
+                    className={styles.input}
+                    style={{ marginBottom: '8px' }}
+                    value={recipientSearch}
+                    onChange={(e) => setRecipientSearch(e.target.value)}
+                    aria-label="Search Recipients"
+                  />
+                  {loadingRecipients ? (
+                    <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
+                      Loading Recipients
+                    </p>
                   ) : (
-                    'CONFIRM SECURE CASHOUT'
+                    <select
+                      className={styles.select}
+                      value={selectedRecipient}
+                      onChange={(e) => setSelectedRecipient(e.target.value)}
+                    >
+                      <option value="">Select Recipient</option>
+                      {filteredRecipients.map((r) => {
+                        const isSelf = r.id === user?.id;
+                        const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
+                        const roleTag =
+                          r.role === 'owner'
+                            ? 'OWNER'
+                            : r.role === 'co_owner'
+                              ? 'CO-OWNER'
+                              : r.role === 'admin'
+                                ? 'ADMIN'
+                                : r.role === 'super_agent'
+                                  ? 'SA'
+                                  : r.role === 'agent'
+                                    ? 'AGT'
+                                    : r.role === 'sub_agent'
+                                      ? 'SUB'
+                                      : '';
+                        const commInfo =
+                          isAgent && r.commissionRate
+                            ? ` ${(r.commissionRate * 100).toFixed(1)}%`
+                            : '';
+                        const typeInfo = isAgent ? (r.isPrepaid ? ' PP' : ' CR') : '';
+                        return (
+                          <option key={r.id} value={r.id}>
+                            {isSelf ? '(YOU) ' : ''}
+                            {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
+                            {r.username} (Bal: {chipFigure(r.balance)})
+                          </option>
+                        );
+                      })}
+                    </select>
                   )}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.cardBody}>
-              {action === 'cashout' && cashoutPreparations.error && (
-                <p role="status">
-                  {cashoutPreparations.error}{' '}
-                  <button onClick={cashoutPreparations.invalidate}>Refresh</button>
-                </p>
-              )}
-              {/* U-02 FIX: Show pending cashouts when on cashout tab */}
-              {action === 'cashout' && pendingCashoutScope.current?.() && pendingCashoutError && (
-                <p role="status">
-                  Pending Cashouts Are Unavailable.{' '}
-                  <button onClick={() => void loadPendingCashouts()}>Refresh</button>
-                </p>
-              )}
-              {action === 'cashout' && visiblePendingCashouts.length > 0 && (
-                <div className={styles.pendingBox}>
-                  <div className={styles.pendingTitle}>Pending Cashouts</div>
-                  {visiblePendingCashouts.map((pc) => (
-                    <div key={pc.id} className={styles.pendingRow}>
-                      <span>{pc.amount.toLocaleString()} Chips</span>
-                      <span className={styles.pendingStatus}>
-                        {pc.status === 'pending' ? 'Awaiting Agent' : 'Processing'}
-                      </span>
-                    </div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className="sc-label sc-ink--blue" htmlFor="cashier-send-amount">
+                    AMOUNT:
+                  </label>
+                  <input
+                    id="cashier-send-amount"
+                    className={styles.input}
+                    type="number"
+                    placeholder="0"
+                    value={amount}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                    min={1}
+                    step={1}
+                    max={MAX_CHIP_AMOUNT}
+                    inputMode="numeric"
+                  />
+                </div>
+
+                {/* Quick amounts */}
+                <div className={styles.presetGrid}>
+                  {preset.map((val) => (
+                    <button
+                      key={val}
+                      className={styles.presetBtn}
+                      onClick={() => setAmount(val.toString())}
+                    >
+                      {chipFigure(val)}
+                    </button>
                   ))}
-                </div>
-              )}
-
-              {/* Open full CashoutRequestModal for premium step-tracker experience */}
-              {action === 'cashout' && !tableId && clubId && user?.id && (
-                <button className={styles.btnSuccess} onClick={() => setShowCashoutModal(true)}>
-                  Manage Cashout Requests
-                </button>
-              )}
-
-              {/* Cashout context info */}
-              {action === 'cashout' && !tableId && (
-                <div className={`${styles.message} ${styles.messageInfo}`}>
-                  Your Chips Will Be Held In Escrow Until Your Assigned Agent Approves The Cashout.
-                </div>
-              )}
-
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel} htmlFor="cashier-amount">
-                  {action === 'mint' ? 'CHIPS TO MINT:' : 'AMOUNT:'}
-                </label>
-                <input
-                  id="cashier-amount"
-                  className={styles.input}
-                  type="number"
-                  placeholder="0"
-                  value={amount}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                  min={1}
-                  step={1}
-                  max={MAX_CHIP_AMOUNT}
-                  inputMode="numeric"
-                />
-              </div>
-
-              {action === 'mint' && amount && (
-                <div className={`${styles.message} ${styles.messageInfo}`}>
-                  {Math.ceil(
-                    (parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN
-                  ).toLocaleString()}{' '}
-                  Diamonds Required
-                </div>
-              )}
-
-              {/* Presets */}
-              <div className={styles.presetGrid}>
-                {preset.map((val) => (
+                  {/* Max is the AGENT WALLET, because that is the account
+                    fn_agent_wallet_send debits. It used to prefill the global
+                    player wallet, which for most staff is a completely different
+                    (usually larger) number, so Max produced an amount the server
+                    refused every time. Disabled until the figure is known rather
+                    than offering a confident 0. */}
                   <button
-                    key={val}
                     className={styles.presetBtn}
-                    onClick={() => setAmount(val.toString())}
-                  >
-                    {val.toLocaleString()}
-                  </button>
-                ))}
-                {action === 'cashout' && (
-                  <button
-                    type="button"
-                    className={styles.presetBtn}
-                    // Per-club, matching what fn_request_cashout debits. This
-                    // prefilled the GLOBAL wallet figure, which for most users
-                    // is far larger than their balance in this club, so "Max"
-                    // produced an amount the server always rejected. Disabled
-                    // until the club figure is known, rather than offering 0.
-                    disabled={myClubChips === null}
-                    onClick={() => setAmount(String(Math.floor(myClubChips ?? 0)))}
+                    disabled={myAgentWallet === null}
+                    onClick={() => setAmount(String(Math.floor(myAgentWallet ?? 0)))}
                   >
                     Max
                   </button>
-                )}
-              </div>
-
-              {message && (
-                <div
-                  className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
-                >
-                  {formatPopupText(message.text)}
                 </div>
-              )}
 
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                // Called through a wrapper: passing the handler directly hands
-                // React's MouseEvent in as the override argument.
-                onClick={() => handleAction()}
-                disabled={
-                  isProcessing ||
-                  cooldown > 0 ||
-                  !amount ||
-                  (action === 'cashout' &&
-                    !tableId &&
-                    !cashoutPreparations.get('request', 'cashout_request'))
-                }
-              >
-                {isProcessing ? (
-                  <>
-                    <span className={styles.spinner} />
-                    Processing...
-                  </>
-                ) : action === 'buyin' ? (
-                  'CONFIRM BUY-IN'
-                ) : action === 'cashout' ? (
-                  tableId ? (
-                    'CONFIRM CASH-OUT'
-                  ) : (
-                    'CHECK OR REQUEST CASHOUT'
-                  )
-                ) : (
-                  'CONFIRM MINT'
-                )}
-              </button>
-
-              {tableId && (
-                <p className={styles.tableContext}>Returning To Table After Transaction</p>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ═══ TRANSACTION HISTORY ═══ */}
-      {action === 'history' && (
-        <section className={styles.card} id="cashier-panel-history" role="tabpanel">
-          <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>≡</span>Transaction History
-          </h2>
-          <div className={styles.txContainer}>
-            {/* Filters */}
-            <div className={styles.txFilters}>
-              {['all', 'credit', 'debit', 'transfer', 'buyin', 'cashout', 'rake', 'prize'].map(
-                (f) => (
-                  <button
-                    key={f}
-                    className={`${styles.txFilterBtn} ${txFilter === f ? styles.txFilterActive : ''}`}
-                    onClick={() => {
-                      setTxFilter(f);
-                      setTxPage(1);
-                    }}
-                  >
-                    {f === 'all'
-                      ? 'All'
-                      : f === 'credit'
-                        ? 'Credits'
-                        : f === 'debit'
-                          ? 'Debits'
-                          : CATEGORY_LABELS[f] || f}
-                  </button>
-                )
-              )}
-              <button className={styles.txExportBtn} onClick={exportCSV}>
-                Export CSV
-              </button>
-            </div>
-
-            {txError && (
-              <div role="alert" className={`${styles.message} ${styles.messageError}`}>
-                <span>{txError}</span>
-                <button
-                  type="button"
-                  className={styles.txExportBtn}
-                  onClick={() => loadTransactions({ force: true })}
-                >
-                  Retry History
-                </button>
-              </div>
-            )}
-            {loadingTx && transactions.length === 0 ? (
-              <div className={styles.txLoading} aria-busy="true">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={styles.txSkeletonRow}
-                    style={{ animationDelay: `${i * 0.08}s` }}
-                  >
-                    <div
-                      className={`${styles.skeletonBar}`}
-                      style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }}
-                    />
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div
-                        className={styles.skeletonBar}
-                        style={{ width: `${55 + i * 5}%`, height: '12px' }}
-                      />
-                      <div
-                        className={styles.skeletonBar}
-                        style={{ width: '40%', height: '10px' }}
-                      />
-                    </div>
-                    <div
-                      className={styles.skeletonBar}
-                      style={{ width: '60px', height: '14px', flexShrink: 0 }}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : txError && transactions.length === 0 ? null : filteredTransactions.length === 0 ? (
-              <div className={styles.txEmpty}>
-                <span className={styles.txEmptyIcon}>▦</span>
-                <span className={styles.txEmptyTitle}>No Transactions Recorded Yet</span>
-                <span className={styles.txEmptyDesc}>
-                  Your Buy-Ins, Cashouts, And Chip Transfers Will Appear Here.
-                </span>
-              </div>
-            ) : (
-              <>
-                <div className={styles.txList}>
-                  {filteredTransactions
-                    .slice(0, txPage * TX_PAGE_SIZE)
-                    .map((tx: any, idx: number) => (
-                      <div
-                        key={tx.id}
-                        className={styles.txRow}
-                        style={{ animationDelay: `${idx * 0.05}s` }}
-                      >
-                        <span className={styles.txIcon}>{CATEGORY_ICONS[tx.category] || '●'}</span>
-                        <div className={styles.txDetails}>
-                          <span className={styles.txCategory}>
-                            {CATEGORY_LABELS[tx.category] ||
-                              (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
-                          </span>
-                          <span className={styles.txDesc}>{formatPopupText(tx.description)}</span>
-                        </div>
-                        <div className={styles.txAmounts}>
-                          <span
-                            className={`${styles.txAmount} ${tx.type === 'credit' ? styles.txPositive : styles.txNegative}`}
-                          >
-                            {tx.type === 'credit' ? '+' : '-'}
-                            {Math.abs(tx.amount).toLocaleString()}
-                          </span>
-                          <span className={styles.txWallet}>{tx.wallet_type}</span>
-                        </div>
-                        <span className={styles.txTime}>
-                          {new Date(tx.created_at).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                          })}{' '}
-                          {new Date(tx.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                {/* Preview. The "before" figure is the AGENT WALLET, the account
+                  this send debits - it quoted the global player wallet, so the
+                  two lines described a movement between two accounts neither of
+                  which was involved. Suppressed entirely while the float is
+                  unknown rather than projecting a subtraction from nothing. */}
+                {selectedRecipientData &&
+                  amount &&
+                  parseFloat(amount) > 0 &&
+                  myAgentWallet !== null && (
+                    <div className={styles.rows}>
+                      <div className={styles.row}>
+                        <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
+                        <span className={`${styles.value} sc-ink--silver`}>
+                          {chipFigure(myAgentWallet)} →{' '}
+                          {chipFigure(Math.max(0, myAgentWallet - parseFloat(amount)))}
                         </span>
                       </div>
-                    ))}
-                </div>
-                {/* Pagination — Load More */}
-                {filteredTransactions.length > txPage * TX_PAGE_SIZE && (
-                  <button
-                    className={styles.loadMoreBtn}
-                    onClick={() => setTxPage((p) => p + 1)}
-                    aria-label="Load More Transactions"
+                      <div className={styles.row}>
+                        <span className="sc-label sc-ink--blue">
+                          {selectedRecipientData.username}
+                        </span>
+                        <span className={`${styles.value} sc-ink--silver`}>
+                          {chipFigure(selectedRecipientData.balance)} →{' '}
+                          {chipFigure(selectedRecipientData.balance + parseFloat(amount))}
+                        </span>
+                      </div>
+                      <div className={styles.row}>
+                        <span className="sc-label sc-ink--blue">Claim Back Window</span>
+                        <span className={`${styles.value} sc-ink--silver`}>Ten Minutes</span>
+                      </div>
+                    </div>
+                  )}
+
+                {message && (
+                  <div
+                    className={`sc-copy ${message.type === 'success' ? 'sc-ink--green' : message.type === 'error' ? 'sc-ink--red' : ''}`}
                   >
-                    Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} Remaining)
-                  </button>
+                    {formatPopupText(message.text)}
+                  </div>
                 )}
-              </>
-            )}
-          </div>
-        </section>
-      )}
+
+                <button
+                  className={`${styles.wordAction} sc-ink--white`}
+                  aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
+                  onClick={() => {
+                    const value = parseFloat(amount);
+                    if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
+                      setSendConfirm({
+                        show: true,
+                        value,
+                        recipientId: selectedRecipient,
+                        recipientName: selectedRecipientData.username,
+                      });
+                    } else {
+                      handleAction();
+                    }
+                  }}
+                  disabled={isProcessing || cooldown > 0 || !amount || !selectedRecipient}
+                >
+                  {isProcessing ? 'Processing...' : 'CONFIRM SEND'}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ═══ DISTRIBUTE CHIPS ═══ */}
+          {action === 'distribute' && canDistribute && (
+            <section className={styles.panel} id="cashier-panel-distribute" role="tabpanel">
+              <h2 className={`${styles.panelTitle} sc-ink--silver`}>Distribute Chips</h2>
+              <div className={styles.stack}>
+                <div className="sc-copy">
+                  {['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner
+                    ? 'Distribute Chips Directly To Players Or Agents From The Club Bank. Each Distribution Is Logged With A Full Audit Trail.'
+                    : 'Distribute Chips To Your Downline From Your Agent Wallet. Each Distribution Is Logged With A Full Audit Trail.'}
+                </div>
+
+                {/* Player Selector */}
+                <div className={styles.formGroup}>
+                  <label className="sc-label sc-ink--blue">Recipient</label>
+                  <input
+                    type="text"
+                    placeholder="Search Member, Role Or (You)..."
+                    className={styles.input}
+                    style={{ marginBottom: '8px' }}
+                    value={recipientSearch}
+                    onChange={(e) => setRecipientSearch(e.target.value)}
+                    aria-label="Search Distribute Recipients"
+                  />
+                  {loadingRecipients ? (
+                    <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
+                      Loading Recipients
+                    </p>
+                  ) : (
+                    <select
+                      className={styles.select}
+                      value={selectedRecipient}
+                      onChange={(e) => setSelectedRecipient(e.target.value)}
+                    >
+                      <option value="">Select Player...</option>
+                      {filteredRecipients.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.id === user?.id ? '(YOU) ' : ''}
+                          {r.username} ({enumToTitleCase(r.role)}) - {chipFigure(r.balance)} Chips
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Amount */}
+                <div className={styles.formGroup}>
+                  <label className="sc-label sc-ink--blue" htmlFor="cashier-distribute-amount">
+                    Amount
+                  </label>
+                  <input
+                    id="cashier-distribute-amount"
+                    className={styles.input}
+                    type="number"
+                    placeholder="Enter Chip Amount"
+                    value={amount}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                    min={1}
+                    step={1}
+                    max={MAX_CHIP_AMOUNT}
+                    inputMode="numeric"
+                  />
+                </div>
+
+                {message && (
+                  <div
+                    className={`sc-copy ${message.type === 'success' ? 'sc-ink--green' : message.type === 'error' ? 'sc-ink--red' : ''}`}
+                  >
+                    {formatPopupText(message.text)}
+                  </div>
+                )}
+
+                {/* Execute Button */}
+                <button
+                  className={`${styles.wordAction} sc-ink--white`}
+                  disabled={isProcessing || cooldown > 0 || !selectedRecipient || !amount}
+                  onClick={async () => {
+                    const parsed = parseChipAmount(amount);
+                    if (!parsed.ok) {
+                      setMessage({ type: 'error', text: parsed.error });
+                      return;
+                    }
+                    const value = parsed.value;
+                    if (!user?.id || !selectedRecipient) return;
+
+                    // DISTRIBUTE RATE LIMIT — prevent rapid-fire distributions (10s cooldown)
+                    const now = Date.now();
+                    const elapsed = now - lastDistributeRef.current;
+                    if (elapsed < DISTRIBUTE_RATE_LIMIT_MS) {
+                      const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
+                      setMessage({
+                        type: 'error',
+                        text: `Please wait ${waitSec}s before distributing again`,
+                      });
+                      return;
+                    }
+
+                    setIsProcessing(true);
+                    setMessage(null);
+
+                    // SETTLEMENT FREEZE CHECK — Block distributions during settlement
+                    if (clubId) {
+                      try {
+                        const lockResult = await checkSettlementLock(clubId);
+                        if (lockResult.locked) {
+                          if (isMounted.current)
+                            setMessage({
+                              type: 'error',
+                              text: `Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
+                            });
+                          if (isMounted.current) setIsProcessing(false);
+                          return;
+                        }
+                      } catch (e) {
+                        reportError(e, 'CashierPage');
+                        // Non-blocking: if settlement check fails, allow the action to proceed
+                      }
+                    }
+
+                    try {
+                      /**
+                       * THE TAB NOW DOES WHAT ITS OWN COPY SAYS (audit 2026-08-27).
+                       *
+                       * The card reads "Distribute Chips ... From The Club Bank",
+                       * but this called the distribute-promo World Hub route,
+                       * whose RPC (transfer_promo_agent_to_player) debits
+                       * club_members.promo_balance - a pool that is zero for
+                       * every member in production and that nothing funds. The
+                       * tab has NEVER moved a chip: zero ledger rows of that
+                       * type exist.
+                       *
+                       * It now routes by the caller's role onto the two
+                       * canonical RPCs. The four bank roles spend the CLUB BANK
+                       * (fn_club_bank_send - self-send permitted there, which is
+                       * how an owner funds their own float); an agent spends
+                       * their AGENT WALLET (fn_agent_wallet_send, downline
+                       * enforced server-side). Both derive the destination from
+                       * the recipient's role and write one ledger row.
+                       * promoOpIdRef is the page's per-INTENT key: held across a
+                       * failed attempt, rotated when the inputs change.
+                       */
+                      const resolvedForDistribute =
+                        (await resolveClubUUID(clubId || '')) || clubId || '';
+                      const recipientRow = recipients.find((r) => r.id === selectedRecipient);
+                      const viaClubBank =
+                        ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) ||
+                        isUnionOwner;
+                      const { data: distData, error: distError } = await supabase.rpc(
+                        viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
+                        {
+                          p_club_id: resolvedForDistribute,
+                          p_to_user_id: selectedRecipient,
+                          p_amount: value,
+                          p_destination: canHoldAgentWallet(recipientRow?.role)
+                            ? 'agent_wallet'
+                            : 'player_wallet',
+                          p_reason: viaClubBank
+                            ? 'Distributed From The Club Bank'
+                            : 'Distributed From The Agent Wallet',
+                          p_op_id: promoOpIdRef.current,
+                        }
+                      );
+                      if (distError) throw distError;
+                      const distRes = (Array.isArray(distData) ? distData[0] : distData) as {
+                        success?: boolean;
+                        error?: string;
+                      } | null;
+                      if (!distRes?.success) {
+                        throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
+                      }
+                      const recipient = recipientRow;
+                      if (isMounted.current)
+                        setMessage({
+                          type: 'success',
+                          text: `Distributed ${chipFigure(value)} chips to ${recipient?.username || 'player'}`,
+                        });
+                      masterBus.emit('CHIPS_DISTRIBUTED', {
+                        clubId: clubId || '',
+                        amount: value,
+                        userId: selectedRecipient,
+                      });
+
+                      // chip_ledger narration REMOVED (2026-08-15): server-owned
+                      // now; the distribution RPC writes wallet_transactions.
+                      setAmount('');
+                      setSelectedRecipient('');
+                      loadBalances(user.id);
+                      loadRecipients(true); // Force refresh — distribution just changed recipient balances
+                      // Notify both sender and recipient for cross-page sync
+                      notifyWalletChange(user.id, value);
+                      notifyWalletChange(selectedRecipient, value);
+                      startCooldown();
+                      lastDistributeRef.current = Date.now();
+                    } catch (err: unknown) {
+                      const msg =
+                        (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
+                      if (msg.includes('Rate limit')) {
+                        if (isMounted.current)
+                          setMessage({
+                            type: 'error',
+                            text: 'Too many distributions - please wait 60 seconds',
+                          });
+                      } else if (msg.includes('Insufficient promo')) {
+                        if (isMounted.current)
+                          setMessage({
+                            type: 'error',
+                            text: 'Insufficient promo balance for this distribution',
+                          });
+                      } else if (msg.includes('Player not found')) {
+                        if (isMounted.current)
+                          setMessage({
+                            type: 'error',
+                            text: 'Player is not a member of this club',
+                          });
+                      } else if (msg.includes('Agent not found')) {
+                        if (isMounted.current)
+                          setMessage({
+                            type: 'error',
+                            text: 'Your agent record was not found - contact club owner',
+                          });
+                      } else {
+                        if (isMounted.current) setMessage({ type: 'error', text: msg });
+                      }
+                    } finally {
+                      if (isMounted.current) setIsProcessing(false);
+                    }
+                  }}
+                >
+                  {isProcessing
+                    ? 'Distributing...'
+                    : cooldown > 0
+                      ? `Wait ${cooldown}s`
+                      : `Distribute ${amount ? chipFigure(parseFloat(amount)) : '0'} Chips`}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ═══ BUY-IN / CASH-OUT / MINT ═══ */}
+          {(action === 'buyin' || action === 'cashout' || action === 'mint') && (
+            <section className={styles.panel} id={`cashier-panel-${action}`} role="tabpanel">
+              <h2 className={`${styles.panelTitle} sc-ink--silver`}>
+                {action === 'cashout' && cashoutConfirmationVisible
+                  ? 'Escrow Verification'
+                  : action === 'buyin'
+                    ? 'Table Buy-In'
+                    : action === 'cashout'
+                      ? 'Cash Out'
+                      : 'Mint Chips'}
+              </h2>
+              {action === 'cashout' && cashoutConfirmationVisible ? (
+                <div className={styles.stack}>
+                  <h3 className={`${styles.subTitle} sc-ink--silver`}>
+                    Security Verification Required
+                  </h3>
+                  <p className="sc-copy">
+                    You Are Requesting A High-Value Cashout Of{' '}
+                    <strong className="sc-ink--gold">
+                      {chipFigure(cashoutConfirm.value)} Chips
+                    </strong>
+                    .<br />
+                    This Amount Triggers Our Mandatory Escrow Protocols To Ensure Player Security.
+                  </p>
+
+                  {/* These three rows previously rendered "Anti-Money Laundering
+                    (AML) Check Passed" and "Identity Verification Confirmed"
+                    with green ticks, hardcoded. No AML or identity check is
+                    performed here or in cashoutService.requestCashout — the app
+                    was asserting a compliance result it had never computed, at
+                    the exact moment of a large withdrawal. Replaced with what
+                    actually happens to the request. The ink carries the state
+                    (green done, gold still to come); no tick glyph, no icon box. */}
+                  <div className={styles.rows}>
+                    <div className={styles.row}>
+                      <span className="sc-copy sc-ink--green">
+                        Request Amount Confirmed Against Your Club Balance
+                      </span>
+                    </div>
+                    <div className={styles.row}>
+                      <span className="sc-copy sc-ink--gold">
+                        Chips Will Be Held After You Confirm This Request
+                      </span>
+                    </div>
+                    <div className={styles.row}>
+                      <span className="sc-copy sc-ink--gold">
+                        Club Agent Review Follows The Verified Hold
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={styles.wordRow}>
+                    <button
+                      className={`${styles.wordAction} sc-ink--silver`}
+                      onClick={() => {
+                        cashoutPreparations.invalidate();
+                        setCashoutConfirm({ show: false, value: 0 });
+                      }}
+                      disabled={isProcessing}
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      className={`${styles.wordAction} sc-ink--white`}
+                      onClick={() => processHighValueCashout(cashoutConfirm.value)}
+                      disabled={
+                        isProcessing || !isCashoutStartCurrent(cashoutConfirm.start ?? null)
+                      }
+                    >
+                      {isProcessing ? 'Processing...' : 'CONFIRM SECURE CASHOUT'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.stack}>
+                  {action === 'cashout' && cashoutPreparations.error && (
+                    <p className="sc-copy sc-ink--red" role="status">
+                      {cashoutPreparations.error}{' '}
+                      <button
+                        type="button"
+                        className={styles.wordInline}
+                        onClick={cashoutPreparations.invalidate}
+                      >
+                        Refresh
+                      </button>
+                    </p>
+                  )}
+                  {/* U-02 FIX: Show pending cashouts when on cashout tab */}
+                  {action === 'cashout' &&
+                    pendingCashoutScope.current?.() &&
+                    pendingCashoutError && (
+                      <p className="sc-copy sc-ink--red" role="status">
+                        Pending Cashouts Are Unavailable.{' '}
+                        <button
+                          type="button"
+                          className={styles.wordInline}
+                          onClick={() => void loadPendingCashouts()}
+                        >
+                          Refresh
+                        </button>
+                      </p>
+                    )}
+                  {action === 'cashout' && visiblePendingCashouts.length > 0 && (
+                    <div className={styles.rows}>
+                      <span className="sc-label sc-ink--blue">Pending Cashouts</span>
+                      {visiblePendingCashouts.map((pc) => (
+                        <div key={pc.id} className={styles.row}>
+                          <span className={`${styles.value} sc-ink--silver`}>
+                            {chipFigure(pc.amount)} Chips
+                          </span>
+                          <span className="sc-label sc-ink--gold">
+                            {pc.status === 'pending' ? 'Awaiting Agent' : 'Processing'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Open full CashoutRequestModal for premium step-tracker experience */}
+                  {action === 'cashout' && !tableId && clubId && user?.id && (
+                    <button
+                      className={`${styles.wordAction} sc-ink--blue`}
+                      onClick={() => setShowCashoutModal(true)}
+                    >
+                      Manage Cashout Requests
+                    </button>
+                  )}
+
+                  {/* Cashout context info */}
+                  {action === 'cashout' && !tableId && (
+                    <div className="sc-copy">
+                      Your Chips Will Be Held In Escrow Until Your Assigned Agent Approves The
+                      Cashout.
+                    </div>
+                  )}
+
+                  <div className={styles.formGroup}>
+                    <label className="sc-label sc-ink--blue" htmlFor="cashier-amount">
+                      {action === 'mint' ? 'CHIPS TO MINT:' : 'AMOUNT:'}
+                    </label>
+                    <input
+                      id="cashier-amount"
+                      className={styles.input}
+                      type="number"
+                      placeholder="0"
+                      value={amount}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setAmount(e.target.value)
+                      }
+                      min={1}
+                      step={1}
+                      max={MAX_CHIP_AMOUNT}
+                      inputMode="numeric"
+                    />
+                  </div>
+
+                  {action === 'mint' && amount && (
+                    <div className="sc-copy">
+                      {Math.ceil(
+                        (parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN
+                      ).toLocaleString()}{' '}
+                      Diamonds Required
+                    </div>
+                  )}
+
+                  {/* Presets */}
+                  <div className={styles.presetGrid}>
+                    {preset.map((val) => (
+                      <button
+                        key={val}
+                        className={styles.presetBtn}
+                        onClick={() => setAmount(val.toString())}
+                      >
+                        {chipFigure(val)}
+                      </button>
+                    ))}
+                    {action === 'cashout' && (
+                      <button
+                        type="button"
+                        className={styles.presetBtn}
+                        // Per-club, matching what fn_request_cashout debits. This
+                        // prefilled the GLOBAL wallet figure, which for most users
+                        // is far larger than their balance in this club, so "Max"
+                        // produced an amount the server always rejected. Disabled
+                        // until the club figure is known, rather than offering 0.
+                        disabled={myClubChips === null}
+                        onClick={() => setAmount(String(Math.floor(myClubChips ?? 0)))}
+                      >
+                        Max
+                      </button>
+                    )}
+                  </div>
+
+                  {message && (
+                    <div
+                      className={`sc-copy ${message.type === 'success' ? 'sc-ink--green' : message.type === 'error' ? 'sc-ink--red' : ''}`}
+                    >
+                      {formatPopupText(message.text)}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className={`${styles.wordAction} sc-ink--white`}
+                    // Called through a wrapper: passing the handler directly hands
+                    // React's MouseEvent in as the override argument.
+                    onClick={() => handleAction()}
+                    disabled={
+                      isProcessing ||
+                      cooldown > 0 ||
+                      !amount ||
+                      (action === 'cashout' &&
+                        !tableId &&
+                        !cashoutPreparations.get('request', 'cashout_request'))
+                    }
+                  >
+                    {isProcessing
+                      ? 'Processing...'
+                      : action === 'buyin'
+                        ? 'CONFIRM BUY-IN'
+                        : action === 'cashout'
+                          ? tableId
+                            ? 'CONFIRM CASH-OUT'
+                            : 'CHECK OR REQUEST CASHOUT'
+                          : 'CONFIRM MINT'}
+                  </button>
+
+                  {tableId && (
+                    <p className="sc-copy sc-ink--muted">Returning To Table After Transaction</p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ═══ TRANSACTION HISTORY ═══ */}
+          {action === 'history' && (
+            <section className={styles.panel} id="cashier-panel-history" role="tabpanel">
+              <h2 className={`${styles.panelTitle} sc-ink--silver`}>Transaction History</h2>
+              <div className={styles.txContainer}>
+                {/* Filters */}
+                <div className={styles.txFilters}>
+                  {['all', 'credit', 'debit', 'transfer', 'buyin', 'cashout', 'rake', 'prize'].map(
+                    (f) => (
+                      <button
+                        key={f}
+                        className={`${styles.txFilterBtn} ${txFilter === f ? 'sc-ink--blue' : 'sc-ink--muted'}`}
+                        onClick={() => {
+                          setTxFilter(f);
+                          setTxPage(1);
+                        }}
+                      >
+                        {f === 'all'
+                          ? 'All'
+                          : f === 'credit'
+                            ? 'Credits'
+                            : f === 'debit'
+                              ? 'Debits'
+                              : CATEGORY_LABELS[f] || enumToTitleCase(f)}
+                      </button>
+                    )
+                  )}
+                  <button className={styles.txExportBtn} onClick={exportCSV}>
+                    Export CSV
+                  </button>
+                </div>
+
+                {txError && (
+                  <div role="alert" className={`${styles.alertRow} sc-copy sc-ink--red`}>
+                    <span>{txError}</span>
+                    <button
+                      type="button"
+                      className={styles.txExportBtn}
+                      onClick={() => loadTransactions({ force: true })}
+                    >
+                      Retry History
+                    </button>
+                  </div>
+                )}
+                {loadingTx && transactions.length === 0 ? (
+                  <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
+                    Loading Transactions
+                  </p>
+                ) : txError && transactions.length === 0 ? null : filteredTransactions.length ===
+                  0 ? (
+                  <div className={styles.txEmpty}>
+                    <span className={`${styles.txEmptyTitle} sc-ink--silver`}>
+                      No Transactions Recorded Yet
+                    </span>
+                    <span className="sc-copy sc-ink--muted">
+                      Your Buy-Ins, Cashouts, And Chip Transfers Will Appear Here.
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles.txList}>
+                      {filteredTransactions
+                        .slice(0, txPage * TX_PAGE_SIZE)
+                        .map((tx: any, idx: number) => (
+                          <div
+                            key={tx.id}
+                            className={styles.txRow}
+                            style={{ animationDelay: `${idx * 0.05}s` }}
+                          >
+                            <div className={styles.txDetails}>
+                              <span className={`${styles.txCategory} sc-ink--silver`}>
+                                {CATEGORY_LABELS[tx.category] ||
+                                  enumToTitleCase(tx.category || tx.type)}
+                              </span>
+                              <span className={`${styles.txDesc} sc-ink--muted`}>
+                                {formatPopupText(tx.description)}
+                              </span>
+                            </div>
+                            <div className={styles.txAmounts}>
+                              <span
+                                className={`${styles.txAmount} ${tx.type === 'credit' ? 'sc-ink--green' : 'sc-ink--red'}`}
+                              >
+                                {tx.type === 'credit' ? '+' : '-'}
+                                {chipFigure(Math.abs(tx.amount))}
+                              </span>
+                              <span className={`${styles.txWallet} sc-ink--blue`}>
+                                {enumToTitleCase(tx.wallet_type)}
+                              </span>
+                            </div>
+                            <span className={`${styles.txTime} sc-ink--muted`}>
+                              {new Date(tx.created_at).toLocaleDateString([], {
+                                month: 'short',
+                                day: 'numeric',
+                              })}{' '}
+                              {new Date(tx.created_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                    {/* Pagination — Load More */}
+                    {filteredTransactions.length > txPage * TX_PAGE_SIZE && (
+                      <button
+                        className={styles.loadMoreBtn}
+                        onClick={() => setTxPage((p) => p + 1)}
+                        aria-label="Load More Transactions"
+                      >
+                        Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} Remaining)
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+      </SpadeConsole>
 
       {/* Cashout Request Modal — Full step tracker UX */}
       {clubId && user?.id && (
@@ -3007,57 +2985,72 @@ function CashierContent() {
           aria-modal="true"
           aria-labelledby="send-confirm-title"
         >
-          <div className={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
-            <h3 id="send-confirm-title" className={styles.confirmTitle}>
-              Confirm High-Value Transfer
-            </h3>
-            <p className={styles.confirmText}>
-              You Are About To Send <strong>{sendConfirm.value.toLocaleString()}</strong> Chips To{' '}
-              <strong>{sendConfirm.recipientName}</strong>.
-            </p>
-            <p className={styles.confirmWarning}>
-              {/* THE SAME SCREEN SAYS "Claim Back Window: Ten Minutes" three
+          <div className={styles.consoleDialog} onClick={(e) => e.stopPropagation()}>
+            <SpadeConsole
+              eyebrow="Protected Transfer"
+              title="Confirm Transfer"
+              titleId="send-confirm-title"
+              subtitle={`${compactChips(sendConfirm.value)} Chips To ${sendConfirm.recipientName}`}
+              pill="Verify"
+              pillInk="gold"
+              foot="plates"
+              className={styles.console}
+              plates={{
+                secondary: {
+                  label: 'Cancel',
+                  onClick: () =>
+                    setSendConfirm({
+                      show: false,
+                      value: 0,
+                      recipientId: '',
+                      recipientName: '',
+                    }),
+                },
+                primary: {
+                  label: isProcessing ? 'Sending' : 'Confirm Send',
+                  ink: 'blue',
+                  disabled: isProcessing,
+                  onClick: () => {
+                    // Send exactly what the user was shown and agreed to.
+                    // This used to call handleAction() with no arguments, which
+                    // re-read `amount` and `selectedRecipient` from live state —
+                    // a realtime-driven refresh between opening and confirming
+                    // could send a different amount to a different person than
+                    // the modal displayed. sendConfirm.recipientId was captured
+                    // for exactly this and was never read.
+                    const confirmed = {
+                      value: sendConfirm.value,
+                      recipientId: sendConfirm.recipientId,
+                    };
+                    setSendConfirm({
+                      show: false,
+                      value: 0,
+                      recipientId: '',
+                      recipientName: '',
+                    });
+                    handleAction(confirmed);
+                  },
+                },
+              }}
+            >
+              <div className={styles.glass}>
+                <p className="sc-copy">
+                  You Are About To Send{' '}
+                  <strong className="sc-ink--silver">{chipFigure(sendConfirm.value)}</strong> Chips
+                  To <strong className="sc-ink--silver">{sendConfirm.recipientName}</strong>.
+                </p>
+                <p className="sc-copy sc-ink--red">
+                  {/* THE SAME SCREEN SAYS "Claim Back Window: Ten Minutes" three
                   hundred lines up. This warning said the opposite - "This
                   Action Cannot Be Undone" - on a send the page itself
                   advertises as reversible, which is not a scarier warning, it
                   is a false one: an operator who believed it would not go
                   looking for the Claim Back that could still save them. */}
-              You Can Claim This Back For Ten Minutes, And Not After That. Please Verify The Amount
-              And Recipient.
-            </p>
-            <div className={styles.confirmButtons}>
-              <button
-                type="button"
-                className={styles.btnSecondary}
-                onClick={() =>
-                  setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })
-                }
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={styles.btnDanger}
-                disabled={isProcessing}
-                onClick={() => {
-                  // Send exactly what the user was shown and agreed to.
-                  // This used to call handleAction() with no arguments, which
-                  // re-read `amount` and `selectedRecipient` from live state —
-                  // a realtime-driven refresh between opening and confirming
-                  // could send a different amount to a different person than
-                  // the modal displayed. sendConfirm.recipientId was captured
-                  // for exactly this and was never read.
-                  const confirmed = {
-                    value: sendConfirm.value,
-                    recipientId: sendConfirm.recipientId,
-                  };
-                  setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
-                  handleAction(confirmed);
-                }}
-              >
-                Confirm Send {sendConfirm.value.toLocaleString()} Chips
-              </button>
-            </div>
+                  You Can Claim This Back For Ten Minutes, And Not After That. Please Verify The
+                  Amount And Recipient.
+                </p>
+              </div>
+            </SpadeConsole>
           </div>
         </div>
       )}

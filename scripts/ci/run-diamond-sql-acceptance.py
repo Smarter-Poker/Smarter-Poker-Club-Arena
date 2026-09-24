@@ -82,6 +82,8 @@ RUNNERS = [
      'Diamond tournament lifecycle cases verified against the installed doors,'),
     ('run-diamond-stats-asset-dimension.py',
      'Diamond stats asset dimension certified on isolated PostgreSQL 17.'),
+    ('run-diamond-club-commerce.py',
+     'club and union diamond commerce qualified in isolation'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -98,6 +100,7 @@ SQL_SCRIPTS = [
 # (hard-wired to SOCKET_DIR and PORT). A runner therefore cannot be mislabelled
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
+    'run-diamond-club-commerce.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
     'run-diamond-tournament-lifecycle.py',

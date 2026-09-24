@@ -63,6 +63,16 @@ case "\${1:-}" in
           absent) valid_detail 102 '[{"context":"Another Check"}]' ;;
         esac
         ;;
+      repos/Smarter-Poker/Smarter-Poker-Diamond-Arena/contents/.github/workflows/agent-autopilot.yml|repos/Smarter-Poker/Smarter-Poker-Diamond-Arena/contents/.github/workflows/agent-open-pr.yml)
+        # Recorded in estate-integrity.sh's RETIRED_PATHS: that repo's own
+        # PR #64 (d70fcbcd1928, 2026-09-18) deleted both and added a test
+        # there to keep them retired. gh prints the 404 body on STDOUT and
+        # exits 1, which is the shape this fixture has to reproduce - the
+        # audit reported those paths as zero-byte files for five days by
+        # decoding that error as if it were content.
+        printf '{"message":"Not Found","status":"404"}\\n'
+        exit 1
+        ;;
       repos/Smarter-Poker/*/contents/*)
         printf 'Z3VhcmQK\\n'
         ;;

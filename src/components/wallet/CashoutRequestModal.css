@@ -5,7 +5,7 @@
    This sheet places the console on the backdrop, switches off the global popup
    chassis (metallic-popups.css paints a rounded shell on `.cashout-modal` with
    !important), and types the balance, the queue and the form on the glass.
-   Sizes are cqw against the console; no :hover; nothing drawn. The only things
+   Sizes are cqw against the console; no hover state; nothing drawn. The only things
    with a box are the two the master does not paint, the amount field and the
    note, and they are engraved rules rather than filled cards.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -190,7 +190,11 @@
   cursor: pointer;
 }
 
-.cro-cancel:active {
+/* 0,3,0: metallic-popups.css presses every dialog button in with an inset
+   bevel and a 1px drop at 0,2,1 !important. The word only brightens. */
+.cro-cancel:active:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  transform: none !important;
   filter: brightness(1.3);
 }
 
@@ -200,7 +204,7 @@
 }
 
 .cro-cancel:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: -0.8cqw;
 }
 
@@ -252,7 +256,7 @@
     system-ui,
     sans-serif;
   outline: none;
-  caret-color: #5bb8ff;
+  caret-color: #45adff;
 }
 
 .cro-input--amount {
@@ -269,12 +273,27 @@
 }
 
 .cro-input::placeholder {
-  color: #6b7784;
+  color: #9aa5b3;
+  opacity: 0.6;
 }
 
+/* !important: the popup chassis rings every focused dialog field in its own
+   translucent blue at 0,1,0 !important. */
 .cro-input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff !important;
   outline-offset: -0.6cqw;
+}
+
+/* Chrome and Safari draw spinners on a number input; the console does not. */
+.cro-input--amount::-webkit-outer-spin-button,
+.cro-input--amount::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.cro-input--amount[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .cro-unit {
@@ -313,7 +332,9 @@
   cursor: pointer;
 }
 
-.cro-preset:active {
+.cro-preset:active:not(:disabled) {
+  box-shadow: none !important;
+  transform: none !important;
   filter: brightness(1.3);
 }
 
@@ -324,8 +345,85 @@
 }
 
 .cro-preset:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: 0.4cqw;
+}
+
+/* ── Unconfirmed outcomes (CashoutReceiptChecks) ─────────────────────── */
+
+/* That component prints a bare section, strong, p and button. The wrapper
+   adds no box of its own; the rows are typed here as rows on the glass, and
+   the button is a lit word, not the chassis' bevelled steel. */
+.cro-receipts {
+  display: contents;
+}
+
+.cro-receipts section {
+  display: grid;
+  gap: 1.6cqw;
+}
+
+.cro-receipts [role='status'] {
+  display: grid;
+  gap: 1.2cqw;
+  padding: 2.2cqw 0.5cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cro-receipts strong {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  font-size: 3.8cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.cro-receipts p {
+  margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.1cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.cro-receipts button {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 1cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cro-receipts button:active:not(:disabled) {
+  box-shadow: none !important;
+  transform: none !important;
+  filter: brightness(1.3);
+}
+
+.cro-receipts button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cro-receipts button:focus-visible {
+  outline: 0.6cqw solid #45adff;
+  outline-offset: -0.8cqw;
 }
 
 @media (prefers-reduced-motion: reduce) {

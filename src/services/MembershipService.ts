@@ -199,43 +199,6 @@ export const MembershipService = {
   },
 
   /**
-   * Add a new member to a club
-   */
-  async addMember(
-    clubId: string,
-    userId: string,
-    role: MemberRole = 'member',
-    invitedBy?: string
-  ): Promise<ClubMembership> {
-    const { data, error } = await supabase
-      .from('club_members')
-      .insert({
-        club_id: clubId,
-        user_id: userId,
-        role,
-        status: 'pending',
-        invited_by: invitedBy,
-      })
-      // Named: a bare .select() is RETURNING *, and club_members is moving to
-      // column-level grants that withhold is_bot from a player.
-      .select('club_id, user_id, role, status, joined_at, invited_by')
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error('Member creation returned no data');
-
-    return {
-      id: `${data.club_id}:${data.user_id}`, // Synthetic id from composite key
-      clubId: data.club_id,
-      userId: data.user_id,
-      role: data.role as MemberRole,
-      status: data.status as MemberStatus,
-      joinedAt: data.joined_at,
-      invitedBy: data.invited_by,
-    };
-  },
-
-  /**
    * Change a member's club role.
    *
    * TWO BUGS LIVED HERE. It wrote `club_members.role` directly, and it typed
@@ -304,21 +267,32 @@ export const MembershipService = {
   },
 
   /**
-   * Update member status
+   * Change a member's access status (ClubDetailPage's Suspend).
+   *
+   * There is no server function for a status change, so this is still a
+   * direct write, but "no error" is not "done": PostgREST answers an UPDATE
+   * that RLS filtered out, or that named a member who is not in this club, with
+   * zero rows and no error. It used to return true for exactly that and the page
+   * toasted "Member suspended" over an unchanged row. The write now returns the
+   * row it changed, and anything other than one row is a failure with a reason.
    */
   async updateStatus(clubId: string, userId: string, status: MemberStatus): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('club_members')
       .update({ status })
       .eq('club_id', resolvedId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select('user_id, status');
 
-    if (!error) {
-      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    if (error) throw error;
+    const changed = Array.isArray(data) ? data : [];
+    if (changed.length !== 1 || changed[0]?.status !== status) {
+      throw new Error('Member Status Was Not Changed');
     }
 
-    return !error;
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    return true;
   },
 
   /**

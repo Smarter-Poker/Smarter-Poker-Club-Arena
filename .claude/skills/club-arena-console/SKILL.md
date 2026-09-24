@@ -708,10 +708,32 @@ node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs
 ```
 
 Scores every page, modal, sheet, panel and card in `src/` by how far it is from
-the standard - CSS corner radii and gradients count against it, references to
+the standard - PAINTED corner radii and gradients count against it, references to
 `club-buttons/` or the console kit zero it out, a `:hover` rule is weighted five
 times because it is forbidden outright. A surface already on a master scores 0.
 `--json` gives the machine-readable list.
+
+**Painted, not merely present (2026-09-22).** `border-radius: 0` and
+`box-shadow: none` do not draw a frame, they refuse one, and they are the exact
+pair 3.5 tells you to write to switch the `metallic-popups` chassis off. The
+scorer used to count them, so the more correctly a surface obeyed 3.5 the more
+generic this said it was: `LeaderboardSettlementCard` prints as rows on
+`LeaderboardPage`'s console glass and owns no frame at all, and it was nominated
+for a rebuild on one zeroed corner and one refused shadow, its only two matching
+lines. Values are read and judged now. If you ever re-touch that counter, judge
+the DECLARATION - a negative lookahead behind `\s*` backtracks to zero width and
+matches `border-radius:` inside `border-radius: 0;`.
+
+**Two rows are ruled off by hand, and both maps say why.** `RULED` carries a
+surface that is finished work without a test whose title says so; it also
+carries `src/components/common/Card.tsx`, which is not a surface at all -
+nothing in `src/` renders any of its six exports, its only importer is the
+`components/common` barrel, and the barrel's only importer takes `ErrorBoundary`
+alone. A primitive several surfaces compose is not a thing a player looks at:
+move its callers onto `SpadeConsole` or retire it, never paint chrome onto a
+generic box to take a count to zero. Both rulings are pinned by
+`tests/unit/consoleInventoryIsHonest.test.ts`, so they re-open on their own if
+the tree stops matching them.
 
 Work the list in **traffic order, not score order**. What a seated player meets
 every hand beats an admin page nobody opens twice a week:
@@ -785,6 +807,40 @@ mount, so shoot after `document.fonts.ready`.
 A follow-up push to a merged branch exits 0 and reaches nobody. If the PR has
 merged, start a **new branch off current `main`**; the `guard-merged-branch.sh`
 hook refuses that push and prints the recovery.
+
+**7.14 A ZONE TABLE IS NOT SAFE BECAUSE IT LOOKS TIDY, AND A BAND IS NOT THE
+TEXT (2026-09-22).** Two of the three families declared head zones that
+overlap. The shark's `title` ran y 76-142 and its `subtitle` y 126-148 on a
+head 154 rows tall, so a console given both printed one through the other; the
+riveted pair shared four rows. Both subtitle bands were also SHORTER than the
+line they hold, and `.sc-zone` clips, so what did print was cut off under the
+letters (10.3 rows of a 15.9-row line on the shark). Nobody saw either, because
+no live caller on either family passes a subtitle.
+
+- **The head's room is set by its own height; the type is set by the console's
+  WIDTH.** `7cqw` is the same fraction everywhere, so a squat head spends more
+  of itself on each line: the shark head is 0.210 of its master's width against
+  the spade's 0.348, which is 1.66x the vertical cost per line. Never carry
+  another family's y numbers across. Measure that master's glass.
+- **A band has to reach the bottom of its ink.** Measured at 393px: the ink
+  ends 0.98 of the font size below the band top for the title (line-height
+  1.2) and 1.10 for the eyebrow, subtitle and pill (line-height 1.6, which
+  puts half a line of leading above the caps before they start).
+- **The text is centred while the line box fits the band and sits from the
+  band's TOP once it does not.** So shrinking a band that already fits keeps
+  the text still only if you keep the band's CENTRE, and shrinking one past the
+  line box moves the text to the top and cuts the bottom.
+- **Ask the component, not the table.** Most zones are alternatives: `title` is
+  wider than `titleBesidePill` and deliberately runs under the pill slot
+  because it is only ever used without a pill. `consoleHeadZones(family, {
+eyebrow, subtitle, pill })` returns the set a head really paints, the console
+  prints from it, and `tests/painted-zones-never-overlap.law.test.ts` reads the
+  same function. If you add a family or a line, it is already covered.
+- **A head that cannot hold a third line gets its own three-line bands**, the
+  way the title already steps aside for a pill. Do not shrink the two-line
+  bands everything live renders in.
+
+`docs/changelog/2026-09-22-the-console-zones-that-sat-on-each-other.md`.
 
 **7.13 A merge conflict between a console render and a main change is never
 resolved by taking a side.** On 2026-09-13 "main wins on product logic" threw

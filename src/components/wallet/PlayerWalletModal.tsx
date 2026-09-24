@@ -27,6 +27,8 @@ import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { roleLabel } from '../../types/clubRoles';
 import { canHoldAgentWallet } from './walletRows';
+import { titleCase, enumToTitleCase } from '../../utils/titleCase';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './WalletCashierModal.css';
 
 const PAGE = 40;
@@ -76,11 +78,24 @@ interface PlayerWalletModalProps {
   clubId: string;
 }
 
-const fmt = (n: number) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+/**
+ * A chip figure on the statement. Dan: "NEVER USE DECIMAL POINTS ON ANY
+ * FORWARD FACING PAGE", so a whole balance prints 12,500 and not 12,500.00;
+ * a ledger never misstates a figure, so one that really carries cents keeps
+ * them. Nothing pins two-decimal DISPLAY here: the two-decimal law
+ * (tests/a-chip-is-two-decimals-on-every-money-path.test.ts) is about what
+ * is stored and sent, and this only prints.
+ *
+ * A figure that is not a number is UNAVAILABLE. This used to print a
+ * confident 0.00 for anything non-finite, which is an invented balance.
+ */
+const fmt = (n: number | string | null | undefined): string => {
+  if (n === null || n === undefined || n === '') return 'Unavailable';
+  const v = Number(n);
+  return Number.isFinite(v)
+    ? v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+    : 'Unavailable';
+};
 
 /**
  * Names for the `chip_transactions.transaction_type` values that actually occur
@@ -139,21 +154,13 @@ const TX_TYPE_LABELS: Record<string, string> = {
   rakeback: 'Rakeback',
   bbj_promo_sweep: 'BBJ Promo Sweep',
   promo_closed_on_union_join: 'Promo Wallet Closed On Union Join',
-  horse_treasury_funding: 'Horse Treasury Funding',
+  /* Never 'Horse ...': a statement line may not say which member is a horse
+     (Dan 2026-09-14, tests/a-horse-is-never-named.law.test.ts). */
+  horse_treasury_funding: 'Treasury Funding',
   union_hold: 'Union Hold',
   union_pnl_collect: 'Union PnL Collected',
   union_pnl_payout: 'Union PnL Payout',
 };
-
-/** "Club Bank Send" from "club_bank_send". Popup and label casing law. */
-function titleCase(raw: string): string {
-  return raw
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-}
 
 /**
  * A row with no type at all must not render an empty cell on a statement - the
@@ -161,7 +168,9 @@ function titleCase(raw: string): string {
  */
 export function labelForTransactionType(raw: string | null | undefined): string {
   if (!raw || !raw.trim()) return 'Chip Movement';
-  return TX_TYPE_LABELS[raw] ?? titleCase(raw);
+  /* The house transform (src/utils/titleCase.ts), which keeps the product's
+     initialisms: a local copy lower-cased the tail of every word. */
+  return TX_TYPE_LABELS[raw] ?? enumToTitleCase(raw.replace(/-+/g, '_'));
 }
 
 export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWalletModalProps) {
@@ -297,126 +306,150 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
 
   const isAgentShaped = canHoldAgentWallet(role);
 
+  /* A BALANCE THAT COULD NOT BE READ IS NOT A BALANCE OF ZERO. While the
+     statement loads the figure is "..."; once a read has failed it says so,
+     rather than sitting on "..." forever or printing an invented figure. */
+  const balanceText = error
+    ? 'Unavailable'
+    : balances === null
+      ? '...'
+      : fmt(balances.player_wallet);
+
   return (
     <div
-      className="cbc-overlay"
+      className="cbc-overlay wcm-overlay"
       role="dialog"
       aria-modal="true"
       aria-label="Player Wallet"
       onClick={onClose}
     >
-      <div className="cbc-panel" onClick={(e) => e.stopPropagation()}>
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="cbc-head">
-          <div>
-            <div className="cbc-title">PLAYER WALLET</div>
+      <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+        {/* ON THE SPADE CONSOLE (#ClubArenaConsole), paired with the Club Bank
+            cashier's own sheet: the same glass, the same rows, the same inks.
+            One action (Close), so the foot is the flat cap and Close is a lit
+            word at the bottom of the glass. The spade is the default crest. */}
+        <SpadeConsole
+          onClose={onClose}
+          as="div"
+          eyebrow="Player Cashier"
+          title="Player Wallet"
+          titleId="player-wallet-title"
+          subtitle="Personal Club Statement"
+          pill={loading ? 'Syncing' : error ? 'Attention' : 'Recorded'}
+          pillInk={loading ? 'gold' : error ? 'red' : 'green'}
+          foot="foot"
+        >
+          <div className="cbc-bank">
+            <span>Player Wallet Balance</span>
+            <strong aria-live="polite">{balanceText}</strong>
           </div>
-          <button className="cbc-x" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
 
-        <div className="cbc-bank">
-          <span>Player Wallet Balance</span>
-          <strong aria-live="polite">
-            {balances === null ? '...' : fmt(balances.player_wallet)}
-          </strong>
-        </div>
+          <div className="cbc-body">
+            {error && <div className="cbc-empty cbc-empty--bad">{error}</div>}
 
-        <div className="cbc-body">
-          {error && <div className="cbc-empty cbc-empty--bad">{error}</div>}
+            {/* Every balance the member holds in this club, one per line. The
+                agent rows only exist for agent-shaped roles: a plain player has
+                one wallet and is shown one wallet. */}
+            {!error && balances && (
+              <>
+                <div className="cbc-row">
+                  <span className="sc-label sc-ink--blue">Role</span>
+                  <strong className="sc-ink--silver">{roleLabel(role)}</strong>
+                </div>
+                {isAgentShaped && (
+                  <div className="cbc-row">
+                    <span className="sc-label sc-ink--blue">Agent Wallet</span>
+                    <strong className="sc-ink--silver">{fmt(balances.agent_wallet)}</strong>
+                  </div>
+                )}
+                {isAgentShaped && (
+                  <div className="cbc-row">
+                    <span className="sc-label sc-ink--blue">Promo Wallet</span>
+                    <strong className="sc-ink--silver">{fmt(balances.promo_wallet)}</strong>
+                  </div>
+                )}
+              </>
+            )}
 
-          {/* Every balance the member holds in this club. The agent rows only
-              exist for agent-shaped roles — a plain player has one wallet and
-              is shown one wallet. */}
-          {!error && balances && (
-            <div className="cbc-totals">
-              <div>
-                <span>Role</span>
-                <strong>{roleLabel(role)}</strong>
-              </div>
-              {isAgentShaped && (
+            {!error && totals && (
+              <div className="cbc-totals">
                 <div>
-                  <span>Agent Wallet</span>
-                  <strong>{fmt(balances.agent_wallet)}</strong>
+                  <span>Received</span>
+                  <strong className="cbc-in">{fmt(totals.received)}</strong>
                 </div>
-              )}
-              {isAgentShaped && (
                 <div>
-                  <span>Promo Wallet</span>
-                  <strong>{fmt(balances.promo_wallet)}</strong>
+                  <span>Sent</span>
+                  <strong className="cbc-out">{fmt(totals.sent)}</strong>
                 </div>
-              )}
+                <div>
+                  <span>Net</span>
+                  <strong>{fmt(totals.net)}</strong>
+                </div>
+              </div>
+            )}
+
+            {!error && (
+              <div className="cbc-ledger-head">
+                <span>{total.toLocaleString('en-US')} Transactions</span>
+              </div>
+            )}
+
+            {!error &&
+              rows.map((row) => (
+                <div
+                  key={row.id}
+                  className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}
+                >
+                  <div className="cbc-tx-top">
+                    <span className="cbc-tx-type">
+                      {labelForTransactionType(row.transaction_type)}
+                    </span>
+                    <span className="cbc-tx-amount">
+                      {row.direction === 'in' ? '+' : '-'}
+                      {fmt(row.amount)}
+                    </span>
+                  </div>
+                  <div className="cbc-tx-mid">
+                    <span>
+                      {titleCase(row.from_name) || 'Club Bank'}
+                      {' → '}
+                      {titleCase(row.to_name) || 'Club Bank'}
+                    </span>
+                    <span className="cbc-tx-when">
+                      {new Date(row.created_at).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <div className="cbc-tx-foot">
+                    {row.notes && <span>{titleCase(row.notes)}</span>}
+                    {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
+                  </div>
+                </div>
+              ))}
+
+            {!error && !loading && rows.length === 0 && (
+              <div className="cbc-empty">No Transactions Yet. Your Chip Movements Land Here.</div>
+            )}
+            {loading && <div className="cbc-empty">Loading Your Wallet...</div>}
+            {!error && !loading && rows.length < total && (
+              <button className="cbc-more" onClick={() => load(rows.length)}>
+                Load More
+              </button>
+            )}
+
+            {/* Close, the one action, as a lit word (never a glyph). Escape and
+                the backdrop still close too. */}
+            <div className="cbc-actions">
+              <button className="cbc-x" onClick={onClose} aria-label="Close">
+                Close
+              </button>
             </div>
-          )}
-
-          {!error && totals && (
-            <div className="cbc-totals">
-              <div>
-                <span>Received</span>
-                <strong className="cbc-in">{fmt(totals.received)}</strong>
-              </div>
-              <div>
-                <span>Sent</span>
-                <strong className="cbc-out">{fmt(totals.sent)}</strong>
-              </div>
-              <div>
-                <span>Net</span>
-                <strong>{fmt(totals.net)}</strong>
-              </div>
-            </div>
-          )}
-
-          {!error && (
-            <div className="cbc-ledger-head">
-              <span>{total.toLocaleString('en-US')} Transactions</span>
-            </div>
-          )}
-
-          {!error &&
-            rows.map((row) => (
-              <div key={row.id} className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}>
-                <div className="cbc-tx-top">
-                  <span className="cbc-tx-type">
-                    {labelForTransactionType(row.transaction_type)}
-                  </span>
-                  <span className="cbc-tx-amount">
-                    {row.direction === 'in' ? '+' : '-'}
-                    {fmt(row.amount)}
-                  </span>
-                </div>
-                <div className="cbc-tx-mid">
-                  <span>
-                    {row.from_name || 'Club Bank'}
-                    {' → '}
-                    {row.to_name || 'Club Bank'}
-                  </span>
-                  <span className="cbc-tx-when">
-                    {new Date(row.created_at).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-                <div className="cbc-tx-foot">
-                  {row.notes && <span>{row.notes}</span>}
-                  {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
-                </div>
-              </div>
-            ))}
-
-          {!error && !loading && rows.length === 0 && (
-            <div className="cbc-empty">No Transactions Yet. Your Chip Movements Land Here.</div>
-          )}
-          {loading && <div className="cbc-empty">Loading Your Wallet...</div>}
-          {!error && !loading && rows.length < total && (
-            <button className="cbc-more" onClick={() => load(rows.length)}>
-              Load More
-            </button>
-          )}
-        </div>
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

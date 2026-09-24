@@ -7,13 +7,17 @@
  * Scores every page and modal in src/ for how far it is from the standard, so
  * a sweep is ordered by evidence instead of by whoever shouted loudest:
  *
- *   radius   CSS corner radii              (a rounded card is a drawn frame)
- *   grad     gradients + box-shadows       (paint the art does not need)
+ *   radius   PAINTED corner radii          (a rounded card is a drawn frame)
+ *   grad     gradients + PAINTED shadows   (paint the art does not need)
  *   master   references to club-buttons/   (art it already uses - lower is worse)
  *   hover    :hover rules                  (forbidden outright)
  *   px       px font sizes                 (should be cqw against the chassis)
  *
  * A surface with master:0 and a high radius+grad is "still generic".
+ *
+ * PAINTED, because `border-radius: 0` and `box-shadow: none` are the standard's
+ * own way of refusing a frame (SKILL.md 3.5) and counting them scored
+ * compliance as a violation. See paintedDecls below.
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
@@ -21,6 +25,31 @@ import { join, dirname, basename } from 'node:path';
 const ROOT = process.cwd();
 const SRC = join(ROOT, 'src');
 const count = (s, re) => (s.match(re) ?? []).length;
+
+/**
+ * A ZEROING DECLARATION IS NOT CHROME (2026-09-22).
+ *
+ * `border-radius: 0` and `box-shadow: none` do not draw a frame, they REFUSE
+ * one - and they are this standard's own handwriting. SKILL.md 3.5 tells every
+ * surface inside a dialog to switch the metallic-popups chassis off longhand by
+ * longhand with exactly those two declarations, and a surface printed as rows
+ * on console glass unpaints its buttons the same way. Counting them as paint
+ * scored the standard against itself: LeaderboardSettlementCard renders inside
+ * LeaderboardPage's <SpadeConsole> (#4521) and owns no frame at all, yet it was
+ * nominated for a rebuild at score 3 - one `border-radius: 0` and one
+ * `box-shadow: none`, its only two matching lines in the whole stylesheet. The
+ * more correctly a surface followed 3.5, the more generic this said it was.
+ *
+ * Counted by VALUE rather than by a negative lookahead, because `\s*` before a
+ * lookahead backtracks to zero width and the lookahead then passes on the
+ * space: `/border-radius\s*:\s*(?!0...)/` matches `border-radius:` in
+ * `border-radius: 0;` and reports a painted corner. Read the declaration, then
+ * judge it.
+ */
+const paintedDecls = (style, prop, isZero) =>
+  [...style.matchAll(new RegExp(`${prop}\\s*:\\s*([^;}]*)`, 'g'))].filter(
+    (m) => !isZero(m[1].trim().replace(/\s*!important$/, '').trim())
+  ).length;
 
 function walk(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -101,6 +130,8 @@ const RULED = {
     'One of three interchangeable 66px HUD tiles on an approved button asset; all-in-cannot-leave-and-the-hud-slot pins their geometry as a set.',
   'src/components/bbj/BBJBasicPanel.tsx':
     'Already on this standard: it renders as rows on the Bad Beat Jackpot console glass, so it has no frame of its own to rebuild.',
+  'src/components/common/Card.tsx':
+    'NOT A SURFACE: nothing renders it. All six exports (Card, CardHeader, CardContent, CardFooter, StatCard, FeatureCard) have zero JSX sites in src/; the only importer is the barrel components/common/index.ts, whose only importer is main.tsx taking ErrorBoundary alone. A player never meets it, so painting a chassis on it would change nothing on screen. Retiring it is the real answer and is NOT free: Card.css is a GLOBAL sheet and its .stat-card flex-direction, its .card-header gap and padding still cascade into five live surfaces that never redeclare them (BankrollTracker, stats/StatCard, SuperAgentDashboard, PositionWinRates, admin/EngineDashboard), so the file leaves only once those declarations are re-homed and those five are re-rendered. Premise pinned by tests/unit/consoleInventoryIsHonest.test.ts.',
 };
 
 /* UNREACHABLE IS NOT A SWEEP CANDIDATE (2026-09-21).
@@ -202,8 +233,13 @@ for (const tsx of files) {
     importers,
     css: css ? css.slice(ROOT.length + 1) : null,
     lines: src.split('\n').length,
-    radius: count(style, /border-radius/g),
-    grad: count(style, /linear-gradient|radial-gradient|box-shadow/g),
+    /* Painted corners and painted shadows only - see paintedDecls above.
+       `!important` is stripped before the judgement because that is how 3.5
+       writes the refusal. */
+    radius: paintedDecls(style, 'border-radius', (v) => /^0[a-z%]*$/.test(v)),
+    grad:
+      count(style, /linear-gradient|radial-gradient/g) +
+      paintedDecls(style, 'box-shadow', (v) => v === 'none'),
     /* ANY approved master counts, not just the console's. Club Arena carries
        three visual authorities: the spade console (club-buttons/), the
        cinematic route families of #SmarterCasinoRealism (images/challenges/,

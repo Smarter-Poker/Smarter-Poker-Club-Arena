@@ -119,18 +119,34 @@ describe('the selected wheel stake owns its availability quote', () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
+  /* Owner ruling 2026-09-21, R1: an unfinished award used to open its game page
+     by itself on load. It now waits in a visible card until Play Game is tapped,
+     and the tap opens the declared game route without a new spin. */
   it.each(['plinko', 'crash', 'crossing', 'mines'])(
-    'opens an existing %s award on its declared game route without a new spin',
+    'holds an existing %s award in a Play Game card and opens its declared route only on the tap',
     async (game) => {
       backend.state.mockResolvedValue({
         ...state,
-        pending_awards: [{ id: 'earned/award?1', game, base_diamonds: 100 }],
+        pending_awards: [
+          {
+            id: 'earned/award?1',
+            game,
+            base_diamonds: 100,
+            boost_multiplier: 1,
+            entry_diamonds: 100,
+          },
+        ],
       });
       render(<DiamondWheelPage />);
-      await waitFor(() =>
-        expect(backend.navigate).toHaveBeenCalledWith(
-          `/clubs/club-a/${game}?wheelAward=earned%2Faward%3F1`
-        )
+      const play = await screen.findByRole('button', { name: 'Play Game' });
+      expect(screen.getByText('You Have A Bonus Game To Play')).toBeInTheDocument();
+      expect(screen.getByText('Play Your Bonus Game Before Another Spin')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeDisabled();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(backend.navigate).not.toHaveBeenCalled();
+      fireEvent.click(play);
+      expect(backend.navigate).toHaveBeenCalledWith(
+        `/clubs/club-a/${game}?wheelAward=earned%2Faward%3F1`
       );
       expect(screen.queryByText('Your Ready Bonus Games')).not.toBeInTheDocument();
     }

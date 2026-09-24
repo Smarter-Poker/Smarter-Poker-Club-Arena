@@ -12,15 +12,29 @@
  *   select fn_crash_multiplier_cents(0.12, 10000, 100000);        -- 332
  *
  * The HMAC is the wheel vector's (seed a3f1..., client 'lucky-seven', nonce 7).
+ * The one-argument fn_crash_point_cents is the no-minimum game those vectors
+ * come from, which the three-argument one reproduces at bet 1 and minimum 0:
+ *
+ *   select fn_crash_point_cents(111921121211850, 1, 0);           -- 201
+ *
+ * The odds below are the 2026-09-22 fairness audit's: a round that funds a
+ * guaranteed minimum L out of its own odds crashes at 1.00x
+ * 1 - (0.8 - L) / (1.01 - L) of the time - 1 in 4.8 at L = 0 (the "1 In 5" the
+ * lobby printed), 1 in 4.3 at a tenth of the stake, 1 in 2.4 at a half.
  */
 import { describe, expect, it } from 'vitest';
 import {
   PLINKO_SLOT_WEIGHTS,
   PLINKO_WEIGHT_TOTAL,
+  awardInstantCrashChances,
+  crashInstantChance,
+  crashMissChance,
   crashMultiplierCents,
   crashPointCentsFromRoll,
   crashSecondsToReach,
   multiplierLabel,
+  oneInLabel,
+  oneInRangeLabel,
   plinkoBitsFromPathBits,
   plinkoPathFromHmacHex,
   verifyCrashRound,
@@ -73,15 +87,23 @@ describe('plinko: the path is the first sixteen bits of the HMAC, get_bit order'
   });
 });
 
-describe('crash: floor(80 * 2^48 / (roll + 1)) cents, floored at 1.00', () => {
+describe('crash: L + (0.8 - L) / u, in cents, floored at 1.00', () => {
   it('matches Postgres on the pinned rolls', () => {
-    expect(crashPointCentsFromRoll(ROLL)).toBe(201);
-    expect(crashPointCentsFromRoll(1000)).toBe(22495502634218);
-    expect(crashPointCentsFromRoll(281474976710655)).toBe(100);
-    expect(crashPointCentsFromRoll(0)).toBe(22517998136852480);
+    expect(crashPointCentsFromRoll(ROLL, 1, 0)).toBe(201);
+    expect(crashPointCentsFromRoll(1000, 1, 0)).toBe(22495502634218);
+    expect(crashPointCentsFromRoll(281474976710655, 1, 0)).toBe(100);
+    expect(crashPointCentsFromRoll(0, 1, 0)).toBe(22517998136852480);
   });
 
-  it('returns 80 percent at every target: P(X >= x) is 0.8 / x to the 48-bit grain', () => {
+  it('is checked with the bet and the minimum of the round, never without them', () => {
+    // The audit's finding: the defaults recomputed the no-minimum game, so a
+    // third party following them disagreed with four of six award rounds.
+    const noArgs = crashPointCentsFromRoll as unknown as (roll: number) => number;
+    expect(() => noArgs(ROLL)).toThrow('A Crash Round Is Checked With Its Bet And Its Minimum');
+    expect(crashPointCentsFromRoll(ROLL, 1, 0.1)).not.toBe(crashPointCentsFromRoll(ROLL, 1, 0));
+  });
+
+  it('returns 80 percent at every target on a no-minimum round: P(X >= x) is 0.8 / x', () => {
     // The largest roll that still reaches x is floor(80 * 2^48 / x) - 1.
     for (const cents of [101, 150, 200, 500, 5000, 100000]) {
       const rolls = Math.floor((80 * 2 ** 48) / cents);
@@ -106,6 +128,8 @@ describe('crash: floor(80 * 2^48 / (roll + 1)) cents, floored at 1.00', () => {
       nonce: 7,
       roll: ROLL,
       crashCents: 201,
+      betChips: 1,
+      minimumPayoutChips: 0,
     });
     expect(v.fair).toBe(true);
     expect(v.computedRoll).toBe(ROLL);
@@ -116,9 +140,102 @@ describe('crash: floor(80 * 2^48 / (roll + 1)) cents, floored at 1.00', () => {
       nonce: 7,
       roll: ROLL,
       crashCents: 202,
+      betChips: 1,
+      minimumPayoutChips: 0,
     });
     expect(wrong.crashMatches).toBe(false);
     expect(wrong.fair).toBe(false);
+    // The same round with a tenth of the stake guaranteed is a different point,
+    // so a verifier handed the round without its minimum reports a mismatch.
+    const blind = await verifyCrashRound({
+      serverSeed: SEED,
+      serverSeedHash: SEED_HASH,
+      clientSeed: 'lucky-seven',
+      nonce: 7,
+      roll: ROLL,
+      crashCents: crashPointCentsFromRoll(ROLL, 1, 0.1),
+      betChips: 1,
+      minimumPayoutChips: 0,
+    });
+    expect(blind.hashMatches).toBe(true);
+    expect(blind.crashMatches).toBe(false);
+  });
+});
+
+describe('crash odds: the guaranteed minimum is paid for out of them', () => {
+  const SPACE = 281474976710656n;
+  /** The number of rolls that still reach `target`, exactly as the sealed point divides them. */
+  const survivors = (target: number, bet: number, minimum: number) =>
+    (100n * (4n * BigInt(Math.round(bet * 100)) - 5n * BigInt(Math.round(minimum * 100))) * SPACE) /
+    (5n *
+      (BigInt(Math.round(bet * 100)) * BigInt(target) - 100n * BigInt(Math.round(minimum * 100))));
+
+  it('reads the audit figures at no minimum, a tenth and a half of the stake', () => {
+    expect(crashInstantChance(1, 0)).toBeCloseTo(1 - 0.8 / 1.01, 12);
+    // 4.81: what "1 In 5" was rounding, and true only while a crash paid nothing.
+    expect(1 / crashInstantChance(1, 0)).toBeCloseTo(4.81, 2);
+    expect(Math.round(1 / crashInstantChance(1, 0))).toBe(5);
+    expect(1 / crashInstantChance(1, 0.1)).toBeCloseTo(4.3333, 4);
+    expect(1 / crashInstantChance(1, 0.5)).toBeCloseTo(2.4286, 4);
+    expect(oneInLabel(crashInstantChance(1, 0))).toBe('1 In 4.8');
+    expect(oneInLabel(crashInstantChance(1, 0.1))).toBe('1 In 4.3');
+    expect(oneInLabel(crashInstantChance(1, 0.5))).toBe('1 In 2.4');
+    // The same three stated as the audit did: the share of the stake decides it.
+    expect(crashInstantChance(50, 5)).toBeCloseTo(crashInstantChance(1, 0.1), 12);
+    expect(crashInstantChance(50, 25)).toBeCloseTo(crashInstantChance(1, 0.5), 12);
+  });
+
+  it('agrees with the sealed crash point it is derived from, to the 48-bit grain', () => {
+    for (const [bet, minimum] of [
+      [1, 0],
+      [1, 0.1],
+      [1, 0.5],
+      [0.25, 0.03],
+      [25, 2.5],
+    ] as const) {
+      for (const target of [101, 150, 1000, 10000]) {
+        const reached = survivors(target, bet, minimum);
+        expect(crashPointCentsFromRoll(reached - 1n, bet, minimum)).toBeGreaterThanOrEqual(target);
+        expect(crashPointCentsFromRoll(reached, bet, minimum)).toBeLessThan(target);
+        expect(Number(SPACE - reached) / Number(SPACE)).toBeCloseTo(
+          crashMissChance(target, bet, minimum),
+          9
+        );
+      }
+    }
+    // Below the first hundredth nothing is missed: every round reaches 1.00x.
+    expect(crashMissChance(100, 1, 0.1)).toBe(0);
+  });
+
+  it('covers every stake a wheel award can be played at, and refuses an impossible one', () => {
+    // CONTRACT 4 is what a new award is sealed with, so it is what the lobby
+    // prices: the floor is half the stake, or for a Super award what the player
+    // PAID, and the round has to reach 1.11x before a cash-out can bind.
+    const ordinary = awardInstantCrashChances(1, 100);
+    const superAward = awardInstantCrashChances(2, 100);
+    // An ordinary award keeps half its stake, rounded up to the cent, so a small
+    // odd entry (25 diamonds keeps 13) dies before 1.11x a shade more often.
+    expect(1 / ordinary.least).toBeCloseTo(1.9677, 4);
+    expect(1 / ordinary.most).toBeCloseTo(1.9032, 4);
+    expect(oneInRangeLabel(ordinary)).toBe('1 In 1.9 To 2');
+    // A Super award keeps the entry without the add-on and the two thirds it
+    // paid with it, and the two thirds ends sooner than any other stake.
+    expect(1 / superAward.least).toBeCloseTo(1.9677, 4);
+    expect(1 / superAward.most).toBeCloseTo(1.4301, 4);
+    expect(oneInRangeLabel(superAward)).toBe('1 In 1.4 To 2');
+    // HISTORY IS NOT RE-PRICED. An award quoted under contract 3 keeps the tenth
+    // it was sealed with, the Super half, and the 1.01x open.
+    const wasOrdinary = awardInstantCrashChances(1, 100, 3);
+    const wasSuper = awardInstantCrashChances(2, 100, 3);
+    expect(1 / wasOrdinary.least).toBeCloseTo(4.3333, 4);
+    expect(1 / wasOrdinary.most).toBeCloseTo(4.1953, 3);
+    expect(oneInRangeLabel(wasOrdinary)).toBe('1 In 4.2 To 4.3');
+    expect(1 / wasSuper.least).toBeCloseTo(2.4286, 4);
+    expect(oneInRangeLabel(wasSuper)).toBe('1 In 2.4');
+    expect(oneInRangeLabel({ most: 0.5, least: 0.5 })).toBe('1 In 2');
+    // A minimum of four fifths of the stake leaves no odds to pay it with.
+    expect(() => crashInstantChance(1, 0.8)).toThrow('Invalid Crash Outcome');
+    expect(() => crashInstantChance(0, 0)).toThrow('Invalid Crash Outcome');
   });
 });
 

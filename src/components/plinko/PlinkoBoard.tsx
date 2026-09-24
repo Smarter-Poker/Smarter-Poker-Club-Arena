@@ -205,6 +205,25 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
   const height = Math.round(width * 1.13);
   const initialSize = useRef({ width, height });
   const sceneRef = useRef<ReturnType<typeof gameRenderer> | null>(null);
+  /** The last landing reported, by dropKey and how many balls it covered,
+   * whichever path reported it. The count matters because the player releases
+   * a batch a ball at a time (R6): each release is its own landing. */
+  const landedKey = useRef<{ key: number; count: number } | null>(null);
+  // A drop the scene cannot draw lands at once (2026-09-22). Its result is
+  // already booked; only the picture is missing. Without this a renderer that
+  // could not start, or a context lost mid-drop, never drew the frame that
+  // reports the landing, and the page waiting on it held every exit until the
+  // player pressed Show Results. CrashCurve settles an undrawable round the
+  // same way.
+  useEffect(() => {
+    const p = latest.current;
+    const count = p.batchPathBits?.length ?? 0;
+    if (!failed || (!count && !p.path)) return;
+    if (landedKey.current?.key === p.dropKey && landedKey.current.count === count) return;
+    landedKey.current = { key: p.dropKey, count };
+    if (count) p.onProgress?.(count);
+    p.onLanded?.();
+  }, [failed, props.batchPathBits, props.path, props.dropKey]);
   useEffect(() => {
     if (!canvas.current) return;
     let kit: ReturnType<typeof gameRenderer>;
@@ -324,6 +343,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       ringSlot = 8,
       booked = 0,
       bestCents = -1;
+    /** When each ball of the batch was released, in visible milliseconds of the batch. */
+    const releaseAt: number[] = [];
     let lastVisibleFrame: number | null = null;
     const visibilityChanged = () => {
       lastVisibleFrame = null;
@@ -376,31 +397,53 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         reported = -1;
         booked = 0;
         bestCents = -1;
+        releaseAt.length = 0;
         ringAt = Number.NEGATIVE_INFINITY;
         hitAt.fill(Number.NEGATIVE_INFINITY);
         hitBig.fill(false);
         writeTally(0, 0);
         pegs.reveal([], -1);
       }
+      if (
+        landedKey.current?.key === key &&
+        landedKey.current.count >= (p.batchPathBits?.length ?? 0)
+      ) {
+        // Landed already, without the scene: a context that comes back never
+        // flies or reports the same drop a second time. A batch the player has
+        // since added to is not that drop: those balls have never been shown.
+        landed = true;
+        pendingLanding = false;
+        pendingProgress = null;
+      }
       ball.visible = !p.batchPathBits?.length;
       batchBalls.forEach((mesh) => {
         mesh.visible = false;
       });
+      const gap = 140 * speed;
+      // THE PLAYER RELEASES THE BALLS (Dan 2026-09-21, R6). A batch may grow
+      // while it plays: each ball the page adds is released now, one gap after
+      // the ball before it, never back-dated to the batch's start (a back-dated
+      // ball would land without ever being seen). Drop All adds the rest at
+      // once and they come down at the batch cadence.
+      while (releaseAt.length < (p.batchPathBits?.length ?? 0)) {
+        const previous = releaseAt.length
+          ? releaseAt[releaseAt.length - 1]
+          : Number.NEGATIVE_INFINITY;
+        releaseAt.push(Math.max(visibleElapsed, previous + gap));
+        landed = false;
+      }
       if (p.batchPathBits?.length && !landed) {
-        const gap = 140 * speed;
-        const elapsed = reduced ? duration + gap * p.batchPathBits.length : visibleElapsed;
-        const finished = Math.max(
-          0,
-          Math.min(p.batchPathBits.length, Math.floor((elapsed - duration) / gap) + 1)
-        );
-        const newest = Math.min(p.batchPathBits.length - 1, Math.floor(elapsed / gap));
+        const count = p.batchPathBits.length;
+        const progressOf = (index: number) =>
+          reduced ? 16 : Math.min(16, ((visibleElapsed - releaseAt[index]) / duration) * 16);
+        let finished = 0;
+        while (finished < count && progressOf(finished) >= 16) finished++;
         // Every ball in flight lights the peg it is passing, so a batch shows
         // the same contact the single drop does instead of a silent board.
         const struck: number[] = [];
-        for (let j = 0; j < 32; j++) {
-          const index = newest - j;
-          if (index < finished || index < 0) continue;
-          const progress = Math.min(16, ((elapsed - index * gap) / duration) * 16);
+        let j = 0;
+        for (let index = finished; index < count && j < 32; index++) {
+          const progress = progressOf(index);
           if (progress < 0 || progress >= 16) continue;
           const row = Math.min(15, Math.floor(progress)),
             t = progress - row;
@@ -408,7 +451,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           let rights = 0;
           for (let k = 0; k < row; k++) rights += (bits >> k) & 1;
           struck.push(pegIndexAt(row, rights));
-          const mesh = batchBalls[j];
+          const mesh = batchBalls[j++];
           mesh.visible = true;
           mesh.rotation.set(0.22, reduced ? 0.32 : visibleElapsed / 850 + index, -0.12);
           mesh.position.set(
@@ -426,9 +469,9 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         if (reported !== finished) {
           reported = finished;
           pendingProgress = finished;
-          writeTally(finished, p.batchPathBits.length);
+          writeTally(finished, count);
         }
-        if (finished === p.batchPathBits.length) {
+        if (finished === count) {
           landed = true;
           pendingLanding = true;
         }
@@ -499,6 +542,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         }
         if (pendingLanding) {
           pendingLanding = false;
+          landedKey.current = { key, count: p.batchPathBits?.length ?? 0 };
           p.onLanded?.();
         }
       }
@@ -528,7 +572,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     <div className={styles.board} data-motion="keep">
       {failed ? (
         <p className="sc-copy">
-          The 3D Scene Is Unavailable. Use Show Results To See Your Saved Bonus.
+          The 3D Scene Is Unavailable. Your Saved Results Are Shown Without It.
         </p>
       ) : null}
       <canvas

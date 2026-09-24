@@ -148,7 +148,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
-    "tests/unit/CashoutRequestModal.test.tsx": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+    "tests/unit/CashoutRequestModal.test.tsx": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+    "scripts/ci/classify-ci-changes.mjs": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "0a13c64f23d929f0d977a10d00c1ae12c84489fb238c02d3122cf57cd07832df",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "a458d41bc2bbcc2055967ea47fbd6f18f265569324e1924ca592b4a6b5361b98",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
+    "tests/unit/fixtureNativeCi.test.ts": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "d9d71c415e82619749914bce811c5e98cbd488e2ca4450c911f4c1c18bbc6d78",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "092c24e450585a9bd29ff24c880367430fb67bdb28bda8e92dc1ece61052b913",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "50298ddc1eb469d6fccc1bf75a7d77c11add9e3a174f5e35a627e48737587d8d",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "271d7354278a5ad2cb45f8a3484341db691627dccdfb792931eee37380d7c23b",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -1751,6 +1751,90 @@
       "to": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
       "on": "2026-09-21",
       "why": "PR #5046: the TournamentLobbyPage.tsx baseline goes 3 -> 0. The ratchet only turns one way and this turn tightens it; the test requires the lower number in the same commit."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+      "to": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+      "on": "2026-09-22",
+      "why": "Restamped 2026-09-22 with the Diamond Wheel v4 migration (owner rulings 2026-09-21, R2/R12/R13/R15 and the server half of R18). The only change to this classifier is two alternations widened so the wheel v4 receipt fixture, its replay test and the generated browser mirror reach the PostgreSQL accounting job that runs their probes: wheel-(?:earned|v3)-postgres-receipts gains v4, the wheel*PostgresContract test list gains V4PostgresContract, and src/utils gains wheelV4Model. No lane was narrowed, no path lost a job, and nothing else in the file changed."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "0a13c64f23d929f0d977a10d00c1ae12c84489fb238c02d3122cf57cd07832df",
+      "to": "d178105d052d74eb07bf60d3fb2eb5c11bd44d96ff633cc5873ddb473f51acf4",
+      "on": "2026-09-22",
+      "why": "Restamped 2026-09-22 in the same change as the classifier above: this binding also pins the two bindings that carry the classifier's own hash, so restamping it there moves these two files by exactly one line each plus their audit entry. Nothing else in either file changed."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "d9d71c415e82619749914bce811c5e98cbd488e2ca4450c911f4c1c18bbc6d78",
+      "to": "42689b235e97b42eb80d4c18635096c2e753a5ae46c2e260ab26594b7b8ad561",
+      "on": "2026-09-22",
+      "why": "Restamped 2026-09-22 in the same change as the classifier above: this binding also pins the two bindings that carry the classifier's own hash, so restamping it there moves these two files by exactly one line each plus their audit entry. Nothing else in either file changed."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+      "to": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561",
+      "on": "2026-09-22",
+      "why": "PR fix/cashier-console-compliance-current: the src/components/wallet/ChipMintModal.tsx baseline goes 3 -> 2. The ratchet only turns one way and this turn tightens it: Chip Mint now binds the error of its diamond-balance read and prints Unavailable instead of 0 when that read fails; the test requires the lower number in the same commit."
+    },
+    {
+      "file": "tests/unit/CashoutRequestModal.test.tsx",
+      "from": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+      "to": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
+      "on": "2026-09-22",
+      "why": "PR fix/cashier-console-compliance-current: one pinned string changes case. The cashout status a receipt row carries now prints through titleCase() at the print site (Dan 2026-09-14: the first letter of every word a player reads is capitalised, data included), so the expected text moves from 'This Cashout Is Already approved.' to 'This Cashout Is Already Approved.'. No assertion is removed; no money, escrow, scope or idempotency expectation moves."
+    },
+    {
+      "file": "scripts/qualification/cash-native-hosted.manifest.json",
+      "from": "fa69c37e19cefeef4dddd592f58f522d0137a3af0e27cd5cbc91f604a29ab770",
+      "to": "3e135cee7fa758831ee39e71a062b1148e23c97c48de75e483ffe5442aa8d673",
+      "on": "2026-09-23",
+      "why": "Restamped 2026-09-23 landing the Diamond Wheel v4 client: this manifest's fixed-input map pins scripts/ci/classify-ci-changes.mjs, which the same change widened by two alternations so the wheel v4 receipt fixture, its replay test and the generated browser mirror reach the PostgreSQL accounting job. Only that one pin moves (22326 bytes / 60793cc6 to 22361 bytes / 84457fdc); no input is added or removed, and nothing else in the manifest changed. scripts/ci/test_cash_native_pgcron.py, which refuses to run on an unpinned input, passes on the new pin."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
+      "to": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
+      "on": "2026-09-23",
+      "why": "Branch feat/cashier-phase5-statements: 'cashier-statements' is added to fixtureDirectories and to requiredRunners in the restored provider accounting qualification describe, so the Phase 5 cashier statements fixture (tests/fixtures/cashier-statements) is a directory the native runner must cover and a runner CI must list. Two list entries are added; no assertion is removed or weakened and no other row moves."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+      "to": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
+      "on": "2026-09-23",
+      "why": "Branch feat/cashier-phase5-statements: tests/fixtures/cashier-statements/ joins the accounting fixture-directory alternation, so a change under it selects the PostgreSQL accounting job and its routing tests. One alternative is added to one selector; no branch is removed or narrowed and no other selector changes."
+    },
+    {
+      "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+      "from": "50298ddc1eb469d6fccc1bf75a7d77c11add9e3a174f5e35a627e48737587d8d",
+      "to": "271d7354278a5ad2cb45f8a3484341db691627dccdfb792931eee37380d7c23b",
+      "on": "2026-09-23",
+      "why": "Cascade of the 2026-09-23 restamp of tests/unit/fixtureNativeCi.test.ts and scripts/ci/classify-ci-changes.mjs for Cashier Phase 5 (cashier_statements_rebinding_20260923). The nested binding re-pins the same reviewed bytes of the file(s) it lists and gains its own restamp_audit rows; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "d178105d052d74eb07bf60d3fb2eb5c11bd44d96ff633cc5873ddb473f51acf4",
+      "to": "a458d41bc2bbcc2055967ea47fbd6f18f265569324e1924ca592b4a6b5361b98",
+      "on": "2026-09-23",
+      "why": "Cascade of the 2026-09-23 restamp of tests/unit/fixtureNativeCi.test.ts and scripts/ci/classify-ci-changes.mjs for Cashier Phase 5 (cashier_statements_rebinding_20260923). The nested binding re-pins the same reviewed bytes of the file(s) it lists and gains its own restamp_audit rows; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "42689b235e97b42eb80d4c18635096c2e753a5ae46c2e260ab26594b7b8ad561",
+      "to": "092c24e450585a9bd29ff24c880367430fb67bdb28bda8e92dc1ece61052b913",
+      "on": "2026-09-23",
+      "why": "Cascade of the 2026-09-23 restamp of tests/unit/fixtureNativeCi.test.ts and scripts/ci/classify-ci-changes.mjs for Cashier Phase 5 (cashier_statements_rebinding_20260923). The nested binding re-pins the same reviewed bytes of the file(s) it lists and gains its own restamp_audit rows; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "scripts/qualification/cash-native-hosted.manifest.json",
+      "from": "7fd3ff48e16aea3bb8531c346dbcf062a1319b14edb57936e4a6b5ecfbfb2847",
+      "to": "65c60ceaa12b7db0390381e407cfa72c4bffd40ef1ec3fb2e53765e66be03075",
+      "on": "2026-09-23",
+      "why": "Cascade of the 2026-09-23 restamp of tests/unit/fixtureNativeCi.test.ts, scripts/ci/classify-ci-changes.mjs and .github/workflows/ci.yml for Cashier Phase 5 (cashier_statements_rebinding_20260923), re-based on main ce23acf886 after merging it into feat/cashier-phase5-statements. The manifest's fixed-input map re-pins those three files at their merged bytes (ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner) and records the pins it replaced under cashierStatementsIntegration.previousPins; the cash SQL and every immutable capture input it pins are unchanged."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -1827,5 +1911,67 @@
     ],
     "reason": "PR #5046 lowers this file's baseline for src/pages/tournament/TournamentLobbyPage.tsx from 3 to 0. That is the ratchet TIGHTENING - it now permits fewer discarded error reads for that file than before, never more - and the test itself asks for the lower number in the same commit, which is what turned it red here. All three reads were the shape this ratchet exists to kill: a PostgREST call that RESOLVES with { error } read as an empty result. The player's own registration list became \"registered for nothing\", so a board of live Register (buy-in) buttons was shown to a player already entered in every event and pressing one is a second entry attempt against real money; union membership became \"standalone\"; and the union scope read became \"no union\", silently dropping every union game off the board. The two union reads keep the outcome they always had (fail open on the Create Tournament affordance, fail closed on scope) and now report instead of guessing. No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture or accounting assertion is touched.",
     "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit. Every other repository binding and every captured fixture was re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The diff is exactly this one hash plus this block."
+  },
+  "cashier_console_ratchet_rebinding_20260922": {
+    "base_commit": "e4ff8ae72be09654cbd4b853810c16cbc52017a2",
+    "prior_binding_sha256": "d6ae4c72b1fbdd1f32c7c058cbf0a0b40b90be99baed8105a6e322cea307407b",
+    "supersedes": "lobby_read_ratchet_rebinding_20260921",
+    "source_branch": "fix/cashier-console-compliance-current",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+        "sha256": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561"
+      },
+      {
+        "path": "tests/unit/CashoutRequestModal.test.tsx",
+        "previous_sha256": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+        "sha256": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed"
+      }
+    ],
+    "reason": "The Cashier #ClubArenaConsole release lowers this file's baseline for src/components/wallet/ChipMintModal.tsx from 3 to 2. That is the ratchet TIGHTENING - it permits fewer discarded error reads for that file than before, never more - and the test itself asks for the lower number in the same commit, which is what turned it red here. The read that is now bound is the profiles.diamonds balance read behind the Chip Mint: a FAILED read used to print 0 diamonds and enable nothing, and now reports through reportError, prints Unavailable and keeps every preset disabled until a read succeeds. No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture or accounting assertion is touched. The same release also restamps tests/unit/CashoutRequestModal.test.tsx: its one pinned success string changes case because the cashout status from the receipt row now prints through titleCase(); the assertion count and every escrow, scope and idempotency expectation in that file are unchanged.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit. Every other repository binding and every captured fixture was re-verified with scripts/ci/verify-source-bindings.py (hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation) and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The diff is exactly these two hashes, two restamp_audit rows and this block."
+  },
+  "cashier_statements_rebinding_20260923": {
+    "base_commit": "ce23acf8861fcd5acc0d0ac0782cec8d1d9e406b",
+    "prior_binding_sha256": "3f879237421ac42f6408cb5623c468a60ce92d1b8cf905271acd77c367e1a95c",
+    "supersedes": "cashier_console_ratchet_rebinding_20260922",
+    "source_branch": "feat/cashier-phase5-statements",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
+        "sha256": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7"
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+        "sha256": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f"
+      }
+    ],
+    "reason": "Phase 5 cashier statements fixture runner registered in fixtureNativeCi and classify-ci-changes. Cashier Phase 5 (2026-09-23) adds the Full Statement route clubs/:clubId/cashier/statements, its RPC family fn_cashier_statement_scope/_page/_totals/_export_start/_export_page/_export_cancel, and a native fixture directory tests/fixtures/cashier-statements that qualifies them. tests/unit/fixtureNativeCi.test.ts adds 'cashier-statements' to fixtureDirectories and to requiredRunners, so the fixture is a directory the native runner must cover and a runner CI must list; two list entries are added and nothing else in the file moves. scripts/ci/classify-ci-changes.mjs adds tests/fixtures/cashier-statements/ to the accounting fixture-directory alternation, so a change under it selects the PostgreSQL accounting job and its routing tests; one alternative is added to one selector, no branch is removed or narrowed. No accounting component, SQL, assertion, captured catalog fixture or limit changed. Re-based 2026-09-23 on main ce23acf886 after merging origin/main into the branch: the previous_sha256 values are main's pins at that commit, and scripts/qualification/cash-native-hosted.manifest.json (which main now pins from this file) cascades as a fourth nested binding.",
+    "verification": "The two new sha256 values are the sha256 of the bytes of tests/unit/fixtureNativeCi.test.ts and scripts/ci/classify-ci-changes.mjs at this base commit, read from disk in the worktree that produced the change (hashlib.sha256(path.read_bytes()).hexdigest(), no normalisation), and their diffs against the base commit are the added list entries and the added alternation described above and nothing else. The same two files are also pinned by tests/fixtures/earlybird-fee-custody/source-binding.json, tests/fixtures/legacy-fee-finality/source-binding.json and tests/fixtures/sep8-spin-custody/source-binding.json; each of those re-pins the same bytes with its own restamp_audit rows, which changes its own sha256, so the three nested binding hashes this binding pins move with it (cascaded_nested_bindings, three restamp_audit cascade rows). npx vitest run tests/unit/fixtureNativeCi.test.ts passes 590 tests on those bytes. The same three files (.github/workflows/ci.yml, which Phase 5 also changed by one added cashier-statements fixture step, and these two) are pinned by scripts/qualification/cash-native-hosted.manifest.json; its files map was refreshed with the new bytes and sha256 and its previous pins recorded under cashierStatementsIntegration, and python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the tree after this restamp: 759 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. No native financial execution and no production installation is established by this refresh; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed.",
+    "cascaded_nested_bindings": [
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous_sha256": "50298ddc1eb469d6fccc1bf75a7d77c11add9e3a174f5e35a627e48737587d8d",
+        "sha256": "271d7354278a5ad2cb45f8a3484341db691627dccdfb792931eee37380d7c23b"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "d178105d052d74eb07bf60d3fb2eb5c11bd44d96ff633cc5873ddb473f51acf4",
+        "sha256": "a458d41bc2bbcc2055967ea47fbd6f18f265569324e1924ca592b4a6b5361b98"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "42689b235e97b42eb80d4c18635096c2e753a5ae46c2e260ab26594b7b8ad561",
+        "sha256": "092c24e450585a9bd29ff24c880367430fb67bdb28bda8e92dc1ece61052b913"
+      },
+      {
+        "path": "scripts/qualification/cash-native-hosted.manifest.json",
+        "previous_sha256": "7fd3ff48e16aea3bb8531c346dbcf062a1319b14edb57936e4a6b5ecfbfb2847",
+        "sha256": "65c60ceaa12b7db0390381e407cfa72c4bffd40ef1ec3fb2e53765e66be03075"
+      }
+    ]
   }
 }

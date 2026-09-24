@@ -317,6 +317,12 @@
   outline-offset: 0.6cqw;
 }
 
+/* The shark head's clear glass beside its pill is 32 of 733 columns wide, so
+   the glyph steps down to fit inside it; the 44px hit area is unchanged. */
+.sc--family-shark .sc__close {
+  font-size: 3.6cqw;
+}
+
 /* ── Ink: the master's own colours ────────────────────────────────────── */
 
 .sc-ink--silver {

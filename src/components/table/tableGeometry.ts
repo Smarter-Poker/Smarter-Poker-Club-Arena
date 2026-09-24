@@ -226,11 +226,37 @@ export function markerInsetWidthPct(size: Size): number {
 }
 
 /**
- * Where a chip finishes when it is collected, as a fraction of seat-to-centre.
+ * WHERE THE POT IS, as a percentage of the table scaler - the one point every
+ * chip that goes INTO the pot converges on, and the point every chip that
+ * comes OUT of it leaves from.
  *
- * The chips are going to the pot and the pot is in the middle, so every seat
- * converges on one point. 0.9 rather than 1.0 so the arriving stacks form a
- * pile around the pot rather than all landing on the same pixel.
+ * `.pot-area` is a zero-size anchor with translate(-50%, -50%), so its `top`
+ * and `left` ARE the pot's centre: `left: 49.9%` in TablePage.css and
+ * `top: 23% !important` in TableVisualHotfix.css (Dan 2026-08-28, the pot
+ * moved so the top seat's bets can never touch the pill). This constant
+ * mirrors those two declarations and tests/unit/theSweepLandsInThePot pins
+ * the mirror; move all three together.
+ *
+ * ── THE SWEEP WENT TO THE WRONG PLACE FOR A MONTH (Dan 2026-09-23) ─────────
+ * "THE CHIPS ARE NOT BEING MOVED OR 'SHIPPED' TO THE CORRECT POSITION OR
+ * PLAYER AFTER A HAND IS COMPLETED." The end-of-street collect swept every
+ * seat's bet chips 0.9 of the way to `feltCenter()` - the MIDDLE of the felt,
+ * y 49% of the scaler, on the board and the wordmark - while the pot pill has
+ * stood at y 23% since 2026-08-28. Every hand, the bets flew to a point ~26%
+ * of the table below the pot, vanished there, and the pill then shipped from
+ * somewhere else. The comment on the fraction below still said "the pot is in
+ * the middle". This constant lived in TablePage.tsx, where the pot-to-winner
+ * flights already aimed at it; the collect never heard. One anchor, here,
+ * for both directions.
+ */
+export const POT_ANCHOR_PCT: Pos = { x: 49.9, y: 23 };
+
+/**
+ * Where a chip finishes when it is collected, as a fraction of seat-to-pot.
+ *
+ * The chips are going to the pot, so every seat converges on POT_ANCHOR_PCT.
+ * 0.9 rather than 1.0 so the arriving stacks form a pile around the pill
+ * rather than all landing on the same pixel.
  */
 export const CHIP_COLLECT_FRACTION = 0.9;
 
@@ -1559,10 +1585,12 @@ export function betChipOffsetPx(seat: Pos, size: Size, pod: Size | undefined = u
  *
  * The chip already sits at betChipOffsetPx(); the collect keyframe translates it
  * by this again. Expressed as the remainder to a common endpoint so every seat's
- * chips converge on the same place regardless of where they started.
+ * chips converge on the same place regardless of where they started - and the
+ * endpoint is the POT (POT_ANCHOR_PCT), not the middle of the felt; see the
+ * note on that constant for the month it was the wrong one.
  */
 export function chipCollectOffsetPx(seat: Pos, size: Size, pod: Size | undefined = undefined): Pos {
-  const c = feltCenter();
+  const c = POT_ANCHOR_PCT;
   const dxPx = ((c.x - seat.x) * size.w) / 100;
   const dyPx = ((c.y - seat.y) * size.h) / 100;
   const rest = betChipOffsetPx(seat, size, pod);

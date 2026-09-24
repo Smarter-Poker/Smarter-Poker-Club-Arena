@@ -4,8 +4,6 @@
  * 3-button horizontal row: Fold (red) | Check/Call (green) | Raise (amber)
  */
 
-@import '../../styles/design-tokens.css';
-
 /* ═══════════════════════════════════════════════════════════════
    HOW TALL THE BOTTOM CHROME IS — one number, three consumers
    ═══════════════════════════════════════════════════════════════

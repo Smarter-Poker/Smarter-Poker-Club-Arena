@@ -769,6 +769,8 @@ export type TournamentStatus =
   | 'late_registration'
   | 'running'
   | 'final_table'
+  /* Multi-day, between days (src/utils/multiDaySchedule.ts). */
+  | 'bagged'
   | 'complete'
   | 'cancelled';
 

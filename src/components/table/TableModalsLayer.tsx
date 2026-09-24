@@ -74,6 +74,7 @@ import { tournamentService } from '../../services/TournamentService';
 import { WalletService } from '../../services/WalletService';
 import { type UserTableSettings } from '../../hooks/useUserTableSettings';
 import type { SeatPlayer } from './SeatSlot';
+import type { KillTableRule } from '../../utils/killPot';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,8 @@ export interface TableModalsLayerProps {
    */
   canManualBombPot?: boolean;
   onManualBombPot?: () => void;
+  /** KILL POTS (kill-v1): the table's kill rule for the rules sheet, or null. */
+  killPotRules?: KillTableRule | null;
   onCloseGameRules: () => void;
 
   // Chip Animations
@@ -557,6 +560,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onEditBombSettings,
     canManualBombPot,
     onManualBombPot,
+    killPotRules,
     onCloseGameRules,
     // Chips
     chipAnimations,
@@ -859,6 +863,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onEditBombSettings={onEditBombSettings}
         canManualBombPot={canManualBombPot}
         onManualBombPot={onManualBombPot}
+        killPotRules={isTournament ? null : killPotRules}
       />
 
       {/* Chip Animations - pass-through to parent's ChipAnimationManager */}

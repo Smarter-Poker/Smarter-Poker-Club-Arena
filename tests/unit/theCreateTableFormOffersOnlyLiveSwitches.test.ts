@@ -192,3 +192,54 @@ describe('5d — the 7-2 amount is gated exactly like the 7-2 switch', () => {
     expect(FLOW).toMatch(/\{variant === 'nlh' && \(/);
   });
 });
+
+/**
+ * 5e — MULTI-DAY MTT IS A LIVE SWITCH ONLY WHERE IT IS LIVE (2026-09-24).
+ *
+ * The tournament form's Multi-Day switch was replaced by "NOT AVAILABLE YET"
+ * on 2026-08-26 because it wrote two flag columns nothing honoured. Day 2 now
+ * exists (single flight), and the switch is back under three conditions this
+ * pins: it is drawn only when the capability registry says
+ * tournament.multi_day.single_flight is available (otherwise the honest
+ * status stays); what it produces is a Day Schedule sealed through the
+ * operator door, never the flag columns; and the form still never composes
+ * is_multi_day or total_days (TournamentFromTableConfig.test.ts pins that
+ * refusal on buildTournamentConfig).
+ */
+describe('5e — the Multi-Day switch is gated by the registry and seals a plan', () => {
+  const FORM = read('src/pages/TableConfigPage.tsx');
+  const BUILDER = read('src/lib/tournamentFromTableConfig.ts');
+
+  it('draws the switch only when the capability is available, and says so otherwise', () => {
+    expect(FORM).toContain('usePlatformCapability(MULTI_DAY_CAPABILITY)');
+    const gate = FORM.indexOf("{multiDayGate === 'available' ? (");
+    expect(gate).toBeGreaterThan(0);
+    const toggle = FORM.search(/<Toggle\s+label="Multi-Day MTT"/);
+    const fallback = FORM.indexOf('NOT AVAILABLE YET', gate);
+    expect(toggle).toBeGreaterThan(gate);
+    expect(fallback).toBeGreaterThan(toggle);
+    // Exactly one Multi-Day switch, and it is the gated one.
+    expect(FORM.match(/<Toggle\s+label="Multi-Day MTT"/g)).toHaveLength(1);
+  });
+
+  it('seals the Day Schedule through the operator door after creation, checked before it', () => {
+    const start = FORM.indexOf('const handleStartTournament = async () => {');
+    const body = FORM.slice(start, FORM.indexOf('const handleStart = async () => {'));
+    const check = body.indexOf('sealedPlan = buildStagePlan(');
+    const create = body.indexOf('tournamentService.createTournament(');
+    const seal = body.indexOf('sealStagePlan(createdId, sealedPlan.plan)');
+    expect(check).toBeGreaterThan(0);
+    expect(create).toBeGreaterThan(check);
+    expect(seal).toBeGreaterThan(create);
+    expect(read('src/services/TournamentStageService.ts')).toContain(
+      "door('fn_operator_seal_stage_plan'"
+    );
+  });
+
+  it('never writes the flag columns the database guard still refuses', () => {
+    const code = FORM.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    expect(code).not.toMatch(/isMultiDay:\s*true/);
+    expect(code).not.toMatch(/is_multi_day|total_days/);
+    expect(BUILDER).toMatch(/isMultiDay: false/);
+  });
+});

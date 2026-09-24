@@ -179,6 +179,16 @@ import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import {
+  fixedLimitStreetBet,
+  killNextAnnouncement,
+  killPotPillText,
+  killTableRuleOf,
+  isKillVariant,
+  type KillHandSnapshot,
+  type KillNextSnapshot,
+  type KillTableRule,
+} from '../utils/killPot';
 import type { HeroLeaveClock } from '../lib/chipContinuity';
 import {
   heroLeaveIsLocked,
@@ -187,7 +197,7 @@ import {
 } from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { createSeatIdentityOverrides } from '../lib/seatIdentityOverrides';
-import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+import { bettingStructureFor } from '../lib/bettingStructure';
 import {
   isPreActionHonorable,
   PRE_ACTION_EXEC_GRACE_MS,
@@ -392,6 +402,7 @@ import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
 import '../components/table/ControlThemeTokens.css';
+import '../styles/table-design-tokens.css';
 import './TablePage.css';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 // Phase 8-9 Premium Components
@@ -676,6 +687,13 @@ interface TableState {
   bombPotNextAt: number | null;
   /** 2026-08-29: seats a due-but-held bomb is waiting for. Null = not waiting. */
   bombPotWaitingFor: number | null;
+  /**
+   * KILL POTS (rule manifest kill-v1), straight from the engine snapshot:
+   * this hand's kill (effective limits, kill blind, killer) and the kill
+   * scheduled for the next hand. Null on a base-limit hand / none scheduled.
+   */
+  killHand?: KillHandSnapshot | null;
+  killNext?: KillNextSnapshot | null;
   /**
    * THE REGULAR ANTE (Dan 2026-09-04): chips per posting, 0 when the table
    * runs none, and who posts it. Printed on the felt beside the blinds.
@@ -2296,6 +2314,8 @@ function LiveTablePage({
       bombPotIn: null,
       bombPotNextAt: null,
       bombPotWaitingFor: null,
+      killHand: null,
+      killNext: null,
       ante: 0,
       anteMode: null,
       gameStyle: null,
@@ -2693,6 +2713,9 @@ function LiveTablePage({
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
         bombPotWaitingFor: mapped.bombPotWaitingFor,
+        // KILL POTS (kill-v1): the engine's own kill facts, never derived here.
+        killHand: mapped.killHand,
+        killNext: mapped.killNext,
         ante: mapped.ante,
         anteMode: mapped.anteMode,
         handVariant: mapped.handVariant,
@@ -6067,7 +6090,13 @@ function LiveTablePage({
       tableState.potLimitPot ?? tableState.pot,
       callAmount
     );
-    const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+    // Server first; a kill hand never falls back to the base big blind.
+    const flBetSize = fixedLimitStreetBet({
+      serverBetSize: tableState.fixedBetSize,
+      killHand: tableState.killHand,
+      bigBlind: bb,
+      stage: tableState.boardStage,
+    });
     const flWagerTo = Math.min(
       allInTo,
       serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
@@ -6096,6 +6125,7 @@ function LiveTablePage({
     tableState.potLimitPot,
     tableState.fixedBetSize,
     tableState.fixedRaiseSize,
+    tableState.killHand,
     tableState.boardStage,
     tableState.wagersCapped,
   ]);
@@ -7163,6 +7193,38 @@ function LiveTablePage({
     /** BUTTON POLICY (2026-08-29): 'regular' | 'separate'. */
     buttonPolicy: string;
   } | null>(null);
+
+  /**
+   * KILL POTS (rule manifest kill-v1): the table's kill rule, for the Game
+   * Rules sheet only, read when the sheet opens. It is its OWN read and NOT a
+   * column on the bootstrap select above: a table whose row cannot answer
+   * simply shows no kill rule, and the felt still loads. What the felt shows
+   * about a kill (the pill, the next-hand line, the killer's marker) comes
+   * from the engine snapshot, never from here. Fixed-limit cash tables only,
+   * the only kind kill-v1 covers.
+   */
+  const [killPotRules, setKillPotRules] = useState<KillTableRule | null>(null);
+  const killRulesApply = !tableState.isTournament && isKillVariant(tableState.gameType);
+  useEffect(() => {
+    if (!tableId || !isUUID(tableId) || !killRulesApply) {
+      setKillPotRules(null);
+      return;
+    }
+    if (!showGameRules) return;
+    let live = true;
+    void (async () => {
+      const { data, error } = await supabase
+        .from('tables')
+        .select('kill_mode, kill_threshold_bb')
+        .eq('id', tableId)
+        .maybeSingle();
+      if (!live) return;
+      setKillPotRules(error || !data ? null : killTableRuleOf(data));
+    })();
+    return () => {
+      live = false;
+    };
+  }, [tableId, killRulesApply, showGameRules]);
 
   /**
    * TIMED BOMB CLOCK 2026-08-28 (spec §15.2): the engine publishes
@@ -23734,6 +23796,20 @@ function LiveTablePage({
                         <span className="table-brand__bomb">{bombPotBadge.text}</span>
                       </span>
                     )}
+                    {/* KILL POTS (kill-v1): the next hand is a kill hand. The
+                        bomb clock's line, word for word the same pattern: a
+                        masthead line under the blinds, not a pill on the felt.
+                        The engine says so (kill_next); nothing here predicts. */}
+                    {tableState.killNext && (
+                      <span
+                        className="table-brand__line table-brand__line--bomb table-brand__line--bomb-next table-brand__line--kill"
+                        aria-live="polite"
+                      >
+                        <span className="table-brand__bomb">
+                          {killNextAnnouncement(tableState.killNext)}
+                        </span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 {/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.
@@ -24040,6 +24116,22 @@ function LiveTablePage({
                     <div className="bomb-pot-live" aria-live="polite">
                       <span className="bomb-pot-live__dot" />
                       {bombPotBadge.text}
+                    </div>
+                  )}
+                  {/* KILL POTS (kill-v1): THIS hand is a kill hand. Same pill,
+                      same anchor as the live bomb (the two never share a hand:
+                      a kill table runs no bomb pots). It states the hand's
+                      effective limits as the engine published them, "Kill Pot
+                      8/16" or "Half Kill 6/12"; the killer's seat carries the
+                      matching marker. */}
+                  {tableState.killHand && bombPotBadge?.state !== 'live' && (
+                    <div
+                      className="bomb-pot-live kill-pot-live"
+                      aria-live="polite"
+                      aria-label={`${killPotPillText(tableState.killHand)}, Killer In Seat ${tableState.killHand.killerSeat}`}
+                    >
+                      <span className="bomb-pot-live__dot" aria-hidden="true" />
+                      {killPotPillText(tableState.killHand)}
                     </div>
                   )}
                 </div>
@@ -24632,6 +24724,7 @@ function LiveTablePage({
                   showPickedCardIndexes={displayPlayer?.isHero ? shownCardIndexes : undefined}
                   onToggleShowCard={displayPlayer?.isHero ? handleToggleShowCard : undefined}
                   position={tableState.positions[idx] || null}
+                  killMarker={tableState.killHand?.killerSeat === seatNumber ? 'Kill Blind' : null}
                   /* Always on: the acting seat is always marked active. The
                      v8Settings.highlight_active_players gate is gone — see the
                      spotlight note above. */
@@ -25637,8 +25730,15 @@ function LiveTablePage({
                   // Fixed limit: one legal wager, so the floor and the ceiling
                   // are the same number and there is no range to drag through.
                   // A short stack clamps to its all-in.
-                  const flBetSize =
-                    tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+                  // KILL POTS (kill-v1): the server's size wins; on a kill
+                  // hand from an older engine the fallback reads the kill
+                  // limits the snapshot published, never bb x a multiplier.
+                  const flBetSize = fixedLimitStreetBet({
+                    serverBetSize: tableState.fixedBetSize,
+                    killHand: tableState.killHand,
+                    bigBlind: bb,
+                    stage: tableState.boardStage,
+                  });
                   const flWagerTo = Math.min(
                     allInTo,
                     serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
@@ -26273,6 +26373,7 @@ function LiveTablePage({
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
         bombPotRules={bombPotRules}
+        killPotRules={killPotRules}
         canManualBombPot={isClubStaff && bombPotRules?.enabled === true}
         onManualBombPot={handleManualBombPot}
         canEditBombSettings={isClubStaff}

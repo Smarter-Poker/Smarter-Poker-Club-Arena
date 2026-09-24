@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 156310,
-      "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      "bytes": 157613,
+      "sha256": "c58b3e664af56ef0bf88998de1108f04ade61a0416f81cc49e0cdf2cae78988d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -272,6 +272,51 @@
       ".github/workflows/ci.yml": {
         "bytes": 156118,
         "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "killPotTableSettingsIntegration": {
+    "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "tournamentCreationRulesIntegration": {
+    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "scheduleTimeZoneIntegration": {
+    "reason": "A schedule keeps its time zone: ci.yml gains the 'A schedule keeps its time zone across daylight saving' owned-PostgreSQL step (scripts/ci/test-schedule-time-zone.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155887,
+        "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
+      }
+    }
+  },
+  "multiDayStageFoundationIntegration": {
+    "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "multiDayStageViewIntegration": {
+    "reason": "Multi-day stage view and operator doors: ci.yml gains the Multi-day stage view step (scripts/ci/test-multi-day-stage-view.py against PostgreSQL 17) beside the multi-day foundation step, additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156053,
+        "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
       }
     }
   }

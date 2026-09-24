@@ -245,6 +245,11 @@ import { isWakeableCashTable } from './services/onDemandTableWake.js';
 import { assertCashTablePlayEnabled, type CashTablePlayRow } from './services/supabase/tables.js';
 import { DiamondCashPolicyClosedError } from './services/cashTablePlayEligibility.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
+import {
+  StageResumeSchedule,
+  readStageResumeBoard,
+  type StageResumeDue,
+} from './tournament/stageResumeSchedule.js';
 import { ENGINE_RELEASE_IDENTITY } from './releaseIdentity.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
@@ -296,6 +301,12 @@ const PAST_START_TOP_UP_CONCURRENCY = 4;
 const PAST_START_TOP_UP_MAX_INTERVAL_MS = 10 * 60 * 1000;
 /** C19's 40ms start stagger, applied to RUNNING re-adoption as well. */
 const TOURNAMENT_RESUME_STAGGER_MS = 40;
+/**
+ * How often the multi-day stage-resume lane re-reads the BAGGED board. The
+ * wake itself is a timer at the exact due time; this cadence only bounds how
+ * late a bag made elsewhere or a reschedule is noticed.
+ */
+const STAGE_RESUME_DISCOVERY_INTERVAL_MS = 30_000;
 /**
  * Ownership renewal is a primary lifecycle, not part of table discovery.
  * Start each pass at least four times inside the shorter conservative proof
@@ -352,7 +363,13 @@ type DirectTableAdmission =
   | 'policy_closed'
   | 'owned_elsewhere'
   | 'retryable_failure';
-type TournamentManagerStartMode = 'start' | 'resume';
+/**
+ * `stage_resume` (multi-day, 2026-09-24): a BAGGED event whose next stage is
+ * due. The manager claims the stage resume receipt, seats every entitlement,
+ * completes the resume and then carries on as the running manager. Only
+ * discoverStageResumes admits it.
+ */
+type TournamentManagerStartMode = 'start' | 'resume' | 'stage_resume';
 type DealerPrerequisiteGate = {
   generation: number;
   promise: Promise<boolean>;
@@ -2658,6 +2675,7 @@ export class GameServer {
         return;
       }
       if (mode === 'resume') await manager.resume();
+      else if (mode === 'stage_resume') await manager.resumeStage();
       else await manager.start();
 
       if (!this.directAdmissionIsCurrent(generation)) {
@@ -3406,6 +3424,15 @@ export class GameServer {
       this.launchDiscoveryJob(
         this.discoverRunningResumes(),
         'GameServer.Tournament_resume_lane_fatal_err'
+      );
+      /**
+       * Multi-day (2026-09-24): a BAGGED event's next stage starts on its
+       * published schedule. Beside the RUNNING lane, never inside it -
+       * discoverRunningResumes reads RUNNING only and never sees BAGGED.
+       */
+      this.launchDiscoveryJob(
+        this.discoverStageResumes(),
+        'GameServer.Tournament_stage_resume_lane_fatal_err'
       );
       /**
        * The seat-first fast lane (Dan 2026-08-21: the wheel spins the MOMENT
@@ -8136,6 +8163,71 @@ export class GameServer {
         QUARANTINED_MANAGER_STOP_RETRY
       );
     }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE NEXT DAY OF A MULTI-DAY EVENT (2026-09-24)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Pages every BAGGED row with a scheduled (or already resuming) next stage
+   * and keeps one wake timer per due time (tournament/stageResumeSchedule).
+   * The timer only wakes; `fn_begin_stage_resume`'s receipt is the state, and
+   * the manager admitted in `stage_resume` mode drives begin, seat and
+   * complete from it. The schedule is the product (CLAUDE.md 10.12): nothing
+   * here repairs a row. Before the multi-day migrations exist no row can be
+   * BAGGED, so a pass is one empty read of `tournaments`.
+   *
+   * The board is re-read every STAGE_RESUME_DISCOVERY_INTERVAL_MS so a bag
+   * made by another process, a restart, or an operator's reschedule is
+   * picked up; an incomplete read changes no timer.
+   */
+  private async discoverStageResumes(): Promise<void> {
+    const generation = this.lifecycleGeneration;
+    const schedule = new StageResumeSchedule((due) => this.admitDueStageResume(due, generation));
+    try {
+      while (this.directAdmissionIsCurrent(generation)) {
+        try {
+          const board = await readStageResumeBoard();
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          if (board) schedule.reconcile(board);
+          else {
+            reportError(
+              new Error('[GameServer] BAGGED board read failed: incomplete or malformed board'),
+              'GameServer.stage_resume_board_read_failed'
+            );
+          }
+        } catch (err) {
+          reportError(err, 'GameServer.Tournament_stage_resume_pass_error');
+        }
+        // Slept in the RUNNING lane's slices, so a shutdown that drains this
+        // job never waits longer for it than for its neighbours.
+        for (
+          let waited = 0;
+          waited < STAGE_RESUME_DISCOVERY_INTERVAL_MS && this.directAdmissionIsCurrent(generation);
+          waited += TOURNAMENT_DISCOVERY_INTERVAL
+        ) {
+          await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+        }
+      }
+    } finally {
+      schedule.clear();
+    }
+  }
+
+  private admitDueStageResume(due: StageResumeDue, generation: number): void {
+    if (!this.directAdmissionIsCurrent(generation)) return;
+    if (this.tournamentEngines.has(due.tournamentId)) return;
+    this.launchDiscoveryJob(
+      this.ensureTournamentManagerAdmission(
+        due.tournamentId,
+        'stage_resume',
+        `Resuming day ${due.stageNo} of tournament: ${due.name}`,
+        generation
+      ),
+      'GameServer.Tournament_stage_resume_failed_for_t',
+      { tournamentId: due.tournamentId }
+    );
   }
 
   private async discoverRunningResumes(): Promise<void> {

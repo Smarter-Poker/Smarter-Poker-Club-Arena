@@ -19,6 +19,7 @@
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
+import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
 import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
@@ -255,6 +256,12 @@ export interface SeatSlotProps {
   seatNumber: number;
   player: SeatPlayer | null;
   position: PositionBadge;
+  /**
+   * KILL POTS (rule manifest kill-v1): the marker on the killer's seat for the
+   * whole kill hand ("Kill Blind"), drawn opposite the position badge so a
+   * killer who is also a blind keeps both. Null on every other seat and hand.
+   */
+  killMarker?: string | null;
   isActive: boolean;
   lastAction: LastAction;
   lastBetAmount?: number;
@@ -837,6 +844,7 @@ export const SeatSlot = memo(
       seatNumber,
       player,
       position,
+      killMarker = null,
       isActive,
       lastAction,
       lastBetAmount,
@@ -3048,6 +3056,14 @@ export const SeatSlot = memo(
               {position}
             </div>
           )}
+          {killMarker && (
+            <div
+              className="seat__position-badge seat__kill-badge"
+              title="This Player Is The Killer"
+            >
+              {killMarker}
+            </div>
+          )}
         </div>
 
         {/* Info Box — name + stack, with neon timer border when active.
@@ -3541,6 +3557,7 @@ export const SeatSlot = memo(
     if (prev.handInPlay !== next.handInPlay) return false;
     if (prev.isHeroReservedSeat !== next.isHeroReservedSeat) return false;
     if (prev.position !== next.position) return false;
+    if (prev.killMarker !== next.killMarker) return false;
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;

@@ -85,12 +85,49 @@ function sourceMapAssetIdentity(): Plugin {
   };
 }
 
+/**
+ * ONE IMMER (2026-09-24).
+ *
+ * recharts 3 declares `immer@^10` and imports exactly one name from it,
+ * `castDraft`, an identity function. Its store is built with
+ * @reduxjs/toolkit, which declares `immer@^11`, so npm installs two copies
+ * and the chart chunk shipped both: immer 11 doing all of the store's work
+ * and a second, complete immer 10 whose module-level instance cannot be
+ * tree-shaken, kept alive for that one identity function (about 3kB gzipped
+ * of the whole-app ceiling in scripts/ci/bundle-size.mjs, which exists to
+ * catch exactly this: one library arriving twice).
+ *
+ * Every bare `immer` import therefore resolves to the copy the toolkit
+ * itself resolves. Nothing else in the app imports immer, `castDraft` is
+ * `(value) => value` in both majors, and the toolkit's own imports are left
+ * to the normal resolver. Build only: dev serving pre-bundles dependencies
+ * separately and the duplicate costs nothing there.
+ */
+function oneImmer(): Plugin {
+  let toolkitImmer: Promise<string | null> | null = null;
+  return {
+    name: 'one-immer',
+    apply: 'build',
+    enforce: 'pre',
+    async resolveId(source, importer) {
+      if (source !== 'immer' || !importer || importer.includes('/@reduxjs/toolkit/')) return null;
+      toolkitImmer ??= this.resolve('@reduxjs/toolkit', path.resolve(__dirname, 'package.json'), {
+        skipSelf: true,
+      }).then(async (toolkit) =>
+        toolkit ? ((await this.resolve('immer', toolkit.id, { skipSelf: true }))?.id ?? null) : null
+      );
+      return (await toolkitImmer) ?? null;
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: NATIVE ? '/' : WEB_BASE,
   plugins: [
     react(),
     sourceMapAssetIdentity(),
+    oneImmer(),
     mediaIdentity.plugin,
 
     /**

@@ -1,0 +1,78 @@
+/* Day Schedule editor. 375px first: each day stacks its two fields; from
+   560px the fields sit side by side. Nothing is wider than the form. */
+.day-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+  min-width: 0;
+}
+
+.day-schedule__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.day-schedule__title {
+  font-weight: 700;
+}
+
+.day-schedule__zone,
+.day-schedule__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.day-schedule__label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.day-schedule__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.day-schedule__row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  min-width: 0;
+}
+
+.day-schedule__day {
+  font-weight: 700;
+}
+
+.day-schedule__cell input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.day-schedule__fixed {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.day-schedule__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (min-width: 560px) {
+  .day-schedule__row {
+    grid-template-columns: 4rem 1fr 1fr;
+    align-items: end;
+  }
+}

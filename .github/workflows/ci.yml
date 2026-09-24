@@ -1333,6 +1333,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-multi-day-stage-foundation.py
+      - name: Multi-day stage view shows each player only their own bag and the operator doors refuse without authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-stage-view.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

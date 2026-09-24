@@ -79,6 +79,8 @@ import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import TournamentDealReview from '../TournamentDealReview';
 import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
+import MultiDayStagePanel from './MultiDayStagePanel';
+import { isBaggedStatus } from '../../../utils/multiDaySchedule';
 import {
   activationStatusLine,
   formatCents,
@@ -195,6 +197,10 @@ export default function DetailOverviewTab({
   const isRunning = status === 'RUNNING';
   const handForHand = useTournamentHandForHand(tournament.id, currentUserId, isRunning);
   const isCompleted = status === 'COMPLETED';
+  /* BAGGED (multi-day, between days): live, but no table and no clock. It is
+     neither finished nor about to start, so it gets its own hero line and no
+     one-second heartbeat. */
+  const isBagged = isBaggedStatus(status);
   const { maintenanceBreak } = useMaintenanceBreak();
   const eventPaused = isRunning && tournament?.on_break === true;
   const [observedPause, setObservedPause] = useState<{
@@ -254,11 +260,11 @@ export default function DetailOverviewTab({
     startAtMs - Date.now() > -86_400_000;
 
   useEffect(() => {
-    if (isCompleted) return;
+    if (isCompleted || isBagged) return;
     if (!isRunning && !startsWithinADay) return;
     const id = setInterval(() => setTick((n) => (n + 1) % 86_400), 1000);
     return () => clearInterval(id);
-  }, [isCompleted, isRunning, startsWithinADay]);
+  }, [isCompleted, isBagged, isRunning, startsWithinADay]);
 
   /* Who is still in, counted ONCE. `field` below builds its figures from this
      same list, so the deal gate and the displayed count cannot disagree -- and
@@ -735,7 +741,7 @@ export default function DetailOverviewTab({
       : '-'
     : isRunning
       ? clockText(level.remaining)
-      : isCompleted
+      : isCompleted || isBagged
         ? '-'
         : untilText(secondsToStart);
   const heroEyebrow = clockPaused
@@ -744,13 +750,17 @@ export default function DetailOverviewTab({
       ? level.isBreak
         ? 'Break Ends In'
         : `Level ${level.index + 1} Ends In`
-      : 'Starts In';
+      : isBagged
+        ? 'Day Complete'
+        : 'Starts In';
   const heroNote = clockPaused
     ? `Level ${level.index + 1} Clock Paused`
     : maintenanceNote ||
       (isRunning
         ? `Running Since ${shortDate(tournament.started_at)}`
-        : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
+        : isBagged
+          ? 'Chips Are Bagged Until The Next Day Starts'
+          : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">
@@ -828,7 +838,13 @@ export default function DetailOverviewTab({
             <div className="dov-hero__blinds">
               <div className="dov-blind">
                 <span className="dov-blind__label">
-                  {isRunning ? (level.isBreak ? 'On Break' : 'Blinds') : 'Opening Blinds'}
+                  {isRunning
+                    ? level.isBreak
+                      ? 'On Break'
+                      : 'Blinds'
+                    : isBagged
+                      ? 'Blinds'
+                      : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
                   {level.amountsKnown
@@ -864,6 +880,10 @@ export default function DetailOverviewTab({
           )}
         </div>
       )}
+
+      {/* Multi-day schedule, bag, leaders and Day 2 seat. Renders null unless
+          the multi-day capability is available and this event has a plan. */}
+      <MultiDayStagePanel tournamentId={tournament.id} status={tournament.status} />
 
       {/* Bubble play. Renders null unless hand-for-hand is actually on. */}
       {isRunning && handForHand === true && (

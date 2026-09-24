@@ -807,8 +807,10 @@ class TournamentService {
       // cards (the card template has no dead-state), so a player tapping one
       // landed on a CANCELLED detail page whose only control is disabled --
       // the reported "join silently failed". History views query completed
-      // tournaments themselves; the LOBBY is for joining.
-      .in('status', ['REGISTERING', 'RUNNING'])
+      // tournaments themselves; the LOBBY is for joining. BAGGED (multi-day,
+      // between days) is listed so a player finds tomorrow's Day 2; every
+      // entry control treats it as closed (isTournamentEntryUnavailable).
+      .in('status', ['REGISTERING', 'RUNNING', 'BAGGED'])
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -934,8 +936,8 @@ class TournamentService {
             // ClubHomePage was fixed the same day; this service was missed,
             // which left the two lobbies disagreeing.
             .neq('club_id', resolvedId) // Avoid duplicates (host club already included above)
-            // Same lobby fix as the club query above -- joinable states only.
-            .in('status', ['REGISTERING', 'RUNNING'])
+            // Same lobby fix as the club query above, BAGGED included.
+            .in('status', ['REGISTERING', 'RUNNING', 'BAGGED'])
             .order('created_at', { ascending: false });
 
           // ROUND 8 (2026-08-29): a failed read here silently emptied the

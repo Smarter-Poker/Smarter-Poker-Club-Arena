@@ -417,7 +417,7 @@ const ALL_TAB_MTT_CAP = 10;
  *
  * One array, both consumers. Adding a status here can no longer half-land.
  */
-const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'];
+const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON', 'BAGGED'];
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
@@ -630,7 +630,8 @@ function tournamentOpenFirst(
       ['REGISTERING', 'OPEN', 'PENDING', 'ANNOUNCED', 'LATE_REG', 'LATE_REGISTRATION'].includes(u)
     )
       return 0;
-    if (u === 'RUNNING' || u === 'IN_PROGRESS') return 1;
+    // A multi-day event between days sorts with the events under way.
+    if (u === 'RUNNING' || u === 'IN_PROGRESS' || u === 'BAGGED') return 1;
     return 2;
   };
   const r = rank(a.status) - rank(b.status);
@@ -3384,6 +3385,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         'STARTING_SOON',
         'RUNNING',
         'IN_PROGRESS',
+        // Multi-day, between days: listed (a player looks for tomorrow's Day 2
+        // here) but never enterable; stillEnterable() above says no.
+        'BAGGED',
       ].includes(status);
     };
 

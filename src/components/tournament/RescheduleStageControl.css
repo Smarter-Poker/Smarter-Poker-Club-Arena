@@ -1,0 +1,33 @@
+/* Reschedule Day 2 on the table-management board. One column at 375px. */
+.md-reschedule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.md-reschedule__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.md-reschedule__field input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.md-reschedule__label {
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.md-reschedule__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

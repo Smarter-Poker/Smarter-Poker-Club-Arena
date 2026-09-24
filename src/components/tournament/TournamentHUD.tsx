@@ -216,6 +216,9 @@ function hudPause(row: Tournament, nowMs: number): HudPause {
 function rowDeadline(row: Tournament, nowMs: number): { key: string; atMs: number } | null {
   const status = String(row.status ?? '').toUpperCase();
   if (isTerminal(status)) return null;
+  // Multi-day, between days: live (not terminal) but nothing on the row is
+  // due; the resume arrives as a status change, not at a predictable instant.
+  if (status === 'BAGGED') return null;
   if (status !== 'RUNNING') {
     const startsAt = epochMs(row.start_time);
     return startsAt === null ? null : { key: `start:${startsAt}`, atMs: startsAt };

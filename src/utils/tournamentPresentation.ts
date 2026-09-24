@@ -36,6 +36,9 @@ export function isTournamentEntryUnavailable(row: unknown, entrants: number): bo
   if (!isKnownTournamentFormat(row) || !Number.isSafeInteger(entrants) || entrants < 0) return true;
   const status = String((row as { status?: unknown }).status ?? '').toUpperCase();
   if (['COMPLETING', 'COMPLETED', 'CANCELLED', 'ABORTED', 'FINISHED'].includes(status)) return true;
+  // Multi-day, between days: entries are closed (the registration core admits
+  // nobody into a BAGGED event), though the event is not over.
+  if (status === 'BAGGED') return true;
   if (isUnlimitedTournamentFormat(row)) return false;
   const capacity = getTournamentEntryCapacity(row);
   return capacity === null || entrants >= capacity;

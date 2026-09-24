@@ -52,6 +52,7 @@ import {
 } from './tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../../utils/multiDaySchedule';
 import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { CASH_TEMPLATES } from '../../config/cashGames';
@@ -998,6 +999,11 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
   const status = String(t.status || '').toUpperCase();
   if (status === 'COMPLETED') return { key: 'completed', label: 'Completed' };
   if (status === 'CANCELLED') return { key: 'closed', label: 'Cancelled' };
+  /* MULTI-DAY, BETWEEN DAYS. Under way, entries closed, nobody dealing: the
+     `running` key gives a registered player Return To Tournament and everyone
+     else Registration Closed, never Unregister or Register. It must not fall
+     to the default below, which would call it Registering. */
+  if (isBaggedStatus(status)) return { key: 'running', label: DAY_COMPLETE_LABEL };
   if (!isKnownTournamentFormat(t)) {
     return ['RUNNING', 'LATE_REG', 'LATE_REGISTRATION', 'COMPLETING'].includes(status)
       ? { key: 'running', label: status === 'COMPLETING' ? 'Finishing' : 'Running' }
@@ -1457,7 +1463,8 @@ export function tournamentEntry(
        IT NEEDS TO SAY RUNNING NOT STARTING") while the column still says
        REGISTERING for a beat — so the card showed a Running badge with no
        live pip: one card, two claims. One derivation now. */
-    live: st.key === 'running' || st.key === 'late_reg',
+    // A bagged event is under way but nobody is dealing: no live pip.
+    live: (st.key === 'running' || st.key === 'late_reg') && !isBaggedStatus(t.status),
     rules: tournamentMedallions(t, structureFacts),
     ...lobbyFlags(t),
     clubLabel: null,

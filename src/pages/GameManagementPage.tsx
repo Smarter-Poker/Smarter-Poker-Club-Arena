@@ -52,6 +52,8 @@ import {
   releaseManagedGameWork,
 } from './gameManagementIdentity';
 import styles from './GameManagementPage.module.css';
+import RescheduleStageControl from '../components/tournament/RescheduleStageControl';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 
 type Scope = 'club' | 'union';
 type View = 'all' | 'running' | 'scheduled' | 'closed';
@@ -207,6 +209,8 @@ function managedGameStatus(game: ManagedGame): ArenaGameStatus {
   if (game.bucket === BUCKET_CLOSED) return 'closed';
   const status = game.status.toLowerCase().replace(/_/g, '-');
   if (status === 'active') return 'running';
+  // Multi-day, between days: the event is live and stopped overnight.
+  if (status === 'bagged') return 'paused';
   if (status === 'registration-open') return 'registering';
   const supported: ArenaGameStatus[] = [
     'open',
@@ -1637,7 +1641,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         startTime:
                           game.kind === 'tournament' ? formatTime(game.startTime) : undefined,
                         status: managedGameStatus(game),
-                        statusLabel: game.status.replace(/_/g, ' '),
+                        statusLabel: isBaggedStatus(game.status)
+                          ? DAY_COMPLETE_LABEL
+                          : game.status.replace(/_/g, ' '),
                         rules: [],
                       }}
                       actions={{
@@ -1744,6 +1750,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       )}
                     </div>
                     <div className={styles.rowActions}>
+                      {/* Multi-day: Reschedule Day 2, only while the next day
+                          is scheduled; renders nothing otherwise. */}
+                      {game.kind === 'tournament' && !closed && isBaggedStatus(game.status) && (
+                        <RescheduleStageControl tournamentId={game.id} status={game.status} />
+                      )}
                       {/*
                       Open, Pause, Schedule and Close are all gated on !closed
                       and Edit was not, so a finished game could be renamed and

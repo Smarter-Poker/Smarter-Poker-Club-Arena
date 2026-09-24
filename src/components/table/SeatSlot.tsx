@@ -539,8 +539,9 @@ export interface SeatSlotProps {
 function formatStack(amount: number): string {
   // Whole chips from 100 up (engine sub-chip noise is rake and split
   // artifacts, not chips anyone can bet); to the penny below it, always two
-  // places (Dan 2026-09-04). The rule lives in utils/format so the seat, the
-  // stack-delta float and the net-win line cannot disagree about a stack.
+  // places (Dan 2026-09-04). The rule lives in utils/format so every stack on
+  // the table agrees; the stack-delta float and the net-win line are wagers
+  // and read through formatWager instead (item 9, 2026-09-23).
   return formatStackChips(amount);
 }
 
@@ -3409,7 +3410,10 @@ export const SeatSlot = memo(
             key={netWinAmount}
           >
             {netWinAmount > 0 ? '+' : '-'}
-            {formatStack(Math.abs(netWinAmount))}
+            {/* A win is a wager's kind of number, not a stack's: +12, not
+                +12.00, beside a stack delta that already reads +12
+                (2026-09-24, the one float item 9 missed). */}
+            {formatWager(Math.abs(netWinAmount))}
           </div>
         )}
 

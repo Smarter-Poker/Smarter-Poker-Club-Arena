@@ -2096,6 +2096,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           `settling=${sizeOf(engine?.settlementInFlight)}`,
           `postTasks=${engine?.postHandTasksPromise != null}`,
           `moves=${sizeOf(engine?.tournamentMoveOperations)}`,
+          `actionLock=${engine?.actionLock === true}`,
           `boundary=${sizeOf(engine?.terminalBoundaryPendingGenerations)}/${engine?.terminalBoundaryPersistenceFailed === true}`,
           `accounting=${sizeOf(engine?.timeBankAccountingPending)}`,
           ...fleetBankCensus(),
@@ -2220,6 +2221,73 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return 0;
       }
     };
+    /* ═══ A STICKY "DID NOT SUCCEED" ON A PROCESS THAT IS ALREADY DEAD ═══
+       (2026-09-24)
+
+       #5155 gave this capture the same three boundary outcomes `physical()`
+       has carried since #5020 and #5021. The first release on that SHA, run
+       35956154940, got one require further than any release since
+       2026-09-18 and then stopped on the LAST conjunct of the same proof, on
+       table 6557ebd8:
+
+         captureEngine.engine_work_not_drained
+         stopped=true terminal=true boundary=0/true permitPhase=attempted
+
+       `boundary=0/true` is an EMPTY pending set and a set
+       `terminalBoundaryPersistenceFailed`. Nothing is outstanding. What
+       refuses is a flag left by a boundary that has already resolved, and
+       resolved badly. That flag is cleared in exactly one place,
+       `beginTerminalBoundaryPersistence` (ServerTableEngineBase), which runs
+       immediately before `HandController.start`. A STOPPED, TERMINAL engine
+       will never start another hand, so on this engine the flag is true for
+       ever and no amount of waiting moves it. The only thing that clears it
+       is replacing the process, which is exactly what it was blocking:
+       CLAUDE.md 10.86, the fix for the wedge sitting behind the wedge.
+
+       THIS IS NOT "A FAILED PERSISTENCE IS NOW AN ALLOWANCE". It is still
+       never an allowance for a PENDING generation: `boundaryGenerationsAllowed`
+       keeps `terminalBoundaryPersistenceFailed !== false -> 0`, so a dead
+       engine still carrying an unresolved generation refuses one conjunct
+       earlier, without a row read, exactly as before. A LIVE engine keeps the
+       flat `=== false` in every phase. `physical()` is untouched: it walks
+       only the mixed-custody originals, and its deferral is about an
+       abandoned generation that never asserted "did not succeed" at all.
+
+       What is bounded here is only the case waiting cannot answer, and it is
+       not answered from memory. ServerTableEngineBase says so itself, above
+       `abandonTerminalBoundaryPersistence`: "Whether that hand settled is
+       answered from the database (`hand_state_snapshots`, `f06_hand_permits`),
+       never from the memory of a process that is already dead." So the table
+       is DEFERRED into the same `deferredUnresolvableCustody` map as the two
+       cases above, and `proveUnresolvableCustody` refuses the whole checkpoint
+       unless the rows prove that table quiet BEFORE anything is written. A
+       hand in the air still refuses, from rows. */
+    const deadBoundaryFailureDeferred = (tableId, engine) => {
+      try {
+        if (
+          engine.terminalBoundaryPersistenceFailed !== true ||
+          !(engine.terminalBoundaryPendingGenerations instanceof Set) ||
+          engine.terminalBoundaryPendingGenerations.size !== 0 ||
+          engine.running !== false ||
+          engine.terminal !== true ||
+          engine.handController !== null ||
+          engine.f06RecoveryInFlight !== false ||
+          engine.postHandTasksPromise !== null ||
+          !(engine.settlementInFlight instanceof Set) ||
+          engine.settlementInFlight.size !== 0 ||
+          !(engine.timeBankEngine?.playerBanks instanceof Map) ||
+          engine.timeBankEngine.playerBanks.size !== 0
+        )
+          return false;
+        const phase = permitPhaseOf(engine);
+        if (phase !== 'attempted' && phase !== 'none') return false;
+        deferredUnresolvableCustody.set(tableId, `failedBoundary:${phase}`);
+        return true;
+      } catch {
+        // Unreadable is never "dead". It keeps the original refusal.
+        return false;
+      }
+    };
     const captureEngine = (tableId, engine) => {
       // The same condition, the same code and the same order as the
       // process-wide `require` it shadows at every call below; this one only
@@ -2330,7 +2398,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         engine.terminalBoundaryPendingGenerations instanceof Set &&
         engine.terminalBoundaryPendingGenerations.size <=
           boundaryGenerationsAllowed(tableId, engine) &&
-        engine.terminalBoundaryPersistenceFailed === false, 'engine_work_not_drained');
+        (engine.terminalBoundaryPersistenceFailed === false ||
+          deadBoundaryFailureDeferred(tableId, engine)), 'engine_work_not_drained');
       require(Number.isSafeInteger(engine.handCount) &&
         engine.handCount >= 0 &&
         Array.isArray(engine.seatedPlayers) &&

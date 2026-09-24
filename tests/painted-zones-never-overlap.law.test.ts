@@ -83,30 +83,47 @@ const HEADS: Record<ConsoleFamily, { width: number; height: number }> = {
 
 const FAMILIES = Object.keys(HEADS) as ConsoleFamily[];
 
-/** Every shape of head content a caller can ask for. */
+/** Every shape of head content a caller can ask for. The X (2026-09-23) is
+ *  the fourth axis: it sits at the right end of the wide title band on the
+ *  shark and riveted masters, so a head with an X and no pill has to narrow
+ *  its title exactly as a pill does, and this file is what proves it. */
 const CONTENT = [false, true].flatMap((eyebrow) =>
-  [false, true].flatMap((subtitle) => [false, true].map((pill) => ({ eyebrow, subtitle, pill })))
+  [false, true].flatMap((subtitle) =>
+    [false, true].flatMap((pill) =>
+      [false, true].map((close) => ({ eyebrow, subtitle, pill, close }))
+    )
+  )
 );
 
-function shapeName(c: { eyebrow: boolean; subtitle: boolean; pill: boolean }): string {
+function shapeName(c: {
+  eyebrow: boolean;
+  subtitle: boolean;
+  pill: boolean;
+  close: boolean;
+}): string {
   const parts = ['title'];
   if (c.eyebrow) parts.unshift('eyebrow');
   if (c.subtitle) parts.push('subtitle');
   if (c.pill) parts.push('pill');
+  if (c.close) parts.push('close');
   return parts.join(' + ');
 }
 
 describe('painted zones never overlap', () => {
   it('enumerates every family and every shape of head content', () => {
     expect(FAMILIES).toEqual(['spade', 'shark', 'riveted']);
-    expect(CONTENT).toHaveLength(8);
+    expect(CONTENT).toHaveLength(16);
     /* A shape that returns nothing means the selector was renamed out from
        under this file, not that the art is clean. */
     for (const family of FAMILIES) {
       for (const content of CONTENT) {
         const painted = consoleHeadZones(family, content);
         const expected =
-          1 + Number(content.eyebrow) + Number(content.subtitle) + Number(content.pill);
+          1 +
+          Number(content.eyebrow) +
+          Number(content.subtitle) +
+          Number(content.pill) +
+          Number(content.close);
         expect(
           Object.keys(painted),
           `${family} / ${shapeName(content)} painted the wrong set of zones`

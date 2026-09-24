@@ -16,6 +16,12 @@ import {
 } from '../../config/spinSpec';
 import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
 import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
+import {
+  TOURNAMENT_CREATE_ERRORS,
+  payoutTotalIsValid,
+  rebuyWindowIsOpen,
+  startTimeIsPast,
+} from '../../lib/tournamentCreationRules';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
@@ -416,12 +422,14 @@ export default function CreateTournamentModal({
   /* TournamentService rejects a payout table that does not total 100%, and a
      rejection AFTER the operator has clicked Create reads as a failure they
      cannot see the cause of. Same rule, checked here, so the button is simply
-     disabled with the reason printed beside it. */
+     disabled with the reason printed beside it. It is the SHARED rule
+     (tournamentCreationRules): within 1 of 100, as the database allows, and a
+     zero total is refused. This screen used to hold its own 0.5. */
   const payoutsTotal = useMemo(
     () => effectivePayouts.reduce((sum, pp) => sum + (Number(pp.percentage) || 0), 0),
     [effectivePayouts]
   );
-  const payoutsValid = Math.abs(payoutsTotal - 100) < 0.5;
+  const payoutsValid = payoutTotalIsValid(payoutsTotal);
   const blindsValid = Array.isArray(effectiveBlinds) && effectiveBlinds.length > 0;
 
   const isSatellite = format === 'satellite';
@@ -588,11 +596,11 @@ export default function CreateTournamentModal({
     /* A SCHEDULED start in the past creates a tournament that can never begin.
        coreValid only checks the two date strings are non-empty, so an owner
        picking yesterday got no feedback at all. A minute of slack, for a form
-       filled in while the clock moves. */
+       filled in while the clock moves: the shared rule every surface uses. */
     if (startTimeMode === 'scheduled') {
       const startsAt = new Date(`${scheduledDate}T${scheduledTime}`).getTime();
-      if (!Number.isFinite(startsAt) || startsAt < Date.now() - 60_000) {
-        toast.error('Pick A Start Time In The Future');
+      if (!Number.isFinite(startsAt) || startTimeIsPast(startsAt)) {
+        toast.error(TOURNAMENT_CREATE_ERRORS.start_time_in_past);
         submittingRef.current = false;
         setIsSubmitting(false);
         return;
@@ -603,8 +611,7 @@ export default function CreateTournamentModal({
       // ── Satellite validation: without a target it silently becomes a cash
       // payout, defeating the point (winners should earn seats). ──
       if (isSatellite && !satelliteTargetId) {
-        toast.error('Pick The Target Tournament This Satellite Awards Seats Into');
-        submittingRef.current = false;
+        toast.error(TOURNAMENT_CREATE_ERRORS.satellite_target_required);
         submittingRef.current = false;
         setIsSubmitting(false);
         return;
@@ -991,6 +998,14 @@ export default function CreateTournamentModal({
     };
   }, [onClose, isSubmitting]);
 
+  const rebuyWindowOpen = rebuyWindowIsOpen({
+    isRebuy,
+    isReentry,
+    lateRegistrationLevels: parseInt(lateRegLevels) || 0,
+    buyIn: Number(buyIn) || 0,
+    type: format,
+  });
+
   const coreValid = (() => {
     if (!name.trim()) return false;
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
@@ -1004,8 +1019,10 @@ export default function CreateTournamentModal({
     }
     // Scheduled tournament must have date+time
     if (startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime)) return false;
-    // Late reg levels must be valid if set
-    if ((isRebuy || isReentry) && parseInt(lateRegLevels) <= 0) return false;
+    // Rebuys and re-entries are sold only while late registration is open.
+    // `parseInt('') <= 0` is false, so a cleared field used to pass here and
+    // send a window of 0. The shared rule reads it as 0 and refuses.
+    if (!rebuyWindowOpen) return false;
     return true;
   })();
 
@@ -1031,7 +1048,7 @@ export default function CreateTournamentModal({
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <form className={styles.form} onSubmit={handleSubmit}>
           <SpadeConsole
-            onClose={onClose}
+            onClose={isSubmitting ? undefined : onClose}
             eyebrow={unionId ? 'Union Tournament Command' : 'Club Tournament Command'}
             title={unionId ? 'Create Union Tournament' : 'Create Tournament'}
             subtitle="Configure, Validate, Then Publish"
@@ -2276,8 +2293,8 @@ export default function CreateTournamentModal({
                 {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
                   <p>Scheduled Date And Time Are Required</p>
                 )}
-                {(isRebuy || isReentry) && parseInt(lateRegLevels) <= 0 && (
-                  <p>Late Reg Levels Must Be Set When Rebuys/Re-Entries Are Enabled</p>
+                {!rebuyWindowOpen && (
+                  <p>{TOURNAMENT_CREATE_ERRORS.rebuy_requires_late_registration}</p>
                 )}
                 {!bountyValid && isBountyFormat && <p>Bounty Configuration Is Incomplete</p>}
               </div>

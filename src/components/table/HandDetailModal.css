@@ -159,7 +159,15 @@
 .hdm-console .sc__body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  /* Hidden on the x axis, and on the y axis ONLY until the rows above the
+     page no longer fit (2026-09-24). The subheader and the copy row are
+     fixed-height and the page keeps a floor (see .hdm-body); on a sheet too
+     short for both - a phone in landscape, an SE - the glass scrolls so the
+     rows and the page are both reachable, instead of the page collapsing to
+     nothing under rows that were clipped with no scroller anywhere. On any
+     sheet tall enough this never scrolls, and the page stays the one
+     scroller. */
+  overflow: hidden auto;
 }
 
 /* ── When, at what stakes, in what game ───────────────────────────────── */
@@ -268,7 +276,10 @@
      the flexible row of the console's body now and takes exactly what is
      left (Dan 2026-09-23, see .hdm-panel). */
   flex: 1 1 auto;
-  min-height: 0;
+  /* A floor, not a share of the viewport: the page can never be squeezed
+     below this by the fixed rows above it. When the glass cannot hold the
+     rows plus this floor, the glass scrolls (see .hdm-console .sc__body). */
+  min-height: 120px;
   padding-right: 1cqw;
   overflow-y: auto;
   overscroll-behavior: contain;

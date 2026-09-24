@@ -32,6 +32,7 @@ import { maxSeatsForVariant, maxSeatsTheDeckAllows } from '../config/tableSeatin
 
 import { tournamentService } from '../services/TournamentService';
 import { buildTournamentConfig } from '../lib/tournamentFromTableConfig';
+import { TOURNAMENT_CREATE_ERRORS } from '../lib/tournamentCreationRules';
 import {
   canRunAsTournament as gameTypeCanRunAsTournament,
   canRunAsSpin as gameTypeCanRunAsSpin,
@@ -943,7 +944,7 @@ export default function TableConfigPage({
       // Next Step (Satellite) sanity: an ON toggle with no target would
       // silently build a cash-paying MTT, so refuse before any round trip.
       if (config.gameMode === 'mtt' && config.nextStepSatellite && !config.satelliteTargetId) {
-        toast.error('Pick the target tournament this satellite awards seats into.');
+        toast.error(TOURNAMENT_CREATE_ERRORS.satellite_target_required);
         return;
       }
 

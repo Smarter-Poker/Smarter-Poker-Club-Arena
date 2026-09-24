@@ -92,9 +92,15 @@
 
 /* Row 3: the table's rule. One component, one prop (spec 23 / 24). */
 .vpipBadge__minimum {
-  font-size: 11cqw;
+  /* "TABLE MIN 30%" is thirteen characters of heavy caps on a row the badge's
+     own width sizes. Measured 2026-09-24 in Chromium at 40, 44 and 58px: at
+     11cqw the phrase took 87-90% of the badge in a fallback face, which is
+     over the edge once Montserrat's wider caps load; at 10cqw with 0.02em
+     tracking it takes 79%, in every size the seat asks for. The row read
+     "MIN 30%" at 11cqw before, and Dan's words were "the 'TABLE MIN'". */
+  font-size: 10cqw;
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
 }
 
 .vpipBadge__minText {

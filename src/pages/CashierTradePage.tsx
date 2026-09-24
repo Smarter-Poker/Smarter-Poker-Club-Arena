@@ -3186,6 +3186,7 @@ export default function CashierTradePage() {
             onClick={(event) => event.stopPropagation()}
           >
             <SpadeConsole
+              onClose={() => setReceipt(null)}
               eyebrow="Immutable Ledger Entry"
               title="Transaction Receipt"
               titleId="cashier-receipt-title"
@@ -3297,6 +3298,7 @@ export default function CashierTradePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <SpadeConsole
+              onClose={asking ? undefined : () => setAskOpen(false)}
               eyebrow="Funding Request"
               title="Request Chips"
               titleId="cashier-ask-title"
@@ -3381,6 +3383,14 @@ export default function CashierTradePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <SpadeConsole
+              onClose={
+                busy
+                  ? undefined
+                  : () => {
+                      setAmountModal(null);
+                      setTransferFailures([]);
+                    }
+              }
               eyebrow={`${compactChips(picked.length)} Player${picked.length === 1 ? '' : 's'}`}
               title={amountModal === 'send' ? 'Send Out' : 'Send Ticket'}
               titleId="cashier-amount-title"
@@ -3515,6 +3525,7 @@ export default function CashierTradePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <SpadeConsole
+              onClose={claimingId ? undefined : () => setClaimOpen(false)}
               eyebrow="Ten Minute Reversal"
               title="Claim Back"
               titleId="cashier-claim-title"

@@ -134,6 +134,12 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
     lastPlaceOverpayChargeAt: DISCOVERY_NOW,
     lastSpinExpireAt: DISCOVERY_NOW,
     readSeatFirstPaidSeats: vi.fn(async () => new Map()),
+    // The start gate reads each row's roster (2026-09-24); these rows carry
+    // their field in current_players, so the roster is that number.
+    readEntrantRosterCounts: vi.fn(
+      async (rows: Array<{ id: string; current_players?: number }>) =>
+        new Map(rows.map((row) => [row.id, Number(row.current_players ?? 0)]))
+    ),
     sleep: vi.fn(async () => {
       const gate = gates[pass++];
       if (gate) await gate.promise;

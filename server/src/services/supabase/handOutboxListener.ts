@@ -24,15 +24,21 @@
  * hands flowing. The connection string is never logged.
  */
 
-import { readFileSync } from 'node:fs';
 import pg from 'pg';
+import {
+  enginePgConnectionString,
+  enginePgSsl,
+  reconnectDelayMs,
+  RECONNECT_BASE_MS,
+  RECONNECT_MAX_MS,
+} from './enginePgSession.js';
 import { reportError, describeError } from '../errorReporter.js';
 import { wakeHandProjection, type HandProjectionWakeSource } from './handProjection.js';
 
 export const HAND_OUTBOX_CHANNEL = 'hand_projection_outbox';
 
-export const RECONNECT_BASE_MS = 500;
-export const RECONNECT_MAX_MS = 30_000;
+// The session configuration is shared with the lease heartbeat session.
+export { reconnectDelayMs, RECONNECT_BASE_MS, RECONNECT_MAX_MS };
 export const HEARTBEAT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 
@@ -69,26 +75,14 @@ export type HandOutboxListenerOptions = {
   random?: () => number;
 };
 
-function sslConfig(): pg.ClientConfig['ssl'] {
-  const caFile = process.env.ENGINE_PG_LISTEN_CA_FILE;
-  if (caFile) return { ca: readFileSync(caFile, 'utf8'), rejectUnauthorized: true };
-  return { rejectUnauthorized: true };
-}
-
 function defaultOpenSession(connectionString: string): OutboxListenerClient {
   return new pg.Client({
     connectionString,
     application_name: `club-arena-engine-outbox-listener:${process.pid}`,
     keepAlive: true,
     connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    ssl: sslConfig(),
+    ssl: enginePgSsl(),
   });
-}
-
-/** Exponential backoff, base 500 ms, capped at 30 s, jittered by +/-25%. */
-export function reconnectDelayMs(attempt: number, random: () => number = Math.random): number {
-  const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.min(attempt, 6));
-  return Math.round(delay * (0.75 + random() * 0.5));
 }
 
 export class HandOutboxListener {
@@ -110,7 +104,7 @@ export class HandOutboxListener {
   private lastPayload = '';
 
   constructor(options: HandOutboxListenerOptions = {}) {
-    this.connectionString = options.connectionString ?? process.env.ENGINE_PG_LISTEN_URL ?? '';
+    this.connectionString = options.connectionString ?? enginePgConnectionString();
     this.openSession = options.openSession ?? defaultOpenSession;
     this.wake = options.wake ?? wakeHandProjection;
     this.random = options.random ?? Math.random;

@@ -5458,6 +5458,12 @@ export abstract class TournamentManagerBase {
    */
   static readonly ABANDONED_GENERATION_ATTEMPTS = 3;
   static readonly ABANDONED_GENERATION_RETRY_MS = 1_000;
+  /**
+   * How long an adoption inside the maintenance freeze waits for the thaw
+   * before it gives up on a dead generation. The freeze runs from the :53
+   * announcement to the :00 thaw, so seven minutes covers any adoption in it.
+   */
+  static readonly ABANDONED_GENERATION_FREEZE_CEILING_MS = 7 * 60_000;
 
   /**
    * Find every earlier generation of this event that left a reserved hand on
@@ -5528,16 +5534,34 @@ export abstract class TournamentManagerBase {
     let attempt = 0;
     for (;;) {
       this.assertLifecycleCurrent(lifecycle);
-      // The door refuses while the platform is frozen, and an adoption must
-      // never wait on the freeze: it would hold every healthy table of this
-      // event, and a resume slot, until the thaw. The table stays exactly as
-      // blocked as it was before this door existed; the next adoption asks.
+      // The door refuses while the platform is frozen, and every engine
+      // release adopts its whole fleet inside the freeze (boot ~:58, thaw
+      // :00). Skipping there left the release's own adoptions - the ones that
+      // inherit every dead generation - unable to decide any of them. So an
+      // adoption that found a dead generation waits for the thaw, fenced by
+      // its lifecycle and bounded: nothing deals during the freeze, and past
+      // the ceiling the table stays exactly as blocked as it was before this
+      // door existed.
       if (isMaintenanceFrozen()) {
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
-            `left a reserved hand on ${tables.length} table(s) - not asked during the maintenance freeze`
-        );
-        return false;
+        const waitedFrom = Date.now();
+        while (
+          isMaintenanceFrozen() &&
+          this.lifecycleIsCurrent(lifecycle) &&
+          Date.now() - waitedFrom < TournamentManagerBase.ABANDONED_GENERATION_FREEZE_CEILING_MS
+        ) {
+          await new Promise<void>((resolve) => {
+            const poll = setTimeout(resolve, TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+            poll.unref?.();
+          });
+        }
+        this.assertLifecycleCurrent(lifecycle);
+        if (isMaintenanceFrozen()) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
+              `left a reserved hand on ${tables.length} table(s) - the maintenance freeze outlasted the wait`
+          );
+          return false;
+        }
       }
       attempt += 1;
       try {

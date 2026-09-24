@@ -321,20 +321,55 @@ describe('an adopting generation decides the reserved hand a dead generation lef
     }
   });
 
-  it('never holds an adoption on the maintenance freeze: it adopts every table and asks next time', async () => {
+  it('an adoption inside the release freeze waits for the thaw, then decides and adopts the moved clock', async () => {
     const f = fixture({ [TABLE_A]: DEAD, [TABLE_B]: null });
     setMaintenanceFrozen(true);
-    await f.state.resumeLifecycle(1);
+    const adoption = f.state.resumeLifecycle(1);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(f.calls).toContain('fn_f06_hand_number_state');
     expect(f.doorCalls()).toHaveLength(0);
-    expect(f.db.reserved[TABLE_A]).toBe(DEAD);
-    expect(f.eventReads).toEqual([7]);
-    expect(f.state.startManagedTableEngine).toHaveBeenCalledTimes(2);
-    expect(f.state.running).toBe(true);
-    expect(reportError).not.toHaveBeenCalled();
+    expect(f.state.startManagedTableEngine).not.toHaveBeenCalled();
     setMaintenanceFrozen(false);
-    await f.state.resumeLifecycle(2);
+    await adoption;
     expect(f.doorCalls()).toHaveLength(1);
     expect(f.db.reserved[TABLE_A]).toBeNull();
+    expect(f.eventReads).toEqual([7, 3]);
+    expect(f.state.currentLevel).toBe(3);
+    expect(f.state.startManagedTableEngine).toHaveBeenCalledTimes(2);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('a freeze that outlasts the wait leaves the table as blocked as before and adopts every table', async () => {
+    const ceiling = TournamentManagerBase.ABANDONED_GENERATION_FREEZE_CEILING_MS;
+    (TournamentManagerBase as any).ABANDONED_GENERATION_FREEZE_CEILING_MS = 60;
+    try {
+      const f = fixture({ [TABLE_A]: DEAD, [TABLE_B]: null });
+      setMaintenanceFrozen(true);
+      await f.state.resumeLifecycle(1);
+      expect(f.doorCalls()).toHaveLength(0);
+      expect(f.db.reserved[TABLE_A]).toBe(DEAD);
+      expect(f.eventReads).toEqual([7]);
+      expect(f.state.startManagedTableEngine).toHaveBeenCalledTimes(2);
+      expect(f.state.running).toBe(true);
+      setMaintenanceFrozen(false);
+      await f.state.resumeLifecycle(2);
+      expect(f.doorCalls()).toHaveLength(1);
+    } finally {
+      (TournamentManagerBase as any).ABANDONED_GENERATION_FREEZE_CEILING_MS = ceiling;
+    }
+  });
+
+  it('an adoption whose lifecycle ends during the freeze wait asks nothing and starts no dealer', async () => {
+    const f = fixture({ [TABLE_A]: DEAD, [TABLE_B]: null });
+    setMaintenanceFrozen(true);
+    const adoption = f.state.resumeLifecycle(1);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    f.end();
+    setMaintenanceFrozen(false);
+    await adoption;
+    expect(f.doorCalls()).toHaveLength(0);
+    expect(f.state.startManagedTableEngine).not.toHaveBeenCalled();
+    expect(reportError).not.toHaveBeenCalled();
   });
 
   it('asks again in a later adoption after a refusal, and only once per adoption', async () => {

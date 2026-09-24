@@ -3293,6 +3293,124 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.calls).toEqual([]);
   });
 
+  /* WHAT IS ACTUALLY INSIDE THE REJECTION (2026-09-24). The deferral above is
+     argued from `performStop`'s source: the AggregateError it throws collects
+     from three places and none of them can hide an unwritten money fact on
+     8825. Nothing in the record said what the members of those eight
+     aggregates actually were, so nothing confirmed that from the running
+     fleet, and a release that steps over a rejection left no account of what
+     it stepped over. */
+  const member = (name: string, code: unknown, message: string) =>
+    Object.assign(new Error(message), { name, ...(code === undefined ? {} : { code }) });
+
+  it('accounts for every teardown it stepped over, on the path that proceeds', async () => {
+    const f: any = mixedFixture();
+    observedFleet(f);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // Eight rejections, all of them deferred, none of them still refusing.
+    expect(result.nativeWorkMembers).toContain('joins=8');
+    expect(result.nativeWorkMembers).toContain('deferredJoins=8');
+    expect(result.nativeWorkMembers).toContain('refusingJoins=0');
+    expect(result.nativeWorkMembers).toContain('members=8');
+    // `d.` is a rejection the release stepped over, with its type and code.
+    expect(result.nativeWorkMembers).toContain('d.Error(none)=8');
+    // Eight copies of one failure cost one sentence.
+    expect(result.nativeWorkMembers).toContain('words=snapshot write failed');
+    expect(result.nativeWorkMembers).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(result.nativeWorkMembers.length).toBeLessThanOrEqual(512);
+  });
+
+  it('names the type and the structured code of each member it stepped over', async () => {
+    const f: any = mixedFixture();
+    deadTeardown(
+      f,
+      680,
+      observedTables[0],
+      failedTeardown(observedTables[0], [
+        member('PostgrestError', '23505', 'settlement insert 9421 rejected for hand 8412773'),
+        member('Error', undefined, 'terminal snapshot flush failed'),
+      ])
+    );
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.nativeWorkMembers).toContain('members=2');
+    expect(result.nativeWorkMembers).toContain('d.PostgrestError(23505)=1');
+    expect(result.nativeWorkMembers).toContain('d.Error(none)=1');
+    expect(result.nativeWorkMembers).toContain('settlement insert rejected for hand');
+    expect(result.nativeWorkMembers).toContain('terminal snapshot flush failed');
+    // No id, hand number or amount travels through a member's message.
+    expect(result.nativeWorkMembers).not.toContain('9421');
+    expect(result.nativeWorkMembers).not.toContain('8412773');
+    expect(result.nativeWorkMembers).toMatch(/^[\w .,:/=()+-]+$/);
+  });
+
+  it('separates a join that still refuses from the ones it stepped over', async () => {
+    const f: any = mixedFixture();
+    observedFleet(f);
+    const live: any = new f.Table(681);
+    live.presenceSave = rejected(member('PostgrestError', 'PGRST116', 'park write refused'));
+    f.server.tableEngines.set(live.tableId, live);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'previous_native_work_unconfirmed',
+      failedCheck: 'previousNativeWork.presenceSave',
+    });
+    expect(result.nativeWorkMembers).toContain('joins=9');
+    expect(result.nativeWorkMembers).toContain('deferredJoins=8');
+    expect(result.nativeWorkMembers).toContain('refusingJoins=1');
+    // `r.` is the one still refusing; `d.` are the ones stepped over.
+    expect(result.nativeWorkMembers).toContain('r.PostgrestError(PGRST116)=1');
+    expect(result.nativeWorkMembers).toContain('d.Error(none)=8');
+    // The named table says how deep its own rejection was.
+    expect(result.observedDetail).toContain('members=1');
+    expect(f.calls).toEqual([]);
+  });
+
+  it('refuses a type or a code that is not identifier-shaped rather than carrying it', async () => {
+    const f: any = mixedFixture();
+    deadTeardown(
+      f,
+      682,
+      observedTables[0],
+      failedTeardown(observedTables[0], [
+        member('Error', 'user 6f1e2a33-0000-4000-8000-000000000001', 'write refused'),
+        member('seat 8a02bd41-0000-4000-8000-000000000002 failed', 'PGRST116', 'read refused'),
+      ])
+    );
+    const result: any = await f.run();
+    // A code-shaped value is carried; anything else becomes `none`.
+    expect(result.nativeWorkMembers).toContain('d.Error(none)=1');
+    // A type that is not a type name becomes `unknown`, with its code kept.
+    expect(result.nativeWorkMembers).toContain('d.unknown(PGRST116)=1');
+    expect(result.nativeWorkMembers).not.toContain('6f1e2a33');
+    expect(result.nativeWorkMembers).not.toContain('8a02bd41');
+    expect(result.nativeWorkMembers).toMatch(/^[\w .,:/=()+-]+$/);
+  });
+
+  it('reports a rejection that carries no members as one member', async () => {
+    const f: any = mixedFixture();
+    deadTeardown(f, 683, observedTables[0], new Error('retained an unresolved seat-move 4f21e0c2'));
+    const result: any = await f.run();
+    // Not the 8825 sentence, so it still refuses, and it still says what it is.
+    expect(result).toMatchObject({ ok: false, reason: 'previous_native_work_unconfirmed' });
+    expect(result.nativeWorkMembers).toContain('joins=1');
+    expect(result.nativeWorkMembers).toContain('deferredJoins=0');
+    expect(result.nativeWorkMembers).toContain('members=1');
+    expect(result.nativeWorkMembers).toContain('r.Error(none)=1');
+    expect(result.nativeWorkMembers).toContain('retained an unresolved seat move');
+    expect(result.nativeWorkMembers).not.toContain('4f21e0c2');
+    expect(result.observedDetail).toContain('members=1');
+  });
+
+  it('adds no member record when every join comes back', async () => {
+    const f: any = mixedFixture();
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.nativeWorkMembers).toBeUndefined();
+  });
+
   /* ONE REFUSED RELEASE, THE WHOLE BLOCKING SET. The release only ever named
      the table that refused FIRST, so a fleet holding several shapes cost one
      maintenance break per shape to read. The walk now finishes and counts. */

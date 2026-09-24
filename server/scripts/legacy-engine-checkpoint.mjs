@@ -134,6 +134,13 @@ function checkpointSummary(value) {
     // a maintenance break; this is what makes one break read the whole
     // blocking set. Carried verbatim; nothing reads it.
     'refusalCensus',
+    // What was inside the rejections the previous-work join met, whether it
+    // refused on them or stepped over them: the type and structured code of
+    // each member, and their reduced sentences. It is what says whether a
+    // failed join is a money write or a cleanup failure, and it is the
+    // account of what a release stepped over. Carried verbatim; nothing
+    // reads it.
+    'nativeWorkMembers',
   ]) {
     const item = value?.[key];
     if (

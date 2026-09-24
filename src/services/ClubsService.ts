@@ -46,55 +46,17 @@ const _membershipBreaker = (() => {
     },
   };
 })();
-import type {
-  Club,
-  ClubWithDistance,
-  ClubMember,
-  ClubLocation,
-  ClubChallenge,
-  MemberRole,
-} from '@/types/club.types';
+import type { Club, ClubMember, ClubLocation, ClubChallenge, MemberRole } from '@/types/club.types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  CLUB DISCOVERY (PostGIS)
+//  CLUB DISCOVERY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Discover clubs within a specified radius using PostGIS
- * @param location User's current location
- * @param radiusKm Search radius in kilometers (default 50km)
- * @returns Clubs sorted by proximity with < 50ms latency
- */
-export async function discoverNearbyClubs(
-  location: ClubLocation,
-  radiusKm: number = 50
-): Promise<ClubWithDistance[]> {
-  // Round 19: prod fn_discover_clubs is search-based, not lat/lng/radius
-  // (signatures: (p_search, p_limit) and (p_search, p_limit, p_offset)).
-  // The location-based discover doesn't exist in production. Until a real
-  // PostGIS-backed location RPC ships, fall back to a search-based discover
-  // and let the caller order/filter client-side. location + radiusKm are
-  // accepted to keep the public API stable but only used for client-side
-  // distance annotation when the clubs table grows lat/lng columns.
-  void location; // kept for future PostGIS upgrade
-  void radiusKm;
-  const { data, error } = await retryAsync(
-    () =>
-      supabase.rpc('fn_discover_clubs', {
-        p_search: '',
-        p_limit: 50,
-        p_offset: 0,
-      }),
-    3
-  );
-
-  if (error) {
-    reportError(error, 'ClubsService.Club_discovery_failed');
-    throw new Error('Failed to discover nearby clubs');
-  }
-
-  return (data as ClubWithDistance[]) || [];
-}
+/* There is no location-based discovery. discoverNearbyClubs used to live here,
+   headed "PostGIS" and promising clubs "sorted by proximity", while it ignored
+   the location and ran the same name search as below. Nothing rendered it, but
+   the hook in front of it asked the browser for the player's position. Club
+   discovery is the name search; nothing here reads or asks for a location. */
 
 /**
  * Search clubs by name with pattern matching
@@ -1364,7 +1326,6 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
 
 // Export service object for cleaner imports
 export const ClubsService = {
-  discoverNearby: discoverNearbyClubs,
   search: searchClubs,
   get: getClub,
   create: createClub,

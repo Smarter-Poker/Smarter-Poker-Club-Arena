@@ -626,3 +626,85 @@ describe('a restored bank no roster will ever claim is answered from rows', () =
     expect(fault).toContain("return 'unreadable';");
   });
 });
+
+/* A LIVE SEAT BETWEEN ITS BANKS IS NOT CUSTODY (2026-09-24).
+
+   Run 36026978112 refused `bank_metadata_without_bank` on 3a294223, ONE live
+   cash table out of 439 walked, whose seated player held accounting metadata
+   and no live bank. 8825 creates a seat's bank and its metadata together at
+   deal time and deletes the metadata only for a user the next roster no longer
+   holds, so a player removed and re-seated at the same table keeps the
+   metadata, loses the bank, and gets both back at the next deal.
+   `captureParkedTimeBanks` skips a seat with no bank, so the row this
+   checkpoint writes is identical either way: the refusal protected no value
+   and made the release a lottery on ordinary fleet churn. */
+describe('the capture does not refuse a live engine for a bank it never held', () => {
+  const metadata = GUARD.slice(
+    GUARD.indexOf('const disposed = new Set();'),
+    GUARD.indexOf("'bank_metadata_without_bank');")
+  );
+
+  it('a stopped engine still qualifies only by holding no bank at all', () => {
+    // The regression, in the exact form that refused run 36026978112: a live
+    // engine could pass this require only by not seating the player at all.
+    expect(metadata).not.toContain('(stopped && engine.timeBankEngine.playerBanks.size === 0)');
+    expect(metadata).toContain('!seated ||');
+    expect(metadata).toContain('!stopped ||');
+    expect(metadata).toContain('engine.timeBankEngine.playerBanks.size === 0');
+    expect(metadata).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
+  });
+
+  it('the live case rests on an ordering this file pins, not on repeated conjuncts', () => {
+    // `!stopped` is the ONLY conjunct added, because a non-stopped engine
+    // reaches that require only through these two, which prove the rest. They
+    // are asserted here rather than repeated there, so a reorder is what goes
+    // red instead of nothing.
+    const parked = GUARD.slice(
+      GUARD.indexOf('require(engine.running === true &&'),
+      GUARD.indexOf("'engine_not_physically_parked');")
+    );
+    for (const conjunct of [
+      'engine.terminal === false &&',
+      'engine.teardownPromise === null &&',
+      'engine.maintenancePaused === true &&',
+      'engine.holdBeforeNextHand === true &&',
+      'engine.handController === null',
+    ])
+      expect(parked).toContain(conjunct);
+    expect(GUARD.indexOf("'engine_not_physically_parked');")).toBeLessThan(
+      GUARD.indexOf("'bank_metadata_without_bank');")
+    );
+    expect(GUARD.indexOf("'engine_work_not_drained');")).toBeLessThan(
+      GUARD.indexOf("'bank_metadata_without_bank');")
+    );
+  });
+
+  it('a disposed seat is still proved from rows, whatever its engine is doing', () => {
+    const proof = GUARD.slice(
+      GUARD.indexOf('const disposedTables = captures.filter('),
+      GUARD.indexOf("'stopped_disposed_banks_unproven', 'snapshotsRead');")
+    );
+    // The disposed proof is not gated on `stopped`, so admitting a live seat
+    // routes it into the same row proof rather than around it.
+    expect(proof).toContain('captures.filter((capture) => capture.disposed.length > 0)');
+    expect(proof).toContain("'hand_state_snapshots'");
+    expect(proof).toContain(".eq('is_complete', false)");
+    expect(proof).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
+  });
+
+  it('a deferral record that outgrew its carrier counts its kinds first', () => {
+    // Run 36022429840 deferred 47 tables and the 512-character cut left the
+    // first nine, alphabetically, so the kinds behind the other 38 were gone.
+    const record = GUARD.slice(
+      GUARD.indexOf('const kindOf = (label) =>'),
+      GUARD.indexOf('restartHeldOnlyByProvenUnresolvableCustody')
+    );
+    expect(record).toContain('unresolvableCustody = `tables=${ids.length} ');
+    expect(record.indexOf('.map(([kind, count]) => `${kind}=${count}`)')).toBeLessThan(
+      record.indexOf('.map((id) => `${id}:${deferredUnresolvableCustody.get(id)}`)')
+    );
+    // The carrier itself is asserted where it is observable, on the emitted
+    // record in the guard suite, not by pinning a number in this source.
+    expect(record).toContain('deferredUnresolvableCustody.get(id)');
+  });
+});

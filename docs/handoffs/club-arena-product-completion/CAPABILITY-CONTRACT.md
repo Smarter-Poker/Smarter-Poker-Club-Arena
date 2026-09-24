@@ -3,7 +3,9 @@
 Owner: Prompt 1 (technical platform). Consumer: Prompt 2 (diamond commerce).
 Source of truth: `supabase/migrations/20260924025555_one_capability_registry_and_accepted_event_continuation.sql`.
 Qualified by: `scripts/ci/test-capability-registry.py` (CI step "Capability registry and accepted-event continuation"
-in the `accounting_postgres` job) and `tests/one-capability-registry.law.test.ts`.
+in the `accounting_postgres` job) and `tests/unit/capabilityRegistrySeedsFixture.test.ts` (the seed copy
+`scripts/ci/fixtures/capability-registry/seeds.json` equals the migration). The client side is held by
+`tests/one-capability-registry.law.test.ts`, which ships with the first consumer (see section 1).
 
 Commerce maps its commercial catalog onto the capability ids below. It does not redefine game rules, readiness or
 the ids, and Prompt 1 does not change this contract silently: a change to anything in this file ships with a change
@@ -29,8 +31,14 @@ to this file.
   "coming soon", or bundled.
 - The readiness column above is a snapshot. Always read the live value.
 
-The TypeScript mirror is `src/config/platformCapabilities.ts` (`PLATFORM_CAPABILITY_IDS`, `PlatformCapabilityId`,
-`CAPABILITY_READINESS_ORDER`, `isAvailable`, `readPlatformCapabilities`).
+The client mirror ships with its first consumer, not with this registry: `src/config/platformCapabilities.ts`
+(`PLATFORM_CAPABILITY_IDS`, `PlatformCapabilityId`, `CAPABILITY_READINESS_ORDER`, `isAvailable`,
+`readPlatformCapabilities`), the hook `src/hooks/usePlatformCapability.ts`
+(`usePlatformCapability(id | null): 'loading' | 'available' | 'unavailable' | 'unknown'`, one shared read with a
+60 s TTL, failed reads never kept) and `tests/one-capability-registry.law.test.ts` land together, byte-identical in
+every consumer, so nothing under `src/` exists that the app does not import. Until this migration is in the same
+tree, that law compares the mirror to `scripts/ci/fixtures/capability-registry/seeds.json`. A surface shows a gated
+control only on `'available'`; a feature keeps its own capability id constant in its own module.
 
 ## 2. Readiness
 

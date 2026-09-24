@@ -1,0 +1,73 @@
+{
+  "_source": "supabase/migrations/20260924025555_one_capability_registry_and_accepted_event_continuation.sql",
+  "_what": "The registry migration's seed rows (INSERT INTO public.platform_capabilities, in migration order, evidence omitted) and its readiness and scope CHECK lists. tests/one-capability-registry.law.test.ts holds src/config/platformCapabilities.ts to this copy in a tree that does not carry the migration; tests/unit/capabilityRegistrySeedsFixture.test.ts holds this copy to the migration where it does. Edit both together.",
+  "readiness": ["excluded", "planned", "implemented", "tested", "deployed", "production_verified"],
+  "scopes": ["platform", "club", "union", "cash_table", "tournament"],
+  "seeds": [
+    {
+      "id": "club.membership_cap",
+      "rule_version": "club-membership-v2",
+      "title": "Club Membership Cap",
+      "scope": "club",
+      "supported_variants": [],
+      "compatibility": {},
+      "readiness": "implemented"
+    },
+    {
+      "id": "tournament.discovery.trait_filters",
+      "rule_version": "trait-filters-v1",
+      "title": "Tournament Trait Filters",
+      "scope": "tournament",
+      "supported_variants": [],
+      "compatibility": {},
+      "readiness": "tested"
+    },
+    {
+      "id": "cash.fixed_limit.kill_pots",
+      "rule_version": "kill-v1",
+      "title": "Fixed Limit Kill Pots",
+      "scope": "cash_table",
+      "supported_variants": ["flh", "flo8"],
+      "compatibility": {},
+      "readiness": "planned"
+    },
+    {
+      "id": "tournament.multi_day.single_flight",
+      "rule_version": "multi-day-v1",
+      "title": "Multi-Day Tournaments",
+      "scope": "tournament",
+      "supported_variants": [],
+      "compatibility": {},
+      "readiness": "planned"
+    },
+    {
+      "id": "tournament.multi_day.multi_flight",
+      "rule_version": "multi-flight-v1",
+      "title": "Multi-Flight Tournaments",
+      "scope": "tournament",
+      "supported_variants": [],
+      "compatibility": {
+        "requires": ["tournament.multi_day.single_flight"]
+      },
+      "readiness": "planned"
+    },
+    {
+      "id": "cash.insurance_ev_cashout",
+      "rule_version": "insurance-v1",
+      "title": "Insurance And EV Cashout",
+      "scope": "cash_table",
+      "supported_variants": [],
+      "compatibility": {},
+      "readiness": "deployed"
+    },
+    {
+      "id": "variant.ofc",
+      "rule_version": "retired",
+      "title": "Open Face Chinese",
+      "scope": "platform",
+      "supported_variants": [],
+      "compatibility": {},
+      "readiness": "excluded"
+    }
+  ]
+}

@@ -109,20 +109,66 @@ DO $$ DECLARE before jsonb:=pg_temp.movement_state(); o smarter_private.f06_oper
  PERFORM pg_temp.assert_movement(pg_temp.movement_state()=before,'same-custody admission scenario fully rolled back');
 END $$;
 
-CREATE FUNCTION pg_temp.movement_flow(modern boolean) RETURNS void LANGUAGE plpgsql AS $$
+-- A DECIDED HAND DOES NOT HOLD A PARKED TABLE (20260922152219). A permit a
+-- receipt decided not to count (never_started, aborted_unsettled) is resolved
+-- custody - above the boundary too - while nothing of that hand exists. A
+-- reserved permit, a missing receipt, a dispatch or any durable trace of the
+-- decided hand still refuses. Receipt identities here are fixture values: the
+-- permit is written the way the deciding door leaves it, and every scenario
+-- rolls back.
+CREATE FUNCTION pg_temp.decided_permit(p_state text,p_hand bigint DEFAULT 9720005,
+ evidence uuid DEFAULT 'b7800000-0000-4000-8000-000000000055') RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+ INSERT INTO smarter_private.f06_hand_permits(permit_id,tournament_id,table_id,lifecycle,hand_number,custody_id,generation,state,evidence_id)
+ SELECT 'b7800000-0000-4000-8000-000000000005',(a.stack_result->>'tournament_id')::uuid,t.id,t.f06_lifecycle,p_hand,
+ 'b7900000-0000-4000-8000-000000000005','b7500000-0000-4000-8000-000000000003',p_state,evidence
+ FROM public.hand_atomic_commits a JOIN public.tables t ON t.id=a.table_id WHERE a.hand_number=9720004;
+END $$;
+CREATE FUNCTION pg_temp.decided_admits(p_state text,label text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE before jsonb:=pg_temp.movement_state(); r jsonb; proof jsonb; BEGIN
+ BEGIN
+ PERFORM pg_temp.movement_permit();
+ PERFORM pg_temp.decided_permit(p_state);
+ r:=pg_temp.movement_admit();
+ SELECT m.proof INTO STRICT proof FROM smarter_private.f06_movement_admissions m WHERE m.admission_id=(r->>'admission_id')::uuid;
+ PERFORM pg_temp.assert_movement(r->>'mode'='movement_only' AND r->>'revision'='1'
+ AND jsonb_array_length(proof->'permits')=2
+ AND (SELECT count(*) FROM jsonb_array_elements(proof->'permits') e WHERE e->>'state'=p_state)=1,label);
+ RAISE EXCEPTION 'FIXTURE_FLOW_ROLLBACK';
+ EXCEPTION WHEN OTHERS THEN IF SQLERRM<>'FIXTURE_FLOW_ROLLBACK' THEN RAISE; END IF; END;
+ PERFORM pg_temp.assert_movement(pg_temp.movement_state()=before,label||' (rolled back)');
+END $$;
+SELECT pg_temp.decided_admits('never_started','a never-started hand above the boundary does not hold the parked table');
+SELECT pg_temp.decided_admits('aborted_unsettled','an aborted hand above the boundary does not hold the parked table');
+SELECT pg_temp.movement_refuses($q$SELECT pg_temp.movement_permit(); SELECT pg_temp.decided_permit('never_started',9720005,NULL); SELECT pg_temp.movement_admit()$q$,
+ 'F06_MOVEMENT_UNRESOLVED_HAND_CUSTODY','a decided state without its receipt is not decided');
+SELECT pg_temp.movement_refuses($q$SELECT pg_temp.movement_permit(); SELECT pg_temp.decided_permit('aborted_unsettled',9720003);
+ SET LOCAL session_replication_role=replica;
+ INSERT INTO public.hand_private_state(hand_id,player_id,table_id,hand_number)
+ VALUES('b7b00000-0000-4000-8000-000000000003','b7100000-0000-4000-8000-000000000008','b7300000-0000-4000-8000-000000000004',9720003);
+ SET LOCAL session_replication_role=origin; SELECT pg_temp.movement_admit()$q$,
+ 'F06_MOVEMENT_UNRESOLVED_HAND_CUSTODY','a decided hand that left private state on the table still refuses');
+SELECT pg_temp.movement_refuses($q$SELECT pg_temp.movement_permit(); SELECT pg_temp.decided_permit('never_started');
+ INSERT INTO smarter_private.f06_hand_dispatch VALUES('b7800000-0000-4000-8000-000000000005',txid_current()); SELECT pg_temp.movement_admit()$q$,
+ 'F06_MOVEMENT_UNRESOLVED_HAND_CUSTODY','a dispatched decided hand still refuses');
+SELECT pg_temp.movement_refuses($q$SELECT pg_temp.movement_permit(); SELECT pg_temp.decided_permit('reserved'); SELECT pg_temp.movement_admit()$q$,
+ 'F06_MOVEMENT_UNRESOLVED_HAND_CUSTODY','an undecided hand above the boundary still refuses');
+
+CREATE FUNCTION pg_temp.movement_flow(modern boolean,decided text DEFAULT NULL) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE o smarter_private.f06_operations; admission jsonb; replay jsonb; next_admission jsonb; r jsonb; manifest jsonb;
- first jsonb; second jsonb; receipt jsonb; before jsonb; money jsonb; original_proof jsonb; label text:=CASE WHEN modern THEN 'modern accepted' ELSE 'legacy zero-permit' END;
+ first jsonb; second jsonb; receipt jsonb; before jsonb; money jsonb; original_proof jsonb; label text:=CASE WHEN modern THEN 'modern accepted' ELSE 'legacy zero-permit' END||COALESCE(' with a decided '||decided||' hand','');
 BEGIN
  before:=pg_temp.movement_state();
  BEGIN
  IF modern THEN PERFORM pg_temp.movement_permit(); END IF;
+ IF decided IS NOT NULL THEN PERFORM pg_temp.decided_permit(decided,9720006); END IF;
  money:=pg_temp.movement_state(true);
  SELECT * INTO STRICT o FROM smarter_private.f06_operations WHERE source_table_id='b7300000-0000-4000-8000-000000000004';
  admission:=pg_temp.movement_admit(); replay:=pg_temp.movement_admit();
  SELECT proof INTO STRICT original_proof FROM smarter_private.f06_movement_admissions WHERE admission_id=(admission->>'admission_id')::uuid;
  PERFORM pg_temp.assert_movement(admission=replay AND admission->>'mode'='movement_only' AND admission->>'revision'='1'
  AND jsonb_array_length(original_proof->'roster')=2 AND jsonb_array_length(original_proof->'eliminated')=1
- AND jsonb_array_length(original_proof->'permits')=CASE WHEN modern THEN 1 ELSE 0 END,label||' immutable admission and replay');
+ AND jsonb_array_length(original_proof->'permits')=CASE WHEN modern THEN 1 ELSE 0 END+CASE WHEN decided IS NULL THEN 0 ELSE 1 END,label||' immutable admission and replay');
  PERFORM pg_temp.movement_refuses($q$SELECT pg_temp.movement_admit('b7600000-0000-4000-8000-000000000004','b7700000-0000-4000-8000-000000000099',0)$q$,
  'F06_MOVEMENT_CHANGED_REPLAY','changed admission identity refuses');
  PERFORM pg_temp.movement_refuses($q$SELECT pg_temp.movement_admit('b7600000-0000-4000-8000-000000000099','b7700000-0000-4000-8000-000000000099',0)$q$,
@@ -224,5 +270,7 @@ BEGIN
 END $$;
 SELECT pg_temp.movement_flow(false);
 SELECT pg_temp.movement_flow(true);
+SELECT pg_temp.movement_flow(true,'never_started');
+SELECT pg_temp.movement_flow(true,'aborted_unsettled');
 SELECT 'F06_MOVEMENT_ADMISSION_PASS';
 ROLLBACK;

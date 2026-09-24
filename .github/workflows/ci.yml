@@ -1327,6 +1327,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-engine-recovery-postgres.py
+      - name: A member's club status is changed only by the server
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-member-status-server-owned.py
       # Depends on the capability registry migration 20260924025555, which
       # merges first; the harness exits 2 naming it when it is absent.
       - name: Multi-day stage foundation keeps every stack through a bag and a resume (needs capability registry 20260924025555)
@@ -1465,6 +1469,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
+      - name: "Tournament creation refuses what the client refuses"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-creation-rules.py --output artifacts/tournament-creation-rules
       - name: Concurrent hands preserve shared F06 custody lanes
         id: f06_hand_authority
         env:

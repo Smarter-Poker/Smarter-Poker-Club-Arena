@@ -267,31 +267,56 @@ export const MembershipService = {
   },
 
   /**
-   * Change a member's access status (ClubDetailPage's Suspend).
+   * Suspend, ban or reinstate a member (ClubDetailPage's Suspend,
+   * ClubMemberManagement's Ban and Unban).
    *
-   * There is no server function for a status change, so this is still a
-   * direct write, but "no error" is not "done": PostgREST answers an UPDATE
-   * that RLS filtered out, or that named a member who is not in this club, with
-   * zero rows and no error. It used to return true for exactly that and the page
-   * toasted "Member suspended" over an unchanged row. The write now returns the
-   * row it changed, and anything other than one row is a failure with a reason.
+   * club_members.status is server owned: trg_club_members_status_guard refuses
+   * a browser write, because the RLS policy lets a member update their own row
+   * and a suspended member could otherwise set themselves back to active.
+   * fn_club_set_member_status checks the caller's authority, changes exactly
+   * one row, records the reason in audit_trail and returns that row's id.
+   *
+   * "No error" is not "done" (#5171): resolves true only when the server
+   * answers success AND names exactly the status that was asked for. Anything
+   * else throws, with the server's own refusal text when it gave one.
+   * CLUB_UPDATED is announced only after a confirmed change; a confirmed
+   * no-op (the member already had that status) has nothing to announce. An
+   * already 'approved' member asked to be 'active' is answered 'approved', which
+   * is not the status asked for, so it throws rather than claiming a change.
    */
-  async updateStatus(clubId: string, userId: string, status: MemberStatus): Promise<boolean> {
+  async updateStatus(
+    clubId: string,
+    userId: string,
+    status: Extract<MemberStatus, 'active' | 'suspended' | 'banned'>,
+    reason?: string
+  ): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { data, error } = await supabase
-      .from('club_members')
-      .update({ status })
-      .eq('club_id', resolvedId)
-      .eq('user_id', userId)
-      .select('user_id, status');
+    const { data, error } = await supabase.rpc('fn_club_set_member_status', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
+      p_status: status,
+      p_reason: reason ?? null,
+    });
 
     if (error) throw error;
-    const changed = Array.isArray(data) ? data : [];
-    if (changed.length !== 1 || changed[0]?.status !== status) {
-      throw new Error('Member Status Was Not Changed');
+
+    const result = (Array.isArray(data) ? data[0] : data) as {
+      success?: boolean;
+      error?: string;
+      unchanged?: boolean;
+      new_status?: string;
+    } | null;
+    if (!result?.success) {
+      throw new Error(result?.error || 'The Club Did Not Accept The Status Change');
+    }
+    if (result.new_status !== status) {
+      throw new Error('The Club Did Not Confirm The Status Change');
     }
 
-    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    // The server reports unchanged: false only when its UPDATE changed the row.
+    if (result.unchanged === false) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    }
     return true;
   },
 

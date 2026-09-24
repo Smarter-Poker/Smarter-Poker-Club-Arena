@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 156763,
-      "sha256": "9f82e8db91296a3765ada8c7b3d2b7ae7000e6ce54fe76bbb8cb943a31d2d91a"
+      "bytes": 157192,
+      "sha256": "2722102426f11ba1aa5a421b63fcbeab33a539a5188de6d02987bb95b841fc53"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -266,8 +266,8 @@
       }
     }
   },
-  "multiDayStageFoundationIntegration": {
-    "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
+  "memberStatusServerOwnedIntegration": {
+    "reason": "Member status is server owned: ci.yml gains the 'A member's club status is changed only by the server' owned-PostgreSQL step (scripts/ci/test-member-status-server-owned.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
         "bytes": 156118,
@@ -275,12 +275,30 @@
       }
     }
   },
+  "tournamentCreationRulesIntegration": {
+    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "multiDayStageFoundationIntegration": {
+    "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156547,
+        "sha256": "e91379b67c8947d773646c070258358f86e6b6c0ac9ee74c2cb877ac98382a86"
+      }
+    }
+  },
   "multiDayStageViewIntegration": {
     "reason": "Multi-day stage view and operator doors: ci.yml gains the Multi-day stage view step (scripts/ci/test-multi-day-stage-view.py against PostgreSQL 17) beside the multi-day foundation step, additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 156521,
-        "sha256": "e2b00bbb4a9c7215ccd3d417f2849aa430b39f0a623fcee23557b4110b173952"
+        "bytes": 156547,
+        "sha256": "e91379b67c8947d773646c070258358f86e6b6c0ac9ee74c2cb877ac98382a86"
       }
     }
   }

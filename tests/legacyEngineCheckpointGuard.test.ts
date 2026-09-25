@@ -1592,6 +1592,12 @@ function mixedFixture() {
   const rpcCalls: string[] = [];
   let onRpc: ((name: string, input: any) => void) | undefined;
   let changeResponse: ((name: string, data: any) => any) | undefined;
+  // `changeResponse` can only reshape a SUCCESSFUL answer. A refusal the
+  // database raises arrives as `{ data: null, error }`, which is the shape the
+  // live run met, so the whole response has to be replaceable to model it.
+  let onRpcResponse:
+    | ((name: string, answer: { data: any; error: any }) => { data: any; error: any } | undefined)
+    | undefined;
   class Manager {
     gameServer = f.server;
     tournamentId: string;
@@ -1865,9 +1871,12 @@ function mixedFixture() {
         };
       }
       const changed = changeResponse ? changeResponse(name, data) : data;
-      // A PostgREST refusal: the RAISE text travels as `error.message`, no data.
-      if (changed && changed.__rpcError) return { error: changed.__rpcError, data: null };
-      return { error: null, data: changed };
+      // From #5218: a PostgREST refusal travels as `error.message` with no data.
+      const answer =
+        changed && changed.__rpcError
+          ? { error: changed.__rpcError, data: null }
+          : { error: null, data: changed };
+      return onRpcResponse ? (onRpcResponse(name, answer) ?? answer) : answer;
     },
   });
   /* A SECOND original on one manager holding NO permit at all - the shape the
@@ -1998,6 +2007,9 @@ function mixedFixture() {
     changeResponse: (cb: typeof changeResponse) => {
       changeResponse = cb;
     },
+    onRpcResponse: (cb: typeof onRpcResponse) => {
+      onRpcResponse = cb;
+    },
   };
 }
 
@@ -2088,6 +2100,80 @@ describe('exact 8825 retained original custody retirement', () => {
       expect(f.server.tableEngines.size).toBe(1);
     }
   );
+  /* A RAISED REFUSAL IS NOT AN ANSWER OF "NO" (2026-09-24). Run 36068474418
+     attempted 62 tables, completed 62 and read back and verified all 62, then
+     refused `mixed_custody_rpc_unknown` naming nothing at all. The whole
+     diagnosis - `POST fn_f06_prepare_mixed_manager_custody` answering 400 with
+     SQLSTATE P0001 - lived in the Supabase edge log, outside the run, and the
+     Postgres log that held the refusal token itself had aged out before anyone
+     read it. The three facts that one code collapsed are now told apart and the
+     database's own SQLSTATE and token travel with the refusal. The reason
+     string, the stage and the outcome do not move. */
+  const raised = (code: string, message: string) => () => ({
+    data: null,
+    error: { code, message },
+  });
+  it.each([
+    [
+      'a refusal the database raised',
+      raised('P0001', 'F06_MIXED_OLD_LEASE_CHANGED'),
+      'rpc.transport',
+      'sqlstate=P0001,refusal=F06_MIXED_OLD_LEASE_CHANGED',
+    ],
+    /* Half the SQLSTATEs this function can raise begin with a digit -
+       `F06_RETRY_MAINTENANCE_LANE` is 40001 - and a digit is exactly what an
+       identifier-shaped reader throws away. The code is the half of the answer
+       that says whether a refusal is a retry, a permission or a rule. */
+    [
+      'a refusal whose SQLSTATE begins with a digit',
+      raised('40001', 'F06_RETRY_MAINTENANCE_LANE'),
+      'rpc.transport',
+      'sqlstate=40001,refusal=F06_RETRY_MAINTENANCE_LANE',
+    ],
+    ['a body that is not a record', () => ({ data: [], error: null }), 'rpc.body', 'body=Array(0)'],
+    [
+      'a body that says no',
+      (_name: string, answer: any) => ({ ...answer, data: { ...answer.data, ok: false } }),
+      'rpc.ok',
+      'ok=false',
+    ],
+  ])(
+    'names which fact the mixed custody RPC lacked: %s',
+    async (_label, respond, failedCheck, detail) => {
+      const f = mixedFixture();
+      f.onRpcResponse((name: string, answer: any) =>
+        name === 'fn_f06_prepare_mixed_manager_custody' ? (respond as any)(name, answer) : undefined
+      );
+      const result: any = await f.run();
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'mixed_custody_rpc_unknown',
+        stage: 'mixed_custody',
+        checkpointOutcome: 'unconfirmed',
+        restartAuthorized: false,
+        failedCheck,
+        failedField: 'fn_f06_prepare_mixed_manager_custody',
+      });
+      expect(result.observedDetail).toContain(detail);
+    }
+  );
+  /* The token is carried because it NAMES the refusal, not because a message is
+     safe. Anything that is not a bare upper-case refusal token is reduced to its
+     length, so a message that carried a hand, a player or a credential could not
+     export it through the receipt. */
+  it('reduces a refusal message that is not a bare token to its length', async () => {
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? raised('P0001', 'As Kd for user 046718c5')()
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_custody_rpc_unknown');
+    expect(result.observedDetail).toContain('refusal=string(23)');
+    expect(result.observedDetail).not.toContain('Kd');
+    expect(result.observedDetail).not.toContain('046718c5');
+  });
   // A preflight refusal used to name only its code. These conjunctions are wide
   // and run against live state, so the code alone cost a deploy to interpret.
   // Each sub-condition now reports itself, and the fixture proves it. What is
@@ -4412,7 +4498,7 @@ describe('an epoch that never reserved a hand is witnessed by its absence (2026-
       reason: 'mixed_custody_rpc_unknown',
       failedTable: second,
     });
-    expect(result.observedDetail).toContain('expected=observe');
+    expect(result.observedDetail).toContain('commit=no');
     // Both managers were observed, and the first was NOT committed: no
     // immutable transfer row exists for the next attempt to refuse against.
     expect(observations).toBe(2);
@@ -4434,13 +4520,13 @@ describe('an epoch that never reserved a hand is witnessed by its absence (2026-
     expect(result).toMatchObject({
       ok: false,
       reason: 'mixed_custody_rpc_unknown',
-      failedCheck: 'rpc.error',
+      failedCheck: 'rpc.transport',
+      failedField: 'fn_f06_prepare_mixed_manager_custody',
       failedTable: f.originals[0].manager.tournamentId,
     });
-    expect(result.observedDetail).toContain('rpc=fn_f06_prepare_mixed_manager_custody');
-    expect(result.observedDetail).toContain('expected=observe');
-    expect(result.observedDetail).toContain('code=P0001');
-    expect(result.observedDetail).toContain('message=F06_MIXED_ALLOCATION_WITNESS_UNPROVEN');
+    expect(result.observedDetail).toContain('commit=no');
+    expect(result.observedDetail).toContain('sqlstate=P0001');
+    expect(result.observedDetail).toContain('refusal=F06_MIXED_ALLOCATION_WITNESS_UNPROVEN');
     expect(result.observedDetail).toContain('allocationBacked=1');
     expect(result.observedDetail).toContain(
       `backed=${e.tableId.slice(0, 8)}:${e.f06AllocationEpoch.slice(0, 8)}:null:hand=17:seats=1`

@@ -276,6 +276,23 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       return 'unreadable';
     }
   };
+  /* A database refusal names itself. Every `f06` function raises a bare
+     upper-case token (`F06_MIXED_OLD_LEASE_CHANGED`), and PostgREST hands that
+     token back as the error's `message` with the SQLSTATE beside it. Those are
+     the two facts a refused release needs and neither one names a player, a
+     bank or a row. Anything that is NOT such a token is reduced to its length
+     by `describe`, so a message that carried a payload could not export it. */
+  const refusalToken = (value) =>
+    typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value) ? value : describe(value);
+  /* A SQLSTATE is five characters of `[0-9A-Z]` and nothing else - the SQL
+     standard fixes both the length and the alphabet - so it can be carried
+     whole and can carry nothing. `refusalToken` alone would not: half of them
+     begin with a digit (`57014`, `42501`, `23505`) and would be reduced to
+     their length, which is the one thing a SQLSTATE does not tell you.
+     PostgREST's own codes (`PGRST202`) are identifier-shaped and fall through
+     to the token rule; anything else falls through that to its length. */
+  const sqlState = (value) =>
+    typeof value === 'string' && /^[0-9A-Z]{5}$/.test(value) ? value : refusalToken(value);
   const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const uuid = (value) =>
     typeof value === 'string' &&
@@ -1878,54 +1895,84 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             custodyCommitAttempted = true;
           const response = await modules.client.supabase.rpc(name, args);
           checkAll();
-          // The same condition and the same code as before; this names the
-          // manager, the RPC, what the database said, and the shape of the
-          // physical map it refused - which the process-wide require never
-          // did (run 36068474418 refused `mixed_custody_rpc_unknown` and
-          // named nothing; the cause was on the Postgres log alone).
+          const engineShape = () => (Array.isArray(local?.engines) ? local.engines : []);
+          const allocationBacked = () =>
+            engineShape().filter((e) => e.permit === null && typeof e.allocation_epoch === 'string');
+          /* ═══ THE DATABASE NAMED IT AND THE GUARD CALLED IT UNKNOWN (2026-09-24) ═══
+
+             Run 36068474418 is the measurement: 62 tables attempted, 62
+             completed, all 62 read back and verified inside their own write
+             windows - and then `mixed_custody_rpc_unknown`, naming nothing.
+             The Supabase edge log for that second holds what this conjunction
+             threw away: `POST /rest/v1/rpc/fn_f06_prepare_mixed_manager_custody`
+             answered 400 with SQLSTATE P0001. Which of that function's refusals
+             fired is written only in its message, and by the time a person
+             looked, the database's own log for that second was no longer
+             retained. So the single fact that decides the next fix reached
+             nobody, and the outcome was `unknown` because the guard made it
+             unknown.
+
+             It cannot be anything else. `fn_f06_prepare_mixed_manager_custody`
+             has no path that returns `ok` false: it returns a record with `ok`
+             true or it raises. So `response.data.ok` can never be the conjunct
+             that fails while the call came back cleanly, and the only reachable
+             failure here is an error this conjunction declined to read. That is
+             10.86 rule 1: "I could not tell" has to say what it does know.
+
+             Observability only. The three collapsed facts - the call did not
+             come back, it came back as something that is not a record, it came
+             back saying no - are told apart, and the database's own SQLSTATE
+             and refusal token travel with them. `reason` is still
+             `mixed_custody_rpc_unknown` for every existing parser, no check,
+             threshold or outcome moves, and a refusal is still a refusal that
+             carries `retryAllowed` false.
+
+             Only a bare upper-case refusal token of the kind every f06 function
+             raises is carried verbatim. Any other string becomes its length,
+             exactly as `describe` does, so no permit payload, card, credential
+             or player identity can reach a log. */
           witness(
             'mixed_custody_rpc_unknown',
             [
-              ['rpc.error', () => !response.error],
-              ['rpc.data', () => record(response.data)],
+              ['rpc.transport', () => !response.error],
+              ['rpc.body', () => record(response.data)],
               ['rpc.ok', () => response.data.ok === true],
             ],
-            () => {
-              const engines = Array.isArray(local?.engines) ? local.engines : [];
-              const backed = engines.filter(
-                (e) => e.permit === null && typeof e.allocation_epoch === 'string'
-              );
-              const clean = (value) =>
-                String(value ?? '')
-                  .replace(/[^\w .,:/=()+-]+/g, ' ')
-                  .replace(/ {2,}/g, ' ')
-                  .trim()
-                  .slice(0, 96);
-              return {
-                failedTable: manager.tournamentId,
-                observedDetail: [
-                  `rpc=${name}`,
-                  `expected=${args.p_expected === null ? 'observe' : 'commit'}`,
-                  `code=${clean(response.error?.code ?? 'none')}`,
-                  `message=${clean(response.error?.message ?? response.data?.reason ?? 'none')}`,
-                  `engines=${engines.length}`,
-                  `permits=${engines.filter((e) => e.permit !== null).length}`,
-                  `allocationBacked=${backed.length}`,
-                  `nullLifecycle=${engines.filter((e) => e.lifecycle === null).length}`,
-                  `backed=${backed
-                    .slice(0, 12)
-                    .map(
-                      (e) =>
-                        `${String(e.table_id).slice(0, 8)}:${String(e.allocation_epoch).slice(0, 8)}:${
-                          e.lifecycle === null ? 'null' : e.lifecycle
-                        }:hand=${e.bank_custody?.hand_number}:seats=${e.bank_custody?.roster?.length}`
-                    )
-                    .join('/')}`,
-                ]
-                  .join(',')
-                  .slice(0, 512),
-              };
-            }
+            () => ({
+              failedField: name,
+              failedTable: manager.tournamentId,
+              observed: sqlState(response.error?.code),
+              observedDetail: [
+                `sqlstate=${sqlState(response.error?.code)}`,
+                `refusal=${refusalToken(response.error?.message)}`,
+                `hint=${refusalToken(response.error?.hint)}`,
+                `details=${describe(response.error?.details)}`,
+                `body=${describe(response.data)}`,
+                `ok=${describe(response.data?.ok)}`,
+                `commit=${args.p_expected === null ? 'no' : 'yes'}`,
+                `tournament=${
+                  uuid(args.p_tournament_id) ? args.p_tournament_id : describe(args.p_tournament_id)
+                }`,
+                // From #5218: the physical map this manager refused on. Kept
+                // after the database's own answer above, so a truncation at the
+                // carrier limit drops the shape and never the SQLSTATE.
+                `engines=${engineShape().length}`,
+                `permits=${engineShape().filter((e) => e.permit !== null).length}`,
+                `allocationBacked=${allocationBacked().length}`,
+                `nullLifecycle=${engineShape().filter((e) => e.lifecycle === null).length}`,
+                `backed=${allocationBacked()
+                  .slice(0, 12)
+                  .map(
+                    (e) =>
+                      `${String(e.table_id).slice(0, 8)}:${String(e.allocation_epoch).slice(0, 8)}:${
+                        e.lifecycle === null ? 'null' : e.lifecycle
+                      }:hand=${e.bank_custody?.hand_number}:seats=${e.bank_custody?.roster?.length}`
+                  )
+                  .join('/')}`,
+              ]
+                .join(',')
+                .slice(0, 512),
+            })
           );
           return response.data;
         };
@@ -2891,8 +2938,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          then refuse `engine_state_changed` on the re-verification after the
          write - naming nothing, because that require was the process-wide
          one. Every part of this signature but one is frozen by the break
-         itself: the hand number (parked), the roster and stacks (the Postgres
-         freeze guard refuses every seat write), the banks (no hand, no
+         itself: the hand number (parked), the roster and stacks (the engine's own
+         half of the freeze, immediately below), the banks (no hand, no
          timer), and the residue and disposed sets that derive from them. The
          one part the freeze does not touch is the disconnect FSM: a player's
          socket drops or comes back during the five minutes exactly as it does
@@ -2912,6 +2959,41 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          roster event the freeze forbids, and that still refuses. The readback
          holds the row's presence to the same rule: the same players, each
          with a record, not the same bytes. */
+      /* ═══ WHICH HALF OF THE FREEZE HOLDS THE ROSTER STILL (2026-09-24) ═══
+
+         The paragraph above named the Postgres half. For the roster it is the
+         wrong half twice over, and the correction matters because the whole
+         argument for keeping seats and stacks in `custody` rests on it.
+
+         FIRST, the Postgres half does not apply to this process.
+         `fn_refuse_while_frozen`, the function behind `zz_freeze_guard` on
+         `table_seats`, returns early when the caller's `request.jwt.claims`
+         carry the service role, which is exactly what this engine presents.
+         Verified against the live database on 2026-09-24. That guard holds
+         back browsers and pg_cron, which is what `freezeState.ts` says it is
+         for ("the engine is dead for ~2 of the 5 minutes and pg_cron and
+         browsers do not stop when it does"). It was never the engine's leash.
+
+         SECOND, the signature does not read a row. `custody.roster` below
+         reads `engine.seatedPlayers`, an in-memory array, and no trigger on
+         any table can hold an array in this heap still.
+
+         What does hold it is the ENGINE's half: the process-wide flag in
+         `maintenance/freezeState.ts`, set from the ANNOUNCEMENT at :53 rather
+         than the countdown at :55, and read on both paths that could move a
+         seat under this walk. A top-up answers `Scheduled maintenance is in
+         progress` on the first line of `addChips`, before it finds the seat
+         and before any debit, so neither the stack nor the pending-add-on
+         cache moves. And the wait-for-players sweep, the only caller that
+         replaces `seatedPlayers` wholesale, meets the pause gate at the top
+         of its loop before it reads seats or adopts a roster, so an arrival,
+         a departure and an expired sit-out all wait for the resume.
+
+         Both gates are now pinned by
+         `tests/a-seat-does-not-move-under-a-release-walk.law.test.ts`, which
+         also pins this signature's dependency on them. Before it, deleting
+         either gate left every suite green and turned the next release back
+         into the lottery #5215 had just removed. */
       const custody = {
         handNumber: engine.handCount,
         roster: engine.seatedPlayers.map((seat) => [

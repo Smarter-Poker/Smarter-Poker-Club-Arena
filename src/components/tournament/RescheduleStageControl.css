@@ -18,6 +18,17 @@
   width: 100%;
   min-height: 44px;
   box-sizing: border-box;
+  /* The board's own field ink (GameManagementPage's dialog inputs), so the
+     two fields are not white browser defaults on the black board (visual
+     acceptance 2026-09-24). */
+  padding: 10px 12px;
+  border: 1px solid rgb(94 116 134 / 52%);
+  color: #f4f7fb;
+  background: #05080c;
+  color-scheme: dark;
+  font:
+    600 16px/1.2 Inter,
+    sans-serif;
 }
 
 .md-reschedule__label {

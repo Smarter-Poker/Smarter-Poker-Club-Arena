@@ -94,7 +94,9 @@ export default function RescheduleStageControl({
   return (
     <div className="md-reschedule" role="group" aria-label={label}>
       <label className="md-reschedule__field">
-        <span className="md-reschedule__label">Starts At ({zone})</span>
+        {/* The zone as a place name, "America/New York", the way the Day
+            Schedule editor lists it: an IANA id's underscore is not a word. */}
+        <span className="md-reschedule__label">Starts At ({zone.replace(/_/g, ' ')})</span>
         <input
           type="datetime-local"
           value={startsAt}

@@ -53,6 +53,21 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
+/* THE MULTI-DAY LINE (visual acceptance 2026-09-24). "Day 2 Starts Sat Oct 3
+   10:00 AM PDT" is wider than the card, and on the shared two-column row the
+   value's auto column took every pixel and printed over its own label ("Day 1
+   Complete"). The start time is the whole point of the line, so it is not cut
+   either: the label takes its own line and the value wraps under it. */
+.rowStacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.2cqw;
+}
+
+.rowStacked .value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .value {
   display: flex;
   gap: 2cqw;

@@ -2645,13 +2645,44 @@
   color: #94a3b8;
 }
 
-/* KILL POTS (kill-v1): the killer's marker, the position badge's twin on the
-   opposite corner so a killer in a blind keeps both. The gold is the felt's
-   own marker ink (the bomb pill and run badge), not a new colour; the word is
-   what carries the meaning. */
+/* KILL POTS (kill-v1): the killer's marker. The gold is the felt's own marker
+   ink (the bomb pill and run badge), not a new colour; the word is what carries
+   the meaning.
+
+   ONE ROW, NEVER ON TOP OF EACH OTHER (visual acceptance 2026-09-24). The
+   marker used to be the position badge's twin on the opposite corner, both
+   absolutely placed. On one line "Kill Blind" is wider than half the avatar,
+   so at 393px it ran across the SB badge and, later in the DOM, painted over
+   it: a killer in a blind showed only the kill marker. UTG+1 overlapped it by
+   17px even on two lines. On the killer's seat both badges now sit in this
+   flex row, spanning the corners (-4px each side, as before) and growing
+   symmetrically only when the two cannot fit. The marker breaks between its
+   two words so the row stays inside the corners for SB, BB, MP, HJ and CO. */
+.seat__corner-badges {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: calc(100% + 8px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 3px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.seat__corner-badges > .seat__position-badge {
+  position: static;
+}
+
 .seat__kill-badge {
-  right: auto;
-  left: -4px;
+  width: min-content;
+  padding: 1px 3px;
+  letter-spacing: 0.02em;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.1;
   color: var(--sp-text-bright);
   border-color: rgba(255, 215, 0, 0.55);
 }

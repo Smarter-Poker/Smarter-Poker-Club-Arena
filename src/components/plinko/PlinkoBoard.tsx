@@ -572,7 +572,9 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     if (!kit) return;
     kit.camera.aspect = width / height;
     kit.camera.updateProjectionMatrix();
-    kit.renderer.setSize(width, height, false);
+    // Through the kit so the governor's pixel ratio survives the resize.
+    if (typeof kit.setSize === 'function') kit.setSize(width, height);
+    else kit.renderer.setSize(width, height, false);
   }, [width, height]);
   return (
     <div className={styles.board} data-motion="keep">

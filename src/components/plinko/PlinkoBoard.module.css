@@ -23,6 +23,14 @@
 .canvas {
   display: block;
   max-width: 100%;
+  /* Under the first frame: the cabinet's own steel and blue, and the house
+     hairline, so a slow phone shows a machine, not a black hole. The canvas
+     is transparent until it is drawn on. */
+  border-radius: 10px;
+  background:
+    radial-gradient(70% 60% at 50% 40%, rgb(24 119 242 / 16%), transparent 65%),
+    linear-gradient(180deg, #0a1424 0%, #070b10 100%);
+  box-shadow: 0 0 0 1px rgb(154 165 179 / 28%) inset;
 }
 
 .payouts {

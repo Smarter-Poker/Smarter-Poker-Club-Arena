@@ -7,8 +7,13 @@ BEGIN
    WHERE status = 'held' AND expires_at < now() - interval '10 minutes';
   IF v_expired < 1 THEN RAISE EXCEPTION 'RED setup failed: nothing is expired'; END IF;
 
-  DELETE FROM public.ca_incident_events;
-  DELETE FROM public.ca_drift_incidents;
+  -- Scoped to THIS detector only. An unqualified DELETE here would wipe the
+  -- incident board of whatever else is sharing the cluster (2026-09-25: this
+  -- rehearsal base is used by more than one task at a time).
+  DELETE FROM public.ca_incident_events e
+   USING public.ca_drift_incidents i
+   WHERE i.id = e.incident_id AND i.source = 'fn_ca_escrow_ttl_sweep';
+  DELETE FROM public.ca_drift_incidents WHERE source = 'fn_ca_escrow_ttl_sweep';
 
   v_n := public.fn_ca_escrow_ttl_sweep();
   SELECT count(*) INTO v_inc FROM public.ca_drift_incidents

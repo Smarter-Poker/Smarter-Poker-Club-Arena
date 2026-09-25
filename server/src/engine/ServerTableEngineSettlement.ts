@@ -1821,7 +1821,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   ? { hand_request_identity_v1: handRequestIdentity }
                   : {}),
                 ...(failureEvidence ? { leave_pending_diagnostic_v1: failureEvidence } : {}),
-              }
+              },
+              // ONE OPEN ALERT PER HAND PER STEP, not one per pass over it.
+              // The subject is the hand: a step that fails for hand #N is the
+              // same fact however many times this or a later engine generation
+              // re-reports it. See financialAlerts.raiseFinancialAlert.
+              `${this.tableId}:${snap.handNumber}`,
+              this.tableId
             );
           }
         } finally {
@@ -2467,7 +2473,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 hand_number: snap.handNumber,
                 error: message,
                 ...(semantic ? { hand_request_identity_v1: handRequestIdentity } : {}),
-              }
+              },
+              // Same hand, same subject key. Every engine generation that
+              // inherits this hand behind its causal barrier reports the same
+              // refusal; the operator needs it once.
+              `${this.tableId}:${snap.handNumber}`,
+              this.tableId
             );
           } catch (alertError) {
             reportError(alertError, `${alertCode}.alert_failed`, {

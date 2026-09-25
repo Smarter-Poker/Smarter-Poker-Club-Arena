@@ -2529,6 +2529,8 @@ export class TournamentManager extends TournamentManagerEliminations {
     engine: ServerTableEngine | null
   ): Promise<boolean> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
+      const path = tableId === null && !engine ? 'shutdown' : 'recovery';
+      this.noteSeatMoveQuarantineRefusal(`${path}:f06_permit_retained`);
       if (
         engine?.getF06RetainedPermit?.() ||
         (engine && [...this.stoppedOriginalBreaks.values()].includes(engine))
@@ -2543,6 +2545,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       for (const [requestId, item] of pending) {
         let boundary: ClaimedTournamentMoveBoundary;
         if (item.input.sourceMode === 'closed_orphan') {
+          this.noteSeatMoveQuarantineRefusal(`${path}:closed_orphan_source_has_live_engine`);
           if (
             this.tableEngines.has(item.input.sourceTableId) ||
             this.gameServer.getTableEngine(item.input.sourceTableId)
@@ -2552,6 +2555,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           boundary = { sourceMode: 'closed_orphan', engine: null };
         } else {
           const sourceEngine = engine ?? this.tableEngines.get(item.input.sourceTableId) ?? null;
+          this.noteSeatMoveQuarantineRefusal(`${path}:live_source_boundary_unavailable`);
           if (
             !sourceEngine ||
             (tableId !== null && item.input.sourceTableId !== tableId) ||
@@ -2576,6 +2580,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             `[Tournament:${this.tournamentId.slice(0, 8)}] Quarantined move ${receipt.requestId.slice(0, 8)} replay certified before engine release`
           );
         } catch (error) {
+          this.noteSeatMoveQuarantineRefusal(`${path}:replay_unresolved`);
           reportError(error, 'Tournament.atomic_move_quarantine_unresolved', {
             tournamentId: this.tournamentId,
             requestId,
@@ -2589,17 +2594,68 @@ export class TournamentManager extends TournamentManagerEliminations {
         const stillPending = [...this.pendingTournamentSeatMoveOutcomes.values()].some(
           (item) => item.input.sourceTableId === tableId
         );
+        this.noteSeatMoveQuarantineRefusal(
+          stillPending ? 'recovery:source_seat_move_pending' : 'recovery:break_source_retained'
+        );
         if (stillPending || this.retainsTournamentBreakSource(tableId, engine)) return false;
         engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
-        return !engine.hasClaimedTournamentMoveBoundary();
+        this.noteSeatMoveQuarantineRefusal('recovery:claimed_move_boundary');
+        if (engine.hasClaimedTournamentMoveBoundary()) return false;
+        this.noteSeatMoveQuarantineRefusal(null);
+        return true;
       }
 
+      this.noteSeatMoveQuarantineRefusal('shutdown:unresolved_seat_move_uuid');
       if (this.pendingTournamentSeatMoveOutcomes.size > 0) return false;
-      if (this.retainedTournamentBreakSources.size > 0) return false;
+      /*
+       * A RETAINED BREAK SOURCE IS NOT A SEAT MOVE (2026-09-25).
+       *
+       * #4799 added `if (this.retainedTournamentBreakSources.size > 0) return
+       * false;` here, beside the pending-UUID guard. In the RECOVERY branch
+       * above, its sibling is right and stays: that branch is asked whether one
+       * named engine may be released while the manager lives, and a manager
+       * that still fences that engine for a break must say no.
+       *
+       * This branch is a different question. It is asked once, during the
+       * manager's own teardown, about the whole generation - and nothing on
+       * that path can ever clear this map. `retainedTournamentBreakSources` is
+       * cleared only by a durable break reaching `acknowledged`
+       * (retireTournamentBreak / finishAcknowledgedTournamentBreak) or by
+       * `forgetContinuedNoStartPark`, and none of those run while a fenced
+       * manager is being stopped. So a manager that was fencing one break
+       * source when its lease was lost could never stop again, for the life of
+       * the process: on release 778075b4, thirteen tournaments, 5,678 refusals
+       * in twenty-five minutes, 20 quarantined managers and a restart gate that
+       * could not open. That is the shape the maintenance-break bound was
+       * written against - "a fail-closed gate with no bound... trades 'breaks
+       * get dismantled' for 'a stuck table never recovers', and the second is
+       * the worse bug".
+       *
+       * Nothing is discarded by letting it go. The retention is LOCAL custody
+       * of a source engine, as its own declaration says ("Local custody only;
+       * durable discovery and completion belong to the break RPC"). The break
+       * row, its members and their immutable `active_request_id`s are durable;
+       * a successor re-discovers the break and re-dispatches the SAME request
+       * identities. The one obligation that lives only in this process - an
+       * ambiguous move UUID - is fenced by the guard above and is replayed to a
+       * receipt before it is ever forgotten. No move is discarded on any path.
+       *
+       * What is kept is the part that was actually unsafe: a retained source
+       * whose engine is still in this manager's registry and has NOT released
+       * process ownership is a dealer this teardown has not joined, so it still
+       * refuses - by name.
+       */
+      this.noteSeatMoveQuarantineRefusal('shutdown:break_source_owns_running_engine');
+      for (const [sourceTableId, retained] of this.retainedTournamentBreakSources) {
+        const live = this.tableEngines.get(sourceTableId);
+        if (live === retained.engine && !live.hasReleasedProcessOwnership()) return false;
+      }
+      this.noteSeatMoveQuarantineRefusal('shutdown:claimed_move_boundary');
       for (const sourceEngine of this.tableEngines.values()) {
         sourceEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         if (sourceEngine.hasClaimedTournamentMoveBoundary()) return false;
       }
+      this.noteSeatMoveQuarantineRefusal(null);
       return true;
     });
   }

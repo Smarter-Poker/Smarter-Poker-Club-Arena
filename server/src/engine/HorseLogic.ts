@@ -127,6 +127,13 @@ import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
 // actually executed. Gated on opts.telemetry — league/benchmark/tests never
 // count. See engine/BrainTelemetry.ts.
 import { noteDecisionMs, noteFire, telemetryOn } from './BrainTelemetry.js';
+// V51 (2026-09-21): the commitment cap, DEFAULT OFF. See HorseCommitCap.ts.
+import {
+  COMMIT_CAP_POT_BB,
+  commitCapClass,
+  commitCapEquity,
+  facesRaiseOrAllIn,
+} from './HorseCommitCap.js';
 // V27 (Dan 2026-08-29): the PioSolver push/fold charts, preloaded in memory
 // by GtoChartLoader so the synchronous decision can read them at zero I/O.
 // See engine/GtoCharts.ts for scope and why absence falls back to heuristics.
@@ -1896,6 +1903,16 @@ export interface HorseDecideOpts {
    *  already going to spend; see ServerTableEngineTurns.scheduleHorseAction.
    *  Never set on the fast path. */
   deepEquity?: number;
+  /** V51 (2026-09-21, audit P2.2): the commitment cap. In a pot of 20bb or
+   *  more, a hold'em hand holding one pair no better than top pair with a
+   *  kicker of nine or worse, or trips with a kicker of nine or worse, never
+   *  raises, re-raises or jams facing a bet, and facing a raise or an all-in
+   *  its equity is capped at its class's measured showdown win rate on that
+   *  line (0.20 one pair, 0.55 trips). DEFAULT OFF: a strategy change that
+   *  ships measured, promoted only after three separate significant-positive
+   *  nightly v51_commitment_cap runs (the v16Ratio rule). See
+   *  HorseCommitCap.ts. */
+  v51CommitCap?: boolean;
 }
 
 /**
@@ -6623,6 +6640,55 @@ export class HorseLogic {
         if (tele15) noteFire('v21_scare_cap');
       }
     }
+    // ═══ V51 COMMITMENT CAP (2026-09-21, audit P2.2) ═══ DEFAULT OFF. In a
+    // pot of 20bb or more, one pair no better than top pair with a kicker of
+    // nine or worse, or trips with a kicker of nine or worse, never raises,
+    // never re-raises and never jams facing a bet; facing an opponent's raise
+    // or all-in the equity it may use is capped at its class's measured
+    // showdown win rate on that line (0.20 one pair, 0.55 trips). The
+    // measurement and the thresholds are in HorseCommitCap.ts. It sits with
+    // the other caps so the tournament utility evidence below inherits it.
+    let noRaise51 = false;
+    /** the equity before the V51 ceiling lowered it; null when it did not */
+    let eqBefore51: number | null = null;
+    if (
+      opts.v51CommitCap === true &&
+      !vi.isOmaha &&
+      !vi.isFixedLimit &&
+      !multiBoard36 &&
+      gs.bombPot !== true &&
+      gs.bigBlind > 0 &&
+      pot / gs.bigBlind >= COMMIT_CAP_POT_BB
+    ) {
+      const cls51 = commitCapClass(player.cards, board, vi.isShortDeck);
+      if (cls51 !== null) {
+        noRaise51 = true;
+        const cap51 = commitCapEquity(cls51);
+        if (eq15 > cap51 && facesRaiseOrAllIn(gs.actionHistory, street, player.user_id)) {
+          eqBefore51 = eq15;
+          eq15 = cap51;
+        }
+      }
+    }
+    /** V51: called as the LAST term of each raise gate, so it runs only when
+     *  that raise had already won its roll. The receipt counts each decision
+     *  the cap took a raise away from once, and the random stream is
+     *  untouched until then. */
+    let raiseWithheld51 = false;
+    const skipRaise51 = (): boolean => {
+      if (!noRaise51) return false;
+      if (tele15 && !raiseWithheld51) noteFire('v51_commit_cap_no_raise');
+      raiseWithheld51 = true;
+      return true;
+    };
+    /** V51: at a fold, did the ceiling make it? `wouldCall` asks the same gate
+     *  again with the equity from before the ceiling. Telemetry only: it never
+     *  draws from the random stream and never changes the answer. */
+    const foldBy51 = (wouldCall: (eq: number) => boolean): void => {
+      if (tele15 && eqBefore51 !== null && !raiseWithheld51 && wouldCall(eqBefore51)) {
+        noteFire('v51_commit_cap_fold');
+      }
+    };
 
     // The Phase 7 utility model must inherit every structural safety cap
     // (notably the multiway T8o and dominated-Omaha repairs), not resurrect
@@ -6760,6 +6826,11 @@ export class HorseLogic {
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
           (useV21 && dominated21) ||
           planCallOnly23;
+        // V51: a capped hand in a 20bb+ pot that clears the bar calls; it does not jam.
+        if (noRaise51 && toCall < stack && !preferFlat15) {
+          if (tele15) noteFire('v51_commit_cap_no_jam');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
         return toCall >= stack || preferFlat15
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
@@ -6767,6 +6838,7 @@ export class HorseLogic {
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.
       if (eq15 >= required || solverCall32) return { action: 'call', amount: toCall, thinkTime: 0 };
+      foldBy51((e) => e >= required);
       return {
         action: 'fold',
         thinkTime: 0,
@@ -6841,7 +6913,8 @@ export class HorseLogic {
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
       if (
         !(dangered && cat < 6) &&
-        fastRandom() < 0.55 * params.aggression + params.checkRaiseFreq + oopBoost
+        fastRandom() < 0.55 * params.aggression + params.checkRaiseFreq + oopBoost &&
+        !skipRaise51()
       ) {
         // V18 EXPLOIT SIZING: on the river, a station (valueThinMod > 1)
         // pays a bigger raise; a nit calls only what a smaller one asks.
@@ -6875,7 +6948,8 @@ export class HorseLogic {
       // it says: do not raise as a semi-bluff into a bet bigger than 0.85x
       // the pot.
       potFrac <= 0.85 &&
-      fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5 * omahaDrawMod()
+      fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5 * omahaDrawMod() &&
+      !skipRaise51()
     ) {
       // V13: register the barrel plan. planBarrel was called on all three BET
       // paths and none of the RAISE paths, so a flop semi-bluff raise arrived
@@ -6901,7 +6975,8 @@ export class HorseLogic {
       equity < 0.42 &&
       oppCount === 1 &&
       betRatio <= (opts.v16Ratio === true ? 1.5 : 0.6) &&
-      fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
+      fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale) &&
+      !skipRaise51()
     ) {
       // V13: same as above — a check-raise bluff is the start of a story.
       planBarrel(equity);
@@ -6926,7 +7001,8 @@ export class HorseLogic {
       // Was `betRatio <= 0.75` — also always true, so river blocker
       // raise-bluffs fired into any sizing at all.
       potFrac <= 0.75 &&
-      fastRandom() < params.bluffFreq * 0.35 * Math.min(1.2, bluffScale)
+      fastRandom() < params.bluffFreq * 0.35 * Math.min(1.2, bluffScale) &&
+      !skipRaise51()
     ) {
       const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
       return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
@@ -7108,9 +7184,9 @@ export class HorseLogic {
     if (useEv38 && (isRiver || solverless38) && !solverCall32) {
       // the exploit reads, as an equity shift instead of a margin
       const readShift38 = -(respect - 1) * 0.08;
-      const eqRead38 = clamp01(
-        eq15 + impliedBonus + readShift38 - dominationPenalty - (loOnly23 ? 0.03 : 0)
-      );
+      const read38 = (eq: number): number =>
+        clamp01(eq + impliedBonus + readShift38 - dominationPenalty - (loOnly23 ? 0.03 : 0));
+      const eqRead38 = read38(eq15);
       const risk38 = risk > 0 && stack > 0 ? risk : 0;
       if (isRiver) {
         const v = riverCallVerdict({
@@ -7124,6 +7200,8 @@ export class HorseLogic {
         });
         if (tele15) noteFire(v.call ? 'v38_river_call' : 'v38_river_fold');
         if (v.call) return { action: 'call', amount: toCall, thinkTime: 0 };
+        // V51: outside the 1.5-point mixing band, so the counterfactual is a sure call
+        foldBy51((e) => read38(e) - v.required > 0.015);
         return { action: 'fold', thinkTime: 0 };
       }
       // Flop / turn in a solverless game: realized equity vs the raked price.
@@ -7133,29 +7211,37 @@ export class HorseLogic {
         inPosition: ip,
         drawy: drawy38,
       });
-      const verdict38 = evaluateSpot({
-        equity: eqRead38,
-        pot,
-        toCall,
-        stack,
-        effectiveStack: stack,
-        street: street === 'turn' ? 'turn' : 'flop',
-        inPosition: ip,
-        opponents: oppCount,
-        realization: realization38,
-        rakeMarg,
-        riskPremium: risk38,
-        minBet: Math.max(gs.minRaise || 0, 0.01),
-        maxBet: 0, // fold/call only here: the raise gates above already rolled
-        sizes: [],
-        rand: fastRandom,
-      });
+      const spot38 = (eq: number, rand: () => number) =>
+        evaluateSpot({
+          equity: eq,
+          pot,
+          toCall,
+          stack,
+          effectiveStack: stack,
+          street: street === 'turn' ? 'turn' : 'flop',
+          inPosition: ip,
+          opponents: oppCount,
+          realization: realization38,
+          rakeMarg,
+          riskPremium: risk38,
+          minBet: Math.max(gs.minRaise || 0, 0.01),
+          maxBet: 0, // fold/call only here: the raise gates above already rolled
+          sizes: [],
+          rand,
+        });
+      const verdict38 = spot38(eqRead38, fastRandom);
       const callEv = verdict38.candidates.find((a) => a.kind === 'call');
       if (callEv && callEv.ev >= 0) {
         if (tele15) noteFire('v38_ev_call');
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       if (tele15) noteFire('v38_ev_fold');
+      // V51: the candidate EVs never read `rand` (only the final mixed pick
+      // does), so a constant asks the same question without touching the stream.
+      foldBy51((e) => {
+        const cf = spot38(read38(e), () => 0.5).candidates.find((a) => a.kind === 'call');
+        return cf !== undefined && cf.ev >= 0;
+      });
       return { action: 'fold', thinkTime: 0 };
     }
     if (
@@ -7180,6 +7266,10 @@ export class HorseLogic {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
 
+    foldBy51(
+      (e) =>
+        e + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty
+    );
     return { action: 'fold', thinkTime: 0 };
   }
 

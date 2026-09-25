@@ -157,7 +157,13 @@ describe('LAW: a race that touched nothing names it and waits', () => {
         /drain=\$\{drainWitness\(\)\}/,
         /map=\$\{failedMap\(\)\}/,
         /set=\$\{failedSet\(\)\}/,
-        /rev=/,
+        // The custody this checkpoint retires is named by the tournament id it
+        // captured and the LEASE GENERATION, not by the seat-move authority
+        // revision. #5034 moved that deliberately: the live 8825 stop-retry
+        // loop bumps `rev` every ~5 s without custody moving, so a witness on
+        // it named a term that had not moved. `lease=` is the term that has.
+        /capturedTournament=/,
+        /lease=\$\{describe\(manager\.tournamentLeaseGeneration\)\}/,
       ])
         expect(call, `observedDetail must carry ${term}`).toMatch(term);
       // and NONE of them rides as a key of its own, where the fixed allow-list
@@ -272,9 +278,15 @@ describe('LAW: a race that touched nothing names it and waits', () => {
     });
 
     it('defers a late arrival WITHOUT moving the reserve it arrived late for', () => {
-      // the floor is #5026's and stays: what changes is only the consequence
+      // THE FLOOR IS #5026's AND STAYS: what changes is only the consequence.
+      // It is composed, not a single literal, and both halves are pinned here
+      // because moving either one would move the floor. The guard holds the
+      // 245000ms it must still see at every check; the shell demands that PLUS
+      // the whole 40000ms checkpoint budget at entry, which is the 285000ms
+      // `legacy_checkpoint_countdown` admitted on.
       const guardSource = read('server/scripts/legacy-engine-checkpoint-guard.mjs');
-      expect(guardSource).toContain('const reserveMs = 285000;');
+      expect(guardSource).toContain('const reserveMs = 245000;');
+      expect(read('server/scripts/legacy-engine-checkpoint.sh')).toContain('reserve=245000+40000');
       expect(
         deferrableCheckpointRefusal(
           withReceipt((d) => {

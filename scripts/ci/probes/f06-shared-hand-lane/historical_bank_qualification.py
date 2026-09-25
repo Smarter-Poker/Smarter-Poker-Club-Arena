@@ -68,6 +68,11 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             accepted=json.loads((root/'scripts/ci/probes/f06-shared-hand-lane/historical-pending-accepted.json').read_text())
             for key,table in [('history','hand_history'),('atomic','hand_atomic_commits'),('key','settlement_idempotency_keys'),('settlement','ca_settlements')]:
                 run('historical-pending-accepted-'+key,"INSERT INTO "+table+" SELECT * FROM jsonb_populate_record(NULL::"+table+",$json$"+json.dumps(accepted[key])+"$json$::jsonb);")
+            # Production registrations carry the elimination outcome columns the
+            # transfer guard now reads (chip_count, prize, position, eliminated_at,
+            # elimination_sequence); the native table gets them before attestation
+            # so the attested rows and the live rows carry the same keys.
+            run('historical-registration-outcome-schema',"ALTER TABLE tournament_players ADD COLUMN chip_count numeric DEFAULT 0,ADD COLUMN prize numeric DEFAULT 0,ADD COLUMN position integer,ADD COLUMN eliminated_at timestamptz,ADD COLUMN elimination_sequence bigint;UPDATE tournament_players SET chip_count=chips;")
             run('historical-move-support-schema',"ALTER TABLE table_seats ALTER COLUMN id SET DEFAULT gen_random_uuid();ALTER TABLE table_seats ADD COLUMN leave_pending boolean,ADD COLUMN is_sitting_out boolean,ADD COLUMN is_away boolean,ADD COLUMN sit_out_at timestamptz,ADD COLUMN scheduled_leave_hands integer,ADD COLUMN player_id uuid,ADD COLUMN member_id uuid,ADD COLUMN horse_id uuid,ADD COLUMN auto_rebuy boolean,ADD COLUMN time_bank_remaining numeric,ADD COLUMN time_bank_uses_remaining integer,ADD COLUMN entry_hold jsonb,ADD COLUMN entry_post_agreed boolean;")
             door=(root/'supabase/migrations/20260910051447_the_seat_move_door_the_engine_calls_exists.sql').read_text()
             start=door.index('CREATE TABLE public.tournament_seat_exit_authorizations (');end=door.index('ALTER TABLE public.tournament_seat_exit_authorizations',start)
@@ -126,6 +131,21 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-never-reserved-install','BEGIN;\n'+never+'\nCOMMIT;')
             run('historical-never-reserved-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)');",
                 'smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb) 5422e7f73fdbdd34bf73d46e514e844e 23d15f8c833cf1d3ef6737cb9c758964')
+            # Production then applies 20260925130323, which replaces the retired
+            # origin transfer guard with the byte-exact 20260919024642 text carrying
+            # one relaxed comparison: for registrations only, a stored playing row
+            # with chips=0 and chip_count=0 may match a live eliminated row that is
+            # identical in every field except status, a positive integer position,
+            # eliminated_at and elimination_sequence (the Afternoon 615783bf bust of
+            # an already-zero stack recorded after attestation). Its pre-image refuses
+            # unless the installed body is exactly 62d8d93f..., which this clone
+            # holds after the historical install, so the whole transaction is
+            # applied as written: pre-image, CREATE OR REPLACE, post-image.
+            regbust=(root/'supabase/migrations/20260925130323_a_bust_of_a_zero_stack_recorded_after_attestation_is_the_sam.sql').read_text()
+            regbust=regbust[regbust.index('DO $regbust_preimage$'):regbust.index('END $regbust_postimage$;')+len('END $regbust_postimage$;')]
+            run('historical-registration-bust-install','BEGIN;\n'+regbust+'\nCOMMIT;')
+            run('historical-registration-bust-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_retired_origin_transfer(uuid,uuid,jsonb,jsonb)');",
+                'smarter_private.f06_retired_origin_transfer(uuid,uuid,jsonb,jsonb) ce9c8da18aa4b596b62cc436fd22348d 61bd389d3c261ee6422a9e2336c58e89')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -167,6 +187,47 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             red="UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines,0,bank_custody,time_bank_metadata}','[[\"lost-user\",{}]]') WHERE i=1401;"
             probe('historical-red-before',old+service+red+prepare,error='ORIGINAL_EVIDENCE_MISSING')
             run('historical-usage-before',"SELECT jsonb_agg(to_jsonb(u) ORDER BY user_id) FROM vip_feature_usage_monthly u;")
+            # The installed transfer guard, through the prepare RPC on 1402, whose
+            # attested registrations hold exactly one playing zero-stack row. The
+            # engine's recording of that bust after attestation (status eliminated,
+            # a position, an eliminated_at, an elimination_sequence; chips, chip_count,
+            # prize and seat unchanged) is admitted; the same edit on a live stack,
+            # any money or seat difference, a bust without its position or
+            # eliminated_at, a registration added, removed or swapped, and a changed
+            # original operation still refuse. The roster source guard is disabled
+            # inside each rolled-back probe only to write the row the engine wrote.
+            zero="(SELECT id FROM tournament_players WHERE tournament_id=fixture_origin_t(1402) AND status='playing' AND chips=0)"
+            run('historical-registration-one-attested-zero',"SELECT count(*) FROM tournament_players WHERE tournament_id=fixture_origin_t(1402) AND status='playing' AND chips=0 AND chip_count=0 AND prize=0 AND position IS NULL AND eliminated_at IS NULL AND elimination_sequence IS NULL;",'1')
+            unguard="ALTER TABLE tournament_players DISABLE TRIGGER a00_f06_source_roster;"
+            def bust(where=zero,extra='',position='12',eliminated_at="'2026-09-18T22:12:05.712905+00'"):
+                return f"UPDATE tournament_players SET status='eliminated',position={position},eliminated_at={eliminated_at},elimination_sequence=151476{extra} WHERE id={where};"
+            prepare_1402="SELECT (fn_f06_prepare_mixed_manager_custody(md5('origin-transfer1402')::uuid,fixture_origin_t(1402),(fixture_origin_c(1402)->>'generation')::uuid,md5('origin-successor1402')::uuid,(SELECT local_proof FROM fixture_origin_inputs WHERE i=1402),NULL))->'receipt';"
+            origin=runpy.run_path(str(root/'scripts/ci/build-f06-retired-origin.py'))
+            strict=origin['definition']((root/origin['AUTHORITY']).read_text(),'smarter_private.f06_retired_origin_transfer','$$').replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1)
+            probe('historical-registration-bust-red-before',strict+service+unguard+bust()+prepare_1402,error='F06_RETIRED_CANONICAL_CHANGED: registrations')
+            probe('historical-registration-bust-admitted',service+unguard+bust()+prepare_1402,'null')
+            probe('historical-registration-unchanged-admitted',service+prepare_1402,'null')
+            live="(SELECT id FROM tournament_players WHERE tournament_id=fixture_origin_t(1402) AND status='playing' AND chips>0 ORDER BY id LIMIT 1)"
+            for label,change in [
+                ('live-stack',bust(live)),
+                ('chips',bust(extra=',chips=1')),
+                ('chip-count',bust(extra=',chip_count=1')),
+                ('prize',bust(extra=',prize=1')),
+                ('seat',bust(extra=',seat_number=9')),
+                ('no-position',bust(position='NULL')),
+                ('zero-position',bust(position='0')),
+                ('no-eliminated-at',bust(eliminated_at='NULL')),
+                ('still-playing',f"UPDATE tournament_players SET position=12 WHERE id={zero};"),
+                ('added',f"INSERT INTO tournament_players(id,tournament_id,table_id,user_id,seat_number,chips,status) SELECT gen_random_uuid(),tournament_id,table_id,gen_random_uuid(),9,0,'playing' FROM tournament_players WHERE id={zero};"),
+                ('removed',f"DELETE FROM tournament_players WHERE id={zero};"),
+                ('swapped',f"WITH gone AS (DELETE FROM tournament_players WHERE id={zero} RETURNING tournament_id,table_id) INSERT INTO tournament_players(id,tournament_id,table_id,user_id,seat_number,chips,status) SELECT gen_random_uuid(),tournament_id,table_id,gen_random_uuid(),9,0,'playing' FROM gone;"),
+            ]:probe('historical-registration-refuses-'+label,service+unguard+change+prepare_1402,error='F06_RETIRED_CANONICAL_CHANGED: registrations')
+            # The seven other keys keep the strict whole-row comparison: with the
+            # admitted bust in place, one chip on one live seat still refuses.
+            probe('historical-registration-bust-refuses-changed-seat',service+unguard+bust()+"UPDATE table_seats SET stack=stack+1 WHERE id=(SELECT id FROM table_seats WHERE table_id IN(SELECT id FROM tables WHERE tournament_id=fixture_origin_t(1402)) AND left_at IS NULL ORDER BY id LIMIT 1);"+prepare_1402,error='F06_RETIRED_CANONICAL_CHANGED: seats')
+            # A changed original operation is refused before the transfer guard is
+            # reached, by the mixed snapshot's own reservation check.
+            probe('historical-registration-bust-refuses-late-changed-operation',service+unguard+bust()+"UPDATE smarter_private.f06_operations SET revision=revision+1 WHERE tournament_id=fixture_origin_t(1402);"+prepare_1402,error='F06_MIXED_RESERVATION_CHANGED')
         if name.startswith('retired-origin-completion-reply-lost-'):
             i=int(name.rsplit('-',1)[1])
             value=run('historical-materialized-'+str(i),f"SELECT count(*)=jsonb_array_length(fixture_history_scope({i})->'occupants')+jsonb_array_length(fixture_history_scope({i})->'pending_arrivals') AND bool_and((b.value->>'remainingSeconds')::integer=40 AND b.value->>'unlimitedActivations'='true') FROM engine_presence_parked p CROSS JOIN LATERAL jsonb_each(p.time_bank_snapshot->'players') b WHERE p.table_id IN(SELECT id FROM tables WHERE tournament_id=fixture_origin_t({i}));",'t')
@@ -182,8 +243,8 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     # The publisher's pre-intent read-only comparison pins this installed
     # 29-function catalogue, the one production holds after this migration, the
     # reviewed-noon-hand abort migration 20260921040823, the legacy checkpoint
-    # reserve migration 20260921155216 and the never-reserved witness migration
-    # 20260924225647.
+    # reserve migration 20260921155216, the never-reserved witness migration
+    # 20260924225647 and the registration bust migration 20260925130323.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

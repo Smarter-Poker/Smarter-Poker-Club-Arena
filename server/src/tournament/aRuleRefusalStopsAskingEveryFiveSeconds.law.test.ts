@@ -207,10 +207,7 @@ describe('the manager asks with that delay and alerts once', () => {
     // The window is bounded by the next member rather than a byte count: the
     // previous +700 was already smaller than the comment that documents this
     // branch, which is how a pin starts failing for prose (10.86 rule 4).
-    const start = MANAGER.indexOf('protected async alertFinishRefusalOnce(');
-    expect(start).toBeGreaterThan(-1);
-    const after = MANAGER.indexOf('BUST_REFUSAL_SKIP_AFTER', start);
-    const helper = MANAGER.slice(start, after > start ? after : start + 4000);
+    const helper = sliceMethod(MANAGER, 'protected async alertFinishRefusalOnce(');
     expect(helper).toContain('await raiseFinancialAlert(');
     expect(helper).toContain('if (isNew)');
     // and it is still the ONLY awaited alert inside the helper

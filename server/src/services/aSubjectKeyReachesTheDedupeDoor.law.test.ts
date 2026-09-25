@@ -32,6 +32,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const SRC = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
@@ -53,9 +54,11 @@ describe('a subject key reaches the dedupe door', () => {
   });
 
   it('a finish refusal is keyed by tournament AND reason, not by the attempt', () => {
-    const start = MANAGER.indexOf('protected async alertFinishRefusalOnce(');
-    expect(start).toBeGreaterThan(-1);
-    const body = MANAGER.slice(start, start + 2600);
+    // Bounded by the METHOD, not by a byte count. A fixed window is how a pin
+    // starts failing for prose: the sibling law in
+    // aRuleRefusalStopsAskingEveryFiveSeconds pinned this same helper with a
+    // +700 slice that was already shorter than the comment explaining it.
+    const body = sliceMethod(MANAGER, 'protected async alertFinishRefusalOnce(');
     // The key must name the subject and the reason together: a different
     // refusal still earns its own alert, the same one stops repeating.
     expect(body).toMatch(/\$\{String\(subject\)\}:\$\{reasonForKey \?\? 'unknown'\}/);
@@ -65,8 +68,7 @@ describe('a subject key reaches the dedupe door', () => {
   it('a finish refusal records WHAT was refused', () => {
     // 14,388 of the 15,426 rows carried no error and no error_name at all,
     // while asserting proven_refusal: true. CLAUDE.md 10.86 rule 1.
-    const start = MANAGER.indexOf('protected async alertFinishRefusalOnce(');
-    const body = MANAGER.slice(start, start + 2600);
+    const body = sliceMethod(MANAGER, 'protected async alertFinishRefusalOnce(');
     expect(body).toMatch(/refusal_reason: reasonForKey/);
   });
 

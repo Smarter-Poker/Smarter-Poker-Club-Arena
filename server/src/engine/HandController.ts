@@ -2045,6 +2045,27 @@ export class HandController {
   private handCompleted = false;
 
   /**
+   * CASH POT CONSERVATION FIX (2026-09-25): the real winners of THIS hand,
+   * captured the moment completeHandInner() actually credits them to
+   * player.stack. completeHandInner() keeps working (display-only per-pot
+   * scaling, board-breakdown grouping) after that credit, purely to build
+   * the WINNERS event payload — and if any of that later, cosmetic work
+   * throws, completeHand()'s catch handler used to emit `WINNERS winners:
+   * []` unconditionally, discarding a winner who had already been paid.
+   * ServerTableEngineHandEvents only writes `currentHandWinners` when an
+   * emitted WINNERS event is non-empty (the RIT skip-distribution path
+   * depends on that gate to keep its own pre-set winner), so an empty
+   * winners array here was never just "not shown" — it was the exact
+   * winners array persisted to hand_history, permanently. Four production
+   * hands (2026-09-11, 09-19, 09-23, 09-24 — all uncontested "everyone
+   * folds" wins) were settled this way: the pot was correctly paid, but
+   * hand_history recorded no winner and no table_id-bearing row of truth.
+   * Reset at the top of every completeHandInner() call so a stale winner
+   * from an earlier hand can never leak into a later hand's crash fallback.
+   */
+  private creditedWinnersAwaitingEmit: Winner[] = [];
+
+  /**
    * ═══ RUNOUT CALLS ARE ONLY LEGAL DURING A RUNOUT (2026-08-31) ═══════════
    *
    * continueRunout, dealNextStreet, finalizeRunout, markFlopSeen and
@@ -2474,7 +2495,9 @@ export class HandController {
     } catch (err) {
       console.error('[HandController] completeHand threw - force-ending hand:', err);
       try {
-        this.emit({ type: 'WINNERS', winners: [] } as never);
+        // A winner already credited to a player's stack before the throw is
+        // reported here, not discarded — see creditedWinnersAwaitingEmit.
+        this.emit({ type: 'WINNERS', winners: this.creditedWinnersAwaitingEmit } as never);
       } catch {
         /* keep going — the HAND_COMPLETE below is the load-bearing emit */
       }
@@ -2489,6 +2512,9 @@ export class HandController {
   }
 
   private completeHandInner(): void {
+    // A hand that has not yet credited anyone owes its crash fallback an
+    // empty array, not a previous hand's winners.
+    this.creditedWinnersAwaitingEmit = [];
     // Return any uncalled bet to the bettor before rake / pot formation.
     this.returnUncalledBet();
 
@@ -2838,6 +2864,11 @@ export class HandController {
     // AUDIT V6: snap stacks after settlement — the payout cents are exact,
     // but += on binary floats is where cross-hand drift was born.
     this.snapChips();
+    // The pot is now genuinely paid. Everything below this line is display
+    // formatting for the WINNERS event (per-pot scaling, board grouping) —
+    // if any of it throws, completeHand()'s catch handler must still be able
+    // to report the winner who already has the chips.
+    this.creditedWinnersAwaitingEmit = adjustedWinners;
 
     // SHOWDOWN POLISH 2026-08-25 (review fix): scale the per-pot display
     // shares by the same global rake ratio the merged winners were scaled

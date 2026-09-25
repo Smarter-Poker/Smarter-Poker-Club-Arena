@@ -267,7 +267,15 @@ describe('the axes follow the flight', () => {
     const twoAfterOneFrame = at(tick(container, 200), 'y1');
     for (let now = 180; now <= 3000; now += 40) frame(now);
     const twoSettled = at(tick(container, 200), 'y1');
-    expect(labels(container, '[data-tick-label]')).toEqual(['1.00x', '2.00x', '5.00x', '10.00x']);
+    // Every line the climb needs is drawn; 2.00x sits too close to the launch
+    // line on this glass to print its label as well (phase 2, below).
+    expect(shown(container, '[data-tick]').map((n) => n.getAttribute('data-tick'))).toEqual([
+      '100',
+      '200',
+      '500',
+      '1000',
+    ]);
+    expect(labels(container, '[data-tick-label]')).toEqual(['1.00x', '5.00x', '10.00x']);
     // As the axis grows the 2.00x line slides down towards the launch line.
     expect(twoSettled).toBeGreaterThan(twoAtStart);
     // One 40ms frame moves it part of the way, never all of it.
@@ -652,5 +660,109 @@ describe('the cap and the would-have-gone plate', () => {
     frame(300);
     expect(plate.dataset.shown).toBe('true');
     expect(CSS).toContain(".reveal[data-reduced='true'][data-shown='true']");
+  });
+});
+
+describe('a round booked at the ceiling is crowned, not crashed (phase 2)', () => {
+  it('turns the frame gold once the replay reaches the cap, reads the cap on the cash mark, and pins no crash', () => {
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={2500}
+        cashoutCents={2500}
+        crashCents={4000}
+      />
+    );
+    const frameNode = container.querySelector('[data-phase="cashed"]') as HTMLElement;
+    frame(100);
+    frame(2000);
+    expect(frameNode.dataset.max).toBe('false');
+    for (let now = 2040; now <= 3600; now += 40) frame(now);
+    expect(frameNode.dataset.max).toBe('true');
+    expect(labels(container, '[data-marker-label="cash"]')).toEqual(['Max 25.00x']);
+    // The cap line still draws, but the cash mark already says Max: one label, not two.
+    expect(shown(container, '[data-line="cap"]')).toHaveLength(1);
+    expect(labels(container, '[data-line-label="cap"]')).toEqual([]);
+    expect(shown(container, '[data-marker="crash"]')).toHaveLength(0);
+    expect(container.querySelector('[data-reveal="would-have-gone"]')).toHaveTextContent(
+      'Booked At The 25.00x Max'
+    );
+    expect(CSS).toContain(".frame[data-max='true']::before");
+    expect(CSS).toContain(".frame[data-max='true'] .cap");
+    expect(CSS).toContain('@keyframes maxBreathe');
+    expect(CSS).toContain(".frame[data-max='true'][data-reduced='true']::before");
+  });
+
+  it('never marks an ordinary booking or a crash as the ceiling', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={950}
+      />
+    );
+    for (let now = 100; now <= 3600; now += 40) frame(now);
+    expect((container.querySelector('[data-phase]') as HTMLElement).dataset.max).toBe('false');
+    expect(shown(container, '[data-marker="crash"]')).toHaveLength(1);
+    rerender(<CrashCurve {...base} capCents={2500} phase="crashed" finalCents={150} />);
+    for (let now = 3640; now <= 5000; now += 40) frame(now);
+    expect((container.querySelector('[data-phase]') as HTMLElement).dataset.max).toBe('false');
+  });
+});
+
+describe('the axis labels give way before they overprint (phase 2)', () => {
+  it('keeps every tick line and hides only a label that would sit on the one above it', () => {
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        height={200}
+        phase="open"
+        replayElapsedMs={secondsTo(2400)}
+        tickerCents={2400}
+      />
+    );
+    for (let now = 100; now <= 3000; now += 40) frame(now);
+    // On a 200px glass with the axis at 27x, 1.00x and 2.00x are a few pixels apart.
+    const one = tick(container, 100),
+      two = tick(container, 200);
+    expect(one.getAttribute('visibility')).not.toBe('hidden');
+    expect(two.getAttribute('visibility')).not.toBe('hidden');
+    expect(Math.abs(at(one, 'y1') - at(two, 'y1'))).toBeLessThan(14);
+    const oneLabel = container.querySelector('[data-tick-label="100"]')!;
+    const twoLabel = container.querySelector('[data-tick-label="200"]')!;
+    // The launch line always keeps its label; the one crowding it gives way.
+    expect(oneLabel.getAttribute('visibility')).toBe('visible');
+    expect(twoLabel.getAttribute('visibility')).toBe('hidden');
+    // Higher up there is room: 10.00x and 20.00x both print.
+    expect(labels(container, '[data-tick-label]')).toEqual(
+      expect.arrayContaining(['10.00x', '20.00x'])
+    );
+  });
+});
+
+describe('the frame is alive between rounds (phase 2)', () => {
+  it('breathes its launch line and LEDs while idle, opacity only, and rests them under reduced motion', () => {
+    const { container } = render(<CrashCurve {...base} capCents={2500} phase="idle" />);
+    expect(container.querySelector('[data-attract="launch-line"]')).not.toBeNull();
+    expect(CSS).toContain(".frame[data-phase='idle'] .launchLine");
+    expect(CSS).toContain(".frame[data-phase='idle']::after");
+    expect(CSS).toContain('@keyframes launchBreathe');
+    expect(CSS).toContain('@keyframes ledBreathe');
+    expect(CSS).toContain(".frame[data-reduced='true'] .launchLine");
+    expect(CSS).toContain(".frame[data-phase='idle'][data-reduced='true']::after");
+    const breathe = CSS.slice(
+      CSS.indexOf('@keyframes launchBreathe'),
+      CSS.indexOf('}', CSS.indexOf('@keyframes launchBreathe') + 60)
+    );
+    expect(breathe).not.toContain('transform');
   });
 });

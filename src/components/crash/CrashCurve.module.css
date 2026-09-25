@@ -149,7 +149,7 @@
 
 .capLine text {
   fill: #ffd700;
-  text-anchor: middle;
+  text-anchor: end;
 }
 
 .autoLine line {
@@ -468,4 +468,141 @@
   z-index: 6;
   margin: 0;
   text-align: center;
+}
+
+/* BOOKED AT THE CEILING (mobile spins, phase 2). A round that books at the
+   25.00x max is the best thing that can happen on this glass, and it says so:
+   the frame's edge turns gold and breathes, the Max chip lights up, the hero
+   goes gold with a slow sheen, and the plate is gold-edged. The loop sets
+   data-max on the frame once the replay has reached the cap. Reduced motion
+   keeps every colour and drops the breathing and the sheen. */
+.frame[data-max='true']::before {
+  box-shadow:
+    inset 0 0 0 2px rgb(255 215 0 / 70%),
+    inset 0 0 46px rgb(0 0 0 / 40%),
+    inset 0 0 72px rgb(255 215 0 / 18%);
+  animation: maxBreathe calc(1.8s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+.frame[data-max='true'] .cap {
+  color: #f4f7fb;
+  background: linear-gradient(180deg, rgb(120 90 0 / 92%), rgb(60 44 0 / 94%));
+  box-shadow:
+    0 0 0 1px rgb(255 215 0 / 85%),
+    inset 0 1px 0 rgb(255 246 208 / 30%),
+    0 0 18px rgb(255 215 0 / 45%),
+    0 6px 16px rgb(0 0 0 / 55%);
+  animation: maxChip calc(1.2s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+.frame[data-max='true'] .ticker {
+  color: #ffd700;
+  text-shadow:
+    0 0 24px rgb(255 215 0 / 70%),
+    0 0 56px rgb(255 215 0 / 35%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.frame[data-max='true'] .reveal {
+  box-shadow:
+    0 0 0 1px rgb(255 215 0 / 80%),
+    inset 0 1px 0 rgb(255 246 208 / 22%),
+    0 0 26px rgb(255 215 0 / 30%),
+    0 14px 30px rgb(0 0 0 / 60%);
+}
+
+.frame[data-max='true'] .revealTitle {
+  color: #ffd700;
+}
+
+@keyframes maxBreathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes maxChip {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.frame[data-max='true'][data-reduced='true']::before,
+.frame[data-max='true'][data-reduced='true'] .cap {
+  animation: none;
+}
+
+/* THE IDLE ATTRACT (mobile spins, phase 2). Between rounds the frame is not
+   dead: the launch line breathes light blue and the LED corners breathe, both
+   opacity only, so the glass looks live while the player picks a stake. The
+   jet's own hover is drawn by the scene. */
+.frame[data-phase='idle'] .launchLine {
+  opacity: 1;
+}
+
+.launchLine {
+  position: absolute;
+  right: 6%;
+  bottom: 14%;
+  left: 6%;
+  height: 2px;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(69 173 255 / 55%) 20%,
+    rgb(69 173 255 / 55%) 80%,
+    transparent
+  );
+  box-shadow: 0 0 14px rgb(69 173 255 / 45%);
+  animation: launchBreathe calc(2.4s * var(--animation-speed, 1)) ease-in-out infinite;
+  transition: opacity 400ms ease;
+}
+
+@keyframes launchBreathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.frame[data-reduced='true'] .launchLine {
+  animation: none;
+  opacity: 0.6;
+}
+
+.frame[data-phase='idle']::after {
+  animation: ledBreathe calc(2.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes ledBreathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.frame[data-phase='idle'][data-reduced='true']::after {
+  animation: none;
 }

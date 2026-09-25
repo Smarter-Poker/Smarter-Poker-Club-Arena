@@ -42,6 +42,8 @@ const MINES = Number(CHOICE_MODE.mines);
 const MINE_PICKS = 25 - MINES;
 /** Every crash round is capped at 25.00x, as the server seals it. */
 const CRASH_CAP = 2500;
+/** The live curve: e^(0.10 t), the 25x ceiling in about 32 seconds (migration 20260925215112). */
+const CRASH_K = 0.1;
 function roll48() {
   const a = crypto.getRandomValues(new Uint32Array(2));
   return BigInt(a[0]) * 65536n + BigInt(a[1] & 65535);
@@ -122,7 +124,7 @@ export default function DiamondTestPage() {
     if (!open || game !== 'crash') return;
     let frame: number;
     const tick = () => {
-      const cents = crashMultiplierCents(0.04, performance.now() - started.current, CRASH_CAP);
+      const cents = crashMultiplierCents(CRASH_K, performance.now() - started.current, CRASH_CAP);
       setLiveCents(cents);
       if (cents >= CRASH_CAP && crash.current >= CRASH_CAP) finish(chips * 25, 'cashed');
       else if (cents >= crash.current) finish(minimum, 'lost');
@@ -212,7 +214,7 @@ export default function DiamondTestPage() {
   const cash = () => {
     if (!open) return;
     if (game === 'crash') {
-      const cents = crashMultiplierCents(0.04, performance.now() - started.current, CRASH_CAP);
+      const cents = crashMultiplierCents(CRASH_K, performance.now() - started.current, CRASH_CAP);
       setLiveCents(cents);
       finish(
         cents >= crash.current && crash.current < CRASH_CAP ? minimum : (chips * cents) / 100,
@@ -386,7 +388,7 @@ export default function DiamondTestPage() {
               width={width}
               height={Math.max(280, Math.min(560, width * 0.7))}
               phase={phase === 'lost' ? 'crashed' : phase}
-              growthK={0.04}
+              growthK={CRASH_K}
               capCents={CRASH_CAP}
               startedAtLocalMs={open ? started.current : null}
               finalCents={phase === 'lost' ? crash.current : liveCents}

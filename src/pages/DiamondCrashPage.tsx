@@ -508,7 +508,7 @@ function DiamondCrashGame() {
   const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet), [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
   const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 2500;
-  const growthK = cfg?.growth_k ?? 0.12;
+  const growthK = cfg?.growth_k ?? 0.1;
   const autoPresets = useMemo(
     () => AUTO_PRESETS.filter((t) => t === 0 || t <= capCents),
     [capCents]

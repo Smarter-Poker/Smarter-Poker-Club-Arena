@@ -115,6 +115,14 @@ for (const [width, height, dsf] of [
     } else {
       await page.waitForTimeout(3000);
       await shot(page, width, 'settled');
+      // The prize reveal covers the scene once a round settles by itself (a
+      // Crash round that reached its ceiling, say); dismiss it for the scene.
+      const proceed = page.getByRole('button', { name: 'Continue', exact: true });
+      if (await proceed.isVisible().catch(() => false)) {
+        await proceed.click();
+        await page.waitForTimeout(600);
+        await shot(page, width, 'settled-scene');
+      }
     }
   }
   await context.close();

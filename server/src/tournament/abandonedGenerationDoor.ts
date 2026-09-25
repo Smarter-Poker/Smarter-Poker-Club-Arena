@@ -35,12 +35,42 @@ import { f06AbandonedGenerationClosuresTotal } from '../observability/engineInst
  * at, which is why the manager asks it during adoption, BEFORE it reads the
  * clock, and reads the event again when the door committed.
  *
- * What this is not: a sweep, a watcher or a retry loop. It runs only inside
- * the adoption the new generation was already performing, once per dead
- * generation it found blocking one of its tables. A refusal the door names
- * (a roster that moved, a custody transfer in progress) is a rule, not a
- * blip: it is reported, and the table stays exactly as blocked as it was
- * before this change.
+ * What this is not: a sweep, a watcher or a retry loop. It runs inside work
+ * the generation was already performing - the adoption, and the table
+ * admission that is already being refused - once per dead generation it finds
+ * blocking one of its tables. A refusal the door names (a roster that moved, a
+ * custody transfer in progress) is a rule, not a blip: it is reported, and the
+ * table stays exactly as blocked as it was before this change.
+ *
+ * ADOPTION WAS THE WRONG AND ONLY MOMENT (2026-09-25). Asking during adoption
+ * is right, but it was the ONLY ask, and `resumeLifecycle` runs exactly once
+ * per manager: on the adoption path a manager holds its event's lease for the
+ * rest of its life and never resumes again. So every way that single ask could
+ * end without a decision - a freeze that outlasted the wait, a table state
+ * that could not be read, a transient refusal that used up its three attempts
+ * - left the table blocked for the whole life of that manager, and the next
+ * ask waited for the next engine release.
+ *
+ * Measured on the 15:29 cutover to 778075b4: 526 tables in 388 RUNNING events
+ * held a reserved permit of a dead generation, carrying 2,061 seated players
+ * and 14,210,568 chips. All 388 events were adopted between 15:42:08 and
+ * 15:44:33; the adoption read every table (1,411 fn_f06_hand_number_state
+ * calls, all HTTP 200, returning a well-formed `hand_permit_unresolved` whose
+ * generation was not the lease holder's); and the door itself was never
+ * requested once - zero /rpc/fn_f06_abort_abandoned_generation calls, and zero
+ * on every label of poker_f06_abandoned_generation_closures_total. Probed in a
+ * rolled-back transaction the same day, the door decided 7 of 8 sampled
+ * generations cleanly, crediting nothing. The door was right; the single
+ * moment it was asked in was not.
+ *
+ * So the ask now also happens where the refusal is actually MET: in the table
+ * admission that reads `hand_permit_unresolved` and has been throwing
+ * `f06_engine_admission_unproven` every fifteen seconds since. That is the
+ * live path for that table, on the event that is already blocked, at the
+ * moment it is blocked - not a job that comes along afterwards (CLAUDE.md
+ * 10.12). The receipt is derived from (event, dead generation), so the second
+ * ask replays the first instead of minting anything, and a rule the door names
+ * is asked once and not again by that manager.
  */
 
 export type AbandonedGenerationOutcome = 'aborted' | 'replayed' | 'already_closed';
@@ -154,12 +184,32 @@ export function abandonedGenerationReceiptId(tournamentId: string, generation: s
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function count(outcome: 'aborted' | 'replayed' | 'already_closed' | 'refused' | 'transient'): void {
+export type AbandonedGenerationCount =
+  | 'aborted'
+  | 'replayed'
+  | 'already_closed'
+  | 'refused'
+  | 'transient'
+  /** The maintenance freeze outlasted the wait: the door was never reached. */
+  | 'frozen'
+  /** The table's own state could not be read, so nothing was decided about it. */
+  | 'unreadable';
+
+/**
+ * Every end of an ask is a number, including the ends that never reach the
+ * door. `frozen` and `unreadable` were silent until 2026-09-25, and silence
+ * reads identically to "there was nothing to decide" (CLAUDE.md 10.86 rule 1).
+ */
+export function countAbandonedGenerationOutcome(outcome: AbandonedGenerationCount): void {
   try {
     f06AbandonedGenerationClosuresTotal.inc(1, { outcome });
   } catch {
     /* a metric never changes a custody decision */
   }
+}
+
+function count(outcome: AbandonedGenerationCount): void {
+  countAbandonedGenerationOutcome(outcome);
 }
 
 /**

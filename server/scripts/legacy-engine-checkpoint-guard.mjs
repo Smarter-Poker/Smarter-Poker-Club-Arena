@@ -3445,7 +3445,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          So a move inside the hour is asked ONE more question, from rows: has
          `hand_history` recorded a hand at the destination table, after the
          move executed, with that player in it? One row is enough. No row, an
-         error or an unreadable answer keeps the refusal exactly as it was. */
+         error or an unreadable answer keeps the refusal exactly as it was.
+
+         The containment value is sent as a JSON STRING. postgrest-js writes an
+         array argument as a Postgres array literal (`cs.{...}`), so an array of
+         objects reached PostgREST as invalid JSON and every read answered
+         22P02 (release run 36081290135, 2026-09-25 01:24 UTC:
+         failedCheck proveBanksHeldNothing.dealtSinceRead, error=22P02). A
+         string is passed through verbatim. */
       const claimableSince = Date.now() - 3600000;
       const inWindow = arrivals.filter((arrival) => {
         const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
@@ -3460,7 +3467,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               .select('id')
               .eq('table_id', arrival.to_table_id)
               .gt('created_at', executed)
-              .contains('players', [{ userId: arrival.player_id }])
+              .contains('players', JSON.stringify([{ userId: arrival.player_id }]))
               .limit(1)
           : Promise.resolve({ data: [], error: null });
       }))).entries()) {

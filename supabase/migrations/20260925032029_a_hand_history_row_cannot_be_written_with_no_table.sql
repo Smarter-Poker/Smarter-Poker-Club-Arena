@@ -72,6 +72,17 @@
 -- nobody to make whole. Leaving them in place only keeps re-triggering the
 -- CashPotConservation detector that correctly found them.
 --
+-- CI HARDENING (2026-09-25, second commit): check-definer-authorization.mjs
+-- judges only this branch's migration text, never the live catalog, so a
+-- CREATE OR REPLACE that states no grant reads as the Postgres default
+-- (EXECUTE held by PUBLIC) even though production's actual grant already
+-- restricts this function to `postgres` alone. Declaring that restriction
+-- explicitly - rather than relying on a grant this file never states - is
+-- the check's own preferred remedy (nobody in a browser should call this;
+-- it is reachable only from inside the guarded settlement chain or from a
+-- postgres-authenticated session by name) and costs nothing live, since it
+-- only repeats the access this function already has today.
+--
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
@@ -149,6 +160,15 @@ COMMENT ON FUNCTION public.fn_ca_insert_hand_with_awards(jsonb, jsonb) IS
   'accepted - this function has never validated table_id against '
   'public.tables, only the settlement RPCs above it do that for the real '
   'path.';
+
+-- Declared, not merely inherited: this function is reachable only from
+-- inside the guarded settlement chain (which calls it as the same SECURITY
+-- DEFINER context) or from a session logged in as `postgres` by name (the
+-- bomb-guard test's own probe pattern). No browser role - PUBLIC, anon or
+-- authenticated - has ever needed EXECUTE here, and this repeats that
+-- restriction explicitly rather than leaving it to a grant this migration
+-- never states.
+REVOKE ALL ON FUNCTION public.fn_ca_insert_hand_with_awards(jsonb, jsonb) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- PROVE IT, against the real function, then roll every probe back.

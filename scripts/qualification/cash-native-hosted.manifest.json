@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 157613,
-      "sha256": "c58b3e664af56ef0bf88998de1108f04ade61a0416f81cc49e0cdf2cae78988d"
+      "bytes": 157847,
+      "sha256": "2513e065ffc6a62abaa852b089f1763c9b7e8793c974de1275bab11a849def6f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -317,6 +317,15 @@
       ".github/workflows/ci.yml": {
         "bytes": 156053,
         "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
+      }
+    }
+  },
+  "multiDayGuardR6Integration": {
+    "reason": "Multi-day guard admits a sealed plan (R6, migration 20260924232849): ci.yml gains the 'Multi-day guard admits a badge only with a sealed plan and keeps the structure columns refused (R6)' owned-PostgreSQL step (scripts/ci/test-multi-day-guard-r6.py against PostgreSQL 17) beside the multi-day foundation and stage view steps, additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 157613,
+        "sha256": "c58b3e664af56ef0bf88998de1108f04ade61a0416f81cc49e0cdf2cae78988d"
       }
     }
   }

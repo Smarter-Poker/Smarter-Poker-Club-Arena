@@ -293,17 +293,28 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
     expect(ok.stdout.trim()).toMatch(/^\d+$/);
   });
 
-  it('exit 75 means nothing was attempted, and is only reachable above the durable intent', () => {
+  it('the UNCONDITIONAL defer is only ever reachable above the durable intent', () => {
+    // NARROWED 2026-09-21 (see tests/a-race-that-touched-nothing-names-it-and-
+    // waits.law.test.ts). This pin used to read "below the intent, only `die`",
+    // and that sentence is no longer true: there is now exactly ONE further
+    // deferral below it, for a receipt that PROVES the guard touched nothing.
+    // What this still pins, unchanged, is the rule that mattered - `defer`
+    // itself, the unconditional one that fires on a plain shell check, can
+    // never be reached once the one-shot intent exists.
     expect(checkpointShell).toContain(
       'defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }'
     );
     const intentAt = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
     expect(intentAt).toBeGreaterThan(0);
-    // every `defer` sits ABOVE the O_EXCL intent write; below it, only `die`
     const defers = [...checkpointShell.matchAll(/^\s*.*\|\| defer /gm)].map((m) => m.index!);
     expect(defers.length).toBeGreaterThan(0);
     for (const at of defers) expect(at).toBeLessThan(intentAt);
-    expect(checkpointShell.slice(intentAt)).not.toContain('defer ');
+    // below the intent, `defer` is unreachable and the ONLY deferral is the
+    // proved one, which carries a different name on purpose so neither can be
+    // widened into the other by an edit that never read both.
+    const below = checkpointShell.slice(intentAt);
+    expect(below).not.toMatch(/(?:^|[^_\w])defer(?![_\w])/);
+    expect(below).toContain("defer_proved_not_started 'the fleet moved");
   });
 
   it('the physical probe DEFERS on a short break and writes no intent', () => {

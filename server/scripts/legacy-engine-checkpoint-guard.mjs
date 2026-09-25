@@ -1534,14 +1534,23 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                   ),
               ],
             ]
-              .filter(([, test]) => {
+              .map(([name, test]) => {
+                // Three outcomes, never one (CLAUDE.md 10.86 rule 1). A term
+                // that MOVED names itself. A term that could not be READ is a
+                // different fact - still reported, because an unreadable term
+                // is still suspicious, but it never wears the name of one that
+                // moved, or the next release acts on a finding nobody made.
                 try {
-                  return test();
+                  return test() ? name : null;
                 } catch {
-                  return true;
+                  return `${name}:unreadable`;
                 }
               })
-              .map(([name]) => name);
+              .filter((name) => name !== null);
+            // And the fourth, which matters most: the identity compare said the
+            // capture flipped and every term below still holds, so the cause is
+            // OUTSIDE this list. `none` says that out loud instead of returning
+            // an empty string that reads as "nothing was wrong".
             return flipped.length === 0 ? 'none' : flipped.join(',');
           };
           const failedEngine = () => {

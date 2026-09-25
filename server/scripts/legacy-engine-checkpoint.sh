@@ -12,11 +12,22 @@ die() { echo "[legacy-engine-checkpoint] $*" >&2; exit 1; }
 # break window closed while this entry was still running and NOTHING durable
 # was created - no intent file, no inspector, no write - so the owning
 # transaction may wait for a later certificate and enter again. It is only
-# ever reachable ABOVE the O_EXCL intent write below; once that file exists a
-# retry is forbidden and every remaining path is `die`. CLAUDE.md 10.86 rule 1:
+# ever reachable ABOVE the O_EXCL intent write below. CLAUDE.md 10.86 rule 1:
 # "this attempt arrived late" is a different outcome from "this attempt is
 # unsafe", so it gets its own name and its own code.
 defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
+# BELOW the intent there is exactly ONE further deferral, and it is a different
+# function on purpose so the two can never be confused or widened into each
+# other. `defer` above is unconditional: it fires on a plain shell check having
+# written nothing at all. `defer_proved_not_started` fires only after the guard
+# has RETURNED - inspector closed, complete receipt in hand - saying in its own
+# fields that it refused in preflight on a capture-then-reverify race and
+# touched nothing (`deferrableCheckpointRefusal`, exit 75 from the node
+# helper), AND after this script has proved the intent on disk is byte for byte
+# the one THIS entry wrote and retired it. A disconnect, a partial receipt, a
+# retained inspector or any other reason never reaches it; those are all `die`,
+# and a retry stays forbidden however the helper exited.
+defer_proved_not_started() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
 [ "$#" = 1 ] || die 'expected owning run key'
 RUN_ID="$1"
@@ -134,8 +145,39 @@ print(json.dumps(intent,separators=(",",":")))
 PY
 )"
 
+set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" \
+  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT"
+CHECKPOINT_RC=$?
+set -e
+if [ "$CHECKPOINT_RC" = 75 ]; then
+  # The guard came back, closed its inspector, and reported a capture-then-
+  # reverify refusal at stage `preflight` with attemptedTables 0, completedCalls
+  # 0 and checkpointOutcome not_started. The fleet moved while it was looking.
+  # Nothing was written, so this attempt may stand down and a later break may
+  # enter again - it is one attempt waiting for a window it can act in, not a
+  # retry loop, a sweep or a repair job (CLAUDE.md 10.12).
+  #
+  # The intent was written BEFORE the inspector because a disconnect is unknown.
+  # This is not a disconnect: the helper answered. Retire that intent, and only
+  # this one - compare the exact bytes this entry wrote, never merely the path,
+  # so a file left by any other entry is a `die` and not a licence to retry. The
+  # owning transaction then re-proves the absence from the filesystem itself
+  # before it honours 75 (engine-release-transaction.sh), and that proof is
+  # unchanged: this script does not get to tell it the intent is gone.
+  timeout 5s python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$CHECKPOINT_INTENT" <<'PY' || die 'checkpoint reported a non-acting refusal but its own durable intent could not be retired; refusing a retry'
+import os,sys
+path,intent=sys.argv[1:]
+with open(path,"rb") as handle: on_disk=handle.read()
+if on_disk != (intent+"\n").encode(): raise SystemExit("intent on disk is not the one this entry wrote")
+os.unlink(path)
+fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY)
+try: os.fsync(fd)
+finally: os.close(fd)
+PY
+  defer_proved_not_started 'the fleet moved while the checkpoint was reading it; nothing was attempted and this entry retired its own intent'
+fi
+[ "$CHECKPOINT_RC" = 0 ] \
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
 [ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'

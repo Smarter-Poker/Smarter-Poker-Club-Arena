@@ -2584,6 +2584,88 @@ describe('exact 8825 retained original custody retirement', () => {
       failedCheck: 'server.lifecycleGeneration',
     });
   });
+  /* The capture and all seven registry terms below it run in ONE synchronous
+     turn - no await separates `captureDrainedF06Originals()` from the reads
+     that pin each original - so a term that is false is a standing
+     disagreement between the manager's own map and the process registries,
+     never a capture that went stale. Run 36144951750 refused on exactly this
+     conjunction at stage preflight with attemptedTables 0 and named nothing
+     else, so each term now names itself and says which registry moved. */
+  it('names the fleet registry when a captured original left it', async () => {
+    const f = mixedFixture();
+    const { engine, manager } = f.originals[0];
+    f.server.tableEngines.delete(engine.tableId);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'fleet.tableEngines',
+      failedTable: engine.tableId,
+      failedField: 'drainedF06Originals',
+    });
+    expect(result.observedDetail).toContain(`tournament=${manager.tournamentId}`);
+    expect(result.observedDetail).toContain('fleetSlot=absent');
+    // The manager still holds it, which is why the capture above said nothing
+    // was wrong: the two registries disagree, and the receipt says which.
+    expect(result.observedDetail).toContain('managerSlot=same');
+    expect(result.observedDetail).toContain('owned=true');
+    // How many of this manager's originals are out of step, so the next
+    // release can tell one reaped table from a whole custody handoff.
+    expect(result.observedDetail).toContain('fleetDisagree=1/1');
+    expect(f.receipts.size).toBe(0);
+  });
+  it('refuses and names the fleet registry when another engine holds the slot', async () => {
+    const f = mixedFixture();
+    const { engine } = f.originals[0];
+    const usurper: any = new f.Table(700);
+    f.server.tableEngines.set(engine.tableId, usurper);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'fleet.tableEngines',
+      failedTable: engine.tableId,
+      observed: 'fleet:other',
+      expected: 'fleet:same',
+    });
+    expect(result.observedDetail).toContain('fleetSlot=other');
+    // Nothing is retired on the way out: the usurper keeps the slot and no
+    // custody receipt was written for either tournament.
+    expect(f.server.tableEngines.get(engine.tableId)).toBe(usurper);
+    expect(f.receipts.size).toBe(0);
+  });
+  it('names the ownership set when the fleet slot is right and ownership is not', async () => {
+    const f = mixedFixture();
+    const { engine } = f.originals[0];
+    f.server.tournamentOwnedTables.delete(engine.tableId);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'fleet.tournamentOwnedTables',
+      failedTable: engine.tableId,
+    });
+    expect(result.observedDetail).toContain('fleetSlot=same');
+    expect(result.observedDetail).toContain('owned=false');
+    expect(f.receipts.size).toBe(0);
+  });
+  it('names the duplicate when two managers capture the same original', async () => {
+    const f = mixedFixture();
+    const first = f.originals[0].engine;
+    const second = f.originals[1].manager;
+    second.tableEngines = new Map([[first.tableId, first]]);
+    second.drainedF06Originals = [[first.tableId, first]];
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'original.distinctEngine',
+      failedTable: first.tableId,
+    });
+    expect(result.observedDetail).toContain(`tournament=${second.tournamentId}`);
+    expect(result.observedDetail).toContain('duplicate=true');
+    expect(f.receipts.size).toBe(0);
+  });
   it.each(['original', 'canonical', 'readback', 'healthy'])(
     'refuses %s evidence loss without hiding originals',
     async (fault) => {

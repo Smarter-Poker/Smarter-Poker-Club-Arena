@@ -159,7 +159,7 @@ ActionPanel, SitOutModal, WaitListModal, TimeBank, CashierModal, BuyInModal, Str
 | Feature           | Us  | PokerBros | ClubGG | WPT Global |
 | :---------------- | :-: | :-------: | :----: | :--------: |
 | Custom PNG Deck   | ✅  |    ✅     |   ✅   |     ✅     |
-| OFC Pineapple     | ✅  |    ❌     |   ❌   |     ❌     |
+| OFC (Excluded)    | ❌  |    ❌     |   ❌   |     ❌     |
 | Horse AI Bots     | ✅  |    ❌     |   ❌   |     ❌     |
 | GTO Advisor       | ✅  |    ❌     |   ❌   |     ❌     |
 | Player Style Tags | ✅  |    ❌     |   ❌   |     ❌     |

@@ -92,8 +92,7 @@ const shown = (root: HTMLElement, selector: string) =>
 const labels = (root: HTMLElement, selector: string) =>
   shown(root, selector).map((node) => node.textContent);
 const at = (node: Element | null | undefined, attr: string) => Number(node?.getAttribute(attr));
-const tick = (root: HTMLElement, cents: number) =>
-  root.querySelector(`[data-tick="${cents}"]`)!;
+const tick = (root: HTMLElement, cents: number) => root.querySelector(`[data-tick="${cents}"]`)!;
 /** The elapsed milliseconds at which the curve reads a multiplier, for growth 0.12. */
 const secondsTo = (cents: number) => Math.round((Math.log(cents / 100) / 0.12) * 1000);
 
@@ -116,9 +115,9 @@ describe('the multiplier is the hero', () => {
       <CrashCurve {...base} phase="open" startedAtLocalMs={0} tickerCents={250} />
     );
     expect(hero(container)).toHaveTextContent('2.50x');
-    expect(CSS.slice(CSS.indexOf('.ticker {'), CSS.indexOf('}', CSS.indexOf('.ticker {')))).toContain(
-      'font-variant-numeric: tabular-nums'
-    );
+    expect(
+      CSS.slice(CSS.indexOf('.ticker {'), CSS.indexOf('}', CSS.indexOf('.ticker {')))
+    ).toContain('font-variant-numeric: tabular-nums');
     expect(tickerLabel(257)).toBe('2.57x');
     expect(tickerLabel(100)).toBe('1.00x');
     rerender(<CrashCurve {...base} phase="open" startedAtLocalMs={0} tickerCents={1234} />);
@@ -127,13 +126,13 @@ describe('the multiplier is the hero', () => {
 
   it('warms as it climbs: calm to 2x, warm to 5x, hot past it', () => {
     clock();
-    expect([tickerHeat(100), tickerHeat(199), tickerHeat(200), tickerHeat(499), tickerHeat(500)]).toEqual([
-      'calm',
-      'calm',
-      'warm',
-      'warm',
-      'hot',
-    ]);
+    expect([
+      tickerHeat(100),
+      tickerHeat(199),
+      tickerHeat(200),
+      tickerHeat(499),
+      tickerHeat(500),
+    ]).toEqual(['calm', 'calm', 'warm', 'warm', 'hot']);
     const { container, rerender } = render(
       <CrashCurve {...base} phase="open" startedAtLocalMs={0} tickerCents={150} />
     );
@@ -153,7 +152,9 @@ describe('the multiplier is the hero', () => {
     expect(hero(container)).toHaveTextContent('2.32x');
     expect(hero(container)).toHaveAttribute('data-phase', 'crashed');
     expect(CSS).toContain(".ticker[data-phase='crashed']");
-    rerender(<CrashCurve {...base} phase="cashed" finalCents={257} cashoutCents={257} crashCents={950} />);
+    rerender(
+      <CrashCurve {...base} phase="cashed" finalCents={257} cashoutCents={257} crashCents={950} />
+    );
     expect(hero(container)).toHaveTextContent('2.57x');
     expect(hero(container)).toHaveAttribute('data-phase', 'cashed');
     expect(CSS).toContain(".ticker[data-phase='cashed']");
@@ -169,6 +170,71 @@ describe('the multiplier is the hero', () => {
     expect(hero(container)).toHaveTextContent('2.61x');
   });
 
+  it('hands the page the very figure it prints, every drawn frame, without a render (R20)', () => {
+    const { tick: frame } = clock();
+    const onTick = vi.fn();
+    const { container, rerender } = render(
+      <CrashCurve {...base} phase="open" replayElapsedMs={100} onTick={onTick} />
+    );
+    frame(100);
+    const at100 = crashMultiplierCents(0.12, 100, 10000);
+    expect(onTick).toHaveBeenLastCalledWith(at100);
+    expect(hero(container)).toHaveTextContent(tickerLabel(at100));
+    rerender(<CrashCurve {...base} phase="open" replayElapsedMs={8000} onTick={onTick} />);
+    const drawn = frames.render.mock.calls.length;
+    frame(8000);
+    const at8000 = crashMultiplierCents(0.12, 8000, 10000);
+    expect(onTick).toHaveBeenLastCalledWith(at8000);
+    expect(hero(container)).toHaveTextContent(tickerLabel(at8000));
+    expect(hero(container).dataset.heat).toBe(tickerHeat(at8000));
+    // The figure went from the loop to the text node: one scene frame, no render of it.
+    expect(frames.render.mock.calls.length - drawn).toBe(1);
+  });
+  it('holds the figure the page freezes while a cash-out is pending', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve {...base} phase="open" replayElapsedMs={8000} />
+    );
+    frame(100);
+    expect(hero(container)).toHaveTextContent('2.61x');
+    rerender(<CrashCurve {...base} phase="open" replayElapsedMs={12000} tickerCents={261} />);
+    frame(200);
+    expect(hero(container)).toHaveTextContent('2.61x');
+    // Released again: the clock's figure returns on the next frame, never an older one.
+    rerender(<CrashCurve {...base} phase="open" replayElapsedMs={12000} />);
+    expect(hero(container)).toHaveTextContent('2.61x');
+    frame(300);
+    expect(hero(container)).toHaveTextContent(
+      tickerLabel(crashMultiplierCents(0.12, 12000, 10000))
+    );
+  });
+  it('stops its loop while the tab is hidden and resumes when it is shown', () => {
+    let hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const requested: FrameRequestCallback[] = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      requested.push(callback);
+      return requested.length;
+    });
+    const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    render(<CrashCurve {...base} phase="open" startedAtLocalMs={0} />);
+    const scheduled = () => requested.length;
+    act(() => requested[scheduled() - 1](100));
+    const before = scheduled();
+    hidden = true;
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(cancelled).toHaveBeenCalled();
+    // A frame that still fires while hidden does no work and schedules nothing.
+    act(() => requested[before - 1](5000));
+    expect(scheduled()).toBe(before);
+    hidden = false;
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(scheduled()).toBe(before + 1);
+  });
   it('stays up, with its axes, when WebGL cannot draw the flight', () => {
     frames.fail = true;
     const { tick: frame } = clock();
@@ -259,14 +325,28 @@ describe('what the player set is drawn where it happens', () => {
   it('draws the auto cash-out as a labelled line on the very line the head crosses at that multiplier', () => {
     const { tick: frame } = clock();
     const { container, rerender } = render(
-      <CrashCurve {...base} phase="open" replayElapsedMs={0} tickerCents={100} autoCashoutCents={200} />
+      <CrashCurve
+        {...base}
+        phase="open"
+        replayElapsedMs={0}
+        tickerCents={100}
+        autoCashoutCents={200}
+      />
     );
     frame(100);
     const auto = container.querySelector('[data-line="auto"]')!;
     expect(auto.getAttribute('visibility')).not.toBe('hidden');
     expect(labels(container, '[data-line-label="auto"]')).toEqual(['Auto 2.00x']);
     expect(at(auto, 'y1')).toBe(at(tick(container, 200), 'y1'));
-    rerender(<CrashCurve {...base} phase="open" replayElapsedMs={0} tickerCents={100} autoCashoutCents={null} />);
+    rerender(
+      <CrashCurve
+        {...base}
+        phase="open"
+        replayElapsedMs={0}
+        tickerCents={100}
+        autoCashoutCents={null}
+      />
+    );
     frame(140);
     expect(auto.getAttribute('visibility')).toBe('hidden');
   });
@@ -278,7 +358,14 @@ describe('what the player set is drawn where it happens', () => {
     expect(floorCents(1, null)).toBeNull();
     const { tick: frame } = clock();
     const { container, rerender } = render(
-      <CrashCurve {...base} phase="open" replayElapsedMs={0} tickerCents={100} minimumPayoutChips={1} betChips={2} />
+      <CrashCurve
+        {...base}
+        phase="open"
+        replayElapsedMs={0}
+        tickerCents={100}
+        minimumPayoutChips={1}
+        betChips={2}
+      />
     );
     frame(100);
     const floor = container.querySelector('[data-line="floor"]')!;
@@ -289,13 +376,27 @@ describe('what the player set is drawn where it happens', () => {
     expect(at(floor, 'y1')).toBeLessThan(310 - 20);
     // A tenth floor sits too far below a fresh axis to be drawn.
     rerender(
-      <CrashCurve {...base} phase="open" replayElapsedMs={0} tickerCents={100} minimumPayoutChips={0.1} betChips={1} />
+      <CrashCurve
+        {...base}
+        phase="open"
+        replayElapsedMs={0}
+        tickerCents={100}
+        minimumPayoutChips={0.1}
+        betChips={1}
+      />
     );
     frame(140);
     expect(floor.getAttribute('visibility')).toBe('hidden');
     // A floor equal to the stake is the launch line itself.
     rerender(
-      <CrashCurve {...base} phase="open" replayElapsedMs={0} tickerCents={100} minimumPayoutChips={2} betChips={2} />
+      <CrashCurve
+        {...base}
+        phase="open"
+        replayElapsedMs={0}
+        tickerCents={100}
+        minimumPayoutChips={2}
+        betChips={2}
+      />
     );
     frame(180);
     expect(floor.getAttribute('visibility')).not.toBe('hidden');
@@ -318,7 +419,9 @@ describe('the two moments', () => {
     frame(100);
     const crash = container.querySelector('[data-marker="crash"]')!;
     expect(crash.getAttribute('visibility')).not.toBe('hidden');
-    expect(container.querySelector('[data-marker="head"]')!.getAttribute('visibility')).toBe('hidden');
+    expect(container.querySelector('[data-marker="head"]')!.getAttribute('visibility')).toBe(
+      'hidden'
+    );
     for (let now = 140; now <= 3000; now += 40) frame(now);
     const x = at(crash, 'cx'),
       y = at(crash, 'cy');
@@ -382,7 +485,9 @@ describe('the two moments', () => {
     frame(600);
     frame(3000);
     expect([at(crash, 'cx'), at(crash, 'cy')]).toEqual([x, y]);
-    rerender(<CrashCurve {...base} phase="cashed" finalCents={257} cashoutCents={257} crashCents={950} />);
+    rerender(
+      <CrashCurve {...base} phase="cashed" finalCents={257} cashoutCents={257} crashCents={950} />
+    );
     frame(3200);
     // No replay to wait for: the booked marker and the crash point are both there at once.
     expect(labels(container, '[data-marker-label="cash"]')).toEqual(['Cashed 2.57x']);

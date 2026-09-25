@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
+    "scripts/dev/test-union-weekly-basis.py": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -52,6 +52,7 @@
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/payment-regression.sql": "2270f4bd2e60c1601783173fa24a351b52bdb1ea489fed92c059fd83da90ee96",
+    "tests/fixtures/union-weekly-basis/period-coverage-regression.sql": "ad96b436611bf98f2a61997e4e1f88c1714bf4d3c0c1a85c38769bf02e74ca00",
     "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
     "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -74,7 +75,13 @@
     "tests/fixtures/cash-participant-funding/move-after.sql": "c74c09e5afbac8aeb48de0fae905a132a9a4e1c4503e14beaedcb6d4651a6a0d",
     "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql": "8facffa4345b81721f4a408062c96b74bece16df644eb7ff3e6c199c590981f1",
     "tests/fixtures/club-settlement-floor/load.sql": "7cd182a45ab353a214ee1fde1cd35649b5625c57641e165aec9935f171192669",
-    "tests/fixtures/club-settlement-floor/seed.sql": "0f7ad67c358864fc45d97364606f8504c359cafb32296958d75d8a6290d830bd",
-    "tests/fixtures/club-settlement-floor/regression.sql": "6099eb3f49ea41e33b26626dbbef32d2126634674bd7ac8559357436a2fdb2fd"
+    "tests/fixtures/club-settlement-floor/seed.sql": "52fbf7cfce9301789cb7b2dc531d6d77a7d43febca61edd9799663fce879f4f5",
+    "tests/fixtures/club-settlement-floor/regression.sql": "6099eb3f49ea41e33b26626dbbef32d2126634674bd7ac8559357436a2fdb2fd",
+    "supabase/migrations/20260921022924_rakeback_payouts_carry_their_document_and_run_identity.sql": "29a38f770fbf7364718d15c81e656beb556b669d8ed46786821d53b588c59c87",
+    "tests/fixtures/rakeback-payout-document/regression.sql": "b5082d6d0827418120774d64838024b5fab228c7b9165e55f452e88651f4eef1",
+    "tests/fixtures/club-settlement-floor-behaviour/README.md": "506e5e332eb13f381e4d46442fd69b8b78c5705456652d304332dac9eb658ff6",
+    "tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql": "38d6d93620685f44e875eb99e40807d12f4c059989e2cc93eb9159d2b5eef3e9",
+    "tests/fixtures/club-settlement-floor-behaviour/seed.sql": "d1d7cda2a0c6015a7918a2db911ee6efa3d3af3401558e78bda10340fa0bc05c",
+    "tests/fixtures/club-settlement-floor-behaviour/regression.sql": "b5ca1be66f2e1bb0ce022a4c85d088fd16b1e612580e0768c75b8851f6d11042"
   }
 }

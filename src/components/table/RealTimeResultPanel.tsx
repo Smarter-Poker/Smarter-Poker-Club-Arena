@@ -26,6 +26,16 @@
  * a single interval that only runs while the card is open. Everything else is
  * either static table metadata (fetched once on open) or session stats that
  * arrive on the bus.
+ *
+ * #ClubArenaConsole (2026-09-14): the drawer keeps Dan's 2026-08-22 shape
+ * (a sheet over 3/4 of the RIGHT side, never the full width) and its chassis
+ * is now a SpadeConsole: the clock in the eyebrow, the title engraved, the
+ * arena asset in the painted pill slot, every fact a row on the black glass
+ * (label lit blue, value silver, an engraved rule between), and the two
+ * actions on the painted plates - Close on steel, Detailed Analytics on the
+ * blue glass. With no detailed panel to open, the foot is the flat cap and
+ * Close is a lit word on the glass (two actions or none). Chips on the felt
+ * are never abbreviated: formatTableChips.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -34,6 +44,9 @@ import { readLocalSession } from '../../lib/authUtils';
 import { reportError } from '../../utils/errorReporter';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { formatTableChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import './RealTimeResultPanel.css';
 
 export interface RealTimeResultPanelProps {
@@ -101,9 +114,10 @@ function gameIdFor(uuid: string): string {
   return String(10_000_000 + (h % 90_000_000));
 }
 
-function money(n: number, arenaAsset?: 'chips' | 'diamonds'): string {
-  const dp = arenaAsset === 'diamonds' ? 0 : 2;
-  return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+/* Felt money is formatTableChips' law: whole chips read as whole chips, cents
+   keep their two places, nothing is abbreviated. Diamonds are whole. */
+function money(n: number): string {
+  return formatTableChips(n);
 }
 
 export default function RealTimeResultPanel({
@@ -162,13 +176,14 @@ export default function RealTimeResultPanel({
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('tables')
           .select(
             'created_at, game_variant, small_blind, big_blind, max_players, min_buy_in, max_buy_in, gps_restriction, ip_restriction, restrict_device, game_length_hours'
           )
           .eq('id', tableId)
           .maybeSingle();
+        if (error) reportError(error, 'RealTimeResultPanel.loadMeta');
         if (cancelled || !data) return;
         setMeta({
           createdAt: data.created_at ? new Date(data.created_at).getTime() : null,
@@ -330,86 +345,106 @@ export default function RealTimeResultPanel({
 
   const winnings = stats?.profitLoss ?? 0;
   const clock = new Date(now).toLocaleTimeString('en-GB', { hour12: false });
+  const assetWord = arenaAsset === 'diamonds' ? 'Diamonds' : arenaAsset === 'chips' ? 'Chips' : '';
+
+  const profileRows = [
+    { label: 'Buy-In', value: money(stats?.buyInTotal ?? 0), ink: 'silver' },
+    {
+      label: 'Winnings',
+      value: `${winnings > 0 ? '+' : ''}${money(winnings)}`,
+      ink: winnings > 0 ? 'green' : winnings < 0 ? 'red' : 'silver',
+    },
+    {
+      label: 'Current Table VPIP',
+      value: `${Math.round(stats?.vpipPercent ?? 0)}%`,
+      ink: 'silver',
+    },
+    { label: 'Hands Played', value: String(stats?.handsPlayed ?? 0), ink: 'silver' },
+    { label: 'Hands/Hour', value: String(Math.round(stats?.handsPerHour ?? 0)), ink: 'silver' },
+    { label: 'BB Won', value: (stats?.bigBlindsWon ?? 0).toFixed(1), ink: 'silver' },
+  ];
+
+  const body = (
+    <>
+      {/* Table facts */}
+      <div className="rtr__rows">
+        {rows.map((r) => (
+          <div className="rtr__row" key={r.label}>
+            <span className="rtr__label sc-label sc-ink--blue">{r.label}</span>
+            <span className="rtr__value sc-ink--silver">{r.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Profile data */}
+      <div className="rtr__section sc-label sc-ink--blue">
+        Profile Data{assetWord ? ` (${assetWord})` : ''}
+      </div>
+      <div className="rtr__rows">
+        {profileRows.map((r) => (
+          <div className="rtr__row" key={r.label}>
+            <span className="rtr__label sc-label sc-ink--blue">{r.label}</span>
+            <span className={`rtr__value sc-ink--${r.ink}`}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Observers */}
+      <div className="rtr__section sc-label sc-ink--blue">Observers ({observers.length})</div>
+      <div className="rtr__observers">
+        {observers.length === 0 ? (
+          <span className="rtr__empty sc-ink--muted">No One Is Watching This Table</span>
+        ) : (
+          observers.map((o) => (
+            <span className="rtr__observer sc-ink--silver" key={o.id}>
+              {titleCase(o.name)}
+            </span>
+          ))
+        )}
+      </div>
+    </>
+  );
 
   return (
     <div className="rtr" role="dialog" aria-modal="true" aria-label="Real Time Result">
       <div className="rtr__backdrop" onClick={onClose} />
 
       <div className="rtr__panel">
-        {/* ── Header: live clock left, title right ── */}
-        <div className="rtr__head">
-          <span className="rtr__clock">{clock}</span>
-          <span className="rtr__title">REAL TIME RESULT</span>
-          <button className="rtr__close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-
-        {/* ── Table facts ── */}
-        <div className="rtr__rows">
-          {rows.map((r) => (
-            <div className="rtr__row" key={r.label}>
-              <span className="rtr__label">{r.label}:</span>
-              <span className="rtr__value">{r.value}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Profile data ── */}
-        <div className="rtr__section">
-          Profile Data{' '}
-          {arenaAsset === 'diamonds' ? '(Diamonds)' : arenaAsset === 'chips' ? '(Chips)' : ''}
-        </div>
-        <div className="rtr__rows rtr__rows--wide">
-          <div className="rtr__row">
-            <span className="rtr__label">Buy-In</span>
-            <span className="rtr__value">{money(stats?.buyInTotal ?? 0, arenaAsset)}</span>
-          </div>
-          <div className="rtr__row">
-            <span className="rtr__label">Winnings</span>
-            <span
-              className={`rtr__value ${winnings > 0 ? 'rtr__value--up' : winnings < 0 ? 'rtr__value--down' : ''}`}
+        {onOpenDetailed ? (
+          <SpadeConsole
+            onClose={onClose}
+            crest="flat"
+            eyebrow={clock}
+            title="Real Time Result"
+            pill={assetWord || undefined}
+            pillInk="blue"
+            plates={{
+              secondary: { label: 'Close', onClick: onClose, 'aria-label': 'Close' },
+              primary: { label: 'Detailed Analytics', ink: 'white', onClick: handleDetailed },
+            }}
+          >
+            {body}
+          </SpadeConsole>
+        ) : (
+          <SpadeConsole
+            onClose={onClose}
+            crest="flat"
+            eyebrow={clock}
+            title="Real Time Result"
+            pill={assetWord || undefined}
+            pillInk="blue"
+            foot="foot"
+          >
+            {body}
+            <button
+              type="button"
+              className="rtr__word sc-ink--muted"
+              onClick={onClose}
+              aria-label="Close"
             >
-              {winnings > 0 ? '+' : ''}
-              {money(winnings, arenaAsset)}
-            </span>
-          </div>
-          <div className="rtr__row">
-            <span className="rtr__label">Current Table VPIP</span>
-            <span className="rtr__value">{Math.round(stats?.vpipPercent ?? 0)}%</span>
-          </div>
-          <div className="rtr__row">
-            <span className="rtr__label">Hands Played</span>
-            <span className="rtr__value">{stats?.handsPlayed ?? 0}</span>
-          </div>
-          <div className="rtr__row">
-            <span className="rtr__label">Hands/Hour</span>
-            <span className="rtr__value">{Math.round(stats?.handsPerHour ?? 0)}</span>
-          </div>
-          <div className="rtr__row">
-            <span className="rtr__label">BB Won</span>
-            <span className="rtr__value">{(stats?.bigBlindsWon ?? 0).toFixed(1)}</span>
-          </div>
-        </div>
-
-        {/* ── Observers ── */}
-        <div className="rtr__section">Observers ({observers.length})</div>
-        <div className="rtr__observers">
-          {observers.length === 0 ? (
-            <span className="rtr__empty">No One Is Watching This Table</span>
-          ) : (
-            observers.map((o) => (
-              <span className="rtr__observer" key={o.id}>
-                {o.name}
-              </span>
-            ))
-          )}
-        </div>
-
-        {onOpenDetailed && (
-          <button className="rtr__detailed" onClick={handleDetailed}>
-            Detailed Analytics
-          </button>
+              Close
+            </button>
+          </SpadeConsole>
         )}
       </div>
     </div>

@@ -1135,6 +1135,12 @@
 }
 
 .tileImage {
+  /* An inline image sits on the text baseline, so the wrapper's line box added
+     a ~7.7px descender gap under every tile (measured 2026-09-22: 64.2x104 at a
+     393px phone instead of 64.2x96.3). height: 100% then filled that taller box,
+     which stretched the four fill tiles about 8% and letterboxed the native
+     Challenge Vault render. As a block the image is exactly the 2:3 wrapper. */
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: fill;
@@ -1146,42 +1152,71 @@
   object-fit: contain;
 }
 
-/* Live copy prints into the dark leather footer painted into the portal art. */
+/* The Challenge Vault master paints a dark leather title plate across its foot,
+   88.5% to 95.5% of the art's height (rows 1359-1465 of the 1024x1536 render).
+   The live label prints inside that plate and nowhere else: sized by the tile's
+   own width (the wrapper is its container, so a 64px phone tile and a 160px
+   desktop tile get the same picture), always one line, never across the felt or
+   onto the frame rails. The status joins the title only where the plate is tall
+   enough to hold both lines. */
+.tileImageWrapper:has(> .tileImageNative) {
+  container-type: inline-size;
+}
+
 .tileLabel {
   position: absolute;
-  right: 9%;
-  bottom: 3.8%;
-  left: 9%;
-  display: grid;
-  gap: 1px;
+  top: 88.5%;
+  right: 8%;
+  bottom: 4.5%;
+  left: 8%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5cqi;
   color: #f4f7fb;
   text-align: center;
   text-shadow:
     0 1px 0 #050607,
-    0 0 8px rgb(0 212 255 / 42%);
+    0 0 1.6cqi rgb(0 212 255 / 42%);
   z-index: 3;
   pointer-events: none;
 }
 
 .tileLabel strong {
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(8px, 0.82vw, 11px);
+  font-size: min(8.4cqi, 13px);
   line-height: 1;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .tileLabel small {
+  display: none;
   color: #45adff;
-  font-size: clamp(6px, 0.56vw, 8px);
+  font-size: min(3.5cqi, 7px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@container (min-width: 140px) {
+  .tileLabel strong {
+    font-size: min(6.2cqi, 11px);
+  }
+
+  .tileLabel small {
+    display: block;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   LOADING STATE — Skeleton Card Shimmers
+   LOADING STATE - one lit word (#ClubArenaConsole 2026-09-14)
+   The rounded skeleton cards were frames drawn in CSS; the cold start now
+   says what it is doing in the console's own lit ink and nothing else.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .loadingOverlay {
@@ -1197,101 +1232,16 @@
   /* Dan 2026-08-24 (live, DB under IO saturation): this overlay sat over the
      WHOLE screen while the club list loaded, and on a slow database that
      meant up to 12 seconds where NOT ONE header button or the hamburger
-     answered a tap — measured on production: every header button's tap
-     landed on this element. The overlay is purely visual (skeletons and a
-     spinner); it must never eat input. */
+     answered a tap - measured on production: every header button's tap
+     landed on this element. The overlay is purely visual; it must never eat
+     input. */
   pointer-events: none;
 }
 
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 3px solid rgba(0, 212, 255, 0.15);
-  border-top-color: rgba(0, 212, 255, 0.8);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  box-shadow:
-    0 0 20px rgba(0, 212, 255, 0.15),
-    inset 0 0 10px rgba(0, 212, 255, 0.05);
-  /* Premium pulsing glow */
-  filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.4));
-}
-
 .loadingText {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(0, 212, 255, 0.6);
-  text-transform: uppercase;
-  letter-spacing: 3px;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 13px;
   animation: loadingPulse 2s ease-in-out infinite;
-}
-
-/* Skeleton shimmer cards — match carousel card shape */
-.skeletonRow {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 16px;
-  width: 100%;
-  max-width: 600px;
-}
-
-.skeletonCard {
-  width: clamp(100px, 18vw, 140px);
-  aspect-ratio: 7 / 11;
-  border-radius: 12px;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.03) 0%,
-    rgba(255, 255, 255, 0.06) 50%,
-    rgba(255, 255, 255, 0.03) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  position: relative;
-  overflow: hidden;
-}
-
-.skeletonCard::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(0, 212, 255, 0.06) 50%, transparent 100%);
-  animation: skeletonShimmerSweep 1.8s ease-in-out infinite;
-}
-
-.skeletonCardFeatured {
-  width: clamp(140px, 25vw, 200px);
-  aspect-ratio: 7 / 11;
-  border-radius: 12px;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.03) 0%,
-    rgba(255, 255, 255, 0.06) 50%,
-    rgba(255, 255, 255, 0.03) 100%
-  );
-  border: 1px solid rgba(0, 212, 255, 0.1);
-  position: relative;
-  overflow: hidden;
-}
-
-.skeletonStat {
-  width: 60%;
-  height: 10px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.04);
-  margin: 8px auto 0;
-}
-
-/* Paired with .skeletonCard::after, an inset overlay that sweeps across.
-   Renamed from `skeletonShimmer` — see the note on skeletonShimmerBg above. */
-@keyframes skeletonShimmerSweep {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
 }
 
 @keyframes loadingPulse {
@@ -1304,115 +1254,74 @@
   }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EMPTY STATE — Onboarding Card
+   EMPTY AND FAILED STATES - SpadeConsoles (#ClubArenaConsole 2026-09-14)
+   The chassis, plates and inks are painted by SpadeConsole.css; this only
+   places the console in the column and lays the copy on its glass.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .emptyStateCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 32px 24px;
-  margin: 0 16px;
-  border-radius: 16px;
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.04) 0%, rgba(5, 5, 16, 0.95) 100%);
-  text-align: center;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 4px;
+  box-sizing: border-box;
   animation: homePageFadeInUp 0.5s ease-out backwards;
   animation-delay: 300ms;
 }
 
-.emptyStateIcon {
-  font-size: 48px;
-  line-height: 1;
-  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
-}
-
-.emptyStateTitle {
-  font-size: 18px;
-  font-weight: 800;
-  color: #fff;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin: 0;
-}
-
 .emptyStateDesc {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
-  line-height: 1.6;
-  max-width: 280px;
+  max-width: 88%;
+  align-self: center;
+}
+
+/* A console in the lobby column stops at the width of a phone-and-a-half,
+   not at the master's own 1000px: at 1280 the copy would print at 40px.
+   --sc-max may narrow a console, never raise it. */
+/* Doubled: the console's own .sc declares --sc-max too, and which sheet
+   loads later depends on who imported SpadeConsole first. */
+.consoleNarrow.consoleNarrow {
+  --sc-max: 560px;
+}
+
+/* The lit word: one action printed on the glass under the copy, no plate. */
+.word {
+  align-self: center;
   margin: 0;
-}
-
-.emptyStateActions {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  max-width: 320px;
-  margin-top: 4px;
-}
-
-.emptyStateBtn {
-  flex: 1;
-  padding: 12px 8px;
-  font-size: 12px;
-  font-weight: 700;
+  padding: 1.5cqw 3cqw;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  border-radius: 10px;
   cursor: pointer;
-  border: none;
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
 }
 
-.emptyStateBtn:active {
-  transform: scale(0.96);
+.word:active {
+  filter: brightness(1.3);
 }
 
-.emptyStateBtnPrimary {
-  flex: 1;
-  padding: 12px 8px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-radius: 10px;
-  cursor: pointer;
-  border: none;
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
-  background: linear-gradient(135deg, #00d4ff, #0099cc);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.25);
+.word:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
-.emptyStateBtnSecondary {
-  flex: 1;
-  padding: 12px 8px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-radius: 10px;
-  cursor: pointer;
-  border: none;
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+/* metallic-popups.css bevels every button inside a dialog with !important;
+   the lit word paints nothing. */
+[role='dialog'] .word.word,
+[role='alertdialog'] .word.word,
+[aria-modal='true'] .word.word {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  color: inherit !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1431,12 +1340,6 @@
   outline: 2px solid rgba(0, 212, 255, 0.7);
   outline-offset: 3px;
   border-radius: 8px;
-}
-
-.modalButtonPrimary:focus-visible,
-.modalButtonSecondary:focus-visible {
-  outline: 2px solid rgba(0, 212, 255, 0.7);
-  outline-offset: 2px;
 }
 
 .carouselCardFeatured:focus-visible {
@@ -1543,23 +1446,26 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   JOIN A CLUB MODAL
+   LEAVE CLUB - a SpadeConsole over the lobby (#ClubArenaConsole 2026-09-14)
+   Named leaveOverlay / leaveSheet, not modal*: metallic-popups.css fills and
+   bevels every [class*='_modal...'] with !important, and the console brings
+   its own paint. The sheet keeps the focus trap, role="alertdialog" and the
+   pinned aria-labelledby; the console prints the question and the two plates.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modalOverlay {
+.leaveOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: max(16px, env(safe-area-inset-top)) 8px max(16px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   animation: fadeIn 0.2s ease-out;
-  /* Mobile-fit sweep 2026-08-23: side padding so the 320px-min modal never
-     touches the screen edge on narrow phones. */
-  padding: 16px;
 }
 
 @keyframes fadeIn {
@@ -1571,18 +1477,11 @@
   }
 }
 
-.modalContent {
-  background: linear-gradient(145deg, rgba(8, 20, 40, 0.95), rgba(5, 15, 35, 0.95));
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 16px;
-  padding: 40px;
-  min-width: 320px;
-  max-width: 400px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.6),
-    0 0 40px rgba(0, 212, 255, 0.1);
+.leaveSheet {
+  container-type: inline-size;
+  width: min(100%, 560px);
+  margin: auto;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
   animation: homePageSlideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -1597,107 +1496,8 @@
   }
 }
 
-.modalTitle {
-  font-size: 22px;
-  font-weight: 800;
-  color: #fff;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  text-align: center;
-  margin-bottom: 20px;
-  text-shadow: 0 0 16px rgba(0, 212, 255, 0.4);
-}
-
-.modalSubtitle {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.inputGroup {
-  margin-bottom: 24px;
-}
-
-.clubCodeInput {
-  width: 100%;
-  padding: 16px 20px;
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
-  background: rgba(5, 15, 35, 0.8);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 10px;
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 4px;
-  transition: all 0.3s ease;
-  box-sizing: border-box;
-}
-
-.clubCodeInput::placeholder {
-  color: rgba(0, 212, 255, 0.3);
-  letter-spacing: 1px;
-  text-transform: none;
-  font-weight: 400;
-}
-
-.clubCodeInput:focus {
-  outline: none;
-  border-color: rgba(0, 212, 255, 0.6);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
-}
-
-.modalButtons {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.modalButtonPrimary {
-  width: 100%;
-  padding: 14px 24px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #000;
-  background: linear-gradient(135deg, #00d4ff, #0099ff);
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.modalButtonPrimary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.modalButtonPrimary:active:not(:disabled) {
-  transform: scale(0.97);
-  transition-duration: 0.1s;
-}
-
-.modalButtonSecondary {
-  width: 100%;
-  padding: 14px 24px;
-  font-size: 14px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  transition: all 0.3s ease;
-}
-
-.modalButtonSecondary:active {
-  transform: scale(0.97);
-  transition-duration: 0.1s;
+.leaveCopy {
+  padding: 1cqw 0 2cqw;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1867,20 +1667,6 @@
   .bottomRow {
     gap: 8px;
     padding: 12px 12px 16px;
-  }
-
-  .modalContent {
-    padding: 24px 16px;
-    min-width: 260px;
-  }
-
-  .modalTitle {
-    font-size: 18px;
-  }
-
-  .clubCodeInput {
-    padding: 12px 16px;
-    font-size: 16px;
   }
 }
 
@@ -2053,7 +1839,9 @@
   }
 }
 
-/* Enhancement #10: Error Boundary */
+/* Enhancement #10: Error Boundary - a SpadeConsole on black glass
+   (#ClubArenaConsole 2026-09-14). One action, so the foot is the flat cap and
+   Retry is a lit word on the glass. */
 .errorBoundary {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
@@ -2062,103 +1850,55 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  align-items: center;
-  background: linear-gradient(180deg, #0a0a12 0%, #050510 100%);
+  background: #000;
   color: #fff;
-  text-align: center;
-  padding: 40px 20px;
-}
-
-.errorBoundaryIcon {
-  font-size: 48px;
-  margin-bottom: 20px;
-  opacity: 0.6;
-}
-
-.errorBoundaryTitle {
-  font-size: 20px;
-  font-weight: 800;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  color: rgba(0, 212, 255, 0.9);
+  padding: 40px 12px;
+  box-sizing: border-box;
 }
 
 .errorBoundaryMessage {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 24px;
-  max-width: 360px;
+  max-width: 88%;
+  align-self: center;
 }
 
-.errorBoundaryRetry {
-  padding: 14px 32px;
-  background: linear-gradient(135deg, #00d4ff, #0099ff);
-  color: #000;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
 /* ═══════════════════════════════════════════════════════════════════════════════
    PHASE 4 ENHANCEMENTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Phase 7 #10: Offline Banner with pulse animation */
+/* Phase 7 #10: Offline banner. A BANNER IS NOT A CARD (#ClubArenaConsole
+   2026-09-14): red ink on black glass under one engraved rule, no gradient
+   and no dot. Its slide-in and its pulse still play every time. */
 .offlineBanner {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  padding: 8px 16px;
-  background: linear-gradient(90deg, rgba(255, 80, 0, 0.9), rgba(255, 40, 0, 0.9));
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
   z-index: 2000;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  animation:
-    offlineSlideIn 0.3s ease-out,
-    offlinePulse 2s ease-in-out infinite 0.3s;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-}
-
-.offlineBanner::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #fff;
-  animation: offlineDot 1.5s ease-in-out infinite;
+  padding: 10px 16px;
+  background: #000;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+  animation:
+    offlineSlideIn 0.3s ease-out,
+    offlinePulse 2s ease-in-out infinite 0.3s;
 }
 
 @keyframes offlinePulse {
   0%,
   100% {
-    box-shadow: 0 2px 12px rgba(255, 60, 0, 0.3);
-  }
-  50% {
-    box-shadow: 0 2px 20px rgba(255, 60, 0, 0.6);
-  }
-}
-
-@keyframes offlineDot {
-  0%,
-  100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.3;
+    opacity: 0.7;
   }
 }
 
@@ -2171,85 +1911,68 @@
   }
 }
 
-/* #1: Keyboard Shortcut Overlay */
+/* #1: Keyboard shortcuts - a SpadeConsole (#ClubArenaConsole 2026-09-14):
+   each shortcut a row on the glass, the key in lit blue, what it does in
+   silver, an engraved rule between rows. Close is a lit word. */
 .shortcutOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   z-index: 1500;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  padding: max(16px, env(safe-area-inset-top)) 8px max(16px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   animation: fadeIn 0.2s ease-out;
 }
 
-.shortcutPanel {
-  background: linear-gradient(145deg, rgba(8, 20, 40, 0.95), rgba(5, 15, 35, 0.95));
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 16px;
-  padding: 32px;
-  min-width: 280px;
-  max-width: 360px;
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.6),
-    0 0 40px rgba(0, 212, 255, 0.1);
+.shortcutSheet {
+  container-type: inline-size;
+  width: min(100%, 560px);
+  margin: auto;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
   animation: homePageSlideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.shortcutTitle {
-  font-size: 16px;
-  font-weight: 800;
-  color: rgba(0, 212, 255, 0.9);
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin: 0 0 20px;
-  text-align: center;
-  text-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
 }
 
 .shortcutGrid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .shortcutRow {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 2.2cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.shortcutRow:first-child {
+  border-top: 0;
+  box-shadow: none;
 }
 
 .shortcutKey {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 36px;
-  height: 28px;
-  padding: 0 8px;
-  background: rgba(0, 212, 255, 0.1);
-  border: 1px solid rgba(0, 212, 255, 0.25);
-  border-radius: 6px;
-  color: rgba(0, 212, 255, 0.9);
-  font-size: 12px;
-  font-weight: 700;
-  font-family: 'SF Mono', 'Cousine', monospace;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .shortcutDesc {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 500;
+  font-size: 4cqw;
+  font-weight: 700;
+  text-align: right;
 }
 
 /* Duplicate removed -- see #11 below */
-
-/* #4: Danger Button Variant */
-.modalButtonDanger {
-  background: linear-gradient(135deg, #ff4444, #cc2222) !important;
-  color: #fff !important;
-}
 
 /* #2: Pinned Club Badge */
 .pinnedBadge {
@@ -2780,6 +2503,16 @@
   margin: 0;
   padding: 8px 16px;
   text-align: center;
-  font-size: clamp(20px, 3vw, 28px);
-  color: #f4f7ff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  /* Engraved silver: solid ink plus a bevel, in px because the title sits
+     outside any console. */
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 55%),
+    0 1px 0 #6d747c,
+    0 2px 0 #050607,
+    0 3px 4px rgb(0 0 0 / 90%);
 }

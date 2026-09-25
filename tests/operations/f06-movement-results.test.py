@@ -59,12 +59,12 @@ class Results(unittest.TestCase):
 
 class ProbeResults(unittest.TestCase):
     def test_complete_probe(self):
-        owner.validate_probe(0,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*73)
+        owner.validate_probe(0,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*139)
     def test_missing_or_extra_assertion(self):
-        for n in (0,72,74):
+        for n in (0,73,138,140):
             with self.assertRaises(RuntimeError): owner.validate_probe(0,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*n)
     def test_sql_error_or_missing_terminal(self):
-        for code,out,err in [(1,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*73), (0,'','MOVEMENT PASS: case\n'*73), (0,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*73+'ERROR: failed')]:
+        for code,out,err in [(1,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*139), (0,'','MOVEMENT PASS: case\n'*139), (0,'F06_MOVEMENT_ADMISSION_PASS\n','MOVEMENT PASS: case\n'*139+'ERROR: failed')]:
             with self.assertRaises(RuntimeError): owner.validate_probe(code,out,err)
 
 if __name__=='__main__':unittest.main()

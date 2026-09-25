@@ -259,6 +259,19 @@
   padding: 10px 12px;
 }
 
+/* KILL POTS (visual acceptance 2026-09-24): the kill group is the one promise
+   panel whose body is chips and a note rather than readout rows, and those
+   carry no inset of their own, so the chips and the rule sentence sat flush
+   on the panel's left rail. They take the readout's own 12px inset. */
+.cash-create__promise > .cash-create__chips {
+  padding: 10px 12px 0;
+}
+
+.cash-create__promise > .cash-create__note {
+  margin: 0;
+  padding: 10px 12px;
+}
+
 .cash-create__promise .cash-create__rule-readout + .cash-create__rule-readout {
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);

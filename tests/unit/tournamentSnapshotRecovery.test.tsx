@@ -523,22 +523,22 @@ describe('authoritative hand-for-hand disclosure', () => {
     fixture.realOverview = true;
     render(<Page />);
     await flush();
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     presentation('a', true);
-    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    expect(screen.getByText('Hand For Hand')).toBeTruthy();
     presentation('a', false);
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     presentation('a', true);
     act(() => {
       for (const listener of fixture.channelStatuses) listener('reconnecting');
     });
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     act(() => {
       for (const listener of fixture.channelStatuses) listener('connected');
     });
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     presentation('a', true);
-    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    expect(screen.getByText('Hand For Hand')).toBeTruthy();
   });
 
   it('fences old-account and old-tournament callbacks before accepting a new snapshot', async () => {
@@ -551,15 +551,15 @@ describe('authoritative hand-for-hand disclosure', () => {
     view.rerender(<Page embedded id="a" />);
     await flush();
     act(() => old({ type: 'tournament_presentation', payload: { handForHand: true } }));
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     presentation('a', true);
-    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    expect(screen.getByText('Hand For Hand')).toBeTruthy();
     view.rerender(<Page embedded id="b" />);
     await flush();
     presentation('a', true);
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     presentation('b', true);
-    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    expect(screen.getByText('Hand For Hand')).toBeTruthy();
   });
 
   it('rejects unrelated/malformed state and releases the old event consumer on unmount', async () => {
@@ -568,9 +568,9 @@ describe('authoritative hand-for-hand disclosure', () => {
     await flush();
     presentation('other', true);
     presentation('a', 'true');
-    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    expect(screen.queryByText('Hand For Hand')).toBeNull();
     presentation('a', true);
-    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    expect(screen.getByText('Hand For Hand')).toBeTruthy();
     view.unmount();
     expect(fixture.tournamentEvents.get('a')?.size ?? 0).toBe(0);
     presentation('a', true);

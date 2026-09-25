@@ -160,6 +160,13 @@
   font-size: 0.78rem;
 }
 
+.cardCopy .summary {
+  margin-top: 6px;
+  color: #a9b6c2;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .signal {
   color: #57b3ff;
 }

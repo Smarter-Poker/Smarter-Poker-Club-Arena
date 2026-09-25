@@ -19,6 +19,7 @@
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
+import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
 import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
@@ -255,6 +256,12 @@ export interface SeatSlotProps {
   seatNumber: number;
   player: SeatPlayer | null;
   position: PositionBadge;
+  /**
+   * KILL POTS (rule manifest kill-v1): the marker on the killer's seat for the
+   * whole kill hand ("Kill Blind"), drawn opposite the position badge so a
+   * killer who is also a blind keeps both. Null on every other seat and hand.
+   */
+  killMarker?: string | null;
   isActive: boolean;
   lastAction: LastAction;
   lastBetAmount?: number;
@@ -509,6 +516,23 @@ export interface SeatSlotProps {
   showPickedCardIndexes?: readonly number[];
   /** Toggle one of the hero's cards in/out of the show-after-hand selection. */
   onToggleShowCard?: (cardIndex: number) => void;
+  /**
+   * WHY A NEW CASH ENTRANT IS NOT PLAYING YET (Dan 2026-09-23). The engine
+   * flags every player it is holding for the big blind as sitting out, and the
+   * seat printed SITTING OUT over all of them. "IT SHOULDN'T SAY 'SITTING OUT'
+   * IF YOU AGREED TO 'POST THE BIG BLIND'. IT ALSO SHOULDN'T SAY 'SITTING OUT'
+   * IF THEY ARE WAITING FOR BB, IT SHOULD SAY 'WAITING FOR BB'."
+   *
+   *   'waiting_for_bb'  held by the engine until the big blind reaches them,
+   *                     and they have not asked to post: the badge says so.
+   *   'posting_bb'      held, and they agreed to post: nothing is wrong with
+   *                     this seat and no badge is drawn.
+   *   null / undefined  not an entry hold - a sat-out seat is sat out.
+   *
+   * Decided by the parent from the engine's waiting_for_bb_user_ids and
+   * post_bb_deferred_user_ids, the same two lists the hero's footer reads.
+   */
+  entryWait?: 'waiting_for_bb' | 'posting_bb' | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -522,8 +546,9 @@ export interface SeatSlotProps {
 function formatStack(amount: number): string {
   // Whole chips from 100 up (engine sub-chip noise is rake and split
   // artifacts, not chips anyone can bet); to the penny below it, always two
-  // places (Dan 2026-09-04). The rule lives in utils/format so the seat, the
-  // stack-delta float and the net-win line cannot disagree about a stack.
+  // places (Dan 2026-09-04). The rule lives in utils/format so every stack on
+  // the table agrees; the stack-delta float and the net-win line are wagers
+  // and read through formatWager instead (item 9, 2026-09-23).
   return formatStackChips(amount);
 }
 
@@ -591,6 +616,19 @@ function getStackDepthClass(stack: number, bigBlind: number): string {
   return ''; // healthy — default white
 }
 
+/**
+ * A BET IS NOT A STACK (Dan 2026-09-23: '"RAISE 4.00" SHOULD BE "RAISE 4". NO
+ * DECIMAL POINTS FOR WHOLE NUMBERS'). The badge read through formatStack,
+ * whose under-100 penny rule is Dan's STACK rule (2026-09-04: a 5.37 stack
+ * reads 5.37, a 5 stack reads 5.00 so the seats line up). A wager has never
+ * had that rule: it is formatTableChips - integers clean, a real fraction
+ * kept - which is what the pot pill, the chip label in flight and the
+ * action bar's own buttons already print. One contract for one number.
+ */
+function formatWager(amount: number): string {
+  return formatTableChips(amount);
+}
+
 function getActionLabel(action: LastAction, amount?: number): string {
   switch (action) {
     case 'fold':
@@ -598,11 +636,11 @@ function getActionLabel(action: LastAction, amount?: number): string {
     case 'check':
       return 'Check';
     case 'call':
-      return amount ? `Call ${formatStack(amount)}` : 'Call';
+      return amount ? `Call ${formatWager(amount)}` : 'Call';
     case 'bet':
-      return amount ? `Bet ${formatStack(amount)}` : 'Bet';
+      return amount ? `Bet ${formatWager(amount)}` : 'Bet';
     case 'raise':
-      return amount ? `Raise ${formatStack(amount)}` : 'Raise';
+      return amount ? `Raise ${formatWager(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
     case 'discard':
@@ -806,6 +844,7 @@ export const SeatSlot = memo(
       seatNumber,
       player,
       position,
+      killMarker = null,
       isActive,
       lastAction,
       lastBetAmount,
@@ -819,6 +858,7 @@ export const SeatSlot = memo(
       // needs to see it change (it feeds SeatSlot's parents), and because
       // removing it from every call site is a bigger change than it is worth.
       sitOutAt,
+      entryWait = null,
       bountyValue,
       bountyUnitCents,
       isWinner = false,
@@ -2977,13 +3017,25 @@ export const SeatSlot = memo(
               means. The disconnect overlay below is the third state and takes
               precedence over neither: a dropped player reads DISCONNECTED until
               the engine formally sits them out, and SITTING OUT after. */}
-          {player.status === 'sitting_out' && (
-            /* The clock lives in a memoised child that owns its own interval —
-               passing a per-second number through here would defeat this
-               component's comparator sixty times a minute per sat-out seat.
-               See SitOutBadge for the full reasoning. */
-            <SitOutBadge sitOutAt={sitOutAt} />
-          )}
+          {player.status === 'sitting_out' &&
+            entryWait !== 'posting_bb' &&
+            (entryWait === 'waiting_for_bb' ? (
+              /* An entrant the engine holds for the blind is not sitting out;
+                 they are waiting for it (Dan 2026-09-23, see `entryWait`). */
+              <div
+                className="seat__sitout-badge"
+                title="This Player Is Waiting For The Big Blind"
+                data-testid="seat-waiting-bb-badge"
+              >
+                Waiting For BB
+              </div>
+            ) : (
+              /* The clock lives in a memoised child that owns its own interval —
+                 passing a per-second number through here would defeat this
+                 component's comparator sixty times a minute per sat-out seat.
+                 See SitOutBadge for the full reasoning. */
+              <SitOutBadge sitOutAt={sitOutAt} />
+            ))}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
             <div className="seat__disconnect-overlay" title="Player Disconnected">
@@ -2997,12 +3049,37 @@ export const SeatSlot = memo(
           {/* Position Badge — PokerBros parity: SB/BB/UTG/CO/BTN shown
              on each seat. Dealer "D" button rendered separately via DealerButton
              component, so skip 'D' and 'BTN' here to avoid double-badging. */}
-          {position && position !== 'D' && position !== 'BTN' && (
-            <div
-              className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
-            >
-              {position}
+          {/* KILL POTS (kill-v1): on the killer's seat the kill marker and the
+              position badge share one row, so they sit side by side and can
+              never paint over each other (visual acceptance 2026-09-24: as
+              two absolutely placed corners, "Kill Blind" covered SB, and
+              UTG+1 overlapped it by 17px). Every other seat is unchanged. */}
+          {killMarker ? (
+            <div className="seat__corner-badges">
+              <div
+                className="seat__position-badge seat__kill-badge"
+                title="This Player Is The Killer"
+              >
+                {killMarker}
+              </div>
+              {position && position !== 'D' && position !== 'BTN' && (
+                <div
+                  className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
+                >
+                  {position}
+                </div>
+              )}
             </div>
+          ) : (
+            position &&
+            position !== 'D' &&
+            position !== 'BTN' && (
+              <div
+                className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
+              >
+                {position}
+              </div>
+            )
           )}
         </div>
 
@@ -3068,7 +3145,9 @@ export const SeatSlot = memo(
               className={`seat__stack-delta ${stackDelta > 0 ? 'seat__stack-delta--win' : 'seat__stack-delta--loss'}`}
             >
               {stackDelta > 0 ? '+' : ''}
-              {showStackInBB ? formatStackAsBB(stackDelta, bigBlind) : formatStack(stackDelta)}
+              {/* A change of stack is a wager or a win, not a stack: "-4",
+                  never "-4.00" (Dan 2026-09-23, item 9's rule). */}
+              {showStackInBB ? formatStackAsBB(stackDelta, bigBlind) : formatWager(stackDelta)}
             </span>
           )}
         </div>
@@ -3364,7 +3443,10 @@ export const SeatSlot = memo(
             key={netWinAmount}
           >
             {netWinAmount > 0 ? '+' : '-'}
-            {formatStack(Math.abs(netWinAmount))}
+            {/* A win is a wager's kind of number, not a stack's: +12, not
+                +12.00, beside a stack delta that already reads +12
+                (2026-09-24, the one float item 9 missed). */}
+            {formatWager(Math.abs(netWinAmount))}
           </div>
         )}
 
@@ -3492,6 +3574,7 @@ export const SeatSlot = memo(
     if (prev.handInPlay !== next.handInPlay) return false;
     if (prev.isHeroReservedSeat !== next.isHeroReservedSeat) return false;
     if (prev.position !== next.position) return false;
+    if (prev.killMarker !== next.killMarker) return false;
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
@@ -3591,6 +3674,8 @@ export const SeatSlot = memo(
        fires at settlement — the stamp only ever arrives that way, so the badge
        showed no clock at all for the whole five minutes. */
     if (prev.sitOutAt !== next.sitOutAt) return false;
+    // The entry hold changes what a sat-out seat says (Dan 2026-09-23).
+    if (prev.entryWait !== next.entryWait) return false;
 
     const pp = prev.player;
     const np = next.player;

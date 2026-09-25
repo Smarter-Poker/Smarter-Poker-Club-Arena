@@ -98,9 +98,29 @@ describe('seat range', () => {
 
 describe('format chips', () => {
   it('separates satellites from regular games', () => {
+    /* REPLACED 2026-09-22: this chip used to decide from the NAME alone, so
+       both cases were bare names. The satellite columns decide now
+       (isSatelliteTournament in utils/tournamentFilters); the name is the
+       fallback for a row that does not carry them, and it only ever says yes,
+       so a bare "Heads-Up 5" with no columns is no opinion rather than "no". */
     const v = { ...emptyFilterValue(sng), format: ['sats'] };
+    const regular = {
+      variant: 'sng',
+      tournament_type: 'SNG',
+      satellite_target_id: null,
+      satellite_target: null,
+    };
+    expect(
+      rowPassesFilter(
+        sng,
+        v,
+        row({ name: 'NLH Heads-Up 5', row: { ...regular, satellite_target_id: 't1' } })
+      )
+    ).toBe(true);
+    expect(rowPassesFilter(sng, v, row({ name: 'NLH Heads-Up 5', row: regular }))).toBe(false);
     expect(rowPassesFilter(sng, v, row({ name: 'NLH Sat To Main' }))).toBe(true);
-    expect(rowPassesFilter(sng, v, row({ name: 'NLH Heads-Up 5' }))).toBe(false);
+    // No columns and a title that says nothing: no opinion, so not hidden.
+    expect(rowPassesFilter(sng, v, row({ name: 'NLH Heads-Up 5' }))).toBe(true);
   });
 
   it('treats both-selected as no opinion', () => {
@@ -122,12 +142,25 @@ describe('must-have and hide', () => {
   it('requires every must-have and excludes any hidden feature', () => {
     const must = { ...emptyFilterValue(holdem), mustHave: ['bomb_pot'] };
     expect(rowPassesFilter(holdem, must, row({ settings: { bomb_pot_enabled: true } }))).toBe(true);
-    expect(rowPassesFilter(holdem, must, row({ settings: {} }))).toBe(false);
+    /* REPLACED 2026-09-22, in the commit that made the matcher three-valued.
+       This used `settings: {}` with an empty row, i.e. a row that never
+       carried the column, and required MUST-HAVE to delete it. That is the
+       behaviour the matcher's own contract forbade ("a filter that cannot be
+       evaluated passes"). A row that SAYS it has no Bomb Pot is the real
+       "no", so the case now carries the column, switched off. */
+    expect(rowPassesFilter(holdem, must, row({ row: { bomb_pot_enabled: false } }))).toBe(false);
 
     const hide = { ...emptyFilterValue(holdem), hide: ['bomb_pot'] };
     expect(rowPassesFilter(holdem, hide, row({ settings: { bomb_pot_enabled: true } }))).toBe(
       false
     );
+    expect(rowPassesFilter(holdem, hide, row({ row: { bomb_pot_enabled: false } }))).toBe(true);
+  });
+
+  it('keeps a row that cannot answer, under must-have and hide alike', () => {
+    const must = { ...emptyFilterValue(holdem), mustHave: ['bomb_pot'] };
+    const hide = { ...emptyFilterValue(holdem), hide: ['bomb_pot'] };
+    expect(rowPassesFilter(holdem, must, row({ settings: {} }))).toBe(true);
     expect(rowPassesFilter(holdem, hide, row({ settings: {} }))).toBe(true);
   });
 });

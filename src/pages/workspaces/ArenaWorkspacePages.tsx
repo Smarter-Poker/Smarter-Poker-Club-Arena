@@ -11,8 +11,10 @@ import {
   useClubOperationsOverview,
   type ClubOperationsAlert,
 } from '../../hooks/useClubOperationsOverview';
+import { withClubContext } from '../../utils/clubScopedPath';
 import { formatChips, formatInt } from '../../utils/clubDashboard';
 import { mediaUrl } from '../../utils/mediaBase';
+import { LEGAL_CENTER, LEGAL_CENTER_ENTRIES } from '../legalCenterContent';
 import styles from './ArenaWorkspacePages.module.css';
 
 interface WorkspaceLink {
@@ -20,6 +22,8 @@ interface WorkspaceLink {
   description: string;
   path: string;
   signal?: string;
+  /** A longer line under the description, for a page whose cards are documents. */
+  summary?: string;
 }
 
 interface WorkspaceReading {
@@ -50,6 +54,11 @@ function WorkspacePage({
   alerts?: WorkspaceAlert[];
   liveLine?: string;
 }) {
+  /* The club source the section rail beside this grid reads, so a card and
+     the rail tab for the same page carry the same club. Paths that are not
+     about one club (legal, help, friends, a /clubs/... tool) come back from
+     withClubContext untouched. */
+  const { routeClubId } = useClubWorkspace();
   /* A <section>, not a <main>. AppLayout already renders <main
      id="main-content"> around the router outlet, so every one of these pages
      was shipping two main landmarks and an ambiguous skip link. */
@@ -113,11 +122,16 @@ function WorkspacePage({
 
       <section className={styles.grid} aria-label={`${title} Tools`}>
         {links.map((item, index) => (
-          <Link to={item.path} className={styles.card} key={item.path}>
+          <Link
+            to={withClubContext(item.path, routeClubId)}
+            className={styles.card}
+            key={item.path}
+          >
             <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>
             <span className={styles.cardCopy}>
               <strong>{item.label}</strong>
               <span>{item.description}</span>
+              {item.summary && <span className={styles.summary}>{item.summary}</span>}
             </span>
             {item.signal && <span className={styles.signal}>{item.signal}</span>}
             <span className={styles.arrow} aria-hidden="true">
@@ -387,35 +401,15 @@ export function PlayWorkspacePage() {
 }
 
 export function LegalWorkspacePage() {
+  /* The words live in pages/legalCenterContent.ts so the prerendered Legal
+     Center (src/prerender/LegalPrerender.tsx) prints exactly this page. */
   return (
     <WorkspacePage
-      eyebrow="Trust & Rules"
-      title="Legal Center"
-      description="The Current Platform Rules, Privacy Commitments, Integrity Standards, And Promotion Terms."
-      art="images/bg-vault.jpg"
-      links={[
-        {
-          label: 'Fair Gaming',
-          description: 'Integrity, Security, And Reporting',
-          path: '/legal/fair-gaming',
-        },
-        {
-          label: 'Terms Of Service',
-          description: 'Platform And Account Terms',
-          path: '/legal/tos',
-        },
-        {
-          label: 'Privacy Policy',
-          description: 'Data Use, Retention, And Controls',
-          path: '/legal/privacy',
-        },
-        {
-          label: 'Promotion Rules',
-          description: 'Eligibility And Campaign Terms',
-          path: '/legal/promotions',
-        },
-        { label: 'Help Center', description: 'Product Help And Support Paths', path: '/help' },
-      ]}
+      eyebrow={LEGAL_CENTER.eyebrow}
+      title={LEGAL_CENTER.title}
+      description={LEGAL_CENTER.description}
+      art={LEGAL_CENTER.art}
+      links={[...LEGAL_CENTER_ENTRIES]}
     />
   );
 }

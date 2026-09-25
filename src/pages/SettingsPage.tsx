@@ -518,7 +518,7 @@ export default function SettingsPage() {
           .select(
             'id, hand_number, game_variant, small_blind, big_blind, pot_size, community_cards, winners, players, created_at'
           )
-          .contains('players', [{ userId: user.id }])
+          .contains('players', JSON.stringify([{ userId: user.id }]))
           .limit(100),
       ]);
 

@@ -1,10 +1,11 @@
 \set ON_ERROR_STOP on
 -- This cluster carries the exact INSTALLED weekly base, which is what the
--- migration's preimage guard names. Its captured union_accounting_runs predates
--- the shared scope columns, so the club scope's behaviour is proved in the
--- weekly-scheduler-fairness harness instead; what is proved here is that the
--- floor the coordinator now consults rounds, refuses and reconciles correctly
--- on the real installed definitions.
+-- migration's preimage guard names. What is proved here is that the floor the
+-- coordinator now consults rounds, refuses and reconciles correctly on the real
+-- installed definitions. The club scope's discovery BEHAVIOUR is proved after
+-- this file, in tests/fixtures/club-settlement-floor-behaviour, which first
+-- brings the captured union-only union_accounting_runs to the installed shared
+-- scope shape that the 2026-09-14 catalog capture predates.
 SET request.jwt.claims='{"role":"service_role","sub":"00000000-0000-0000-0000-000000000900"}';
 
 INSERT INTO rakeback_periods(club_id,user_id,period_start,period_end,rakeback_amount,status)

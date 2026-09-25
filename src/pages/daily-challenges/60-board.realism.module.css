@@ -1,0 +1,92 @@
+.missionBoard {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(22px, 3.4vw, 40px);
+  border-color: rgba(184, 196, 201, 0.5);
+  background:
+    radial-gradient(circle at 50% 5%, rgba(14, 94, 77, 0.3), transparent 34rem),
+    linear-gradient(180deg, rgba(7, 35, 29, 0.5), rgba(5, 9, 8, 0.96) 30%),
+    repeating-linear-gradient(90deg, transparent 0 80px, rgba(255, 255, 255, 0.012) 81px), #060908;
+  box-shadow:
+    inset 0 0 0 5px #040706,
+    inset 0 0 0 6px rgba(184, 196, 201, 0.12),
+    inset 0 24px 70px rgba(3, 61, 49, 0.15),
+    0 32px 70px rgba(0, 0, 0, 0.45);
+}
+
+.missionBoard::before,
+.missionBoard::after {
+  position: absolute;
+  z-index: 0;
+  width: 90px;
+  height: 22px;
+  border-top: 1px solid var(--mission-gold-deep);
+  content: '';
+  pointer-events: none;
+}
+
+.missionBoard::before {
+  top: 7px;
+  left: 7px;
+  border-left: 1px solid var(--mission-gold-deep);
+}
+
+.missionBoard::after {
+  right: 7px;
+  bottom: 7px;
+  border-right: 1px solid var(--mission-gold-deep);
+  border-bottom: 1px solid var(--mission-gold-deep);
+  border-top: 0;
+}
+
+.missionBoard > * {
+  position: relative;
+  z-index: 1;
+}
+
+.boardHeader {
+  border-bottom-color: rgba(214, 173, 82, 0.24);
+}
+
+.tabs {
+  padding: 4px;
+  border-color: rgba(184, 196, 201, 0.4);
+  background: linear-gradient(180deg, #202629, #090c0c 42%, #040605), var(--mission-gunmetal);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.12),
+    0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+.tab {
+  min-height: 66px;
+  border-right-color: rgba(184, 196, 201, 0.19);
+  background: linear-gradient(180deg, rgba(17, 23, 22, 0.95), rgba(5, 8, 7, 0.98));
+}
+
+.tab::before {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 4px;
+  height: 4px;
+  border: 1px solid #5f696a;
+  background: #111716;
+  content: '';
+}
+
+.tabActive {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--tier-color) 8%, #1b2221), #07100d), #08100e;
+  box-shadow: inset 0 0 26px color-mix(in srgb, var(--tier-color) 7%, transparent);
+}
+
+.tabActive::after {
+  right: 10%;
+  left: 10%;
+  height: 3px;
+}
+
+.list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}

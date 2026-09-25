@@ -821,6 +821,39 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a migration here that moves a Diamond Spins contract cannot
+      # merge while the client in the same branch cannot read it, and a client
+      # here cannot drop a contract without the migration that retires it.
+      #
+      # 2026-09-23: four Diamond Spins migrations were applied straight to
+      # production - the estate's documented way of shipping schema - and the
+      # session ended without merging the client. fn_wheel_state_v2 began
+      # returning contract_version 4; the deployed client accepts 2 or 3 and
+      # throws on every load. The wheel was dead for about nine hours and
+      # nothing went red, because every gate here compares the repo against the
+      # repo or against a snapshot of the schema. Nothing compared what the
+      # DATABASE says against what the CLIENT can hear.
+      #
+      # This half needs no credential, so a pull request never depends on
+      # production being reachable - the same ruling production-integrity-audit
+      # already makes for its live readers. The live comparison runs hourly
+      # there, and is the only half that can see a migration with no pull
+      # request behind it.
+      - name: Supabase Invariants — The Diamond Spins Contract The Client Can Read
+        run: |
+          set -o pipefail
+          echo "## Diamond Spins Contract Parity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-diamond-contract-parity.mjs --source 2>&1 | tee /tmp/diamondcontract.log; then
+            echo "OK — nothing here moves a Diamond Spins contract past the client that reads it." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A migration in this branch moves the wheel contract, the prize vocabulary, the" >> $GITHUB_STEP_SUMMARY
+            echo "segment count or the bonus floor, and the client in this branch cannot read it —" >> $GITHUB_STEP_SUMMARY
+            echo "or the client drops a contract with no migration retiring it. Land both halves" >> $GITHUB_STEP_SUMMARY
+            echo "together. See the log for the exact declaration to widen." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: Supabase identifies migrations by the filename version. A
       # duplicate version makes two different files compete for one ledger row.
 
@@ -1294,6 +1327,20 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-engine-recovery-postgres.py
+      - name: A member's club status is changed only by the server
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-member-status-server-owned.py
+      # Depends on the capability registry migration 20260924025555, which
+      # merges first; the harness exits 2 naming it when it is absent.
+      - name: Multi-day stage foundation keeps every stack through a bag and a resume (needs capability registry 20260924025555)
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-stage-foundation.py
+      - name: Multi-day stage view shows each player only their own bag and the operator doors refuse without authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-stage-view.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1306,6 +1353,22 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase1-cluster-session.sh
+      - name: Lightning Phase 2 remediation joins the hand to its cluster, its instance and its epoch
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase2-remediation.sh
+      - name: Lightning Phase 3 opens a Lightning-capable game as a feeder and keeps it one
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase3-feeder-first.sh
+      - name: Lightning Phase 3 remediation makes the front table the main game everywhere
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase3-remediation.sh
+      - name: Lightning Phase 4 counts one live eligible population and the thresholds it is judged by
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase4-population.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1323,6 +1386,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Cashier statements follow the trade ledger scope and export what is on screen
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cashier-statements.sh
       - name: Accounting agreement changes preserve immutable observed history
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1390,10 +1457,26 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
+      - name: "Club membership cap: one count, one lock, one limit"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-membership-cap.py --output artifacts/club-membership-cap
+      - name: Capability registry and accepted-event continuation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-capability-registry.py --output "$GITHUB_WORKSPACE/artifacts/capability-registry"
+      - name: Kill pot table settings refuse what the engine cannot honour
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-kill-pot-table-settings.py
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
+      - name: "Tournament creation refuses what the client refuses"
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-creation-rules.py --output artifacts/tournament-creation-rules
       - name: Concurrent hands preserve shared F06 custody lanes
         id: f06_hand_authority
         env:
@@ -1509,6 +1592,10 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
+      - name: Satellite and deal ladders rank a same-hand bust by starting stack
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-satellite-same-hand-bust-order-pg17.sh
 
       - name: Tournament blinds publish atomically across the field
         env:
@@ -1547,6 +1634,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-diamond-health-comparisons.py
+
+      - name: A schedule keeps its time zone across daylight saving
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-schedule-time-zone.py --output artifacts/schedule-time-zone
 
       # ── THE DIAMOND ARENA ACCEPTANCE RUNS HERE (2026-09-19) ──────────────
       # tests/sql/run-*diamond*.py certify the Diamond money doors (custody,

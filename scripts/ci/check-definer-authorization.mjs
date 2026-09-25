@@ -113,6 +113,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { partitionMigrations, reportRecorded } from './recording-only.mjs';
 import { join } from 'node:path';
 
 const REPO = process.cwd();
@@ -162,26 +163,15 @@ function changedMigrations(base) {
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
-      // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
-      // recovered record of an ALREADY-APPLIED migration is history, not new
-      // work. It cannot introduce a new definer: the function is already live in
-      // whatever state later migrations left it, and THAT live grant - not this
-      // file's historical creation-time GRANT - is what a browser can actually
-      // reach. Judging a backfill on its own creation-time grants produces false
-      // positives against production truth (verified 2026-09-01). New
-      // declarations are unaffected, and live grants stay covered by
-      // audit-live-definer-exposure.mjs (which asks production directly) and by
-      // this gate on every genuinely new migration. Marker is machine-written by
-      // scripts/ci/backfill-unrecorded-migrations.mjs.
-      .filter((f) => {
-        try {
-          return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(
-            readFileSync(join(REPO, f), 'utf8')
-          );
-        } catch {
-          return true; // unreadable: check it rather than skip it
-        }
-      })
+      // A RECORDING IS SORTED OUT IN main(), NOT HERE (2026-09-23, issue #5008).
+      //
+      // This used to drop any file whose first line read `-- BACKFILLED`, with
+      // no check that it recorded anything, so a comment disarmed all four
+      // rules on any file that carried it. scripts/ci/recording-only.mjs
+      // replaces that with a claim that can be checked - a manifest row whose
+      // md5 must equal both the file on disk and what production's
+      // schema_migrations holds for that version - and it has three outcomes,
+      // so "could not tell" is judged strictly instead of skipped.
   );
 }
 
@@ -246,8 +236,39 @@ function scanSql(sql, grantsOnly = false) {
   return out.join('');
 }
 
+/* SCANNING IS MEMOISED, BECAUSE THE COST WAS QUADRATIC (2026-09-23).
+ *
+ * `main` concatenates every migration the branch touches into one `branchSql`
+ * so a REVOKE in a sibling file is visible to a declaration in another. That is
+ * right, and it was being re-scanned from scratch for EVERY file AND, inside
+ * effectiveGrants, once for EVERY function name - so the work was
+ * files x functions x total-branch-bytes.
+ *
+ * Measured on the ten recovered migrations of issue #5008 (1.9 MB, 196 declared
+ * functions): 128 seconds for the 1.67 MB file alone and no verdict at all
+ * within 25 minutes for the set. In CI that is a job timeout, which is a guard
+ * that does not answer (CLAUDE.md 10.86 rule 1) rather than a guard that
+ * refuses. The scan itself is correct and unchanged; it simply runs once per
+ * distinct string instead of once per question asked about it.
+ *
+ * Four entries is enough for the shape main() actually uses (one branchSql in
+ * each of two modes, plus the file being judged in each), and the cap keeps a
+ * long --all sweep from holding every migration in memory. */
+const SCAN_CACHE_LIMIT = 4;
+const scanCache = new Map();
+
+function memoScan(sql, grantsOnly) {
+  const key = (grantsOnly ? 'g:' : 's:') + sql;
+  const hit = scanCache.get(key);
+  if (hit !== undefined) return hit;
+  const value = scanSql(sql, grantsOnly);
+  scanCache.set(key, value);
+  if (scanCache.size > SCAN_CACHE_LIMIT) scanCache.delete(scanCache.keys().next().value);
+  return value;
+}
+
 function stripComments(sql) {
-  return scanSql(sql);
+  return memoScan(sql, false);
 }
 
 /**
@@ -321,8 +342,28 @@ const BROWSER_ROLES = ['public', 'anon', 'authenticated'];
  * to `authenticated` explicitly.
  */
 function effectiveGrants(sql, name) {
-  sql = scanSql(sql, true);
   const held = { public: true, anon: true, authenticated: true };
+  for (const statement of grantLedger(sql).get(name.toLowerCase()) ?? []) {
+    for (const role of statement.roles) held[role] = statement.verb === 'GRANT';
+  }
+  return held;
+}
+
+/**
+ * Every GRANT/REVOKE in this SQL, indexed by the function name it names, in
+ * file order. One pass, memoised: see memoScan above for why.
+ *
+ * The parsing is byte-for-byte the rule that was here before - the same
+ * statement-bounded regexp, the same multi-signature handling, the same
+ * per-role application - lifted out of the per-name loop it used to sit in.
+ */
+function grantLedger(sql) {
+  const key = 'l:' + sql;
+  const hit = ledgerCache.get(key);
+  if (hit !== undefined) return hit;
+
+  const clean = memoScan(sql, true);
+  const ledger = new Map();
   /* THE GAP CANNOT CROSS A STATEMENT BOUNDARY (2026-09-01). This used to be
      `[\s\S]*?`, which let the word "grant" ANYWHERE - inside a RAISE EXCEPTION
      string, a column name, a comment that survived stripping - reach forward to
@@ -342,22 +383,30 @@ function effectiveGrants(sql, name) {
     'gi'
   );
   let m;
-  while ((m = re.exec(sql))) {
+  while ((m = re.exec(clean))) {
     // PostgreSQL permits several function signatures in one grant. Match each
     // complete signature; commas inside its argument list are not separators.
     const signatures = [...m[2].matchAll(/(?:^|,)\s*(?:public\.)?(\w+)\s*\([^)]*\)/gi)];
-    if (!signatures.some((signature) => signature[1].toLowerCase() === name.toLowerCase()))
-      continue;
+    if (signatures.length === 0) continue;
     const verb = m[1].toUpperCase();
     const named = m[4].toLowerCase();
-    for (const role of BROWSER_ROLES) {
-      if (new RegExp(String.raw`\b${role}\b`).test(named)) {
-        held[role] = verb === 'GRANT';
-      }
+    const roles = BROWSER_ROLES.filter((role) => new RegExp(String.raw`\b${role}\b`).test(named));
+    if (roles.length === 0) continue;
+    const statement = { verb, roles };
+    for (const signature of signatures) {
+      const fn = signature[1].toLowerCase();
+      const list = ledger.get(fn);
+      if (list) list.push(statement);
+      else ledger.set(fn, [statement]);
     }
   }
-  return held;
+
+  ledgerCache.set(key, ledger);
+  if (ledgerCache.size > SCAN_CACHE_LIMIT) ledgerCache.delete(ledgerCache.keys().next().value);
+  return ledger;
 }
+
+const ledgerCache = new Map();
 
 function browserReachable(sql, name) {
   const held = effectiveGrants(sql, name);
@@ -681,6 +730,17 @@ function main() {
     return;
   }
 
+  const { judge, recorded, unknown } = partitionMigrations(files, { repo: REPO });
+  reportRecorded('check-definer-authorization', recorded, unknown);
+  if (judge.length === 0) {
+    console.log(
+      `[check-definer-authorization] OK - ${files.length} migration(s); every one is a ` +
+        'verified recording of SQL production has already applied. Their live grants are ' +
+        'asked of production by scripts/ci/check-recorded-migrations-evidence.mjs.'
+    );
+    return;
+  }
+
   const allowlist = new Set(loadAllowlist().keys());
   const anonAllowlist = new Set(loadAllowlist('anonPublicSurface').keys());
   const offenders = [];
@@ -692,13 +752,13 @@ function main() {
   // Every migration this branch touches, concatenated, so a REVOKE in one file
   // is seen by a declaration in another. They ship together; they are read
   // together. See anonReadableDefiners for why.
-  const branchSql = files
+  const branchSql = judge
     .map((f) => join(REPO, f))
     .filter((p) => existsSync(p))
     .map((p) => readFileSync(p, 'utf8'))
     .join('\n');
 
-  for (const file of files) {
+  for (const file of judge) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
     const sql = readFileSync(path, 'utf8');

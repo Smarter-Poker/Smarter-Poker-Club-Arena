@@ -25,6 +25,7 @@
 #      of data: the CLOSED session exists so that the reader's
 #      `closed_at IS NULL` filter has something to filter.
 set -euo pipefail
+export LC_ALL=C  # else macOS collation reorders string_agg output and an assertion message stops being deterministic
 root=$(git rev-parse --show-toplevel)
 pgbin=${PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}
 migration="$root/supabase/migrations/20260920172736_lightning_phase_1_the_cash_session_knows_its_cluster.sql"

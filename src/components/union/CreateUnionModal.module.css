@@ -1,103 +1,122 @@
-.modal-overlay {
+/**
+ * CREATE UNION - the spade master's frame, and nothing drawn (#ClubArenaConsole).
+ *
+ * This sheet used to build the popup: `--surface-card`, `--radius-xl`, a 1px
+ * border, two sticky bars and a blur. All of it is gone. The frame, the header
+ * well, the pill slot and both action plates are PAINTED in the master; what
+ * is left here is the backdrop, the console's width, and the size of the copy
+ * and the two fields printed on its black glass.
+ *
+ * The panel classes were also renamed away from `modal-content` / `modal-overlay`:
+ * metallic-popups.css matches `[class*='_modal-content_']` and paints a steel
+ * shell with `!important`, which would put a second frame around the master.
+ *
+ * Sizes are cqw against the console, so a 320px phone and a 430px phone get
+ * the same picture. No radius, no gradient, no :hover.
+ */
+
+.overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  z-index: 1200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  z-index: var(--z-modal);
-  padding: var(--space-4);
-}
-
-.modal-content {
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  width: 100%;
-  max-width: 500px;
-  max-height: 90vh;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
   overflow-y: auto;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow:
-    var(--shadow-xl),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: slideUp var(--duration-normal)
-    var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  isolation: isolate;
+  color-scheme: dark;
 }
 
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-6);
-  border-bottom: 1px solid var(--border-subtle);
-  position: sticky;
-  top: 0;
-  background: var(--surface-card);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: 10;
+.sheet {
+  width: min(100%, 560px);
+  min-width: 0;
+  margin: auto 0;
+  outline: 0;
 }
 
-.modal-header h2 {
-  font-size: var(--text-xl);
+.console {
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+}
+
+.copy {
   margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.5cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: var(--text-xl);
-  cursor: pointer;
-  padding: var(--space-2);
-}
-
-.modal-body {
-  padding: var(--space-6);
+/* One field per row, its name engraved above it in lit blue caps, with an
+   engraved rule dividing it from what came before - the console's own
+   separator, never a drawn divider. */
+.field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 1.4cqw;
+  padding-top: 2.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+.label {
+  color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-.form-group label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
+/* The one thing the master does not paint: a place to type. It is a LINE on
+   the glass, engraved top and bottom, never a rounded well - the same control
+   the Create Club console uses. metallic-popups.css recesses and rounds every
+   input inside a dialog with `!important` from a `:where()` at specificity 0,
+   so each longhand is restated here at 0,2,0.
+   16px floor on the font: anything smaller makes iOS zoom the page on focus. */
+.input.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2.8cqw 1cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e4e7ec !important;
+  font:
+    500 max(16px, 3.8cqw) / 1.45 Inter,
+    system-ui,
+    sans-serif;
+  outline: none;
+  caret-color: #5bb8ff;
+  resize: vertical;
 }
 
-.modal-footer {
-  padding: var(--space-6);
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  position: sticky;
-  bottom: 0;
-  background: var(--surface-card);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+.input.input::placeholder {
+  color: #6b7784;
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
+.input.input:focus-visible {
+  outline: 0.6cqw solid #8fd4ff !important;
+  outline-offset: -0.6cqw;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+}
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.input.input:disabled {
+  opacity: 0.55;
 }

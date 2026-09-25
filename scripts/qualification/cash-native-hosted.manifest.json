@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 152173,
-      "sha256": "d6221c8d5e05b315b1d9b706c2c189beeaec0ef0bc4c6e0986435f5eb04a915a"
+      "bytes": 157613,
+      "sha256": "c58b3e664af56ef0bf88998de1108f04ade61a0416f81cc49e0cdf2cae78988d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 22175,
-      "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e"
+      "bytes": 22380,
+      "sha256": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 88814,
-      "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      "bytes": 90375,
+      "sha256": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7"
     }
   },
   "nativePgCron": {
@@ -133,8 +133,8 @@
     "reason": "Existing Accounting job directly invokes retained-hand native qualification; selector and routing regression expanded. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 139539,
-        "sha256": "50fa46ccf228dca4be463240f9ebd9d59725586a4ae6f6b122fbb3c1d976106d"
+        "bytes": 149836,
+        "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 17771,
@@ -149,8 +149,8 @@
       "revision": "59759374f63503f046b00fc54d3e0c161b87a0f4",
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 140716,
-          "sha256": "f223211fc49a26cadaca69b275569d416b36565d612052ab2298d5dba3d97687"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -168,8 +168,8 @@
       "revision": "f3e5bae43395980fc49ca02876b3f94818a54672",
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 141427,
-          "sha256": "94ec280b980b29ba5450cfea1eebf05449e97b8bdeb60b0c8de7861ce244fe4b"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -185,8 +185,8 @@
     "stockToolchainBinding": {
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 142687,
-          "sha256": "8f1a33be99429876bf59cb820f32931961a0d1b2dd7c7fcf7cb04ea92b8eb7d9"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -203,8 +203,8 @@
       "revision": "546421d4a8080b6cf8127c538e9043f3219beb6a",
       "movementParentPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 141976,
-          "sha256": "9a1f06bf566d36eec5d84fe340eaf434309059eb9097e692292782bb8f43a21e"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -228,6 +228,95 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
         "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      }
+    }
+  },
+  "cashierStatementsIntegration": {
+    "reason": "Phase 5 cashier statements: ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner (additive only). Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155443,
+        "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 22361,
+        "sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 90321,
+        "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      }
+    }
+  },
+  "clubMembershipCapIntegration": {
+    "reason": "Club membership cap: ci.yml gains the 'Club membership cap: one count, one lock, one limit' owned-PostgreSQL step (scripts/ci/test-club-membership-cap.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155650,
+        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+      }
+    }
+  },
+  "capabilityRegistryIntegration": {
+    "reason": "One capability registry: ci.yml gains the Capability registry and accepted-event continuation step (scripts/ci/test-capability-registry.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155875,
+        "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
+      }
+    }
+  },
+  "memberStatusServerOwnedIntegration": {
+    "reason": "Member status is server owned: ci.yml gains the 'A member's club status is changed only by the server' owned-PostgreSQL step (scripts/ci/test-member-status-server-owned.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "killPotTableSettingsIntegration": {
+    "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "tournamentCreationRulesIntegration": {
+    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "scheduleTimeZoneIntegration": {
+    "reason": "A schedule keeps its time zone: ci.yml gains the 'A schedule keeps its time zone across daylight saving' owned-PostgreSQL step (scripts/ci/test-schedule-time-zone.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155887,
+        "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
+      }
+    }
+  },
+  "multiDayStageFoundationIntegration": {
+    "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "multiDayStageViewIntegration": {
+    "reason": "Multi-day stage view and operator doors: ci.yml gains the Multi-day stage view step (scripts/ci/test-multi-day-stage-view.py against PostgreSQL 17) beside the multi-day foundation step, additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156053,
+        "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
       }
     }
   }

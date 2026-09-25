@@ -148,6 +148,7 @@ const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
 const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
 const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'));
+const CashierStatementsPage = lazyWithRetry(() => import('./pages/CashierStatementsPage'));
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
 const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
@@ -164,6 +165,7 @@ const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
 const ClubDiamondGamesOperationsPage = lazyWithRetry(
   () => import('./pages/club/ClubDiamondGamesOperationsPage')
 );
+const ClubDiamondCostsPage = lazyWithRetry(() => import('./pages/club/ClubDiamondCostsPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -224,6 +226,9 @@ const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPag
 const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
 const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
+// One marketplace (Dan, 2026-09-21): the route hands the web to the World Hub
+// marketplace and keeps MarketplacePage for the native app and checkout returns.
+const MarketplaceRoute = lazyWithRetry(() => import('./pages/MarketplaceRoute'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
@@ -285,6 +290,10 @@ const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDa
 /* House ads: smarter.poker's own promotions, platform-staff only. The page
    gates on profiles.role and the API route behind it checks again. */
 const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
+/* Commerce Desk (2026-09-24): platform staff decide club and union diamond
+   refunds, run the catalog price lifecycle and verify comparison evidence.
+   PlatformStaffGuard closes the route; every door checks staff again. */
+const CommerceDeskPage = lazyWithRetry(() => import('./pages/admin/CommerceDeskPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -1084,6 +1093,18 @@ function FullApp() {
                   }
                 />
                 <Route
+                  path="unions/:unionId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="union" />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
@@ -1425,6 +1446,21 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* Cashier Phase 5: the full cross-wallet statement and its
+                    export. Member-reachable like the Cashier itself; what it
+                    may show is decided by fn_cashier_statement_page. */}
+                <Route
+                  path="clubs/:clubId/cashier/statements"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierStatementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="clubs/:clubId/cashier-classic"
                   element={
@@ -1584,6 +1620,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Diamond Games Operations">
                           <ClubDiamondGamesOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="club" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -2133,11 +2181,23 @@ function FullApp() {
                 <Route
                   path="marketplace"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Marketplace">
-                        <MarketplacePage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Marketplace">
+                      {/* THE SAME PAGES AS THE WORLD HUB MARKETPLACE (Dan,
+                          2026-09-21). On the web this opens the matching
+                          /hub/diamond-store, /hub/vip-membership or
+                          /hub/club-shop page, which a signed-out visitor may
+                          read as well - so the guard belongs on the in-app
+                          storefront, which is rendered in the native app and
+                          for the two addresses only it can finish (a card
+                          checkout return, and a top-up carrying ?next=). */}
+                      <MarketplaceRoute
+                        storefront={
+                          <AuthGuard>
+                            <MarketplacePage />
+                          </AuthGuard>
+                        }
+                      />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route
@@ -2261,6 +2321,18 @@ function FullApp() {
                       <PageErrorBoundary pageName="House Ads">
                         <HouseAdsPage />
                       </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="commerce-desk"
+                  element={
+                    <AuthGuard>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Commerce Desk">
+                          <CommerceDeskPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
                     </AuthGuard>
                   }
                 />

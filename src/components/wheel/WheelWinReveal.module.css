@@ -4,9 +4,24 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  /* The shared card blurs its backdrop; this card is transparent art, so the
+     blur only cost a per-frame filter over the wheel behind it. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   width: min(580px, calc(100vw - 20px));
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
+}
+/* Phones and other coarse pointers get a solid scrim instead of a blurred one:
+   backdrop-filter re-samples everything under it every frame the wheel or the
+   prize moves, and on a 3x phone that was the reveal's biggest cost (owner
+   ruling 2026-09-21, R20). Desktop keeps the blur. */
+@media (pointer: coarse), (max-width: 700px) {
+  :global(.ca-modal-portal):has(.dialog) :global(.ca-modal-overlay) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgb(0 0 0 / 82%);
+  }
 }
 .dialog :global(.ca-modal-content) {
   padding: 0;
@@ -38,9 +53,39 @@
   filter: drop-shadow(0 20px 7px #000);
   animation: prize-float calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
 }
+/* On coarse pointers the floating art casts a painted shadow (transform and
+   opacity only) instead of a drop-shadow filter re-rendered on every frame. */
+@media (pointer: coarse) {
+  .art {
+    filter: none;
+  }
+  .prize::before {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    bottom: 2%;
+    height: 14%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgb(0 0 0 / 85%) 0%, rgb(0 0 0 / 0) 70%);
+    animation: prize-shadow calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
+  }
+}
+@keyframes prize-shadow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.94);
+    opacity: 0.8;
+  }
+}
 .rays {
   position: absolute;
   inset: 8%;
+  will-change: transform;
   background: conic-gradient(
     from 0deg,
     transparent,

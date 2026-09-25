@@ -5,6 +5,7 @@
   padding: 12px;
   box-sizing: border-box;
 }
+
 .stage {
   position: relative;
   aspect-ratio: 1;
@@ -248,8 +249,19 @@
   }
 }
 @media (max-width: 760px) {
+  /* THE BOARD IS CAPPED BY THE SPACE THE CONSOLE LEAVES IT, NOT BY THE PHONE.
+     min(100%, 500px) gives the board the whole column, and on a phone the
+     console is that one column: at 375 x 667 the board took all 359px of it
+     and put Book and the tile plate 67px below the fold, in every round. The
+     stage is square and is the board's width less its padding, so the width is
+     what caps the height. The subtrahend is the chrome the board shares the
+     column with, term by term: the back link (44) + the console header (50) +
+     the playfield's padding (16) + the controls with their plates (158) + the
+     board's own readouts, caption and padding (107), and 15px of slack. It
+     stops biting above roughly 755px of viewport, so a modern phone held
+     upright still gets the full column. */
   .board {
-    width: min(100%, 500px);
+    width: min(100%, 500px, calc(100dvh - 390px));
     padding: 10px 5px;
   }
   .tile {

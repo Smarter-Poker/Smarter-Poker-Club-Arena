@@ -1,4 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 402ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 223x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
@@ -496,6 +506,18 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/snapshot_retention_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/snapshot-retention-preimage.json',
     'supabase/migrations/20260918230713_unresolved_hand_permits_retain_their_original_snapshots.sql',
+    'scripts/ci/build-f06-retired-origin.py',
+    'scripts/ci/build-f06-stopped-bank-custody.py',
+    'scripts/ci/probes/f06-shared-hand-lane/stopped-bank-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/stopped_bank_qualification.py',
+    'scripts/ci/schema-manifest.d/f06-stopped-bank-custody.json',
+    'supabase/migrations/20260919032212_stopped_mtt_banks_survive_their_original_owner_transfer.sql',
+    'scripts/ci/probes/f06-retired-origin-authority.sql',
+    'scripts/ci/probes/f06-retired-origin-cohorts.json',
+    'scripts/ci/probes/f06-shared-hand-lane/retired-origin-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/retired_origin_qualification.py',
+    'scripts/ci/schema-manifest.d/f06-retired-origin.json',
+    'supabase/migrations/20260919024642_retired_original_managers_retain_authority_without_restoring.sql',
     'scripts/ci/probes/f06-shared-hand-lane/retained_mtt_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/lease_reaper_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/lease-reaper-preimage.json',
@@ -1506,6 +1528,7 @@ describe('restored provider accounting qualification', () => {
     'cash-source-compatibility',
     'cash-source-refusals',
     'cashier-document-authority',
+    'cashier-statements',
     'club-weekly-summary',
     'correction-document-authority',
     'correction-writer-authority',
@@ -1643,6 +1666,7 @@ describe('restored provider accounting qualification', () => {
       'accounting-delivery',
       'credit-invoice-payment',
       'agent-accounting-statements',
+      'cashier-statements',
       'accounting-agreement-history',
       'club-weekly-summary',
       'weekly-accounting-coordinator',

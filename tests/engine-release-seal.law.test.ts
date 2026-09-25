@@ -17,7 +17,17 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 3488ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 25x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 
 const ROOT = resolve(import.meta.dirname, '..');
 const read = (path: string) => readFileSync(resolve(ROOT, path), 'utf8');
@@ -128,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 8 tests');
+  expect(result.stderr).toContain('Ran 9 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {
@@ -2582,7 +2592,19 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     expect(transaction).toContain('m.get("durableConfirmed") is True');
     expect(transaction).toContain('m.get("unparkedTables")==0');
     expect(transaction).toContain('if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):');
-    expect(transaction).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
+    // The certificate's minimum is an explicit argument that defaults to the
+    // strict figure; the entry countdown always reads the strict figure.
+    expect(transaction).toContain('local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"');
+    expect(transaction).toContain('MIN_BREAK_MS="$minimum_ms"');
+    const countdown = transaction.slice(
+      transaction.indexOf('legacy_checkpoint_countdown() {'),
+      transaction.indexOf('\npersist_break_deadline() {')
+    );
+    // The countdown reads the strict figure plus the caller's headroom, whose
+    // ceiling is 0 for the legacy path (the budget already holds the entry);
+    // it never reads the legacy figure itself.
+    expect(countdown).toContain('MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom))');
+    expect(countdown).not.toContain('LEGACY_MIN_BREAK_REMAINING_MS');
   });
 
   it('executes short-window queue refusal, retry, deadline, supersession and cancellation cases', () => {
@@ -2596,7 +2618,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       }
     );
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stderr).toContain('Ran 10 tests');
+    expect(result.stderr).toContain('Ran 15 tests');
   });
 
   it('guarantee and rollback can only recover the durable desired image', () => {
@@ -2623,6 +2645,18 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       'MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))'
     );
     expect((150 + 135) * 1000).toBeLessThan(5 * 60 * 1000);
+    // The legacy checkpoint's 40 seconds come out of candidate proof only:
+    // 110 seconds remain for a candidate proof that sealed runs have measured
+    // at 51-112 seconds. A proof at the top of that range now rolls back
+    // inside the untouched 135-second reserve instead of sealing; that is the
+    // trade the changelog states, and the reserve itself does not move.
+    expect(transaction).toContain('LEGACY_CHECKPOINT_BUDGET_SECONDS=40');
+    expect(transaction).toContain(
+      'LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))'
+    );
+    expect((150 + 135 + 0 - 40) * 1000).toBe(245_000);
+    expect(150 - 40).toBe(110);
+    expect(110).toBeGreaterThan(51);
     expect(transaction).toContain('if [ "$CERTIFICATE_RC" -eq 2 ]');
     expect(transaction).toContain('refusing before mutation');
     const readiness = transaction.indexOf(

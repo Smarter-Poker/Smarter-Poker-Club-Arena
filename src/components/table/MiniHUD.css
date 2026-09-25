@@ -3,8 +3,6 @@
  * Shows player type, VPIP/PFR bars, heat indicator
  */
 
-@import '../../styles/design-tokens.css';
-
 .mini-hud {
   display: inline-flex;
   align-items: center;

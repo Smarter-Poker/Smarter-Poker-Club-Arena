@@ -298,11 +298,10 @@ describe('the allowlist stays small and reasoned', () => {
     )
   );
 
-  it('holds only the two functions that were read line by line', () => {
-    expect(Object.keys(allow.reviewedExceptions).sort()).toEqual([
-      'get_current_settlement_period',
-      'recalculate_leaderboard_ranks',
-    ]);
+  it('holds only the one function still exposed, read line by line', () => {
+    // get_current_settlement_period left on 2026-09-22: no browser role can
+    // execute either overload, so its exception was forgiving nothing.
+    expect(Object.keys(allow.reviewedExceptions).sort()).toEqual(['recalculate_leaderboard_ranks']);
   });
 
   it('gives every entry a reason long enough to be a reason', () => {

@@ -43,6 +43,7 @@ import { PlayerSearchService, type PlayerSearchResult } from '../services/Player
 import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
 import { formatBuyInShort } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 import styles from './SearchPage.module.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -220,8 +221,15 @@ export function variantLabel(variant: string | null | undefined): string {
     plo8: 'PLO8',
     flo8: 'FLO8',
     pineapple: 'Pineapple',
+    /* Legacy spellings, never a game on offer: Open-Face Chinese is excluded
+       (owner decision 2026-09-22) and was never dealt. `ofc_pineapple` rows
+       were Crazy Pineapple (20260823_retire_ofc_pineapple_variant.sql), so they
+       read exactly as `pineapple` does here; a bare `ofc` names no game this
+       platform runs, so it reads as the 'Poker' this function prints for a
+       missing variant. */
+    ofc_pineapple: 'Pineapple',
+    ofc: 'Poker',
     short_deck: 'Short Deck',
-    ofc: 'OFC',
     mixed: 'Mixed',
     cash: 'Cash',
   };
@@ -237,6 +245,9 @@ export function tournamentStatusLabel(status: string): string {
       return 'Registering';
     case 'ANNOUNCED':
       return 'Announced';
+    case 'BAGGED':
+      // Multi-day, between days. Never "Bagged" from the default below.
+      return DAY_COMPLETE_LABEL;
     default:
       return status ? status.charAt(0) + status.slice(1).toLowerCase() : 'Scheduled';
   }
@@ -1324,7 +1335,9 @@ export default function SearchPage() {
                               ? 'Open Lobby'
                               : tournament.status === 'RUNNING'
                                 ? 'Watch'
-                                : 'Register'}
+                                : isBaggedStatus(tournament.status)
+                                  ? 'View Schedule'
+                                  : 'Register'}
                           </button>
                         </div>
                       </article>

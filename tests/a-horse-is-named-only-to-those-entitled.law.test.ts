@@ -93,19 +93,17 @@ describe('a horse is named only to those entitled', () => {
     }
   });
 
-  it('the page paints the flag it is given and never derives one', () => {
-    // The client must not infer "horse" from a username, an avatar, a member
-    // number or anything else. If the database masked it, the screen has to
-    // stay masked too - a client-side guess would walk straight around the
-    // entitlement the database just enforced.
+  it('the page never paints, derives or infers which players are horses', () => {
+    // Dan, 2026-09-14 (binding): "NOTHING SHOULD EVER REVEAL A HORSES
+    // IDENTITY." This closes the one thing the entitlement rule above still
+    // allowed - staff seeing the true flag painted on screen. The page no
+    // longer touches is_horse at all: not the real value the RPC still hands
+    // an entitled caller, not a masked one, and not a guess from a username,
+    // an avatar or anything else. See tests/a-horse-is-never-named.law.test.ts
+    // for the estate-wide guard this page is one instance of.
     const page = readFileSync(resolve(__dirname, '../src/pages/club/ClubDataPage.tsx'), 'utf8');
-    const horseLines = page.split('\n').filter((l) => /is_horse|horseTag|hideHorses/.test(l));
-    expect(horseLines.length).toBeGreaterThan(0);
-    for (const line of horseLines) {
-      expect(line, `this line derives a horse rather than reading the flag: ${line}`).not.toMatch(
-        /username\s*\.\s*(includes|startsWith|match)|is_bot/
-      );
-    }
+    expect(page).not.toMatch(/is_horse|horseTag|hideHorses/);
+    expect(page).not.toMatch(/username\s*\.\s*(includes|startsWith|match)|is_bot/);
   });
 
   it('never calls a horse a bot, anywhere the operator can read', () => {

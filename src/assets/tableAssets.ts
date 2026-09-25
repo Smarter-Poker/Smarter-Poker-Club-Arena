@@ -69,14 +69,20 @@ import bgSkinGoldenSparks from '../assets/backgrounds/bg_skin_golden_sparks.jpg'
 import bgSkinPlatinumDeco from '../assets/backgrounds/bg_skin_platinum_deco.jpg';
 import bgFinalTableBroadcast from '../assets/backgrounds/bg_final_table_broadcast.jpg';
 
+/* Every thumbnail is a served file, never a data: URI. Vite inlines any asset
+   under 4kB as base64 into the importing chunk, which put the two smallest
+   background thumbnails (bg_skin_crimson_damask, bg_skin_obsidian_micro) into
+   the marketplace script as ~9kB of base64 while the other 46 stayed files:
+   a third larger than the image, re-downloaded with the script, and outside
+   the media pipeline. `no-inline` keeps the whole set uniform. */
 const tableThumbnailModules = import.meta.glob('./customization-thumbs/tables/*.webp', {
   eager: true,
-  query: '?url',
+  query: '?url&no-inline',
   import: 'default',
 }) as Record<string, string>;
 const backgroundThumbnailModules = import.meta.glob('./customization-thumbs/backgrounds/*.webp', {
   eager: true,
-  query: '?url',
+  query: '?url&no-inline',
   import: 'default',
 }) as Record<string, string>;
 

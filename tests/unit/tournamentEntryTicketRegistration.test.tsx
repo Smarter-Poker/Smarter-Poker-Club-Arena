@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   findTicket: vi.fn(),
   navigate: vi.fn(),
   readBalance: vi.fn(),
+  readUnit: vi.fn(),
   registerPlayer: vi.fn(),
   reportError: vi.fn(),
   toastError: vi.fn(),
@@ -18,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../src/services/TournamentService', () => ({
   tournamentService: {
     findTournamentEntryTicket: mocks.findTicket,
+    /* The card now reads the entry's unit beside the ticket (2026-09-21).
+       These are chip events; the Diamond and unread halves are in
+       tests/unit/signUpCardSpeaksTheEntryUnit.test.tsx. */
+    readTournamentUnitCents: mocks.readUnit,
     registerPlayer: mocks.registerPlayer,
   },
 }));
@@ -68,6 +73,7 @@ describe('human tournament registration with entry-only tickets', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.findTicket.mockResolvedValue(null);
+    mocks.readUnit.mockResolvedValue(1);
     mocks.readBalance.mockResolvedValue({ balance: 500 });
     mocks.registerPlayer.mockResolvedValue({ id: 'registration-1', table_id: 'table-1' });
   });
@@ -93,7 +99,8 @@ describe('human tournament registration with entry-only tickets', () => {
     });
 
     expect(await screen.findByText('Tournament Ticket')).toBeInTheDocument();
-    expect(screen.queryByText('Your Balance:')).not.toBeInTheDocument();
+    // The console prints the row label without a colon: label left, value right.
+    expect(screen.queryByText('Your Balance')).not.toBeInTheDocument();
     expect(mocks.readBalance).not.toHaveBeenCalled();
     expect(
       screen.getByText('You Can Unregister Any Time Before The Tournament Starts')
@@ -140,7 +147,7 @@ describe('human tournament registration with entry-only tickets', () => {
       registration = hook.result.current.register(tournament);
     });
 
-    expect(await screen.findByText('Entry Fee:')).toBeInTheDocument();
+    expect(await screen.findByText('Entry Fee')).toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.readBalance).toHaveBeenCalledWith('user-1', { clubId: 'club-1' })
     );

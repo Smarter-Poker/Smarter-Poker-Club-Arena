@@ -3,7 +3,7 @@
  *  SETTINGS PANEL — Table Preferences
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Slide-out settings panel for:
+ * Table preferences on the spade console (#ClubArenaConsole, 2026-09-13):
  * - Auto-muck losing hands
  * - Sound controls
  * - Card display preferences
@@ -18,6 +18,7 @@ import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './SettingsPanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -233,6 +234,22 @@ export function SettingsPanel({
 
   if (!isOpen) return null;
 
+  /* ONE CONSOLE (#ClubArenaConsole, 2026-09-13). The side sheet is gone: the
+     panel is the spade master with its rails bridged flat (no crest - a
+     preferences sheet, not a showpiece), every setting a row on the black
+     glass with an engraved rule between rows, every switch a lit word (ON
+     burns green, OFF sits muted), the animation speed three lit words, and
+     the one slider the art cannot paint drawn to run UP AND DOWN (a sideways
+     drag at the felt is the table-switch gesture). The two painted plates in
+     the foot are its actions: Reset To Defaults on steel, Close on the blue
+     glass. Every handler, key and default above is untouched; the staggered
+     section reveal still plays, at the same 80ms cadence. */
+  const sectionStyle = (i: number): React.CSSProperties => ({
+    opacity: visibleSections[i] ? 1 : 0,
+    transform: visibleSections[i] ? 'translateY(0)' : 'translateY(8px)',
+    transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+  });
+
   return (
     <div
       className="settings-overlay"
@@ -256,27 +273,35 @@ export function SettingsPanel({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="settings-panel__header">
-          <h2 className="settings-panel__title">Table Settings</h2>
-          <button className="settings-panel__close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-
-        {/* Settings Sections */}
-        <div className="settings-panel__body">
+      <div
+        className="settings-panel"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="table-settings-title"
+      >
+        <SpadeConsole
+          onClose={onClose}
+          eyebrow="Table Preferences"
+          title="Table Settings"
+          titleId="table-settings-title"
+          crest="flat"
+          pill={settings.soundEnabled ? 'Sound On' : 'Muted'}
+          pillInk={settings.soundEnabled ? 'green' : 'muted'}
+          plates={{
+            secondary: { label: 'Reset To Defaults', ink: 'silver', onClick: handleReset },
+            primary: {
+              label: 'Close',
+              ink: 'white',
+              onClick: onClose,
+              'aria-label': 'Close Table Settings',
+            },
+          }}
+          className="stp__console"
+        >
           {/* Gameplay Section */}
-          <div
-            className="settings-section"
-            style={{
-              opacity: visibleSections[0] ? 1 : 0,
-              transform: visibleSections[0] ? 'translateY(0)' : 'translateY(8px)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <h3 className="settings-section__title">Gameplay</h3>
+          <div className="stp__section" style={sectionStyle(0)}>
+            <h3 className="stp__heading sc-ink--blue">Gameplay</h3>
 
             {/* ── SHOWDOWN follow-up 2026-08-25 (Dan spec section 37) ──
                 The auto-muck toggle RETURNS, because both of the reasons it
@@ -324,15 +349,8 @@ export function SettingsPanel({
           </div>
 
           {/* Display Section */}
-          <div
-            className="settings-section"
-            style={{
-              opacity: visibleSections[1] ? 1 : 0,
-              transform: visibleSections[1] ? 'translateY(0)' : 'translateY(8px)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <h3 className="settings-section__title">Display</h3>
+          <div className="stp__section" style={sectionStyle(1)}>
+            <h3 className="stp__heading sc-ink--blue">Display</h3>
 
             {/* FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay */}
 
@@ -372,33 +390,34 @@ export function SettingsPanel({
               onChange={() => handleToggle('showTicker')}
             />
 
-            <div className="settings-item">
-              <div className="settings-item__info">
-                <span className="settings-item__label">Animation Speed</span>
+            {/* Three lit words, not a drawn dropdown: the art paints no select.
+                Same handler, same three values. Speed SCALES every animation
+                (--animation-speed); none of these can switch one off. */}
+            <div className="stp__row" role="group" aria-labelledby="stp-animation-speed">
+              <div className="stp__info">
+                <span id="stp-animation-speed" className="stp__label sc-ink--silver">
+                  Animation Speed
+                </span>
               </div>
-              <div className="settings-item__select">
-                <select
-                  value={settings.animationSpeed}
-                  onChange={(e) => handleSelect('animationSpeed', e.target.value)}
-                >
-                  <option value="slow">Slow</option>
-                  <option value="normal">Normal</option>
-                  <option value="fast">Fast</option>
-                </select>
+              <div className="stp__choices">
+                {(['slow', 'normal', 'fast'] as const).map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    className={`stp-word stp-word--choice ${settings.animationSpeed === speed ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                    aria-pressed={settings.animationSpeed === speed}
+                    onClick={() => handleSelect('animationSpeed', speed)}
+                  >
+                    {speed === 'slow' ? 'Slow' : speed === 'normal' ? 'Normal' : 'Fast'}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
 
           {/* Sound Section */}
-          <div
-            className="settings-section"
-            style={{
-              opacity: visibleSections[2] ? 1 : 0,
-              transform: visibleSections[2] ? 'translateY(0)' : 'translateY(8px)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <h3 className="settings-section__title">Sound</h3>
+          <div className="stp__section" style={sectionStyle(2)}>
+            <h3 className="stp__heading sc-ink--blue">Sound</h3>
 
             <SettingToggle
               label="Sound Effects"
@@ -407,10 +426,14 @@ export function SettingsPanel({
               onChange={() => handleToggle('soundEnabled')}
             />
 
-            <div className="settings-item">
-              <div className="settings-item__info">
-                <span className="settings-item__label">Volume</span>
-                <span className="settings-item__value">{settings.soundVolume}%</span>
+            {/* THE ONE THING DRAWN. The art paints no slider, so this is the
+                only control here that is not a lit word - and it runs UP AND
+                DOWN (Dan: "THE SLIDER NEEDS TO GO UP AND DOWN, NOT SIDE TO
+                SIDE"). Top is loud. Same key, same range, same disable. */}
+            <div className="stp__row stp__row--slider">
+              <div className="stp__info">
+                <span className="stp__label sc-ink--silver">Volume</span>
+                <span className="stp__value sc-ink--blue">{settings.soundVolume}%</span>
               </div>
               <input
                 type="range"
@@ -421,6 +444,7 @@ export function SettingsPanel({
                 onChange={(e) => handleSlider('soundVolume', parseInt(e.target.value))}
                 disabled={!settings.soundEnabled}
                 aria-label="Sound Volume Percent"
+                aria-orientation="vertical"
               />
             </div>
 
@@ -433,45 +457,43 @@ export function SettingsPanel({
           </div>
 
           {/* Customization Section */}
-          <div
-            className="settings-section"
-            style={{
-              opacity: visibleSections[3] ? 1 : 0,
-              transform: visibleSections[3] ? 'translateY(0)' : 'translateY(8px)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <h3 className="settings-section__title">Customization</h3>
+          <div className="stp__section" style={sectionStyle(3)}>
+            <h3 className="stp__heading sc-ink--blue">Customization</h3>
 
             {/* Avatar Button */}
-            <div className="settings-item settings-item--action">
-              <div className="settings-item__info">
-                <span className="settings-item__label">Avatar</span>
-                <span className="settings-item__description">Change Your Table Avatar</span>
+            <div className="stp__row">
+              <div className="stp__info">
+                <span className="stp__label sc-ink--silver">Avatar</span>
+                <span className="stp__desc">Change Your Table Avatar</span>
               </div>
-              <button className="settings-action-btn" onClick={() => setShowAvatarGallery(true)}>
+              <button
+                type="button"
+                className="stp-word stp-word--avatar sc-ink--blue"
+                onClick={() => setShowAvatarGallery(true)}
+                aria-label="Change Avatar"
+              >
                 <img
                   loading="lazy"
                   decoding="async"
                   src={resolveAvatarDisplay(currentAvatarUrl, userId)}
-                  alt="Avatar"
+                  alt=""
                   className="settings-avatar-preview"
                 />
                 Change
               </button>
             </div>
 
-            <div className="settings-item settings-item--action settings-item--studio">
-              <div className="settings-item__info">
-                <span className="settings-item__eyebrow">Appearance Suite</span>
-                <span className="settings-item__label">Table Studio</span>
-                <span className="settings-item__description">
-                  Tables, Backgrounds, Buttons And Card Backs
-                </span>
+            <div className="stp__row">
+              <div className="stp__info">
+                <span className="stp__eyebrow sc-ink--blue">Appearance Suite</span>
+                <span className="stp__label sc-ink--silver">Table Studio</span>
+                <span className="stp__desc">Tables, Backgrounds, Buttons And Card Backs</span>
               </div>
               <button
-                className="settings-action-btn settings-action-btn--studio"
+                type="button"
+                className="stp-word sc-ink--white"
                 onClick={() => setShowThemeSettings(true)}
+                aria-label="Open Table Studio"
               >
                 Open Studio
               </button>
@@ -481,8 +503,8 @@ export function SettingsPanel({
           {/* ═══════════════════════════════════════════════════════════
               Bible V8 §11.1: User Table Preferences (12 toggles)
           ═══════════════════════════════════════════════════════════ */}
-          <div className="settings-section">
-            <h3 className="settings-section__title">Table Preferences</h3>
+          <div className="stp__section">
+            <h3 className="stp__heading sc-ink--blue">Table Preferences</h3>
             <TableSettingsPanel
               settings={v8Settings}
               loading={v8Loading}
@@ -490,14 +512,7 @@ export function SettingsPanel({
               mode="inline"
             />
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="settings-panel__footer">
-          <button className="settings-panel__reset" onClick={handleReset}>
-            Reset To Defaults
-          </button>
-        </div>
+        </SpadeConsole>
       </div>
 
       {/* Avatar Gallery Modal */}
@@ -532,18 +547,33 @@ interface SettingToggleProps {
   onChange: () => void;
 }
 
+/**
+ * A switch is a lit word, not a drawn track (#ClubArenaConsole): the art
+ * paints no toggle and nothing may be drawn. ON burns green, OFF sits muted.
+ * It is a real switch to assistive tech (role, aria-checked, a name), which
+ * the hidden checkbox it replaces never was.
+ */
 function SettingToggle({ label, description, checked, onChange }: SettingToggleProps) {
+  const id = `stp-switch-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   return (
-    <label className="settings-item settings-item--toggle">
-      <div className="settings-item__info">
-        <span className="settings-item__label">{label}</span>
-        {description && <span className="settings-item__description">{description}</span>}
+    <div className="stp__row">
+      <div className="stp__info">
+        <span className="stp__label sc-ink--silver" id={id}>
+          {label}
+        </span>
+        {description && <span className="stp__desc">{description}</span>}
       </div>
-      <div className="settings-toggle">
-        <input type="checkbox" checked={checked} onChange={onChange} />
-        <span className="settings-toggle__slider" />
-      </div>
-    </label>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-labelledby={id}
+        className={`stp-word stp-word--switch ${checked ? 'sc-ink--green' : 'sc-ink--muted'}`}
+        onClick={onChange}
+      >
+        {checked ? 'On' : 'Off'}
+      </button>
+    </div>
   );
 }
 

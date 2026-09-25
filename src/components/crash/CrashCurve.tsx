@@ -157,6 +157,8 @@ function wouldHaveGone(
 }
 /** The multiplier lines the glass can print; the ones inside the axis are shown. */
 const MULTIPLIER_TICKS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+/** Two tick labels closer than this, in glass pixels, would overprint; the lower one gives way. */
+const TICK_LABEL_GAP = 14;
 /** Seconds tick spacing candidates: the smallest that keeps the axis to a handful of ticks. */
 const SECOND_STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300];
 const SECOND_TICKS = 8;
@@ -839,9 +841,28 @@ interface FrameState {
   finished: boolean;
   burst: number;
   cashProgress: number | null;
+  /** A round booked at the ceiling: the flight is crowned in gold, nothing crashes. */
+  atCap: boolean;
   reduced: boolean;
   speed: number;
 }
+/** The burst's two palettes: the crash in red, the ceiling in gold. */
+const BURST_PALETTE = {
+  crash: {
+    flash: new THREE.Color(0xfff1c9),
+    fire: new THREE.Color(0xff5b3a).multiplyScalar(1.6),
+    shock: new THREE.Color(0xff5b6e).multiplyScalar(1.6),
+    bright: new THREE.Color(0xfff1c9),
+    dim: new THREE.Color(0xff5b6e),
+  },
+  max: {
+    flash: new THREE.Color(0xfff6d0),
+    fire: new THREE.Color(0xffd700).multiplyScalar(1.5),
+    shock: new THREE.Color(0xffd700).multiplyScalar(1.4),
+    bright: new THREE.Color(0xfff6d0),
+    dim: new THREE.Color(0xffb300),
+  },
+} as const;
 /** Writes the flight, the ribbon, the wake, the sky and the burst for one frame. Allocates nothing. */
 function paintScene(art: Art, path: FlightPath, s: FrameState, v: THREE.Vector3[]) {
   const [head, tangent, normal, scratch] = v;
@@ -853,27 +874,27 @@ function paintScene(art: Art, path: FlightPath, s: FrameState, v: THREE.Vector3[
   art.ribbonMaterial.uniforms.uCore.value.lerp(heat.core, mix);
   art.ribbonMaterial.uniforms.uHalo.value.lerp(heat.halo, mix);
   art.fillMaterial.uniforms.uColor.value.lerp(
-    s.finished ? art.ribbonMaterial.uniforms.uRedHalo.value : heat.halo,
+    s.finished && !s.atCap ? art.ribbonMaterial.uniforms.uRedHalo.value : heat.halo,
     mix
   );
   art.headGlow.material.color.lerp(heat.glow, mix);
-  art.ribbonMaterial.uniforms.uRed.value = s.finished
-    ? s.reduced
-      ? 1
-      : Math.min(1, s.burst * 1.6)
-    : 0;
+  art.ribbonMaterial.uniforms.uRed.value =
+    s.finished && !s.atCap ? (s.reduced ? 1 : Math.min(1, s.burst * 1.6)) : 0;
   // The jet: on the head, along the tangent, banking harder as the curve steepens.
   const flight = art.flight.group;
   flight.position.copy(head);
+  // Between rounds the jet hovers on the launch line instead of sitting on it.
+  if (s.phase === 'idle' && !s.reduced) flight.position.y += Math.sin(s.now / 700) * 0.06;
   flight.rotation.set(
     0.04 + s.progress * 0.14,
     0.06,
     Math.atan2(tangent.y, tangent.x) +
       (s.phase === 'idle' && !s.reduced ? Math.sin(s.now / 900) * 0.035 : 0)
   );
-  flight.visible = !s.finished;
-  art.headGlow.visible = !s.finished;
-  art.headGlow.position.copy(head);
+  // A crash removes the jet; a booking at the ceiling keeps it flying under the crown.
+  flight.visible = !s.finished || s.atCap;
+  art.headGlow.visible = !s.finished || s.atCap;
+  art.headGlow.position.copy(flight.position);
   art.headGlow.material.opacity = s.reduced ? 0.55 : 0.45 + Math.sin(s.now / 160) * 0.12;
   art.flight.afterburners.forEach(({ outer, inner, glow }, i) => {
     const flicker = s.reduced
@@ -959,7 +980,14 @@ function paintScene(art: Art, path: FlightPath, s: FrameState, v: THREE.Vector3[
   const bursting = s.finished;
   art.flash.visible = art.fire.visible = art.shock.visible = art.sparks.points.visible = bursting;
   if (bursting) {
-    const t = s.reduced ? 0.55 : Math.min(1, s.burst);
+    const palette = s.atCap ? BURST_PALETTE.max : BURST_PALETTE.crash;
+    art.flash.material.color.copy(palette.flash);
+    art.fire.material.color.copy(palette.fire);
+    art.shock.material.color.copy(palette.shock);
+    art.sparks.points.material.uniforms.uBright.value.copy(palette.bright);
+    art.sparks.points.material.uniforms.uDim.value.copy(palette.dim);
+    // The crown at the ceiling keeps ringing while the plate is read; a crash burns out once.
+    const t = s.reduced ? 0.55 : s.atCap ? s.burst - Math.floor(s.burst) : Math.min(1, s.burst);
     const quick = Math.min(1, t * 1.8);
     art.flash.position.copy(head);
     art.flash.scale.setScalar(0.8 + quick * 3.8);
@@ -1007,6 +1035,7 @@ function paintScene(art: Art, path: FlightPath, s: FrameState, v: THREE.Vector3[
 export default function CrashCurve(props: CrashCurveProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const glass = useRef<SVGSVGElement>(null);
+  const frameNode = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   /** The hero's text node, written by the frame loop while the round is open. */
   const ticker = useRef<HTMLDivElement>(null);
@@ -1124,8 +1153,13 @@ export default function CrashCurve(props: CrashCurveProps) {
           ticker.current.dataset.heat = tickerHeat(printed);
         }
       }
+      // Booked at the ceiling: there is nothing above it to reveal, so the
+      // replay ends at the cap and the flight is crowned instead of crashed.
+      const atCap = p.phase === 'cashed' && (p.cashoutCents ?? 0) >= p.capCents;
       const target =
-        p.phase === 'cashed' ? (p.crashCents ?? p.finalCents ?? 100) : (p.finalCents ?? current);
+        p.phase === 'cashed'
+          ? Math.min(p.crashCents ?? p.finalCents ?? 100, atCap ? p.capCents : Infinity)
+          : (p.finalCents ?? current);
       const replay =
         p.phase === 'cashed'
           ? reduced
@@ -1186,6 +1220,7 @@ export default function CrashCurve(props: CrashCurveProps) {
             burst: (revealedFor - burstAfter) / (1200 * speed),
             cashProgress:
               p.phase === 'cashed' ? Math.min(0.92, progressOf(p.cashoutCents ?? 100)) : null,
+            atCap,
             reduced,
             speed,
           },
@@ -1195,14 +1230,24 @@ export default function CrashCurve(props: CrashCurveProps) {
       // ── The glass ──────────────────────────────────────────────────────
       const [, y0] = toScreen(0),
         [, y1] = toScreen(1);
-      MULTIPLIER_TICKS.forEach((cents, i) => {
+      // Lines for every tick inside the axis. Labels: 1.00x always prints (it
+      // is the launch line), and going up from it a label prints only where it
+      // has room under the one below, so the low ticks never overprint once
+      // the axis is large.
+      let labelCeiling = Infinity;
+      for (let i = 0; i < MULTIPLIER_TICKS.length; i++) {
+        const cents = MULTIPLIER_TICKS[i];
         const q = progressOf(cents);
-        if (q > 1) hide(marks.grid[i]);
-        else {
-          const [, y] = toScreen(q);
-          place(marks.grid[i], 6, y, width - 6, y, 8, y - 4, tickerLabel(cents));
+        if (q > 1) {
+          hide(marks.grid[i]);
+          continue;
         }
-      });
+        const [, y] = toScreen(q);
+        place(marks.grid[i], 6, y, width - 6, y, 8, y - 4, tickerLabel(cents));
+        const crowded = labelCeiling - y < TICK_LABEL_GAP;
+        marks.grid[i].text.setAttribute('visibility', crowded ? 'hidden' : 'visible');
+        if (!crowded) labelCeiling = y;
+      }
       const span = maxLog / Math.max(1e-6, p.growthK);
       const step =
         SECOND_STEPS.find((s) => span / s <= SECOND_TICKS - 2) ??
@@ -1219,7 +1264,11 @@ export default function CrashCurve(props: CrashCurveProps) {
       // The cap, drawn where the flight would stop, once the axis reaches it.
       if (p.capCents > 100 && progressOf(p.capCents) <= 1) {
         const [, y] = toScreen(progressOf(p.capCents));
-        place(marks.cap, 6, y, width - 6, y, width / 2, y - 4, `Max ${tickerLabel(p.capCents)}`);
+        // The label sits at the right edge like the auto line, clear of the hero
+        // and of the tick labels on the left; once a round has booked at the
+        // cap the cash mark says Max and the line needs no label.
+        place(marks.cap, 6, y, width - 6, y, width - 8, y - 4, `Max ${tickerLabel(p.capCents)}`);
+        marks.cap.text.setAttribute('visibility', atCap ? 'hidden' : 'visible');
       } else hide(marks.cap);
       const auto = p.autoCashoutCents;
       if (auto && auto > 100 && progressOf(auto) <= 1) {
@@ -1257,9 +1306,16 @@ export default function CrashCurve(props: CrashCurveProps) {
       if (p.phase === 'cashed') {
         const cashed = p.cashoutCents ?? 100;
         const [cx, cy] = toScreen(Math.min(0.92, progressOf(cashed)));
-        pin(marks.cash, cx, cy, `Cashed ${tickerLabel(cashed)}`, cx, cy - 12);
+        pin(
+          marks.cash,
+          cx,
+          cy,
+          atCap ? `Max ${tickerLabel(p.capCents)}` : `Cashed ${tickerLabel(cashed)}`,
+          cx,
+          cy - 12
+        );
       } else unpin(marks.cash);
-      if (finished)
+      if (finished && !atCap)
         pin(
           marks.crash,
           hx,
@@ -1269,6 +1325,8 @@ export default function CrashCurve(props: CrashCurveProps) {
           hy - 16
         );
       else unpin(marks.crash);
+      if (frameNode.current && frameNode.current.dataset.max !== String(atCap && finished))
+        frameNode.current.dataset.max = String(atCap && finished);
       // The plate over a booked flight comes up the moment the replay reaches
       // the crash point, once per round, without a render.
       if (p.phase === 'cashed' && finished && !plateShown && plate.current) {
@@ -1307,6 +1365,7 @@ export default function CrashCurve(props: CrashCurveProps) {
   return (
     <div className={styles.wrap} data-motion="keep">
       <div
+        ref={frameNode}
         className={styles.frame}
         data-phase={props.phase}
         data-reduced={reduced ? 'true' : undefined}
@@ -1340,6 +1399,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         <div className={styles.cap} data-cap={props.capCents}>
           Max <b>{tickerLabel(props.capCents)}</b>
         </div>
+        <div className={styles.launchLine} data-attract="launch-line" aria-hidden="true" />
         {reveal ? (
           <div
             ref={plate}

@@ -282,8 +282,15 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
      the two facts a refused release needs and neither one names a player, a
      bank or a row. Anything that is NOT such a token is reduced to its length
      by `describe`, so a message that carried a payload could not export it. */
+  // A bare upper-case token, or one token naming one lower-case key after a
+  // colon: `f06_retired_origin_transfer` raises
+  // `F06_RETIRED_CANONICAL_CHANGED: registrations`, and the key is the whole
+  // finding (run 36095932476 carried it as `string(44)`). Anything else is
+  // still reduced to its length.
   const refusalToken = (value) =>
-    typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value) ? value : describe(value);
+    typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}(: [a-z_]{1,32})?$/.test(value)
+      ? value
+      : describe(value);
   /* A SQLSTATE is five characters of `[0-9A-Z]` and nothing else - the SQL
      standard fixes both the length and the alphabet - so it can be carried
      whole and can carry nothing. `refusalToken` alone would not: half of them

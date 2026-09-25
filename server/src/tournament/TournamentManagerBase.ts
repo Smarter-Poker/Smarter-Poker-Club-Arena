@@ -258,6 +258,19 @@ interface TournamentLaunchCompleteResult {
  */
 const drainedF06OriginalsRefusals = new WeakMap<TournamentManagerBase, string>();
 
+/**
+ * The guard the last seat-move release certificate refused on, per manager;
+ * absent after a certificate that passed. Kept beside the class for the same
+ * reason as the map above: the certificate's body reads exactly the terms the
+ * stop diagnostic reports, and nothing else may write this.
+ *
+ * It is a DIAGNOSTIC, never authority. `resolveTournamentSeatMoveQuarantine`
+ * still returns the boolean that decides; this only says which clause produced
+ * it, because on 2026-09-25 three different clauses all reported themselves as
+ * `retained an unresolved seat-move UUID` and two of them are not a UUID.
+ */
+const seatMoveQuarantineRefusals = new WeakMap<TournamentManagerBase, string>();
+
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
   protected gameServer: GameServer;
@@ -1602,6 +1615,21 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * Name the clause one seat-move release certificate refused on, or clear the
+   * name when it certified. Called by the certificate itself, immediately
+   * before the clause it names is tested.
+   */
+  protected noteSeatMoveQuarantineRefusal(refusal: string | null): void {
+    if (refusal === null) seatMoveQuarantineRefusals.delete(this);
+    else seatMoveQuarantineRefusals.set(this, refusal);
+  }
+
+  /** Which clause the last seat-move release certificate refused on. */
+  seatMoveQuarantineRefusal(): string | null {
+    return seatMoveQuarantineRefusals.get(this) ?? null;
+  }
+
+  /**
    * Layer-three managers override this with exact UUID replay. Minimal test
    * harnesses have no seat-move ledger; they may proceed only when no concrete
    * engine reports a retained move boundary.
@@ -1610,7 +1638,9 @@ export abstract class TournamentManagerBase {
     _tableId: string | null,
     engine: ServerTableEngine | null
   ): Promise<boolean> {
-    return !engine?.hasClaimedTournamentMoveBoundary();
+    const claimed = engine?.hasClaimedTournamentMoveBoundary() === true;
+    this.noteSeatMoveQuarantineRefusal(claimed ? 'harness:claimed_move_boundary' : null);
+    return !claimed;
   }
 
   private async performManagedTableEngineRecovery(
@@ -7336,8 +7366,21 @@ export abstract class TournamentManagerBase {
       }
       try {
         if (!(await this.resolveTournamentSeatMoveQuarantine(null, null))) {
+          /* THE UUID THAT WAS NOT THERE (2026-09-25). This error read
+             `retained an unresolved seat-move UUID` for every refusal of the
+             manager-shutdown certificate, including the two that are not a
+             UUID at all. On release 778075b4 it fired 5,678 times in
+             twenty-five minutes across thirteen tournaments while
+             `Tournament.atomic_move_refused_or_unknown` - the ONLY event that
+             can put a UUID in the pending set - had not fired once in the
+             whole retained log. Nobody could tell, from the log, that there
+             was no move. The certificate names its clause now and this
+             reports that name. */
           stopFailures.push(
-            new Error(`Tournament ${this.tournamentId} retained an unresolved seat-move UUID`)
+            new Error(
+              `Tournament ${this.tournamentId} refused its seat-move release certificate: ` +
+                `${this.seatMoveQuarantineRefusal() ?? 'refusal_unnamed'}`
+            )
           );
         }
       } catch (error) {

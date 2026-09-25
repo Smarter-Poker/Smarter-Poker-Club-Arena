@@ -1341,6 +1341,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-multi-day-stage-view.py
+      - name: Multi-day guard admits a badge only with a sealed plan and keeps the structure columns refused (R6)
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-multi-day-guard-r6.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

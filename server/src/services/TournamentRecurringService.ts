@@ -1343,6 +1343,46 @@ export function horseAtCapacity(load: number): boolean {
 }
 
 /**
+ * AN MTT IS BOOKED AGAINST THE GAMES IT WILL BE PLAYED BESIDE (2026-09-22).
+ *
+ * The four-game cap is asked only at the door, and the door counts a booking
+ * as a game only in the hour before its start (REGISTRATION_LOAD_HORIZON_MS,
+ * the database's own window, which the seat-first boards keep under the
+ * 2026-09-06 and 2026-09-07 decisions). The pre-start ramp books MTT fields
+ * up to 72 hours out (MTT_PRESTART_RAMP_MS), so a horse holding three seats
+ * could take four bookings for one afternoon, one at a time, each of them
+ * "not a game yet" to the others. When they start, every one of them is a
+ * chair: the four-table trigger honours an entrant's seat ("the cap is at the
+ * door, not at the chair", 2026-09-09), and the rotator can only stand a
+ * horse up from CASH (HorseTournamentCommitment). Measured 2026-09-22 12:00
+ * UTC: 103 horses above four open seats, and all 114 of their fifth-plus
+ * seats MTT seats, 112 of them booked more than an hour before the start.
+ *
+ * So an MTT or satellite entry made by registerHorses also needs
+ *
+ *     open TOURNAMENT seats the horse holds now
+ *   + its other pending bookings that start within this window of the
+ *     event's own start, either side
+ *   < 4
+ *
+ * Cash seats are left out: the rotator sheds them before a start.
+ *
+ * SIX HOURS IS AN ESTIMATED MTT DURATION, not a measured one: about how long a
+ * field takes from its first hand to its final table. A booking that starts
+ * within it of this event is probably still being played when this one seats,
+ * or this one is still being played when that one seats.
+ *
+ * A FIXED WINDOW AROUND THIS EVENT, NOT A COUNT OF EVERY FAR BOOKING. Counting
+ * a booking as a game from the moment it is made is the rule Dan rejected on
+ * 2026-09-07: it held 615 of 1,000 horses out of every open board for events
+ * up to six days away. A window around the event's own start charges a
+ * booking only to the events it can actually collide with, so next Sunday's
+ * booking still costs nothing today, and a fifth game on the same afternoon
+ * can no longer be booked.
+ */
+export const MTT_OVERLAP_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/**
  * How long a HorseTopUpPass may hold an answer (2026-09-11). The pass forgets
  * everything when one of ITS top-ups seats or registers somebody, but the rest
  * of the platform - the fleet's cash seating, the seat-first fast lane, the
@@ -1516,6 +1556,73 @@ export function buildHorseLoadMap(
     // counted, because under-counting hands out a horse that is already full
     // and the database then refuses the claim — the expensive direction.
     if (tid && seatedInTournament.has(`${id}|${tid}`)) continue;
+    bump(id);
+  }
+  return load;
+}
+
+/** A booking as the MTT overlap cap reads it: the event's start rides along,
+ *  because the window is measured from it. */
+export interface PendingBookingRef {
+  user_id?: string | null;
+  tournament_id?: string | null;
+  start_time?: string | null;
+}
+
+/**
+ * Games per horse as an MTT or satellite starting at `targetStartMs` will meet
+ * them. See MTT_OVERLAP_WINDOW_MS for the rule and why.
+ *
+ *   - Every open TOURNAMENT seat counts, whenever its event started: a seat is
+ *     left by busting, and nothing says that happens before this start. A seat
+ *     with no tournament is CASH and does not count here.
+ *   - Every other pending booking counts when its start lies within
+ *     `windowMs` of the target's start, either side, the boundary included.
+ *
+ * The seat-first dedupe is buildHorseLoadMap's: a booking for a tournament the
+ * horse already holds a chair in is that chair, not a second game. The
+ * target's own seat and booking never count (fn_concurrent_game_load's
+ * p_exclude_tournament_id), and one tournament is one game however many rows
+ * it has. A start that cannot be read, the booking's or the target's, counts:
+ * under-counting is the direction that books a fifth game.
+ *
+ * Pure, so the rule is proven without a database.
+ */
+export function buildMttOverlapLoadMap(
+  tournamentSeatRefs: readonly LoadRef[],
+  pendingBookings: readonly PendingBookingRef[],
+  targetStartMs: number,
+  targetTournamentId: string | null = null,
+  windowMs: number = MTT_OVERLAP_WINDOW_MS
+): Map<string, number> {
+  const load = new Map<string, number>();
+  const bump = (id: string) => load.set(id, (load.get(id) ?? 0) + 1);
+
+  const seatedInTournament = new Set<string>();
+  for (const ref of tournamentSeatRefs) {
+    const id = refUser(ref);
+    const tid = refTournament(ref);
+    if (!id || !tid || tid === targetTournamentId) continue;
+    bump(id);
+    seatedInTournament.add(`${id}|${tid}`);
+  }
+
+  const targetKnown = Number.isFinite(targetStartMs);
+  const counted = new Set<string>();
+  for (const booking of pendingBookings) {
+    const id = booking.user_id || null;
+    if (!id) continue;
+    const tid = booking.tournament_id || null;
+    if (tid) {
+      if (tid === targetTournamentId) continue;
+      const key = `${id}|${tid}`;
+      if (seatedInTournament.has(key) || counted.has(key)) continue;
+      counted.add(key);
+    }
+    const startMs = Date.parse(String(booking.start_time ?? ''));
+    if (targetKnown && Number.isFinite(startMs) && Math.abs(startMs - targetStartMs) > windowMs) {
+      continue;
+    }
     bump(id);
   }
   return load;
@@ -4045,7 +4152,15 @@ export class TournamentRecurringService {
         HOLD_SEAT_FOR_HUMAN || admission.effective_max_players === null
           ? config.horsesToRegister
           : Math.max(config.horsesToRegister, admission.effective_max_players);
-      const registered = await this.registerHorses(tournament.id, horseTarget);
+      // An MTT field, so it is held to the overlap cap (MTT_OVERLAP_WINDOW_MS).
+      const registered = await this.registerHorses(
+        tournament.id,
+        horseTarget,
+        false,
+        undefined,
+        false,
+        tournament
+      );
       // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
       // (each entry adds its exact prize share - fee and bounty excluded), so
       // recomputing it here from config.buyIn x registered both overstated it
@@ -4286,7 +4401,15 @@ export class TournamentRecurringService {
         HOLD_SEAT_FOR_HUMAN || admission.effective_max_players === null
           ? config.horsesToRegister
           : Math.max(config.horsesToRegister, admission.effective_max_players);
-      const registered = await this.registerHorses(tournament.id, horseTarget);
+      // An MTT field, so it is held to the overlap cap (MTT_OVERLAP_WINDOW_MS).
+      const registered = await this.registerHorses(
+        tournament.id,
+        horseTarget,
+        false,
+        undefined,
+        false,
+        tournament
+      );
       // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
       // (each entry adds its exact prize share - fee and bounty excluded), so
       // recomputing it here from config.buyIn x registered both overstated it
@@ -5956,7 +6079,8 @@ export class TournamentRecurringService {
             shortfall,
             opts.allLanes === true,
             pass,
-            opts.redeemTickets === true
+            opts.redeemTickets === true,
+            tRow
           );
         }
 
@@ -6031,7 +6155,11 @@ export class TournamentRecurringService {
     count: number,
     allLanes = false,
     pass?: HorseTopUpPass,
-    redeemTickets = false
+    redeemTickets = false,
+    /* The persisted row of the event being filled, when the caller holds it.
+       An MTT or satellite field is held to the overlap cap
+       (MTT_OVERLAP_WINDOW_MS); any other row, or none, registers as before. */
+    target?: { format_contract?: unknown; start_time?: string | null }
   ): Promise<number> {
     const generation = this.lifecycleGeneration;
     try {
@@ -6058,6 +6186,35 @@ export class TournamentRecurringService {
       const busyIds = new Set(
         [...load.keys()].filter((id) => TournamentRecurringService.atCapacity(load, id))
       );
+
+      /* AN MTT IS BOOKED AGAINST THE GAMES IT WILL BE PLAYED BESIDE
+         (2026-09-22). The load above counts a booking only in the hour before
+         its start: the rule for the seat-first boards, and blind to the MTT
+         the ramp books 72 hours out. An MTT or satellite field also counts the
+         horse's open tournament seats and its bookings within
+         MTT_OVERLAP_WINDOW_MS of this start (buildMttOverlapLoadMap). A Spin
+         or SNG never reads as an MTT field, so it skips this block and
+         registers exactly as before. */
+      const overlapBusyIds = new Set<string>();
+      if (target && isPersistedUnlimitedMtt(target)) {
+        const commitments = await viaTopUpPass(
+          pass,
+          'horse-tournament-commitments',
+          () => this.horseTournamentCommitments(),
+          (read) => read !== null
+        );
+        // Unknown, not zero: the horseLoadMap contract, for the same reason.
+        if (!commitments) return 0;
+        const overlap = buildMttOverlapLoadMap(
+          commitments.tournamentSeats,
+          commitments.pendingBookings,
+          Date.parse(String(target.start_time ?? '')),
+          tournamentId
+        );
+        for (const [id, games] of overlap) {
+          if (horseAtCapacity(games)) overlapBusyIds.add(id);
+        }
+      }
 
       // Still never twice into the SAME tournament. This is the booking bug
       // the concurrency limit was standing in for, and it is the one that
@@ -6173,6 +6330,7 @@ export class TournamentRecurringService {
       }
       const poolAll = poolPage.rows;
       let busyDropped = 0;
+      let overlapDropped = 0;
       let laneDropped = 0;
       let clubDropped = 0;
 
@@ -6246,6 +6404,11 @@ export class TournamentRecurringService {
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {
           busyDropped++;
+          return false;
+        }
+        // A fifth game beside the four it will already be playing at this start.
+        if (overlapBusyIds.has(h.id)) {
+          overlapDropped++;
           return false;
         }
         // Not a member of the club hosting this event: not a candidate.
@@ -6441,8 +6604,8 @@ export class TournamentRecurringService {
            if they add up. */
         console.warn(
           `[TournamentRecurring] registerHorses found no candidates: fleet ${poolAll.length}, ` +
-            `at-capacity/entered ${busyDropped}, not-a-club-member ${clubDropped}, ` +
-            `lane/window-excluded ${laneDropped}`
+            `at-capacity/entered ${busyDropped}, mtt-overlap ${overlapDropped}, ` +
+            `not-a-club-member ${clubDropped}, lane/window-excluded ${laneDropped}`
         );
         return 0;
       }
@@ -6508,6 +6671,113 @@ export class TournamentRecurringService {
     } catch {
       return 0;
     }
+  }
+
+  /**
+   * What the MTT overlap cap counts (buildMttOverlapLoadMap): every open
+   * TOURNAMENT seat, and every booking for a tournament that has not started,
+   * however far out it starts. Cash seats are not read.
+   *
+   * Null when either half cannot be read whole, never a partial answer: the
+   * horseLoadMap contract, for the same reason. A missing row is a horse that
+   * looks free.
+   */
+  private async horseTournamentCommitments(): Promise<{
+    tournamentSeats: LoadRef[];
+    pendingBookings: PendingBookingRef[];
+  } | null> {
+    const PAGE = 1000;
+    const tournamentSeats: LoadRef[] = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] MTT overlap seat paging did not terminate'),
+          'TournamentRecurring.mtt_overlap_seats_runaway'
+        );
+        return null;
+      }
+      const { data: chunk, error } = await supabase
+        .from('table_seats')
+        .select('user_id, table_id, tables!table_seats_table_id_fkey!inner(status, tournament_id)')
+        .is('left_at', null)
+        .neq('tables.status', 'closed')
+        .not('tables.tournament_id', 'is', null)
+        // A unique sort key, as in horseLoadMap: user_id alone repeats and
+        // drops rows across page boundaries.
+        .order('user_id', { ascending: true })
+        .order('table_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) {
+        reportError(
+          new Error(`[TournamentRecurring] MTT overlap seat read failed: ${error.message}`),
+          'TournamentRecurring.mtt_overlap_seats_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      for (const r of chunk) {
+        const row = r as {
+          user_id?: string;
+          tables?:
+            | { tournament_id?: string | null }
+            | Array<{ tournament_id?: string | null }>
+            | null;
+        };
+        const embedded = Array.isArray(row.tables) ? row.tables[0] : row.tables;
+        tournamentSeats.push({
+          user_id: row.user_id,
+          tournament_id: embedded?.tournament_id ?? null,
+        });
+      }
+      if (chunk.length < PAGE) break;
+    }
+
+    const pendingBookings: PendingBookingRef[] = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] MTT overlap booking paging did not terminate'),
+          'TournamentRecurring.mtt_overlap_bookings_runaway'
+        );
+        return null;
+      }
+      // No start-time bound here: the window is measured per event, from its
+      // own start, by buildMttOverlapLoadMap.
+      const { data: chunk, error } = await supabase
+        .from('tournament_players')
+        .select('user_id, tournament_id, tournaments!inner(status, start_time)')
+        .in('status', ['registered', 'playing'])
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        .order('user_id', { ascending: true })
+        .order('tournament_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) {
+        reportError(
+          new Error(`[TournamentRecurring] MTT overlap booking read failed: ${error.message}`),
+          'TournamentRecurring.mtt_overlap_bookings_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      for (const r of chunk) {
+        const row = r as {
+          user_id?: string;
+          tournament_id?: string;
+          tournaments?:
+            | { start_time?: string | null }
+            | Array<{ start_time?: string | null }>
+            | null;
+        };
+        const embedded = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
+        pendingBookings.push({
+          user_id: row.user_id,
+          tournament_id: row.tournament_id ?? null,
+          start_time: embedded?.start_time ?? null,
+        });
+      }
+      if (chunk.length < PAGE) break;
+    }
+    return { tournamentSeats, pendingBookings };
   }
 
   // rollSpinMultiplier — the local CSPRNG weighted draw (engine audit A8) —

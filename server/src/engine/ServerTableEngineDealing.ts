@@ -493,6 +493,55 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
 
+        /* ═══ THE CLUSTER'S HALT (Lightning 2.0 Phase 5, 2026-09-21) ══════
+           `tables.dealing_halted_at` is set on every table of a Cluster while
+           it converts MUST_MOVE -> LIGHTNING and cleared if that conversion
+           aborts. It means one thing: finish the hand you are in and start no
+           other. See `dealingHaltLock` on the base class for the contract, for
+           why it is a polled lock rather than a pause-gate owner, and for the
+           60-second worst case on both the halt and the resume.
+
+           THE HAND IN THE AIR IS NEVER KILLED. This is the top of the
+           iteration: the loop cannot reach this line until `dealHand()` has
+           resolved and the settlement barrier above has drained. "Allow
+           already-started hands to resolve normally" is not a second check -
+           it is the position of this one.
+
+           IT SITS ABOVE THE SIT-OUT EVICTION DELIBERATELY. Everything before
+           this gate keeps the table's picture of itself current - the roster,
+           the moved presence, the horse heartbeats, and the throttled row
+           re-read inside prepareNextHand that is how the halt is lifted again.
+           Everything after it changes somebody's seat or deals: the sit-out
+           eviction cashes a player out, `announcePendingSeatMoves` and the
+           idle sweeps move one between tables, and `dealHand` posts blinds. A
+           halted table does none of that. The start-up wait loop learned the
+           same lesson on 2026-09-01: a deliberately parked table that goes on
+           standing players up is a table telling its players their seat is
+           safe and then emptying it.
+
+           AND IT HOLDS NOBODY FOR A BLIND IT COULD HAVE RELEASED. The idle
+           branch's `releaseWaitersNoBlindCanReach` (see the law of that name)
+           fires only when letting everyone in actually STARTS the game.
+           Letting them in here starts nothing, because the table is halted -
+           they would simply be in, and would come in behind the blinds when
+           the halt lifts, which is the one thing Dan's entry rule forbids. The
+           holds stand, unbilled, for the length of the conversion.
+
+           `markProgress` because a pass of this branch has just re-read the
+           roster and the row, exactly as the short-handed branch below has -
+           and because a table halted while its FSM is still 'waiting' has no
+           'paused' state to show GameServer's zombie reaper, which would
+           otherwise condemn it at 180s and rebuild it into the same halt. */
+        if (this.dealingHaltLock) {
+          if (this.tableFSM.state === 'running') {
+            this.tableFSM.transition('paused');
+          }
+          this.setLoopPhase('cluster_dealing_halted');
+          this.markProgress();
+          await this.sleep(3000);
+          continue;
+        }
+
         // ── Dan 2026-08-21, BINDING: sit-out eviction ──
         // "IF A PLAYER IS SITTING OUT THEY MUST BE REMOVED AFTER THE BUTTON
         //  PASSES THEM TWICE, OR AFTER 5 MINUTES, WHICHEVER HAPPENS FIRST."
@@ -932,7 +981,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
-          if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
+          // The three POLLED owners have no gate to wait on. awaitPauseGate
+          // returns immediately when only one of them is raised, and this
+          // branch then `continue`s - a hot spin. The gate is for the owners
+          // that something in this process will release.
+          if (!this.adminPauseLock && !this.maintenanceLock && !this.dealingHaltLock)
+            await this.awaitPauseGate();
           if (!this.running) break;
           continue;
         }

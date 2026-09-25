@@ -1326,6 +1326,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-remediation.sh
+      - name: Lightning Phase 5 converts a must-move cluster in one transaction and stands the tick down
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase5-conversion.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-must-be-zero-account-is-checked-by-its-balance",
+  "tables": ["ca_must_be_zero_hours", "ca_must_be_zero_state"]
+}

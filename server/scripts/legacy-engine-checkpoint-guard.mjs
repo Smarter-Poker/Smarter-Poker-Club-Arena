@@ -280,10 +280,54 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
      upper-case token (`F06_MIXED_OLD_LEASE_CHANGED`), and PostgREST hands that
      token back as the error's `message` with the SQLSTATE beside it. Those are
      the two facts a refused release needs and neither one names a player, a
-     bank or a row. Anything that is NOT such a token is reduced to its length
-     by `describe`, so a message that carried a payload could not export it. */
-  const refusalToken = (value) =>
-    typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value) ? value : describe(value);
+     bank or a row.
+
+     ═══ A TOKEN THAT CARRIES A DETAIL IS STILL A TOKEN (2026-09-25) ═══
+
+     Run 36095932476 is the measurement, and the third release in this sequence
+     whose one deciding fact this reader destroyed. It refused at
+     `mixed_custody` carrying `refusal=string(44)`: a 44 character message
+     reduced to its length because it is not BARE. The message was
+     `F06_RETIRED_CANONICAL_CHANGED` followed by a colon and the name of one of
+     the eight canonical keys that function compares, and that name IS the
+     diagnosis - it says which key moved. Reduced to a 44 it says nothing, and
+     a maintenance break was spent to learn a number.
+
+     These functions raise two shapes, not one. A bare token, and a token
+     followed by a colon and a detail the SOURCE wrote: a jsonb key read out of
+     a fixed `ARRAY[...]` literal, or a sentence of fixed words such as the one
+     `PLATFORM_FROZEN` carries. The token is now read whenever the message
+     BEGINS with one, and only the detail is judged.
+
+     WHAT TRAVELS. A detail is carried only when it is lower-case words of
+     letters, digits, underscores and hyphens joined by single spaces, at most
+     40 characters. That is the shape of a literal written into a function
+     body, and it is not the shape of a card, a credential, an email or a
+     display name - each of those carries a capital, a digit-led group or
+     punctuation this alphabet does not admit. A uuid detail is named as a uuid
+     and never exported, because a uuid that begins with a hex letter would
+     otherwise pass the word rule whole. Any other detail becomes its length
+     exactly as before, and a message that does not BEGIN with a token is still
+     reduced whole by `describe`. What changed is that the token now survives
+     every one of those paths, so a refusal can no longer name nothing. */
+  const refusalWords = /^[a-z][a-z0-9_-]*( [a-z0-9_-]+)*$/;
+  const refusalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const refusalDetailMax = 40;
+  const refusalToken = (value) => {
+    try {
+      if (typeof value !== 'string') return describe(value);
+      const named = /^([A-Z][A-Z0-9_]{0,63})(?::[ ]?([\s\S]*))?$/.exec(value);
+      if (named === null) return describe(value);
+      const [, token, detail] = named;
+      if (detail === undefined) return token;
+      if (refusalUuid.test(detail)) return `${token}:uuid`;
+      return detail.length <= refusalDetailMax && refusalWords.test(detail)
+        ? `${token}: ${detail}`
+        : `${token}:string(${detail.length})`;
+    } catch {
+      return 'unreadable';
+    }
+  };
   /* A SQLSTATE is five characters of `[0-9A-Z]` and nothing else - the SQL
      standard fixes both the length and the alphabet - so it can be carried
      whole and can carry nothing. `refusalToken` alone would not: half of them

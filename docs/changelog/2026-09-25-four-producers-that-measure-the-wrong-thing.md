@@ -164,9 +164,65 @@ the anchor must appear exactly once in the live definition before anything is
 replaced, so a function that is not the one this was derived against aborts the
 whole transaction instead of being silently overwritten.
 
+## Two more closed on the same day, on a re-measurement rather than a fix of mine
+
+`28c8e143` (`fn_ca_kill_switch_trip`) and `abcde69a` (the same event relayed
+from `financial_alerts`) both recorded the kill switch crossing its 1000
+threshold on 2026-09-21 06:40: `fn_ca_ledger_replay` found one account
+disagreeing with the journal by -2,624.78. That was the Spin seed return
+writing `spin_reserve -> spin_reserve` with no destination entity, because
+`fn_ca_declare_ledger` `set_config`'d all three GUCs unconditionally and
+overwrote a declaration `fn_spin_settle_game` had already made.
+
+The root fix is not mine - it is migration
+`20260921005621_spin_seed_return_journal_leg_and_nondestructive_declaration`,
+which #4985 brought into the repo an hour before this - but nobody had gone back
+and asked whether it worked. Re-run on 2026-09-25 15:03Z,
+`fn_ca_ledger_replay` reports **disagree 0, worst 0.00 across 275 accounts**.
+Both incidents already carried `verdict: UNCONFIRMED` and `persists: false`,
+which is the kill switch saying its own reading did not hold. Closed as
+`verified_remeasured`, inside a transaction that re-runs the replay first and
+aborts if it still disagrees. No chip was moved to close them.
+
+Seven incidents closed in total, all on `verified_remeasured`.
+
+## The analysis is on the rows that stay open
+
+Thirteen open rows now carry a `root_cause`, written while they stay open -
+`fn_ca_resolution_needs_a_cause` only fires on the move to `resolved`, so
+recording what is known does not require pretending it is finished. The point is
+that the next agent reads the finding instead of re-deriving it, and that
+nothing was closed to make a count smaller.
+
+The one worth reading is `0f8f8cc6`, which had been reporting -30,000 of
+tournament chip drift for five days and is **not missing chips**. Sunday Funday
+Six-Card Closer `c7f21a83` started 2026-09-21 04:00 at 30,000 a stack. Four
+players hold 24,418 + 28,714 + 30,912 + 35,956 = 120,000, exactly the seated
+stack total, so those four conserve perfectly. The fifth, `5330edb2`, a horse,
+**registered at 2026-09-22 14:08 - thirty-four hours after the event started** -
+and has 0 chips and has never had a `table_seats` row at all.
+`fn_tournament_chip_conservation_check` computes expected as
+`registered x starting_chips`, so it counts a registration that was never dealt
+in and calls the difference chip drift.
+
+Two defects in one row, and neither is the one the alert named:
+
+1. the producer gives _a registration nobody honoured_ the name of _a chip
+   leak_, and that wrong name has stood for five days;
+2. a late registration was accepted 34 hours past the start and then never
+   seated or chipped. Its buy-in is inside the 1,245.00 prize / 25.00 fee
+   escrow for five entries, and under 10.5 that horse paid what everybody else
+   paid.
+
+It is left open on purpose. The two candidate outcomes are seat-and-chip - wrong
+five days and many blind levels into a running event - or withdraw-and-refund
+through the platform's own idempotent path, which changes a running event's
+prize pool. Both are live-path decisions the frozen engine owns, and I am not
+going to guess between them in a compensating write (10.12).
+
 ## What I did not close, and why
 
-The board is live and moved while I worked on it. Nothing else was closed:
+The board is live and moved while I worked on it - 38 rows open when I stopped, 9 of them critical. Nothing else was closed:
 
 - **Engine-blocked** (the engine has been frozen on `8825af51` for over 158
   hours and a sibling agent owns the cutover): `28f5660c` 20 RUNNING events with

@@ -95,6 +95,10 @@ function checkpointSummary(value) {
     'checkpointOutcome',
     'paidAccountingQualification',
     'restartAuthorized',
+    // How many retained managers the rows proved an earlier run had already
+    // sealed, so this run transferred nothing for them (2026-09-25). A count,
+    // validated like every other count; absent from a guard that predates it.
+    'sealedManagers',
   ];
   const result = {};
   for (const key of keys) {
@@ -173,6 +177,10 @@ function checkpointSummary(value) {
     // generation that is no longer current), with what each row held. Carried
     // verbatim; nothing reads it.
     'provedRows',
+    // What the seal lookup answered for each retained manager (2026-09-25):
+    // sealed, none, other_generation, unanswered or malformed. Carried
+    // verbatim; nothing reads it.
+    'sealedLookup',
   ]) {
     const item = value?.[key];
     if (

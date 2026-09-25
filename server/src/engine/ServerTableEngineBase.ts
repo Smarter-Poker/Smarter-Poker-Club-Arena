@@ -968,6 +968,31 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * A FENCED DEALER ITS MANAGER IS REPLACING NEEDS NO RENEWED PROOF
+   * (2026-09-25, release 778075b4).
+   *
+   * The zombie watchdog kills a tournament table with
+   * `fenceForEngineLeaseLoss('tournament_table_zombie', true)`: the fence
+   * expires this dealer's proof, marks it terminal, and signals the owning
+   * manager, whose identity-CAS replacement then stops it and installs a
+   * fresh generation. Between the fence and the end of that stop this object
+   * is terminal, not running, cannot mutate (`lifecycleCanMutate` is false on
+   * both counts) and cannot renew (`renewEngineLeaseProof` refuses an expired
+   * proof by design). The manager's renewal pass used to ask it to renew
+   * anyway, take the refusal as a lost tournament lease, and fence every
+   * sibling table: one zombie kill at 19:54:05 UTC and one at 20:15:20 UTC
+   * quarantined 17 managers. This is the read-only identity the manager
+   * consults instead: the same table, the same tournament lease generation,
+   * fenced and stopped, with no claim about teardown completion (that is
+   * `isTerminalDrainedForTournamentLease`), no claim about custody, and no
+   * authority to deal. The manager combines it with its own replacement
+   * bookkeeping; an engine nobody is replacing still fences the tournament.
+   */
+  isTerminalFencedForTournamentLease(tableId: string, authority: EngineLeaseAuthority): boolean {
+    return this.terminal && !this.running && this.hasTournamentLeaseIdentity(tableId, authority);
+  }
+
   private hasTerminalTournamentLeaseIdentity(
     tableId: string,
     authority: EngineLeaseAuthority
@@ -976,7 +1001,6 @@ export abstract class ServerTableEngineBase {
       this.terminalTeardownComplete &&
       this.terminal &&
       !this.running &&
-      this.tableId === tableId &&
       !ServerTableEngineBase.liveEngines.has(this.tableId) &&
       this.dealingLoopPromise === null &&
       this.settlementInFlight.size === 0 &&
@@ -984,6 +1008,14 @@ export abstract class ServerTableEngineBase {
       this.readContinuationTasks.size === 0 &&
       this.snapshotFlushPromise === null &&
       this.handController === null &&
+      this.hasTournamentLeaseIdentity(tableId, authority)
+    );
+  }
+
+  /** The same table under the same live tournament lease generation, nothing more. */
+  private hasTournamentLeaseIdentity(tableId: string, authority: EngineLeaseAuthority): boolean {
+    return (
+      this.tableId === tableId &&
       this.engineLeaseScope === 'tournament' &&
       this.engineLeaseVerified &&
       authority.scope === 'tournament' &&
@@ -3976,7 +4008,7 @@ export abstract class ServerTableEngineBase {
           );
           this.leaveHeldByClock.delete(userId);
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.forgetTimeBank(userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.chipContinuity.forget(userId);
@@ -4358,7 +4390,7 @@ export abstract class ServerTableEngineBase {
          the start of the hand. */
       this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
-      this.timeBankEngine.removePlayer(this.tableId, m.player_id);
+      this.forgetTimeBank(m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
       this.preActionEngine.removePlayer(this.tableId, m.player_id);
       this.leaveHeldByClock.delete(m.player_id);
@@ -4552,12 +4584,58 @@ export abstract class ServerTableEngineBase {
     return true;
   }
 
+  /**
+   * A DEPARTED PLAYER LEAVES NO TIME-BANK METADATA BEHIND (2026-09-25,
+   * release 778075b4).
+   *
+   * The invariant: `timeBankMeta` may name only a user who either has a live
+   * bank in `timeBankEngine` or is covered by `stoppedTimeBankCustody`. The
+   * deal creates the bank and its metadata together
+   * (ServerTableEngineDealing, "Only initialize time bank if player is NEW"),
+   * `captureParkedTimeBanks` reads them together, and `performStop` refuses
+   * custody when metadata names a user with no bank ("Stopped time bank
+   * metadata has no original balance"). Until this helper, every departure
+   * removed the bank and kept the metadata: the cash branch of
+   * `adoptSeatRoster` was the one place that deleted it, and the tournament
+   * branch deleted nothing. So on a tournament table every player who was
+   * ever moved to another table or eliminated left a metadata entry behind,
+   * the stop-time check refused, the refusal happened before the custody
+   * object was assigned, `hasUnretiredStoppedTimeBankCustody()` answered true
+   * for ever through its `timeBankMeta.size > 0` branch, `unregisterTableEngine`
+   * refused, and the manager's stop failed every five seconds. Production
+   * measured 31,061 such refusals over 24 engines in 1.6 hours; 17 managers
+   * quarantined with `tournament_lease_lost_stop_failed`, 50 tables idle.
+   *
+   * The stop-time check is right and is not weakened. The departures agree
+   * with it: a player who leaves this engine loses the bank and the metadata
+   * in one call. A cash seat-move deposits the player's presence (with the
+   * bank and its metadata) for the destination BEFORE it calls this, in the
+   * same synchronous block; a tournament move carries nothing engine-side
+   * (the destination deals a fresh allowance), so nothing is deposited after
+   * it is forgotten.
+   */
+  protected forgetTimeBank(userId: string): void {
+    this.timeBankEngine.removePlayer(this.tableId, userId);
+    this.timeBankMeta.delete(userId);
+  }
+
   /** Retire departed/replaced cash stays; return only replacements for arrival detection. */
   protected adoptSeatRoster(nextRoster: SeatedPlayer[]): string[] {
     if (!this.lifecycleCanMutate()) return [];
     const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
     this.seatedPlayers = nextRoster;
     if (this.isTournamentTable()) {
+      // A tournament seat closes in the database (a balancing move or an
+      // accepted elimination) and is simply absent from the next roster; the
+      // engine runs no leave path of its own for it (TournamentGhostSeat.law).
+      // This is therefore the one place a tournament departure is observed,
+      // and the bank and its metadata are forgotten here, together. The
+      // seat's parked balance, if any, is dropped with `parkedTimeBanks` by
+      // `applyParkedTimeBanks` below exactly as before.
+      for (const userId of previous.keys()) {
+        if (nextRoster.some((p) => p.user_id === userId)) continue;
+        this.forgetTimeBank(userId);
+      }
       this.applyParkedTimeBanks(nextRoster);
       return [];
     }
@@ -8476,7 +8554,7 @@ export abstract class ServerTableEngineBase {
     });
     this.chipContinuity.forget(player.user_id);
     this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-    this.timeBankEngine.removePlayer(this.tableId, player.user_id);
+    this.forgetTimeBank(player.user_id);
     this.straddleEngine.removePlayer(this.tableId, player.user_id);
     this.preActionEngine.removePlayer(this.tableId, player.user_id);
     return true;
@@ -8659,7 +8737,7 @@ export abstract class ServerTableEngineBase {
             timestamp: Date.now(),
           });
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.forgetTimeBank(userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.leaveHeldByClock.delete(userId);

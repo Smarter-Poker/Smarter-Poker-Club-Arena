@@ -3604,8 +3604,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.chipContinuity.forget(horse.user_id);
           // Round 57: clear FSM tracking on profit-target cashout too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-          // Round 64: same for TimeBankEngine.
-          this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+          // Round 64: same for TimeBankEngine, bank and metadata together.
+          this.forgetTimeBank(horse.user_id);
           // Round 66: same for StraddleEngine.
           this.straddleEngine.removePlayer(this.tableId, horse.user_id);
           this.preActionEngine.removePlayer(this.tableId, horse.user_id);
@@ -3760,7 +3760,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
       if (current && current.occupancy_id !== occupancyId) continue;
       this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.forgetTimeBank(userId);
       this.straddleEngine.removePlayer(this.tableId, userId);
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.leaveHeldByClock.delete(userId);

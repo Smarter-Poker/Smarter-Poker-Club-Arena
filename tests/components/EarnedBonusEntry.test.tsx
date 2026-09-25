@@ -58,7 +58,17 @@ const quote = (doubled = false) => ({
     plinko_table: plinkoTableVersion(2),
   },
 });
-const preference: BonusBudget = { base: 100, doubled: false, denomination: 20 };
+/**
+ * The page's saved preference carries the award it was answered for (R9/R6):
+ * a Double Your Diamonds answer or a drop value given for one award is never
+ * carried into the quote for another.
+ */
+const preference: BonusBudget = {
+  base: 200,
+  doubled: false,
+  denomination: 20,
+  award: { id, entryDiamonds: 100, boostMultiplier: 2 },
+};
 const wrapper = ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -90,10 +100,35 @@ describe('server-owned earned game entry', () => {
     expect(view.result.current.ready).toBe(false);
     await act(async () => {});
     expect(bonusTotal(view.result.current.budget)).toBe(300);
+    expect(view.result.current.budget.denomination).toBe(20);
     expect(backend.rpc).toHaveBeenLastCalledWith('fn_wheel_bonus_state', {
       p_club_id: club,
       p_game: 'plinko',
       p_double: true,
+      p_mode: null,
+      p_award_id: null,
+    });
+  });
+  it('quotes a new award without the answers saved for an earlier one', async () => {
+    backend.rpc.mockImplementation((_name, args) =>
+      Promise.resolve({ error: null, data: quote(args.p_double) })
+    );
+    const stale: BonusBudget = {
+      ...preference,
+      doubled: true,
+      award: { ...preference.award!, id: '00000000-0000-0000-0000-000000000099' },
+    };
+    const view = renderHook(() => useEarnedBonus(club, 'plinko', stale), { wrapper });
+    await act(async () => {});
+    expect(view.result.current.ready).toBe(true);
+    expect(view.result.current.budget.doubled).toBe(false);
+    expect(view.result.current.budget.denomination).toBeNull();
+    expect(bonusTotal(view.result.current.budget)).toBe(200);
+    expect(backend.rpc).toHaveBeenCalledTimes(1);
+    expect(backend.rpc).toHaveBeenLastCalledWith('fn_wheel_bonus_state', {
+      p_club_id: club,
+      p_game: 'plinko',
+      p_double: false,
       p_mode: null,
       p_award_id: null,
     });
@@ -130,16 +165,46 @@ describe('server-owned earned game entry', () => {
       error: null,
       data: { ok: true, contract_version: 2, enabled: false, award: null, awards: [] },
     });
-    const view = renderHook(() => useEarnedBonus(club, 'plinko', preference), { wrapper });
+    const direct: BonusBudget = { base: 100, doubled: false, denomination: 20 };
+    const view = renderHook(() => useEarnedBonus(club, 'plinko', direct), { wrapper });
     await act(async () => {});
     expect(view.result.current.ready).toBe(true);
-    expect(view.result.current.budget).toEqual(preference);
+    expect(view.result.current.budget).toEqual(direct);
     backend.rpc.mockResolvedValue({ error: Error('Offline'), data: null });
     await act(async () => {
       await view.result.current.refresh();
     });
     expect(view.result.current.ready).toBe(false);
-    expect(view.result.current.error).toMatch(/Could Not Be Checked/);
+    // Nobody is told to press Refresh: the read is retried by itself.
+    expect(view.result.current.error).toBe('Reconnecting To Your Wheel Award');
+  });
+  it('retries a failed award read by itself until it answers', async () => {
+    vi.useFakeTimers();
+    try {
+      backend.rpc.mockResolvedValue({ error: Error('Offline'), data: null });
+      const view = renderHook(() => useEarnedBonus(club, 'plinko', preference), { wrapper });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(view.result.current.error).toBe('Reconnecting To Your Wheel Award');
+      const failedReads = backend.rpc.mock.calls.length;
+      backend.rpc.mockResolvedValue({ error: null, data: quote() });
+      // First retry after one second, with no press.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(backend.rpc.mock.calls.length).toBeGreaterThan(failedReads);
+      expect(view.result.current.error).toBeNull();
+      expect(view.result.current.award?.id).toBe(id);
+      const settledReads = backend.rpc.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000);
+      });
+      // Settled: no more reads on a timer.
+      expect(backend.rpc.mock.calls.length).toBe(settledReads);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it.each([
     { club_id: '00000000-0000-0000-0000-000000000099' },
@@ -190,16 +255,17 @@ describe('server-owned earned game entry', () => {
           disabled={false}
           game="plinko"
           clubId={club}
+          offerAnswered={false}
         />
       </MemoryRouter>
     );
     expect(screen.getByText('200 Diamonds Funded')).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByText(/You Need/)).toBeNull();
-    const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
     expect(offer).toHaveTextContent('Add 100 Diamonds To Your 200 Diamond Bonus.');
     fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add The Diamonds' }));
     expect(bonusTotal(onChange.mock.calls[0][0])).toBe(300);
     expect(screen.getByRole('button', { name: 'Buy More' })).toBeEnabled();
   });

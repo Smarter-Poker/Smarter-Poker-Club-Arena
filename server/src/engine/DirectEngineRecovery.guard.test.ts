@@ -173,11 +173,14 @@ describe('direct table-engine terminal recovery', () => {
     const start = method('private async performStart(');
     const stopFence = method('stop(): Promise<void>');
     const stop = method('private async performStop(');
-    expect(start.match(/this\.launchDiscoveryJob\(/g) ?? []).toHaveLength(4);
+    // Five lanes since the multi-day stage-resume lane (2026-09-24); every one
+    // is a discovery job and ends with its lifecycle generation.
+    expect(start.match(/this\.launchDiscoveryJob\(/g) ?? []).toHaveLength(5);
     for (const loop of [
       'private async discoverCashTables()',
       'private async discoverTournaments()',
       'private async discoverRunningResumes()',
+      'private async discoverStageResumes()',
       'private async discoverSeatFirstStarts()',
     ]) {
       expect(method(loop)).toContain('while (this.directAdmissionIsCurrent(generation))');

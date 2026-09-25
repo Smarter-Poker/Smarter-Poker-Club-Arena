@@ -1,0 +1,108 @@
+/* Multi-day stage panel. Mobile first: one column at 375px, nothing wider
+   than the panel, long names ellipsed rather than pushing the stack off. */
+.md-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.md-stage__next {
+  margin: 0;
+  font-weight: 700;
+  color: var(--tl-accent);
+}
+
+.md-stage__days,
+.md-stage__leaderlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.md-stage__day {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.md-stage__dayname,
+.md-stage__label {
+  font-weight: 700;
+  color: var(--tl-text);
+}
+
+.md-stage__when,
+.md-stage__sub {
+  color: var(--tl-text-dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.md-stage__state {
+  color: var(--tl-text-hint);
+  white-space: nowrap;
+}
+
+.md-stage__seat,
+.md-stage__bag,
+.md-stage__leaders {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--tl-hairline-soft);
+}
+
+.md-stage__value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--tl-text);
+}
+
+.md-stage__open {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--tl-hairline, rgba(111, 220, 255, 0.14));
+  border-radius: var(--tl-radius-pill, 999px);
+  background: var(--tl-surface-raised, #223046);
+  color: var(--tl-text, #e8eaf0);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.md-stage__open:focus-visible {
+  outline: 2px solid var(--tl-accent, #6fdcff);
+  outline-offset: 2px;
+}
+
+.md-stage__leader {
+  display: grid;
+  grid-template-columns: 2ch 1fr auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.md-stage__rank {
+  color: var(--tl-text-hint);
+  text-align: right;
+}
+
+.md-stage__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tl-text);
+}
+
+.md-stage__stack {
+  font-variant-numeric: tabular-nums;
+  color: var(--tl-text-dim);
+}

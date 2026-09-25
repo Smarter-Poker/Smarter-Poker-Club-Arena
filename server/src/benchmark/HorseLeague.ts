@@ -32,7 +32,7 @@ import {
 } from './HorseLeagueComputeWorkerClient.js';
 import type { Card, SeatPlayer, HandStage, ActionRecord } from '../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
-import { HorseMind, type HorseMindSandbox } from '../engine/HorseMind.js';
+import { HorseMind, readScopeOf, type HorseMindSandbox } from '../engine/HorseMind.js';
 import {
   seedFastRandom,
   saveFastRandom,
@@ -87,6 +87,18 @@ export interface LeagueResult {
   candidateNodeRoles: string[];
   /** Per-scenario evidence retained when several utility contexts are gated. */
   benchmarkComponents: LeagueBenchmarkComponent[];
+  /** Duplicate pairs whose two passes settled differently (A's edge != 0).
+   *  Set by runMatchup; absent on results assembled from components. */
+  divergentPairs?: number;
+  /** THE MATCHUP MEASURED NOTHING (2026-09-21). True when pairs were played
+   *  and either none settled differently under the two configs (the arms
+   *  played byte-identical poker) or the per-pair differences have zero
+   *  variance. bb100 = 0.00 with stderr = 0.00 is then not "no edge", it is
+   *  "no experiment". v16_deep_reads reported exactly
+   *  that every night from 2026-09-13 through 2026-09-21 while the daily
+   *  audit read it as a resolved zero. An inert matchup is a harness defect and is reported as
+   *  one; it is never a measurement. */
+  inert?: boolean;
 }
 
 export interface LeagueBenchmarkComponent {
@@ -559,8 +571,24 @@ export function playHand(
           });
         }
       }
+      // V45 SCOPED READS: production settles a hand WITH its ReadScope
+      // (workerRuntime.ts passes request.scope), so the c-bet, 3-bet and
+      // big-bet counters land in the scoped bucket that HorseMind.readStats
+      // prefers once that bucket holds SCOPE_MIN_HANDS. This call passed no
+      // scope, so in the sandbox the scoped bucket filled with hands (every
+      // decision observes under a scope) while its deep-read counters stayed
+      // at zero, every read returned null, and v16_deep_reads reported
+      // 0.00 +/- 0.00 every night from 2026-09-13 to 09-21: the two arms played
+      // byte-identical poker because neither could see a read. Same scope
+      // derivation as HorseLogic.decide: variant x dealt count.
       HorseMind.runInSandbox(sandbox, () =>
-        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown)
+        HorseMind.observeHandComplete(
+          `league:${ts}`,
+          history,
+          BB,
+          showdown,
+          readScopeOf(gameVariant, seats.length)
+        )
       );
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */
@@ -592,6 +620,11 @@ export async function runMatchup(
   let candidateExecutionMismatches = 0;
   const candidateNodeRoles = new Set<string>();
   const perPairDiff: number[] = [];
+  // Pairs where the two passes did not settle identically. Zero across a
+  // whole matchup means the flag under test changed no decision (see
+  // LeagueResult.inert); it is counted on the raw chip figure, before the
+  // bb normalisation, so a rounding artefact can never manufacture a difference.
+  let divergentPairs = 0;
   // V12.3: before compute isolation this ran inside the dealer process, where
   // HorseEval's module-global RNG was shared with every live decision.
   // Production now calls this only in its worker; the bracket remains part of
@@ -664,6 +697,7 @@ export async function runMatchup(
     // aNet counts A-minus-B chips over 2 hands x (SEATS/2) A-seats;
     // normalize to "A's edge in bb per hand pair".
     perPairDiff.push(aNet / 2 / BB);
+    if (aNet !== 0) divergentPairs++;
   }
 
   restoreFastRandom(rngBefore);
@@ -678,11 +712,12 @@ export async function runMatchup(
   // horse_league_results was inflated 6x. Ratios and signs are unchanged, so
   // historical comparisons still hold — only the scale was wrong.
   const A_HANDS_PER_PAIR = (SEATS / 2) * 2;
+  const stderr = (sd / Math.sqrt(Math.max(1, n)) / A_HANDS_PER_PAIR) * 100;
   return {
     matchup: matchup.name,
     hands: n * 2,
     bb100: (mean / A_HANDS_PER_PAIR) * 100,
-    stderr: (sd / Math.sqrt(Math.max(1, n)) / A_HANDS_PER_PAIR) * 100,
+    stderr,
     durationMs: Date.now() - t0,
     illegalActions: counters.illegal,
     truncatedStreets: counters.truncated,
@@ -690,6 +725,8 @@ export async function runMatchup(
     candidateExecutionMismatches,
     candidateNodeRoles: [...candidateNodeRoles].sort(),
     benchmarkComponents: [],
+    divergentPairs,
+    inert: n > 0 && (divergentPairs === 0 || stderr === 0),
   };
 }
 
@@ -733,10 +770,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
    * 2026-09-03 - returns a call or a fold for EVERY river spot and every
    * solverless flop/turn spot before that second gate is reached, so no hand
    * can differ between the arms. Same shape as v18_exploit_size and
-   * v31_gto_suit_aware above: a matchup that always reports 0.00 +/- 0.00
+   * v31_gto_suit_aware below: a matchup that always reports 0.00 +/- 0.00
    * spends 12,000 hands a night measuring nothing. The default stays OFF;
    * the promotion rule (three significant positive runs) cannot be met by a
    * flag that no longer reaches code.
+   * Re-measured 2026-09-21 with runMatchup's divergence count: 0 of 1,000 and
+   * 0 of 6,000 pairs diverged at seeds 4242 and 20260921. INERT; still off.
    */
   // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
@@ -770,6 +809,8 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
    * reports 0.00 +/- 0.00 spends 12,000 hands teaching us nothing while the
    * card is only completing one matchup a night. Ablate it deliberately with
    * a temporary pairs bump if it ever needs a verdict.
+   * Re-measured 2026-09-21: 0 of 1,000 and 0 of 6,000 pairs diverged at seeds
+   * 4242 and 20260921 (INERT); a heads-up v11 control diverged in 7 and 2 of 1,000.
    */
   // { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
   { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
@@ -789,7 +830,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   /*
    * v18_exploit_size is NOT on the card, and this one is impossible by
    * CONSTRUCTION rather than merely underpowered - it reported 0.00 +/- 0.00
-   * on 2026-09-01 and 2026-08-31 both.
+   * on 2026-08-28 and 2026-09-01 (the 2026-08-31 row read -0.04 +/- 0.15).
+   * Re-measured 2026-09-21: 0 of 1,000 and 0 of 6,000 pairs diverged at seeds
+   * 4242 and 20260921. INERT.
    *
    * The layer multiplies its river raise by (exploit.valueThinMod - 1), and
    * only counts a firing when abs(valueThinMod - 1) > 0.03. HorseMind.exploit
@@ -1818,11 +1861,32 @@ export async function runLeague(
       } catch (err) {
         reportError(err, 'HorseLeague.write');
       }
+      if (r.inert === true) {
+        // The row is still written above so the audit can see the shape, but
+        // it is a harness FAILURE, not a resolved zero, and it is reported
+        // through the same channel every other league fault uses.
+        reportError(
+          new Error(
+            `[HorseLeague] ${r.matchup} is INERT: ${r.hands} hands, ${r.divergentPairs} of ` +
+              `${r.hands / 2} pairs diverged between config A and config B, stderr ` +
+              `${round2(r.stderr)}. The flag under test changed no measurable decision; ` +
+              `0.00 +/- 0.00 is not a measurement.`
+          ),
+          'HorseLeague.inert',
+          { matchup: r.matchup, hands: r.hands, config_a: m.a, config_b: m.b }
+        );
+      }
       console.log(
         `[HorseLeague] ${r.matchup}: ${round2(r.bb100)} bb/100 (se ${round2(r.stderr)}) ` +
-          `${Math.abs(r.bb100) > 2 * r.stderr ? 'SIGNIFICANT' : 'not resolved'} over ` +
+          `${
+            r.inert === true
+              ? 'INERT'
+              : Math.abs(r.bb100) > 2 * r.stderr
+                ? 'SIGNIFICANT'
+                : 'not resolved'
+          } over ` +
           `${r.hands} hands in ${r.durationMs}ms, illegal=${r.illegalActions}, ` +
-          `truncated=${r.truncatedStreets}`
+          `truncated=${r.truncatedStreets}, divergent=${r.divergentPairs ?? 'n/a'}`
       );
       // Yield the event loop between matchups — production tables come first.
       await new Promise((res) => setTimeout(res, 250));

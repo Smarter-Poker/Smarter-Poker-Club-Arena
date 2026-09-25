@@ -409,6 +409,7 @@ export default function PlayerNotesPanel({
     if (onClose) {
       return (
         <SpadeConsole
+          onClose={onClose}
           className={`${styles.console} ${compact ? styles.compact : ''}`}
           eyebrow="Player Notes"
           title={targetName || 'Player'}
@@ -425,6 +426,7 @@ export default function PlayerNotesPanel({
     }
     return (
       <SpadeConsole
+        onClose={onClose}
         className={`${styles.console} ${compact ? styles.compact : ''}`}
         eyebrow="Player Notes"
         title={targetName || 'Player'}
@@ -526,6 +528,7 @@ export default function PlayerNotesPanel({
   if (onClose) {
     return (
       <SpadeConsole
+        onClose={onClose}
         className={styles.console}
         eyebrow="Player Notes"
         title="Notes Library"
@@ -543,6 +546,7 @@ export default function PlayerNotesPanel({
   }
   return (
     <SpadeConsole
+      onClose={onClose}
       className={styles.console}
       eyebrow="Player Notes"
       title="Notes Library"

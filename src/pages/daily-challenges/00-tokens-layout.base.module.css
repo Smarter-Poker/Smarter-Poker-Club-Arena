@@ -1,0 +1,38 @@
+:root {
+  --mission-black: #020405;
+  --mission-panel: #090d11;
+  --mission-white: #f2f6f8;
+  --mission-blue: #55e8ff;
+  --mission-blue-deep: #1389b8;
+  --mission-gold: #ffc93c;
+}
+
+.container {
+  width: 100%;
+  /* StandardContentLayout already reserves the fixed Club Arena footer, but
+     this page's spacing shorthand used to replace that reservation with a
+     fixed 78px. The artwork-driven footer is responsive (about 176px at a
+     1280px viewport), so mission controls near the end of the page could be
+     visible beneath its semantic navigation hit targets. Keep one content
+     rhythm beyond the authoritative live clearance token at every width. */
+  padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px);
+  color: var(--mission-white);
+  background: linear-gradient(rgba(2, 4, 5, 0.94), rgba(2, 4, 5, 0.97));
+  font-family: 'Rajdhani', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+}
+
+.container > div {
+  max-width: 1180px;
+}
+
+.container > div > div {
+  gap: 24px;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  min-width: 0;
+}

@@ -262,14 +262,31 @@ describe('the feed refuses to guess, and never promises a refused mini', () => {
 });
 
 describe('the felt: a thinner frame, and the mini under it', () => {
-  it('the frame is 2px, not 5px, and the inner bezel thinned with it', () => {
+  it('the frame is a 1px hairline, not 5px or 2px, and the inner bezel is gone', () => {
+    /* Dan 2026-09-11: 5px -> 2px. Dan 2026-09-23, same words: the 2px bezel,
+       the 1px inner ring flush against it and the 1px highlight read as one
+       4px band. Hairline outer bezel, no inner ring, on both bindings. */
     const base = plateCss.slice(
       plateCss.indexOf('.bbj-widget {'),
       plateCss.indexOf('/* Inner nickel bezel')
     );
-    expect(base).toContain('border: 2px solid transparent;');
+    expect(base).toContain('border: 1px solid transparent;');
     expect(base).not.toContain('border: 5px solid transparent;');
-    expect(sliceCssRule(plateCss, '.bbj-widget::before {')).toContain('padding: 1px;');
+    expect(base).not.toContain('border: 2px solid transparent;');
+    expect(sliceCssRule(plateCss, '.bbj-widget::before {')).toContain('content: none;');
+    expect(sliceCssRule(plateCss, '.bbj-widget::before {')).not.toContain('padding: 1px;');
+    const phone = plateCss.slice(plateCss.indexOf('@media (max-width: 768px)'));
+    expect(phone).toContain('border-width: 1px;');
+    expect(phone).not.toContain('border-width: 2px;');
+    /* 2026-09-24: the third layer of that band. The outer white highlight
+       (`0 1px 0 rgba(255,255,255,.22)`, not inset) was still painted under
+       the hairline in the base rule and both pulse keyframes, so the bottom
+       edge read as 2px of light. Only inset highlights remain: they sit on
+       the plate's face, not outside its edge. */
+    const outerWhite = /(^|[^-\w])(?!inset)\s*0 1px 0 rgba\(255, 255, 255, 0\.\d+\)/m;
+    expect(plateCss.replace(/inset 0 1px 0 rgba\(255, 255, 255, 0\.\d+\)/g, '')).not.toMatch(
+      outerWhite
+    );
   });
 
   it('the mini row is its own element under the plate, with the flat amount', () => {

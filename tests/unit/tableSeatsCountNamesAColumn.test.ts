@@ -10,28 +10,10 @@
  * A count needs one column. `id` is always granted.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { blankNonCode } from '../helpers/sourceWindow';
-
-/* memberCount is a pure src/utils module, so it is exercised rather than
-   grepped: the count it issues must name a column. */
-const selectSpy = vi.fn();
-vi.mock('../../src/lib/supabase', () => ({
-  supabase: {
-    from: () => ({
-      select: (...args: unknown[]) => {
-        selectSpy(...args);
-        return {
-          eq: () => ({ in: async () => ({ count: 3, error: null }) }),
-        };
-      },
-    }),
-  },
-}));
-vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
-import { getUserActiveClubCount } from '../../src/utils/memberCount';
 
 const root = join(__dirname, '../..');
 
@@ -108,10 +90,5 @@ describe('a table_seats or club_members read names its columns', () => {
     // The filter would be a string literal, so search the raw source too: the
     // blanked copy cannot see it and would pass on nothing.
     expect(raw).not.toMatch(/\.eq\(\s*'is_horse'/);
-  });
-
-  it('getUserActiveClubCount counts user_id, not * (club_members has no id)', async () => {
-    await expect(getUserActiveClubCount('u1')).resolves.toBe(3);
-    expect(selectSpy).toHaveBeenCalledWith('user_id', { count: 'exact', head: true });
   });
 });

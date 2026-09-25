@@ -58,6 +58,12 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+.settlementLine {
+  border-top: 1px solid rgb(154 165 179 / 20%);
+}
+.settlementLine dt {
+  color: #e4e7ec;
+}
 .host {
   display: flex;
   flex-direction: column;

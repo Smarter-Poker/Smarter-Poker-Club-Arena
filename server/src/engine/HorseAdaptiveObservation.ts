@@ -405,9 +405,17 @@ export function qualifyAdaptiveHand(
     if (!ACTIONS.includes(action.action)) {
       // These producer records do not represent voluntary betting choices.
       if (
-        !['sb', 'bb', 'post', 'ante', 'straddle', 'bomb_ante', 'discard', 'return'].includes(
-          action.action
-        )
+        ![
+          'sb',
+          'bb',
+          'post',
+          'ante',
+          'straddle',
+          'bomb_ante',
+          'kill_blind',
+          'discard',
+          'return',
+        ].includes(action.action)
       )
         lineUnavailable = true;
       reject('non_betting_action');

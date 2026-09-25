@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LeaderboardSettlementStatus } from '../../src/services/LeaderboardService';
 import { LeaderboardSettlementCard } from '../../src/components/leaderboard/LeaderboardSettlementCard';
 
@@ -121,35 +121,67 @@ describe('LeaderboardSettlementCard', () => {
     expect(screen.getByText('Tied Places Share Their Occupied Prizes.')).toBeInTheDocument();
   });
 
-  it('prints the funding the batch row actually recorded when a seed paid part of it', () => {
+  const seededBatch = (seed: number, promo: number) => ({
+    id: 'batch-5678',
+    program_id: 'program-1',
+    program_version: 3,
+    program_hash: 'a'.repeat(64),
+    metric: 'profit',
+    funding_owner_type: 'club' as const,
+    funding_union_id: null,
+    total_paid: seed + promo,
+    seed_funded: seed,
+    promo_funded: promo,
+    winner_count: 2,
+    tie_policy: 'split_occupied_places' as const,
+    settled_at: '2026-09-13T00:20:00Z',
+  });
+
+  it('names the pools the batch row recorded when an opening seed paid part of it', () => {
     render(
       <LeaderboardSettlementCard
-        status={{
-          ...openStatus,
-          state: 'paid',
-          planned_total: 150,
-          batch: {
-            id: 'batch-5678',
-            program_id: 'program-1',
-            program_version: 3,
-            program_hash: 'a'.repeat(64),
-            metric: 'profit',
-            funding_owner_type: 'club',
-            funding_union_id: null,
-            total_paid: 150,
-            seed_funded: 100,
-            promo_funded: 50,
-            winner_count: 2,
-            tie_policy: 'split_occupied_places',
-            settled_at: '2026-09-13T00:20:00Z',
-          },
-        }}
+        status={{ ...openStatus, state: 'paid', planned_total: 150, batch: seededBatch(100, 50) }}
         onRetry={vi.fn()}
       />
     );
 
-    expect(screen.getByText('Seed 100 And Promo 50 Chips')).toBeInTheDocument();
+    expect(screen.getByText('Seed And Promo Wallet')).toBeInTheDocument();
+    expect(screen.getByText('150 Chips')).toBeInTheDocument();
     expect(screen.queryByText('Promo Only')).not.toBeInTheDocument();
+  });
+
+  it('never prints parts that contradict the total when the seed is a fraction of a chip', () => {
+    /* numeric(18,2): a 0.50 seed with a 9.50 promo debit pays exactly 10. The
+       house compact format floors each figure, so printing the parts would
+       have read "Seed 0 And Promo 9" beside "Paid 10". The sources are named
+       instead, and the only figure is the batch total. */
+    render(
+      <LeaderboardSettlementCard
+        status={{ ...openStatus, state: 'paid', planned_total: 10, batch: seededBatch(0.5, 9.5) }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Seed And Promo Wallet')).toBeInTheDocument();
+    expect(screen.getByText('10 Chips')).toBeInTheDocument();
+    expect(screen.queryByText(/Seed 0/)).not.toBeInTheDocument();
+  });
+
+  it('says a round had no program without claiming why a never-published club had none', () => {
+    render(
+      <LeaderboardSettlementCard
+        status={{ ...openStatus, state: 'not_published', program: null, planned_total: 0 }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'No Prize Program Applies To This Round' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('No Published Prize Program Covered This Period When It Started.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Started Before A Published/)).not.toBeInTheDocument();
   });
 
   it('states the tie rule on a pending round, not only the live one', () => {
@@ -174,5 +206,38 @@ describe('LeaderboardSettlementCard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry Status' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  describe('period-close countdown', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('counts a live round down to the exclusive UTC end the server returned', () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      // Sep 21 19:30 UTC; the weekly round ends at Sep 27 00:00 UTC.
+      vi.setSystemTime(new Date('2026-09-21T19:30:00Z'));
+      render(
+        <LeaderboardSettlementCard
+          status={{ ...openStatus, period_start: '2026-09-20', period_end: '2026-09-27' }}
+          onRetry={vi.fn()}
+        />
+      );
+
+      expect(screen.getByRole('timer')).toHaveTextContent('Closes In 5D 4H');
+
+      vi.setSystemTime(new Date('2026-09-26T23:20:00Z'));
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(screen.getByRole('timer')).toHaveTextContent('Closes In 40M');
+    });
+
+    it('shows no countdown once the round has closed', () => {
+      render(
+        <LeaderboardSettlementCard status={{ ...openStatus, state: 'pending' }} onRetry={vi.fn()} />
+      );
+      expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+    });
   });
 });

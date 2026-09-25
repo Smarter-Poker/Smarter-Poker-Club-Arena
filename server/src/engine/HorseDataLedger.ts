@@ -713,6 +713,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('maxRaiseTo', 'maximum absolute legal wager after structure and table caps'),
   state('bettingStructure', 'no-limit, pot-limit or fixed-limit rule selected by the live hand'),
   state('fixedBetSize', 'fixed-limit street bet; null in other structures'),
+  state(
+    'fixedLimitSmallBet',
+    "the hand's effective fixed-limit small bet (raised on a kill hand); null in other structures"
+  ),
   state('wagersCapped', 'fixed-limit wager cap reached on this street'),
   state(
     'commitmentCapRemaining',

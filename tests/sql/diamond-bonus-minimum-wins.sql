@@ -59,7 +59,12 @@ BEGIN
   END;
   IF NOT refused THEN RAISE EXCEPTION 'Minimum Was Not Immutable'; END IF;
   -- A private clock advance makes a real winning manual request deterministic.
-  IF game='crash' THEN UPDATE public.crash_rounds SET started_at=clock_timestamp()-interval '10 seconds' WHERE id=rid; END IF;
+  -- A live round's clock is sealed (20260922173914), so the shortcut says it is maintenance.
+  IF game='crash' THEN
+   PERFORM set_config('app.ledger_maintenance','probe clock: ten seconds of play',true);
+   UPDATE public.crash_rounds SET started_at=clock_timestamp()-interval '10 seconds' WHERE id=rid;
+   PERFORM set_config('app.ledger_maintenance','',true);
+  END IF;
   -- Drain through the canonical writer, never manufacture an unbalanced fixture.
   SELECT promo_balance INTO before_promo FROM public.clubs WHERE id=club;
   IF before_promo>1 THEN PERFORM * FROM public.fn_diamond_game_pay_chips('wheel_prize',club,'club',club,player,before_promo-1,'minimum-win-promo:'||game,'Isolated Minimum Funding Boundary','{}'::jsonb); END IF;

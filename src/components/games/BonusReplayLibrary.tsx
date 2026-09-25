@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import {
   DiamondReplayService,
   bonusReplayTitle,
@@ -9,8 +9,17 @@ import { openInBrowser } from '../../lib/openExternal';
 import { reportError } from '../../utils/errorReporter';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
-import BonusReplayPlayer from './BonusReplayPlayer';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import styles from './BonusReplay.module.css';
+
+/**
+ * The player draws Plinko, Crash and Donkey Cross, so it carries three.js -
+ * 511kB raw, 125kB gzipped - and it renders only once somebody picks a row.
+ * This library is mounted by DiamondWheelPage, the page every round starts on,
+ * so a static import made the whole wheel wait on a scene it never draws.
+ * SharedBonusReplayPage keeps its static import: there the player IS the page.
+ */
+const BonusReplayPlayer = lazyWithRetry(() => import('./BonusReplayPlayer'));
 
 export default function BonusReplayLibrary({ clubId }: { clubId: string }) {
   const [rows, setRows] = useState<BonusReplaySummary[]>([]);
@@ -117,7 +126,9 @@ export default function BonusReplayLibrary({ clubId }: { clubId: string }) {
           >
             Back To Replays
           </button>
-          <BonusReplayPlayer key={selected.id} replay={selected.replay} />
+          <Suspense fallback={<p className="sc-copy">Loading Replay</p>}>
+            <BonusReplayPlayer key={selected.id} replay={selected.replay} />
+          </Suspense>
           {!share ? (
             <button className={styles.action} type="button" disabled={busy} onClick={makeShare}>
               Share This Replay

@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const app = readFileSync(resolve(__dirname, '../src/App.tsx'), 'utf8');
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
 const authGuard = readFileSync(resolve(__dirname, '../src/components/auth/AuthGuard.tsx'), 'utf8');
 const routeFallback = readFileSync(
   resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
@@ -17,24 +19,32 @@ const challengeRoute = readFileSync(
 describe('Daily Challenge cycle deep links', () => {
   it('routes Daily, Weekly, and Monthly as bookmarkable subpages', () => {
     expect(app).toContain('path="challenges/:cycle?"');
-    expect(page).toContain("cycle === 'daily' || cycle === 'weekly' || cycle === 'monthly'");
-    expect(page).toContain(
+    expect(route).toContain("cycle === 'daily' || cycle === 'weekly' || cycle === 'monthly'");
+    expect(route).toContain(
       'withClubContext(`/challenges/${tier}${location.search}${location.hash}`'
     );
     expect(page).toContain('data-mission-cycle={activeTier}');
   });
 
   it('recovers malformed cycle bookmarks without dropping query, hash, or club context', () => {
-    expect(page).toContain('`/challenges${location.search}${location.hash}`');
-    expect(page).toContain('withClubContext(');
-    expect(page).toContain('routeClubId');
-    expect(page).toMatch(/replace:\s*true/);
-    expect(page).toContain("setActiveTier('daily')");
+    expect(route).toContain('`/challenges${location.search}${location.hash}`');
+    expect(route).toContain('withClubContext(');
+    expect(route).toContain('routeClubId');
+    expect(route).toMatch(/replace:\s*true/);
+    expect(route).toContain("setActiveTier('daily')");
   });
 
   it('keeps club context through tier, mission, and arena navigation', () => {
-    expect(page).toContain('navigate(withClubContext(action.path, routeClubId))');
-    expect(page.match(/routeClubId \? `\/clubs\/\$\{routeClubId\}` : '\/'/g)).toHaveLength(2);
+    expect(route).toContain('navigate(withClubContext(action.path, routeClubId))');
+    // One arena path, defined once on the page and handed to the hero and the footer.
+    expect(page.match(/routeClubId \? `\/clubs\/\$\{routeClubId\}` : '\/'/g)).toHaveLength(1);
+    expect(page).toContain(
+      "const goToArena = () => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')"
+    );
+    expect(page).toContain('onBackToArena={goToArena}');
+    expect(page).toContain('onBrowseArena={goToArena}');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('onClick={onBackToArena}');
+    expect(readDailyChallengesUnit('MissionFooter.tsx')).toContain('onClick={onBrowseArena}');
   });
 
   it('uses the cinematic Daily Missions master during auth checks and render recovery', () => {
@@ -57,9 +67,9 @@ describe('Daily Challenge cycle deep links', () => {
   });
 
   it('closes a stale reroll confirmation when returning to the base route', () => {
-    const baseRouteBranch = page.slice(
-      page.indexOf('if (!cycle)'),
-      page.indexOf("if (cycle === 'daily'")
+    const baseRouteBranch = route.slice(
+      route.indexOf('if (!cycle)'),
+      route.indexOf("if (cycle === 'daily'")
     );
     expect(baseRouteBranch).toContain("setActiveTier('daily')");
     expect(baseRouteBranch).toContain('setConfirmingRerollId(null)');

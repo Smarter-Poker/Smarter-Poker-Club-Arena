@@ -60,6 +60,25 @@ function remoteValue(response) {
   return response?.result;
 }
 
+/** The guard's own progress record, read back from the predecessor's global
+ *  object when the call's outcome is unknown (see the guard's `progress`).
+ *  Observability only: a fixed set of keys, each held to its shape, or absent. */
+function progressSummary(value) {
+  if (!value || typeof value !== 'object' || value.schema !== 'legacy-engine-checkpoint-progress/v1')
+    return null;
+  const out = {};
+  for (const key of ['elapsedMs', 'attemptedTables', 'completedCalls', 'verifiedTables']) {
+    const item = value[key];
+    if (Number.isSafeInteger(item) && item >= 0) out[key] = item;
+  }
+  for (const key of ['stage', 'note', 'reason']) {
+    const item = value[key];
+    if (typeof item === 'string' && item.length <= 64 && /^[A-Za-z][A-Za-z0-9_]*$/.test(item))
+      out[key] = item;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function checkpointSummary(value) {
   const keys = [
     'schema',
@@ -114,12 +133,46 @@ function checkpointSummary(value) {
     'failedCheck',
     'failedTable',
     'failedField',
+    // `failedCheck` names the sub-expression that refused; WHICH map, set,
+    // drain condition or captured revision moved underneath it travels in
+    // `observedDetail` below. This list is FIXED and drops every unlisted key,
+    // so one carrier is the design: a key of its own has to be remembered
+    // here too, and on 2026-09-21 it was not - `mixed_owner_changed` reached
+    // the runner naming a call and nothing else, which is the whole reason
+    // nobody could act on it (CLAUDE.md 10.86 rule 2: an unreadable answer
+    // must not be coerced into an empty one).
     'observed',
     'expected',
     'observedDetail',
     // Which tables were proved abandoned from rows, and how many unreachable
     // boundary generations each carried. Carried verbatim; nothing reads it.
     'abandonedBoundaries',
+    // How many residue players and disposed seats the rows proved held
+    // nothing, and on which stopped tournaments. Carried verbatim; nothing
+    // reads it.
+    'bankDisposition',
+    // Which tables held an F06 permit that no process could ever resolve, and
+    // the phase each was in when the rows proved the felt quiet. This is the
+    // record of what a release stepped over, so a refusal that never happened
+    // is still legible afterwards. Carried verbatim; nothing reads it.
+    'unresolvableCustody',
+    // Which tables the capture walk refused and under which code, across the
+    // whole fleet rather than the first table alone. One refused release costs
+    // a maintenance break; this is what makes one break read the whole
+    // blocking set. Carried verbatim; nothing reads it.
+    'refusalCensus',
+    // What was inside the rejections the previous-work join met, whether it
+    // refused on them or stepped over them: the type and structured code of
+    // each member, and their reduced sentences. It is what says whether a
+    // failed join is a money write or a cleanup failure, and it is the
+    // account of what a release stepped over. Carried verbatim; nothing
+    // reads it.
+    'nativeWorkMembers',
+    // Which dead generations' park rows were proved from the row they had read
+    // instead of written again (the database fences a write from a lease
+    // generation that is no longer current), with what each row held. Carried
+    // verbatim; nothing reads it.
+    'provedRows',
   ]) {
     const item = value?.[key];
     if (
@@ -230,6 +283,83 @@ function connectInspector(endpoint, deadline, createWebSocket) {
 
 /** One checkpoint attempt; a timeout/disconnect is unknown, never a retry.
  * The stdin production caller fixes PID, module coordinates and budgets. */
+/**
+ * The refusals a release may stand down on, in two groups, both of which mean
+ * "this attempt could not act", never "this attempt is unsafe".
+ *
+ * ARRIVED LATE. `insufficient_reserve` is the guard finding less than its
+ * 285000ms reserve left. #5026 built `defer()` for exactly this sentence and
+ * could only reach it ABOVE the intent write, so the guard's own copy of the
+ * same finding stayed terminal - and it is what ended run 35625997626 at
+ * 16:30 on 2026-09-21, twenty minutes after the ladder shipped. Deferring it
+ * does NOT move the floor: the guard refuses at the identical threshold, on
+ * the identical reading. It simply stops one mistimed arrival from consuming
+ * the operation.
+ *
+ * OVERTAKEN WHILE READING. The four `*_changed` codes each mean a value the
+ * guard had already READ stopped being what it read - the fleet gained or lost
+ * a table, the server object was replaced, custody moved - between the capture
+ * and the re-verification a page of Supabase reads later.
+ *
+ * Deliberately NOT here: every `maintenance_*` code, which is what stops a
+ * cutover being certified over a hand in the air, and every code naming
+ * durable state such as `bank_park_write_incomplete`. Those are safety
+ * findings, not timing ones, and a refusal that is not in this list still ends
+ * the release.
+ */
+export const CHECKPOINT_DEFERRABLE_REFUSALS = Object.freeze([
+  'insufficient_reserve',
+  'server_changed',
+  'fleet_identity_changed',
+  'mixed_owner_changed',
+  'mixed_local_custody_changed',
+]);
+
+/**
+ * True when the helper may exit 75 (defer) instead of 1 (die).
+ *
+ * WHY THIS EXISTS. `legacy-engine-checkpoint.sh` writes its O_EXCL intent
+ * BEFORE opening the inspector, because a disconnect is unknown and unknown is
+ * never permission to invoke again. That is right for a disconnect and wrong
+ * for this: the guard came back, closed its inspector, and handed over a
+ * complete receipt saying it refused in preflight having touched nothing. On
+ * 2026-09-21 that exact receipt - stage `preflight`, `attemptedTables: 0`,
+ * `completedCalls: 0`, `checkpointOutcome: "not_started"` - ended the release
+ * permanently, twice, while 49 seats and 4,908,000 chips sat behind it.
+ *
+ * This is NOT a tolerance and NOT a retry loop (CLAUDE.md 10.12). The refusal
+ * still refuses and nothing is retired; all that changes is that an attempt
+ * which provably did not act stops poisoning every later attempt. Every
+ * condition below is READ from the receipt, never inferred: if any field is
+ * missing, unexpected, or says work began, this is false and the release dies
+ * (CLAUDE.md 10.86 rules 1 and 2 - an unreadable answer is not an empty one).
+ */
+export function deferrableCheckpointRefusal(outcome) {
+  const isRecord = (value) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isRecord(outcome) || outcome.ok !== false || outcome.retryAllowed !== false) return false;
+  // A retained debugger session is an unknown process state, never a deferral.
+  if (outcome.inspectorClosed !== true || outcome.cleanupConnections !== 0) return false;
+  // A cleanup failure carries its OWN outer reason and must not be deferred
+  // behind the guard's inner one; requiring the two to agree seals that.
+  const checkpoint = isRecord(outcome.checkpoint) ? outcome.checkpoint : outcome;
+  return (
+    checkpoint.schema === 'legacy-engine-checkpoint/v1' &&
+    checkpoint.ok === false &&
+    checkpoint.stage === 'preflight' &&
+    checkpoint.checkpointOutcome === 'not_started' &&
+    checkpoint.attemptedTables === 0 &&
+    checkpoint.completedCalls === 0 &&
+    checkpoint.verifiedTables === 0 &&
+    checkpoint.bankCount === 0 &&
+    checkpoint.readyForRestart === false &&
+    checkpoint.restartAuthorized === false &&
+    typeof checkpoint.reason === 'string' &&
+    checkpoint.reason === outcome.reason &&
+    CHECKPOINT_DEFERRABLE_REFUSALS.includes(checkpoint.reason)
+  );
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -271,7 +401,8 @@ export async function runLegacyEngineCheckpoint({
     failure;
   let checkpointInvoked = false,
     inspectorClosed = false,
-    cleanupConnections = 0;
+    cleanupConnections = 0,
+    progress = null;
   const verifyPid = async (owned, until) => {
     const identity = remoteValue(
       await owned.request(
@@ -395,6 +526,27 @@ export async function runLegacyEngineCheckpoint({
         }
         if (!inspectorClosed) {
           await verifyPid(connection, cleanupDeadline);
+          // AN UNKNOWN OUTCOME SAYS HOW FAR IT GOT (2026-09-24, run 36041108119).
+          // One read of the guard's own progress record, only when the call's
+          // result never came back, on the cleanup connection this path
+          // already holds. It changes no outcome: `failure` stays what it was.
+          if (checkpointInvoked && !result && /outcome unknown/.test(failure ?? '')) {
+            try {
+              const read = remoteValue(
+                await connection.request(
+                  'Runtime.evaluate',
+                  {
+                    expression: 'globalThis.__legacyEngineCheckpointProgress ?? null',
+                    returnByValue: true,
+                  },
+                  cleanupDeadline
+                )
+              );
+              progress = progressSummary(read?.value);
+            } catch {
+              // The record is a courtesy to the reader, never a condition.
+            }
+          }
           await connection.request(
             'Runtime.releaseObjectGroup',
             { objectGroup: 'legacy-checkpoint' },
@@ -459,6 +611,8 @@ export async function runLegacyEngineCheckpoint({
       // Preserve only the validated guard summary. Cleanup failure remains the
       // outer refusal and must not erase the original checkpoint observation.
       ...(result ? { checkpoint: result } : {}),
+      // Where the guard had got to when the outcome was lost, if it said.
+      ...(progress ? { progress } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,
@@ -502,5 +656,9 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
   (checkpointResult.ok ? console.log : console.error)(JSON.stringify(checkpointResult));
   // A failed cleanup may retain a client socket. End this helper after its
   // bounded attempt without sending another WebSocket close to the engine.
-  if (!checkpointResult.ok) process.exit(1);
+  // 75 is `legacy-engine-checkpoint.sh`'s deferral, and it is reachable here
+  // ONLY on a receipt that proves this attempt touched nothing. Anything else,
+  // including an unreadable or partial receipt, is 1 and ends the release.
+  if (!checkpointResult.ok)
+    process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
 }

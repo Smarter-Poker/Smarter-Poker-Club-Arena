@@ -12,28 +12,46 @@
  *
  *   Hold'em   games(NLH/FLH/6+) · blinds · table size · features
  *   Omaha     (no games row)    · blinds · table size · features
- *   MTT       games(7)          · buy-in · running/open-reg · 5 features
- *   Spin-It   games(4)          · buy-in · table size(fixed 3) · NO features
- *   SN        format + games(5) · buy-in · table size · NO features
+ *   MTT       games(7)          · buy-in · running/open-reg · features
+ *   Spin-It   games(4)          · buy-in · table size(fixed 3) · Private / Union Event
+ *   SN        format + games(5) · buy-in · table size · Private / Union Event
  *
  * Encoding that as DATA rather than as branches in the component is the whole
  * point: the modal renders whatever the spec for the active tab declares, so
  * adding a variant later is a table entry, not a new conditional. It also keeps
- * the shape honest — Spin-It genuinely has no feature grid, and a component
- * full of `{type !== 'SPIN' && ...}` would hide that fact.
+ * the shape honest: Spin-It and SN carry only the two traits that genuinely
+ * vary between their events, and a component full of `{type !== 'SPIN' && ...}`
+ * would hide that fact.
  *
  * FEATURE KEYS map to what the lobby can actually see: `tables.settings` JSON
- * for cash games and the tournament flags for MTT. A filter that cannot be
- * evaluated is worse than a missing one, so anything unmatchable is left out.
+ * and columns for cash games, and the columns the lobby's tournament query
+ * selects for tournaments. A filter that cannot be evaluated is worse than a
+ * missing one, so anything unmatchable is left out, and a ROW that cannot
+ * answer (its source did not select the column) is never hidden by it.
  */
 
 import {
+  isGuaranteedTournament,
+  isHyperTournament,
   isInLateRegistration,
-  STARTING_SOON_WINDOW_MINUTES,
+  isMysteryBountyTournament,
+  isOrdinaryBountyTournament,
+  isPkoTournament,
+  isPrivateTournament,
+  isSatelliteTournament,
+  isTurboTournament,
+  isUnionEvent,
+  matchesTournamentSubFilter,
+  offersLateRegistration,
+  sellsAddOn,
+  sellsRebuys,
+  sellsReentry,
   type FilterableTournament,
 } from '../../utils/tournamentFilters';
 import { SPIN_VARIANT_KEYS, TOURNAMENT_VARIANT_KEYS } from '../../config/tournamentVariants';
 import { CASH_TEMPLATES } from '../../config/cashGames';
+import type { PlatformCapabilityId } from '../../config/platformCapabilities';
+import { killModeOf } from '../../utils/killPot';
 
 export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MTT' | 'SPIN' | 'SNG';
 
@@ -42,10 +60,27 @@ export interface FeatureOption {
   key: string;
   label: string;
   /**
-   * settings-JSON keys (cash) or tournament columns (MTT) that mean "this
-   * table has the feature". Any one matching counts.
+   * The settings-JSON keys (cash) or columns every one of this feature's
+   * answers reads. The lobby query must select each of them; the tests hold
+   * cash and tournament grids to that. Without `test`, any one of them truthy
+   * means "this table has the feature".
    */
   match: string[];
+  /**
+   * The decision, for a feature one truthy column cannot express (an ORDINARY
+   * bounty is is_bounty without is_pko or is_mystery_bounty). true / false as
+   * the row states it; null when the row cannot tell, which never hides it.
+   * Tournament features call the trait predicates in utils/tournamentFilters,
+   * the same functions the card's medallions call, so the two cannot disagree.
+   */
+  test?: (row: Record<string, unknown>) => boolean | null;
+  /**
+   * A chip for a capability the platform may not be running yet. The sheet
+   * draws it only while `fn_platform_capabilities()` says the capability is
+   * available (AdvancedFilters), because a chip for a feature nothing can
+   * have is the ghost this file has removed three times.
+   */
+  capability?: PlatformCapabilityId;
 }
 
 export interface RangeSpec {
@@ -123,6 +158,29 @@ const CASH_FEATURES: FeatureOption[] = [
 ];
 
 /**
+ * KILL POTS (rule manifest kill-v1), back with the feature. Removed on
+ * 2026-08-25 because the engine did not enforce it; it comes back keyed on the
+ * one column the engine reads, `tables.kill_mode`, and on the LIMIT tab only,
+ * because kill-v1 covers exactly the two fixed-limit games and a Hold'em or
+ * Omaha chip for it could only ever match nothing. Three-valued like every
+ * chip: 'half' or 'full' is yes, 'off' or null is no, and a row whose source
+ * did not select the column (get_club_home's first paint) is "cannot tell",
+ * which never hides it.
+ */
+const KILL_POT_FEATURE: FeatureOption = {
+  key: 'kill_pot',
+  label: 'Kill Pot',
+  match: ['kill_mode'],
+  test: (row) => {
+    const mode = killModeOf(row.kill_mode);
+    return mode === null ? null : mode !== 'off';
+  },
+  capability: 'cash.fixed_limit.kill_pots',
+};
+
+const LIMIT_FEATURES: FeatureOption[] = [...CASH_FEATURES, KILL_POT_FEATURE];
+
+/**
  * Omaha drops Seven-Deuce, and now for a reason the engine agrees with rather
  * than a reference screen: ServerTableEngineSettlement gates the bounty to
  * Hold'em ("meaningless in PLO; short-deck has no deuces"), so the chip could
@@ -134,20 +192,109 @@ const OMAHA_FEATURES: FeatureOption[] = CASH_FEATURES.filter(
 );
 
 /**
- * MTT features.
+ * MTT features (2026-09-22).
  *
- * All FIVE of the old entries were inert: the tournament path passes
- * `settings: {}` explicitly and none of `all_in_or_fold`, `is_private`,
- * `is_bounty`, `is_pko`, `is_mystery_bounty`, `vip_only` or `block_emulator`
- * is in the tournament select list. Selecting any of them emptied the MTT tab.
+ * This grid was empty, for a reason that had stopped being true. Its first five
+ * entries were inert (the tournament path passes `settings: {}` and none of
+ * their columns was selected), so they were removed until the query fetched the
+ * columns. It since grew is_pko, is_mystery_bounty, is_bounty, guaranteed_prize
+ * and the late-registration columns, and now also selects is_rebuy, is_reentry,
+ * add_on_available, is_private, is_xmtt, union_id and blind_speed. Every chip reads
+ * only columns the lobby really fetches: `match` names each of them, and
+ * tests/unit/tournamentDiscoveryFilters.test.ts parses the select and refuses a
+ * chip that reads anything else.
  *
- * The grid is empty rather than wrong. A tournament's traits are already
- * visible as medallions on its card (PKO, MYSTERY BOUNTY, REBUY, GUARANTEED,
- * LATE REG) and those are computed from columns the query really does fetch;
- * turning them into filters means fetching the columns first, which is a
- * change to the query and not to this table.
+ * Each answer is a trait predicate from utils/tournamentFilters, and where the
+ * card shows a medallion for the trait it calls the same function, so a chip
+ * cannot disagree with the medallion beside it. A tournament may carry several
+ * traits and matches each of them.
+ * There is no multi-day, flight or OFC chip: those are not built, and a trait
+ * the platform cannot run is not advertised.
  */
-const MTT_FEATURES: FeatureOption[] = [];
+const MTT_FEATURES: FeatureOption[] = [
+  { key: 'pko', label: 'PKO', match: ['is_pko', 'name'], test: isPkoTournament },
+  {
+    key: 'mystery_bounty',
+    label: 'Mystery Bounty',
+    match: ['is_mystery_bounty', 'name'],
+    test: isMysteryBountyTournament,
+  },
+  {
+    key: 'bounty',
+    label: 'Bounty',
+    match: ['is_bounty', 'is_pko', 'is_mystery_bounty', 'name'],
+    test: isOrdinaryBountyTournament,
+  },
+  { key: 'rebuy', label: 'Rebuy', match: ['is_rebuy', 'name'], test: sellsRebuys },
+  { key: 'reentry', label: 'Re-Entry', match: ['is_reentry', 'name'], test: sellsReentry },
+  { key: 'addon', label: 'Add-On', match: ['add_on_available'], test: sellsAddOn },
+  {
+    key: 'guaranteed',
+    label: 'Guaranteed',
+    match: ['guaranteed_prize'],
+    test: isGuaranteedTournament,
+  },
+  /* "Late Registration", not "Late Reg": the status row above the grid already
+     has a Late Reg chip meaning "open right now". This one is the TERM - the
+     event offers a late window that has not been closed. */
+  {
+    key: 'late_registration',
+    label: 'Late Registration',
+    match: [
+      'late_reg_levels',
+      'rebuy_levels',
+      'late_reg_mins',
+      'prize_pool_finalized',
+      'current_level',
+    ],
+    test: offersLateRegistration,
+  },
+  {
+    key: 'satellite',
+    label: 'Satellite',
+    match: [
+      'variant',
+      'tournament_type',
+      'satellite_target_id',
+      'satellite_target',
+      'format_contract',
+      'name',
+    ],
+    test: isSatelliteTournament,
+  },
+  {
+    key: 'turbo',
+    label: 'Turbo',
+    match: ['format_contract', 'blind_speed', 'blind_structure'],
+    test: isTurboTournament,
+  },
+  {
+    key: 'hyper',
+    label: 'Hyper',
+    match: ['format_contract', 'blind_speed', 'blind_structure'],
+    test: isHyperTournament,
+  },
+  { key: 'private', label: 'Private', match: ['is_private'], test: isPrivateTournament },
+  {
+    key: 'union_event',
+    label: 'Union Event',
+    match: ['is_xmtt', 'union_id'],
+    test: isUnionEvent,
+  },
+];
+
+/**
+ * Spins and Sit And Gos: only the traits that genuinely vary between their
+ * events. Every creator writes both formats as freezeouts with no late window
+ * and no add-on; neither is a bounty format (fn_create_tournament sets the
+ * bounty flags for the three MTT bounty types only); the Heads Up tab already
+ * splits satellites with its own format row; and neither records a clock speed
+ * (blind_speed is a column default outside MTTs). Whether an event is the
+ * club's own private game or a union event applies to every format.
+ */
+const SEAT_FIRST_FEATURES: FeatureOption[] = MTT_FEATURES.filter((f) =>
+  ['private', 'union_event'].includes(f.key)
+);
 
 /** Blind tiers, matching BBJRulesPanel's published ladder. */
 const BLIND_RANGE: RangeSpec = {
@@ -307,7 +454,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
-    features: CASH_FEATURES,
+    features: LIMIT_FEATURES,
   },
   MTT: {
     /* Every game an MTT can be created as, plus `pineapple` — which is NOT
@@ -344,7 +491,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     // "Table Size: 3" and no slider at all.
     seats: null,
     seatsLabel: 'Table Size: 3',
-    features: [],
+    features: SEAT_FIRST_FEATURES,
   },
   SNG: {
     format: [
@@ -359,7 +506,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
-    features: [],
+    features: SEAT_FIRST_FEATURES,
   },
 };
 
@@ -401,35 +548,52 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
  * Does this row survive the tab's saved filters?
  *
  * `row` is a raw table or tournament record. Feature detection reads the
- * settings JSON for cash and the flags for tournaments, via the `match` keys
- * on each FeatureOption - which is why those keys live in the spec rather than
- * being inferred from the label.
+ * settings JSON and columns for cash via the `match` keys on each FeatureOption,
+ * and a tournament trait through its `test` predicate - which is why both live
+ * in the spec rather than being inferred from the label.
  *
  * A filter that CANNOT be evaluated passes. If a table's settings blob does not
  * mention Bomb Pot at all we do not know whether it has one, and hiding rows on
  * an unknown is how a lobby ends up empty for a reason the player cannot see.
  * Absence of evidence is not evidence of absence on a screen whose whole job is
  * to show what is available.
+ *
+ * THAT SENTENCE WAS NOT WHAT THE CODE DID (fixed 2026-09-22). The old matcher
+ * answered only yes or no, so a column the row's source never selected read as
+ * "no": MUST-HAVE then deleted the row. The lobby paints from two sources that
+ * select different columns, so the answer is now three-valued (featureState):
+ * a row that cannot answer stays under MUST-HAVE and under Hide alike. A column
+ * that WAS selected and is null or false is a real "no".
  */
+export function featureState(
+  f: FeatureOption,
+  row: Record<string, unknown>,
+  settings: Record<string, unknown>
+): boolean | null {
+  if (f.test) return f.test(row);
+  let carried = false;
+  for (const k of f.match) {
+    const val = settings[k] ?? row[k];
+    if (val === undefined) continue;
+    carried = true;
+    if (val === true || val === 'true' || (typeof val === 'number' && val > 0)) return true;
+  }
+  return carried ? false : null;
+}
+
 export function matchesAdvancedFilter(
   spec: GameFilterSpec,
   v: GameFilterValue,
   row: Record<string, unknown>,
   settings: Record<string, unknown>
 ): boolean {
-  const hasFeature = (f: FeatureOption): boolean =>
-    f.match.some((k) => {
-      const val = settings[k] ?? row[k];
-      return val === true || val === 'true' || (typeof val === 'number' && val > 0);
-    });
-
   for (const key of v.mustHave) {
     const f = spec.features.find((x) => x.key === key);
-    if (f && !hasFeature(f)) return false;
+    if (f && featureState(f, row, settings) === false) return false;
   }
   for (const key of v.hide) {
     const f = spec.features.find((x) => x.key === key);
-    if (f && hasFeature(f)) return false;
+    if (f && featureState(f, row, settings) === true) return false;
   }
   return true;
 }
@@ -472,7 +636,7 @@ export interface FilterableRow {
   seatsTaken?: number | null;
   /** Tournament status, for the MTT running / open-registration chips. */
   status?: string | null;
-  /** Tournament name, the only place SATS vs REGULAR is expressed today. */
+  /** Tournament name: the satellite fallback when `row` lacks the satellite columns. */
   name?: string | null;
   /**
    * Cash: the game's template (classic / action / madness), or null for a
@@ -562,19 +726,17 @@ export function rowPassesFilter(
 
   // ── Format chips (SN only: satellite vs regular) ─────────────────────────
   if (v.format.length > 0) {
-    const name = String(r.name ?? '').toLowerCase();
-    /* `includes('sat')` matched Saturday, Satchel and anything else with those
-       three letters, so "Regular SNG" hid real games. Word-boundary match on
-       the actual word, plus the column when the query ever fetches it. */
-    /* `includes('sat')` matched Saturday, Satchel and anything else carrying
-       those three letters, so "Regular SNG" hid real games. A WORD match keeps
-       "Sat To Main" and "Satellite" and rejects "Saturday", because there is no
-       word boundary after the "Sat" in Saturday. */
-    const isSat = /\bsat(ellite)?\b/i.test(name) || r.row.is_satellite === true;
+    /* THE COLUMNS DECIDE (2026-09-22). This read the NAME, plus an
+       `is_satellite` column that does not exist, while the query already
+       selected the four columns TournamentInfoPanel decides a satellite by.
+       isSatelliteTournament reads those; the name (the old word rule: "Sat To
+       Main" yes, "Saturday" no) is consulted only when the row does not carry
+       them, and a row that cannot tell at all is no opinion. */
+    const isSat = isSatelliteTournament(r.row, r.name);
     const wantsSat = v.format.includes('sats');
     const wantsReg = v.format.includes('regular');
     // Both selected is the same as neither: no opinion.
-    if (wantsSat !== wantsReg) {
+    if (wantsSat !== wantsReg && isSat !== null) {
       if (wantsSat && !isSat) return false;
       if (wantsReg && isSat) return false;
     }
@@ -664,15 +826,17 @@ export function rowPassesFilter(
           // string - no tournament has ever carried a 'LATE_REG' status, which
           // is why that tab was empty for months. Reuses the shared rule.
           return isInLateRegistration(r.row as unknown as FilterableTournament, Date.now());
-        case 'starting_soon': {
-          const startsAt = new Date(String(r.row.start_time ?? '')).getTime();
-          if (!Number.isFinite(startsAt)) return false;
-          const minsAway = (startsAt - Date.now()) / 60000;
-          // Games here start on FILL, not on the clock, so a live one usually
-          // has a start_time already in the past. "Soon" therefore includes
-          // anything already due as well as anything inside the window.
-          return minsAway <= STARTING_SOON_WINDOW_MINUTES;
-        }
+        case 'starting_soon':
+          /* The ALL tab's rule, so the two tabs mean the same thing
+             (2026-09-22). Games here start on FILL, not on the clock, so an
+             open one usually has a start_time already in the past, and "soon"
+             includes anything already due. This used to test the clock alone,
+             which listed every RUNNING event too: its start time is past. */
+          return matchesTournamentSubFilter(
+            r.row as unknown as FilterableTournament,
+            'starting_soon',
+            Date.now()
+          );
         default:
           // A key this build does not know is not an opinion about this row.
           return true;

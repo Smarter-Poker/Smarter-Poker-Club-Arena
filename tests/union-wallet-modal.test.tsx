@@ -429,7 +429,7 @@ describe('UnionWalletModal', () => {
     expect(await screen.findByText('Promo To Club')).toBeTruthy();
     expect(screen.getByText('To Club JAQK')).toBeTruthy();
     // the row amount, and the Net total beneath the tab, both carry the sign
-    expect(screen.getAllByText('-5,000.00').length).toBe(2);
+    expect(screen.getAllByText('-5,000').length).toBe(2);
     expect(screen.getByText('Wallet After 32,482.58')).toBeTruthy();
   });
 
@@ -465,7 +465,7 @@ describe('UnionWalletModal', () => {
     );
     expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
     expect((await screen.findByRole('status')).textContent).toMatch(/promo wallet/i);
-    expect(screen.getByText('33,000.00')).toBeTruthy();
+    expect(screen.getByText('33,000')).toBeTruthy();
   });
 
   it('pulls from the club bank when opened on the union bank, with an op id', async () => {
@@ -487,7 +487,7 @@ describe('UnionWalletModal', () => {
         expect.objectContaining({ p_club_id: 'c-2', p_amount: 10, p_op_id: expect.any(String) })
       )
     );
-    expect(await screen.findByText('70,000.00')).toBeTruthy();
+    expect(await screen.findByText('70,000')).toBeTruthy();
   });
 
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {

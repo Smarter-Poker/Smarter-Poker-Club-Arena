@@ -30,6 +30,44 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+/**
+ * The transport every non-auth request goes out on: one send, then the
+ * PostgREST pre-execution 503 retry (2026-08-31, see below). Named so the
+ * Diamond Spins deadline can wrap the WHOLE exchange — retries included —
+ * rather than one attempt inside it.
+ *
+ * 2026-08-31: retry 503s PostgREST emits BEFORE executing the request
+ * (PGRST001/002/003 — connection/schema-cache/pool). During a schema-cache
+ * reload these otherwise fail live seating and dealing. Safe for POSTs: the
+ * statement was never run. The retry loop lives in src/lib/pgrstRetryFetch.ts
+ * and is dynamically imported on the FIRST retryable 503, so the entry bundle
+ * only pays for this shim (Track Bundle Size sits within ~1kB of its 320kB
+ * budget).
+ */
+async function sendRest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const resp = await globalThis.fetch(input, init);
+  if (resp.status !== 503) return resp;
+  let code: unknown;
+  try {
+    code = (await resp.clone().json())?.code;
+  } catch {
+    return resp; // non-JSON 503 (gateway/maintenance) — not ours to retry
+  }
+  if (code !== 'PGRST001' && code !== 'PGRST002' && code !== 'PGRST003') return resp;
+  const { retryPgrst503 } = await import('./pgrstRetryFetch');
+  return retryPgrst503(input, init, resp);
+}
+
+/**
+ * Diamond Spins' own RPC families: the wheel, the four bonus games and the
+ * diamond readouts those pages draw. A page there waits on one of these calls
+ * for the thing the player just did, so a request that never answers freezes
+ * the round it belongs to — src/lib/diamondSpinsRpcDeadline.ts gives those
+ * calls a budget and that file carries the reasoning. Everything else keeps
+ * the unbounded transport, deliberately: see its SCOPE note.
+ */
+const DIAMOND_SPINS_RPC = /\/rest\/v1\/rpc\/fn_(?:wheel|diamond|crash|plinko|choice|shared_bonus)_/;
+
 // Create the Supabase client.
 // CRITICAL: storageKey MUST match Hub's 'smarter-poker-auth' for same-origin SSO.
 // eventsPerSecond — the CLIENT->SERVER message rate limit the Realtime server
@@ -77,13 +115,6 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // apps share one storage key.
   },
   global: {
-    // 2026-08-31: retry 503s PostgREST emits BEFORE executing the request
-    // (PGRST001/002/003 — connection/schema-cache/pool). During a schema-cache
-    // reload these otherwise fail live seating and dealing. Safe for POSTs:
-    // the statement was never run. The retry loop lives in
-    // src/lib/pgrstRetryFetch.ts and is dynamically imported on the FIRST
-    // retryable 503, so the entry bundle only pays for this shim (Track
-    // Bundle Size sits within ~1kB of its 320kB budget).
     fetch: async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.startsWith(`${supabaseUrl?.replace(/\/+$/, '')}/auth/v1/`)) {
@@ -93,17 +124,15 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
         const { fetchAuthWithDeadline } = await import('./authFetchDeadline');
         return fetchAuthWithDeadline(input, init);
       }
-      const resp = await globalThis.fetch(input, init);
-      if (resp.status !== 503) return resp;
-      let code: unknown;
-      try {
-        code = (await resp.clone().json())?.code;
-      } catch {
-        return resp; // non-JSON 503 (gateway/maintenance) — not ours to retry
+      // A Diamond Spins page has no second wait to fall back on: the send it
+      // is holding IS the round. Give those calls a deadline, so a socket
+      // that never answers becomes the lost answer every one of those pages
+      // already recovers from.
+      if (DIAMOND_SPINS_RPC.test(url)) {
+        const { fetchDiamondSpinsRpc } = await import('./diamondSpinsRpcDeadline');
+        return fetchDiamondSpinsRpc(input, init, sendRest);
       }
-      if (code !== 'PGRST001' && code !== 'PGRST002' && code !== 'PGRST003') return resp;
-      const { retryPgrst503 } = await import('./pgrstRetryFetch');
-      return retryPgrst503(input, init, resp);
+      return sendRest(input, init);
     },
   },
   realtime: {

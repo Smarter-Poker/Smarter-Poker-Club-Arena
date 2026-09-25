@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 153274,
-      "sha256": "1c435a38efff0654c84947d8849b5aaa2b9f30bf4ebe34350ffda3a54d68585e"
+      "bytes": 157835,
+      "sha256": "c3a5b9c3929338ec2fb2746b43081b928a5d87832181ab24a59f9f8579d4444f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 22326,
-      "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed"
+      "bytes": 22380,
+      "sha256": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 90321,
-      "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      "bytes": 90375,
+      "sha256": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7"
     }
   },
   "nativePgCron": {
@@ -228,6 +228,95 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
         "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      }
+    }
+  },
+  "cashierStatementsIntegration": {
+    "reason": "Phase 5 cashier statements: ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner (additive only). Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155443,
+        "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 22361,
+        "sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 90321,
+        "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9"
+      }
+    }
+  },
+  "clubMembershipCapIntegration": {
+    "reason": "Club membership cap: ci.yml gains the 'Club membership cap: one count, one lock, one limit' owned-PostgreSQL step (scripts/ci/test-club-membership-cap.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155650,
+        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+      }
+    }
+  },
+  "capabilityRegistryIntegration": {
+    "reason": "One capability registry: ci.yml gains the Capability registry and accepted-event continuation step (scripts/ci/test-capability-registry.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155875,
+        "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
+      }
+    }
+  },
+  "memberStatusServerOwnedIntegration": {
+    "reason": "Member status is server owned: ci.yml gains the 'A member's club status is changed only by the server' owned-PostgreSQL step (scripts/ci/test-member-status-server-owned.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "killPotTableSettingsIntegration": {
+    "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "tournamentCreationRulesIntegration": {
+    "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+      }
+    }
+  },
+  "scheduleTimeZoneIntegration": {
+    "reason": "A schedule keeps its time zone: ci.yml gains the 'A schedule keeps its time zone across daylight saving' owned-PostgreSQL step (scripts/ci/test-schedule-time-zone.py), additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 155887,
+        "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
+      }
+    }
+  },
+  "multiDayStageFoundationIntegration": {
+    "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+      }
+    }
+  },
+  "multiDayStageViewIntegration": {
+    "reason": "Multi-day stage view and operator doors: ci.yml gains the Multi-day stage view step (scripts/ci/test-multi-day-stage-view.py against PostgreSQL 17) beside the multi-day foundation step, additive only. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 156053,
+        "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
       }
     }
   }

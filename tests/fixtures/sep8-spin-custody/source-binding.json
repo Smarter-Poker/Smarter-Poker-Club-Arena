@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+    "scripts/ci/classify-ci-changes.mjs": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
+    "tests/unit/fixtureNativeCi.test.ts": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -82,6 +82,27 @@
       "to": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
       "on": "2026-09-21",
       "why": "Restamped 2026-09-21: the native accounting cluster now declares LC_ALL=C/LANG=C for its own initdb and pg_ctl lifecycle commands, because an inherited UTF-8 locale made the macOS postmaster refuse to start ('postmaster became multithreaded during startup') and the runner died before its first assertion. No financial function, fixture body, assertion or captured definition changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+      "to": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+      "on": "2026-09-22",
+      "why": "Restamped 2026-09-22 with the Diamond Wheel v4 migration (owner rulings 2026-09-21, R2/R12/R13/R15 and the server half of R18). The only change to this classifier is two alternations widened so the wheel v4 receipt fixture, its replay test and the generated browser mirror reach the PostgreSQL accounting job that runs their probes: wheel-(?:earned|v3)-postgres-receipts gains v4, the wheel*PostgresContract test list gains V4PostgresContract, and src/utils gains wheelV4Model. No lane was narrowed, no path lost a job, and nothing else in the file changed."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
+      "to": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
+      "on": "2026-09-23",
+      "why": "Restamped 2026-09-23 (branch feat/cashier-phase5-statements, see cashier_statements_rebinding_20260923 in tests/fixtures/full-weekly-accounting/source-binding.json): 'cashier-statements' is added to fixtureDirectories and to requiredRunners in the restored provider accounting qualification describe, so the Phase 5 cashier statements fixture (tests/fixtures/cashier-statements) is a directory the native runner must cover and a runner CI must list. Two list entries are added; no assertion is removed or weakened, and no financial function, fixture body, assertion or captured definition of this fixture changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+      "to": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
+      "on": "2026-09-23",
+      "why": "Restamped 2026-09-23 (branch feat/cashier-phase5-statements, see cashier_statements_rebinding_20260923 in tests/fixtures/full-weekly-accounting/source-binding.json): tests/fixtures/cashier-statements/ joins the accounting fixture-directory alternation, so a change under it selects the PostgreSQL accounting job and its routing tests. One alternative is added to one selector; no branch is removed or narrowed, and no financial function, fixture body, assertion or captured definition of this fixture changed."
     }
   ]
 }

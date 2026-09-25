@@ -57,6 +57,7 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { secureRandomInt } from './CryptoRandom.js';
 import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
+import type { BlindSeats } from './deadButton.js';
 import {
   HAND_COMPLETION,
   handCompletionHoldMs,
@@ -487,8 +488,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Observe the server-driven seats before classifying stale presence,
         // using the same heartbeat path as the periodic table tick. Human
         // presence, voluntary sit-outs and time-bank state remain untouched.
+        /* A HORSE IS NEVER ABSENT (2026-09-23).
+
+           This used to be a bare heartbeat, and it leaned on a side effect
+           that heartbeat no longer has. Until today a reconnect edge cleared
+           the consecutive-timeout ladder and the away-blind budget, so beating
+           a restored horse silently reset both. It does not any more: a beat
+           is proof of a SOCKET, and only a voluntary action proves a player -
+           otherwise a frozen phone's once-per-orbit edge disarms every rule
+           that could ever free its seat. See DisconnectEngine.heartbeat.
+
+           A horse has no phone and no person. It runs inside this process, so
+           when the engine restores one it is not observing a socket, it is
+           asserting presence outright - and the strike ladder, whose entire
+           job is to find a seat nobody is behind, means nothing on a seat the
+           server itself is playing. Leaving stale strikes on a restored horse
+           is what would force its turn and sit it out, which is the exact
+           thing this block exists to prevent.
+
+           So the horse says what it means. recordPlayerActed is the API for
+           "this seat acted of its own accord", which is true of a horse every
+           hand, and it clears the ladder, the away-blind budget and the stale
+           protection deadline together. Human presence, voluntary sit-outs and
+           time-bank state remain untouched, exactly as before. */
         for (const p of this.seatedPlayers) {
-          if (p.is_horse) this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+          /* Kept as an INCLUSION rather than `if (!p.is_horse) continue`, which
+             reads as a fourth horse exclusion to check-horses-are-players and
+             is not one: this block gives a horse MORE than a human gets, never
+             less. Dan 2026-08-27, binding: horses are never excluded by design. */
+          if (p.is_horse) {
+            /* Only the seat that was actually AWAY is being restored. A horse
+               already CONNECTED keeps its history, and a horse SAT_OUT keeps
+               its sit-out, its eviction clock and its strikes - a restoration
+               is not an excuse to erase either. */
+            const wasDisconnected =
+              this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state === 'DISCONNECTED';
+            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+            if (wasDisconnected) this.disconnectEngine.recordPlayerActed(this.tableId, p.user_id);
+          }
         }
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
@@ -1848,6 +1885,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandCommunityCards3 = [];
       this.currentHandBombPot = null;
       this.currentHandVariant = null;
+      // KILL POTS: per-hand record and cancellation. The ledger itself
+      // (killSchedule) persists across hands by design.
+      this.currentHandKillRecord = null;
+      this.currentHandKillCancellation = null;
       this.currentHandWinnersByBoard = [];
       // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
       this.currentHandPerPotAwards = [];
@@ -2104,6 +2145,38 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dealerSeat = headsUpSeat;
         }
       }
+      /**
+       * THE DEAD BUTTON RULE HOLDS AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30)
+       *
+       * The block above applied "the blinds advance and the button follows"
+       * only when the table had dropped to two. At three or more the button
+       * still walked to the next occupied seat, which is the moving-button
+       * convention, and a tournament is not played that way. Seats 1..6,
+       * button 2, small blind 3, big blind 4, seat 3 busts: the walk put the
+       * button on 4, so seat 4 posted the big blind and then held the button
+       * (no small blind), and seat 5 went from UTG straight to the big blind.
+       * When the BIG blind busted, seat 5 went small blind, then button, and
+       * never posted a big blind that orbit. When a balanced-in player took
+       * the empty seat between the button and the small blind, the walk
+       * handed them the button and seats 4 and 5 posted the small and the big
+       * blind twice running.
+       *
+       * tournamentDeadButtonSeats is the ONE definition of the rule, shared
+       * with every predictor in the base class: the big blind advances one
+       * live seat, the small blind is the seat that posted it last hand (dead
+       * if that seat emptied) and the button is the seat that held the small
+       * blind last hand (dead if that seat emptied). It stands down on the
+       * first hand, on a cash table (whose published rule IS the moving
+       * button) and heads-up, where the block above already holds. A drawn
+       * first button is hand one by definition, so the two never meet.
+       */
+      const deadButton: BlindSeats | null =
+        !drawnIsSeated && headsUpFirstButton === null
+          ? this.tournamentDeadButtonSeats(players)
+          : null;
+      if (deadButton) {
+        dealerSeat = deadButton.button;
+      }
       this.currentHandDealerSeat = dealerSeat;
       this.lastButtonSeat = dealerSeat;
       // Everyone dealt into THIS hand is a veteran from the NEXT one onward, so
@@ -2178,8 +2251,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // over the same `players` roster HandController is about to receive. Its
       // getNextActiveSeat filters `is_sitting_out`, and every player in this
       // roster is built with `is_sitting_out: false`, so the two walks agree.
-      const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
-      const bbSeat = this.getNextSeat(sbSeat, players);
+      //
+      // Under the tournament dead-button rule the seats are the rule's own
+      // (see `deadButton` above): the small blind can be DEAD - null here, no
+      // seat posts it - and the button can sit on an empty seat. HandController
+      // cannot derive either from the button, so the hand is TOLD its blind
+      // seats through `config.blindSeats` below rather than left to walk.
+      const sbSeat: number | null = deadButton
+        ? deadButton.smallBlind
+        : players.length === 2
+          ? dealerSeat
+          : this.getNextSeat(dealerSeat, players);
+      const sbSeatPosition = deadButton ? deadButton.smallBlindSeat : (sbSeat as number);
+      const bbSeat = deadButton ? deadButton.bigBlind : this.getNextSeat(sbSeat as number, players);
 
       // Bible V8 §4.4: Process straddles before hand starts
       let straddleResults: { seat: number; amount: number }[] = [];
@@ -2189,7 +2273,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         const seatOrder: Array<{ seat: number; playerId: string }> = [];
         let currentSeat = utgSeat;
-        for (let i = 0; i < players.length - 2; i++) {
+        // Exclude the blinds: two seats, or one when the small blind is dead.
+        const blindSeatCount = sbSeat === null ? 1 : 2;
+        for (let i = 0; i < players.length - blindSeatCount; i++) {
           // Exclude SB and BB
           const p = players.find((pl) => pl.seat_number === currentSeat);
           if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
@@ -2568,6 +2654,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
        */
       if (!bombPotConfig) {
         this.lastBigBlindSeat = bbSeat;
+        // The small blind SEAT, posted or dead: the next tournament button
+        // (tournamentDeadButtonSeats). Recorded on exactly the hands the big
+        // blind anchor is, for the same reason.
+        this.lastSmallBlindSeat = sbSeatPosition;
       }
 
       if (!this.isTournamentTable() && !bombPotConfig && players.length >= 2) {
@@ -2577,7 +2667,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, occupant.user_id, which);
         };
 
-        chargeBlind(sbSeat, 'sb');
+        if (sbSeat !== null) chargeBlind(sbSeat, 'sb');
         chargeBlind(bbSeat, 'bb');
 
         // The posted blinds are not the only blinds. Two other paths take money
@@ -2626,6 +2716,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
 
+      /* ── KILL POT (rule manifest kill-v1) ────────────────────────────────
+         Decided HERE, once, at the hand boundary, from the settings the table
+         row holds now: a change of mode or threshold takes effect at the next
+         hand, and a pending kill keeps the mode frozen into it. A kill is
+         played only if its killer is in the roster this hand is dealt to;
+         otherwise it is cancelled with the reason recorded on this hand's row.
+         Pure - nothing is committed until the controller exists (below), so
+         a deal that is prepared and then abandoned changes nothing. */
+      const killSettings = this.killSettingsFromTable();
+      const killDecision = this.killSchedule.decide({
+        settings: killSettings,
+        variant: bombHandVariant ?? this.dealtGameVariant(),
+        isTournament: this.isTournamentTable(),
+        isBombHand: Boolean(bombPotConfig),
+        asset: this.tableInfo.arena?.asset === 'diamonds' ? 'diamonds' : 'chips',
+        baseBigBlind: Number(this.tableInfo.big_blind),
+        roster: players.map((p) => ({ userId: p.user_id, seat: p.seat_number })),
+        sbSeat,
+        bbSeat,
+      });
+
       const config: HandConfig = {
         asset: this.tableInfo.arena?.asset ?? 'chips',
         tableId: this.tableId,
@@ -2672,6 +2783,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
         allInOrFold: this.tableInfo.all_in_or_fold ?? false,
         bombPot: bombPotConfig,
+        // KILL POT: the frozen kill state and the hand's effective limits.
+        killPot: killDecision.kind === 'kill' ? killDecision.hand : undefined,
         /**
          * A BOMB HAND HAS NO STRADDLE (2026-08-29).
          *
@@ -2698,6 +2811,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
         // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
         bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
+        /**
+         * THE HAND IS TOLD ITS BLIND SEATS (2026-09-25, the dead button at
+         * every table size). Under the tournament rule the small blind can be
+         * dead and the button can sit on an empty seat, neither of which
+         * HandController's own walk from the button can express. On a cash
+         * table this stays undefined and the controller walks as it always
+         * has: the published cash rule is the moving button, and its entry
+         * hold-outs are built on that walk.
+         */
+        blindSeats: this.isTournamentTable() ? { smallBlind: sbSeat, bigBlind: bbSeat } : undefined,
         // RAKE-AUDIT 2026-07-24: tournament pots are NEVER raked and never pay a
         // BBJ fee — the house take for tournaments/SNGs is the 10% entry fee at
         // buy-in. Pre-fix the cash schedule (10% + cap) was deducted from every
@@ -2795,6 +2918,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           : undefined
       );
       const preparedController = this.handController;
+      // KILL POT: the hand exists, so the deal decision is committed. A
+      // cancellation is final; a kill stays pending until this hand SETTLES.
+      this.killSchedule.commitDeal(killDecision);
+      this.currentHandKillSettings = killSettings;
+      this.currentHandKillCancellation =
+        killDecision.kind === 'cancel' ? killDecision.cancellation : null;
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
       // these exact players to this exact total.

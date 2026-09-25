@@ -845,14 +845,90 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               now.every(([id, e], i) => originals[i][0] === id && originals[i][1] === e))
           );
         };
-        const exactEngines = originals.map(([tableId, engine]) => {
-          require(uuid(tableId) &&
-            !retained.has(engine) &&
-            tableMap.get(tableId) === engine &&
-            ownedTables.has(tableId) &&
-            manager.tableEngines.get(tableId) === engine &&
-            engine instanceof modules.base.ServerTableEngineBase &&
-            engine.tableId === tableId, 'mixed_original_registry_disagreement');
+        // Which of these seven terms refused is the one thing run 36144951750
+        // (2026-09-25, stage preflight, attemptedTables 0) could not say: a
+        // bare conjunction refuses under one code and names nothing. Nothing
+        // is widened and nothing is re-captured here, because a false term is
+        // NOT a stale capture: `captureDrainedF06Originals()` above and every
+        // read below run in one synchronous turn with no await between them,
+        // so a term that is false is a STANDING disagreement between this
+        // manager's own map and the two process registries - a state the
+        // release is right to refuse. The exact original sub-expressions, in
+        // the exact original left-to-right order, under the original code.
+        const exactEngines = originals.map(([tableId, engine], originalIndex) => {
+          const slot = (map, expected) =>
+            !(map instanceof Map)
+              ? 'unreadable'
+              : !map.has(tableId)
+                ? 'absent'
+                : map.get(tableId) === expected
+                  ? 'same'
+                  : 'other';
+          /* One original out of step is a table that left the fleet under a
+             manager that still holds it; ALL of them is a custody handoff that
+             took the whole manager. The next refusal should not need a third
+             release to tell those two apart. Read defensively: a detail that
+             throws costs every other field on the receipt. */
+          const disagreeing = () => {
+            try {
+              let count = 0;
+              for (const pair of originals)
+                if (
+                  !Array.isArray(pair) ||
+                  tableMap.get(pair[0]) !== pair[1] ||
+                  !ownedTables.has(pair[0])
+                )
+                  count += 1;
+              return `${count}/${originals.length}`;
+            } catch {
+              return 'unreadable';
+            }
+          };
+          witness(
+            'mixed_original_registry_disagreement',
+            [
+              ['original.tableId', () => uuid(tableId)],
+              ['original.distinctEngine', () => !retained.has(engine)],
+              ['fleet.tableEngines', () => tableMap.get(tableId) === engine],
+              ['fleet.tournamentOwnedTables', () => ownedTables.has(tableId)],
+              ['manager.tableEngines', () => manager.tableEngines.get(tableId) === engine],
+              ['engine.prototype', () => engine instanceof modules.base.ServerTableEngineBase],
+              ['engine.tableId', () => engine.tableId === tableId],
+            ],
+            () => ({
+              failedTable: uuid(tableId) ? tableId : describe(tableId),
+              failedField: 'drainedF06Originals',
+              observed: `fleet:${slot(tableMap, engine)}`,
+              expected: 'fleet:same',
+              /* `failedTournament` is not a carried key (#5034), so the
+                 tournament travels here - and beside it the three registry
+                 slots, so ONE receipt says which registry disagreed, which
+                 way, and whether the id was retired out from under it rather
+                 than replaced. Shapes, sizes and uuids only. */
+              observedDetail: [
+                `tournament=${
+                  uuid(manager.tournamentId) ? manager.tournamentId : describe(manager.tournamentId)
+                }`,
+                `table=${uuid(tableId) ? tableId : describe(tableId)}`,
+                `index=${originalIndex + 1}/${originals.length}`,
+                `fleetSlot=${slot(tableMap, engine)}`,
+                `owned=${describe(ownedTables.has(tableId))}`,
+                `managerSlot=${slot(manager.tableEngines, engine)}`,
+                `duplicate=${describe(retained.has(engine))}`,
+                `prototype=${describe(engine instanceof modules.base.ServerTableEngineBase)}`,
+                `engineTable=${uuid(engine?.tableId) ? engine.tableId : describe(engine?.tableId)}`,
+                `heldRetired=${describe(retirement.held.has(tableId))}`,
+                `pendingRetired=${describe(retirement.pending.has(tableId))}`,
+                `activeRetired=${describe(retirement.active.has(tableId))}`,
+                `fleetSize=${describe(tableMap.size)}`,
+                `ownedSize=${describe(ownedTables.size)}`,
+                `managerEngines=${describe(manager.tableEngines.size)}`,
+                `fleetDisagree=${disagreeing()}`,
+              ]
+                .join(',')
+                .slice(0, 512),
+            })
+          );
           retained.add(engine);
           const permit = engine.f06CurrentPermit;
           require(permit === null ||

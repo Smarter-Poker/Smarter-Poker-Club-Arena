@@ -42,7 +42,7 @@ export function diamondWheelFixture() {
             const main=document.querySelector('[aria-label="Diamond Wheel"]');
             if(!upper||!main)return;
             const state={
-              phase:upper.parentElement.dataset.phase,
+              phase:upper.dataset.phase,
               expanded:document.querySelector('[data-wheel-assembly]').dataset.upgradeReveal,
               selectors:upper.querySelectorAll('[data-wheel-selector]').length,
               titles:upper.querySelectorAll('[data-card-design="title"]').length,

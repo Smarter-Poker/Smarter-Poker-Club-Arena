@@ -207,9 +207,7 @@ describe('the public arena is measured and light (discoverability phase 5, 2026-
     expect(gate).toContain(
       "entry.route === '/' ? '/hub/club-arena/' : `/hub/club-arena${entry.route}/`"
     );
-    expect(gate).toContain(
-      "const routes = [...publicRoutes, '/hub/club-arena/legal', '/hub/club-arena/health']"
-    );
+    expect(gate).toContain("const routes = [...publicRoutes, '/hub/club-arena/health']");
     // An empty manifest fails the gate rather than silently measuring nothing.
     expect(gate).toContain('has no routes; the public arena was not prerendered');
     expect(gate).toContain("violations.push('transfer > 3MB')");

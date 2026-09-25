@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const kernel = vi.hoisted(() => ({
   opendirSync: vi.fn(),
@@ -9,6 +9,33 @@ const kernel = vi.hoisted(() => ({
 }));
 vi.mock('node:fs', () => kernel);
 vi.mock('node:os', () => ({ getPriority: kernel.getPriority }));
+
+// ---------------------------------------------------------------------------
+// THE PLATFORM IS A KERNEL FACT, AND IT IS MOCKED LIKE EVERY OTHER ONE.
+//
+// Every kernel surface this module reads is faked above - opendirSync, openSync,
+// readSync, closeSync, getPriority. The one it went on reading for real was
+// `process.platform`, which captureCheckpoint() consults before it touches
+// anything else. So this file used to open its hook with a hard assertion that
+// the host was Linux, and on any machine that is not Linux all fifteen cases
+// failed inside beforeEach with "expected 'darwin' to be 'linux'": one
+// environment fact wearing the costume of fifteen logic regressions, on a
+// benchmark whose entire job is to make a priority regression obvious.
+//
+// Not one of these cases needs a Linux kernel. They hand the parser fabricated
+// /proc bytes and assert what it does with them, which is arithmetic, and is
+// the same on every platform. HorseLeagueComputeProcessBoundary.test.ts - the
+// sibling covering the launcher half of this same boundary - already settled
+// how this tree answers that, and this file now follows it: stub the
+// descriptor, restore it afterwards, and leave the REAL host proof to
+// HorseLeagueProcessPriority.integration.test.ts, which forks an actual niced
+// child and reads actual /proc.
+//
+// The refusal that assertion stood in for is not lost, it is gained. It was
+// unreachable while the hook demanded the one platform on which it cannot fire;
+// it has cases of its own below.
+// ---------------------------------------------------------------------------
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
 const pid = process.pid;
 let directories: number[][];
@@ -26,8 +53,9 @@ function stat(tid: number, nice = 19, start = '249881547', comm = 'node'): strin
 }
 
 beforeEach(() => {
-  // Required native qualification is Linux; never silently skip this contract.
-  expect(process.platform).toBe('linux');
+  // The module refuses a non-Linux host before it reads proc. These cases are
+  // about what it does once past that gate; the gate itself is asserted below.
+  Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'linux' });
   vi.resetModules();
   vi.clearAllMocks();
   directories = [
@@ -74,7 +102,29 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  Object.defineProperty(process, 'platform', originalPlatform);
+});
+
 describe('Horse League inherited process priority evidence', () => {
+  it.each(['darwin', 'win32'])(
+    'refuses %s before reading proc, the gate the old platform assertion made unreachable',
+    async (platform) => {
+      Object.defineProperty(process, 'platform', { ...originalPlatform, value: platform });
+      const module = await import('./HorseLeagueProcessPriority.js');
+      expect(() => module.verifyHorseLeagueBootstrapPriority()).toThrow(
+        /Linux proc metadata is required/
+      );
+      // Refusing FIRST is the contract: a non-Linux host must not be probed at
+      // all, so no priority read and no proc read may have happened.
+      expect(kernel.getPriority).not.toHaveBeenCalled();
+      expect(kernel.opendirSync).not.toHaveBeenCalled();
+      expect(kernel.openSync).not.toHaveBeenCalled();
+      // And a refused bootstrap leaves no proof behind for READY to lean on.
+      expect(() => module.horseLeagueReadyPriorityProof()).toThrow(/bootstrap proof is absent/);
+    }
+  );
+
   it('does not repair a normal-priority launch or touch proc after the leader refusal', async () => {
     kernel.getPriority.mockReturnValue(0);
     const module = await import('./HorseLeagueProcessPriority.js');

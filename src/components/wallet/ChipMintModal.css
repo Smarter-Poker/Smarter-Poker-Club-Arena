@@ -1,227 +1,260 @@
-/**
- * CHIP MINT modal.
- *
- * Dan 2026-08-23: "change the color schema of the Chip Mint to be
- * smarter.poker color schema only."
- *
- * It was carrying two off-palette colour families at once: gold (#f5c542 /
- * #eab308) on the title, the destination name, the preview figure, the MAX
- * chip and the confirm button, and violet (#8b5cf6 / #c4b5fd) on the diamond
- * balance strip. Neither appears anywhere else in the product. This is the
- * same correction the BBJ banner had on 2026-08-20, applied to the other
- * money surface that had drifted.
- *
- * The smarter.poker palette, and the only one allowed here:
- *   surfaces  #223046 -> #1a2436 -> #131b28 -> #0d1120   (navy)
- *   accent    #6fdcff / #00b4e6                           (brand cyan)
- *   action    #1877f2 / #2f8bff                           (brand blue)
- *   diamonds  #0088ff                                     (as in DynamicWallet)
- *   text      #e8eaf0 primary, #8892a4 secondary
- *   refusal   #ef4444 / #ffb4b4
- *
- * The rule the palette encodes, unchanged from the wallet: CYAN says "this is
- * an amount that matters", BLUE says "this is the button that acts".
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHIP MINT - on the spade console (#ClubArenaConsole)
+
+   The chassis, its inks, its type and its two painted plates come from
+   SpadeConsole.css. This sheet places the console on the backdrop, switches
+   off the global popup chassis (metallic-popups.css names `.cmm-panel` in its
+   own inventory and paints a rounded bevelled shell on it, a recessed well on
+   every input inside a dialog and a metal bevel on every button, all with
+   !important), and prints every figure as a ROW on the black glass.
+
+   WHAT WAS DELETED. A rounded dark card with a border and a drop shadow; a
+   centred title bar; a boxed balance strip; a bordered destination panel with
+   its own union and blocked variants; a filled, bordered number well; five
+   rounded quick-amount pills; a boxed preview strip; and two rounded action
+   lozenges, one of them a green gradient.
+
+   The amount is a GROOVE cut in the glass - the same cut as `.rules-textarea`
+   on the Club Rules page: no fill, no rim, a black line with a light lip above
+   and below. Rows are separated by an engraved rule. No border-radius on a
+   card, tile, pill or button, no gradient, no box-shadow on a box, no hover.
+
+   NO FIGURE IN THIS SHEET IS ABBREVIATED. The diamonds burned and the chips
+   created are the amounts about to move, so they print in full through `fmt`.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .cmm-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1750;
-  background: rgba(4, 8, 16, 0.7);
+  z-index: 1800; /* above the Club Bank cashier (1700) it opens from */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  backdrop-filter: blur(2px);
+  padding: 12px;
 }
 
-.cmm-panel {
-  width: min(380px, 94vw);
-  /* The panel had no height bound at all: in landscape on a 375px phone the
-     destination notice plus the quick row pushed Mint Chips below the fold with
-     nothing to scroll. */
+/* Doubled class (0,2,0) so it outranks the popup chassis' :where() inventory,
+   which is specificity 0,0,0 and !important. Every longhand that rule sets is
+   restated; a `background` shorthand alone leaves its border and its 16px
+   radius clipping the art. */
+.cmm-panel.cmm-panel {
+  width: min(100%, 420px);
+  /* The mint stacks on top of the cashier and used to have no height bound at
+     all, so on a short phone its actions sat below the fold. */
   max-height: 92vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  border-radius: 16px;
-  background: linear-gradient(165deg, #223046 0%, #1a2436 42%, #0d1120 100%);
-  border: 1px solid rgba(0, 180, 230, 0.3);
-  box-shadow:
-    0 24px 50px rgba(0, 0, 0, 0.62),
-    0 0 40px rgba(0, 180, 230, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  padding: 20px;
+  overflow: visible auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Figures: a label and its value on one engraved row ───────────────── */
+
+.cmm-rows {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  color: #e8eaf0;
 }
 
-.cmm-title {
-  font-family: 'Oswald', 'Impact', sans-serif;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  background: linear-gradient(180deg, #6fdcff 0%, #00b4e6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.cmm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.cmm-rate {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #8892a4;
+.cmm-row-dim {
+  opacity: 0.55;
 }
 
-/* Diamonds are #0088ff everywhere else in the product (DynamicWallet's diamond
-   row), so they are #0088ff here too rather than violet. */
-.cmm-balance {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(0, 136, 255, 0.1);
-  border: 1px solid rgba(0, 136, 255, 0.3);
-  font-size: 0.85rem;
+.cmm-label {
+  min-width: 0;
 }
 
-.cmm-balance strong {
-  font-variant-numeric: tabular-nums;
-  color: #4faaff;
+.cmm-value {
+  overflow: hidden;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.01em;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cmm-panel input {
-  padding: 11px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.35);
-  color: #fff;
-  font-size: 1rem;
+.cmm-blocked {
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font:
+    600 3.1cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+}
+
+/* ── The amount: a groove, never a well ───────────────────────────────── */
+
+.cmm-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.4cqw 1cqw !important;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e4e7ec !important;
+  -webkit-text-fill-color: #e4e7ec;
+  font-family: inherit;
+  font-size: 7cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: center;
+  text-shadow:
+    0 -0.14cqw 0 rgb(255 255 255 / 45%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  caret-color: #45adff;
   outline: none;
 }
 
-.cmm-panel input:focus {
-  border-color: rgba(0, 180, 230, 0.6);
+.cmm-input::placeholder {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  opacity: 0.45;
+  font-size: 3.4cqw;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-shadow: none;
+  text-transform: uppercase;
 }
+
+.cmm-input:focus-visible {
+  outline: 0.6cqw solid #45adff !important;
+  outline-offset: -0.6cqw;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+}
+
+/* Chrome and Safari draw spinners on a number input; the console does not. */
+.cmm-input::-webkit-outer-spin-button,
+.cmm-input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.cmm-input[type='number'] {
+  appearance: textfield;
+}
+
+/* ── The five quick amounts: lit words, never five drawn pills ────────── */
 
 .cmm-quick {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch;
 }
 
-/* 44px minimum on every tappable control (2026-08-25). These were 28px. */
-.cmm-quick button {
-  flex: 1;
-  min-width: 0;
+.cmm-quick-word,
+.cmm-close-word {
+  appearance: none;
+  /* A quick amount on a phone still has to be hittable. */
   min-height: 44px;
-  padding: 7px 4px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e8eaf0;
-  font-size: 0.78rem;
-  font-weight: 700;
+  margin: 0;
+  padding: 2cqw 0.3cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-family: inherit;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
 }
 
-.cmm-quick button:disabled {
-  opacity: 0.35;
-  cursor: default;
+.cmm-quick-word {
+  font-size: 2.7cqw;
 }
 
 .cmm-max {
-  background: rgba(0, 180, 230, 0.14) !important;
-  border-color: rgba(0, 180, 230, 0.45) !important;
-  color: #6fdcff !important;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-.cmm-preview {
+.cmm-quick-word:disabled,
+.cmm-close-word:disabled {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* metallic-popups.css presses every dialog button in with an inset bevel and
+   a 1px drop at 0,2,1 !important; at 0,3,0 the word only brightens. */
+.cmm-quick-word:active:not(:disabled),
+.cmm-close-word:active:not(:disabled) {
+  box-shadow: none !important;
+  filter: brightness(1.25);
+  transform: none !important;
+}
+
+.cmm-quick-word:focus-visible,
+.cmm-close-word:focus-visible {
+  outline: 0.6cqw solid #45adff;
+  outline-offset: -1cqw;
+}
+
+/* ── When the server has already refused, there is one thing to do ────── */
+
+/* `cmm-close` matches the popup chassis' [class*='-close'] close-control
+   rule, which paints a raised, rounded steel box with !important. This row is
+   an engraved rule on the glass, so every longhand that rule sets is restated. */
+.cmm-close {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px;
-  border-radius: 10px;
-  background: rgba(0, 180, 230, 0.08);
-  border: 1px solid rgba(0, 180, 230, 0.32);
-  font-size: 0.9rem;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
 
-.cmm-preview strong {
-  font-variant-numeric: tabular-nums;
-  color: #6fdcff;
-  font-size: 1.05rem;
-}
-
-.cmm-preview--dim {
-  opacity: 0.45;
-}
-
-.cmm-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.cmm-actions button {
-  min-height: 44px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: none;
-  color: #e8eaf0;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.cmm-confirm {
-  background: linear-gradient(180deg, #2f8bff 0%, #1877f2 100%) !important;
-  color: #ffffff !important;
-  border: none !important;
-  box-shadow:
-    0 8px 18px rgba(24, 119, 242, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-
-.cmm-confirm:disabled {
-  opacity: 0.4;
-  cursor: default;
-  box-shadow: none;
-}
-
-/* ── Destination / refusal states ─────────────────────────────────────────── */
-.cmm-dest {
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 0.82rem;
-  line-height: 1.35;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #b6c0d0;
-}
-
-.cmm-dest strong {
-  color: #6fdcff;
-}
-
-.cmm-dest--union {
-  background: rgba(0, 180, 230, 0.08);
-  border-color: rgba(0, 180, 230, 0.3);
-}
-
-.cmm-dest--blocked {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #ffb4b4;
-}
-
-.cmm-dest--blocked strong {
-  color: #ffb4b4;
-}
-
-.cmm-warn {
-  font-size: 0.78rem;
-  color: #ffb4b4;
+.cmm-close-word {
+  padding: 2.4cqw 6cqw;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 3.4cqw;
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }

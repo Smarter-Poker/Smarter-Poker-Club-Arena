@@ -14,7 +14,16 @@ import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 
-export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+/* A union-scoped call names its union. Every method below used to default to
+   one hardcoded union (Midway), and so did UnionOpsPanel, so a surface that
+   had not resolved its union read, swept or settled that union's books instead
+   of saying it had none. The constant is gone from the client; a missing id is
+   refused before anything is asked of the database. */
+function requireUnionId(unionId: string | null | undefined): void {
+  if (typeof unionId !== 'string' || unionId.trim() === '') {
+    throw new Error('No Union Selected');
+  }
+}
 
 export interface CompletedUnionSettlement {
   success: true;
@@ -269,7 +278,8 @@ export const UnionOpsService = {
   },
 
   // UNION OVERSIGHT
-  async getAgentRisk(unionId: string = MIDWAY_UNION_ID, since?: string): Promise<AgentRiskRow[]> {
+  async getAgentRisk(unionId: string, since?: string): Promise<AgentRiskRow[]> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_agent_risk_report', {
       p_union_id: unionId,
       p_since: since ?? null,
@@ -281,7 +291,8 @@ export const UnionOpsService = {
     return (data ?? []) as AgentRiskRow[];
   },
 
-  async getCoverage(unionId: string = MIDWAY_UNION_ID): Promise<UnionCoverage | null> {
+  async getCoverage(unionId: string): Promise<UnionCoverage | null> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_agent_coverage', { p_union_id: unionId });
     if (error) {
       reportError(error, 'UnionOpsService.getCoverage');
@@ -291,13 +302,15 @@ export const UnionOpsService = {
   },
 
   /** Same read as getCoverage, but throws so the caller can show why it failed. */
-  async getCoverageStrict(unionId: string = MIDWAY_UNION_ID): Promise<UnionCoverage | null> {
+  async getCoverageStrict(unionId: string): Promise<UnionCoverage | null> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_agent_coverage', { p_union_id: unionId });
     if (error) throw error;
     return (data ?? null) as UnionCoverage | null;
   },
 
-  async getAllAgentStatements(unionId: string = MIDWAY_UNION_ID, from?: string) {
+  async getAllAgentStatements(unionId: string, from?: string) {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_weekly_agent_statements', {
       p_union_id: unionId,
       p_period_start: from ?? null,
@@ -315,10 +328,8 @@ export const UnionOpsService = {
   },
 
   // SETTLEMENT
-  async getSettlementRounds(
-    unionId: string = MIDWAY_UNION_ID,
-    limit = 30
-  ): Promise<SettlementRound[]> {
+  async getSettlementRounds(unionId: string, limit = 30): Promise<SettlementRound[]> {
+    requireUnionId(unionId);
     const { data, error } = await supabase
       .from('union_settlement_rounds')
       .select('round_no, round_name, payees, amount, shortfalls, executed_at, detail')
@@ -337,10 +348,11 @@ export const UnionOpsService = {
 
   /** Read-only dry run: what each round WOULD move, and who cannot cover it. */
   async getSettlementPreview(
-    unionId: string = MIDWAY_UNION_ID,
+    unionId: string,
     from?: string,
     to?: string
   ): Promise<SettlementPreview> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_settlement_preview', {
       p_union_id: unionId,
       p_period_start: from ?? null,
@@ -350,7 +362,8 @@ export const UnionOpsService = {
     return data as SettlementPreview;
   },
 
-  async runSettlementCascade(unionId: string = MIDWAY_UNION_ID, from?: string, to?: string) {
+  async runSettlementCascade(unionId: string, from?: string, to?: string) {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_settlement_cascade', {
       p_union_id: unionId,
       p_period_start: from ?? null,
@@ -360,10 +373,8 @@ export const UnionOpsService = {
     return completedSettlement(data, unionId);
   },
 
-  async getDistributionCheck(
-    unionId: string = MIDWAY_UNION_ID,
-    since?: string
-  ): Promise<DistributionCheck | null> {
+  async getDistributionCheck(unionId: string, since?: string): Promise<DistributionCheck | null> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_distribution_check', {
       p_union_id: unionId,
       p_since: since ?? null,
@@ -385,7 +396,8 @@ export const UnionOpsService = {
     return (data ?? null) as LawSelfTest | null;
   },
 
-  async runIntegritySweep(unionId: string = MIDWAY_UNION_ID, hours = 24) {
+  async runIntegritySweep(unionId: string, hours = 24) {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_integrity_sweep', {
       p_union_id: unionId,
       p_hours: hours,
@@ -396,6 +408,7 @@ export const UnionOpsService = {
 
   // GOVERNANCE
   async getClubExitBlockers(unionId: string, clubId: string): Promise<ExitBlockers | null> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_club_exit_blockers', {
       p_union_id: unionId,
       p_club_id: clubId,
@@ -408,6 +421,7 @@ export const UnionOpsService = {
   },
 
   async expelClub(unionId: string, clubId: string, reason?: string, force = false) {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_expel_club', {
       p_union_id: unionId,
       p_club_id: clubId,

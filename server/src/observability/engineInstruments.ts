@@ -1003,6 +1003,22 @@ for (const outcome of ['refused', 'unreadable', 'malformed']) {
   f06DrainedCustodyOutcomesTotal.inc(0, { outcome });
 }
 
+/**
+ * What the abandoned-generation door did when an adopting generation asked it
+ * to decide a dead generation's reserved hand (tournament/
+ * abandonedGenerationDoor.ts). `aborted` and `replayed` freed the tables;
+ * `already_closed` found another receipt had; `refused` is a rule the door
+ * named, and the table stays blocked; `transient` found no answer. Before
+ * 2026-09-22 nothing asked, and a blocked table moved no series at all.
+ */
+export const f06AbandonedGenerationClosuresTotal: Counter = alwaysOnRegistry.counter(
+  'poker_f06_abandoned_generation_closures_total',
+  'Abandoned-generation door answers during adoption, by outcome (labels: outcome=aborted|replayed|already_closed|refused|transient)'
+);
+for (const outcome of ['aborted', 'replayed', 'already_closed', 'refused', 'transient']) {
+  f06AbandonedGenerationClosuresTotal.inc(0, { outcome });
+}
+
 /** Prometheus lines for the always-on fleet registry. */
 /* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
    See observability/processMemory.ts for why these exist. Always-on, bounded

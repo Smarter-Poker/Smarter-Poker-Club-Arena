@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA — Hand History Panel  #SMARTERCASINOREALISM
+ *  CLUB ARENA — Hand History Panel  #ClubArenaConsole
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * The slide-out record of the hands played AT THIS TABLE, newest first. One row
@@ -28,6 +28,23 @@
  *
  * The stats strip says what it counts: the last N hands loaded for this table,
  * not "the session".
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE CONSOLE (#ClubArenaConsole). The sheet was a rounded dark drawer with a
+ * grey header bar, two square icon buttons, a five-up grid of stat tiles, a
+ * filled rounded search well, a card per hand and two rounded buttons inside
+ * every expanded one. The spade master is the frame now: THIS TABLE is the
+ * eyebrow, HAND HISTORY is engraved in the header well, the viewer's net for
+ * these hands sits in the well's painted pill slot, every stat and every hand
+ * is a ROW on the black glass, and EXPORT / CLOSE are the plates painted into
+ * the foot.
+ *
+ * WHAT DID NOT MOVE. The sheet's GEOMETRY is unchanged and is pinned by
+ * tests/unit/handHistorySheets.test.tsx: a right-hand drawer on desktop, a
+ * 75dvh sheet anchored to the bottom on a phone, a backdrop under it, and the
+ * safe-area inset paid at the top so nothing lands under the clock. So are the
+ * focus trap, the search predicate, the note and flag loads, the stagger and
+ * the export text.
  */
 
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
@@ -41,6 +58,7 @@ import { handNotesService, type HandNote } from '../../services/HandNotesService
 import { handFlagService, type HandFlag } from '../../services/HandFlagService';
 import { filterBySubjects, handSearchSubject } from '../../lib/handSearch';
 import { formatTableChips } from '../../utils/format';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './HandHistoryPanel.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 
@@ -372,6 +390,9 @@ function HandEntry({
           )}
         </span>
         <span className={`hh-entry__result hh-entry__result--${tone}`}>{signed(heroNet)}</span>
+        {/* The disclosure mark. Not an emblem stuck on the art - a hairline
+            stroke in the master's own ink, the one control the master paints
+            nowhere and the row cannot do without. */}
         <span className={`hh-entry__chevron${isExpanded ? ' hh-entry__chevron--open' : ''}`}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path
@@ -691,155 +712,146 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
         aria-label="Hand History"
         aria-busy={busy}
       >
-        <div className="hh-panel__grab" aria-hidden="true">
-          <span />
+        {/* THE TOP OF THE SHEET. It carries the grab affordance and, more to
+            the point, the safe-area inset: this is the strip that stands
+            between the crest and the phone's clock, and its padding is pinned
+            by tests/unit/handHistorySheets.test.tsx in both places it can
+            vanish (the phone breakpoint, and the installed app where env()
+            can resolve to 0). */}
+        <div className="hh-panel__header" aria-hidden="true">
+          <span className="hh-panel__grab" />
         </div>
-        <div className="hh-panel__header">
-          <div className="hh-panel__titles">
-            <span className="hh-panel__eyebrow">This Table</span>
-            <h3 className="hh-panel__title">Hand History</h3>
-          </div>
-          <div className="hh-panel__header-actions">
-            <button
-              type="button"
-              className="hh-panel__iconbtn"
-              onClick={exportAll}
-              disabled={hands.length === 0}
-              title="Export All Hands"
-              aria-label="Export All Hands"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M8 2v8M4 7l4 4 4-4M2 12h12"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="hh-panel__iconbtn"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M4 4l8 8M12 4l-8 8"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {stats && (
-          <div className="hh-panel__stats" aria-label={`Last ${stats.hands} Hands At This Table`}>
-            <div className="hh-panel__stats-scope">Last {stats.hands} Hands At This Table</div>
-            <div className="hh-panel__stats-grid">
-              <div className="hh-panel__stat">
-                <span className="hh-panel__stat-label">Net</span>
-                <span
-                  className={`hh-panel__stat-value hh-panel__stat-value--${
-                    stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : 'flat'
-                  }`}
-                >
-                  {signed(stats.net)}
-                </span>
-              </div>
-              <div className="hh-panel__stat">
-                <span className="hh-panel__stat-label">Pots Won</span>
-                <span className="hh-panel__stat-value">
-                  {stats.won}/{stats.hands}
-                </span>
-              </div>
-              <div className="hh-panel__stat">
-                <span className="hh-panel__stat-label">VPIP</span>
-                <span className="hh-panel__stat-value">{stats.vpipPct}%</span>
-              </div>
-              <div className="hh-panel__stat">
-                <span className="hh-panel__stat-label">Best</span>
-                <span className="hh-panel__stat-value hh-panel__stat-value--up">
-                  {signed(stats.best)}
-                </span>
-              </div>
-              <div className="hh-panel__stat">
-                <span className="hh-panel__stat-label">Worst</span>
-                <span className="hh-panel__stat-value hh-panel__stat-value--down">
-                  {signed(stats.worst)}
-                </span>
+        <SpadeConsole
+          onClose={onClose}
+          as="div"
+          className="hh-console"
+          eyebrow="This Table"
+          title="Hand History"
+          /* The viewer's net over the hands loaded for this table: the one
+             figure this sheet is opened for, in the well's painted slot. */
+          pill={stats ? signed(stats.net) : undefined}
+          pillInk={stats ? (stats.net > 0 ? 'green' : stats.net < 0 ? 'red' : 'silver') : 'muted'}
+          plates={{
+            secondary: {
+              label: 'Export',
+              onClick: exportAll,
+              disabled: hands.length === 0,
+              title: 'Export All Hands',
+              'aria-label': 'Export All Hands',
+            },
+            primary: {
+              label: 'Close',
+              ink: 'white' as const,
+              onClick: onClose,
+              'aria-label': 'Close',
+            },
+          }}
+        >
+          {stats && (
+            <div className="hh-panel__stats" aria-label={`Last ${stats.hands} Hands At This Table`}>
+              <div className="hh-panel__stats-scope">Last {stats.hands} Hands At This Table</div>
+              <div className="hh-panel__stats-grid">
+                <div className="hh-panel__stat">
+                  <span className="hh-panel__stat-label">Net</span>
+                  <span
+                    className={`hh-panel__stat-value hh-panel__stat-value--${
+                      stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : 'flat'
+                    }`}
+                  >
+                    {signed(stats.net)}
+                  </span>
+                </div>
+                <div className="hh-panel__stat">
+                  <span className="hh-panel__stat-label">Pots Won</span>
+                  <span className="hh-panel__stat-value">
+                    {stats.won}/{stats.hands}
+                  </span>
+                </div>
+                <div className="hh-panel__stat">
+                  <span className="hh-panel__stat-label">VPIP</span>
+                  <span className="hh-panel__stat-value">{stats.vpipPct}%</span>
+                </div>
+                <div className="hh-panel__stat">
+                  <span className="hh-panel__stat-label">Best</span>
+                  <span className="hh-panel__stat-value hh-panel__stat-value--up">
+                    {signed(stats.best)}
+                  </span>
+                </div>
+                <div className="hh-panel__stat">
+                  <span className="hh-panel__stat-label">Worst</span>
+                  <span className="hh-panel__stat-value hh-panel__stat-value--down">
+                    {signed(stats.worst)}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {hands.length > 0 && (
-          <div className="hh-panel__search">
-            <input
-              className="hh-panel__search-input"
-              type="search"
-              value={search}
-              placeholder="Find A Hand: Number, Opponent Or Tag"
-              aria-label="Find A Hand At This Table"
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button
-                type="button"
-                className="hh-panel__search-clear"
-                onClick={() => setSearch('')}
-                aria-label="Clear The Search"
-              >
-                Clear
-              </button>
+          {hands.length > 0 && (
+            <div className="hh-panel__search">
+              <input
+                className="hh-panel__search-input"
+                type="search"
+                value={search}
+                placeholder="Find A Hand: Number, Opponent Or Tag"
+                aria-label="Find A Hand At This Table"
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="hh-panel__search-clear"
+                  onClick={() => setSearch('')}
+                  aria-label="Clear The Search"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="hh-panel__list">
+            {shown.length === 0 ? (
+              <div className="hh-panel__empty">
+                {loadState === 'loading'
+                  ? 'Loading Hands'
+                  : loadState === 'failed'
+                    ? 'Could Not Load The Hands For This Table'
+                    : /* A search that matched nothing is not an empty history,
+                         and telling a seated player they have no hands when
+                         they are looking at a filter is the same mistake the
+                         observer copy fixed in Phase 1. */
+                      hands.length > 0
+                      ? 'No Hands Here Match That Search'
+                      : viewerSeated
+                        ? 'No Completed Hands For You At This Table Yet'
+                        : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
+              </div>
+            ) : (
+              shown.map((hand) => (
+                <div
+                  key={hand.id}
+                  className={`hh-panel__item${visible[hand.id] ? ' hh-panel__item--in' : ''}`}
+                >
+                  <HandEntry
+                    hand={hand}
+                    heroId={heroId}
+                    isExpanded={expandedId === hand.id}
+                    onToggle={() => toggleExpand(hand.id)}
+                    onReplay={onReplay}
+                    onOpenDetail={onOpenDetail}
+                    note={notes.get(hand.id) ?? null}
+                    noteKnown={notesKnown}
+                    onNoteSaved={onNoteSaved}
+                    flag={flags.get(hand.id) ?? null}
+                    flagKnown={flagsKnown}
+                    onFlagFiled={onFlagFiled}
+                  />
+                </div>
+              ))
             )}
           </div>
-        )}
-
-        <div className="hh-panel__list">
-          {shown.length === 0 ? (
-            <div className="hh-panel__empty">
-              {loadState === 'loading'
-                ? 'Loading Hands'
-                : loadState === 'failed'
-                  ? 'Could Not Load The Hands For This Table'
-                  : /* A search that matched nothing is not an empty history,
-                       and telling a seated player they have no hands when
-                       they are looking at a filter is the same mistake the
-                       observer copy fixed in Phase 1. */
-                    hands.length > 0
-                    ? 'No Hands Here Match That Search'
-                    : viewerSeated
-                      ? 'No Completed Hands For You At This Table Yet'
-                      : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
-            </div>
-          ) : (
-            shown.map((hand) => (
-              <div
-                key={hand.id}
-                className={`hh-panel__item${visible[hand.id] ? ' hh-panel__item--in' : ''}`}
-              >
-                <HandEntry
-                  hand={hand}
-                  heroId={heroId}
-                  isExpanded={expandedId === hand.id}
-                  onToggle={() => toggleExpand(hand.id)}
-                  onReplay={onReplay}
-                  onOpenDetail={onOpenDetail}
-                  note={notes.get(hand.id) ?? null}
-                  noteKnown={notesKnown}
-                  onNoteSaved={onNoteSaved}
-                  flag={flags.get(hand.id) ?? null}
-                  flagKnown={flagsKnown}
-                  onFlagFiled={onFlagFiled}
-                />
-              </div>
-            ))
-          )}
-        </div>
+        </SpadeConsole>
       </div>
     </>
   );

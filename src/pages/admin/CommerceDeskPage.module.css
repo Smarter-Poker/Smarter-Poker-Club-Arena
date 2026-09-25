@@ -1,0 +1,516 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMMERCE DESK - platform staff only
+
+   An internal tool (Dan 2026-09-14: "THESE POP UPS OR EVENT LOGS (IF INTERNAL
+   USE ONLY) DO NOT NEED DYNAMIC IMAGES"), so no painted chassis. It is still
+   held to the house copy and colour laws: schema inks only (club-engine.css
+   brand blue, the console's lit blue, silver, green, gold for held money,
+   red for refusals), black glass, engraved rules between rows, no radius, no
+   gradient, and no hover state anywhere (tests/no-hover-effects.law.test.ts).
+   Mobile first at 375px; the desk stops growing at 1000px and centres.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.page {
+  --desk-blue: #45adff;
+  --desk-brand: #1877f2;
+  --desk-silver: #e4e7ec;
+  --desk-white: #f4f7fb;
+  --desk-muted: #9aa5b3;
+  --desk-green: #c8ffd2;
+  --desk-gold: #ffd700;
+  --desk-red: #ff5b6e;
+  --desk-rule: rgb(69 173 255 / 22%);
+
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px 16px 48px;
+  background: #000;
+  color: var(--desk-silver);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.page *,
+.page *::before,
+.page *::after {
+  box-sizing: border-box;
+}
+
+/* ── Head ─────────────────────────────────────────────────────────────── */
+
+.head {
+  padding: 8px 0 14px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--desk-blue);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  color: var(--desk-silver);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 1px 0 #050607,
+    0 -1px 0 rgb(255 255 255 / 12%);
+}
+
+.lede {
+  margin: 8px 0 0;
+  color: var(--desk-muted);
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 var(--desk-rule);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--desk-muted);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.tabOn {
+  border-bottom-color: var(--desk-blue);
+  color: var(--desk-white);
+}
+
+/* ── Sections and cards ───────────────────────────────────────────────── */
+
+.section {
+  padding: 18px 0 8px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionTitle {
+  margin: 0 0 8px;
+  color: var(--desk-silver);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.copy {
+  margin: 0 0 12px;
+  color: var(--desk-muted);
+  font-size: 14px;
+}
+
+.card {
+  padding: 14px 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.cardTitle {
+  margin: 0;
+  min-width: 0;
+  color: var(--desk-silver);
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.pill {
+  flex: 0 0 auto;
+  padding-top: 2px;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.subhead {
+  margin: 12px 0 2px;
+  color: var(--desk-blue);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* A row: label in lit blue on the left, value on the right, wrapping. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 16px;
+  row-gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.rowLabel {
+  margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--desk-blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rowValue {
+  /* Its own width, so a one digit count stays beside a long label and a long
+     value takes its own line whole instead of being squeezed to 12ch. */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  color: var(--desk-silver);
+  overflow-wrap: anywhere;
+}
+
+/* A sentence (an owner's details, a decision note) reads left to right on
+   its own line under the label, not squeezed against the right edge. */
+.rowProse {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.rowProse .rowValue {
+  flex: 0 0 auto;
+  text-align: left;
+}
+
+.code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.86em;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* A source address prints exactly as recorded: never case-changed, wraps anywhere. */
+.url {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+.ink_blue {
+  color: var(--desk-blue);
+}
+
+.ink_silver {
+  color: var(--desk-silver);
+  font-weight: 700;
+}
+
+.ink_green {
+  color: var(--desk-green);
+}
+
+.ink_gold {
+  color: var(--desk-gold);
+}
+
+.ink_red {
+  color: var(--desk-red);
+}
+
+.ink_muted {
+  color: var(--desk-muted);
+}
+
+.empty {
+  margin: 10px 0;
+  color: var(--desk-muted);
+}
+
+.alert {
+  margin: 8px 0;
+  color: var(--desk-red);
+  font-weight: 600;
+}
+
+.notice {
+  margin: 10px 0 0;
+  color: var(--desk-white);
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: var(--desk-muted);
+  font-size: 13px;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+
+.chips,
+.whenPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.chip {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--desk-rule);
+  background: transparent;
+  color: var(--desk-muted);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chipOn {
+  border-color: var(--desk-blue);
+  color: var(--desk-white);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  min-width: 0;
+}
+
+.fieldLabel {
+  color: var(--desk-blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--desk-rule);
+  border-radius: 0;
+  background: #000;
+  color: var(--desk-white);
+  font: inherit;
+  color-scheme: dark;
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.input:focus-visible,
+.textarea:focus-visible {
+  border-color: var(--desk-blue);
+  outline: none;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.inline {
+  display: flex;
+  gap: 8px;
+}
+
+.inline .input {
+  flex: 1 1 auto;
+}
+
+.form {
+  margin-top: 6px;
+}
+
+.decide {
+  margin-top: 10px;
+}
+
+.version {
+  padding: 8px 0 4px;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.versionActions {
+  margin-top: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.action,
+.primary,
+.danger,
+.dangerQuiet,
+.switch {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--desk-blue);
+  border-radius: 0;
+  background: transparent;
+  color: var(--desk-blue);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.primary {
+  border-color: var(--desk-brand);
+  background: var(--desk-brand);
+  color: var(--desk-white);
+}
+
+.danger {
+  border-color: var(--desk-red);
+  background: transparent;
+  color: var(--desk-red);
+}
+
+.dangerQuiet {
+  border-color: rgb(255 91 110 / 45%);
+  color: var(--desk-red);
+}
+
+.link {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--desk-blue);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.action:active,
+.primary:active,
+.danger:active,
+.dangerQuiet:active,
+.switch:active,
+.chip:active,
+.tab:active,
+.link:active {
+  transform: translateY(1px);
+}
+
+.action:focus-visible,
+.primary:focus-visible,
+.danger:focus-visible,
+.dangerQuiet:focus-visible,
+.switch:focus-visible,
+.chip:focus-visible,
+.tab:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--desk-blue);
+  outline-offset: 2px;
+}
+
+.action:disabled,
+.primary:disabled,
+.danger:disabled,
+.dangerQuiet:disabled,
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.switch {
+  flex: 0 0 auto;
+  min-width: 72px;
+  border-color: var(--desk-muted);
+  color: var(--desk-muted);
+}
+
+.switchOn {
+  border-color: var(--desk-blue);
+  color: var(--desk-white);
+}
+
+/* One column on a phone; two at desktop, so a label and its value never sit
+   a whole screen apart. */
+.cardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+  .cardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 40px;
+    align-items: start;
+  }
+}
+
+@media (min-width: 720px) {
+  .page {
+    padding: 24px 24px 64px;
+  }
+
+  .title {
+    font-size: 36px;
+  }
+}

@@ -21,7 +21,9 @@ describe('Club Entry dialog runtime surfaces', () => {
     const onClose = vi.fn();
     surface(<CreateClubModal isOpen onClose={onClose} />);
     expect(screen.getByRole('dialog', { name: 'Create A Club' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    /* Two controls are named Close since 2026-09-23: the console's corner X
+       and the foot plate. Either is the semantic control; this clicks the X. */
+    await user.click(screen.getAllByRole('button', { name: 'Close' })[0]);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

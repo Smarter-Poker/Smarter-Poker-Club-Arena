@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { LeaderboardSettlementStatus } from '../../services/LeaderboardService';
 import { compactChips } from '../../utils/format';
 import './LeaderboardSettlementCard.css';
@@ -15,7 +16,7 @@ const STATE_COPY = {
   not_published: {
     label: 'No Program',
     title: 'No Prize Program Applies To This Round',
-    body: 'This Period Started Before A Published Prize Program Took Effect.',
+    body: 'No Published Prize Program Covered This Period When It Started.',
   },
   disabled: {
     label: 'Disabled',
@@ -44,6 +45,33 @@ const STATE_COPY = {
   },
 } as const;
 
+/* The live round's close, from the server's own exclusive period end (00:00
+   UTC on period_end), so the countdown and the settlement run agree on the
+   instant. Minute resolution: a round lasts days, and a seconds tick would
+   re-render the board every second for nothing. */
+const COUNTDOWN_TICK_MS = 30_000;
+
+function useCountdownNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), COUNTDOWN_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+function formatRoundCloses(remainingMs: number): string {
+  if (remainingMs <= 0) return 'Round Closing';
+  const totalMinutes = Math.ceil(remainingMs / 60_000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `Closes In ${days}D ${hours}H`;
+  if (hours > 0) return `Closes In ${hours}H ${minutes}M`;
+  return `Closes In ${minutes}M`;
+}
+
 function formatUtcDate(value: string): string {
   const parsed = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -63,6 +91,12 @@ export function LeaderboardSettlementCard({
   onRetry,
   onReviewSetup,
 }: LeaderboardSettlementCardProps) {
+  // Hooks run before any early return: the countdown is live only while the
+  // round is open.
+  const closesAt =
+    status?.state === 'open' ? Date.parse(`${status.period_end}T00:00:00Z`) : Number.NaN;
+  const now = useCountdownNow(Number.isFinite(closesAt));
+
   if (loading && !status) {
     return (
       <section className="lb-settlement-card is-loading" aria-label="Leaderboard Settlement">
@@ -110,6 +144,11 @@ export function LeaderboardSettlementCard({
         <span className="lb-settlement-window">
           {formatUtcDate(status.period_start)} To {formatUtcDate(status.period_end)} · UTC
         </span>
+        {Number.isFinite(closesAt) && (
+          <span className="lb-settlement-countdown" role="timer">
+            {formatRoundCloses(closesAt - now)}
+          </span>
+        )}
         {status.state === 'failed' && status.failure && (
           <span className="lb-settlement-retry">
             Attempt {status.failure.attempt_count.toLocaleString('en-US')} Recorded · Automatic
@@ -142,14 +181,13 @@ export function LeaderboardSettlementCard({
         {status.batch && (
           <div>
             <dt>Funding</dt>
-            {/* The batch row records exactly which pool paid: a club's one-time
-                leaderboard seed is drawn down first, the Promo Wallet covers the
-                rest. Print what the ledger says rather than a fixed label. */}
-            <dd>
-              {status.batch.seed_funded > 0
-                ? `Seed ${compactChips(status.batch.seed_funded)} And Promo ${compactChips(status.batch.promo_funded)} Chips`
-                : 'Promo Wallet'}
-            </dd>
+            {/* The batch row records which pools paid. A standalone club's
+                one-time opening leaderboard seed is drawn down before its Promo
+                Wallet; a union batch never has a seed. The sources are named,
+                not re-priced: flooring each part separately (house compact
+                format) would print parts that do not add up to the total above,
+                and a half-chip seed would read "Seed 0". */}
+            <dd>{status.batch.seed_funded > 0 ? 'Seed And Promo Wallet' : 'Promo Wallet'}</dd>
           </div>
         )}
       </dl>

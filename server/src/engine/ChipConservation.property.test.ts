@@ -20,7 +20,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fuzzOneHand, ChipConservationError, VARIANTS, type FuzzHandResult } from './HandFuzzer.js';
+import {
+  fuzzOneHand,
+  ChipConservationError,
+  VARIANTS,
+  mulberry32,
+  randomKillTable,
+  type FuzzHandResult,
+} from './HandFuzzer.js';
 import { calculatePots } from './PokerEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
@@ -45,6 +52,8 @@ const HANDS = Number(process.env.CHIP_CONSERVATION_HANDS ?? 10_000);
 const BASE_SEED = Number(process.env.CHIP_CONSERVATION_SEED ?? 1);
 /** Fresh territory on every run, so the corpus is not the only thing tested. */
 const EXPLORE_HANDS = Number(process.env.CHIP_CONSERVATION_EXPLORE ?? 1_000);
+/** KILL POTS (kill-v1): fixed-limit kill hands, run through the same oracle. */
+const KILL_HANDS = Number(process.env.CHIP_CONSERVATION_KILL_HANDS ?? 3_000);
 
 interface RunSummary {
   ran: number;
@@ -58,7 +67,7 @@ interface RunSummary {
   seatCounts: Set<number>;
 }
 
-function runCorpus(baseSeed: number, count: number): RunSummary {
+function runCorpus(baseSeed: number, count: number, opts: { kill?: boolean } = {}): RunSummary {
   const s: RunSummary = {
     ran: 0,
     showdowns: 0,
@@ -74,7 +83,7 @@ function runCorpus(baseSeed: number, count: number): RunSummary {
     const seed = baseSeed + i;
     let r: FuzzHandResult;
     try {
-      r = fuzzOneHand(seed);
+      r = fuzzOneHand(seed, opts);
     } catch (err) {
       if (err instanceof ChipConservationError) {
         // The message already carries the full replay. Reproduce with:
@@ -187,6 +196,48 @@ describe('chip conservation (property)', () => {
 
     expect(enginePanics().slice(0, 5), replayHint(BASE_SEED, HANDS)).toEqual([]);
   }, 600_000);
+
+  /**
+   * KILL POTS (rule manifest kill-v1). A kill hand adds a live forced post at
+   * raised limits from any seat - a blind, the button, a short stack all in for
+   * less than the kill blind - and resizes every fixed-limit street. None of
+   * that may create or destroy a chip, and the hand must still finish.
+   */
+  it(`conserves chips across ${KILL_HANDS} randomized fixed-limit KILL hands`, () => {
+    const s = runCorpus(BASE_SEED + 5_000_000, KILL_HANDS, { kill: true });
+    expect(s.ran).toBe(KILL_HANDS);
+    if (KILL_HANDS >= 1000) {
+      expect(s.showdowns).toBeGreaterThan(KILL_HANDS * 0.2);
+      expect(s.allInRunouts).toBeGreaterThan(KILL_HANDS * 0.05);
+      expect(s.rakeTaken).toBeGreaterThan(0);
+      expect([...s.variants].sort()).toEqual(['flh', 'flo8']);
+    }
+    expect(enginePanics().slice(0, 5), replayHint(BASE_SEED, KILL_HANDS)).toEqual([]);
+  }, 600_000);
+
+  it('the kill corpus really deals kill hands, short killers included', () => {
+    // A corpus whose kill silently dropped would conserve chips trivially.
+    let kept = 0;
+    let shortKillers = 0;
+    const seeds = 400;
+    for (let i = 0; i < seeds; i++) {
+      const cfg = randomKillTable(mulberry32(BASE_SEED + 5_000_000 + i));
+      const hc = new HandController(cfg.config, cfg.seats, cfg.dealerSeat);
+      hc.start();
+      const kill = hc.getKillHandState();
+      if (!kill) continue;
+      kept++;
+      const state = hc.getState();
+      const killer = state.players.find((p) => p.seat === kill.killerSeat)!;
+      const forced = killer.bet;
+      if (killer.is_all_in && forced < kill.killBlind) shortKillers++;
+      if (forced > 0 && state.currentBet + 0.005 < kill.killBlind) {
+        throw new Error(`seed ${i}: bet level ${state.currentBet} below kill ${kill.killBlind}`);
+      }
+    }
+    expect(kept).toBe(seeds);
+    expect(shortKillers).toBeGreaterThan(0);
+  });
 
   it(`explores ${EXPLORE_HANDS} previously untested hands`, () => {
     if (EXPLORE_HANDS <= 0) return;

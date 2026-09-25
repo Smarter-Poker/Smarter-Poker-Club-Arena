@@ -1,18 +1,29 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🚶 SIT OUT MODAL — Sit-Out Timer and Controls
+ *  SIT OUT NOTICE - what a sitting-out player is looking at, on the master
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Modal for managing sit-out status:
- * - Time remaining display
- * - Return to game button
- * - Auto-post blinds toggle
- * - Leave table option
+ * The one surface a sitting-out player has: the state, how long the seat is
+ * held, and the way off the table. It floats at the bottom right of the felt
+ * over a pointer-transparent overlay, so the hand underneath stays clickable.
+ *
+ * #ClubArenaConsole (2026-09-14). It was a rounded translucent pill with a
+ * hand-drawn red outline button: its own radius, its own border, its own
+ * backdrop blur. It is now the spade master's frame, cut narrow (--sc-max)
+ * because it sits in a felt corner rather than over the page: the flat crest
+ * (no emblem, the rails bridged), the state engraved in the header well, the
+ * clock in the header's PAINTED pill slot, and the sentence on the black
+ * glass. ONE action, so the foot is the flat closing cap and Leave Table is a
+ * lit word on the glass - never a second painted plate left empty.
+ *
+ * NOTHING HERE IS DRAWN. No radius, no gradient, no border: the frame, the
+ * well and the pill are painted in the art.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import { sitOutMsRemaining, formatSitOutRemaining, isSitOutUrgent } from '../../lib/sitOutDeadline';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './SitOutModal.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -175,6 +186,8 @@ export function SitOutModal({
 
   if (!isOpen) return null;
 
+  const urgent = msRemaining !== null && isSitOutUrgent(msRemaining);
+
   return (
     <div className="sitout-overlay" onClick={onClose}>
       <div
@@ -186,50 +199,89 @@ export function SitOutModal({
           transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
       >
-        <span className="sitout-modal__status-label">Sitting Out</span>
+        <SpadeConsole
+          onClose={onClose}
+          className="sitout-modal__console"
+          crest="flat"
+          eyebrow="At This Table"
+          title="Sitting Out"
+          /* The clock goes in the master's own painted pill slot, gold while
+             the seat is safe and red once it is nearly gone - the same
+             predicate the seat badge uses, so the two cannot disagree.
 
-        {/* THE DEADLINE, worded as the upper bound it is. The rule is "2 orbits
+             A TOURNAMENT TABLE HAS NO DEADLINE, and the slot is painted in the
+             art whether anything is printed into it or not, so it says HELD
+             rather than sitting there empty - which is the one thing an
+             unfilled painted control always reads as. */
+          pill={
+            msRemaining === null
+              ? 'Held'
+              : msRemaining <= 0
+                ? 'Now'
+                : formatSitOutRemaining(msRemaining)
+          }
+          pillInk={urgent ? 'red' : 'gold'}
+          foot="foot"
+        >
+          {/* THE DEADLINE, worded as the upper bound it is. The rule is "2 orbits
             or 5 minutes, whichever comes FIRST", and the orbit half is engine
             state no client can see — so a player evicted early must never be
             able to point at a countdown here that promised them longer.
             A tournament table (a spin is one) gets no line at all rather than
             a countdown that never fires. */}
-        {msRemaining !== null && (
-          <span
-            className={`sitout-modal__deadline${
-              isSitOutUrgent(msRemaining) ? ' sitout-modal__deadline--urgent' : ''
-            }`}
-            data-testid="sitout-deadline"
-          >
-            {msRemaining <= 0
-              ? 'Your Seat May Be Taken At Any Moment'
-              : `Your Seat Is Held For Up To ${formatSitOutRemaining(msRemaining)}`}
-          </span>
-        )}
+          {msRemaining !== null ? (
+            <span
+              className={`sitout-modal__deadline${
+                isSitOutUrgent(msRemaining) ? ' sitout-modal__deadline--urgent' : ''
+              }`}
+              data-testid="sitout-deadline"
+            >
+              {msRemaining <= 0
+                ? 'Your Seat May Be Taken At Any Moment'
+                : `Your Seat Is Held For Up To ${formatSitOutRemaining(msRemaining)}`}
+            </span>
+          ) : (
+            /* The tournament line. It is NOT a countdown and must never read
+               like one: a tournament (a spin is one) may sit out indefinitely
+               and is blinded off instead. The row also has to exist, because
+               without it the glass between the head and Leave Table is an
+               empty engraved band - which reads as a line that failed to
+               render rather than as a table with no clock. */
+            <span className="sitout-modal__deadline">
+              Your Seat Is Held For As Long As You Sit Out
+            </span>
+          )}
 
-        {/* NO "I'M BACK" HERE (Dan 2026-09-04: "there shouldn't be two 'im
+          {/* NO "I'M BACK" HERE (Dan 2026-09-04: "there shouldn't be two 'im
             back' buttons"). This pill floats bottom-right, over the hero's
             cards, at the same moment the footer bar below it says "You Are
             Sitting Out" with its own I'm Back - two green buttons a thumb's
             width apart doing the same thing. The bar is THE way back
             (TablePage's spectator-footer-bar, `handleSitBackIn`); this pill
             keeps what the bar does not offer: the way OFF the table. */}
-        {/* Dan 2026-08-25: "if you are SITTING OUT but click LEAVE TABLE, it
+          {/* Dan 2026-08-25: "if you are SITTING OUT but click LEAVE TABLE, it
             doesn't leave the table... LEAVE TABLE IS LIKE THE RESET BUTTON."
             This modal has ALWAYS taken an onLeaveTable prop and built a
             handleLeave for it — TableModalsLayer passes onConfirmLeaveTable in
             — and then rendered only "I'm Back". The handler was dead code, so
             the one screen a sitting-out player is looking at offered them no way
             out at all. */}
-        <button
-          className="sitout-modal__leave-btn"
-          onClick={() => {
-            haptic.light();
-            handleLeave();
-          }}
-        >
-          Leave Table
-        </button>
+          {/* ONE ACTION, SO IT IS A LIT WORD, NOT A PLATE. The foot paints both
+              plates or neither, and a surface with one action would leave the
+              other painted and empty. */}
+          <div className="sitout-modal__actions">
+            <button
+              type="button"
+              className="sitout-modal__leave-btn sc-ink--red"
+              onClick={() => {
+                haptic.light();
+                handleLeave();
+              }}
+            >
+              Leave Table
+            </button>
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

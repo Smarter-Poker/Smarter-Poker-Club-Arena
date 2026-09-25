@@ -27,15 +27,46 @@
  * lost. This closes the hole and, more importantly, makes any future occurrence
  * visible and self-healing instead of silent.
  *
- * So the engine now writes the exact arguments it could not bank into
- * `pending_fee_distributions`, and this module drains that queue. Re-driving is
- * safe by construction: `atomic_distribute_rake` is hand-gated and
+ * So the engine wrote the exact arguments it could not bank into
+ * `pending_fee_distributions`, and this module drained that queue. Re-driving
+ * was safe by construction: `atomic_distribute_rake` is hand-gated and
  * `bbj_record_contribution` is keyed per (table, hand), so an entry that
- * actually did land resolves as a no-op instead of double-banking.
+ * actually did land resolved as a no-op instead of double-banking.
+ *
+ * THE HAND OWES ITS OWN FEES NOW, AND NOTHING HERE RE-DRIVES THEM (2026-09-22).
+ *
+ * Since 2026-09-09 21:56 UTC the only hand door the engine can reach,
+ * `fn_ca_commit_hand_settlement`, carries the rake and the BBJ drop in the
+ * hand's post-commit envelope and refuses a raked hand whose envelope does not
+ * carry them. `fn_ca_process_hand_post_commit_obligations` banks both in one
+ * transaction, and the hand projection outbox is its crash successor.
+ *
+ * RE-MEASURED ON PRODUCTION 2026-09-24 03:46 UTC, before this shipped: 57,377
+ * raked cash hands in the preceding 24 hours, every one with an atomic commit
+ * and none with a null envelope; 173,098 cash rake records in the preceding 3
+ * days, none banked more than five minutes after its hand (worst 2m04s) and no
+ * raked cash hand without one. No rake claim has been queued since 2026-09-08
+ * 17:30 UTC, and `pending_fee_distributions` holds no unresolved row of any
+ * kind (2026-09-24 03:17 UTC).
+ *
+ * So the drain below completes jackpot payout claims (`bbj_payout`) and nothing
+ * else: their writer is still outside the hand's transaction. The rake and
+ * BBJ-drop re-drive branches, the hourly restart-orphan re-queue
+ * (`fn_requeue_unbanked_cash_rake`) and the hourly BBJ self-heal
+ * (`fn_bbj_repair_unbanked`) are gone. They compensated for the split write the
+ * envelope removed, and the re-queue did worse than nothing when an envelope
+ * was merely late: it filed an equal-split claim after ten minutes, and
+ * `atomic_distribute_rake` keeps the first write for a hand, so the hand's
+ * weighted per-player attribution was lost for good.
+ *
+ * `queueUnbankedFee` is still reachable from the protocol-1 compatibility path
+ * in ServerTableEngineSettlement (a hand committed without a verified lease and
+ * envelope), which production refuses at the hand door. A claim it writes is
+ * the durable record that the fee is owed, read by the rake/BBJ invariant audit
+ * and reconciled by a person. No timer re-drives it.
  */
 
 import { supabase } from './supabase.js';
-import { logBBJCollection } from './supabase.js';
 import { processBBJPayout, setBBJPayoutQueue } from './supabase/bbj.js';
 import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
@@ -121,9 +152,8 @@ const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
  * Raised 100 -> 250 after the 2026-08-29 FK outage: 1,860 queued hands at 100
  * per cycle meant hours of natural drain for a backlog the database could
  * clear in minutes. 250 keeps a cycle comfortably under a minute of
- * sequential RPCs while cutting worst-case drain time by 2.5x. For anything
- * bigger, the DB-side sweep exists: fn_redrive_unbanked_rake (service_role),
- * which re-drives idempotently without the per-row HTTP round trip.
+ * sequential RPCs while cutting worst-case drain time by 2.5x. Since 2026-09-22
+ * the drain reads jackpot payout claims only; the bound is unchanged.
  */
 const RECONCILE_BATCH = 250;
 
@@ -254,6 +284,10 @@ setBBJPayoutQueue({ claim: queueUnpaidBBJPayout, settle: settleBBJPayoutClaim })
  * unrecoverable from data, and the alert is all that stands between that and a
  * silent shortfall. The partial unique index on (hand_id, kind) where
  * resolved_at is null makes a duplicate queue attempt a harmless no-op.
+ *
+ * Only the protocol-1 compatibility path reaches this (see the module header),
+ * and production refuses such a hand at the hand door. The row is the durable
+ * record that the fee is owed; no timer re-drives it (2026-09-22).
  */
 export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): Promise<void> {
   try {
@@ -282,7 +316,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       });
       if (!error) return { done: true, error: '' };
       // Already queued by an earlier attempt (possibly one that committed and
-      // then timed out on us). Nothing is lost; the drain loop owns it now.
+      // then timed out on us). Nothing is lost: the durable claim exists.
       if (/duplicate|unique/i.test(error.message || '')) return { done: true, error: '' };
       return { done: false, error: error.message || String(error) };
     };
@@ -407,7 +441,7 @@ async function alarmUnqueueableFee(
  *      not a rejection — the insert usually committed. Auditing the 1,020 open
  *      alerts on 2026-08-22: 830 of them referred to a fee that was already
  *      queued or already banked. The row is in `pending_fee_distributions`,
- *      `reconcilePendingFees` owns it, and nothing is at risk. The duplicate-
+ *      so the owed fee is on disk and nothing is lost. The duplicate-
  *      key path above catches this only when Postgres gets to answer; a
  *      timeout is precisely when it does not.
  *   2. THE FEE IS ALREADY BANKED — the banking call succeeded and only its
@@ -526,7 +560,15 @@ async function feeIsAccountedFor(
 }
 
 /**
- * Drain the queue. Returns a small summary so the caller can log one line.
+ * Complete the jackpot payout claims (`bbj_payout`) the live payout could not
+ * land: deferred by the maintenance freeze, or left open by a process that died
+ * between its write-ahead claim and the payout. Returns a small summary so the
+ * caller can log one line.
+ *
+ * It reads ONLY `bbj_payout` rows (2026-09-22). The rake and BBJ drop of an
+ * accepted hand are banked by the hand's own post-commit envelope, so a queued
+ * row of any other kind is never re-driven and never touched here. The module
+ * header says why that re-drive was harmful as well as redundant.
  *
  * A row that fails again is NOT resolved — its attempt counter is bumped and it
  * is retried next cycle, until MAX_RECONCILE_ATTEMPTS, at which point it stays
@@ -551,6 +593,7 @@ export async function reconcilePendingFees(): Promise<{
     .select(
       'id, table_id, club_id, hand_id, hand_number, rake, bbj, pot, num_players, contributions, returned_uncalled, rake_method, tournament_id, big_blind, kind, attempts'
     )
+    .eq('kind', 'bbj_payout')
     .is('resolved_at', null)
     .lt('attempts', MAX_RECONCILE_ATTEMPTS)
     .order('created_at', { ascending: true })
@@ -569,9 +612,10 @@ export async function reconcilePendingFees(): Promise<{
        THE SWEEP CHECKS THE FREEZE, FOR EVERY KIND (section 13 rule 5, 2026-09-11)
        ═══════════════════════════════════════════════════════════════════════
 
-       Every row this loop re-drives moves money: `bbj_payout` credits seats,
-       `rake` calls `atomic_distribute_rake`, and the fall-through banks a BBJ
-       drop through `logBBJCollection`. Dan, section 13: "NO CHIP MOVEMENTS."
+       Every row this loop re-drives moves money: a `bbj_payout` credits
+       seats. Dan, section 13: "NO CHIP MOVEMENTS." (Until 2026-09-22 the loop
+       also re-drove `rake` through `atomic_distribute_rake` and BBJ drops
+       through `logBBJCollection`; those are the hand's own envelope now.)
 
        The first cut of this check gated only the jackpot branch, on the
        reasoning that jackpots were what this programme was about. That left
@@ -586,10 +630,28 @@ export async function reconcilePendingFees(): Promise<{
        The row is left completely untouched rather than attempted and failed:
        bumping its attempt counter and writing a failure message would read in
        the log as work that failed, when what happened is a break we scheduled.
-       It is also checked FIRST, before the `hand_history` resolution below,
-       so a deferred row costs no reads either. */
+       It is also checked FIRST, before any read or write below, so a deferred
+       row costs nothing either. */
     if (isMaintenanceFrozen()) {
       summary.deferredFrozen++;
+      continue;
+    }
+
+    /* THE READ ABOVE ASKS FOR JACKPOT CLAIMS ONLY (2026-09-22). A row of any
+       other kind is not work this drain owns: the rake and BBJ drop of an
+       accepted hand are banked by its own post-commit envelope. So it is never
+       re-driven and never written here, not even its attempt counter. It is
+       counted as still open and said out loud, because a read that returned
+       it has broken its own filter. */
+    if (row.kind !== 'bbj_payout') {
+      summary.stillFailing++;
+      reportError(
+        new Error(
+          `[A5] pending_fee_distributions row ${row.id} (kind ${row.kind}) reached the jackpot ` +
+            `claim drain; left untouched, because only a bbj_payout claim is this drain's work`
+        ),
+        'FeeReconciler.not_a_jackpot_claim'
+      );
       continue;
     }
 
@@ -605,151 +667,90 @@ export async function reconcilePendingFees(): Promise<{
       kind?: 'main' | 'mini';
     } | null = null;
 
-    // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
-    //
-    // Historical queued fees can carry a null hand_id from the former split
-    // writer. Resolve the already-durable history row here so replaying that
-    // old claim cannot preserve an unlinkable identity. Accepted hands now
-    // commit history and fee ownership together and never enter this state.
-    //
-    // The hand row exists by now, so resolve the id here instead of trusting a
-    // null captured minutes ago. hand_number is globally unique above
-    // 1,000,000 (uq_hand_history_global_hand_number), so this is one indexed
-    // lookup and it cannot match another table's hand.
-    let resolvedHandId = row.hand_id;
-    if (!resolvedHandId && Number(row.hand_number) >= 1_000_000) {
-      const { data: hh } = await supabase
-        .from('hand_history')
-        .select('id')
-        .eq('hand_number', row.hand_number)
-        .limit(1)
-        .maybeSingle();
-      if (hh?.id) resolvedHandId = hh.id as string;
-    }
-
     try {
-      if (row.kind === 'rake') {
-        const { data: rdData, error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
-          p_table_id: row.table_id,
-          p_club_id: row.club_id,
-          p_hand_id: resolvedHandId,
-          p_hand_number: row.hand_number,
-          p_rake: row.rake,
-          p_bbj: row.bbj,
-          p_pot: row.pot,
-          p_num_players: row.num_players,
-          p_contributions: row.contributions ?? {},
-          p_tournament_id: row.tournament_id,
-          // Weighted contributed rake (Dan 2026-08-29): a re-driven hand keeps
-          // the methodology it was settled under. Legacy queue rows (null)
-          // stay DEALT_EQUAL, which is what they were played as.
-          p_returned_uncalled: row.returned_uncalled ?? null,
-          p_rake_method: row.rake_method ?? 'DEALT_EQUAL',
-        });
-        const receipt = Array.isArray(rdData) ? (rdData.length === 1 ? rdData[0] : null) : rdData;
-        ok =
-          !rdErr &&
-          typeof receipt?.applied === 'boolean' &&
-          typeof receipt?.already_processed === 'boolean' &&
-          receipt.applied !== receipt.already_processed &&
-          typeof receipt.rake_record_id === 'string' &&
-          receipt.rake_record_id.trim() !== '';
-        failureMessage = rdErr?.message ?? (ok ? '' : 'Rake banking receipt was not confirmed');
-      } else if (row.kind === 'bbj_payout') {
-        // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
-        // not land. The parameter set was frozen at hit time (who was dealt
-        // in, who took the beat, who beat them, the tier's percent). The ONE
-        // thing re-read live is who is still seated: the RPC credits a seat
-        // that is still there and the club wallet of anyone who has left, and
-        // "still there" is a fact about NOW, not about the moment the hit was
-        // queued. Both routes are durable and both are keyed, so a recipient
-        // is paid exactly once whichever one they land on.
-        const p = row.contributions as unknown as Partial<BBJPayoutParams> | null;
-        if (
-          !p ||
-          !p.tableId ||
-          !p.clubId ||
-          !p.loserUserId ||
-          !p.winnerUserId ||
-          p.tableId !== row.table_id ||
-          p.clubId !== row.club_id ||
-          !Number.isSafeInteger(row.hand_number) ||
-          row.hand_number <= 0 ||
-          (p.handNumber != null && p.handNumber !== row.hand_number) ||
-          typeof p.loserUserId !== 'string' ||
-          typeof p.winnerUserId !== 'string' ||
-          p.loserUserId === p.winnerUserId ||
-          !Array.isArray(p.dealtInPlayerIds) ||
-          p.dealtInPlayerIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
-          typeof p.payoutTotalPercent !== 'number' ||
-          !Number.isFinite(p.payoutTotalPercent) ||
-          p.payoutTotalPercent < 0 ||
-          (p.kind !== 'mini' && p.payoutTotalPercent === 0) ||
-          p.payoutTotalPercent > 100 ||
-          (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
-          (p.kind === 'mini' && !p.tierId)
-        ) {
-          ok = false;
-          failureMessage =
-            'bbj_payout row is missing its parameters or has an invalid operation identity';
-        } else {
-          const { data: seats } = await supabase
-            .from('table_seats')
-            .select('user_id')
-            .eq('table_id', p.tableId)
-            .is('left_at', null);
-          const seatedNow = new Set((seats ?? []).map((s) => s.user_id as string));
-          const outcome = await processBBJPayout(
-            {
-              tableId: p.tableId,
-              clubId: p.clubId,
-              handNumber: Number(p.handNumber ?? row.hand_number),
-              loserUserId: p.loserUserId,
-              winnerUserId: p.winnerUserId,
-              loserHandName: p.loserHandName || 'Unknown',
-              winnerHandName: p.winnerHandName || 'Unknown',
-              dealtInPlayerIds: p.dealtInPlayerIds,
-              seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
-              payoutTotalPercent: p.payoutTotalPercent,
-              kind: p.kind,
-              tierId: p.tierId,
-              metadata: p.metadata,
-            },
-            { fromQueue: true }
-          );
-          /* The outcome says which of the four happened (phase 2.1). Before it,
-             this branch got `null` for "already paid", "nothing to pay" and
-             "failed again" alike and had to ask the ledger which one it was -
-             and a write-ahead claim for a hand that can never pay (an empty
-             pool) would have re-driven all the way to a critical alert. */
-          ok =
-            outcome.status === 'paid' ||
-            outcome.status === 'already_paid' ||
-            outcome.status === 'nothing_to_pay';
-          if (outcome.status === 'paid' || outcome.status === 'already_paid') {
-            paidLate = {
-              tableId: p.tableId,
-              handNumber: Number(p.handNumber ?? row.hand_number),
-              kind: p.kind,
-              totalPayout: outcome.status === 'paid' ? outcome.result.totalPayout : undefined,
-            };
-          }
-          if (outcome.status === 'nothing_to_pay') {
-            failureMessage = `nothing to pay (${outcome.reason}); claim closed`;
-          } else if (!ok) {
-            failureMessage = outcome.status === 'queued' ? outcome.lastError : 'unknown outcome';
-          }
-        }
+      // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
+      // not land. The parameter set was frozen at hit time (who was dealt
+      // in, who took the beat, who beat them, the tier's percent). The ONE
+      // thing re-read live is who is still seated: the RPC credits a seat
+      // that is still there and the club wallet of anyone who has left, and
+      // "still there" is a fact about NOW, not about the moment the hit was
+      // queued. Both routes are durable and both are keyed, so a recipient
+      // is paid exactly once whichever one they land on.
+      const p = row.contributions as unknown as Partial<BBJPayoutParams> | null;
+      if (
+        !p ||
+        !p.tableId ||
+        !p.clubId ||
+        !p.loserUserId ||
+        !p.winnerUserId ||
+        p.tableId !== row.table_id ||
+        p.clubId !== row.club_id ||
+        !Number.isSafeInteger(row.hand_number) ||
+        row.hand_number <= 0 ||
+        (p.handNumber != null && p.handNumber !== row.hand_number) ||
+        typeof p.loserUserId !== 'string' ||
+        typeof p.winnerUserId !== 'string' ||
+        p.loserUserId === p.winnerUserId ||
+        !Array.isArray(p.dealtInPlayerIds) ||
+        p.dealtInPlayerIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+        typeof p.payoutTotalPercent !== 'number' ||
+        !Number.isFinite(p.payoutTotalPercent) ||
+        p.payoutTotalPercent < 0 ||
+        (p.kind !== 'mini' && p.payoutTotalPercent === 0) ||
+        p.payoutTotalPercent > 100 ||
+        (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
+        (p.kind === 'mini' && !p.tierId)
+      ) {
+        ok = false;
+        failureMessage =
+          'bbj_payout row is missing its parameters or has an invalid operation identity';
       } else {
-        ok = await logBBJCollection(
-          row.table_id,
-          row.club_id,
-          row.hand_number,
-          Number(row.bbj),
-          Number(row.big_blind ?? 0),
-          resolvedHandId
+        const { data: seats } = await supabase
+          .from('table_seats')
+          .select('user_id')
+          .eq('table_id', p.tableId)
+          .is('left_at', null);
+        const seatedNow = new Set((seats ?? []).map((s) => s.user_id as string));
+        const outcome = await processBBJPayout(
+          {
+            tableId: p.tableId,
+            clubId: p.clubId,
+            handNumber: Number(p.handNumber ?? row.hand_number),
+            loserUserId: p.loserUserId,
+            winnerUserId: p.winnerUserId,
+            loserHandName: p.loserHandName || 'Unknown',
+            winnerHandName: p.winnerHandName || 'Unknown',
+            dealtInPlayerIds: p.dealtInPlayerIds,
+            seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
+            payoutTotalPercent: p.payoutTotalPercent,
+            kind: p.kind,
+            tierId: p.tierId,
+            metadata: p.metadata,
+          },
+          { fromQueue: true }
         );
-        if (!ok) failureMessage = 'logBBJCollection returned false';
+        /* The outcome says which of the four happened (phase 2.1). Before it,
+           this branch got `null` for "already paid", "nothing to pay" and
+           "failed again" alike and had to ask the ledger which one it was -
+           and a write-ahead claim for a hand that can never pay (an empty
+           pool) would have re-driven all the way to a critical alert. */
+        ok =
+          outcome.status === 'paid' ||
+          outcome.status === 'already_paid' ||
+          outcome.status === 'nothing_to_pay';
+        if (outcome.status === 'paid' || outcome.status === 'already_paid') {
+          paidLate = {
+            tableId: p.tableId,
+            handNumber: Number(p.handNumber ?? row.hand_number),
+            kind: p.kind,
+            totalPayout: outcome.status === 'paid' ? outcome.result.totalPayout : undefined,
+          };
+        }
+        if (outcome.status === 'nothing_to_pay') {
+          failureMessage = `nothing to pay (${outcome.reason}); claim closed`;
+        } else if (!ok) {
+          failureMessage = outcome.status === 'queued' ? outcome.lastError : 'unknown outcome';
+        }
       }
     } catch (err: any) {
       ok = false;
@@ -819,8 +820,8 @@ export async function reconcilePendingFees(): Promise<{
     } else if (attempts >= MAX_RECONCILE_ATTEMPTS) {
       summary.exhausted++;
       const detail =
-        `[A5] Unbanked ${row.kind} for hand ${row.hand_id ?? row.hand_number} still failing after ` +
-        `${attempts} attempts (rake ${row.rake}, bbj ${row.bbj}): ${failureMessage}. ` +
+        `[A5] Queued ${row.kind} claim for hand ${row.hand_id ?? row.hand_number} still failing ` +
+        `after ${attempts} attempts: ${failureMessage}. ` +
         `Row ${row.id} left open for manual reconciliation.`;
       reportError(new Error(detail), 'FeeReconciler.exhausted');
       await raiseFinancialAlert('critical', 'FeeReconciler.exhausted', detail, {
@@ -908,58 +909,6 @@ export async function raiseOrRefreshCondition(
   } catch (e) {
     console.warn(`[FeeReconciler] raiseOrRefreshCondition(${source}) failed:`, e);
     return 'quiet';
-  }
-}
-
-/**
- * SELF-HEAL 2026-08-18: bank BBJ fees that rake_records proves were withheld
- * from pots but that never reached a pool.
- *
- * Why this exists on top of the pending_fee_distributions queue: that queue is
- * only written when `logBBJCollection` RETURNS FALSE, which requires the engine
- * process to still be alive to observe the failure and enqueue. A live
- * investigation on 2026-08-18 found 4 hands (2.00 chips) lost with ZERO queue
- * rows — two of them 52ms apart on different tables in different clubs, the
- * signature of the process dying between the rake transaction and the banking
- * call. Recovery that lives in the engine cannot survive the engine dying.
- *
- * fn_bbj_repair_unbanked works from rake_records — written inside the same
- * atomic transaction that withheld the fee — so it recovers regardless of how
- * the engine went away. It is idempotent by construction and skips the last 5
- * minutes so it can never race the live banking path.
- */
-export async function repairUnbankedBBJFees(
-  sinceHours = 48,
-  limit = 200
-): Promise<{ repaired: number; chips: number }> {
-  try {
-    const { data, error } = await supabase.rpc('fn_bbj_repair_unbanked', {
-      p_since_hours: sinceHours,
-      p_limit: limit,
-    });
-    if (error) {
-      reportError(error, 'FeeReconciler.bbj_repair_failed');
-      return { repaired: 0, chips: 0 };
-    }
-    const rows = (data ?? []) as Array<{ hand_id: string; club_id: string; amount: number }>;
-    const chips = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    if (rows.length > 0) {
-      // Report every recovery: money that had to be repaired is a signal about
-      // engine stability, not routine bookkeeping to be logged and forgotten.
-      reportError(
-        new Error(
-          `[BBJ self-heal] Recovered ${rows.length} unbanked BBJ contribution(s) totalling ` +
-            `${chips.toFixed(2)} chips - these fees were withheld from pots but never reached a ` +
-            `pool (no pending_fee_distributions row, i.e. the engine did not survive to enqueue). ` +
-            `Hands: ${rows.map((r) => r.hand_id).join(', ')}`
-        ),
-        'FeeReconciler.bbj_self_heal_recovered'
-      );
-    }
-    return { repaired: rows.length, chips };
-  } catch (err) {
-    reportError(err, 'FeeReconciler.bbj_repair_threw');
-    return { repaired: 0, chips: 0 };
   }
 }
 
@@ -1255,66 +1204,6 @@ export async function auditSatelliteConservation(
     return { violations: rows.length };
   } catch (err) {
     reportError(err, 'FeeReconciler.satellite_conservation_threw');
-    return null;
-  }
-}
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  HISTORICAL PRE-ATOMIC RAKE CLAIM RECOVERY
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Before accepted hands used one atomic transaction, a process death between
- * the independent history and fee writes could leave nothing on disk that
- * remembered the hand owed a fee. No older healer could see it:
- * fn_bbj_repair_unbanked heals BBJ *from* rake_records, so a hand with no
- * rake_records row at all is invisible to it.
- *
- * MEASURED 2026-08-31 over 24 hours: 17,911 raked cash hands, 20 of them
- * (72.30 chips) with no rake_records row and nothing queued, clustered
- * exactly at engine restarts. The 08:07 cluster shows the split cleanly —
- * four hands had a bbj_contributions row and no rake_records, three the
- * reverse. Two halves of one write with a restart between them. 0.11%,
- * permanent, and growing by about a chip an hour with nothing to stop it.
- * Phase 2 had re-queued 21 of these BY HAND after the outage; this is that
- * repair turned into a mechanism.
- *
- * The SQL only FILES THE CLAIM — it inserts into pending_fee_distributions
- * and this reconciler banks it through atomic_distribute_rake, which is
- * hand-gated and idempotent, so a double sweep cannot double-bank.
- *
- * Attribution is honest about what it lost: hand_history.players carries the
- * dealt-in user ids and their ENDING STACK, never per-street contribution, so
- * the weighted split is unreconstructable after the fact. The sweep stamps
- * rake_method='DEALT_EQUAL' — the legacy method the allocator still
- * implements exactly — rather than inventing weights from stack sizes and
- * labelling the guess as weighted truth.
- */
-export async function requeueUnbankedCashRake(
-  sinceHours = 48,
-  minAgeMinutes = 10,
-  limit = 200
-): Promise<{ requeued: number; chips: number } | null> {
-  try {
-    const { data, error } = await supabase.rpc('fn_requeue_unbanked_cash_rake', {
-      p_since_hours: sinceHours,
-      p_min_age_minutes: minAgeMinutes,
-      p_limit: limit,
-    });
-    if (error) {
-      reportError(error, 'FeeReconciler.requeue_unbanked_query_failed');
-      return null;
-    }
-    const rows = (data ?? []) as Array<{ hand_id: string; rake: number; bbj: number }>;
-    if (rows.length === 0) return { requeued: 0, chips: 0 };
-    const chips = rows.reduce((s, r) => s + (Number(r.rake) || 0), 0);
-    console.log(
-      `[FeeReconciler] re-queued ${rows.length} unbanked cash hand(s), ${chips.toFixed(2)} chips ` +
-        `- no rake_records row and nothing queued (restart-orphaned fees)`
-    );
-    return { requeued: rows.length, chips };
-  } catch (err) {
-    reportError(err, 'FeeReconciler.requeue_unbanked_threw');
     return null;
   }
 }

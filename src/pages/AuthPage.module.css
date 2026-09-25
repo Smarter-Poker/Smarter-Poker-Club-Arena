@@ -1,16 +1,53 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🔐 CLUB ARENA — Auth Page Styles (Facebook Dark)
+ *  CLUB ARENA - Auth Page, on the #ClubArenaConsole master (2026-09-14)
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The front door is the first surface a new player meets, and it was the
+ * Facebook-dark generic: a `#242526` card at `border-radius: 8px` with a 1px
+ * `#3e4042` rim and a backdrop blur, a rounded `#3a3b3c` tab rail with a solid
+ * `#1877f2` pill on the active tab, five rounded `#3a3b3c` input wells, two
+ * rounded message boxes (one with a 20px `border-radius: 50%` badge drawn in
+ * it) and a solid `#1877f2` submit slab. Every one of those is a frame or a
+ * control invented in CSS.
+ *
+ * NOTHING HERE DRAWS A CONTROL NOW. The frame, the plates and the closing cap
+ * are the painted master (SpadeConsole); the tabs and the one-action modes are
+ * lit words on the glass; the fields are grooves cut into it - an engraved rule
+ * above and below, no well, no radius, no fill - the same field the console's
+ * own CreateClubModal uses. Sizes are cqw against the console (`.sc` sets
+ * container-type), which is why a 320px phone and a 430px one get the same
+ * picture. No :hover (tests/no-hover-effects.law.test.ts).
  */
 
+/*
+ * TOP-ANCHORED ON A WHOLE PIXEL, AND THAT IS LOAD BEARING (measured 2026-09-14).
+ *
+ * This centred vertically. `.sc__head` is `aspect-ratio: 1000 / 348`, so its
+ * height is `width * 0.348` and is fractional at almost every phone width;
+ * centring then put the head/body junction on a fractional DEVICE row, and at
+ * 375px - the design width - neither slice painted it. The result was a 1px
+ * black band straight across the console cutting both side rails, which is
+ * "CLEAN FRAMES ... nothing cut off at any edge" failing in one row of pixels.
+ *
+ * Starting the console at a whole-pixel offset clears it at 360, 375, 390, 393,
+ * 402, 412 and 430. Do not restore `align-items: center`, and do not change
+ * this padding to a rem value that resolves to a fraction. The signup form is
+ * taller than the viewport anyway, so it never looked centred there.
+ *
+ * The junction itself was fragile in the kit and is fixed there now: the
+ * body's box overlaps its neighbours by a pixel (SpadeConsole.css, "THE SEAMS
+ * OVERLAP BY A PIXEL"). This whole-pixel anchor stays anyway - it also keeps
+ * the console's own top edge off a fractional row.
+ */
 .container {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  background: #18191a;
+  /* Transparent art on black: the master carries every edge the page has. */
+  background: #000;
   width: 100%;
   max-width: 100vw;
   /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
@@ -19,230 +56,226 @@
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  padding: 1rem;
+  padding: 24px 12px;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
-.authCard {
-  position: relative;
+.form {
   width: 100%;
-  max-width: 480px;
-  background: #242526;
-  border: 1px solid #3e4042;
-  border-radius: 8px;
-  padding: 2rem 1.5rem 1.5rem;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  max-width: 560px;
 }
 
-/* Logo */
-.logo {
-  text-align: center;
-  margin-bottom: 2rem;
+/* THE DESKTOP CEILING. A console stops growing at the master's own width and
+   centres; `--sc-max` may narrow it and must never raise it. A sign-in form
+   does not want a thousand pixels, so it is narrowed here. */
+.console {
+  --sc-max: 560px;
+  /* The entrance the page has always asked for. `animationsSlideUpIn` lives in
+     src/styles/animations.css, which main.tsx loads on every route. */
+  animation: animationsSlideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.logoImage {
-  width: 100%;
-  max-width: 340px;
-  height: auto;
-  border-radius: 8px;
-}
+/* ── The tabs: two lit words on the glass, not a rail with a pill in it ──── */
 
-/* Tabs */
 .tabs {
   display: flex;
-  gap: 0;
-  margin-bottom: 1.5rem;
-  background: #3a3b3c;
-  padding: 4px;
-  border-radius: 8px;
+  align-items: center;
+  gap: 6cqw;
+  padding-bottom: 2.4cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .tab {
-  flex: 1;
-  padding: 0.75rem 1rem;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: #b0b3b8;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.tabActive {
-  background: #1877f2;
-  color: #ffffff;
-  box-shadow: none;
-}
-
-/* Messages */
-.successMessage {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.875rem 1rem;
-  background: rgba(49, 162, 76, 0.15);
-  border: 1px solid rgba(49, 162, 76, 0.3);
-  border-radius: 8px;
-  color: #31a24c;
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
-}
-
-.successMessage span {
-  font-weight: 700;
-  font-size: 1rem;
-}
-
-.errorMessage {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.875rem 1rem;
-  background: rgba(240, 40, 73, 0.15);
-  border: 1px solid rgba(240, 40, 73, 0.3);
-  border-radius: 8px;
-  color: #f02849;
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
-}
-
-.errorMessage span {
-  font-weight: 700;
-  font-size: 1rem;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f02849;
-  color: white;
-  border-radius: 50%;
-}
-
-/* Form */
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.inputGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.inputGroup label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #b0b3b8;
-}
-
-.inputGroup input {
-  padding: 0.875rem 1rem;
-  background: #3a3b3c;
-  border: 1px solid #3e4042;
-  border-radius: 6px;
-  color: #e4e6eb;
-  font-size: 1rem;
-  transition: border-color 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.inputGroup input::placeholder {
-  color: #b0b3b8;
-}
-
-.inputGroup input:focus {
-  outline: none;
-  border-color: #1877f2;
-  box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
-}
-
-.submitButton {
-  padding: 1rem;
-  background: #1877f2;
-  border: none;
-  border-radius: 6px;
-  color: #ffffff;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.submitButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.linkButton {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
   background: none;
-  border: none;
-  color: #1877f2;
-  font-size: 0.875rem;
+  font:
+    800 4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
-  padding: 0.5rem;
-  transition: color 0.2s ease;
+  touch-action: manipulation;
 }
+
+.tab:active {
+  filter: brightness(1.3);
+}
+
+.tab:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 3px;
+}
+
+/* ── Messages: a row on the glass, closed by an engraved rule ────────────── */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 2.4cqw;
+  margin: 0;
+  padding-bottom: 2.4cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  font:
+    600 3.5cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+/* A lit typographic mark, not a 20px circle drawn with border-radius: 50%. */
+.noticeDot {
+  flex: 0 0 auto;
+  font-size: 4.6cqw;
+  line-height: 1.05;
+}
+
+/* ── The fields: grooves cut into the glass ─────────────────────────────── */
+
+.field {
+  display: grid;
+  gap: 1.4cqw;
+  padding: 1cqw 0 0;
+}
+
+.optional {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+/* Doubled so it outranks anything that styles a bare `input`. */
+.input.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2.8cqw 1cqw;
+  border: 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%);
+  color: #e4e7ec;
+  /* 16px floor: anything smaller makes iOS zoom the page on focus. */
+  font:
+    500 max(16px, 3.8cqw) / 1.45 Inter,
+    system-ui,
+    sans-serif;
+  outline: none;
+  caret-color: #5bb8ff;
+}
+
+.input.input::placeholder {
+  color: #6b7784;
+}
+
+.input.input:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* The referral code is typed in capitals; the letter-spacing is what makes a
+   code readable back, and it is not a Title Case concern. */
+.code.code {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Copy on the glass ──────────────────────────────────────────────────── */
 
 .resetText {
-  color: #b0b3b8;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  margin: 0 0 0.5rem 0;
+  margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.6cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   text-align: center;
 }
-/* ─── MOBILE RESPONSIVE ─── */
-@media (max-width: 768px) {
-  .tab,
-  .submitButton,
-  .linkButton {
-    min-height: 44px;
-    touch-action: manipulation;
+
+/* ── The lit word: an action printed on the glass, no plate and no box ───── */
+
+.word {
+  appearance: none;
+  align-self: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2cqw;
+  border: 0;
+  background: none;
+  font:
+    800 4.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.word:active {
+  filter: brightness(1.3);
+}
+
+.word:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+.word:disabled {
+  cursor: default;
+}
+
+/*
+ * BUSY IS A MOVEMENT, NOT A DRAWN RING. The old submit button carried a 14px
+ * `border-radius: 50%` ring spinning on `spin` - a control drawn in CSS. The
+ * work is said in the label now ("Logging In", "Creating Account"), and the
+ * label breathes while it waits, which is the console's own idiom
+ * (LayeredActionButton prints "Working"). The animation plays every time it is
+ * owed and nothing can switch it off.
+ */
+.plateBusy :global(.sc-plate__text),
+.word.busy {
+  animation: authWorking 1.1s ease-in-out infinite;
+}
+
+@keyframes authWorking {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
   }
 }
 
-@media (max-width: 480px) {
-  .authContainer {
-    padding: 0.75rem;
+/*
+ * Reduced motion collapses the MOTION, never the MEANING: the console still
+ * arrives, every word stays put and fully legible, and the busy label still
+ * says it is working. Only the movement stops.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .console {
+    animation: none;
   }
-  .authCard {
-    padding: 1.25rem;
-    border-radius: 16px;
-  }
-  .authTitle {
-    font-size: 1.25rem;
-  }
-  .formInput {
-    padding: 0.625rem 0.75rem;
-    font-size: 0.9rem;
-  }
-  .submitBtn {
-    padding: 0.875rem;
-    font-size: 0.9rem;
-  }
-  .socialButtons {
-    gap: 0.5rem;
-  }
-  .socialBtn {
-    padding: 0.625rem;
-    font-size: 0.85rem;
-  }
-}
-@media (max-width: 380px) {
-  .authCard {
-    padding: 1rem;
-  }
-  .authTitle {
-    font-size: 1.125rem;
+
+  .plateBusy :global(.sc-plate__text),
+  .word.busy {
+    animation: none;
+    opacity: 1;
   }
 }

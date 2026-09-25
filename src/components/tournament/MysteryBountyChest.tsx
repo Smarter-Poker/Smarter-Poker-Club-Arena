@@ -44,6 +44,8 @@ import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSp
 import { fireVibration } from '../../utils/vibrationGate';
 import CoinShower from './CoinShower';
 import { mediaUrl } from '../../utils/mediaBase';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 import './MysteryBountyChest.css';
 
 export interface MysteryChestData {
@@ -99,6 +101,20 @@ export interface MysteryChestData {
 
 export interface MysteryBountyChestProps {
   data: MysteryChestData | null;
+  /**
+   * THE UNIT THE EVENT PAYS IN (2026-09-21), stated by the page that owns the
+   * chest: TablePage passes `arenaAssetUnitCentsIfRead` off the table's own
+   * arena, TournamentPage the selected row's `tournamentRowUnitCents`.
+   *
+   * A chip chest prints exactly what it always printed. A Diamond chest holds
+   * whole Diamonds (`a_diamond_mystery_chest_holds_whole_diamonds`), so its
+   * figure is whole Diamonds and says "Diamonds": this is the reveal of the
+   * Diamond Arena's biggest moment, and a bare number there does not say what
+   * was won. `null` means the table's arena has not been read yet, and the
+   * figure is withheld until it has been, rather than printed in a currency
+   * nobody looked up.
+   */
+  unitCents: number | null;
   /** The viewing player. Compared against knockerUserId to decide who may open. */
   viewerUserId: string | null;
   onDone: () => void;
@@ -310,6 +326,7 @@ function fireConfetti(isJackpot: boolean) {
 
 export default function MysteryBountyChest({
   data,
+  unitCents,
   viewerUserId,
   onDone,
   onBroadcastOpen,
@@ -657,6 +674,20 @@ export default function MysteryBountyChest({
   if (!data || phase === 'idle') return null;
 
   const currency = data.currency ?? '';
+  /**
+   * One figure, at the event's unit. The chip branch is the chest's own
+   * rendering, node for node; `currency` is a chip mark and never rides on a
+   * Diamond. Unread (null) prints nothing at all.
+   */
+  const figure = (n: number): React.ReactNode =>
+    unitCents == null ? null : normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS ? (
+      <>
+        {currency}
+        {n.toLocaleString()}
+      </>
+    ) : (
+      `${formatPrizeAtUnit(n, unitCents)}${moneySuffixAtUnit(unitCents)}`
+    );
   const canTap = isWinner && phase === 'locked';
   // Dan 2026-08-21: 'you should never have "50x the average bounty" — it's
   // just a random payout prize.' Mystery bounties are drawn from a prize
@@ -871,8 +902,7 @@ export default function MysteryBountyChest({
               {tier.label}
             </div>
             <div className="mbc__amount" style={{ ['--mbc-tier' as string]: tier.color }}>
-              {currency}
-              {displayAmount.toLocaleString()}
+              {figure(displayAmount)}
             </div>
             {/* SECTION 28 — a shared knockout is ONE bounty, split. The full
                 amount above is what the chest held; this is who it divides
@@ -886,10 +916,7 @@ export default function MysteryBountyChest({
                 {data.recipients.map((r) => (
                   <div className="mbc__split-row" key={r.userId}>
                     <span className="mbc__split-name">{r.name}</span>
-                    <span className="mbc__split-amount">
-                      {currency}
-                      {r.amount.toLocaleString()}
-                    </span>
+                    <span className="mbc__split-amount">{figure(r.amount)}</span>
                   </div>
                 ))}
               </div>

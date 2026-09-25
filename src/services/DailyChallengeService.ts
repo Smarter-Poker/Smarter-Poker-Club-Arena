@@ -63,14 +63,6 @@ export function isChallengeType(value: unknown): value is ChallengeType {
 }
 
 /**
- * A pot at or above this counts as a "big pot" for the big_pots challenges.
- * The threshold lives in the TYPE rather than the requirement because progress
- * is counted per type: "win 3 pots of 500+" is expressible, a separate 5000+
- * tier would need its own type.
- */
-export const BIG_POT_MIN = 500;
-
-/**
  * The only client-side statement of the server-owned Daily Mission reroll
  * price. The database still verifies this value before it can debit a wallet;
  * exporting it keeps the card, confirmation, telemetry, and receipt parser
@@ -164,7 +156,6 @@ export interface DailyChallenge {
    * copy renders the card before the claim. The server never trusts it.
    */
   diamondReward: number;
-  icon: string;
 }
 
 /** What a successful claim actually paid out. */
@@ -312,7 +303,7 @@ export interface DailyChallengeDashboard {
  * guess what the game considers big, strong or enough.
  *
  * That is what `threshold` is for. The previous build hardcoded a single
- * BIG_POT_MIN = 500 into the challenge TYPE, so the catalog could express
+ * 500-chip constant into the challenge TYPE, so the catalog could express
  * exactly one size of big pot and had to describe it vaguely to stay true. The
  * size now lives on the ROW, so 500 / 1,000 / 2,500 / 5,000 tiers coexist and
  * each one says which it is. Same mechanism ranks hands: threshold 5 is a
@@ -330,7 +321,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 10,
     diamondReward: 8,
-    icon: '',
   },
   {
     id: 'hp_25',
@@ -339,7 +329,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 25,
     diamondReward: 12,
-    icon: '',
   },
   {
     id: 'hp_50',
@@ -348,7 +337,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 50,
     diamondReward: 18,
-    icon: '',
   },
   {
     id: 'hp_100',
@@ -357,7 +345,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 100,
     diamondReward: 30,
-    icon: '',
   },
   {
     id: 'hp_200',
@@ -366,7 +353,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 200,
     diamondReward: 50,
-    icon: '',
   },
   {
     id: 'hw_3',
@@ -375,7 +361,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 3,
     diamondReward: 10,
-    icon: '',
   },
   {
     id: 'hw_8',
@@ -384,7 +369,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 8,
     diamondReward: 16,
-    icon: '',
   },
   {
     id: 'hw_15',
@@ -393,7 +377,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 15,
     diamondReward: 26,
-    icon: '',
   },
   {
     id: 'hw_30',
@@ -402,7 +385,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 30,
     diamondReward: 42,
-    icon: '',
   },
   {
     id: 'sd_3',
@@ -411,7 +393,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 3,
     diamondReward: 9,
-    icon: '',
   },
   {
     id: 'sd_10',
@@ -420,7 +401,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 10,
     diamondReward: 20,
-    icon: '',
   },
   {
     id: 'sd_20',
@@ -429,7 +409,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 20,
     diamondReward: 34,
-    icon: '',
   },
   {
     id: 'sdw_2',
@@ -438,7 +417,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns_won',
     requirement: 2,
     diamondReward: 12,
-    icon: '',
   },
   {
     id: 'sdw_5',
@@ -447,7 +425,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns_won',
     requirement: 5,
     diamondReward: 22,
-    icon: '',
   },
   {
     id: 'sdw_10',
@@ -456,7 +433,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns_won',
     requirement: 10,
     diamondReward: 38,
-    icon: '',
   },
   {
     id: 'nsw_3',
@@ -465,7 +441,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won_no_showdown',
     requirement: 3,
     diamondReward: 12,
-    icon: '',
   },
   {
     id: 'nsw_7',
@@ -474,7 +449,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won_no_showdown',
     requirement: 7,
     diamondReward: 24,
-    icon: '',
   },
   {
     id: 'nsw_12',
@@ -483,7 +457,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won_no_showdown',
     requirement: 12,
     diamondReward: 36,
-    icon: '',
   },
   {
     id: 'bp_500_1',
@@ -493,7 +466,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 500,
     diamondReward: 14,
-    icon: '',
   },
   {
     id: 'bp_500_3',
@@ -503,7 +475,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 3,
     threshold: 500,
     diamondReward: 26,
-    icon: '',
   },
   {
     id: 'bp_1000_1',
@@ -513,7 +484,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 1000,
     diamondReward: 20,
-    icon: '',
   },
   {
     id: 'bp_1000_3',
@@ -523,7 +493,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 3,
     threshold: 1000,
     diamondReward: 34,
-    icon: '',
   },
   {
     id: 'bp_2500_1',
@@ -533,7 +502,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 2500,
     diamondReward: 30,
-    icon: '',
   },
   {
     id: 'bp_5000_1',
@@ -543,7 +511,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 5000,
     diamondReward: 48,
-    icon: '',
   },
   {
     id: 'sh_str_1',
@@ -553,7 +520,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 5,
     diamondReward: 15,
-    icon: '',
   },
   {
     id: 'sh_str_3',
@@ -563,7 +529,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 3,
     threshold: 5,
     diamondReward: 30,
-    icon: '',
   },
   {
     id: 'sh_fl_1',
@@ -573,7 +538,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 6,
     diamondReward: 20,
-    icon: '',
   },
   {
     id: 'sh_fl_2',
@@ -583,7 +547,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 2,
     threshold: 6,
     diamondReward: 34,
-    icon: '',
   },
   {
     id: 'sh_fh_1',
@@ -593,7 +556,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 7,
     diamondReward: 28,
-    icon: '',
   },
   {
     id: 'sh_quad_1',
@@ -603,7 +565,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 1,
     threshold: 8,
     diamondReward: 60,
-    icon: '',
   },
   {
     id: 'cw_2500',
@@ -612,7 +573,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'chips_won',
     requirement: 2500,
     diamondReward: 11,
-    icon: '',
   },
   {
     id: 'cw_10000',
@@ -621,7 +581,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'chips_won',
     requirement: 10000,
     diamondReward: 24,
-    icon: '',
   },
   {
     id: 'cw_25000',
@@ -630,7 +589,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'chips_won',
     requirement: 25000,
     diamondReward: 40,
-    icon: '',
   },
   {
     id: 'cw_100000',
@@ -639,7 +597,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'chips_won',
     requirement: 100000,
     diamondReward: 70,
-    icon: '',
   },
   {
     id: 'tp_1',
@@ -648,7 +605,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 1,
     diamondReward: 14,
-    icon: '',
   },
   {
     id: 'tp_3',
@@ -657,7 +613,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 3,
     diamondReward: 30,
-    icon: '',
   },
   {
     id: 'tp_5',
@@ -666,7 +621,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 5,
     diamondReward: 45,
-    icon: '',
   },
   {
     id: 'fa_1',
@@ -675,7 +629,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'friends_added',
     requirement: 1,
     diamondReward: 10,
-    icon: '',
   },
   {
     id: 'fa_3',
@@ -684,7 +637,6 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'friends_added',
     requirement: 3,
     diamondReward: 25,
-    icon: '',
   },
 ];
 
@@ -697,7 +649,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 500,
     diamondReward: 120,
-    icon: '',
   },
   {
     id: 'wk_wins_100',
@@ -706,7 +657,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 100,
     diamondReward: 130,
-    icon: '',
   },
   {
     id: 'wk_sdw_40',
@@ -715,7 +665,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns_won',
     requirement: 40,
     diamondReward: 115,
-    icon: '',
   },
   {
     id: 'wk_nsw_50',
@@ -724,7 +673,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won_no_showdown',
     requirement: 50,
     diamondReward: 115,
-    icon: '',
   },
   {
     id: 'wk_bp_1000_15',
@@ -734,7 +682,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 15,
     threshold: 1000,
     diamondReward: 145,
-    icon: '',
   },
   {
     id: 'wk_sh_fl_10',
@@ -744,7 +691,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 10,
     threshold: 6,
     diamondReward: 150,
-    icon: '',
   },
   {
     id: 'wk_chips_250k',
@@ -753,7 +699,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'chips_won',
     requirement: 250000,
     diamondReward: 160,
-    icon: '',
   },
   {
     id: 'wk_tourneys_10',
@@ -762,7 +707,6 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 10,
     diamondReward: 140,
-    icon: '',
   },
 ];
 
@@ -775,7 +719,6 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 2500,
     diamondReward: 500,
-    icon: '',
   },
   {
     id: 'mo_wins_500',
@@ -784,7 +727,6 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 500,
     diamondReward: 550,
-    icon: '',
   },
   {
     id: 'mo_bp_2500_25',
@@ -794,7 +736,6 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 25,
     threshold: 2500,
     diamondReward: 650,
-    icon: '',
   },
   {
     id: 'mo_sh_fh_25',
@@ -804,7 +745,6 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     requirement: 25,
     threshold: 7,
     diamondReward: 680,
-    icon: '',
   },
   {
     id: 'mo_chips_1m',
@@ -813,7 +753,6 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'chips_won',
     requirement: 1000000,
     diamondReward: 800,
-    icon: '',
   },
   {
     id: 'mo_tourneys_40',
@@ -822,7 +761,6 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 40,
     diamondReward: 600,
-    icon: '',
   },
 ];
 
@@ -1008,7 +946,6 @@ class DailyChallengeServiceClass {
         type,
         requirement,
         diamondReward,
-        icon: '',
       },
     };
   }

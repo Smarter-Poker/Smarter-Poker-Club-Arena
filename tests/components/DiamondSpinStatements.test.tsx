@@ -30,6 +30,9 @@ function statement(day: string, hostName = 'Example Union'): DiamondStatement {
     rabbit_hunts: 10,
     other_expenses: 5,
     net_diamonds: 1100,
+    profit_burn_bps: 2000,
+    profit_burn: 220,
+    credited_net: 880,
     settled_at: '2026-09-19T05:05:00Z',
     wallet_transaction_id: '11111111-1111-4111-8111-111111111111',
     hosts: [
@@ -46,6 +49,7 @@ function statement(day: string, hostName = 'Example Union'): DiamondStatement {
 }
 const page = (days: DiamondStatement[], next: string | null = null): DiamondStatements => ({
   timezone: 'America/Chicago',
+  profit_burn_bps: 2000,
   days,
   next_before_day: next,
 });
@@ -70,6 +74,33 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('daily owner statement screen', () => {
+  it('shows the three settlement lines: net, platform burn and the wallet credit (owner ruling 2026-09-21, R14)', async () => {
+    const open: DiamondStatement = {
+      ...statement('2026-09-19', 'Open Union'),
+      status: 'open',
+      settled_at: null,
+      wallet_transaction_id: null,
+      profit_burn_bps: null,
+      profit_burn: null,
+      credited_net: null,
+    };
+    mocks.load.mockResolvedValueOnce(page([open, statement('2026-09-18', 'Settled Union')]));
+    const view = render(<DiamondSpinStatements />);
+    await screen.findByText('Settled Union');
+    const [openDay, settledDay] = Array.from(view.container.querySelectorAll('details'));
+    expect(settledDay).toHaveTextContent('Net Diamonds Earned1,100');
+    expect(settledDay).toHaveTextContent('Platform Burn (20%)−220');
+    expect(settledDay).toHaveTextContent('Credited To Your Wallet880');
+    expect(settledDay).toHaveTextContent(
+      'One Transfer Of 880 Diamonds Is Recorded In Your Diamond Wallet.'
+    );
+    expect(openDay).toHaveTextContent('Net Diamonds Earned1,100');
+    expect(openDay).toHaveTextContent('Platform Burn (20%)Settles After Midnight');
+    expect(openDay).toHaveTextContent('Credited To Your WalletSettles After Midnight');
+    expect(view.container.textContent).not.toContain('—');
+    expect(screen.getByText(/The Platform Burns 20% Of A Profitable Day/)).toBeInTheDocument();
+  });
+
   it('shows pending and failed reads, prevents duplicate loads, and retries an empty first page', async () => {
     const pending = deferred();
     mocks.load.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(page([]));

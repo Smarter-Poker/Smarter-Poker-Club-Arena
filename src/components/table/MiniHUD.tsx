@@ -11,6 +11,7 @@
  */
 
 import { memo, useMemo } from 'react';
+import '../../styles/table-design-tokens.css';
 import './MiniHUD.css';
 
 export interface MiniHUDStats {

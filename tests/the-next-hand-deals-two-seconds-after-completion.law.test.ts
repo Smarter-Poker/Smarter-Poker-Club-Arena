@@ -81,8 +81,18 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     // work before the deal, preserving the ordinary two-second rest.
     const boundaryGate =
       /if \(\s*this\.terminalCloseoutPaused\s*\|\|\s*this\.tournamentMovePauseOwners\.size > 0\s*\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    // 2026-09-21, Lightning 2.0 Phase 5: THE EXCLUSION LIST GREW A THIRD TERM,
+    // `!this.dealingHaltLock`, and this pin moved to admit exactly that term
+    // and nothing else. A Cluster converting MUST_MOVE -> LIGHTNING sets
+    // `tables.dealing_halted_at`, and that owner is POLLED like the two locks
+    // beside it rather than released by anything in this process, so sending
+    // it through a gate nobody will open is the one thing it must not do. The
+    // rest is untouched by that: on the unpaused path this gate still awaits
+    // NOTHING, which is what keeps the two seconds two seconds, and the
+    // residue check below still proves the lease re-proof is the only other
+    // work between the rest and the deal.
     const requestedPauseGate =
-      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(!this\.adminPauseLock && !this\.maintenanceLock\) await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(!this\.adminPauseLock && !this\.maintenanceLock && !this\.dealingHaltLock\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
     expect(

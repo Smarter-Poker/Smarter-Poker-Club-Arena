@@ -114,20 +114,178 @@ function changedMigrations(base) {
 
 /**
  * Strip what must not be read as code: line comments, block comments, and
- * single-quoted string literals.
+ * quoted text.
  *
  * The literals matter more than they look. This very file's remedy text, and
  * every migration header that QUOTES the broken statement to explain it, would
  * otherwise be reported as the defect they are documenting - the exact trap
  * that made an earlier guard in this directory unusable until it was found.
  * Dollar-quoted bodies are deliberately KEPT: a function body is where the
- * dangerous statement lives.
+ * dangerous statement lives, so a body is scanned in turn rather than skipped,
+ * and an unqualified write inside one is judged on its merits like any other.
+ *
+ * ONE LEFT-TO-RIGHT PASS, NOT THREE INDEPENDENT REGEXES (2026-09-25)
+ *
+ * This used to strip block comments, then line comments, then literals, each
+ * with its own regex over the whole file. None of them knew about the others,
+ * and the project's standard idiom for stripping comments FROM SQL
+ *
+ *     regexp_replace(pg_get_functiondef(...), '--[^' || chr(10) || ']*', '', 'g')
+ *
+ * is a string literal that CONTAINS `--`. The comment pass ate from that `--`
+ * to end of line, taking the literal's closing quote with it and orphaning the
+ * opening one. Five such lines in `20260921151618` flipped quote parity for
+ * the rest of the file, so a genuine literal further down
+ *
+ *     IF v_begin ~ 'UPDATE public\.table_seats|DELETE FROM public\.table_seats'
+ *
+ * stopped being recognised as a literal, survived into the "clean" SQL, and
+ * was reported as an unqualified DELETE on a table the migration never writes.
+ * Blocking the branch that quotes a statement, over a statement that is not
+ * there, is the precise failure this file exists to avoid - so the passes are
+ * now one pass, and a `--` inside a literal can never be a comment nor a quote
+ * inside a comment ever be a quote.
+ *
+ * Recognised, in the order a lexer meets them: identifiers and keywords as
+ * whole words (so a `$` inside one cannot open a dollar-quoted body), `--`
+ * line comments, block comments (NESTED, as Postgres nests them),
+ * single-quoted literals with `''` escapes - and backslash escapes after an
+ * `E` prefix - double-quoted identifiers, and dollar-quoted bodies of any tag.
  */
+const IDENT_START = /[A-Za-z_\u0080-\uFFFF]/;
+const IDENT_PART = /[A-Za-z0-9_$\u0080-\uFFFF]/;
+const NOISE_START = /['"$\-/A-Za-z_\u0080-\uFFFF]/;
+const DOLLAR_TAG = /\$(?:[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_\u0080-\uFFFF]*)?\$/y;
+
+/** The dollar-quote tag opening at `i`, or null if one does not open there. */
+function dollarTagAt(src, i) {
+  DOLLAR_TAG.lastIndex = i;
+  const m = DOLLAR_TAG.exec(src);
+  return m ? m[0] : null;
+}
+
 export function stripNoise(sql) {
-  return String(sql)
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/'(?:[^']|'')*'/g, "''");
+  const src = String(sql);
+  const n = src.length;
+  let out = '';
+  let i = 0;
+
+  // The index just past a single-quoted literal that opens at `start`. `''` is
+  // an escaped quote; a backslash escapes the next character only in an E''
+  // string, because standard_conforming_strings is on everywhere here.
+  const literalEnd = (start, backslashEscapes) => {
+    let j = start + 1;
+    while (j < n) {
+      if (backslashEscapes && src[j] === '\\') {
+        j += 2;
+        continue;
+      }
+      if (src[j] === "'") {
+        if (src[j + 1] === "'") {
+          j += 2;
+          continue;
+        }
+        return j + 1;
+      }
+      j += 1;
+    }
+    return n; // unterminated: the rest of the file is inside it
+  };
+
+  while (i < n) {
+    const c = src[i];
+
+    // An identifier or keyword is taken whole, so the `$` in `a$b` is part of
+    // the name and opens nothing. `AS $$` must still open, so the run stops at
+    // a `$` that begins a dollar-quote tag.
+    if (IDENT_START.test(c)) {
+      let j = i + 1;
+      while (j < n && IDENT_PART.test(src[j])) {
+        if (src[j] === '$' && dollarTagAt(src, j)) break;
+        j += 1;
+      }
+      const word = src.slice(i, j);
+      out += word;
+      i = j;
+      if ((word === 'E' || word === 'e') && src[i] === "'") {
+        i = literalEnd(i, true);
+        out += "''";
+      }
+      continue;
+    }
+
+    if (c === '-' && src[i + 1] === '-') {
+      while (i < n && src[i] !== '\n') i += 1;
+      out += ' ';
+      continue;
+    }
+
+    if (c === '/' && src[i + 1] === '*') {
+      let depth = 1;
+      i += 2;
+      while (i < n && depth > 0) {
+        if (src[i] === '/' && src[i + 1] === '*') {
+          depth += 1;
+          i += 2;
+        } else if (src[i] === '*' && src[i + 1] === '/') {
+          depth -= 1;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      }
+      out += ' ';
+      continue;
+    }
+
+    if (c === "'") {
+      i = literalEnd(i, false);
+      out += "''";
+      continue;
+    }
+
+    // A quoted identifier is not noise: `delete from "public"."x"` names a
+    // real table and has to go on naming it. It is recognised here only so a
+    // quote or a `--` inside one cannot be mistaken for anything else.
+    if (c === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (src[j] === '"') {
+          if (src[j + 1] === '"') {
+            j += 2;
+            continue;
+          }
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      out += src.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    if (c === '$') {
+      const tag = dollarTagAt(src, i);
+      if (tag) {
+        const bodyStart = i + tag.length;
+        const close = src.indexOf(tag, bodyStart);
+        const bodyEnd = close === -1 ? n : close;
+        out += tag + stripNoise(src.slice(bodyStart, bodyEnd));
+        if (close !== -1) out += tag;
+        i = close === -1 ? n : close + tag.length;
+        continue;
+      }
+    }
+
+    // Nothing that can start noise: copy the whole run in one go.
+    let j = i + 1;
+    while (j < n && !NOISE_START.test(src[j])) j += 1;
+    out += src.slice(i, j);
+    i = j;
+  }
+
+  return out;
 }
 
 const IDENT = String.raw`(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)`;
@@ -148,7 +306,10 @@ const QUALIFIED = String.raw`${IDENT}(?:\s*\.\s*${IDENT})*`;
  */
 export function unqualifiedDeletes(sql) {
   const clean = stripNoise(sql);
-  const re = new RegExp(String.raw`\bdelete\s+from\s+(${QUALIFIED})(?![A-Za-z0-9_$])([^;]*)(?:;|$)`, 'gi');
+  const re = new RegExp(
+    String.raw`\bdelete\s+from\s+(${QUALIFIED})(?![A-Za-z0-9_$])([^;]*)(?:;|$)`,
+    'gi'
+  );
   const out = [];
   let m;
   while ((m = re.exec(clean)) !== null) {
@@ -193,7 +354,9 @@ export function declaredExceptions(sql) {
   const out = new Map();
   const lines = String(sql).split('\n');
   for (let i = 0; i < lines.length; i += 1) {
-    const m = /^\s*--\s*unqualified-write-ok:\s*([A-Za-z0-9_."]+)\s+because\s+(.*)$/i.exec(lines[i]);
+    const m = /^\s*--\s*unqualified-write-ok:\s*([A-Za-z0-9_."]+)\s+because\s+(.*)$/i.exec(
+      lines[i]
+    );
     if (!m) continue;
     // A real reason does not fit on one line and should not have to. Following
     // comment lines continue it, up to the next directive or the next line of

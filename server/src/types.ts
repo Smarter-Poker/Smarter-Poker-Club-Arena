@@ -302,6 +302,15 @@ export interface TableInfo {
   role?: 'main' | 'feeder' | null;
   main_index?: number | null;
   lifecycle?: 'opening' | 'live' | 'breaking' | 'closed' | null;
+  /**
+   * Lightning 2.0 Phase 5. Set on every table of a Cluster while it converts
+   * MUST_MOVE -> LIGHTNING, cleared if the conversion aborts. It means FINISH
+   * THE HAND YOU ARE IN AND START NO OTHER - never close, unseat or cash out.
+   * See `dealingHaltLock` on ServerTableEngineBase for the whole contract.
+   */
+  dealing_halted_at?: string | null;
+  /** null, 'lightning_pending_on' or 'lightning'. Log copy, never a gate. */
+  dealing_halted_reason?: string | null;
 }
 
 export interface SeatedPlayer {

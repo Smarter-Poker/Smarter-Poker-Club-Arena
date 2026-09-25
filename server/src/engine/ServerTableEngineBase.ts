@@ -3246,6 +3246,11 @@ export abstract class ServerTableEngineBase {
       }
       if (!this.lifecycleCanMutate()) return;
       this.tableInfo = tableData as TableInfo;
+      /* Lightning 2.0 Phase 5: a halted table must come back HALTED. The
+         engine is new, the row is not - this is the read that makes a reaped
+         and rebuilt engine honour a conversion that started before it existed,
+         and it is why `dealing_halted_at` is in the loadTable select. */
+      this.applyDealingHaltFromRow(this.tableInfo);
 
       // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
       // moment the engine knows which tournament it serves. The cache used to
@@ -4620,6 +4625,98 @@ export abstract class ServerTableEngineBase {
     this.inheritedStoppedTimeBankCustody = null;
   }
 
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   *  A CLUSTER MAY STOP ITS TABLES DEALING WITHOUT CLOSING ONE OF THEM
+   *  (Lightning 2.0 Phase 5, 2026-09-21)
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * The conversion MUST_MOVE -> LIGHTNING sets `tables.dealing_halted_at` on
+   * every table of the Cluster as it enters PENDING_ON, clears it again if the
+   * conversion aborts back to MUST_MOVE, and leaves it set while the Cluster
+   * is `lightning`. Nothing else about the table changes: the seats, the
+   * stacks, the custody bindings and the `cash_player_session` rows all stay
+   * exactly where they are. Chips never move.
+   *
+   * THE CONTRACT IS NARROW, AND THIS IS THE WHOLE OF IT.
+   * `dealing_halted_at IS NOT NULL` means FINISH THE HAND YOU ARE IN AND DO
+   * NOT START ANOTHER. It does NOT mean close the table, drop the engine,
+   * unseat anybody or touch a stack. `stopIfClusterTableClosed` below remains
+   * the only member that ends an engine over Cluster state, and it still
+   * demands a closed row AND an empty table.
+   *
+   * WHY A POLLED LOCK AND NOT A PAUSE GATE. The five gate owners
+   * (`maintenancePaused`, `finalTableDealPaused`, `terminalCloseoutPaused`,
+   * the tournament-move owners and hand-for-hand) are raised and released by
+   * something that is still in the room: `awaitPauseGate` parks the loop
+   * outright and somebody in this process must call `releasePauseGate` to wake
+   * it. This owner is a ROW, written by a transaction that has since committed
+   * and gone home, and the row is also how the halt survives an engine being
+   * reaped and rebuilt. So it belongs with `adminPauseLock` and
+   * `maintenanceLock`: polled by the dealing loop, released by nobody.
+   *
+   * ONE OWNER, NOT A SET. `tournamentMovePauseOwners` is a Set because several
+   * planners may fence one table at once. A table has exactly one Cluster and
+   * that Cluster's row is the single writer here, so a Set could only ever
+   * hold nought or one.
+   *
+   * THE LATENCY, STATED PLAINLY. The value is re-read by `refreshRakeConfig`,
+   * throttled to RAKE_CONFIG_TTL_MS (60s) and called once per pass of the
+   * dealing loop through `prepareNextHand`. So a halt written now takes effect
+   * at the end of the hand in progress PLUS AT MOST 60 SECONDS (less in the
+   * usual case: the throttle runs from the last read, not from the halt), and
+   * the resume when a conversion aborts is bounded by the same 60 seconds -
+   * acceptance F04 costs a minute at worst. A rebuilt engine is immediate: it
+   * reads the row in `start()`. If Phase 5 ever needs a tighter bound the
+   * honest fix is a shorter TTL or a dedicated poll on this one column, not a
+   * second mechanism alongside this one.
+   */
+  protected dealingHaltLock: boolean = false;
+  /** Why the row says this table may not deal. Log copy; never a gate. */
+  protected dealingHaltReason: string | null = null;
+
+  /**
+   * Apply `tables.dealing_halted_at` from a freshly read row. The ONLY writer
+   * of the two fields above, with exactly two callers: `start()`, so an engine
+   * that was reaped and rebuilt comes back halted, and the throttled re-read
+   * in `refreshRakeConfig`, so a halt raised or cleared under a running engine
+   * is honoured without a restart.
+   *
+   * A row that could not be read leaves the lock exactly as it was. Failing
+   * open would resume a halted table on a database blip, which is the one
+   * outcome the conversion cannot survive; failing closed costs a table
+   * nothing but the next 60-second pass.
+   */
+  protected applyDealingHaltFromRow(row: unknown): void {
+    const fresh = (row ?? null) as {
+      dealing_halted_at?: unknown;
+      dealing_halted_reason?: unknown;
+    } | null;
+    if (!fresh) return;
+    const halted = fresh.dealing_halted_at != null;
+    const reason =
+      halted && typeof fresh.dealing_halted_reason === 'string'
+        ? fresh.dealing_halted_reason
+        : null;
+    if (this.tableInfo) {
+      // Keep the cached row honest too: `tableInfo` is what every other reader
+      // of these two columns will reach for, and a boot-time snapshot of a
+      // value the database rewrites mid-session is exactly the trap lane E of
+      // the must-move audit found in the templated rules (see refreshRakeConfig).
+      this.tableInfo.dealing_halted_at = halted ? String(fresh.dealing_halted_at) : null;
+      this.tableInfo.dealing_halted_reason = reason;
+    }
+    if (halted === this.dealingHaltLock && reason === this.dealingHaltReason) return;
+    this.dealingHaltLock = halted;
+    this.dealingHaltReason = reason;
+    console.log(
+      `[ServerTableEngine:${this.tableId}] cluster halt ` +
+        (halted
+          ? `raised (${reason ?? 'no reason given'}) - this hand finishes, no other starts`
+          : 'cleared - the table may deal again')
+    );
+  }
+
   /** Last time the empty-cluster-table check read the row. See below. */
   private lastClusterClosedCheckAt = 0;
 
@@ -5898,6 +5995,10 @@ export abstract class ServerTableEngineBase {
     return (
       this.adminPauseLock ||
       this.maintenanceLock ||
+      // Lightning 2.0 Phase 5: the Cluster's row says finish this hand and
+      // start no other. Sits with the two locks above because it is polled
+      // like them and, like them, no gate in this process releases it.
+      this.dealingHaltLock ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused ||
@@ -7809,7 +7910,7 @@ export abstract class ServerTableEngineBase {
           // of the must-move audit). See the doc comment above for why: these
           // are no longer host settings that change twice a year, they are
           // rewritten by fn_cash_apply_ruleset on every cluster tick.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -7820,6 +7921,14 @@ export abstract class ServerTableEngineBase {
       // rejects (see readKillSettingsForRefresh).
       const killRead = this.readKillSettingsForRefresh();
       const { data: tableRow } = await ruleRead;
+      /* Lightning 2.0 Phase 5. Applied HERE - before the Diamond refusal below
+         and before the `tableRow && this.tableInfo` block - on purpose. A halt
+         is not a rule a boundary can refuse: it is an operational stop, and a
+         Diamond table whose rules were rewritten to something the arena will
+         not admit must still stop dealing when its Cluster says so. It is also
+         the only assignment in this method that is not a "rule the player was
+         sold under the game's name". */
+      this.applyDealingHaltFromRow(tableRow);
       /* A DIAMOND TABLE'S RULES DO NOT LEAVE THE BOUNDARY UNDER IT (2026-09-11,
          restated 2026-09-12 when straddles and run it twice were admitted).
 

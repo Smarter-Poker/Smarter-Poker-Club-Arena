@@ -89,8 +89,15 @@ describe('the hand rests before the next one', () => {
     // work before the deal, preserving the ordinary two-second rest.
     const boundaryGate =
       /if \(\s*this\.terminalCloseoutPaused\s*\|\|\s*this\.tournamentMovePauseOwners\.size > 0\s*\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    // 2026-09-21, Lightning 2.0 Phase 5: a third polled owner,
+    // `!this.dealingHaltLock`, joined this exclusion - the Cluster halt is
+    // read from `tables.dealing_halted_at` and released by nobody in this
+    // process, so like `adminPauseLock` and `maintenanceLock` it must never be
+    // sent through awaitPauseGate. The pin admits that term and no other: the
+    // unpaused path still waits on nothing here, so the window the player gets
+    // to click Rabbit Hunt is still the rest and nothing but the rest.
     const requestedPauseGate =
-      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(!this\.adminPauseLock && !this\.maintenanceLock\) await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(!this\.adminPauseLock && !this\.maintenanceLock && !this\.dealingHaltLock\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
     expect(

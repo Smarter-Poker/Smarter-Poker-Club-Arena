@@ -3451,6 +3451,37 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
         return !(Number.isFinite(executed) && executed < claimableSince);
       });
+      /* ═══ THE QUESTION HAS TO REACH THE DATABASE TO BE ANSWERED (2026-09-25) ═══
+
+         Run 36081290135 on c59dda512f is the measurement: this read refused
+         as `dealtSinceRead` with `error=22P02,rows=null,ceiling=1`, in
+         preflight, with attemptedTables=0. 22P02 is
+         `invalid_text_representation`. The question never became SQL, so
+         nothing in the estate was moving and nothing could have been: the
+         refusal was COULD NOT TELL, which is the right answer to a read that
+         failed, about a read that could never succeed.
+
+         `.contains(column, value)` in postgrest-js 2.98.0 branches on the
+         value it is given (dist/index.mjs:646-648). A STRING is appended
+         verbatim; an ARRAY takes the Postgres array-literal branch,
+         `cs.{${value.join(',')}}`, and `[{ userId }].join(',')` is the
+         string `[object Object]`, so what left here was
+         `players=cs.{[object Object]}` and Postgres would not parse it as
+         json. Only the string branch can express jsonb containment.
+         `HandHistoryService.ts` already carries this fix, this SQLSTATE and
+         this DETAIL as BUG 021 Layer D (2026-04-16); this read, written a day
+         before the run above, reintroduced it.
+
+         Every arrival inside the hour built the same malformed filter, so the
+         refusal was unconditional: no wait, no quiet window and no retry
+         could ever have cleared it, and a fleet that moves a seat every few
+         minutes always has one in the hour. The PREDICATE is already the
+         narrow one custody needs - a hand at THIS destination table, after
+         THIS move executed, with THIS player in it - and it is not touched
+         here. A deal by the same human at an unrelated table has never
+         satisfied it and still does not. Only the encoding changes, so that
+         the question can be answered at all. */
+      const dealtByAtDestination = (playerId) => JSON.stringify([{ userId: playerId }]);
       let arrivalsDealtSince = 0;
       for (const [index, answer] of (await readAll(inWindow.map((arrival) => () => {
         const executed = executedAt.get(lower(arrival.move_id));
@@ -3460,7 +3491,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               .select('id')
               .eq('table_id', arrival.to_table_id)
               .gt('created_at', executed)
-              .contains('players', [{ userId: arrival.player_id }])
+              .contains('players', dealtByAtDestination(arrival.player_id))
               .limit(1)
           : Promise.resolve({ data: [], error: null });
       }))).entries()) {

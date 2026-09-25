@@ -407,6 +407,7 @@ function fixture(count = 1, predecessor = release) {
               table: '',
               since: '',
               player: '',
+              raw: undefined as unknown,
               eq: (key: string, value: string) => {
                 expect(key).toBe('table_id');
                 filter.table = value;
@@ -417,10 +418,23 @@ function fixture(count = 1, predecessor = release) {
                 filter.since = value;
                 return filter;
               },
+              // postgrest-js appends a STRING containment value verbatim and
+              // renders anything array-shaped as a Postgres array literal via
+              // `join(',')`, which turns `[{ userId }]` into the unparseable
+              // `cs.{[object Object]}` and earns SQLSTATE 22P02. This double
+              // used to accept the array and read `value[0].userId` straight
+              // off it, so the guard shipped a filter no database could
+              // answer and this suite still went green. It now refuses
+              // anything the real client would not send.
               contains: (key: string, value: any) => {
                 expect(key).toBe('players');
-                expect(Object.keys(value[0])).toEqual(['userId']);
-                filter.player = value[0].userId;
+                expect(typeof value).toBe('string');
+                const parsed = JSON.parse(value as string);
+                expect(Array.isArray(parsed)).toBe(true);
+                expect(parsed).toHaveLength(1);
+                expect(Object.keys(parsed[0])).toEqual(['userId']);
+                filter.raw = value;
+                filter.player = parsed[0].userId;
                 return filter;
               },
               limit: async (bound: number) => {
@@ -429,6 +443,7 @@ function fixture(count = 1, predecessor = release) {
                   table: filter.table,
                   since: filter.since,
                   player: filter.player,
+                  raw: filter.raw,
                 });
                 return onDealt
                   ? onDealt(filter.table, filter.since, filter.player)
@@ -3146,6 +3161,32 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.dealtReads).toHaveLength(1);
     expect(result.bankDisposition).toContain('arrivalsInWindowChecked=1');
     expect(result.bankDisposition).toContain('arrivalsDealtSince=1');
+  });
+
+  it('encodes the dealt-since question so the database can parse it, not as an array literal', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    const executed = new Date(Date.now() - 21 * 60000).toISOString();
+    landed(f, from, uuid(67000), executed);
+    f.onDealt(() => ({ data: [{ id: uuid(70000) }], error: null }));
+    await f.run();
+    expect(f.dealtReads).toHaveLength(1);
+    // Run the REAL postgrest-js branch (dist/index.mjs contains/cs.) over the
+    // value the guard passed. A string is appended verbatim; anything
+    // array-shaped goes through `join(',')` and becomes `{[object Object]}`,
+    // which is the filter that earned SQLSTATE 22P02 in run 36081290135 and
+    // could never have been answered.
+    const raw = f.dealtReads[0].raw;
+    const sent =
+      typeof raw === 'string'
+        ? `cs.${raw}`
+        : Array.isArray(raw)
+          ? `cs.{${raw.join(',')}}`
+          : `cs.${JSON.stringify(raw)}`;
+    expect(sent).not.toContain('[object Object]');
+    const body = sent.replace(/^cs\./, '');
+    expect(() => JSON.parse(body)).not.toThrow();
+    expect(JSON.parse(body)).toEqual([{ userId: from.departed }]);
   });
 
   it.each([

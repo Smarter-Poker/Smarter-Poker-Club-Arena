@@ -60,8 +60,28 @@ Inspect RSS, anonymous RSS and worker activity separately. Threads also include
 libuv and V8 helpers; external memory includes C++ objects and buffers. A growing
 series can guide investigation but does not independently establish a leak.
 
-This scoped implementation does not install an HTTP dispatcher or establish
-connection limits. Memory measurements do not require that independent change.
+## The bounded fetch pool
+
+`server/src/services/httpDispatcher.ts` (first import of `server/src/index.ts`)
+installs one undici Agent for the main isolate: `connections=128` per origin
+and a 30-second keep-alive, overridable through `ENGINE_HTTP_MAX_CONNECTIONS`
+and `ENGINE_HTTP_KEEPALIVE_MS`. `/health.httpDispatcher` reports the last
+installation: `bounded`, `connectionsPerOrigin`, `keepAliveTimeoutMs` and a
+`reason` when the bound did not go in (the process then runs on the runtime
+default and says so). The report is an installation result, not a live socket
+count or a memory proof.
+
+Confirm churn on the box, read-only, from the engine's network namespace:
+
+```bash
+PID=$(docker inspect -f '{{.State.Pid}}' club-arena-engine)
+nsenter -t "$PID" -n ss -tan | awk '{print $1}' | sort | uniq -c
+```
+
+Hundreds of `ESTAB` to :443 and thousands of `TIME-WAIT` in a quiet minute
+(the 2026-09-14 reading was 240 and 1,674) means the bound is not in effect.
+Compare RSS, anonymous RSS and `[heap]` extent across comparable periods before
+and after the bound before attributing a memory change to it.
 
 ## Recovery and measurement limits
 

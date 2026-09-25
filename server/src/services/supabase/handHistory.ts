@@ -287,6 +287,8 @@ export async function logHandHistory(params: {
     handName?: string;
     /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
     low?: boolean;
+    /** Per-pot slices of this share (2026-09-13). See HandEvent WINNERS.winnersByBoard. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).

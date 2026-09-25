@@ -112,6 +112,15 @@
 --   will roll the whole thing back. Apply once; never in a retry loop.
 -- =====================================================================
 
+-- THIS FILE CREATES NO PERSISTENT OBJECT, so it states its own proof - the
+-- convention tests/a-merged-migration-must-be-live.law.test.ts binds from
+-- 20260920 onward. Nothing in pg_proc or pg_class appears for a patched
+-- function body, a revoked grant or an updated row, so the reader is told
+-- exactly what to run. Every expression below was run read-only against
+-- production on 2026-09-25 and every one returned true.
+-- @live-proof: (SELECT position('OLD.elimination_sequence IS NULL' in p.prosrc) > 0 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_stamp_tournament_elimination_sequence')
+-- @live-proof: (SELECT position('tp.club_id IS DISTINCT FROM club' in p.prosrc) > 0 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_ca_capture_tournament_fee_from_recorded_evidence')
+-- @live-proof: (SELECT position('fn_ca_capture_tournament_fee_from_recorded_evidence' in p.prosrc) > 0 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_settle_tournament_rake')
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';

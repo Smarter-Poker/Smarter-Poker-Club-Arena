@@ -161,6 +161,14 @@
 --
 -- ===========================================================================
 
+-- THIS FILE CREATES NO PERSISTENT OBJECT, so it states its own proof - the
+-- convention tests/a-merged-migration-must-be-live.law.test.ts binds from
+-- 20260920 onward. Nothing in pg_proc or pg_class appears for a patched
+-- function body, a revoked grant or an updated row, so the reader is told
+-- exactly what to run. Every expression below was run read-only against
+-- production on 2026-09-25 and every one returned true.
+-- @live-proof: (SELECT position('v_terminal' in p.prosrc) > 0 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_process_cash_accounting_source')
+-- @live-proof: (SELECT count(*) = 0 FROM public.accounting_cash_source_work w JOIN public.accounting_cash_source_receipts rc ON rc.id = w.receipt_id JOIN public.accounting_cash_accrual_batches b ON b.rake_record_id = w.rake_record_id WHERE w.status = 'blocked' AND w.next_attempt_at <> 'infinity'::timestamptz AND rc.reason = 'cash_source_legacy_unverified' AND b.status = 'legacy_unverified')
 BEGIN;
 
 SET LOCAL lock_timeout = '15s';

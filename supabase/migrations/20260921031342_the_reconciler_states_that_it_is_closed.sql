@@ -37,6 +37,13 @@
 -- service_role and postgres - pg_cron job 157 runs as postgres - keep the
 -- EXECUTE they have always had.
 
+-- THIS FILE CREATES NO PERSISTENT OBJECT, so it states its own proof - the
+-- convention tests/a-merged-migration-must-be-live.law.test.ts binds from
+-- 20260920 onward. Nothing in pg_proc or pg_class appears for a patched
+-- function body, a revoked grant or an updated row, so the reader is told
+-- exactly what to run. Every expression below was run read-only against
+-- production on 2026-09-25 and every one returned true.
+-- @live-proof: (SELECT count(*) = 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'reconcile_ledger_nightly' AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND has_function_privilege('service_role', p.oid, 'EXECUTE'))
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';

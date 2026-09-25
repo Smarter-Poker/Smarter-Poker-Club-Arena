@@ -47,6 +47,13 @@
 --
 -- Asserted at the end: anon and authenticated can execute none of the three.
 
+-- THIS FILE CREATES NO PERSISTENT OBJECT, so it states its own proof - the
+-- convention tests/a-merged-migration-must-be-live.law.test.ts binds from
+-- 20260920 onward. Nothing in pg_proc or pg_class appears for a patched
+-- function body, a revoked grant or an updated row, so the reader is told
+-- exactly what to run. Every expression below was run read-only against
+-- production on 2026-09-25 and every one returned true.
+-- @live-proof: (SELECT count(*) = 3 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('fn_ca_escalate_reconcile_criticals','fn_ca_remeasure_entity','fn_ca_treasury_positions') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND has_function_privilege('service_role', p.oid, 'EXECUTE'))
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';

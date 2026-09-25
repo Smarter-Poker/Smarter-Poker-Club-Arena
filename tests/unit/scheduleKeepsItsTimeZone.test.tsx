@@ -97,11 +97,29 @@ describe('the schedule UI names the zone its times are in', () => {
   });
 
   it('a stored row is described in its own zone, and a legacy row in UTC', () => {
+    // Title Case since the visual acceptance pass (2026-09-24): the summary
+    // prints on the union's schedule cards, and "at" / "every day" did not.
     expect(describeSchedule([5], ['20:00'], null, 'America/Chicago')).toBe(
-      'Fri at 20:00 America/Chicago'
+      'Fri At 20:00 America/Chicago'
     );
-    expect(describeSchedule([5], ['01:00'], null, null)).toBe('Fri at 01:00 UTC');
-    expect(describeSchedule([5], ['01:00'], null)).toBe('Fri at 01:00 UTC');
+    expect(describeSchedule([5], ['01:00'], null, null)).toBe('Fri At 01:00 UTC');
+    expect(describeSchedule([5], ['01:00'], null)).toBe('Fri At 01:00 UTC');
+  });
+
+  it('every word of a summary is capitalised, and a zone id prints without underscores', () => {
+    expect(describeSchedule([0, 1, 2, 3, 4, 5, 6], [], 60, null)).toBe('Every Day - Every 60 Min');
+    expect(
+      describeSchedule([1, 3], ['18:00', '21:30'], null, 'America/Argentina/Buenos_Aires')
+    ).toBe('Mon, Wed At 18:00, 21:30 America/Argentina/Buenos Aires');
+    for (const text of [
+      describeSchedule([0, 1, 2, 3, 4, 5, 6], [], 1440, null),
+      describeSchedule([2], ['09:00'], null, 'America/New_York'),
+    ]) {
+      for (const word of text.split(/[\s,/]+/).filter((w) => /^[a-z]/i.test(w))) {
+        expect(word[0], `"${word}" in "${text}"`).toBe(word[0].toUpperCase());
+      }
+      expect(text).not.toContain('_');
+    }
   });
 });
 

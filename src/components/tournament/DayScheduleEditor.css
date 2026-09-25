@@ -55,6 +55,8 @@
   width: 100%;
   min-height: 44px;
   box-sizing: border-box;
+  /* The date picker's own icon is drawn for a dark field, not lost in it. */
+  color-scheme: dark;
 }
 
 .day-schedule__fixed {
@@ -68,6 +70,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* THE FORM'S OWN INK (visual acceptance 2026-09-24). The two inputs wear the
+   page's field class (.config-datetime, as Start Time does) and these two
+   buttons the footer's outline button, so nothing here renders as a white
+   browser default on the black form. */
+.day-schedule__actions button {
+  flex: 1 1 9rem;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 2px solid #1877f2;
+  color: #1877f2;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.day-schedule__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (min-width: 560px) {

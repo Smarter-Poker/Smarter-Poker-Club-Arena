@@ -63,9 +63,14 @@ export function scheduleWriteTimeZone(
   return engineReadsZones ? deviceTimeZone() : null;
 }
 
-/** The zone name shown beside a schedule's times; NULL means UTC. */
+/**
+ * The zone name shown beside a schedule's times; NULL means UTC. Display
+ * only: an IANA id's underscore is not a word, so "America/Argentina/
+ * Buenos_Aires" prints as "Buenos Aires" (visual acceptance 2026-09-24), the
+ * way the Day Schedule editor already lists zones. Never write this back.
+ */
 export function scheduleZoneLabel(timeZone: string | null | undefined): string {
-  return timeZone || 'UTC';
+  return timeZone ? timeZone.replace(/_/g, ' ') : 'UTC';
 }
 
 /** 'HH:MM' (24h) of a Date on the device's own clock. */

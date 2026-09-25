@@ -5178,3 +5178,136 @@ describe('a sealed custody transfer is not transferred twice', () => {
     expect(f.rpcCalls).toEqual([]);
   });
 });
+
+/* ═══ AN OUTCOME THE CLIENT LOSES NAMES THE STEP IT WAS LOST IN ═══
+
+   Run 36144233010 is the measurement: the deepest a release has reached. All
+   65 tables were parked, read back and verified, and then the publisher's
+   20000ms work budget ran out with the guard's call still running. The only
+   thing that survives that is the progress record the guard leaves on the
+   predecessor's global object - `witness` and `noteRefusal` travel in the
+   RETURN VALUE, which by definition never arrived - and what the record said
+   was `stage: mixed_custody, note: mixed_custody`. `mixed_custody` is two
+   operations and six RPCs across two managers, and one of those RPCs writes
+   an immutable custody row. Which one was in flight is the whole question,
+   and the record could not answer it. These prove it now does. */
+describe('an unknown outcome names the mixed-custody step it was lost in', () => {
+  const record = () => (globalThis as any).__legacyEngineCheckpointProgress;
+
+  it('names proveAbandonedBoundaries and the page it is reading, not just the stage', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    const seen: any[] = [];
+    f.onSnapshots((ids: string[]) => {
+      seen.push({ ids: [...ids], ...record() });
+      return { data: [], error: null };
+    });
+    expect((await f.run()).ok).toBe(true);
+    const page = seen.find((entry) => entry.ids.includes(stuck.tableId));
+    expect(page).toBeDefined();
+    expect(page.stage).toBe('mixed_custody');
+    // The step's own name, never the stage's.
+    expect(page.note).toBe('proveAbandonedBoundariesPage');
+    expect(page.detail).toBe('page=1/1,ids=1');
+  });
+
+  it('names the custody RPC on the wire, its phase, its manager and whether a commit was sent', async () => {
+    const f = mixedFixture();
+    const seen: any[] = [];
+    f.onRpc((name: string) => seen.push({ name, ...record() }));
+    expect((await f.run()).ok).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const entry of seen) {
+      expect(entry.stage).toBe('mixed_custody');
+      expect(entry.note).toBe('mixedCustodyRpc');
+      expect(entry.detail).toContain(`rpc=${entry.name}`);
+    }
+    const parsed = seen.map((entry) => ({
+      name: entry.name,
+      phase: /phase=(\w+)/.exec(entry.detail)![1],
+      tournament: /tournament=([0-9a-f-]{36})/.exec(entry.detail)![1],
+      commitAttempted: /commitAttempted=(\w+)/.exec(entry.detail)![1],
+    }));
+    const tournaments = f.originals.map(({ manager }: any) => manager.tournamentId);
+    for (const entry of parsed) expect(tournaments).toContain(entry.tournament);
+    // Both managers are observed before either is committed, and the record
+    // tells the two identical calls apart.
+    expect(parsed.filter((entry) => entry.phase === 'observe')).toHaveLength(2);
+    expect(parsed.filter((entry) => entry.phase === 'commit')).toHaveLength(2);
+    expect(parsed.findIndex((entry) => entry.phase === 'commit')).toBeGreaterThan(
+      parsed.map((entry) => entry.phase).lastIndexOf('observe')
+    );
+    expect(parsed.find((entry) => entry.name === 'fn_f06_find_mixed_manager_custody')!.phase).toBe(
+      'read'
+    );
+    // The one fact that says whether a lost outcome could have written a row.
+    expect(parsed[0].commitAttempted).toBe('false');
+    expect(parsed.at(-1)!.commitAttempted).toBe('true');
+  });
+
+  it('tells a call still on the wire from an answer already in hand', async () => {
+    const f = mixedFixture();
+    const answered: any[] = [];
+    f.onRpcResponse((name: string, answer: any) => {
+      answered.push({ name, ...record() });
+      return answer;
+    });
+    expect((await f.run()).ok).toBe(true);
+    // The response hook runs while the call is still on the wire...
+    const custody = answered.filter((entry) => entry.stage === 'mixed_custody');
+    expect(custody.length).toBeGreaterThan(0);
+    for (const entry of custody) expect(entry.note).toBe('mixedCustodyRpc');
+    // ...and the sealed-transfer probe the capture walk sends is named by the
+    // step that sends it, never by this one.
+    expect(answered.some((entry) => entry.note === 'captureMixedOriginals')).toBe(true);
+    // ...and the record moves on the moment the answer is in hand, so the
+    // checks that follow are never reported as a call in flight.
+    expect(record().note).toBe('complete');
+  });
+
+  it('never leaves a stale detail behind a later step', async () => {
+    const f = mixedFixture();
+    expect((await f.run()).ok).toBe(true);
+    // `complete` names no page, manager or RPC, so it carries no detail.
+    expect(record().note).toBe('complete');
+    expect(record().detail).toBeNull();
+    expect(record().stage).toBe('complete');
+  });
+
+  it('changes no outcome: a refusal inside a named step still refuses', async () => {
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? { data: null, error: { code: 'P0001', message: 'F06_MIXED_OLD_LEASE_CHANGED' } }
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedCheck: 'rpc.transport',
+    });
+    expect(result.observedDetail).toContain('refusal=F06_MIXED_OLD_LEASE_CHANGED');
+    expect(f.receipts.size).toBe(0);
+    expect(record().note).toBe('refused');
+  });
+
+  // The record is a courtesy to the reader and can never be a condition: a
+  // global that refuses to be written must not move a single outcome.
+  it('survives a global object that refuses the record', async () => {
+    const f = mixedFixture();
+    Object.defineProperty(globalThis, '__legacyEngineCheckpointProgress', {
+      configurable: true,
+      get: () => null,
+      set() {
+        throw new Error('synthetic refusal');
+      },
+    });
+    try {
+      expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    } finally {
+      Reflect.deleteProperty(globalThis, '__legacyEngineCheckpointProgress');
+    }
+  });
+});

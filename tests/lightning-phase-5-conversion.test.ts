@@ -916,7 +916,15 @@ describe('Phase 5: the commit re-asks the population it was told about at PENDIN
     const orphanGuardAt = COMMIT_ON.body.indexOf('IF v_orphan > 0 THEN');
     const reasonAt = COMMIT_ON.body.indexOf("set_config('ca.epoch_reason'");
     const bumpAt = COMMIT_ON.body.indexOf('v_epoch := g.cluster_epoch + 1;');
-    const modeAt = COMMIT_ON.body.indexOf("cluster_mode = 'lightning'");
+    // THE WRITE, NOT ANY MENTION. `cluster_mode = 'lightning'` also appears in
+    // the already_committed answer, which reads `'converted', g.cluster_mode =
+    // 'lightning'` and sits far ABOVE the orphan check - so an unanchored
+    // indexOf found that comparison instead of the UPDATE and reported the
+    // ordering broken while it was right. The anchor is the assignment inside
+    // the UPDATE, which only the write can carry.
+    const modeAt = COMMIT_ON.body.indexOf(
+      "SET cluster_mode = 'lightning', cluster_epoch = v_epoch"
+    );
     const poolAt = COMMIT_ON.body.indexOf('INSERT INTO public.lightning_pool_session');
 
     expect(orphanAt, 'the orphan check is gone').toBeGreaterThan(-1);
@@ -925,6 +933,7 @@ describe('Phase 5: the commit re-asks the population it was told about at PENDIN
     expect(reasonAt, 'the epoch reason is stamped before the orphan check').toBeGreaterThan(
       orphanGuardAt
     );
+    expect(modeAt, 'the UPDATE that makes the Cluster lightning was not found').toBeGreaterThan(-1);
     expect(modeAt, 'the Cluster is made lightning before the orphan check').toBeGreaterThan(
       orphanGuardAt
     );
@@ -1160,7 +1169,31 @@ describe('Phase 5: the conversion is a row, and the row is the F13 race guard', 
     expect(COMMIT_ON.body).toContain("IF v_conv.status = 'committed' THEN");
     expect(COMMIT_ON.body).toContain("'reason', 'already_committed'");
     expect(COMMIT_ON.body).toContain("'epoch_after', v_conv.epoch_after");
-    expect(BEGIN_ON.body).toContain("'reason', 'already_known'");
+    // THE THREE-WAY ANSWER, not the single string it used to be. A replayed
+    // request id is answered per STATUS: an aborted conversion used to be
+    // reported as one in flight, on a Cluster sitting in must_move with
+    // nothing halted, which made a caller keying on ok alone poll
+    // commit_lightning for conversion_already_closed for ever. The literal
+    // "'reason', 'already_known'" is gone because it is now a CASE arm, and
+    // asserting the old string would pin the defect back in place.
+    expect(BEGIN_ON.body).toContain("WHEN 'pending'   THEN 'already_known'");
+    expect(BEGIN_ON.body).toContain("WHEN 'committed' THEN 'already_committed'");
+    expect(BEGIN_ON.body).toContain("ELSE 'conversion_already_aborted' END");
+    expect(BEGIN_ON.body).toContain("'ok', v_prior.status <> 'aborted'");
+    expect(BEGIN_ON.body).toContain("'pending', v_prior.status = 'pending'");
+    // Both idempotency reads - the one before the lock and the one after it -
+    // must answer the same way; a fix applied to one branch only is the shape
+    // this whole repair is about.
+    expect(
+      (BEGIN_ON.body.match(/ELSE 'conversion_already_aborted' END/g) ?? []).length,
+      'the two idempotency reads no longer agree'
+    ).toBe(2);
+    // The mirror, in abort: retrying an abort that already succeeded is the
+    // operation succeeding again, not a refusal.
+    expect(ABORT.body).toContain("'reason', 'already_aborted'");
+    expect(ABORT.body).toContain("'ok', true, 'aborted', true, 'reason', 'already_aborted'");
+    // And converted is read off the CLUSTER, never off the conversion record.
+    expect(COMMIT_ON.body).toContain("'converted', g.cluster_mode = 'lightning'");
     // RLS on, browser roles revoked, service_role only.
     expect(CODE).toContain('ALTER TABLE public.cash_cluster_conversion ENABLE ROW LEVEL SECURITY;');
     expect(CODE).toContain(

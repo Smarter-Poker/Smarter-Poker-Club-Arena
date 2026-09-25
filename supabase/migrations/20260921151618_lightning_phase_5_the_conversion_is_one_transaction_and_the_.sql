@@ -181,6 +181,10 @@
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.tables WHERE (dealing_halted_at IS NULL) <> (dealing_halted_reason IS NULL)))
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_games g WHERE g.cluster_mode IN ('pending_on', 'lightning') AND EXISTS (SELECT 1 FROM public.tables t WHERE t.cluster_id = g.id AND coalesce(t.is_deleted, false) = false AND coalesce(t.lifecycle, '') <> 'closed' AND t.dealing_halted_at IS NULL)))
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_cluster_conversion WHERE status = 'committed' AND (epoch_after IS NULL OR epoch_after <= epoch_before)))
+-- @live-proof: (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_begin_pending_on(uuid,uuid)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') ~ 'conversion_already_aborted')
+-- @live-proof: (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_abort_pending_on(uuid,uuid,text)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') ~ 'already_aborted')
+-- @live-proof: (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_commit_lightning(uuid,uuid)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') ~ '''converted'', g\.cluster_mode = ''lightning''')
+-- @live-proof: (SELECT bool_and(regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') ~ 'request_id_belongs_to_another_cluster') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname IN ('fn_cash_cluster_begin_pending_on', 'fn_cash_cluster_abort_pending_on', 'fn_cash_cluster_commit_lightning'))
 -- @live-proof: (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_live_eligible(uuid,timestamp with time zone,integer)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') !~ 'status IN')
 -- @live-proof: (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_population(uuid,timestamp with time zone,integer)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') !~ 'tb\.status IN')
 -- @live-proof: (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_population(uuid,timestamp with time zone,integer)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') ~ 'w\.status IN \(''waiting'', ''notified''\)')
@@ -428,8 +432,26 @@ BEGIN
   SELECT * INTO v_prior FROM public.cash_cluster_conversion
    WHERE conversion_request_id = p_request_id AND cluster_id = p_game_id;
   IF FOUND THEN
-    RETURN jsonb_build_object('ok', true, 'reason', 'already_known',
+    -- 'pending' IS THIS FUNCTION'S 'converted', AND IT EXISTS FOR THE SAME
+    -- REASON. An earlier cut answered ok: true / already_known on ANY status,
+    -- so a request id whose conversion had since been ABORTED was reported as
+    -- one in flight, about a Cluster sitting back in must_move. The failure is
+    -- a worker that times out before reading this reply, aborts, retries the
+    -- same id, is told true, and then polls commit_lightning for ever - which
+    -- answers conversion_already_closed every time, so that Cluster is never
+    -- converted again under that id. commit_lightning grew a 'converted'
+    -- boolean against exactly this class; its sibling had been left without
+    -- one. The truth was always in the payload, but a caller should not have
+    -- to parse a status string to learn whether ok means what it says.
+    RETURN jsonb_build_object(
+      'ok', v_prior.status <> 'aborted',
+      'pending', v_prior.status = 'pending',
+      'reason', CASE v_prior.status
+                  WHEN 'pending'   THEN 'already_known'
+                  WHEN 'committed' THEN 'already_committed'
+                  ELSE 'conversion_already_aborted' END,
       'conversion_id', v_prior.id, 'status', v_prior.status,
+      'abort_reason', v_prior.abort_reason,
       'cluster_mode', (SELECT cluster_mode FROM public.cash_games WHERE id = p_game_id));
   END IF;
 
@@ -438,7 +460,7 @@ BEGIN
   -- unique index would refuse anyway, with an error nobody could read.
   IF EXISTS (SELECT 1 FROM public.cash_cluster_conversion
               WHERE conversion_request_id = p_request_id) THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'request_id_belongs_to_another_cluster');
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'request_id_belongs_to_another_cluster');
   END IF;
 
   -- THE FREEZE IS TOTAL. server/src/maintenance/theFreezeIsTotal.law.test.ts
@@ -447,12 +469,12 @@ BEGIN
   -- dealing, which is emphatically an engine-affecting act, and the break
   -- exists so that the engine is doing exactly one thing at a time.
   IF public.fn_platform_frozen() THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'platform_frozen');
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'platform_frozen');
   END IF;
 
   SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR UPDATE;
   IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_found');
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'not_found');
   END IF;
 
   -- Step 2: verify current state = MUST_MOVE. A Cluster already in pending_on
@@ -468,13 +490,20 @@ BEGIN
   SELECT * INTO v_prior FROM public.cash_cluster_conversion
    WHERE conversion_request_id = p_request_id AND cluster_id = p_game_id;
   IF FOUND THEN
-    RETURN jsonb_build_object('ok', true, 'reason', 'already_known',
+    RETURN jsonb_build_object(
+      'ok', v_prior.status <> 'aborted',
+      'pending', v_prior.status = 'pending',
+      'reason', CASE v_prior.status
+                  WHEN 'pending'   THEN 'already_known'
+                  WHEN 'committed' THEN 'already_committed'
+                  ELSE 'conversion_already_aborted' END,
       'conversion_id', v_prior.id, 'status', v_prior.status,
+      'abort_reason', v_prior.abort_reason,
       'cluster_mode', g.cluster_mode);
   END IF;
 
   IF g.cluster_mode <> 'must_move' THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'wrong_state',
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'wrong_state',
       'cluster_mode', g.cluster_mode);
   END IF;
 
@@ -485,7 +514,7 @@ BEGIN
   -- this function would have aborted every conversion it ever started.
   v_state := public.fn_cash_cluster_lightning_state(g.id);
   IF NOT coalesce((v_state -> 'verdict' ->> 'would_turn_on')::boolean, false) THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'threshold_not_reached',
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'threshold_not_reached',
       'verdict', v_state -> 'verdict', 'thresholds', v_state -> 'thresholds');
   END IF;
 
@@ -540,7 +569,7 @@ BEGIN
     'epoch_before', g.cluster_epoch,
     'tables_halted', v_halted, 'seat_moves_cancelled', v_cancel));
 
-  RETURN jsonb_build_object('ok', true, 'reason', 'pending_on',
+  RETURN jsonb_build_object('ok', true, 'pending', true, 'reason', 'pending_on',
     'conversion_id', v_prior.id, 'conversion_request_id', p_request_id,
     'cluster_mode', 'pending_on', 'tables_halted', v_halted,
     'seat_moves_cancelled', v_cancel,
@@ -595,20 +624,44 @@ BEGIN
   -- Lightning is gated, leaving it never is.
   SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR UPDATE;
   IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_found');
+    RETURN jsonb_build_object('ok', false, 'aborted', false, 'reason', 'not_found');
   END IF;
 
   SELECT * INTO v_conv FROM public.cash_cluster_conversion
    WHERE cluster_id = g.id AND conversion_request_id = p_request_id;
   IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'no_such_conversion');
+    -- Told apart from "that id is not yours", because a caller cannot fix a
+    -- mistake nobody names. Both refuse; only one is the caller's own bug.
+    IF EXISTS (SELECT 1 FROM public.cash_cluster_conversion
+                WHERE conversion_request_id = p_request_id) THEN
+      RETURN jsonb_build_object('ok', false, 'aborted', false,
+        'reason', 'request_id_belongs_to_another_cluster');
+    END IF;
+    RETURN jsonb_build_object('ok', false, 'aborted', false, 'reason', 'no_such_conversion');
+  END IF;
+
+  -- THE MIRROR OF THE DEFECT begin_pending_on CARRIED. A retry of an abort
+  -- that already succeeded was told ok: false, while the Cluster sat in
+  -- exactly the state the caller had asked for and the conversion was closed
+  -- exactly as requested. Same worker-timeout shape: abort, time out before
+  -- reading the reply, retry, be told no, escalate or retry for ever. An
+  -- idempotent operation that answers false on its second call is not
+  -- idempotent in the only sense a caller cares about.
+  IF v_conv.status = 'aborted' THEN
+    RETURN jsonb_build_object('ok', true, 'aborted', true, 'reason', 'already_aborted',
+      'conversion_id', v_conv.id, 'status', v_conv.status,
+      'abort_reason', v_conv.abort_reason, 'cluster_mode', g.cluster_mode);
   END IF;
   IF v_conv.status <> 'pending' THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'conversion_already_closed',
-      'status', v_conv.status);
+    -- Committed. Not abortable, and the reason is carried so a caller is not
+    -- left reading a status string to find out why.
+    RETURN jsonb_build_object('ok', false, 'aborted', false,
+      'reason', 'conversion_already_closed',
+      'status', v_conv.status, 'epoch_after', v_conv.epoch_after,
+      'cluster_mode', g.cluster_mode);
   END IF;
   IF g.cluster_mode <> 'pending_on' THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'wrong_state',
+    RETURN jsonb_build_object('ok', false, 'aborted', false, 'reason', 'wrong_state',
       'cluster_mode', g.cluster_mode);
   END IF;
 
@@ -636,8 +689,13 @@ BEGIN
     'tables_resumed', v_resume,
     'live_eligible', public.fn_cash_cluster_live_eligible(g.id)));
 
-  RETURN jsonb_build_object('ok', true, 'reason', 'aborted',
+  RETURN jsonb_build_object('ok', true, 'aborted', true, 'reason', 'aborted',
     'conversion_id', v_conv.id, 'cluster_mode', 'must_move',
+    -- commit_lightning returns THIS object for its two self-aborts, so without
+    -- abort_reason here a caller that self-aborted could not tell a population
+    -- that fell away from a player with no open cash session. Both live in the
+    -- row and the event; neither reached the caller.
+    'abort_reason', coalesce(nullif(btrim(p_reason), ''), 'unstated'),
     'tables_resumed', v_resume);
 END;
 $fn$;
@@ -716,6 +774,11 @@ BEGIN
   SELECT * INTO v_conv FROM public.cash_cluster_conversion
    WHERE cluster_id = g.id AND conversion_request_id = p_request_id;
   IF NOT FOUND THEN
+    IF EXISTS (SELECT 1 FROM public.cash_cluster_conversion
+                WHERE conversion_request_id = p_request_id) THEN
+      RETURN jsonb_build_object('ok', false, 'converted', false,
+        'reason', 'request_id_belongs_to_another_cluster');
+    END IF;
     RETURN jsonb_build_object('ok', false, 'converted', false, 'reason', 'no_such_conversion');
   END IF;
 
@@ -724,13 +787,26 @@ BEGIN
   -- told "no" retries, and a worker that is told "committed at epoch 3"
   -- stops.
   IF v_conv.status = 'committed' THEN
-    RETURN jsonb_build_object('ok', true, 'converted', true, 'reason', 'already_committed',
+    -- converted IS READ OFF THE CLUSTER, NOT OFF THE RECORD. An earlier cut
+    -- asserted converted: true from v_conv.status alone, before any test of
+    -- the mode. The record says what this conversion DID; the mode says what
+    -- the Cluster IS, and Phase 10's revert will make those two different by
+    -- design - a Cluster back in must_move whose conversion row still says
+    -- committed. Answering converted: true about it would be the same defect
+    -- begin_pending_on carried: the truth in the payload and the boolean
+    -- wrong. ok stays true because the request did succeed; converted says
+    -- whether the Cluster is Lightning now.
+    RETURN jsonb_build_object('ok', true,
+      'converted', g.cluster_mode = 'lightning',
+      'reason', 'already_committed',
       'conversion_id', v_conv.id, 'epoch_after', v_conv.epoch_after,
       'cluster_mode', g.cluster_mode);
   END IF;
   IF v_conv.status <> 'pending' THEN
-    RETURN jsonb_build_object('ok', false, 'converted', false, 'reason', 'conversion_already_closed',
-      'status', v_conv.status);
+    RETURN jsonb_build_object('ok', false, 'converted', false,
+      'reason', 'conversion_already_closed',
+      'status', v_conv.status, 'abort_reason', v_conv.abort_reason,
+      'cluster_mode', g.cluster_mode);
   END IF;
   IF g.cluster_mode <> 'pending_on' THEN
     RETURN jsonb_build_object('ok', false, 'converted', false, 'reason', 'wrong_state',

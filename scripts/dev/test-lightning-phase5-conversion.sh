@@ -1620,16 +1620,31 @@ BEGIN
     RAISE EXCEPTION 'FAIL 13: commit of an unknown request answered %', v_r;
   END IF;
 
-  -- AND A CONVERSION THAT IS ALREADY CLOSED.
+  -- AND A CONVERSION THAT IS ALREADY CLOSED. The two are NOT symmetrical, and
+  -- the asymmetry is the repair rather than an oversight: aborting an
+  -- already-aborted conversion is the operation SUCCEEDING a second time, so
+  -- it answers ok with already_aborted and carries the reason the first call
+  -- recorded. It used to answer ok: false, which made an abort that timed out
+  -- before its reply was read un-retryable - the mirror of the defect
+  -- begin_pending_on carried against the same status. COMMITTING one is a
+  -- different request and is still refused, now carrying the abort_reason so a
+  -- caller learns why without reading the row.
   PERFORM public.fn_cash_cluster_abort_pending_on(v_g, v_req, 'closing it for the next assertion');
   UPDATE public.cash_games SET cluster_mode = 'pending_on' WHERE id = v_g;
   v_r := public.fn_cash_cluster_abort_pending_on(v_g, v_req, 'x');
-  IF v_r ->> 'reason' IS DISTINCT FROM 'conversion_already_closed' OR v_r ->> 'status' IS DISTINCT FROM 'aborted' THEN
-    RAISE EXCEPTION 'FAIL 13: aborting a closed conversion answered %', v_r;
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true
+     OR (v_r ->> 'aborted')::boolean IS DISTINCT FROM true
+     OR v_r ->> 'reason' IS DISTINCT FROM 'already_aborted'
+     OR v_r ->> 'status' IS DISTINCT FROM 'aborted'
+     OR v_r ->> 'abort_reason' IS DISTINCT FROM 'closing it for the next assertion' THEN
+    RAISE EXCEPTION 'FAIL 13: retrying an abort that already succeeded must answer ok with already_aborted and the reason the FIRST call recorded, not the second: %', v_r;
   END IF;
   v_r := public.fn_cash_cluster_commit_lightning(v_g, v_req);
-  IF v_r ->> 'reason' IS DISTINCT FROM 'conversion_already_closed' OR v_r ->> 'status' IS DISTINCT FROM 'aborted' THEN
-    RAISE EXCEPTION 'FAIL 13: committing a closed conversion answered %', v_r;
+  IF v_r ->> 'reason' IS DISTINCT FROM 'conversion_already_closed'
+     OR v_r ->> 'status' IS DISTINCT FROM 'aborted'
+     OR (v_r ->> 'converted')::boolean IS DISTINCT FROM false
+     OR v_r ->> 'abort_reason' IS DISTINCT FROM 'closing it for the next assertion' THEN
+    RAISE EXCEPTION 'FAIL 13: committing a closed conversion must refuse and say WHY it was closed: %', v_r;
   END IF;
   UPDATE public.cash_games SET cluster_mode = 'must_move' WHERE id = v_g;
 
@@ -1644,7 +1659,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL 13: a Cluster of ten under an ON threshold of eighteen answered %', v_r;
   END IF;
 END $$;
-\echo '  ok  13 WRONG STATE           all three functions answer not_found rather than raising on a Cluster id that does not exist; begin_pending_on answers wrong_state NAMING the mode in every one of the nine states that is not must_move and opens no conversion in any of them, and converts in must_move so the nine refusals are about the mode; abort_pending_on and commit_lightning answer wrong_state naming the mode in every one of the nine states that is not pending_on, on a conversion that really is open; both answer no_such_conversion for a request id nobody opened and conversion_already_closed with the status for one that is closed; and a Cluster of ten under an ON threshold of eighteen is told threshold_not_reached with the verdict and both thresholds in the answer'
+\echo '  ok  13 WRONG STATE           all three functions answer not_found rather than raising on a Cluster id that does not exist; begin_pending_on answers wrong_state NAMING the mode in every one of the nine states that is not must_move and opens no conversion in any of them, and converts in must_move so the nine refusals are about the mode; abort_pending_on and commit_lightning answer wrong_state naming the mode in every one of the nine states that is not pending_on, on a conversion that really is open; both answer no_such_conversion for a request id nobody opened, and name request_id_belongs_to_another_cluster rather than blaming the Cluster when the id is somebody else''s; retrying an ABORT that already succeeded answers ok with already_aborted and the reason the FIRST call recorded, because an idempotent operation that answers false on its second call is not idempotent in the only sense a caller cares about, while COMMITTING that same closed conversion is still refused and now carries the abort_reason so a caller learns why without reading the row; and a Cluster of ten under an ON threshold of eighteen is told threshold_not_reached with the verdict and both thresholds in the answer'
 ASSERT
 
 cat >> "$fixture/assertions.sql" <<'ASSERT'
@@ -2751,6 +2766,320 @@ BEGIN
 END $$;
 \echo '  ok  18 THE NULLABLE STATUS   a board whose tables.status is NULL - which the column permits, and which no CHECK can forbid because a CHECK that evaluates to NULL PASSES - is in the Cluster exactly as a waiting board is, and so is one whose status is paused: against a Cluster of 24 built as 18 on a waiting board plus 3 on a NULL-status board plus 3 on a paused one, with 4 more on a closed board and a deleted board that must stay out, begin_pending_on halts exactly THREE boards and leaves the closed and the deleted ones alone, commit_lightning creates all 24 pool sessions at the new epoch, and each of the six on the NULL-status and paused boards points at the open cluster-scoped cash session that player ALREADY had with the stack they are sitting behind, while not one of the four excluded players enters the pool and the Cluster holds 24 sessions rather than 28 - so what is proved is that status stopped deciding membership and NOT that membership stopped being filtered; the whole section is asked from the UNHALTED side, because that is the one direction the old defect could not be seen from - a separate Cluster of the same shape is converted with no assertion at all about how many boards were stopped, its pool count, its distinct players, its trigger_population and fn_cash_cluster_live_eligible are asserted only to EQUAL ONE ANOTHER, which they did at 18 under the defect exactly as they do at 24 under the fix, and the three questions that follow name no status at all: no member board of a lightning Cluster is still dealing, no eligible player of it is still being dealt cash, and nobody on a member board is without a pool session at the new epoch, each proved non-vacuous at 3, 24 and 24 before the conversion; the identical Cluster with waiting and running on those two boards converts identically, epoch for epoch, pool for pool and record for record, so what is proved is about the NULL and the paused; a Cluster of 19 with 2 on a NULL-status board and 2 on a paused one reaches PENDING_ON at a trigger_population of 19 rather than being told threshold_not_reached at 15 for ever, while one of 16 across the same three boards is still refused at 16 with all three boards left dealing; the orphan path on a NULL-status board aborts cleanly with a reason that COUNTS the one player rather than raising a NOT NULL violation out of cash_player_session_id, and converts all 19 once the session is restored; and the abort lifts the halt from the NULL-status board and the paused one too, leaving all three boards dealing, no pool session and the epoch where it was'
 ASSERT
+
+cat >> "$fixture/assertions.sql" <<'ASSERT'
+
+-- 19 THE REPLAYED REQUEST ID, THROUGH BOTH IDEMPOTENCY READS -------------------
+-- Section 06 replays a request id against a conversion that is still PENDING.
+-- That is one of the THREE states a prior conversion can be in, and it is the
+-- only one an answer of ok: true / already_known is true about. The other two
+-- were never asked, which is why what follows survived.
+--
+-- THE FAILURE THIS SECTION EXISTS FOR. A worker calls begin(G, R) and times out
+-- before it reads the reply. The population falls; abort(G, R) returns the
+-- Cluster to must_move and lifts every halt. The worker retries begin(G, R). An
+-- earlier cut answered ok: true / already_known for ANY status, so the retry
+-- was told a conversion was in flight - about a Cluster sitting in must_move,
+-- with nothing halted, and a conversion that had been closed. A caller keying
+-- on ok alone then polls commit_lightning(G, R), which answers
+-- conversion_already_closed for ever, and that Cluster is never converted again
+-- under that id. The Cluster is not broken; the ID is, and nothing in the
+-- payload said so in a form a caller could branch on. commit_lightning had
+-- already grown a 'converted' boolean against exactly this class of lie; its
+-- sibling had been left without one.
+--
+-- So all three statuses are replayed here, and the aborted one is followed by
+-- the only question that actually matters afterwards: is the Cluster still
+-- genuinely convertible under a FRESH request id. That is the property the
+-- defect destroyed, and a fix that merely renamed the reason would not restore
+-- it.
+--
+-- AND THERE ARE TWO READS, NOT ONE. The function asks the idempotency question
+-- before the lock and again after it - the second exists because two callers
+-- sharing a request id can both miss the row under READ COMMITTED, the first
+-- inserting and committing while the second sleeps on the lock. A fix applied
+-- to one of them and not the other is a fix that holds until the day it is
+-- raced. 19d reaches the POST-LOCK read live, from a second backend, and does
+-- not merely read it.
+DO $$
+DECLARE
+  v_g uuid; v_r jsonb; v_id text; v_n integer; v_halted integer; v_pool integer;
+  v_epoch integer;
+BEGIN
+  -- 19a A REPLAY AGAINST A PENDING CONVERSION. The one case section 06 already
+  -- covers, restated here so that the three statuses are asked in one place and
+  -- the difference between the answers is the thing on the page.
+  v_g := public.fx_cluster('replay', 6, 40);
+  PERFORM public.fx_seat(v_g, 18);
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, 'a0000000-0000-0000-0000-000000000190');
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' OR (v_r ->> 'ok')::boolean IS DISTINCT FROM true
+     OR (v_r ->> 'pending')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 19a: a successful open did not answer ok and pending: %', v_r;
+  END IF;
+  v_id := v_r ->> 'conversion_id';
+  SELECT count(*)::integer INTO v_halted FROM public.tables
+   WHERE cluster_id = v_g AND dealing_halted_reason = 'lightning_pending_on';
+  IF v_halted < 1 THEN RAISE EXCEPTION 'FAIL 19a: nothing was halted, so "halts still in place" would prove nothing'; END IF;
+
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, 'a0000000-0000-0000-0000-000000000190');
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true
+     OR (v_r ->> 'pending')::boolean IS DISTINCT FROM true
+     OR v_r ->> 'reason' IS DISTINCT FROM 'already_known'
+     OR v_r ->> 'status' IS DISTINCT FROM 'pending'
+     OR v_r ->> 'conversion_id' IS DISTINCT FROM v_id
+     OR v_r ->> 'abort_reason' IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 19a: replaying a request id against a PENDING conversion must answer ok, pending, already_known about the same conversion: %', v_r;
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.cash_cluster_conversion WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FAIL 19a: the replay left % conversion rows on the Cluster', v_n; END IF;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 19a: the replay moved the Cluster out of pending_on';
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.tables
+   WHERE cluster_id = v_g AND dealing_halted_reason = 'lightning_pending_on';
+  IF v_n IS DISTINCT FROM v_halted THEN RAISE EXCEPTION 'FAIL 19a: the replay changed the halt count from % to %', v_halted, v_n; END IF;
+  SELECT count(*)::integer INTO v_n FROM public.lightning_pool_session WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FAIL 19a: the replay created % pool session(s) while still only pending', v_n; END IF;
+
+  -- 19b A REPLAY AGAINST A COMMITTED CONVERSION. ok is still true - the request
+  -- did happen - but it is NOT pending, and a worker that reads pending is told
+  -- to stop waiting rather than to keep polling a conversion that is over.
+  v_r := public.fn_cash_cluster_commit_lightning(v_g, 'a0000000-0000-0000-0000-000000000190');
+  IF v_r ->> 'reason' IS DISTINCT FROM 'lightning' THEN RAISE EXCEPTION 'FAIL 19b: the commit refused: %', v_r; END IF;
+  SELECT count(*)::integer INTO v_pool FROM public.lightning_pool_session WHERE cluster_id = v_g;
+  SELECT cluster_epoch INTO v_epoch FROM public.cash_games WHERE id = v_g;
+  IF v_pool < 1 THEN RAISE EXCEPTION 'FAIL 19b: the commit created no pool session, so "no second set" would prove nothing'; END IF;
+
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, 'a0000000-0000-0000-0000-000000000190');
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true
+     OR (v_r ->> 'pending')::boolean IS DISTINCT FROM false
+     OR v_r ->> 'reason' IS DISTINCT FROM 'already_committed'
+     OR v_r ->> 'status' IS DISTINCT FROM 'committed'
+     OR v_r ->> 'conversion_id' IS DISTINCT FROM v_id
+     OR v_r ->> 'abort_reason' IS NOT NULL
+     OR v_r ->> 'cluster_mode' IS DISTINCT FROM 'lightning' THEN
+    RAISE EXCEPTION 'FAIL 19b: replaying a request id against a COMMITTED conversion must answer ok, NOT pending, already_committed: %', v_r;
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.cash_cluster_conversion WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FAIL 19b: the replay of a committed request left % conversion rows', v_n; END IF;
+  SELECT count(*)::integer INTO v_n FROM public.lightning_pool_session WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM v_pool THEN RAISE EXCEPTION 'FAIL 19b: the replay created a second set of pool sessions: % became %', v_pool, v_n; END IF;
+  SELECT cluster_epoch INTO v_n FROM public.cash_games WHERE id = v_g;
+  IF v_n IS DISTINCT FROM v_epoch THEN RAISE EXCEPTION 'FAIL 19b: the replay moved the epoch from % to %', v_epoch, v_n; END IF;
+END $$;
+
+-- 19c A REPLAY AGAINST AN ABORTED CONVERSION, WHICH IS THE ONE THAT WAS WRONG.
+-- ok is FALSE, because there is nothing in flight and nothing to wait for; the
+-- recorded abort_reason comes back verbatim, so the worker learns not only that
+-- its id is dead but why; and the Cluster - which is in must_move with every
+-- table dealing again - is proved STILL CONVERTIBLE under a fresh id, because a
+-- reason string that merely reads better is not a fix.
+DO $$
+DECLARE
+  v_g uuid; v_r jsonb; v_id text; v_n integer; v_halted integer;
+  v_reason constant text := 'the population fell away while the worker was not listening';
+BEGIN
+  v_g := public.fx_cluster('replay_aborted', 6, 40);
+  PERFORM public.fx_seat(v_g, 18);
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, 'a0000000-0000-0000-0000-000000000191');
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN RAISE EXCEPTION 'FAIL 19c: the open refused: %', v_r; END IF;
+  v_id := v_r ->> 'conversion_id';
+  SELECT count(*)::integer INTO v_halted FROM public.tables
+   WHERE cluster_id = v_g AND dealing_halted_at IS NOT NULL;
+  -- NON-VACUITY FOR "ZERO TABLES HALTED": the same query, on the same Cluster,
+  -- one call earlier, answers more than zero.
+  IF v_halted < 1 THEN RAISE EXCEPTION 'FAIL 19c: nothing was halted before the abort, so "zero halted" after it would prove nothing'; END IF;
+
+  v_r := public.fn_cash_cluster_abort_pending_on(v_g, 'a0000000-0000-0000-0000-000000000191', v_reason);
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true OR v_r ->> 'reason' IS DISTINCT FROM 'aborted' THEN
+    RAISE EXCEPTION 'FAIL 19c: the abort itself refused: %', v_r;
+  END IF;
+
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, 'a0000000-0000-0000-0000-000000000191');
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 19c: replaying a request id whose conversion was ABORTED answered ok - a caller branching on ok alone is now told a conversion is in flight on a Cluster sitting in must_move with nothing halted, and will poll commit_lightning for conversion_already_closed for ever: %', v_r;
+  END IF;
+  IF (v_r ->> 'pending')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 19c: the replay of an ABORTED conversion says it is still pending: %', v_r;
+  END IF;
+  IF v_r ->> 'reason' IS DISTINCT FROM 'conversion_already_aborted' THEN
+    RAISE EXCEPTION 'FAIL 19c: the replay of an ABORTED conversion must be named conversion_already_aborted rather than already_known: %', v_r;
+  END IF;
+  IF v_r ->> 'status' IS DISTINCT FROM 'aborted' OR v_r ->> 'conversion_id' IS DISTINCT FROM v_id THEN
+    RAISE EXCEPTION 'FAIL 19c: the replay does not identify the conversion it is talking about: %', v_r;
+  END IF;
+  -- THE REASON IS CARRIED BACK VERBATIM. A worker that has to guess why its own
+  -- id died opens a ticket; one that is told writes a log line.
+  IF v_r ->> 'abort_reason' IS DISTINCT FROM v_reason THEN
+    RAISE EXCEPTION 'FAIL 19c: the recorded abort_reason is not carried back verbatim: expected %, got %', v_reason, v_r;
+  END IF;
+  IF v_r ->> 'cluster_mode' IS DISTINCT FROM 'must_move' THEN
+    RAISE EXCEPTION 'FAIL 19c: the replay does not say what state the Cluster is actually in: %', v_r;
+  END IF;
+
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'must_move' THEN
+    RAISE EXCEPTION 'FAIL 19c: the replay moved a Cluster whose conversion was aborted';
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.tables
+   WHERE cluster_id = v_g AND (dealing_halted_at IS NOT NULL OR dealing_halted_reason IS NOT NULL);
+  IF v_n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FAIL 19c: % table(s) of the Cluster are halted after the abort and the replay, and the replay claimed a conversion was in progress about them', v_n; END IF;
+  SELECT count(*)::integer INTO v_n FROM public.cash_cluster_conversion WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FAIL 19c: the replay of an aborted request opened a % conversion row', v_n; END IF;
+  SELECT count(*)::integer INTO v_n FROM public.lightning_pool_session WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FAIL 19c: the replay created % pool session(s)', v_n; END IF;
+
+  -- AND THE PROPERTY THE DEFECT DESTROYED: the Cluster converts under a FRESH
+  -- id. Under the old answer a caller had no way to know it needed one.
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, 'a0000000-0000-0000-0000-000000000192');
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true OR (v_r ->> 'pending')::boolean IS DISTINCT FROM true
+     OR v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 19c: the Cluster whose conversion was aborted will not open a NEW conversion under a fresh request id, which is the whole thing the abort is supposed to leave possible: %', v_r;
+  END IF;
+  IF v_r ->> 'conversion_id' = v_id THEN
+    RAISE EXCEPTION 'FAIL 19c: the fresh request id was answered with the ABORTED conversion rather than a new one: %', v_r;
+  END IF;
+  v_r := public.fn_cash_cluster_commit_lightning(v_g, 'a0000000-0000-0000-0000-000000000192');
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true OR (v_r ->> 'converted')::boolean IS DISTINCT FROM true
+     OR v_r ->> 'reason' IS DISTINCT FROM 'lightning' THEN
+    RAISE EXCEPTION 'FAIL 19c: the Cluster did not convert under the fresh request id: %', v_r;
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.lightning_pool_session WHERE cluster_id = v_g;
+  IF v_n IS DISTINCT FROM 18 THEN RAISE EXCEPTION 'FAIL 19c: the recovered conversion pooled % players rather than 18', v_n; END IF;
+  IF (SELECT cluster_epoch FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 19c: the recovered conversion did not move the epoch';
+  END IF;
+END $$;
+
+-- The Cluster 19d races against is built and COMMITTED here, in a block of its
+-- own, because the second backend has to be able to see it. It is a full
+-- eighteen-player Cluster over the ON threshold, so that a raced call which
+-- failed to notice the row would really open a conversion and really halt its
+-- tables - which is what makes "it opened nothing and halted nothing" a
+-- measurement rather than a description of a Cluster that could not convert.
+DO $$
+DECLARE v_g uuid;
+BEGIN
+  v_g := public.fx_cluster('replay_postlock', 6, 40);
+  PERFORM public.fx_seat(v_g, 18);
+END $$;
+
+-- 19d THE SECOND READ IS NOT TAKEN ON TRUST. The two idempotency reads are
+-- separated by the row lock, and 19a to 19c can only ever reach the FIRST of
+-- them: in a single session the row is always already visible. So the second is
+-- reached the only way it is reachable at all - by racing it - and it is raced
+-- for real rather than asserted about.
+--
+-- A second backend is opened with dblink, in its own schema so that nothing
+-- this harness needs is added to public. This session takes the Cluster's row
+-- lock and HOLDS it; the second backend is sent begin(G, R) asynchronously, and
+-- we wait until pg_stat_activity shows it genuinely blocked on a Lock with that
+-- function in its query text - so "it got past the pre-lock read" is observed
+-- rather than assumed. ONLY THEN is the conversion row for R inserted, already
+-- aborted, and this transaction commits: the row did not exist when the second
+-- backend's pre-lock read ran, so any answer it gives ABOUT that row can only
+-- have come from the read after the lock.
+CREATE SCHEMA IF NOT EXISTS harness;
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA harness;
+
+DO $$
+DECLARE
+  v_g uuid; v_n integer; i integer;
+  v_req constant uuid := 'a0000000-0000-0000-0000-000000000193';
+  v_conn text;
+BEGIN
+  SELECT game_id INTO v_g FROM board WHERE k = 'replay_postlock';
+  IF v_g IS NULL THEN RAISE EXCEPTION 'FAIL 19d: the fixture Cluster was not built'; END IF;
+  v_conn := 'host=' || current_setting('unix_socket_directories')
+         || ' port=' || current_setting('port')
+         || ' dbname=' || current_database()
+         || ' user=' || current_user;
+  PERFORM harness.dblink_connect('p5_postlock', v_conn);
+
+  PERFORM 1 FROM public.cash_games WHERE id = v_g FOR UPDATE;
+  PERFORM harness.dblink_send_query('p5_postlock',
+    format('SELECT public.fn_cash_cluster_begin_pending_on(%L::uuid, %L::uuid)', v_g, v_req));
+
+  v_n := 0;
+  FOR i IN 1 .. 200 LOOP
+    PERFORM pg_sleep(0.05);
+    SELECT count(*)::integer INTO v_n FROM pg_stat_activity
+     WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+       AND query LIKE '%fn_cash_cluster_begin_pending_on%';
+    EXIT WHEN v_n > 0;
+  END LOOP;
+  IF v_n < 1 THEN
+    RAISE EXCEPTION 'FAIL 19d: the second backend never blocked on the Cluster lock, so nothing below would be about the post-lock read';
+  END IF;
+
+  -- The row appears NOW, after that backend is already past its pre-lock read.
+  INSERT INTO public.cash_cluster_conversion
+    (cluster_id, conversion_request_id, from_mode, to_mode, trigger_population,
+     on_threshold, off_threshold, epoch_before, status, abort_reason, closed_at)
+  VALUES (v_g, v_req, 'must_move', 'lightning', 18, 18, 12, 0, 'aborted',
+          'aborted by the worker that got there first', clock_timestamp());
+END $$;
+
+DO $$
+DECLARE v_r jsonb; v_n integer;
+BEGIN
+  -- The lock was released when the block above committed. This returns the
+  -- second backend's answer, which it produced after waking.
+  SELECT t.answer INTO v_r FROM harness.dblink_get_result('p5_postlock') AS t(answer jsonb);
+  -- Drained to the empty result before the connection is closed, as dblink's
+  -- asynchronous protocol requires.
+  PERFORM 1 FROM harness.dblink_get_result('p5_postlock') AS t2(answer jsonb);
+  PERFORM harness.dblink_disconnect('p5_postlock');
+  IF v_r IS NULL THEN RAISE EXCEPTION 'FAIL 19d: the raced call returned nothing'; END IF;
+  IF v_r ->> 'status' IS DISTINCT FROM 'aborted' THEN
+    RAISE EXCEPTION 'FAIL 19d: the raced call did not read the row that appeared while it was blocked, so the post-lock read was not exercised: %', v_r;
+  END IF;
+  IF (v_r ->> 'ok')::boolean IS DISTINCT FROM false
+     OR (v_r ->> 'pending')::boolean IS DISTINCT FROM false
+     OR v_r ->> 'reason' IS DISTINCT FROM 'conversion_already_aborted'
+     OR v_r ->> 'abort_reason' IS DISTINCT FROM 'aborted by the worker that got there first' THEN
+    RAISE EXCEPTION 'FAIL 19d: the POST-LOCK idempotency read answers differently from the pre-lock one about an ABORTED conversion - a fix applied to one branch and not the other: %', v_r;
+  END IF;
+  IF v_r ->> 'cluster_mode' IS DISTINCT FROM 'must_move' THEN
+    RAISE EXCEPTION 'FAIL 19d: the post-lock read does not say what state the Cluster is in: %', v_r;
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.cash_cluster_conversion
+   WHERE cluster_id = (SELECT game_id FROM board WHERE k = 'replay_postlock');
+  IF v_n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FAIL 19d: the raced call opened a % conversion row', v_n; END IF;
+  SELECT count(*)::integer INTO v_n FROM public.tables
+   WHERE cluster_id = (SELECT game_id FROM board WHERE k = 'replay_postlock')
+     AND dealing_halted_at IS NOT NULL;
+  IF v_n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FAIL 19d: the raced call halted % table(s) about a conversion that was already aborted', v_n; END IF;
+END $$;
+
+-- 19e AND THE TWO BRANCHES ARE THE SAME TEXT, extracted from the INSTALLED body
+-- rather than from the file - both idempotency answers, comment-stripped and
+-- whitespace-normalised, compared to EACH OTHER rather than to a string written
+-- here, so that a future reformatting of the function is not a failure and a
+-- future divergence between the two is. 19d proves the post-lock branch behaves;
+-- this proves there is nothing else in it to behave differently.
+DO $$
+DECLARE v_norm text; v_arms text[];
+BEGIN
+  v_norm := regexp_replace(
+              regexp_replace(pg_get_functiondef('public.fn_cash_cluster_begin_pending_on(uuid,uuid)'::regprocedure),
+                             '--[^' || chr(10) || ']*', '', 'g'),
+              '\s+', ' ', 'g');
+  SELECT array_agg(m[1]) INTO v_arms
+    FROM regexp_matches(v_norm, 'IF FOUND THEN (.*?)''cluster_mode''', 'g') AS m;
+  IF v_arms IS NULL OR array_length(v_arms, 1) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'FAIL 19e: the installed body does not carry exactly TWO idempotency reads, so the pre-lock and post-lock answers cannot be compared: found %', coalesce(array_length(v_arms, 1), 0);
+  END IF;
+  IF v_arms[1] IS DISTINCT FROM v_arms[2] THEN
+    RAISE EXCEPTION 'FAIL 19e: the pre-lock and post-lock idempotency answers are DIFFERENT text, so one of them has been fixed and the other has not: pre-lock <<%>> post-lock <<%>>', v_arms[1], v_arms[2];
+  END IF;
+  IF v_arms[1] !~ 'conversion_already_aborted' OR v_arms[1] !~ 'already_committed'
+     OR v_arms[1] !~ 'already_known' OR v_arms[1] !~ 'v_prior\.status <> ''aborted''' THEN
+    RAISE EXCEPTION 'FAIL 19e: both idempotency answers agree and BOTH are the unconditional already_known that reports an aborted conversion as one in flight: <<%>>', v_arms[1];
+  END IF;
+END $$;
+\echo '  ok  19 THE REPLAYED ID     a request id replayed against all THREE statuses a prior conversion can be in, rather than only the pending one section 06 asks about: against a PENDING conversion begin_pending_on answers ok with pending true and already_known about the same conversion_id with no abort_reason, opens no second conversion row, leaves the Cluster in pending_on with every halt still in place and no pool session; against a COMMITTED one it answers ok with pending FALSE and already_committed, creating no second conversion row, no second set of pool sessions and leaving the epoch exactly where the commit left it; and against an ABORTED one - the case that was answered ok: true / already_known until ten minutes ago, about a Cluster sitting in must_move with nothing halted, which made a caller keying on ok alone poll commit_lightning for conversion_already_closed for ever - it answers ok FALSE, pending FALSE, conversion_already_aborted, naming the conversion and carrying the recorded abort_reason back VERBATIM, with the Cluster still in must_move, ZERO tables halted (proved non-vacuous at the halt count one call earlier), no pool session and no second conversion row - and that Cluster is then proved STILL GENUINELY CONVERTIBLE under a FRESH request id, opening a DIFFERENT conversion, committing to lightning, pooling all 18 and moving the epoch, because that is the property the defect destroyed and a reason string that merely reads better does not restore it. BOTH idempotency reads are covered, and the second is RACED rather than read: a second backend opened with dblink is sent begin(G, R) while this session holds the Cluster row lock, is observed in pg_stat_activity genuinely blocked on that Lock - so it is known to be past its pre-lock read - and only THEN is the aborted conversion row for R inserted and the lock released, so the answer it gives about a row that did not exist when it started can only have come from the read after the lock, and it answers ok false, pending false, conversion_already_aborted with the reason verbatim, halting nothing and opening nothing; and the two branches are finally compared to EACH OTHER as text, extracted comment-stripped and whitespace-normalised from the INSTALLED body, exactly two of them, identical, and carrying the three-way status answer rather than the unconditional already_known'
+ASSERT
+
 cat >> "$fixture/assertions.sql" <<'ASSERT'
 
 -- WHAT THE SECOND APPLICATION AND THE @live-proof BLOCK NEED PUT BACK ----------
@@ -2992,13 +3321,13 @@ if [ "$psql_status" != 0 ]; then
   exit 1
 fi
 
-# EIGHTEEN SECTIONS REPORTED, and the count is asserted rather than eyeballed: a
+# NINETEEN SECTIONS REPORTED, and the count is asserted rather than eyeballed: a
 # psql that stopped early exits non-zero, but a section deleted from this file
 # during a refactor would not, and the PASS line below would still print.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 18 ]; then
-  echo "FAIL: $oks of the 18 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 19 ]; then
+  echo "FAIL: $oks of the 19 sections reported, so this run proved less than this file claims"
   exit 1
 fi
 
-echo "PASS: Lightning Phase 5, the conversion is one transaction and the tables stop dealing, 18 checks: THE BODIES ARE REAL - the fixture installs the REAL 40,000+ character fn_cash_cluster_tick, assembled by line range from 20260906015029 and five real substitution migrations in version order, carrying the manual_game anchor exactly once and fn_platform_frozen, FOR UPDATE and no is_horse, plus the REAL fn_cash_cluster_balance, and a must_move tick that really rewrites tables and really plans seat moves so that nothing later is vacuous - then, against the migration: a six-max Cluster of eighteen eligible seated players with open cluster sessions goes to PENDING_ON with both tables halted for lightning_pending_on, both pending seat moves cancelled with a reason, a conversion record carrying all nine of the specification's fields, a lightning_pending_on event, and NO epoch move and NO pool session; commit_lightning then bumps the epoch by exactly one, opens a cash_cluster_epoch row with started_by lightning_on, creates one pool session per eligible player at the NEW epoch pointing at the cash session the player ALREADY had, re-stamps the halt to lightning and commits the record; F12 holds byte for byte across a nineteen-player conversion on a row-level md5 of every table_seats and cash_player_session column, through an md5 first proved to move and come back; F04 aborts BY ITSELF when the eighteenth player leaves at the boundary and again through a direct call, clearing only its own halt, and the tick plans moves again afterwards; F13 is answered twice - two different request ids produce one conversion and a wrong_state naming the mode, with the partial unique index proved to bite by being made to fire, and the same request id twice is idempotent through both begin and commit with no second set of pool sessions; F14 converts on the population re-measured AT the boundary with the pool set equal to the eligible set in both directions; F15's one-open index is proved to bite for a player and not for a different one; the tick and the balancer STAND DOWN in pending_on and in lightning and are proved to write nothing while doing it, the substitution is proved surgical by growth and by every sibling guard, and neither function mentions is_horse; the hand boundary refuses on a hand in flight and changes nothing, admits the conversion once the hand ends, and does not wedge on a seven-hour-old abandoned row while a five-hour-old one still blocks; the freeze refuses begin and commit and does NOT refuse abort; an eligible player with no open cash session aborts cleanly with a counted reason instead of a NOT NULL violation; all three functions answer not_found and wrong_state naming the mode in every one of the nine illegal starting states rather than raising; anon, authenticated and PUBLIC execute none of the three and service_role executes all three, cash_cluster_conversion has RLS on and no policy, and the halt vocabulary is closed; all of the migration's own @live-proof expressions are extracted from the file under test and true; and the migration applied a SECOND time leaves five bodies, five acls and five comments byte-identical with the stand-down present exactly once in each, no row moved and every Cluster answering identically; and a board whose tables.lifecycle is NULL - which the column permits - is halted, pooled, counted, orphan-refused and abort-resumed exactly as a live one is, with the harness own stranding query, asked from the halted side and proved non-vacuous at 21, answering ZERO, and the authorising number itself - fn_cash_cluster_live_eligible, re-cut onto the same membership predicate - answers 21 rather than 18 and writes 21 into the conversion record, because a reader that undercounts is the number that decides whether a Cluster may convert at all; and the WORSE sibling of that column, tables.status, which is nullable, may legally say 'paused', and whose CHECK could not forbid a NULL either because a CHECK that evaluates to NULL PASSES: a Cluster of 24 built as 18 on a waiting board plus 3 on a NULL-status board plus 3 on a paused one halts THREE boards, pools all 24 at the new epoch with every one of the six subordinate to the cash session they already held, and leaves the closed board and the deleted board - both carrying the waiting the discarded predicate admitted - unhalted, uncounted and unpooled, so what is proved is that status stopped deciding membership and not that membership stopped being filtered. The same shape is then converted a second time with NOTHING asserted about how many boards were stopped and NO absolute number asserted at all - only that the pool, the distinct players, the conversion record and fn_cash_cluster_live_eligible equal ONE ANOTHER, which they did at 18 under the defect exactly as they do at 24 under the fix - and is then asked the three questions that name no status: is any member board of a lightning Cluster still dealing, is any eligible player of it still being dealt cash, and is anybody on a member board without a pool session. That is the direction the halted-side stranding assertion could not see, and it is the only thing that catches a predicate which narrows the halt and the player-set queries together"
+echo "PASS: Lightning Phase 5, the conversion is one transaction and the tables stop dealing, 19 checks: THE BODIES ARE REAL - the fixture installs the REAL 40,000+ character fn_cash_cluster_tick, assembled by line range from 20260906015029 and five real substitution migrations in version order, carrying the manual_game anchor exactly once and fn_platform_frozen, FOR UPDATE and no is_horse, plus the REAL fn_cash_cluster_balance, and a must_move tick that really rewrites tables and really plans seat moves so that nothing later is vacuous - then, against the migration: a six-max Cluster of eighteen eligible seated players with open cluster sessions goes to PENDING_ON with both tables halted for lightning_pending_on, both pending seat moves cancelled with a reason, a conversion record carrying all nine of the specification's fields, a lightning_pending_on event, and NO epoch move and NO pool session; commit_lightning then bumps the epoch by exactly one, opens a cash_cluster_epoch row with started_by lightning_on, creates one pool session per eligible player at the NEW epoch pointing at the cash session the player ALREADY had, re-stamps the halt to lightning and commits the record; F12 holds byte for byte across a nineteen-player conversion on a row-level md5 of every table_seats and cash_player_session column, through an md5 first proved to move and come back; F04 aborts BY ITSELF when the eighteenth player leaves at the boundary and again through a direct call, clearing only its own halt, and the tick plans moves again afterwards; F13 is answered twice - two different request ids produce one conversion and a wrong_state naming the mode, with the partial unique index proved to bite by being made to fire, and the same request id twice is idempotent through both begin and commit with no second set of pool sessions - and a replayed request id is answered correctly for ALL THREE statuses a prior conversion can be in rather than only the pending one: ok with pending true and already_known against a pending conversion, ok with pending FALSE and already_committed against a committed one, and ok FALSE with pending false and conversion_already_aborted against an ABORTED one, carrying the recorded abort_reason back verbatim, leaving the Cluster in must_move with ZERO tables halted and no conversion row opened, and leaving it STILL CONVERTIBLE under a fresh request id all the way to lightning - which is the property the old unconditional already_known destroyed, because a caller keying on ok alone was told a conversion was in flight and then polled commit_lightning for conversion_already_closed for ever; both idempotency reads are covered and the POST-LOCK one is RACED rather than read, a second backend opened with dblink being observed in pg_stat_activity genuinely blocked on the Cluster row lock before the aborted row for its request id is inserted and the lock released, with the two branches finally compared to EACH OTHER as comment-stripped whitespace-normalised text out of the installed body; F14 converts on the population re-measured AT the boundary with the pool set equal to the eligible set in both directions; F15's one-open index is proved to bite for a player and not for a different one; the tick and the balancer STAND DOWN in pending_on and in lightning and are proved to write nothing while doing it, the substitution is proved surgical by growth and by every sibling guard, and neither function mentions is_horse; the hand boundary refuses on a hand in flight and changes nothing, admits the conversion once the hand ends, and does not wedge on a seven-hour-old abandoned row while a five-hour-old one still blocks; the freeze refuses begin and commit and does NOT refuse abort; an eligible player with no open cash session aborts cleanly with a counted reason instead of a NOT NULL violation; all three functions answer not_found and wrong_state naming the mode in every one of the nine illegal starting states rather than raising; anon, authenticated and PUBLIC execute none of the three and service_role executes all three, cash_cluster_conversion has RLS on and no policy, and the halt vocabulary is closed; all of the migration's own @live-proof expressions are extracted from the file under test and true; and the migration applied a SECOND time leaves five bodies, five acls and five comments byte-identical with the stand-down present exactly once in each, no row moved and every Cluster answering identically; and a board whose tables.lifecycle is NULL - which the column permits - is halted, pooled, counted, orphan-refused and abort-resumed exactly as a live one is, with the harness own stranding query, asked from the halted side and proved non-vacuous at 21, answering ZERO, and the authorising number itself - fn_cash_cluster_live_eligible, re-cut onto the same membership predicate - answers 21 rather than 18 and writes 21 into the conversion record, because a reader that undercounts is the number that decides whether a Cluster may convert at all; and the WORSE sibling of that column, tables.status, which is nullable, may legally say 'paused', and whose CHECK could not forbid a NULL either because a CHECK that evaluates to NULL PASSES: a Cluster of 24 built as 18 on a waiting board plus 3 on a NULL-status board plus 3 on a paused one halts THREE boards, pools all 24 at the new epoch with every one of the six subordinate to the cash session they already held, and leaves the closed board and the deleted board - both carrying the waiting the discarded predicate admitted - unhalted, uncounted and unpooled, so what is proved is that status stopped deciding membership and not that membership stopped being filtered. The same shape is then converted a second time with NOTHING asserted about how many boards were stopped and NO absolute number asserted at all - only that the pool, the distinct players, the conversion record and fn_cash_cluster_live_eligible equal ONE ANOTHER, which they did at 18 under the defect exactly as they do at 24 under the fix - and is then asked the three questions that name no status: is any member board of a lightning Cluster still dealing, is any eligible player of it still being dealt cash, and is anybody on a member board without a pool session. That is the direction the halted-side stranding assertion could not see, and it is the only thing that catches a predicate which narrows the halt and the player-set queries together"

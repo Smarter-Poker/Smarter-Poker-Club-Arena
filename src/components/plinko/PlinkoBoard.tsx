@@ -25,7 +25,7 @@ const SLOT_REST_Y = -4.55;
  *
  * The scale is ABSOLUTE - anchored on the multiplier itself rather than on the
  * table's own smallest and largest - so it works for the Diamond table, the
- * Super table and any table opened later, and so 20x is the same red wherever
+ * Super table and any table opened later, and so 20x is the same gold wherever
  * it appears. It also makes the difference between the tables legible: the
  * Super table's 0.52x floor correctly reads warmer than the Diamond table's
  * 0.08x, because it genuinely pays more. Logarithmic, because 0.08x to 0.60x
@@ -40,16 +40,22 @@ export function bucketHeat(multiplierCents: number): number {
   return Math.log(cents / HEAT_FLOOR_CENTS) / Math.log(HEAT_CEILING_CENTS / HEAT_FLOOR_CENTS);
 }
 
-/** Cool blue through teal and green for the middle buckets, gold to red for the outer ones. */
+/**
+ * The smarter.poker schema, cold to hot (Dan, 2026-09-21: "the bottom is
+ * rainbow colored instead of smarter.poker color schema"): deep navy through
+ * royal blue and light blue for the middle buckets, chrome white at the
+ * threshold, and gold, the one colour that means money everywhere else on the
+ * platform, for the buckets worth chasing. No green, no orange, no red: the
+ * loud end reads as gold on black, exactly like a win.
+ */
 const TINT_RAMP: Array<[heat: number, r: number, g: number, b: number]> = [
-  [0, 0x2a, 0x5c, 0xd8],
-  [0.22, 0x2f, 0x93, 0xe0],
-  [0.38, 0x33, 0xbe, 0xc8],
-  [0.52, 0x3f, 0xc0, 0x7e],
-  [0.66, 0x9c, 0xcb, 0x3f],
-  [0.78, 0xf2, 0xc4, 0x2c],
-  [0.9, 0xf8, 0x85, 0x1e],
-  [1, 0xf2, 0x3b, 0x2d],
+  [0, 0x1c, 0x3d, 0x74],
+  [0.25, 0x18, 0x77, 0xf2],
+  [0.48, 0x45, 0xad, 0xff],
+  [0.64, 0x9f, 0xd3, 0xff],
+  [0.78, 0xe4, 0xe7, 0xec],
+  [0.9, 0xff, 0xd7, 0x00],
+  [1, 0xff, 0xb3, 0x00],
 ];
 const channel = (value: number) =>
   Math.round(Math.max(0, Math.min(255, value)))
@@ -588,7 +594,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         aria-label="Payout Multipliers"
       >
         <h3>Slot Multipliers</h3>
-        <p>Slots Run From Left To Right. The Hottest Colours Pay The Most.</p>
+        <p>Slots Run From Left To Right. Gold Pays The Most.</p>
         <p className={styles.tally} ref={tally} role="status" aria-live="polite" />
         <ol className={styles.payoutList} aria-label="Plinko Payout Slots">
           {props.multipliersCents.map((multiplier, index) => {

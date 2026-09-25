@@ -11,6 +11,20 @@
   width: 100%;
   height: 100%;
 }
+/* The frame: a soft vignette and a darker foot, so the plates and the strip
+   sit on the road instead of floating over it, and the lit streets read as
+   the bright part of the picture. Above the canvas, below every plate. */
+.scene::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 45%, rgb(5 6 7 / 0%) 55%, rgb(5 6 7 / 46%) 100%),
+    linear-gradient(180deg, rgb(5 6 7 / 34%) 0%, rgb(5 6 7 / 0%) 22%),
+    linear-gradient(0deg, rgb(5 6 7 / 62%) 0%, rgb(5 6 7 / 0%) 26%);
+}
 /* #SMARTERCASINOREALISM: the overlays are machined plates, not glass pills.
    One obsidian face, a 4px corner, a gunmetal hairline and the bevel every
    Marketplace surface wears; the label tracked and muted, and gold kept for
@@ -94,6 +108,84 @@
 .readout[data-tone='bust'] .readoutValue {
   color: #e4e7ec;
   text-shadow: none;
+}
+
+/* HOW FAR THE DONKEY COULD HAVE GONE: the one plate a booked win adds. The
+   same machined black plate, with a gold LED edge because what it states is
+   value the player weighed, and the figure in gold. It slides in on the beat
+   the win is shown as booked, timed by the player's Animation Speed. */
+.route {
+  position: absolute;
+  z-index: 1;
+  bottom: 68px;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 9px 16px 10px;
+  border: 1px solid rgb(255 215 0 / 78%);
+  border-radius: 4px;
+  background: rgb(5 7 10 / 92%);
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 215 0 / 22%),
+    inset 0 0 18px rgb(255 215 0 / 14%),
+    0 10px 30px rgb(0 0 0 / 55%);
+  color: var(--realism-chrome, #b8c3cd);
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: route-in calc(480ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.route[data-outcome='crash'] {
+  border-color: rgb(255 91 110 / 80%);
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 91 110 / 22%),
+    inset 0 0 18px rgb(240 40 73 / 16%),
+    0 10px 30px rgb(0 0 0 / 55%);
+}
+.routeLabel,
+.routeNote {
+  font:
+    500 10px/1.3 Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--realism-muted, #7f8c9b);
+}
+.routeNote {
+  text-transform: none;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--realism-chrome, #b8c3cd);
+}
+.routeValue {
+  font:
+    800 19px/1.15 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  color: #ffd700;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 16px rgb(255 215 0 / 35%),
+    0 1px 0 #050607;
+}
+.route[data-outcome='crash'] .routeValue {
+  color: #e4e7ec;
+  text-shadow: 0 1px 0 #050607;
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 /* The bust moment: one flash and a stamp, brief and unmistakable. */
@@ -255,12 +347,62 @@
     inset 0 0 0 1px rgb(255 91 110 / 45%),
     inset 0 0 12px rgb(240 40 73 / 35%);
 }
+/* A booked win's route: the streets the donkey would still have crossed light
+   gold as the ghost reaches them, and the one after them is the crash it never
+   met. The same colours the signs on the road wear for the same streets. */
+.street[data-route='reachable'] {
+  opacity: 1;
+  border-color: #ffd700;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 215 0 / 45%),
+    inset 0 0 14px rgb(255 215 0 / 30%);
+}
+.street[data-route='reachable'] .streetMultiplier {
+  color: #ffd700;
+}
+.street[data-route='crash'] {
+  border-color: #ff5b6e;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 91 110 / 40%),
+    inset 0 0 12px rgb(240 40 73 / 30%);
+}
+@media (min-width: 761px) {
+  /* Room to the right of the readout on a wide scene: the plate takes it. */
+  .route {
+    top: 56px;
+    right: 12px;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    animation-name: route-in-wide;
+  }
+  @keyframes route-in-wide {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
 @media (max-width: 760px) {
   .scene {
     height: clamp(280px, 48dvh, 500px);
   }
   .readoutValue {
     font-size: 19px;
+  }
+  /* Above the strip and over the signs, which the strip repeats: the ghost
+     walking the route stays in clear view. */
+  .route {
+    padding: 7px 12px 8px;
+  }
+  .routeValue {
+    font-size: 16px;
   }
   .street {
     min-width: 48px;
@@ -281,5 +423,9 @@
   }
   .streets {
     scroll-behavior: auto;
+  }
+  /* The plate is simply there, in gold, saying the same thing. */
+  .route {
+    animation: none;
   }
 }

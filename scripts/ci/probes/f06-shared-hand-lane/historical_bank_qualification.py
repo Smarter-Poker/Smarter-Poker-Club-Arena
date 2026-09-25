@@ -113,6 +113,19 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-legacy-reserve-install','BEGIN;\n'+reserve+'\nCOMMIT;')
             run('historical-legacy-reserve-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)');",
                 'fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb) 30ad38da71405fdc960599802310e662 4f20f5a2f6d7249578931bc877869981')
+            # Production then applies 20260924225647, which replaces the mixed
+            # custody snapshot with the byte-exact 20260919033536 text plus the
+            # never-reserved witness (an allocator epoch with no permit row is an
+            # engine that dealt nothing in the generation, and is witnessed by that
+            # absence under the same locks). Its pre-image refuses unless the
+            # installed body is exactly 4e678c1f..., which this clone holds after
+            # the historical install, so the whole transaction is applied as
+            # written: pre-image, CREATE OR REPLACE, post-image.
+            never=(root/'supabase/migrations/20260924225647_an_epoch_that_never_reserved_a_hand_is_witnessed_by_its_abse.sql').read_text()
+            never=never[never.index('DO $pins$'):never.index('END $verify$;')+len('END $verify$;')]
+            run('historical-never-reserved-install','BEGIN;\n'+never+'\nCOMMIT;')
+            run('historical-never-reserved-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)');",
+                'smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb) 5422e7f73fdbdd34bf73d46e514e844e 23d15f8c833cf1d3ef6737cb9c758964')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -168,8 +181,9 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     run('historical-no-usage-reversal',"SELECT bool_and(usage_count=1620) FROM vip_feature_usage_monthly;",'t')
     # The publisher's pre-intent read-only comparison pins this installed
     # 29-function catalogue, the one production holds after this migration, the
-    # reviewed-noon-hand abort migration 20260921040823 and the legacy checkpoint
-    # reserve migration 20260921155216.
+    # reviewed-noon-hand abort migration 20260921040823, the legacy checkpoint
+    # reserve migration 20260921155216 and the never-reserved witness migration
+    # 20260924225647.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

@@ -215,7 +215,22 @@ BREAK_DEADLINE_FILE="$REQUEST_ROOT/$RUN_ID.break-deadline"
 LOCK_HELD=0
 PREPARED=0
 MUTATION_STARTED=0
+LEGACY_CHECKPOINT_INTENT_FILE="$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"
 LEGACY_CHECKPOINT_ATTEMPTED=0
+# THE ONE-SHOT IS DURABLE; THIS VARIABLE IS NOT. A boot-resumed or re-entered
+# unit is a fresh process and starts it back at 0, so process memory alone
+# cannot answer "has this run key already opened the checkpoint". On 2026-09-21
+# run 35626149078 proved it: a first attempt in the 16:41 break wrote its
+# O_EXCL intent, the transaction was interrupted ("transient release
+# interruption recovered; durable request retained"), the same run key
+# re-entered, and the helper was invoked a SECOND time. The O_EXCL guard held -
+# which is why nothing was double-applied - but the second invocation should
+# never have happened, and what the operator saw was a Python traceback.
+# Read the durable record here, once, before any of it (CLAUDE.md 10.11: fix
+# the cause, not the symptom).
+if [ -e "$LEGACY_CHECKPOINT_INTENT_FILE" ] || [ -L "$LEGACY_CHECKPOINT_INTENT_FILE" ]; then
+  LEGACY_CHECKPOINT_ATTEMPTED=1
+fi
 
 recover_on_exit() {
   local rc=$? recovery_deadline recovery_remaining non_break_deadline
@@ -1155,6 +1170,21 @@ if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
   LEGACY_CHECKPOINT_REQUIRED=1
 fi
+if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
+  # Refused HERE, before a break is entered and before any lock, rather than
+  # by the helper crashing on its own O_EXCL write several minutes later.
+  #
+  # An interrupted transaction resumes correctly for everything else it owns -
+  # the sealed desired runtime, a committed-run replay, a pending owner - and
+  # those paths all run above this line, so a run that really did finish still
+  # reports its receipt. What cannot resume is this: the checkpoint is a
+  # one-shot over a live predecessor holding seated stacks, nothing durable
+  # records whether an interrupted entry completed it, and "I could not tell"
+  # is a refusal, never permission (CLAUDE.md 10.86 rule 1). The intent stands;
+  # it is NOT retired here. A later break cannot make it safe either, so this
+  # does not wait - it ends, and the next dispatch gets a new run key.
+  die 'this run key already opened the one-shot legacy checkpoint and its durable intent is still on disk; whether that entry acted is UNKNOWN, so it may not be entered again - dispatch a new run key'
+fi
 
 while :; do
   [ "$(date +%s)" -lt "$CERTIFICATE_DEADLINE" ] \
@@ -1271,6 +1301,13 @@ while :; do
       echo "[engine-release-transaction] the legacy checkpoint entry did not fit inside this break and nothing was attempted; waiting for a later certificate"
       bounded_sleep 15
       continue
+    fi
+    if [ "$LEGACY_CHECKPOINT_RC" = 70 ]; then
+      # The helper's own name for "this run key already opened the one-shot".
+      # Reachable only if the durable intent appeared between the check above
+      # and this call, which is another process using our run key: still a
+      # refusal, and still named rather than a traceback.
+      die 'the legacy checkpoint refused as already entered under this run key; its durable intent exists and nothing was re-attempted - dispatch a new run key'
     fi
     [ "$LEGACY_CHECKPOINT_RC" = 0 ] \
       || die 'legacy checkpoint or cleanup refused; release cannot continue'

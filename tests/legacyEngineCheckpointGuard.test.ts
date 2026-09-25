@@ -419,8 +419,14 @@ function fixture(count = 1, predecessor = release) {
               },
               contains: (key: string, value: any) => {
                 expect(key).toBe('players');
-                expect(Object.keys(value[0])).toEqual(['userId']);
-                filter.player = value[0].userId;
+                // postgrest-js writes an array as a Postgres array literal
+                // (`cs.{...}`), which a jsonb column refuses with 22P02. Only
+                // a JSON string reaches PostgREST as JSON.
+                expect(typeof value).toBe('string');
+                const parsed = JSON.parse(value);
+                expect(Array.isArray(parsed)).toBe(true);
+                expect(Object.keys(parsed[0])).toEqual(['userId']);
+                filter.player = parsed[0].userId;
                 return filter;
               },
               limit: async (bound: number) => {

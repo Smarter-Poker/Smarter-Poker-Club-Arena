@@ -1,0 +1,3 @@
+# tests/a-hand-history-row-cannot-be-written-with-no-table.law.test.ts
+
+`fn_ca_insert_hand_with_awards` refuses any payload with a missing or NULL `table_id` before it names a column list or inserts - independent of the settlement RPC doors above it, which already refused this but cannot stop a direct call to the one function whose EXECUTE grant is `postgres`-only (migration `20260925032029`). It still accepts a syntactically valid table_id that names no real table, since the bomb-guard trigger's own test probes depend on that shape. The same migration deletes the four historical orphan rows this gap produced, proven to have zero players, zero rake, and zero linkage to any settlement receipt.

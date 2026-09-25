@@ -57,6 +57,7 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { secureRandomInt } from './CryptoRandom.js';
 import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
+import type { BlindSeats } from './deadButton.js';
 import {
   HAND_COMPLETION,
   handCompletionHoldMs,
@@ -2144,6 +2145,38 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dealerSeat = headsUpSeat;
         }
       }
+      /**
+       * THE DEAD BUTTON RULE HOLDS AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30)
+       *
+       * The block above applied "the blinds advance and the button follows"
+       * only when the table had dropped to two. At three or more the button
+       * still walked to the next occupied seat, which is the moving-button
+       * convention, and a tournament is not played that way. Seats 1..6,
+       * button 2, small blind 3, big blind 4, seat 3 busts: the walk put the
+       * button on 4, so seat 4 posted the big blind and then held the button
+       * (no small blind), and seat 5 went from UTG straight to the big blind.
+       * When the BIG blind busted, seat 5 went small blind, then button, and
+       * never posted a big blind that orbit. When a balanced-in player took
+       * the empty seat between the button and the small blind, the walk
+       * handed them the button and seats 4 and 5 posted the small and the big
+       * blind twice running.
+       *
+       * tournamentDeadButtonSeats is the ONE definition of the rule, shared
+       * with every predictor in the base class: the big blind advances one
+       * live seat, the small blind is the seat that posted it last hand (dead
+       * if that seat emptied) and the button is the seat that held the small
+       * blind last hand (dead if that seat emptied). It stands down on the
+       * first hand, on a cash table (whose published rule IS the moving
+       * button) and heads-up, where the block above already holds. A drawn
+       * first button is hand one by definition, so the two never meet.
+       */
+      const deadButton: BlindSeats | null =
+        !drawnIsSeated && headsUpFirstButton === null
+          ? this.tournamentDeadButtonSeats(players)
+          : null;
+      if (deadButton) {
+        dealerSeat = deadButton.button;
+      }
       this.currentHandDealerSeat = dealerSeat;
       this.lastButtonSeat = dealerSeat;
       // Everyone dealt into THIS hand is a veteran from the NEXT one onward, so
@@ -2218,8 +2251,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // over the same `players` roster HandController is about to receive. Its
       // getNextActiveSeat filters `is_sitting_out`, and every player in this
       // roster is built with `is_sitting_out: false`, so the two walks agree.
-      const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
-      const bbSeat = this.getNextSeat(sbSeat, players);
+      //
+      // Under the tournament dead-button rule the seats are the rule's own
+      // (see `deadButton` above): the small blind can be DEAD - null here, no
+      // seat posts it - and the button can sit on an empty seat. HandController
+      // cannot derive either from the button, so the hand is TOLD its blind
+      // seats through `config.blindSeats` below rather than left to walk.
+      const sbSeat: number | null = deadButton
+        ? deadButton.smallBlind
+        : players.length === 2
+          ? dealerSeat
+          : this.getNextSeat(dealerSeat, players);
+      const sbSeatPosition = deadButton ? deadButton.smallBlindSeat : (sbSeat as number);
+      const bbSeat = deadButton ? deadButton.bigBlind : this.getNextSeat(sbSeat as number, players);
 
       // Bible V8 §4.4: Process straddles before hand starts
       let straddleResults: { seat: number; amount: number }[] = [];
@@ -2229,7 +2273,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         const seatOrder: Array<{ seat: number; playerId: string }> = [];
         let currentSeat = utgSeat;
-        for (let i = 0; i < players.length - 2; i++) {
+        // Exclude the blinds: two seats, or one when the small blind is dead.
+        const blindSeatCount = sbSeat === null ? 1 : 2;
+        for (let i = 0; i < players.length - blindSeatCount; i++) {
           // Exclude SB and BB
           const p = players.find((pl) => pl.seat_number === currentSeat);
           if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
@@ -2608,6 +2654,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
        */
       if (!bombPotConfig) {
         this.lastBigBlindSeat = bbSeat;
+        // The small blind SEAT, posted or dead: the next tournament button
+        // (tournamentDeadButtonSeats). Recorded on exactly the hands the big
+        // blind anchor is, for the same reason.
+        this.lastSmallBlindSeat = sbSeatPosition;
       }
 
       if (!this.isTournamentTable() && !bombPotConfig && players.length >= 2) {
@@ -2617,7 +2667,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, occupant.user_id, which);
         };
 
-        chargeBlind(sbSeat, 'sb');
+        if (sbSeat !== null) chargeBlind(sbSeat, 'sb');
         chargeBlind(bbSeat, 'bb');
 
         // The posted blinds are not the only blinds. Two other paths take money
@@ -2761,6 +2811,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
         // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
         bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
+        /**
+         * THE HAND IS TOLD ITS BLIND SEATS (2026-09-25, the dead button at
+         * every table size). Under the tournament rule the small blind can be
+         * dead and the button can sit on an empty seat, neither of which
+         * HandController's own walk from the button can express. On a cash
+         * table this stays undefined and the controller walks as it always
+         * has: the published cash rule is the moving button, and its entry
+         * hold-outs are built on that walk.
+         */
+        blindSeats: this.isTournamentTable() ? { smallBlind: sbSeat, bigBlind: bbSeat } : undefined,
         // RAKE-AUDIT 2026-07-24: tournament pots are NEVER raked and never pay a
         // BBJ fee — the house take for tournaments/SNGs is the 10% entry fee at
         // buy-in. Pre-fix the cash schedule (10% + cap) was deducted from every

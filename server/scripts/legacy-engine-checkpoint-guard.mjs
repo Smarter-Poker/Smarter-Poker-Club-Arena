@@ -3445,7 +3445,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          So a move inside the hour is asked ONE more question, from rows: has
          `hand_history` recorded a hand at the destination table, after the
          move executed, with that player in it? One row is enough. No row, an
-         error or an unreadable answer keeps the refusal exactly as it was. */
+         error or an unreadable answer keeps the refusal exactly as it was.
+
+         THE QUESTION IS ASKED IN JSON (2026-09-25). `hand_history.players` is
+         jsonb, and postgrest-js encodes an ARRAY argument to `contains` as a
+         Postgres array literal: `[{ userId }]` went on the wire as
+         `cs.{[object Object]}`, which Postgres refused as invalid JSON
+         (22P02) on every arrival in the window. Run 36081290135 (the 00:55
+         break, the first attempt past the mixed-custody stage) stopped here
+         on `dealtSinceRead` with `error=22P02,rows=null,ceiling=1` before a
+         single table was written. A string argument is sent verbatim, so
+         the containment is spelled as the JSON it is. */
       const claimableSince = Date.now() - 3600000;
       const inWindow = arrivals.filter((arrival) => {
         const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
@@ -3460,7 +3470,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               .select('id')
               .eq('table_id', arrival.to_table_id)
               .gt('created_at', executed)
-              .contains('players', [{ userId: arrival.player_id }])
+              .contains('players', JSON.stringify([{ userId: arrival.player_id }]))
               .limit(1)
           : Promise.resolve({ data: [], error: null });
       }))).entries()) {

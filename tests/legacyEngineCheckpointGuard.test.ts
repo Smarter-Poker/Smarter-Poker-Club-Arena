@@ -419,8 +419,16 @@ function fixture(count = 1, predecessor = release) {
               },
               contains: (key: string, value: any) => {
                 expect(key).toBe('players');
-                expect(Object.keys(value[0])).toEqual(['userId']);
-                filter.player = value[0].userId;
+                // postgrest-js sends a string verbatim as `cs.<value>` and an
+                // array as a Postgres array literal (`cs.{a,b}`), which is not
+                // JSON. `players` is jsonb, so the argument must arrive as the
+                // JSON text of exactly [{ userId }] (run 36081290135: 22P02).
+                expect(typeof value).toBe('string');
+                expect(value).not.toContain('[object Object]');
+                const parsed = JSON.parse(value);
+                expect(Array.isArray(parsed) && parsed.length === 1).toBe(true);
+                expect(Object.keys(parsed[0])).toEqual(['userId']);
+                filter.player = parsed[0].userId;
                 return filter;
               },
               limit: async (bound: number) => {

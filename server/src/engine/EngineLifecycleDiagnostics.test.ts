@@ -794,8 +794,15 @@ describe('native retained 8825 release checkpoint', () => {
     async (cause) => {
       const f = await nativeCheckpoint();
       let changed = false;
-      f.onBoundary((name) => {
-        if (changed || name !== 'fn_f06_find_mixed_manager_custody') return;
+      // The durable receipt readback is the find that FOLLOWS a commit. Since
+      // 2026-09-25 the guard also asks the rows, per manager and before any
+      // prepare, whether it already sealed that manager (#5240); that lookup is
+      // a find too, and it is not the readback this models.
+      let committed = false;
+      f.onBoundary((name, args) => {
+        if (name === 'fn_f06_prepare_mixed_manager_custody' && args.p_expected !== null)
+          committed = true;
+        if (changed || !committed || name !== 'fn_f06_find_mixed_manager_custody') return;
         changed = true;
         const o = f.originals[0];
         if (cause === 'replacement')

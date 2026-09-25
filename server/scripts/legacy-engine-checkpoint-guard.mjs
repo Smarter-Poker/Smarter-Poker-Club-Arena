@@ -217,6 +217,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // had already sealed in an earlier run, so this run transferred nothing for
   // them. Never read by a decision.
   let sealedManagers = 0;
+  // Observability only: what the seal lookup answered for each retained
+  // manager (`sealed`, `none`, `other_generation`, `unanswered`, `malformed`).
+  // Never read by a decision: a lookup that did not answer leaves the unsealed
+  // path exactly as it was.
+  let sealedLookup = null;
+  const sealedLookups = [];
   // Observability only: which tables held an F06 permit that no process could
   // ever resolve, and the phase each permit was in when the rows proved the
   // felt quiet. Never read by a decision.
@@ -400,6 +406,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ...(nativeWorkMembers === null ? {} : { nativeWorkMembers }),
     ...(refusalCensus === null ? {} : { refusalCensus }),
     ...(provedRows === null ? {} : { provedRows }),
+    ...(sealedLookup === null ? {} : { sealedLookup }),
   });
 
   try {
@@ -827,49 +834,59 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          not this manager's seal and takes the full path exactly as before. A
          receipt for this generation that names another process or manager
          refuses, named, rather than reaching the database's refusal. A lookup
-         that did not answer is COULD NOT TELL and refuses (10.86 rules 1-2).
+         that did not answer, or found nothing, decides nothing: the manager
+         stays on the existing path, whose own refusals are unchanged.
          Nothing in this lookup writes, and no check a manager that is NOT
          sealed meets has moved. */
       const prefix = (value) =>
         uuid(value) || /^[0-9a-f]{64}$/.test(String(value)) ? String(value).slice(0, 8) : describe(value);
       const sealedTransfer = async (manager) => {
+        const note = (outcome) => {
+          sealedLookups.push(`${String(manager.tournamentId).slice(0, 8)}:${outcome}`);
+          sealedLookup = sealedLookups.join(' ').slice(0, 512);
+        };
+        /* THE LOOKUP NEVER REFUSES AN UNSEALED MANAGER. It is a read made
+           ahead of a path that already has every refusal it needs: a lookup
+           that did not come back, came back as something that is not a
+           record, found no row, or found another generation's row, leaves the
+           manager on the exact existing path - drain sweep, observe, commit -
+           where the database itself still refuses `F06_MIXED_TRANSFER_CHANGED`
+           against any transfer this run did not make. Only a positive receipt
+           for this generation decides anything, and that decision is made by
+           the witness below. What the lookup answered travels in
+           `sealedLookup`; nothing reads it. */
         checkMaintenance();
-        const response = await modules.client.supabase.rpc('fn_f06_find_mixed_manager_custody', {
-          p_tournament_id: manager.tournamentId,
-        });
+        let response;
+        try {
+          response = await modules.client.supabase.rpc('fn_f06_find_mixed_manager_custody', {
+            p_tournament_id: manager.tournamentId,
+          });
+        } catch {
+          response = null;
+        }
         checkMaintenance();
-        witness(
-          'mixed_sealed_lookup_unknown',
-          [
-            ['rpc.transport', () => !response.error],
-            ['rpc.body', () => record(response.data)],
-            ['rpc.ok', () => response.data.ok === true],
-            ['rpc.tournament', () => response.data.tournament_id === manager.tournamentId],
-            [
-              'rpc.receipt',
-              () =>
-                response.data.receipt === null ||
-                response.data.receipt === undefined ||
-                record(response.data.receipt),
-            ],
-          ],
-          () => ({
-            failedField: 'fn_f06_find_mixed_manager_custody',
-            failedTable: manager.tournamentId,
-            observed: sqlState(response.error?.code),
-            observedDetail: [
-              `sqlstate=${sqlState(response.error?.code)}`,
-              `refusal=${refusalToken(response.error?.message)}`,
-              `body=${describe(response.data)}`,
-              `receipt=${describe(response.data?.receipt)}`,
-            ]
-              .join(',')
-              .slice(0, 512),
-          })
-        );
-        const receipt = response.data.receipt ?? null;
-        if (receipt === null || receipt.origin_generation !== manager.tournamentLeaseGeneration)
+        if (response === null || response === undefined || response.error) {
+          note('unanswered');
           return null;
+        }
+        if (!record(response.data) || response.data.ok !== true) {
+          note('malformed');
+          return null;
+        }
+        const receipt = response.data.receipt ?? null;
+        if (receipt === null) {
+          note('none');
+          return null;
+        }
+        if (!record(receipt)) {
+          note('malformed');
+          return null;
+        }
+        if (receipt.origin_generation !== manager.tournamentLeaseGeneration) {
+          note('other_generation');
+          return null;
+        }
+        note('sealed');
         const checkpoint = receipt.local_proof?.release_checkpoint;
         witness(
           'mixed_sealed_transfer_foreign',

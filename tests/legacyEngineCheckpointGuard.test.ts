@@ -4792,6 +4792,9 @@ describe('a sealed custody transfer is not transferred twice', () => {
       // committed or read back: the fresh intent ids are simply unused.
       expect(f.probes).toEqual(f.events);
       expect(f.rpcCalls).toEqual([]);
+      expect(result.sealedLookup).toBe(
+        f.events.map((e: string) => `${e.slice(0, 8)}:sealed`).join(' ')
+      );
       expect([...f.receipts.values()]).toEqual(rows);
       // The bank checkpoint stage still ran for the live cash fleet.
       expect(f.calls.length).toBeGreaterThanOrEqual(writes);
@@ -4873,6 +4876,7 @@ describe('a sealed custody transfer is not transferred twice', () => {
     });
     expect(result.observedDetail).toContain('refusal=F06_MIXED_TRANSFER_CHANGED');
     expect(result.observedDetail).toContain('commit=no');
+    expect(result.sealedLookup).toContain(`${manager.tournamentId.slice(0, 8)}:other_generation`);
     expect(f.probes).toEqual(f.events);
     expect(f.rpcCalls).toEqual(['fn_f06_prepare_mixed_manager_custody']);
     expect(f.server.tableEngines.size).toBe(3);
@@ -4919,25 +4923,79 @@ describe('a sealed custody transfer is not transferred twice', () => {
     }
   );
 
-  it('a lookup that did not answer is could-not-tell: refuses, named, before any prepare', async () => {
+  /* THE LOOKUP NEVER REFUSES AN UNSEALED MANAGER. `EngineLifecycleDiagnostics
+     .test.ts` runs this guard against fixtures that never answer the find at
+     all, and every drain refusal it names is on the path the lookup precedes.
+     A lookup that did not come back, came back malformed, or found nothing
+     decides nothing: the manager takes the exact existing path, whose
+     refusals are unchanged and whose observe call still meets the database's
+     own `F06_MIXED_TRANSFER_CHANGED` against a transfer this run did not
+     make. Only the readback AFTER a commit is a find the guard refuses on. */
+  it.each([
+    [
+      'an error',
+      () => ({ data: null, error: { code: 'PGRST002', message: 'schema cache' } }),
+      'unanswered',
+    ],
+    [
+      'a throw',
+      () => {
+        throw new Error('socket hang up');
+      },
+      'unanswered',
+    ],
+    ['a body that is not a record', () => ({ data: 'synthetic', error: null }), 'malformed'],
+    ['a body saying no', () => ({ data: { ok: false }, error: null }), 'malformed'],
+    [
+      'a receipt that is not a record',
+      () => ({ data: { ok: true, receipt: 'x' }, error: null }),
+      'malformed',
+    ],
+  ])(
+    'a seal lookup that meets %s decides nothing: the full path, unchanged',
+    async (_label, answer, outcome) => {
+      const f = mixedFixture();
+      f.onRpcResponse((name: string) =>
+        name === 'fn_f06_find_mixed_manager_custody' && f.rpcCalls.length === 0
+          ? answer()
+          : undefined
+      );
+      const result: any = await f.run();
+      expect(result, JSON.stringify(result)).toMatchObject({
+        ok: true,
+        readyForRestart: true,
+        sealedManagers: 0,
+      });
+      expect(result.sealedLookup).toBe(
+        f.events.map((e: string) => `${e.slice(0, 8)}:${outcome}`).join(' ')
+      );
+      expect(f.probes).toEqual(f.events);
+      expect(f.rpcCalls).toEqual([
+        // Both observations, then each commit with its readback.
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_find_mixed_manager_custody',
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_find_mixed_manager_custody',
+      ]);
+      expect(f.receipts.size).toBe(2);
+      expect(f.server.tableEngines.size).toBe(1);
+    }
+  );
+
+  it('an unanswered lookup does not hide a drain refusal on the existing path', async () => {
     const f = mixedFixture();
     f.onRpcResponse((name: string) =>
-      name === 'fn_f06_find_mixed_manager_custody'
+      name === 'fn_f06_find_mixed_manager_custody' && f.rpcCalls.length === 0
         ? { data: null, error: { code: 'PGRST002', message: 'schema cache' } }
         : undefined
     );
+    f.originals[0].engine.readContinuationTasks.add(Promise.resolve());
     const result: any = await f.run();
-    expect(result).toMatchObject({
-      ok: false,
-      reason: 'mixed_sealed_lookup_unknown',
-      failedCheck: 'rpc.transport',
-      failedField: 'fn_f06_find_mixed_manager_custody',
-      failedTable: f.originals[0].manager.tournamentId,
-      checkpointOutcome: 'not_started',
-    });
-    expect(result.observedDetail).toContain('sqlstate=PGRST002');
+    expect(result).toMatchObject({ ok: false, reason: 'mixed_original_work_not_drained' });
+    expect(result.sealedLookup).toContain(':unanswered');
     expect(f.rpcCalls).toEqual([]);
-    expect(f.receipts.size).toBe(0);
     expect(f.server.tableEngines.size).toBe(3);
   });
 

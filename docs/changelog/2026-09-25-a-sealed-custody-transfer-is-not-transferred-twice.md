@@ -73,9 +73,18 @@ container_id/process_id`) **and this exact manager** (`manager_id`) - a
   set) is recorded as retired and pinned absent for the rest of the run.
 - **a receipt for this generation naming another process or manager** refuses
   `mixed_sealed_transfer_foreign`, naming the sub-condition, before any
-  prepare. **A lookup that did not answer** refuses
-  `mixed_sealed_lookup_unknown` with the SQLSTATE and refusal token: could
-  not tell is not "no row" (10.86 rules 1-2).
+  prepare.
+- **a lookup that did not come back, or came back malformed**, decides
+  nothing: the manager stays on the existing path, exactly as if the lookup
+  had found no row. The lookup precedes a path that already carries every
+  refusal it needs, and the observe call still meets the database's own
+  `F06_MIXED_TRANSFER_CHANGED` against any transfer this run did not make; a
+  read made ahead of that path must not be able to add a refusal of its own
+  (`EngineLifecycleDiagnostics.test.ts` runs the guard against fixtures that
+  never answer the find, and names the drain refusals that follow it). What
+  the lookup answered for each manager travels as `sealedLookup`
+  (`5a387a75:sealed 615783bf:none`, or `unanswered`, `malformed`,
+  `other_generation`); nothing reads it.
 
 **A sealed manager whose original is STILL registered** - the shape a run cut
 off between its commit and its CAS would leave - is retired through the same
@@ -108,7 +117,8 @@ readback, CAS with the new ids and the sealed one is never prepared; a row for
 a different origin generation takes the full path and meets
 `F06_MIXED_TRANSFER_CHANGED`; a row for this generation naming another
 container, instance, manager or no checkpoint refuses named, before any
-prepare; an unanswered lookup refuses named; a still-registered exact original
+prepare; an errored, thrown or malformed lookup takes the full path unchanged
+and does not hide a drain refusal; a still-registered exact original
 is retired by the CAS; a replaced, running, or owned-but-absent one refuses.
 The fixture keeps the seal lookups (`probes`) apart from the custody transfer
 calls (`rpcCalls`), so "transfers nothing, retires nothing" keeps meaning that.

@@ -126,6 +126,26 @@ describe('the quality governor steps a scene down when its frames say so', () =>
   });
 });
 
+describe('a document that denies storage still gets a governor', () => {
+  it('treats a sessionStorage read that throws as no storage at all', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'sessionStorage');
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Access is denied for this document.', 'SecurityError');
+      },
+    });
+    try {
+      const apply = vi.fn();
+      const governor = createQualityGovernor({ intervalMs: 16, apply });
+      expect(governor.tier).toBe(0);
+      expect(apply).toHaveBeenCalledTimes(1);
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'sessionStorage', descriptor);
+    }
+  });
+});
+
 describe('a tier is put on the renderer', () => {
   it('caps the pixel ratio at the device and re-links materials when shadows change', () => {
     const renderer = {

@@ -74,6 +74,20 @@ function remember(storage: Pick<Storage, 'getItem' | 'setItem'> | null | undefin
   }
 }
 
+/**
+ * The session store, or null where reading it throws: a document with storage
+ * denied (a sandboxed frame, some private modes, a page set by setContent)
+ * raises a SecurityError on the mere property read, and a scene must draw there
+ * all the same.
+ */
+function sessionStorageIfAllowed(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 export interface GovernorOptions {
   /** The scene's own draw interval in milliseconds (the throttle in its frame loop). */
   intervalMs: number;
@@ -92,12 +106,7 @@ export interface QualityGovernor {
 }
 
 export function createQualityGovernor(options: GovernorOptions): QualityGovernor {
-  const storage =
-    options.storage === undefined
-      ? typeof sessionStorage === 'undefined'
-        ? null
-        : sessionStorage
-      : options.storage;
+  const storage = options.storage === undefined ? sessionStorageIfAllowed() : options.storage;
   let tier = Math.max(options.start ?? rememberedTier(storage), rememberedTier(storage));
   tier = Math.min(FLOOR_TIER, Math.max(0, tier));
   options.apply(QUALITY_TIERS[tier], tier);

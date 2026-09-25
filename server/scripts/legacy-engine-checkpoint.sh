@@ -7,6 +7,16 @@ REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-
 CONTAINER="${CONTAINER:-club-arena-engine}"
 
 die() { echo "[legacy-engine-checkpoint] $*" >&2; exit 1; }
+# Two refusals, not one, because conflating them is what burned every release
+# on 2026-09-21. `die` (1) ends the operation for good. `defer` (75) says the
+# break window closed while this entry was still running and NOTHING durable
+# was created - no intent file, no inspector, no write - so the owning
+# transaction may wait for a later certificate and enter again. It is only
+# ever reachable ABOVE the O_EXCL intent write below; once that file exists a
+# retry is forbidden and every remaining path is `die`. CLAUDE.md 10.86 rule 1:
+# "this attempt arrived late" is a different outcome from "this attempt is
+# unsafe", so it gets its own name and its own code.
+defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
 [ "$#" = 1 ] || die 'expected owning run key'
 RUN_ID="$1"
@@ -47,6 +57,7 @@ if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
     && [ "$STARTED_AT" = 2026-09-18T21:55:50.88305198Z ] && [ "$HOST_PID" = 1231816 ] \
     || die 'original mixed-custody process changed'
 fi
+NODE_BOOT_STARTED_MS="$(date +%s%3N)"
 timeout 3s docker exec "$CONTAINER_ID" node -e '
 const fs = require("node:fs");
 const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boolean);
@@ -55,6 +66,18 @@ if (process.version !== "v22.23.2" ||
     /--(?:inspect|debug)/.test(process.env.NODE_OPTIONS ?? "") ||
     process.env.GIT_COMMIT_SHA !== process.argv[1]) process.exit(1);
 ' "$LEGACY_SHA" || die 'predecessor runtime or loopback inspector configuration refused'
+NODE_BOOT_MS=$(( $(date +%s%3N) - NODE_BOOT_STARTED_MS ))
+# The guard's own boot - one durable intent write with two fsyncs and a cold
+# containerised node module boot that streams the two guard files in and
+# enumerates the fleet - is paid INSIDE the transaction's 40000ms legacy
+# checkpoint budget (engine-release-transaction.sh, LEGACY_CHECKPOINT_BUDGET_
+# SECONDS: ~15000ms of entry, 20000ms of work, 5000ms of cleanup), never
+# added to the entry threshold below. The runtime check immediately above is
+# its measurable proxy - same container, same node binary, same exec path -
+# so it is measured here and reported, as evidence for the next re-derivation
+# of that allowance, not as an admission term. (The literal invocation above
+# is an anchor other suites locate with indexOf; it is not repeated here.)
+echo "[legacy-engine-checkpoint] predecessor runtime check took ${NODE_BOOT_MS}ms; the guard boot it proxies is inside the 40000ms legacy checkpoint budget" >&2
 
 # Installed SQL is a prerequisite, not a trial mutation. Refuse before the
 # durable one-shot intent or inspector; the existing transaction owns failure.
@@ -68,13 +91,25 @@ fi
 INSTANCE="$(curl -sS --max-time 2 http://127.0.0.1:8080/health | python3 -c '
 import json,re,sys
 d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId",""); release=sys.argv[1]
+# The entry threshold is the reserve the guard holds at every check (245000,
+# reserveMs in legacy-engine-checkpoint-guard.mjs) PLUS the whole 40000
+# budget the checkpoint still has to pay after this probe (entry, work and
+# cleanup, engine-release-transaction.sh LEGACY_CHECKPOINT_BUDGET_SECONDS):
+# 285000, the same figure legacy_checkpoint_countdown admitted on. Nothing is
+# ADDED to it for the boot that follows: the 300000 countdown has exactly
+# 15000 above 285000 and the entry spends it, so any positive term here would
+# defer at every break for ever. A break shorter than this defers (75); it
+# never dies, because nothing has been written yet.
+# (No apostrophes in this comment: it lives inside a single-quoted python -c
+# argument, and one would close the quote and break the command substitution.)
+reserve=245000+40000
 ok=(d.get("running") is True and d.get("version")==release[:8] and re.fullmatch(r"1-[0-9a-f]{8}",instance)
     and (release=="2f4e33560bcd23bfb5cc731f31816b2c2e2847e5" or d.get("releaseSha")==release)
     and m.get("active") is True and m.get("phase")=="counting_down"
-    and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=285000)
+    and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=reserve)
 if not ok: raise SystemExit(1)
 print(instance)
-' "$LEGACY_SHA")" || die 'physical countdown entry unavailable'
+' "$LEGACY_SHA")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
@@ -104,5 +139,7 @@ PY
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
 [ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'
-# This helper cannot certify or start cutover. The caller must now pass the
-# original maintenance_certificate with the complete 285000ms reserve.
+# This helper cannot certify or start cutover. Entry above demanded the strict
+# 285000ms; the caller must now pass the original maintenance_certificate with
+# the 245000ms legacy reserve (285000ms entry minus the 40000ms checkpoint
+# budget, taken from candidate proof, never from the 135s rollback reserve).

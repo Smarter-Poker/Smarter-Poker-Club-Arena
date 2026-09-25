@@ -219,9 +219,12 @@ describe('start time', () => {
     expect(c.startTime).toBeInstanceOf(Date);
   });
 
-  it('is dropped when it is in the past — that trips the auto-cancel', () => {
-    const c = buildTournamentConfig({ ...base, startTime: '2020-01-01T12:00' }, 'nlh');
-    expect(c.startTime).toBeUndefined();
+  // 20260924033701: a past start used to be dropped here and silently become
+  // "a minute from now". It is refused with the sentence every surface uses.
+  it('is refused when it is in the past, never silently replaced', () => {
+    expect(() => buildTournamentConfig({ ...base, startTime: '2020-01-01T12:00' }, 'nlh')).toThrow(
+      'Pick A Start Time In The Future.'
+    );
   });
 
   it('is ignored for an SNG, which starts when it fills', () => {
@@ -448,10 +451,11 @@ describe('parity fields (2026-08-22)', () => {
       tournamentId: '11111111-1111-1111-1111-111111111111',
       seatsAwarded: 3,
     });
-    // Without a target the toggle is inert - never a cash-paying "satellite".
-    const noTarget = buildTournamentConfig({ ...base, nextStepSatellite: true }, 'nlh');
-    expect(noTarget.type).toBe('mtt');
-    expect(noTarget.satelliteTarget).toBeUndefined();
+    // Without a target the toggle is refused (20260924033701). It used to build
+    // a plain MTT without saying so; never a cash-paying "satellite" either way.
+    expect(() => buildTournamentConfig({ ...base, nextStepSatellite: true }, 'nlh')).toThrow(
+      'Pick The Target Tournament This Satellite Awards Seats Into.'
+    );
   });
 });
 

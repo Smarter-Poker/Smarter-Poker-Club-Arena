@@ -4,7 +4,9 @@
 real PostgreSQL 17. They are the only proof in this repository that the custody,
 admission, transfer, top-up, straddle, run-it-twice, bomb pot, plain-cash,
 accepted-hand, controlled-play, tournament-door, tournament-lifecycle and
-statistics doors behave as production has them installed.
+statistics doors behave as production has them installed, that the transfer
+door gets past the production profile guard and the deposit door consults DR16,
+and that the Diamond health watches resolve the incidents they filed.
 
 They run in CI. Until 2026-09-19 they did not: each one was written for the
 owner's Mac and ran only when somebody remembered to run it, so a Diamond
@@ -76,6 +78,13 @@ environment, and never name `PGHOST`, `PGPORT`, `PGDATABASE`, `DATABASE_URL`,
 `SUPABASE` or `PG17_BINDIR`. That is the property that keeps a runner off
 production: there is no variable to set that would point one at a real database,
 and the cluster has no TCP listener to reach it through.
+
+Two of them, `run-diamond-incident-resolution.py` and
+`run-diamond-transfer-door-and-dr16.py`, start a cluster on that same socket
+and port, and stop it again, when nothing answers there, so they can be run by
+hand without the wrapper. Under the wrapper something always answers, and they
+use its cluster like the rest; they never make a temporary socket of their own,
+which is why they are not private-cluster runners.
 
 **Three runners build a cluster of their own**, because they load the estate's
 historical schema base and pin the installed doors against it, so they need a

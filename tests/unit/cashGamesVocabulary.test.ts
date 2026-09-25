@@ -151,6 +151,17 @@ const LIVE_REFUSALS: ReadonlyArray<[message: string, copy: RegExp]> = [
     'OVERRIDE_LOCKED: bombs is set by the madness template (sent {}, template {})',
     /Bombs Is Set By The Madness Template/,
   ],
+  // 20260924102056: the enforced commerce admission gate in fn_cash_game_create
+  // raises fn_ca_commerce_admission_message's sentence (HINT
+  // operating_access_required). It is already house copy, shown as written.
+  [
+    'This Club Needs Active Operating Access To Open A New Table. Running Tables Are Not Affected.',
+    /^This Club Needs Active Operating Access To Open A New Table\. Running Tables Are Not Affected\.$/,
+  ],
+  [
+    'This Club Needs The Insurance Module To Offer Insurance On A New Table. Existing Insurance Offers Are Not Affected.',
+    /^This Club Needs The Insurance Module To Offer Insurance On A New Table\. Existing Insurance Offers Are Not Affected\.$/,
+  ],
 ];
 
 describe('every refusal the live create function raises has house copy', () => {

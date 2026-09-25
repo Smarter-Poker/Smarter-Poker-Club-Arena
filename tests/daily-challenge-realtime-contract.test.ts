@@ -1,6 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -35,6 +39,9 @@ const certificationRepair = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
+const realtime = readDailyChallengesUnit('useDailyMissionRealtimeCatchUp.ts');
+const surface = readDailyChallengesSurface();
 const completionListener = readFileSync(
   resolve(__dirname, '../src/components/notifications/ChallengeToastListener.tsx'),
   'utf8'
@@ -95,13 +102,13 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(privateBroadcast).toContain("jsonb_build_object('revision', v_revision)");
     expect(privateBroadcast).not.toContain('GRANT INSERT');
 
-    expect(page).toContain('useMasterBusBroadcastChannel({');
-    expect(page).toContain('channelName: userId ? `daily-mission-revision:${userId}` : null');
-    expect(page).toContain("event: 'daily_mission_revision_changed'");
-    expect(page).toContain('private: true');
-    expect(page).toContain('onSubscriptionError:');
-    expect(page).toContain('onSubscriptionStatus:');
-    expect(page).not.toContain("table: 'user_daily_challenges'");
+    expect(realtime).toContain('useMasterBusBroadcastChannel({');
+    expect(realtime).toContain('channelName: userId ? `daily-mission-revision:${userId}` : null');
+    expect(realtime).toContain("event: 'daily_mission_revision_changed'");
+    expect(realtime).toContain('private: true');
+    expect(realtime).toContain('onSubscriptionError:');
+    expect(realtime).toContain('onSubscriptionStatus:');
+    expect(surface).not.toContain("table: 'user_daily_challenges'");
 
     expect(broadcastHook).toContain(".on('broadcast', { event }");
     expect(broadcastHook).toContain('await supabase.realtime.setAuth()');
@@ -112,20 +119,67 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(broadcastHook).toContain('masterBus.removeRegisteredChannel');
   });
 
-  it('coalesces event bursts and repairs dropped events with a visible-tab cursor read', () => {
-    expect(page).toContain('scheduleRealtimeRefresh');
-    expect(page).toContain("loadChallenges(userId, 'silent')");
-    expect(page).toContain('dashboardRequestsInFlightRef.current > 0');
-    expect(page).toContain('queuedRealtimeRevisionRef.current = Math.max');
-    expect(page).toContain('queuedUnversionedRealtimeRef.current = true');
-    expect(page).toContain('shouldRefreshQueuedDailyMissionRealtime(');
-    expect(page).toContain('announcedRevision <= dashboardRevisionRef.current');
-    expect(page).toContain('dailyChallengeService.getDashboardRevision(userId)');
-    expect(page).toContain('revision > dashboardRevisionRef.current');
-    expect(page).toContain("document.visibilityState === 'visible'");
-    expect(page).toContain('setTimeout(reconcileRevision, 15_000)');
-    expect(page).not.toContain("'CHALLENGE_PROGRESS_UPDATED'");
-    expect(page).not.toMatch(/setInterval\s*\(/);
+  it('coalesces event bursts and catches up only on lifecycle events', () => {
+    expect(realtime).toContain('scheduleRealtimeRefresh');
+    expect(realtime).toContain("loadChallenges(userId, 'silent')");
+    expect(realtime).toContain('dashboardRequestsInFlightRef.current > 0');
+    expect(realtime).toContain('queuedRealtimeRevisionRef.current = Math.max');
+    expect(realtime).toContain('queuedUnversionedRealtimeRef.current = true');
+    expect(dashboard).toContain('shouldRefreshQueuedDailyMissionRealtime(');
+    expect(realtime).toContain('announcedRevision <= dashboardRevisionRef.current');
+    expect(realtime).toContain('revision > dashboardRevisionRef.current');
+    expect(realtime).toContain("document.visibilityState !== 'visible'");
+    expect(surface).not.toContain("'CHALLENGE_PROGRESS_UPDATED'");
+    expect(surface).not.toMatch(/setInterval\s*\(/);
+  });
+
+  it('owns catch-up with one bounded cursor read per lifecycle event and no repair timer', () => {
+    // The durable record is the per-user revision cursor. The wake sources are
+    // events only: a broadcast payload, a new subscription generation, a tab
+    // resume, and the daily-reset product clock. Nothing repeats on its own.
+    expect(realtime).toContain('const requestCursorCatchUp = useCallback(');
+    expect(realtime).toContain('.getDashboardRevision(uid)');
+    expect(realtime).toContain('catchUpGenerationRef');
+    expect(realtime).toContain('cursorReadInFlightRef');
+    expect(realtime).toContain('cursorCatchUpPendingRef');
+    expect(realtime).toContain('generation !== catchUpGenerationRef.current');
+    expect(realtime).toContain('uid !== userIdRef.current');
+    expect(surface).not.toContain('reconcileRevision');
+    expect(surface).not.toMatch(/15_000/);
+    expect(surface).not.toMatch(/setTimeout\(\s*\w*(reconcile|poll|watch|repair|heal)\w*\s*,/i);
+    expect(surface).not.toMatch(/setInterval\s*\(/);
+
+    // A channel error only marks the page degraded and retires the generation.
+    const onError = realtime.slice(
+      realtime.indexOf('onSubscriptionError: () => {'),
+      realtime.indexOf('onSubscriptionStatus: (status) => {')
+    );
+    expect(onError).toContain('catchUpGenerationRef.current += 1');
+    expect(onError).toContain("setRealtimeState('degraded')");
+    expect(onError).not.toContain('scheduleRealtimeRefresh(');
+    expect(onError).not.toContain('loadChallenges(');
+    expect(onError).not.toContain('getDashboardRevision');
+
+    // Every SUBSCRIBED status, first join or rejoin, performs the same bounded read.
+    const onStatus = realtime.slice(realtime.indexOf('onSubscriptionStatus: (status) => {'));
+    const statusBody = onStatus.slice(0, onStatus.indexOf('  });'));
+    expect(statusBody).toContain('catchUpGenerationRef.current += 1');
+    expect(statusBody).toContain("if (status !== 'SUBSCRIBED') return;");
+    expect(statusBody).toContain('requestCursorCatchUp();');
+    expect(statusBody).not.toContain('scheduleRealtimeRefresh(');
+    expect(statusBody).not.toContain('loadChallenges(');
+
+    // Resume performs the cursor read too; only a UTC date change reloads outright.
+    const resume = realtime.slice(
+      realtime.indexOf('const refreshAfterResume = () => {'),
+      realtime.indexOf("document.addEventListener('visibilitychange', refreshAfterResume);")
+    );
+    expect(resume).toContain('requestCursorCatchUp();');
+    expect(resume).toContain('if (dateChanged) {');
+    expect(resume).not.toContain('60_000');
+
+    // The daily-reset clock is product timing and stays.
+    expect(dashboard).toContain("msUntilChallengeReset('daily', serverNow)");
   });
 
   it('broadcasts completion once on a private topic and retains account-delete safety', () => {
@@ -147,8 +201,9 @@ describe('Daily Missions realtime and render-isolation contract', () => {
   it('keeps the live clock outside page state and inside subscribing leaves', () => {
     expect(clock).toContain('useSyncExternalStore');
     expect(clock).toContain('export const challengeClock = new ChallengeClockStore()');
-    expect(page).toContain('function MissionCycleCountdown');
-    expect(page).toContain('function MissionResetReadout');
-    expect(page).not.toContain('const [now, setNow]');
+    const clockLeaves = readDailyChallengesUnit('MissionClockLeaves.tsx');
+    expect(clockLeaves).toContain('function MissionCycleCountdown');
+    expect(clockLeaves).toContain('function MissionResetReadout');
+    expect(readDailyChallengesSurface()).not.toContain('const [now, setNow]');
   });
 });

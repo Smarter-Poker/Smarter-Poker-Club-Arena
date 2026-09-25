@@ -45,6 +45,7 @@ import {
   WEEKLY_CHALLENGE_POOL,
   MONTHLY_CHALLENGE_POOL,
 } from '../src/services/DailyChallengeService';
+import { readDailyChallengesSurface } from './helpers/dailyChallengesSources';
 
 const ROOT = resolve(__dirname, '..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -70,7 +71,7 @@ const strip = (s: string) =>
 
 const MIGRATION = sql('supabase/migrations/20260905114421_a_mission_pays_diamonds_not_chips.sql');
 const SERVICE = strip(read('src/services/DailyChallengeService.ts'));
-const PAGE = strip(read('src/pages/DailyChallengesPage.tsx'));
+const PAGE = strip(readDailyChallengesSurface());
 
 const ALL = [...CHALLENGE_POOL, ...WEEKLY_CHALLENGE_POOL, ...MONTHLY_CHALLENGE_POOL];
 

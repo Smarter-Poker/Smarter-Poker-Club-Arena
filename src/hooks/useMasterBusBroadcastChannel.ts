@@ -48,6 +48,15 @@ export function useMasterBusBroadcastChannel({
   useEffect(() => {
     if (!enabled || !channelName) return;
     let alive = true;
+    /* A private join first proves the session to Realtime. When that proof
+       fails (no session yet, a refresh in flight, the network gone) there is
+       no channel at all, so the registry's health monitor - which recovers
+       closed or errored channels - has nothing to recover, and the surface
+       would never hear from its channel again. The retry is owned by events,
+       not a timer: the next token refresh, sign in, or the browser coming back
+       online starts the subscription once more, and any attempt that gets past
+       authentication disarms it. */
+    let disarmAuthRetry: (() => void) | null = null;
 
     const subscribeChannel = async () => {
       if (privateChannel) {
@@ -56,8 +65,10 @@ export function useMasterBusBroadcastChannel({
           // Prime it from the Supabase client's current session before a private
           // channel asks realtime.messages RLS for permission to join.
           await supabase.realtime.setAuth();
+          disarmAuthRetry?.();
         } catch (authError) {
           if (!alive) return;
+          armAuthRetry();
           const error =
             authError instanceof Error
               ? authError
@@ -113,11 +124,31 @@ export function useMasterBusBroadcastChannel({
       void subscribeChannel();
     };
 
+    const armAuthRetry = () => {
+      if (disarmAuthRetry) return;
+      const retry = () => {
+        disarmAuthRetry?.();
+        if (alive) startSubscription();
+      };
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((authEvent) => {
+        if (authEvent === 'TOKEN_REFRESHED' || authEvent === 'SIGNED_IN') retry();
+      });
+      window.addEventListener('online', retry);
+      disarmAuthRetry = () => {
+        disarmAuthRetry = null;
+        window.removeEventListener('online', retry);
+        subscription.unsubscribe();
+      };
+    };
+
     masterBus.registerChannelFactory(channelName, startSubscription);
     startSubscription();
 
     return () => {
       alive = false;
+      disarmAuthRetry?.();
       masterBus.removeChannelFactory(channelName);
       masterBus.removeRegisteredChannel(channelName);
     };

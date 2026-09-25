@@ -953,6 +953,72 @@ showdownHandsTotal.inc(0);
 muckedHandsTotal.inc(0);
 rpcErrorsTotalAlwaysOn.inc(0, { method: 'action' });
 
+/**
+ * ── A TOURNAMENT NOBODY IS DEALING (2026-09-21) ───────────────────────────
+ *
+ * On 2026-09-21 six RUNNING tournaments holding 49 live seats and 4,908,000
+ * tournament chips had no row in engine_tournament_leases; the oldest had been
+ * that way since 2026-09-14. The engine had been up 58 hours and answered
+ * activeTournaments: 472 against 465 lease rows, tournamentResumesFailing: 0
+ * and a full resume budget. Every number an operator could read said the board
+ * was clean, because no number compared the tournaments this process is
+ * SUPPOSED to be dealing with the ones it actually owns.
+ *
+ * These three are that comparison. `without_owner` is the one that matters and
+ * the one that was missing: a RUNNING tournament this process read from the
+ * board that no live manager owns, whether the slot is empty or held by a
+ * manager that cannot stop. Its alert is TournamentRunningWithNoOwner.
+ */
+export const tournamentsRunningWithoutOwner: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournaments_running_without_owner',
+  'RUNNING tournaments on the last complete board read that no lease-owning manager is dealing (empty slot or quarantined manager). 0 is the healthy state'
+);
+export const tournamentManagersQuarantined: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_managers_quarantined',
+  'Tournament managers still holding their slot after a stop that did not complete (TournamentManagerOwnership keeps a failed teardown as the owner)'
+);
+export const tournamentManagerQuarantineOldestSeconds: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_manager_quarantine_oldest_seconds',
+  'Age of the longest-held quarantined tournament manager, in seconds; 0 when none is held'
+);
+/* Zero-seeded from the first scrape: an alert on a name with no series
+   evaluates to an empty vector, which reads exactly like health. See
+   anAlertCannotWaitForAFailureToExist.law.test.ts. */
+tournamentsRunningWithoutOwner.set(0);
+tournamentManagersQuarantined.set(0);
+tournamentManagerQuarantineOldestSeconds.set(0);
+
+/**
+ * Why a drained-custody read did not prove custody. `refused` is the database
+ * answering with its own named F06_... verdict; `unreadable` is not reaching
+ * an answer at all; `malformed` is a reply that is not a verdict. Before
+ * 2026-09-21 all three were one bare string in a log line and none was a
+ * number, so 1,551 refusals in ninety minutes moved no series at all.
+ */
+export const f06DrainedCustodyOutcomesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_f06_drained_custody_outcomes_total',
+  'Drained-custody reads that did not prove custody, by outcome (labels: outcome=refused|unreadable|malformed)'
+);
+for (const outcome of ['refused', 'unreadable', 'malformed']) {
+  f06DrainedCustodyOutcomesTotal.inc(0, { outcome });
+}
+
+/**
+ * What the abandoned-generation door did when an adopting generation asked it
+ * to decide a dead generation's reserved hand (tournament/
+ * abandonedGenerationDoor.ts). `aborted` and `replayed` freed the tables;
+ * `already_closed` found another receipt had; `refused` is a rule the door
+ * named, and the table stays blocked; `transient` found no answer. Before
+ * 2026-09-22 nothing asked, and a blocked table moved no series at all.
+ */
+export const f06AbandonedGenerationClosuresTotal: Counter = alwaysOnRegistry.counter(
+  'poker_f06_abandoned_generation_closures_total',
+  'Abandoned-generation door answers during adoption, by outcome (labels: outcome=aborted|replayed|already_closed|refused|transient)'
+);
+for (const outcome of ['aborted', 'replayed', 'already_closed', 'refused', 'transient']) {
+  f06AbandonedGenerationClosuresTotal.inc(0, { outcome });
+}
+
 /** Prometheus lines for the always-on fleet registry. */
 /* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
    See observability/processMemory.ts for why these exist. Always-on, bounded

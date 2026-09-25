@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { reportError } from '../../utils/errorReporter';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import { SUPER_GAME_TITLES } from '../../utils/diamondGameTitles';
+import { chipStackCard } from './WheelPrizeArt';
 import styles from './WheelPrizeCard.module.css';
 
 type Region = readonly [number, number, number, number];
@@ -68,13 +69,19 @@ export function wheelCardLabel(segment: WheelSegment, upgraded = false): string 
   }[segment.kind];
 }
 
+/**
+ * The card art follows the segment's KIND, never its position: the server may
+ * put a different prize on an ord (a VIP sees chips where others see
+ * Throwables, Time Bank and Rabbit Hunt), and weights never enter into it.
+ */
 function cardIndex(segment: WheelSegment, upgraded: boolean): number {
-  if (segment.kind === 'bonus') return GAME_CARDS[segment.game ?? 'plinko'];
+  if (segment.kind === 'bonus') return GAME_CARDS[segment.game ?? 'plinko'] ?? 0;
   if (upgraded) return 4 + Math.max(0, [5, 10, 25, 100].indexOf(segment.multiplier ?? 5));
   if (segment.kind === 'upgrade') return 4;
-  if (segment.kind === 'chips')
-    return 4 + Math.min(3, Math.max(1, Math.trunc(segment.multiplier ?? 1)));
-  return { throwables: 8, time_bank: 9, rabbit_hunt: 10, diamonds: 11, nothing: 11 }[segment.kind];
+  if (segment.kind === 'chips') return 4 + chipStackCard(segment.multiplier);
+  return (
+    { throwables: 8, time_bank: 9, rabbit_hunt: 10, diamonds: 11, nothing: 11 }[segment.kind] ?? 11
+  );
 }
 
 function at(radius: number, degrees: number) {
@@ -126,6 +133,17 @@ function triangle(source: readonly Point[], destination: readonly Point[]) {
 }
 
 type PaintedTexture = { url: string; x: number; y: number; width: number; height: number };
+
+function encode(canvas: HTMLCanvasElement): Promise<string> {
+  if (typeof canvas.toBlob !== 'function' || typeof URL.createObjectURL !== 'function')
+    return Promise.resolve(canvas.toDataURL('image/png'));
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((blob) => {
+      if (blob) resolve(URL.createObjectURL(blob));
+      else reject(new Error('Wheel Card Artwork Could Not Be Encoded'));
+    }, 'image/png')
+  );
+}
 const atlasImages = new Map<string, Promise<HTMLImageElement>>();
 const bandTextures = new Map<string, Promise<PaintedTexture>>();
 
@@ -174,7 +192,10 @@ function paintTexture(atlas: string, mesh: ReturnType<typeof triangle>[]) {
       context.drawImage(source, 0, 0);
       context.restore();
     });
-    return { url: canvas.toDataURL('image/png'), x, y, width, height };
+    // Encode off the main thread and hand the <image> a blob URL. toDataURL
+    // encoded 64 PNGs synchronously on first mount and parked megabytes of
+    // base64 in href attributes (owner ruling 2026-09-21, R20).
+    return encode(canvas).then((url) => ({ url, x, y, width, height }));
   });
   // This cache holds only the two finite card catalogs, with a bound for previews.
   if (bandTextures.size >= 128) bandTextures.delete(bandTextures.keys().next().value!);
@@ -323,7 +344,7 @@ export function WheelPrizeCard({
   ];
   const atlas =
     atlasUrl ??
-    `${import.meta.env.BASE_URL}assets/diamond-spins/${upgraded ? (titleOnly ? 'wheel-upgrade-titles-v1.png' : 'wheel-upgrade-cards-v1.png') : 'wheel-main-cards-v1.png'}`;
+    `${import.meta.env.BASE_URL}assets/diamond-spins/${upgraded ? (titleOnly ? 'wheel-upgrade-titles-v1.webp' : 'wheel-upgrade-cards-v1.webp') : 'wheel-main-cards-v1.webp'}`;
   const half = (endAngle - startAngle) / 2 - 1.1;
   const mid = (startAngle + endAngle) / 2;
   const outer = outerRadius - 6;

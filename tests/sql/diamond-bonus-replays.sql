@@ -102,7 +102,10 @@ BEGIN
     IF replay->>'ok' IS DISTINCT FROM 'false' OR shared->>'ok' IS DISTINCT FROM 'false' OR EXISTS(SELECT 1 FROM jsonb_array_elements(history->'replays') r WHERE r->>'id'=entry::text) THEN RAISE EXCEPTION 'Open Outcome Leaked'; END IF;
     IF game='crash' THEN
      IF NOT EXISTS(SELECT 1 FROM public.crash_rounds WHERE id=rid AND growth_k=.04 AND cap_cents<=10000) THEN RAISE EXCEPTION 'New Flight Used Old Speed Or Cap'; END IF;
+     -- A live round's clock is sealed (20260922173914), so the shortcut says it is maintenance.
+     PERFORM set_config('app.ledger_maintenance','probe clock: twenty-five seconds of play',true);
      UPDATE public.crash_rounds SET started_at=clock_timestamp()-interval '25 seconds' WHERE id=rid;
+     PERFORM set_config('app.ledger_maintenance','',true);
      SET LOCAL ROLE authenticated;
      settled:=public.fn_crash_cashout(rid,257);
      RESET ROLE;

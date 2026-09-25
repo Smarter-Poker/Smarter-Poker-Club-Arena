@@ -1,3 +1,35 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  JOIN A CLUB - on the spade console (#ClubArenaConsole)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This was a two-panel sheet: a bevelled art bay on the left with the vault
+ * emblem and a blue scan line sweeping over it, and on the right a Rajdhani
+ * title, a rounded code well with a 2px cyan focus ring, two bordered import
+ * chips, a bordered preview card and a `linear-gradient(#087bb2, #04557f)`
+ * button locked to the bottom. Every one of those was CSS pretending to be a
+ * control, and the emblem was an icon stuck on top of a frame rather than one
+ * built into it.
+ *
+ * It is now Dan's approved spade master, cut into head / rails / foot by
+ * SpadeConsole: JOIN A CLUB engraved in the header well, the lookup state in
+ * the well's painted pill slot, the code field a groove cut into the glass,
+ * PASTE INVITATION and SCAN QR IMAGE as lit words, the verified club printed
+ * as label/value rows separated by engraved rules, and the two doors on the
+ * painted plates in the foot - CLOSE on steel, the join on the blue glass.
+ * The crest at the top is the master's own; nothing is stuck on it.
+ *
+ * The full-page shape is unchanged and is a contract
+ * (tests/club-entry-redesign-regression.test.ts): 100dvh, a body that scrolls
+ * on its own, and a footer locked above the home indicator - which now carries
+ * the live status line, so a lookup result can never scroll out of sight.
+ *
+ * Nothing about the flow changed. The preview sequence guard, the verified
+ * identifier ref, the debounce, the paste and QR paths, the pending-request
+ * resume on `online`, the re-entry guard on join, the focus trap, the Escape
+ * owner and every reportError below are the ones that were here.
+ */
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -13,8 +45,9 @@ import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { reportError } from '../../utils/errorReporter';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
 import styles from './JoinClubModal.module.css';
-import { mediaUrl } from '../../utils/mediaBase';
 
 interface JoinClubModalProps {
   isOpen: boolean;
@@ -238,6 +271,39 @@ export default function JoinClubModal({
 
   if (!isOpen) return null;
 
+  /* The word in the header's painted pill slot: where the lookup has got to. */
+  const pill = isPreviewing
+    ? 'Checking'
+    : preview?.membership_status === 'pending'
+      ? 'Pending'
+      : preview
+        ? 'Verified'
+        : 'Code';
+  const pillInk: ConsoleInk =
+    preview?.membership_status === 'pending' ? 'gold' : preview ? 'green' : 'muted';
+
+  /* Two literal branches rather than one clever ternary: the plate label is
+     what a test reads, and `Confirm Join <club>` is pinned by name. */
+  const primaryPlate =
+    preview?.membership_status === 'pending'
+      ? {
+          label: 'Cancel Pending Request',
+          ink: 'red' as const,
+          onClick: cancelPending,
+        }
+      : {
+          label: isJoining
+            ? 'Securing Access'
+            : preview?.membership_status
+              ? 'Enter Club'
+              : preview
+                ? `Confirm Join ${preview.name}`
+                : 'Verify A Club Code',
+          ink: 'white' as const,
+          onClick: handleJoin,
+          disabled: isJoining || !preview?.id,
+        };
+
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div
@@ -248,33 +314,29 @@ export default function JoinClubModal({
         aria-labelledby="join-club-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className={styles.artPanel} aria-hidden="true">
-          {preview?.logo_url ? (
-            <img src={preview.logo_url} alt="" />
-          ) : (
-            <img
-              src={mediaUrl('images/club-arena/vault-iris-emblem-v1-320.webp')}
-              alt=""
-              width="320"
-              height="296"
-            />
-          )}
-          <span className={styles.artScan} />
-        </div>
-        <div className={styles.contentPanel}>
-          <button className={styles.closeButton} onClick={onClose} aria-label="Close" />
-          <div className={styles.scrollBody}>
-            <span className={styles.eyebrow}>Club Access / Verified Entry</span>
-            <h2 id="join-club-title" className={styles.title}>
-              Join A Club
-            </h2>
-            <p className={styles.subtitle}>
+        <div className={styles.scrollBody}>
+          <SpadeConsole
+            onClose={onClose}
+            as="div"
+            className={styles.console}
+            eyebrow="Club Access"
+            title="Join A Club"
+            titleId="join-club-title"
+            pill={pill}
+            pillInk={pillInk}
+            plates={{
+              secondary: { label: 'Close', onClick: onClose },
+              primary: primaryPlate,
+            }}
+          >
+            <p className={`sc-copy sc-copy--center ${styles.copy}`}>
               Enter A Code, Paste An Invitation, Or Upload A QR Screenshot. You Will Confirm The
               Club Before Anything Changes.
             </p>
 
-            <div className={styles.inputWrapper}>
-              <label htmlFor="join-club-code" className={styles.inputLabel}>
+            {/* A groove cut into the glass, not a bordered well. */}
+            <div className={styles.field}>
+              <label htmlFor="join-club-code" className={`sc-label sc-ink--blue ${styles.label}`}>
                 Club Code
               </label>
               <input
@@ -308,10 +370,24 @@ export default function JoinClubModal({
               />
             </div>
 
-            <div className={styles.importActions}>
-              <button onClick={pasteFromClipboard}>Paste Invitation</button>
-              <button onClick={() => qrInputRef.current?.click()} disabled={isScanning}>
-                {isScanning ? 'Scanning…' : 'Scan QR Image'}
+            {/* The two imports are lit words on the glass. The foot paints
+                BOTH plates and they are already spoken for, so a third and
+                fourth plate cannot exist here. */}
+            <div className={styles.wordRail}>
+              <button
+                type="button"
+                className={`${styles.word} sc-ink--blue`}
+                onClick={pasteFromClipboard}
+              >
+                Paste Invitation
+              </button>
+              <button
+                type="button"
+                className={`${styles.word} ${isScanning ? 'sc-ink--muted' : 'sc-ink--blue'}`}
+                onClick={() => qrInputRef.current?.click()}
+                disabled={isScanning}
+              >
+                {isScanning ? 'Scanning' : 'Scan QR Image'}
               </button>
               <input
                 ref={qrInputRef}
@@ -322,50 +398,45 @@ export default function JoinClubModal({
               />
             </div>
 
-            {isPreviewing && (
-              <div className={styles.lookupStatus} aria-live="polite">
-                Verifying Club…
-              </div>
-            )}
             {preview && (
-              <section className={styles.clubPreview} aria-label="Club Confirmation">
-                <div>
-                  <span>{preview.requires_approval ? 'Approval Required' : 'Open Membership'}</span>
-                  <strong>{preview.name}</strong>
-                  <small>{preview.member_count?.toLocaleString()} Members</small>
-                </div>
-                {preview.description && <p>{preview.description}</p>}
+              <section className={styles.preview} aria-label="Club Confirmation">
+                <h3 className={`${styles.previewName} sc-ink--silver`}>{preview.name}</h3>
+                <dl className={styles.facts}>
+                  <div className={styles.fact}>
+                    <dt className={`sc-label sc-ink--blue ${styles.factLabel}`}>Membership</dt>
+                    <dd className={`${styles.factValue} sc-ink--silver`}>
+                      {preview.requires_approval ? 'Approval Required' : 'Open Membership'}
+                    </dd>
+                  </div>
+                  <div className={styles.fact}>
+                    <dt className={`sc-label sc-ink--blue ${styles.factLabel}`}>Members</dt>
+                    <dd className={`${styles.factValue} sc-ink--silver`}>
+                      {compactChips(preview.member_count)}
+                    </dd>
+                  </div>
+                </dl>
+                {preview.description && (
+                  <p className={`sc-copy ${styles.copy}`}>{preview.description}</p>
+                )}
               </section>
             )}
-            {statusMessage && (
-              <div className={styles.statusMessage} aria-live="polite">
-                {titleCase(statusMessage)}
-              </div>
-            )}
-          </div>
-
-          <footer className={styles.pageFooter}>
-            {preview?.membership_status === 'pending' ? (
-              <button className={styles.cancelRequestButton} onClick={cancelPending}>
-                Cancel Pending Request
-              </button>
-            ) : (
-              <button
-                className={styles.joinButton}
-                onClick={handleJoin}
-                disabled={isJoining || !preview?.id}
-              >
-                {isJoining
-                  ? 'Securing Access…'
-                  : preview?.membership_status
-                    ? 'Enter Club'
-                    : preview
-                      ? `Confirm Join ${preview.name}`
-                      : 'Verify A Club Code'}
-              </button>
-            )}
-          </footer>
+          </SpadeConsole>
         </div>
+
+        {/* Locked above the home indicator: the lookup result can never scroll
+            out of sight, and it is the same strip whether it is a status or
+            the standing hint. */}
+        <footer className={styles.pageFooter}>
+          <p className={`sc-label ${styles.status}`} aria-live="polite">
+            {isPreviewing ? (
+              <span className="sc-ink--blue">Verifying Club</span>
+            ) : statusMessage ? (
+              <span className="sc-ink--gold">{titleCase(statusMessage)}</span>
+            ) : (
+              <span className="sc-ink--muted">A Club Code Is Five Or Six Digits</span>
+            )}
+          </p>
+        </footer>
       </div>
     </div>
   );

@@ -65,6 +65,15 @@ import {
   type ExistingCashGame,
 } from '../../config/cashGames';
 import { Slider, Toggle } from '../table-config/controls';
+import { usePlatformCapability } from '../../hooks/usePlatformCapability';
+import {
+  DEFAULT_KILL_THRESHOLD_BB,
+  KILL_THRESHOLDS_BB,
+  killRuleLinePart,
+  type KillMode,
+  type KillTableRule,
+  type KillThresholdBb,
+} from '../../utils/killPot';
 import './CashGameCreateFlow.css';
 
 interface Props {
@@ -119,6 +128,16 @@ export default function CashGameCreateFlow({
 
   const limitGame = isFixedLimitVariant(variant);
   const presets = useMemo(() => presetsFor(limitGame), [limitGame]);
+
+  /* KILL POTS (rule manifest kill-v1). Offered on a fixed-limit game ONLY
+     while the registry says cash.fixed_limit.kill_pots is available; until
+     then nothing about kills is drawn, said or sent. The registry is not even
+     asked for a no-limit or pot-limit game. The database is the authority: it
+     refuses a kill mode other than 'off' while the capability is not live, on
+     any other variant, beside bomb pots, and a half kill on an odd big blind. */
+  const killGate = usePlatformCapability(limitGame ? 'cash.fixed_limit.kill_pots' : null);
+  const [killMode, setKillMode] = useState<KillMode>('off');
+  const [killThreshold, setKillThreshold] = useState<KillThresholdBb>(DEFAULT_KILL_THRESHOLD_BB);
 
   /* Step 1 + 2 -> the server's defaults for this template x variant. Every
      change re-loads them (OPORD 1.3 ROE 6: templates auto-load defaults). */
@@ -242,6 +261,14 @@ export default function CashGameCreateFlow({
   }, [presets, rungTaken]);
 
   const stakes = blindsIndex !== null ? presets[blindsIndex] : null;
+  /* A template that deals bomb pots cannot also kill (kill-v1: the two are
+     refused together), so the control says so instead of offering a choice. */
+  const templateBombs = snapshot?.bombs?.enabled === true;
+  const killOffered = limitGame && killGate === 'available';
+  const killChoice: KillTableRule | null =
+    killOffered && !templateBombs && killMode !== 'off'
+      ? { mode: killMode, thresholdBb: killThreshold }
+      : null;
   const stepTemplateDone = template !== null;
   const stepVariantDone = stepTemplateDone && variant !== null;
   const stepModeDone = stepVariantDone && tableMode !== null;
@@ -289,6 +316,30 @@ export default function CashGameCreateFlow({
         };
         if (!res.ok || !res.table_id) throw new Error('fn_cash_game_create returned no table');
 
+        /* KILL POTS through the owner door the database honours,
+           fn_set_cash_game_kill_settings(p_game_id, p_kill_mode,
+           p_kill_threshold_bb) (20260924034010): it writes the game's
+           ruleset_snapshot.kill and projects it onto every live table through
+           fn_cash_apply_ruleset. fn_cash_game_create drops override keys it
+           does not read, so a kill sent in p_overrides would be lost without a
+           word. The game exists either way; a refused kill is said, not
+           swallowed. */
+        let killRefused: string | null = null;
+        if (killChoice) {
+          const { error: killError } = res.game_id
+            ? await supabase.rpc('fn_set_cash_game_kill_settings', {
+                p_game_id: res.game_id,
+                p_kill_mode: killChoice.mode,
+                p_kill_threshold_bb: killChoice.thresholdBb,
+              })
+            : { error: new Error('fn_cash_game_create returned no game') };
+          if (killError) {
+            reportError(killError, 'CashGameCreateFlow.kill_settings_failed');
+            killRefused = killError.message || 'The Kill Setting Was Refused';
+            toast.error(`Game Created Without Kill Pots: ${killRefused}`);
+          }
+        }
+
         masterBus.emit('TABLE_CREATED', { tableId: res.table_id, clubId: resolvedClubId });
 
         if (mode === 'start') {
@@ -299,10 +350,10 @@ export default function CashGameCreateFlow({
           } catch (err) {
             reportError(err, 'CashGameCreateFlow.engine_wake');
           }
-          toast.success('Game Created And Started');
+          if (!killRefused) toast.success('Game Created And Started');
           navigate(`/table/${res.table_id}`);
         } else {
-          toast.success('Game Created');
+          if (!killRefused) toast.success('Game Created');
           if (onSaved) onSaved();
           else navigate(`/clubs/${clubId}`);
         }
@@ -338,6 +389,7 @@ export default function CashGameCreateFlow({
       tableMode,
       navigate,
       toast,
+      killChoice,
     ]
   );
 
@@ -524,6 +576,7 @@ export default function CashGameCreateFlow({
                 seats: handedness ?? snapshot.seats,
                 min_buyin_bb: overrides.min_buyin_bb,
                 max_buyin_bb: overrides.max_buyin_bb,
+                kill: killChoice,
               })}
               joinDisabled
             />
@@ -695,6 +748,62 @@ export default function CashGameCreateFlow({
                   setOverride('options', { ...overrides.options, seven_deuce_enabled: v })
                 }
               />
+            )}
+            {killOffered && (
+              <div
+                className="cash-create__promise"
+                role="group"
+                aria-label="Kill Pots"
+                data-testid="cash-create-kill"
+              >
+                <span className="cash-create__promise-title">Kill Pots</span>
+                {templateBombs ? (
+                  <p className="cash-create__note">
+                    Kill Pots Cannot Run On A Game With Bomb Pots. Choose The Classic Template To
+                    Offer Them.
+                  </p>
+                ) : (
+                  <>
+                    <div className="cash-create__chips" aria-label="Kill Mode">
+                      {(['off', 'half', 'full'] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className={`config-preset-chip cash-create__chip${killMode === m ? ' is-selected' : ''}`}
+                          onClick={() => setKillMode(m)}
+                          aria-pressed={killMode === m}
+                        >
+                          {m === 'off' ? 'Off' : m === 'half' ? 'Half Kill' : 'Full Kill'}
+                        </button>
+                      ))}
+                    </div>
+                    {killMode !== 'off' && (
+                      <>
+                        <div className="cash-create__chips" aria-label="Kill Threshold">
+                          {KILL_THRESHOLDS_BB.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              className={`config-preset-chip cash-create__chip${killThreshold === t ? ' is-selected' : ''}`}
+                              onClick={() => setKillThreshold(t)}
+                              aria-pressed={killThreshold === t}
+                            >
+                              {t} BB
+                            </button>
+                          ))}
+                        </div>
+                        <p className="cash-create__note">
+                          {killRuleLinePart({ mode: killMode, thresholdBb: killThreshold })}: One
+                          Player Winning Every Pot Of A Hand Worth {killThreshold} Big Blinds Or
+                          More Posts A Live Kill Blind, And The Next Hand Plays At{' '}
+                          {killMode === 'full' ? 'Double' : 'One And A Half Times The'} Limits. The
+                          Small And Big Blinds Do Not Change.
+                        </p>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             )}
             <Slider
               label="Action Time"

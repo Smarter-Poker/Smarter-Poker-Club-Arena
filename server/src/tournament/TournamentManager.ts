@@ -1582,7 +1582,14 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     if (current.state === 'park_requested') {
       const begun = await this.prepareParkedTournamentBreak(current);
-      if (!begun || !begun.ok || !this.eliminationMutationAllowed()) return;
+      if (!begun) {
+        // No destination could be proven. On the last open table that is not a
+        // transient capacity shortage that a later sweep will clear - it is the
+        // terminal case, and the no-start continuation is its only exit.
+        await this.continueAbandonedNoStartPark(current);
+        return;
+      }
+      if (!begun.ok || !this.eliminationMutationAllowed()) return;
       current = begun;
     }
     if (current.state === 'begun') {
@@ -1593,6 +1600,55 @@ export class TournamentManager extends TournamentManagerEliminations {
       current = await this.reconcileTournamentBreak(current);
     }
     if (this.eliminationMutationAllowed()) await this.retireTournamentBreak(current);
+  }
+
+  /**
+   * The no-start continuation is the only terminal exit a park on the last open
+   * table has. Until now it was reachable from exactly one place - table engine
+   * admission - so a park abandoned by a retired lease generation could never
+   * take it: the discovery path reaches the continuation only through
+   * bindStoppedOriginalBreak, and that demands an in-memory hand permit issued
+   * under the CURRENT generation, which a table parked by a dead generation and
+   * not dealt since can never present. The operation was then discovered for
+   * ever and finished never. This offers the already audited exit to the
+   * operation discovery just found; continueExcludedNoStartTable re-proves the
+   * whole scope itself and refuses anything it has not proven.
+   */
+  protected async continueAbandonedNoStartPark(state: TournamentTableBreakState): Promise<boolean> {
+    if (
+      !state.ok ||
+      state.state !== 'park_requested' ||
+      state.terminal_handoff_required ||
+      state.members.length ||
+      !state.custody_id
+    )
+      return false;
+    const engine = this.tableEngines.get(state.source_table_id);
+    if (!engine || !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine))
+      return false;
+    const lifecycle = this.captureLifecycleToken();
+    const leaseGeneration = this.getTournamentLeaseGeneration();
+    if (!lifecycle || !leaseGeneration) return false;
+    const current = (): boolean =>
+      this.lifecycleIsCurrent(lifecycle) &&
+      this.eliminationMutationAllowed() &&
+      this.getTournamentLeaseGeneration() === leaseGeneration &&
+      this.tableEngines.get(state.source_table_id) === engine &&
+      this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine);
+    if (!current()) return false;
+    let continued = false;
+    try {
+      continued = await this.continueExcludedNoStartTable(state.source_table_id, engine, current);
+    } catch (error) {
+      // Eligibility that changed under us is the ordinary race, not a defect:
+      // the next discovery pass re-reads the operation and decides again.
+      if (error instanceof TournamentNoStartContinuationRefusedError) return false;
+      throw error;
+    }
+    if (!continued) return false;
+    if (!current()) throw new Error('F06 abandoned continuation owner changed');
+    await this.readmitContinuedNoStartTable(state.source_table_id, engine);
+    return true;
   }
 
   /** Local custody only; durable discovery and completion belong to the break RPC. */

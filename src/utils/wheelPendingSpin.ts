@@ -1,5 +1,6 @@
 import type { WheelContractVersion, WheelSpinResult } from '../services/DiamondWheelService';
 import { assertWheelAward } from './wheelAward';
+import { reportError } from './errorReporter';
 
 export type WheelSpinMode = 'paid' | 'welcome' | 'daily_bonus';
 export interface WheelPendingSpin {
@@ -30,7 +31,7 @@ function valid(a: WheelPendingSpin, userId: string, clubId: string): boolean {
     (a.mode === 'paid' || a.mode === 'welcome' || a.mode === 'daily_bonus') &&
     (a.contractVersion === undefined
       ? a.entryDiamonds === undefined
-      : (a.contractVersion === 2 || a.contractVersion === 3) &&
+      : (a.contractVersion === 2 || a.contractVersion === 3 || a.contractVersion === 4) &&
         Number.isSafeInteger(a.entryDiamonds) &&
         Number(a.entryDiamonds) >= 25 &&
         Number(a.entryDiamonds) <= 2500 &&
@@ -41,12 +42,57 @@ function valid(a: WheelPendingSpin, userId: string, clubId: string): boolean {
   );
 }
 
-/** Persist before submitting money. An uncertain response keeps the exact request across reloads. */
-export function readWheelPending(userId: string, clubId: string): WheelPendingSpin | null {
-  const raw = localStorage.getItem(keyFor(userId, clubId));
+/** A saved spin this client cannot read back is dropped and reported, never thrown. */
+function discard(key: string, error: unknown, onDiscarded?: () => void) {
+  reportError(error, 'wheelPendingSpin.unreadable');
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* Storage that cannot be written cannot hold a spin either. */
+  }
+  onDiscarded?.();
+}
+
+/** Persist before submitting money. An uncertain response keeps the exact request across reloads.
+ *
+ * A saved spin that cannot be read back (corrupt JSON, a shape this client does
+ * not send, or storage that refuses to be read) is discarded, never thrown. A
+ * wheel spin settles atomically on the server - the debit and the prize in one
+ * transaction, and a won game becomes a pending award the wheel reopens - so
+ * all that is lost is the reveal. Throwing here stranded the wheel on
+ * "Reconnecting" for good: the save lives in localStorage, and every load retry
+ * read it again. Owner ruling 2026-09-21: nothing may make a player check or
+ * recover anything.
+ *
+ * Discarding it silently is not the same as saying so. `onDiscarded` is called
+ * once, after the value is gone, for the one caller that has somewhere to say
+ * it (the wheel page's load): the player is told the spin could not be read and
+ * that History still shows it, rather than finding their reveal simply absent.
+ * Callers with nowhere to say it pass nothing. */
+export function readWheelPending(
+  userId: string,
+  clubId: string,
+  onDiscarded?: () => void
+): WheelPendingSpin | null {
+  const key = keyFor(userId, clubId);
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    return null;
+  }
   if (!raw) return null;
-  const a = JSON.parse(raw) as WheelPendingSpin;
-  if (!valid(a, userId, clubId)) throw new Error('The Saved Spin Needs Recovery. Contact Support');
+  let a: WheelPendingSpin;
+  try {
+    a = JSON.parse(raw) as WheelPendingSpin;
+  } catch (error) {
+    discard(key, error, onDiscarded);
+    return null;
+  }
+  if (!valid(a, userId, clubId)) {
+    discard(key, new Error('The Saved Spin Could Not Be Replayed'), onDiscarded);
+    return null;
+  }
   return a;
 }
 
@@ -69,11 +115,11 @@ export function assertWheelReceipt(r: WheelSpinResult, a: WheelPendingSpin): voi
   if (
     r.ok !== true ||
     (a.contractVersion !== undefined &&
-      // A saved v2 request may first execute after the v3 cutover. Its sealed
-      // commit, stake and mode stay identical; a v3 request never downgrades.
-      ((a.contractVersion === 3
-        ? r.contract_version !== 3
-        : r.contract_version !== 2 && r.contract_version !== 3) ||
+      // A saved request may first execute after a cutover. Its sealed commit,
+      // stake and mode stay identical, and the server may answer under a LATER
+      // contract than the one the request was written under; it may never
+      // answer under an earlier one.
+      ((r.contract_version ?? 0) < a.contractVersion ||
         r.entry_value_diamonds !== a.entryDiamonds ||
         r.player_cost_diamonds !== (a.mode === 'paid' ? a.entryDiamonds : 0) ||
         (a.mode === 'daily_bonus' && r.entry_funded_by !== 'mint'))) ||

@@ -175,7 +175,11 @@ export function getArenaSectionNavigation(
       items.push(
         { label: 'Operations', path: `/unions/${unionId}/operations` },
         { label: 'Statements', path: `/unions/${unionId}/statements` },
-        { label: 'Settlement', path: `/unions/${unionId}/settlement` }
+        { label: 'Settlement', path: `/unions/${unionId}/settlement` },
+        /* CLUB AND UNION DIAMOND COSTS (2026-09-22): the union's back office
+           trial, paid access, sponsorship of its clubs and receipts. Behind
+           the same oversight gate as statements and settlement. */
+        { label: 'Diamond Costs', path: `/unions/${unionId}/diamond-costs` }
       );
     }
     return {

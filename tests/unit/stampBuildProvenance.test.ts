@@ -355,7 +355,16 @@ describe('actual build provenance subprocess', () => {
 });
 
 describe('actual client publisher provenance admission', () => {
-  const workflow = readFileSync(path.resolve('.github/workflows/publish-club-arena.yml'), 'utf8');
+  /**
+   * The publisher's shell is this workflow PLUS the origin activation
+   * transaction it pipes to the host. That transaction was a heredoc inside one
+   * `run:` step until 2026-09-22, when the step outgrew the size GitHub Actions
+   * accepts for a single `run` and the whole workflow stopped parsing. Reading
+   * both keeps this pin on the same bytes it always guarded.
+   */
+  const workflow =
+    readFileSync(path.resolve('.github/workflows/publish-club-arena.yml'), 'utf8') +
+    readFileSync(path.resolve('.github/scripts/publish-origin-activate.sh'), 'utf8');
   const blocks = [...workflow.matchAll(/<<'NODE'\n([\s\S]*?)^\s*NODE$/gm)];
   const courier = blocks.find((block) =>
     block[1].includes("fs.readFileSync('dist/ca-provenance.json'")

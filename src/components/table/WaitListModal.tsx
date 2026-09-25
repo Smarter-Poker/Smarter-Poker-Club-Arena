@@ -7,11 +7,19 @@
  * - Current position display
  * - Estimated wait time
  * - Leave wait list option
- * - Auto-seat toggle
+ *
+ * REBUILT ON THE CONSOLE 2026-09-14 (#ClubArenaConsole, the shark family).
+ * Re-rendered, not rewritten: every prop, the confirm step and its reset on
+ * close, the stagger timers, the one-minute tick, the position and estimate
+ * maths, the haptic on leave and the pinned strings ("#2", "Est. Wait",
+ * "No Players Waiting") are the ones that were here before. What changed is
+ * the picture: the frame is Dan's shark heads-up master, the queue prints as
+ * rows on the glass, and the one action sits on the painted plate.
  */
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './WaitListModal.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
@@ -141,134 +149,144 @@ export function WaitListModal({
 
   if (!isOpen) return null;
 
+  const inLine = myPosition > 0;
+
+  /* ONE PLATE, THREE STATES. The shark foot paints one plate, so the action
+     changes with the step instead of a second plate appearing: Close when the
+     player is not in line, Leave Wait List when they are, and Leave in red
+     ink once they have said they mean it. Cancel is the lit word on the glass
+     beside the question - the control Club Rules uses for its second action. */
+  const plate = !inLine
+    ? { label: 'Close', ink: 'silver' as const, onClick: onClose }
+    : showConfirmLeave
+      ? {
+          label: 'Leave',
+          ink: 'red' as const,
+          onClick: () => {
+            haptic.light();
+            handleLeave();
+          },
+        }
+      : {
+          label: 'Leave Wait List',
+          ink: 'silver' as const,
+          onClick: () => setShowConfirmLeave(true),
+        };
+
   return (
-    <div className="waitlist-overlay" onClick={onClose}>
-      <div className="waitlist-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="waitlist-modal__header">
-          <h2 className="waitlist-modal__title">Wait List</h2>
-          <button className="waitlist-modal__close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-
-        {/* Table Info */}
-        <div className="waitlist-modal__table-info">
-          <span className="waitlist-modal__table-name">{tableName}</span>
-          <span className="waitlist-modal__table-blinds">{blinds}</span>
-        </div>
-
-        {/* My Position */}
-        {myPosition > 0 && (
-          <div className="waitlist-modal__position">
-            <div className="waitlist-modal__position-number">#{myPosition}</div>
-            <div className="waitlist-modal__position-info">
-              <span className="waitlist-modal__position-label">Your Position</span>
-              {estimatedWait !== null && (
-                <span className="waitlist-modal__position-eta">
-                  Est. Wait: {formatDuration(estimatedWait)}
+    <div className="wl-overlay" onClick={onClose}>
+      <div
+        className="wl-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wl-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SpadeConsole
+          onClose={onClose}
+          as="section"
+          family="shark"
+          eyebrow={tableName}
+          title="Wait List"
+          titleId="wl-title"
+          pill={inLine ? `#${myPosition}` : blinds}
+          pillInk={inLine ? 'gold' : 'blue'}
+          plates={{ primary: plate }}
+        >
+          <div className="wl-rows">
+            {inLine && (
+              <div className="wl-row">
+                <span className="sc-label sc-ink--blue">Your Position</span>
+                <span className="wl-row__value sc-ink--silver">#{myPosition}</span>
+              </div>
+            )}
+            {inLine && estimatedWait !== null && (
+              <div className="wl-row">
+                <span className="sc-label sc-ink--blue">Est. Wait</span>
+                <span className="wl-row__value sc-ink--silver">
+                  {formatDuration(estimatedWait)}
                 </span>
-              )}
+              </div>
+            )}
+            <div className="wl-row">
+              <span className="sc-label sc-ink--blue">Blinds</span>
+              <span className="wl-row__value sc-ink--silver">{blinds}</span>
             </div>
           </div>
-        )}
 
-        {/* Queue List */}
-        <div className="waitlist-modal__queue">
-          <div className="waitlist-modal__queue-header">
-            <span>Position</span>
-            <span>Player</span>
-            <span>Waiting</span>
-          </div>
-          <div className="waitlist-modal__queue-body">
-            {players.length === 0 ? (
-              <div className="waitlist-modal__empty">No Players Waiting</div>
-            ) : (
-              players.map((player, i) => (
-                <div
-                  key={player.playerId}
-                  className={`waitlist-modal__player ${player.playerId === myPlayerId ? 'waitlist-modal__player--me' : ''}`}
-                  style={{
-                    opacity: visiblePlayers.has(i) ? 1 : 0,
-                    transform: visiblePlayers.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                    transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                  }}
-                >
-                  <span className="waitlist-modal__player-position">#{player.position}</span>
-                  <div className="waitlist-modal__player-info">
-                    <div className="waitlist-modal__player-avatar">
-                      {player.avatar ? (
-                        <img
-                          loading="lazy"
-                          decoding="async"
-                          src={player.avatar}
-                          alt=""
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                          }}
-                        />
-                      ) : (
-                        <span>{player.playerName[0]?.toUpperCase()}</span>
-                      )}
-                    </div>
-                    <span className="waitlist-modal__player-name">
-                      {player.playerName}
-                      {player.playerId === myPlayerId && ' (You)'}
+          {showConfirmLeave ? (
+            <div className="wl-confirm">
+              <span className="sc-copy sc-copy--center sc-ink--red">
+                Are You Sure You Want To Leave?
+              </span>
+              <button
+                type="button"
+                className="wl-word sc-ink--blue"
+                onClick={() => setShowConfirmLeave(false)}
+                autoFocus
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="wl-queue" aria-label="Queue">
+              <div className="wl-queue__head">
+                <span className="sc-label sc-ink--muted">Position</span>
+                <span className="sc-label sc-ink--muted">Player</span>
+                <span className="sc-label sc-ink--muted wl-queue__right">Waiting</span>
+              </div>
+              {players.length === 0 ? (
+                <p className="sc-copy sc-copy--center sc-ink--muted wl-queue__empty">
+                  No Players Waiting
+                </p>
+              ) : (
+                players.map((player, i) => (
+                  <div
+                    key={player.playerId}
+                    className={`wl-player${player.playerId === myPlayerId ? ' wl-player--me' : ''}`}
+                    style={{
+                      opacity: visiblePlayers.has(i) ? 1 : 0,
+                      transform: visiblePlayers.has(i) ? 'translateY(0)' : 'translateY(8px)',
+                      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                    }}
+                  >
+                    <span className="wl-player__position sc-ink--blue">#{player.position}</span>
+                    <span className="wl-player__who">
+                      <span className="wl-player__avatar" aria-hidden="true">
+                        {player.avatar ? (
+                          <img
+                            loading="lazy"
+                            decoding="async"
+                            src={player.avatar}
+                            alt=""
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
+                            }}
+                          />
+                        ) : (
+                          <span>{player.playerName[0]?.toUpperCase()}</span>
+                        )}
+                      </span>
+                      <span className="wl-player__name sc-ink--silver">
+                        {player.playerName}
+                        {player.playerId === myPlayerId && ' (You)'}
+                      </span>
+                    </span>
+                    <span className="wl-player__wait sc-ink--muted">
+                      {formatWaitTime(player.joinedAt)}
                     </span>
                   </div>
-                  <span className="waitlist-modal__player-wait">
-                    {formatWaitTime(player.joinedAt)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="waitlist-modal__actions">
-          {myPosition > 0 && !showConfirmLeave && (
-            <button
-              type="button"
-              className="waitlist-modal__leave-btn"
-              onClick={() => setShowConfirmLeave(true)}
-            >
-              Leave Wait List
-            </button>
-          )}
-
-          {showConfirmLeave && (
-            <div className="waitlist-modal__confirm">
-              <span>Are You Sure You Want To Leave?</span>
-              <div className="waitlist-modal__confirm-actions">
-                <button
-                  type="button"
-                  className="waitlist-modal__confirm-no"
-                  onClick={() => setShowConfirmLeave(false)}
-                  autoFocus
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="waitlist-modal__confirm-yes"
-                  onClick={() => {
-                    haptic.light();
-                    handleLeave();
-                  }}
-                >
-                  Leave
-                </button>
-              </div>
+                ))
+              )}
             </div>
           )}
 
-          {myPosition <= 0 && (
-            <button className="waitlist-modal__close-btn" onClick={onClose}>
+          {inLine && !showConfirmLeave && (
+            <button type="button" className="wl-word sc-ink--muted wl-close" onClick={onClose}>
               Close
             </button>
           )}
-        </div>
+        </SpadeConsole>
       </div>
     </div>
   );

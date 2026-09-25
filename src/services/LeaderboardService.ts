@@ -162,6 +162,40 @@ export interface LeaderboardRewardPlan {
   published_at: string;
 }
 
+/** One immutable published version, as the owner's program history shows it. */
+export interface LeaderboardProgramHistoryEntry {
+  id: string;
+  club_id: string;
+  version: number;
+  published_at: string;
+  published_by: string | null;
+  /** Resolved from profiles; null when the publisher could not be named. */
+  publisher_name: string | null;
+  rewards_enabled: boolean;
+  payout_metric: Extract<LeaderboardMetric, 'profit' | 'hands_played' | 'tournaments_won' | 'roi'>;
+  suggestion_key: LeaderboardPrizePlanKey;
+  weekly_prizes: LeaderboardPrize[];
+  monthly_prizes: LeaderboardPrize[];
+  weekly_effective_from: string;
+  monthly_effective_from: string;
+  funding_owner_type: 'union' | 'club';
+}
+
+const HISTORY_METRICS = new Set(['profit', 'hands_played', 'tournaments_won', 'roi']);
+const HISTORY_PLAN_KEYS = new Set(['balanced', 'top_heavy', 'even', 'custom']);
+
+function readHistoryPrizes(value: unknown): LeaderboardPrize[] | null {
+  if (!Array.isArray(value)) return null;
+  const prizes: LeaderboardPrize[] = [];
+  for (const row of value) {
+    const rank = Number((row as { rank?: unknown })?.rank);
+    const amount = Number((row as { amount?: unknown })?.amount);
+    if (!Number.isInteger(rank) || rank < 1 || !Number.isFinite(amount) || amount < 0) return null;
+    prizes.push({ rank, amount });
+  }
+  return prizes;
+}
+
 export type LeaderboardSettlementState =
   | 'not_published'
   | 'disabled'
@@ -1023,6 +1057,95 @@ export const LeaderboardService = {
       if (strict) throw err;
       return [];
     }
+  },
+
+  /**
+   * Published program versions for one club, newest first, with each
+   * publisher's name. The versions table is readable to signed-in users once a
+   * program is published (its RLS policy), so this is a plain read; the page
+   * only shows it to the club's prize managers. Malformed rows fail the read
+   * rather than painting an unverified history.
+   */
+  async getRewardProgramHistory(
+    clubId: string,
+    count: number
+  ): Promise<LeaderboardProgramHistoryEntry[]> {
+    const { data, error } = await supabase
+      .from('leaderboard_reward_program_versions')
+      .select(
+        'id, club_id, version, published_at, published_by, rewards_enabled, payout_metric, suggestion_key, weekly_prizes, monthly_prizes, weekly_effective_from, monthly_effective_from, funding_owner_type'
+      )
+      .eq('club_id', clubId)
+      .order('version', { ascending: false })
+      .limit(count);
+    if (error) {
+      reportError(error, 'LeaderboardService.getRewardProgramHistory');
+      throw error;
+    }
+
+    const entries: LeaderboardProgramHistoryEntry[] = [];
+    for (const raw of (data as Record<string, unknown>[] | null) ?? []) {
+      const weekly = readHistoryPrizes(raw.weekly_prizes);
+      const monthly = readHistoryPrizes(raw.monthly_prizes);
+      const version = Number(raw.version);
+      if (
+        typeof raw.id !== 'string' ||
+        raw.club_id !== clubId ||
+        !Number.isInteger(version) ||
+        version < 1 ||
+        typeof raw.published_at !== 'string' ||
+        typeof raw.rewards_enabled !== 'boolean' ||
+        !HISTORY_METRICS.has(String(raw.payout_metric)) ||
+        !HISTORY_PLAN_KEYS.has(String(raw.suggestion_key)) ||
+        !weekly ||
+        !monthly ||
+        typeof raw.weekly_effective_from !== 'string' ||
+        typeof raw.monthly_effective_from !== 'string' ||
+        (raw.funding_owner_type !== 'union' && raw.funding_owner_type !== 'club')
+      ) {
+        throw new Error('Program History Returned Invalid Data');
+      }
+      entries.push({
+        id: raw.id,
+        club_id: clubId,
+        version,
+        published_at: raw.published_at,
+        published_by: typeof raw.published_by === 'string' ? raw.published_by : null,
+        publisher_name: null,
+        rewards_enabled: raw.rewards_enabled,
+        payout_metric: raw.payout_metric as LeaderboardProgramHistoryEntry['payout_metric'],
+        suggestion_key: raw.suggestion_key as LeaderboardPrizePlanKey,
+        weekly_prizes: weekly,
+        monthly_prizes: monthly,
+        weekly_effective_from: raw.weekly_effective_from,
+        monthly_effective_from: raw.monthly_effective_from,
+        funding_owner_type: raw.funding_owner_type,
+      });
+    }
+
+    const publisherIds = [
+      ...new Set(entries.map((entry) => entry.published_by).filter((id): id is string => !!id)),
+    ];
+    if (publisherIds.length > 0) {
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', publisherIds);
+      if (profileError) {
+        // The history stays readable without names; the row says so.
+        reportError(profileError, 'LeaderboardService.getRewardProgramHistory.publishers');
+      } else {
+        const names = new Map(
+          ((profiles as { id: string; username: string | null }[] | null) ?? []).map(
+            (profile) => [profile.id, profile.username] as const
+          )
+        );
+        for (const entry of entries) {
+          entry.publisher_name = (entry.published_by && names.get(entry.published_by)) || null;
+        }
+      }
+    }
+    return entries;
   },
 
   async getLeaderboardRewardSetup(clubId: string): Promise<LeaderboardSettings> {

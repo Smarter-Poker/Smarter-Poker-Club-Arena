@@ -64,7 +64,12 @@ export interface TableReopenPlan {
   refreshHumanWindow: boolean;
 }
 
-/** A tournament in one of these statuses still expects to be played. */
+/**
+ * A tournament in one of these statuses still expects to be played ON ITS
+ * TABLES. BAGGED (multi-day, between two days) is deliberately absent: the bag
+ * closed every table on purpose and the next stage seats a fresh draw, so a
+ * closed table under a bagged event is exactly what it should have.
+ */
 export function isLiveTournamentStatus(status: string | null | undefined): boolean {
   const s = String(status ?? '').toUpperCase();
   return s === 'REGISTERING' || s === 'RUNNING';

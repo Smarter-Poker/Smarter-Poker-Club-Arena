@@ -1,287 +1,632 @@
 /**
- * CLUB BANK CASHIER — smarter.poker palette only (Dan 2026-08-23).
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  CLUB BANK CASHIER AND PLAYER WALLET - on the spade console (#ClubArenaConsole)
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * The palette this product actually uses, and the only one allowed here:
- *   surfaces  #223046 -> #1a2436 -> #131b28 -> #0d1120  (navy, top to bottom)
- *   accent    #6fdcff / #00b4e6                          (brand cyan: "a way in")
- *   action    #1877f2 / #0a5dc2                          (brand blue: "do it")
- *   text      #e8eaf0 primary, #8892a4 secondary, #6b7686 hints
- *   refusal   #ef4444 / #ffb4b4
- * No gold, no purple, no mint green. Those were the off-palette colours the
- * BBJ banner carried before 2026-08-20 and the Chip Mint carried until today.
+ * THIS STYLESHEET SERVES TWO COMPONENTS: WalletCashierModal owns it and
+ * PlayerWalletModal imports it, and both print the same `.cbc-*` vocabulary on
+ * the glass of one SpadeConsole. UnionWalletModal borrowed it until 2026-09-14
+ * and now has its own sheet on the riveted master.
+ *
+ * THE OLD MIDDLE SECTION IS GONE (2026-09-22). Until today this file carried
+ * the pre-console chassis unscoped - a rounded gradient panel, pill tabs, a
+ * segmented control, bordered member cards, tinted total tiles, a gradient
+ * confirm button - and re-typed every one of them under `.wcm` at the bottom,
+ * because PlayerWalletModal still wore the old dress and stripping it would
+ * have restyled that surface with no picture behind it. PlayerWalletModal is
+ * on the master now, so each class has ONE rule and it is the console's: a
+ * lit word or a line of copy on the black glass, rows separated by an engraved
+ * rule (a black line with an 8% light lip, the same cut the master's own
+ * chrome rules are made of). Nothing below draws a frame, a pill, a card, a
+ * gradient or a corner. The only things with any edge are the two the master
+ * does not paint - the fields - and they are engraved rules, not boxes.
+ *
+ * Every colour is an ink the kit already owns (SpadeConsole.css): silver
+ * #e4e7ec, white #f4f7fb, blue #45adff, green #c8ffd2, red #ff5b6e, gold
+ * #ffd700, muted #9aa5b3. Sizes are cqw against the console. No :hover.
+ *
+ * metallic-popups.css bevels, wells, rounds and recolours every button and
+ * input inside a `[role='dialog']` with `!important` from a zero-specificity
+ * `:where()`, and paints steel hardware on anything labelled Close. Each of
+ * those longhands is restated here with `!important` at a class selector.
+ *
+ * `tests/cashier-ui-role-scoping.test.ts` pins ten selectors here at 44px
+ * (.cbc-x .cbc-tab '.cbc-seg button' .cbc-member '.cbc-actions button'
+ * .cbc-chip .cbc-export .cbc-undo .cbc-more .cbc-mint), and pins
+ * `max-height: 85vh` and `.cbc-body { overflow-y: auto }`. Every one of them
+ * is rendered by one of the two components and carries its own 44px.
  */
 
-.cbc-overlay {
+/* ── The backdrop and the panel the console sits in ──────────────────────── */
+
+.cbc-overlay.wcm-overlay {
   position: fixed;
   inset: 0;
   z-index: 1700;
-  background: rgba(4, 8, 16, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  backdrop-filter: blur(2px);
+  padding: 12px;
+  /* Black, not grey, and no blur: the console floats on the same black as the
+     page behind it. */
+  background: rgb(0 0 0 / 90%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-.cbc-panel {
-  width: 100%;
-  max-width: 480px;
-  max-height: 85vh;
+.cbc-panel.wcm.ac-popup {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(165deg, rgba(42, 42, 54, 0.95) 0%, rgba(24, 24, 32, 0.95) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  box-shadow:
-    0 24px 48px -12px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
-    inset 0 0 20px rgba(0, 0, 0, 0.2);
+  width: min(100%, 420px);
+  max-width: none;
+  max-height: 85vh;
   overflow: hidden;
-  backdrop-filter: blur(12px);
-  transform: translateZ(0);
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transform: none;
 }
 
-.cbc-panel--denied {
-  padding: 20px;
-  gap: 14px;
+/* The head and the foot are art at a fixed ratio; the glass between them is
+   what scrolls. */
+.wcm .sc {
+  min-height: 0;
+  max-height: 100%;
 }
 
-/* ── Header ───────────────────────────────────────────────────────────────── */
-.cbc-head {
+.wcm .sc__head,
+.wcm .sc__foot {
+  flex-shrink: 0;
+}
+
+.wcm .sc__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Direct children of the glass are laid out, never squashed: the console body
+   is the flex column that scrolls, so anything inside it that can shrink will
+   shrink instead of pushing the scroll. */
+.wcm .sc__body > * {
+  flex: 0 0 auto;
+}
+
+/* Every control on the glass is a thumb target. The painted plates are the
+   kit's and are sized by their zone, so they are left out. */
+.wcm :where(button:not(.sc-plate)) {
+  min-height: 44px;
+}
+
+/* The column inside the glass. It grows with what it holds (the console body
+   above is what scrolls), so this overflow never engages on a phone. */
+.cbc-body {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 18px 12px;
+  flex-direction: column;
+  gap: 3cqw;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.cbc-title {
-  font-family: 'Oswald', 'Impact', sans-serif;
-  font-size: 1.02rem;
+/* ── The balance this surface spends or reports ─────────────────────────── */
+
+.cbc-bank {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 3cqw;
+  align-items: baseline;
+  margin: 0;
+  padding: 2.6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cbc-bank > span {
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.cbc-bank strong {
+  justify-self: end;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 5.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+  color: #e4e7ec;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.cbc-bank-sub {
+  grid-column: 1 / -1;
+  font-size: 2.6cqw;
+  font-style: normal;
   font-weight: 700;
   letter-spacing: 0.08em;
-  background: linear-gradient(180deg, #6fdcff 0%, #00b4e6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  text-transform: uppercase;
+  color: #9aa5b3;
 }
 
-/* .cbc-sub and .cbc-role were removed on 2026-08-25: the header stopped
-   rendering a subtitle and a role pill some time ago and the two rules sat
-   here matching nothing. Dead CSS on a money surface is worse than dead CSS
-   elsewhere - it is the next reader's evidence that a control they cannot find
-   still exists. */
+/* A figure on its own line: label in lit blue on the left, value in silver on
+   the right, an engraved rule above. What a tile used to be, printed. The inks
+   come from the kit classes on the two spans. */
+.cbc-row {
+  display: flex;
+  gap: 3cqw;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
 
-/* 44px, not 30. The close button is the control a thumb reaches for first and
-   it sat at 30x30 - under every touch-target guideline, on a modal whose whole
-   job is moving money. Same correction applied to every tappable rule below. */
-.cbc-x {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: #8892a4;
-  font-size: 1.35rem;
-  line-height: 1;
+.cbc-row strong {
+  min-width: 0;
+  overflow: hidden;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 4.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Two promo accounts, printed side by side ────────────────────────────── */
+
+.cbc-source {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4cqw;
+  margin: 0;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cbc-source button {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6cqw;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 1cqw 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3 !important;
+  text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
-.cbc-x:disabled {
+.cbc-source button span {
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cbc-source button strong {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 4.2cqw;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: inherit;
+}
+
+.cbc-source .cbc-source-on {
+  color: #f4f7fb !important;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+/* ── Notes, blurbs and empty states: copy on the glass ───────────────────── */
+
+.cbc-note,
+.cbc-blurb,
+.cbc-empty,
+.cbc-warn,
+.cbc-confirmbox,
+.cbc-denied {
+  margin: 0;
+  padding: 0;
+  font:
+    500 3.2cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  color: #9aa5b3;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.cbc-empty,
+.cbc-denied {
+  padding: 2cqw 1cqw;
+  text-align: center;
+}
+
+.cbc-note--bad,
+.cbc-empty--bad,
+.cbc-warn,
+.cbc-denied {
+  color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+/* The second look before a send worth a quarter of the club bank. Gold is the
+   master's held ink, and the engraved rule above it is what sets it apart:
+   nothing is filled and nothing is boxed. */
+.cbc-confirmbox {
+  padding: 2.4cqw 1cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font-size: 3.4cqw;
+  font-weight: 600;
+  text-align: center;
+  color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+/* ── Lit words across the glass: mint, load more, claim back ─────────────── */
+
+.cbc-mint {
+  min-height: 44px;
+}
+
+.cbc-more {
+  min-height: 44px;
+}
+
+/* The Claim Back button IS the ten minute mistake eraser. It was 22px tall and
+   left-aligned in the corner of a row - the smallest target on the screen for
+   the most time-critical action on it. Full width, 44px, in the thumb zone. */
+.cbc-undo {
+  min-height: 44px;
+}
+
+.cbc-mint,
+.cbc-more,
+.cbc-undo {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  padding: 1.2cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.cbc-mint,
+.cbc-more {
+  color: #45adff !important;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+/* The only red word on a ledger row. */
+.cbc-undo {
+  color: #ff5b6e !important;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+/* ── Lit words in a row: close, tabs, segments, filters, export ──────────── */
+
+/* Close, printed as a word (Dan: never a glyph). The foot is the flat cap on
+   every surface that has exactly one action, so that action lives here. */
+.cbc-x {
+  min-height: 44px;
+}
+
+.cbc-tab {
+  min-height: 44px;
+}
+
+.cbc-seg button {
+  min-height: 44px;
+}
+
+.cbc-chip {
+  min-height: 44px;
+}
+
+.cbc-export {
+  min-height: 44px;
+}
+
+.cbc-actions button {
+  min-height: 44px;
+}
+
+.cbc-x,
+.cbc-tab,
+.cbc-seg button,
+.cbc-chip,
+.cbc-export,
+.cbc-actions button {
+  appearance: none;
+  flex: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0.5cqw 1cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font:
+    800 3.2cqw/1.2 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9aa5b3 !important;
+  white-space: normal;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.cbc-tab--on,
+.cbc-seg .cbc-seg-on,
+.cbc-chip--on {
+  color: #f4f7fb !important;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.cbc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 5cqw;
+  justify-content: center;
+  margin: 0;
+  padding: 2cqw 0 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cbc-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 4cqw;
+  justify-content: center;
+}
+
+.cbc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 4cqw;
+  justify-content: center;
+  padding-top: 1.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cbc-export {
+  flex-shrink: 0;
+  color: #45adff !important;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.cbc-actions {
+  display: flex;
+  gap: 5cqw;
+  justify-content: center;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cbc-x,
+.cbc-actions button {
+  color: #e4e7ec !important;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 40%),
+    0 0.35cqw 0 #050607;
+}
+
+.cbc-mint:active,
+.cbc-more:active,
+.cbc-undo:active,
+.cbc-x:active,
+.cbc-tab:active,
+.cbc-seg button:active,
+.cbc-chip:active,
+.cbc-export:active,
+.cbc-actions button:active,
+.cbc-source button:active,
+.cbc-member:active {
+  filter: brightness(1.3);
+}
+
+.cbc-mint:focus-visible,
+.cbc-more:focus-visible,
+.cbc-undo:focus-visible,
+.cbc-x:focus-visible,
+.cbc-tab:focus-visible,
+.cbc-seg button:focus-visible,
+.cbc-chip:focus-visible,
+.cbc-export:focus-visible,
+.cbc-actions button:focus-visible,
+.cbc-source button:focus-visible,
+.cbc-member:focus-visible {
+  outline: 0.6cqw solid #45adff;
+  outline-offset: -0.6cqw;
+}
+
+.cbc-undo:disabled,
+.cbc-more:disabled,
+.cbc-export:disabled,
+.cbc-x:disabled,
+.cbc-actions button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-/* ── The balance this cashier spends ─────────────────────────────────────── */
-.cbc-bank {
-  margin: 16px 20px 0;
-  padding: 18px 20px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(20, 20, 30, 0.6) 0%, rgba(10, 10, 15, 0.8) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.4),
-    0 1px 0 rgba(255, 255, 255, 0.05);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.cbc-bank strong {
-  font-family:
-    'Inter',
-    -apple-system,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  font-size: 1.15rem;
-  color: #6fdcff;
-}
-
-.cbc-mint {
-  margin: 10px 18px 0;
-  min-height: 44px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(24, 119, 242, 0.45);
-  background: rgba(24, 119, 242, 0.14);
-  color: #cfe4ff;
-  font-size: 0.8rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.cbc-note {
-  margin: 10px 18px 0;
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 0.74rem;
-  line-height: 1.4;
-  color: #8892a4;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.cbc-note--bad {
-  color: #ffb4b4;
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.35);
-}
-
-/* ── Tabs ─────────────────────────────────────────────────────────────────── */
-.cbc-tabs {
-  display: flex;
-  gap: 8px;
-  padding: 14px 18px 0;
-}
-
-.cbc-tab {
-  flex: 1;
-  min-height: 44px;
-  padding: 9px 4px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: #8892a4;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.cbc-tab--on {
-  color: #6fdcff;
-  background: rgba(0, 180, 230, 0.14);
-  border-color: rgba(0, 180, 230, 0.45);
-}
-
-/* ── Scrolling body ──────────────────────────────────────────────────────── */
-.cbc-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 18px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  -webkit-overflow-scrolling: touch;
-}
+/* ── Fields: the two things the master does not paint ────────────────────── */
 
 .cbc-field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 1.6cqw;
 }
 
 .cbc-label {
-  font-size: 0.68rem;
+  font-size: 2.7cqw;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #6b7686;
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
+/* A line on the glass, engraved above and below: no box, no corner, no fill.
+   16px floor on the font, because anything smaller makes iOS zoom the page on
+   focus. */
 .cbc-input {
-  padding: 11px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.32);
-  color: #fff;
-  font-size: 0.95rem;
-  outline: none;
+  display: block;
+  box-sizing: border-box;
   width: 100%;
-}
-
-.cbc-input:focus {
-  border-color: rgba(0, 180, 230, 0.6);
-}
-
-/* ── Destination segmented control ───────────────────────────────────────── */
-.cbc-seg {
-  display: flex;
-  gap: 6px;
-}
-
-.cbc-seg button {
-  flex: 1;
   min-width: 0;
-  min-height: 44px;
-  padding: 9px 4px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: #8892a4;
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: pointer;
+  margin: 0;
+  padding: 2.4cqw 1cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #e4e7ec !important;
+  font:
+    500 max(16px, 3.6cqw) / 1.5 Inter,
+    system-ui,
+    sans-serif;
+  caret-color: #45adff;
+  outline: none;
 }
 
-.cbc-seg .cbc-seg-on {
-  color: #6fdcff;
-  background: rgba(0, 180, 230, 0.14);
-  border-color: rgba(0, 180, 230, 0.45);
+/* The amount is the biggest number anyone types on this surface, so it is set
+   in the master's own condensed face, and the browser's spin buttons (a drawn
+   control the art does not contain) are switched off. */
+.cbc-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: max(16px, 5.2cqw);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: center;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
-.cbc-blurb {
-  font-size: 0.68rem;
-  line-height: 1.4;
-  color: #6b7686;
+.cbc-input[type='number']::-webkit-inner-spin-button,
+.cbc-input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-/* ── Recipient list ──────────────────────────────────────────────────────── */
+.cbc-input::placeholder {
+  color: #9aa5b3;
+  opacity: 0.7;
+}
+
+.cbc-input:focus-visible {
+  outline: 0.6cqw solid #45adff !important;
+  outline-offset: -0.6cqw;
+}
+
+/* ── The recipient list: one member per line ─────────────────────────────── */
+
 .cbc-list {
-  max-height: 190px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-right: 2px;
+  max-height: 62cqw;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .cbc-member {
+  appearance: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 3cqw;
   width: 100%;
   min-height: 44px;
-  padding: 9px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(60, 60, 80, 0.4) 0%, rgba(40, 40, 60, 0.4) 100%);
-  color: #e8eaf0;
-  font-size: 0.78rem;
-  cursor: pointer;
+  margin: 0;
+  padding: 2.4cqw 0.5cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #e4e7ec !important;
+  font-size: 3.4cqw;
   text-align: left;
-  box-shadow:
-    0 4px 6px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: all 0.2s ease;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
+/* The chosen recipient is NAMED, not boxed: the whole row lights. */
 .cbc-member--on {
-  border-color: rgba(0, 180, 230, 0.65);
-  background: rgba(0, 180, 230, 0.12);
+  color: #f4f7fb !important;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 /* Listed, findable, not a recipient (Dan 2026-09-04): a member the server
@@ -292,459 +637,210 @@
   cursor: default;
 }
 
-.cbc-member-block {
+/* A recipient's photograph is DATA about the person a transfer is about to
+   reach, so it is printed when there is one - cropped, with no rim, no disc
+   and no fill. A member with no photograph gets nothing here: the name beside
+   it identifies them, and a grey placeholder square is a shape the master does
+   not contain. */
+.cbc-member-avatar {
   flex-shrink: 0;
-  padding: 1px 6px;
-  border: 1px solid #4a5f72;
-  border-radius: 3px;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #a9bccb;
+  width: 7cqw;
+  height: 7cqw;
+  object-fit: cover;
+}
+
+.cbc-member-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.4cqw;
+  min-width: 0;
+}
+
+.cbc-member-name {
+  overflow: hidden;
+  font-size: 3.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cbc-member-id {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.5cqw;
+  letter-spacing: 0.08em;
+  color: #9aa5b3;
 }
 
 .cbc-member-role {
   flex-shrink: 0;
-  font-size: 0.62rem;
+  font-size: 2.5cqw;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  color: #8892a4;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9aa5b3;
 }
 
 .cbc-member-bal {
   flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.72rem;
-  color: #8892a4;
-}
-
-/* .cbc-quick and .cbc-max removed on 2026-08-25: this cashier has never
-   rendered a quick-amount row (that lives in ChipMintModal, which has its own
-   .cmm-quick), so both rules matched nothing. */
-
-.cbc-warn {
-  font-size: 0.72rem;
-  color: #ffb4b4;
-}
-
-/* ── Actions ─────────────────────────────────────────────────────────────── */
-.cbc-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.cbc-actions button {
-  min-height: 44px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: none;
-  color: #e8eaf0;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.4cqw;
   font-weight: 800;
-  font-size: 0.8rem;
-  cursor: pointer;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: #9aa5b3;
 }
 
-.cbc-confirm {
-  background: linear-gradient(180deg, #2f8bff 0%, #1877f2 100%) !important;
-  color: #ffffff !important;
-  border: none !important;
-  box-shadow:
-    0 8px 18px rgba(24, 119, 242, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+/* The reason is a lit word rather than a bordered tag. */
+.cbc-member-block {
+  flex-shrink: 0;
+  font-size: 2.5cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ff5b6e;
 }
 
-.cbc-confirm:disabled {
-  opacity: 0.4;
-  cursor: default;
-  box-shadow: none;
-}
+/* ── The ledger ──────────────────────────────────────────────────────────── */
 
-/* ── Confirm step for a send worth a second look ──────────────────────────── */
-.cbc-confirmbox {
-  padding: 11px 13px;
-  border-radius: 10px;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: #ffd9a0;
-  background: rgba(255, 176, 32, 0.1);
-  border: 1px solid rgba(255, 176, 32, 0.4);
-}
-
-/* ── Ledger ──────────────────────────────────────────────────────────────── */
+/* Three figures across one engraved rule. No tiles: each is a label over a
+   value, printed. */
 .cbc-totals {
   display: flex;
-  gap: 8px;
+  gap: 4cqw;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .cbc-totals > div {
-  flex: 1;
-  min-width: 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 3px;
-  padding: 9px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 0.6cqw;
+  min-width: 0;
 }
 
 .cbc-totals span {
-  font-size: 0.6rem;
+  font-size: 2.4cqw;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #6b7686;
+  color: #9aa5b3;
 }
 
 .cbc-totals strong {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.82rem;
-  color: #e8eaf0;
   overflow: hidden;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
   text-overflow: ellipsis;
+  color: #e4e7ec;
 }
 
 .cbc-in {
-  color: #6fdcff !important;
+  color: #c8ffd2 !important;
+  text-shadow: 0 0 1cqw rgb(53 217 90 / 60%);
 }
 
 .cbc-out {
-  color: #ffb4b4 !important;
+  color: #ff5b6e !important;
+  text-shadow: 0 0 1cqw rgb(240 40 73 / 60%);
 }
 
 .cbc-ledger-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 0.68rem;
+  gap: 3cqw;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font-size: 2.6cqw;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #6b7686;
-}
-
-.cbc-export {
-  flex-shrink: 0;
-  min-height: 44px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 180, 230, 0.35);
-  background: rgba(0, 180, 230, 0.08);
-  color: #6fdcff;
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-
-.cbc-export:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-/* Type filter. The options come from the club's OWN ledger, so the list can
-   never drift out of date the way a hard-coded one would. */
-.cbc-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.cbc-chip {
-  min-height: 44px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: #8892a4;
-  font-size: 0.65rem;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.cbc-chip--on {
-  color: #6fdcff;
-  background: rgba(0, 180, 230, 0.14);
-  border-color: rgba(0, 180, 230, 0.45);
+  color: #9aa5b3;
 }
 
 .cbc-tx {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(60, 60, 80, 0.35) 0%, rgba(40, 40, 60, 0.35) 100%);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.8cqw;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.cbc-tx-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.cbc-tx-type {
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: #e8eaf0;
-}
-
-.cbc-tx-amount {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.86rem;
-  font-weight: 700;
-  color: #6fdcff;
-}
-
+.cbc-tx-top,
 .cbc-tx-mid {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 0.7rem;
-  color: #8892a4;
+  gap: 3cqw;
+}
+
+.cbc-tx-type {
+  font-size: 3.4cqw;
+  font-weight: 700;
+  color: #e4e7ec;
+}
+
+.cbc-tx-amount {
+  flex-shrink: 0;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: #45adff;
+}
+
+.cbc-tx-mid {
+  font-size: 2.9cqw;
+  color: #9aa5b3;
 }
 
 .cbc-tx-when {
   flex-shrink: 0;
-  color: #6b7686;
+  font-size: 2.5cqw;
+  color: #9aa5b3;
 }
 
 .cbc-tx-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  font-size: 0.63rem;
+  gap: 0.6cqw 3cqw;
+  font-size: 2.5cqw;
   line-height: 1.35;
-  color: #6b7686;
+  color: #9aa5b3;
 }
 
 .cbc-tx-rev {
-  color: #ffb4b4;
   font-weight: 700;
+  color: #ff5b6e;
 }
 
 /* A reversed entry is never removed - it is struck through and left in place,
    with its matching reversal row directly above it. */
 .cbc-tx--reversed {
   opacity: 0.62;
-  border-color: rgba(239, 68, 68, 0.28);
 }
 
 .cbc-tx--reversed .cbc-tx-amount {
   text-decoration: line-through;
-  color: #ffb4b4;
-}
-
-/* The Claim Back button IS the ten minute mistake eraser. It was 22px tall and
-   left-aligned in the corner of a row - the smallest target on the screen for
-   the most time-critical action on it. Full width, 44px, in the thumb zone. */
-.cbc-undo {
-  margin-top: 6px;
-  align-self: stretch;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  background: rgba(239, 68, 68, 0.08);
-  color: #ffb4b4;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.cbc-undo:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.cbc-more {
-  min-height: 44px;
-  padding: 10px 0;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 180, 230, 0.35);
-  background: rgba(0, 180, 230, 0.08);
-  color: #6fdcff;
-  font-size: 0.76rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.cbc-empty {
-  padding: 16px 12px;
-  text-align: center;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  color: #6b7686;
-}
-
-.cbc-empty--bad {
-  color: #ffb4b4;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 10px;
-}
-
-.cbc-denied {
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: #ffb4b4;
+  color: #ff5b6e;
 }
 
 /* ── 375px first ─────────────────────────────────────────────────────────── */
+
 @media (max-width: 400px) {
-  .cbc-overlay {
+  .cbc-overlay.wcm-overlay {
     padding: 8px;
   }
 
-  .cbc-panel {
+  .cbc-panel.wcm.ac-popup {
     max-height: 94vh;
   }
-
-  .cbc-head,
-  .cbc-tabs {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-
-  .cbc-bank,
-  .cbc-mint,
-  .cbc-note {
-    margin-left: 14px;
-    margin-right: 14px;
-  }
-
-  .cbc-body {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-
-  .cbc-seg button {
-    font-size: 0.66rem;
-  }
-
-  /* At 375px three destination labels ("Agent Wallet" / "Promo Wallet" /
-     "Player Wallet") in one row are ~104px each. They wrapped mid-word and the
-     row grew unpredictably; letting the label break on the space keeps every
-     button the same height and inside the panel. */
-  .cbc-seg {
-    flex-wrap: wrap;
-  }
-
-  .cbc-seg button {
-    flex: 1 1 30%;
-    white-space: normal;
-    line-height: 1.2;
-  }
-
-  .cbc-totals strong {
-    font-size: 0.74rem;
-  }
-}
-
-.cbc-member-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background-size: cover;
-  background-position: center;
-  background-color: #2a2a36;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.cbc-member-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-}
-
-.cbc-member-id {
-  font-size: 0.6rem;
-  color: #6b7686;
-  font-family: monospace;
-}
-
-.cbc-member-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-/* ── Promo wallet: which account, and its ledger (2026-09-05) ─────────────── */
-.cbc-bank-sub {
-  font-style: normal;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #6b7686;
-}
-
-/* Two promo accounts wear one name on a club surface. The switch prints both
-   balances, so the one you are not looking at is never a mystery. */
-.cbc-source {
-  display: flex;
-  gap: 8px;
-  margin: 10px 18px 0;
-}
-
-.cbc-source button {
-  flex: 1;
-  min-width: 0;
-  min-height: 52px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: #8892a4;
-  cursor: pointer;
-  text-align: left;
-}
-
-.cbc-source button span {
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.cbc-source button strong {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.92rem;
-  color: #e8eaf0;
-}
-
-.cbc-source .cbc-source-on {
-  color: #6fdcff;
-  background: rgba(0, 180, 230, 0.14);
-  border-color: rgba(0, 180, 230, 0.45);
-}
-
-.cbc-source .cbc-source-on strong {
-  color: #6fdcff;
-}
-
-/* An inbound row carries a cyan edge; an outbound one the plain edge. The
-   sign on the amount says the same thing for anyone who cannot see colour. */
-.cbc-tx--in {
-  border-left: 2px solid rgba(0, 180, 230, 0.55);
 }

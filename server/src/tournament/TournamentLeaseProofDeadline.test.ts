@@ -233,6 +233,17 @@ class ConnectedManager extends TournamentManager {
     this.running = true;
     for (const [id, engine] of engines) this.tableEngines.set(id, engine);
   }
+  /** The production wiring: a fenced dealer signals this manager to replace it. */
+  wire(engine: ServerTableEngine): void {
+    this.wireEliminationWake(engine);
+  }
+  replacing(tableId: string, engine: ServerTableEngine): boolean {
+    return (
+      this as unknown as {
+        isReplacingManagedTableEngine(tableId: string, engine: ServerTableEngine): boolean;
+      }
+    ).isReplacingManagedTableEngine(tableId, engine);
+  }
   retain(engine: ServerTableEngine): void {
     expect(
       this.retainTournamentBreakSource(
@@ -665,6 +676,179 @@ describe('connected tournament renewal with a retained F06 dealer', () => {
         true
       );
     } finally {
+      await f.cleanup();
+    }
+  });
+});
+
+/**
+ * ONE ZOMBIE TABLE DOES NOT FENCE ITS TOURNAMENT (2026-09-25, release
+ * 778075b4). The zombie watchdog kills one tournament table with
+ * `fenceForEngineLeaseLoss('tournament_table_zombie', true)`; the fence
+ * expires that dealer's proof and signals the manager, whose replacement
+ * stops it. Until that stop settles the dealer is terminal but not drained,
+ * and the manager's renewal pass used to ask it to renew, take the refusal
+ * as a lost tournament lease, and fence every sibling: two single-table
+ * kills at 19:54:05 and 20:15:20 UTC quarantined 17 managers.
+ */
+describe('connected tournament renewal while one zombie-killed dealer is being replaced', () => {
+  const ZOMBIE_TABLE = 'cccccccc-0000-4000-8000-000000000003';
+  const SIBLING_TABLE = 'cccccccc-0000-4000-8000-000000000004';
+
+  async function zombieRenewal(siblingDeadline = 20_000) {
+    vi.useFakeTimers();
+    let now = 0;
+    _setTournamentLeaseMonotonicNowForTests(() => now);
+    _setEngineLeaseMonotonicNowForTests(() => now);
+    const zombie = new ConnectedDealer(ZOMBIE_TABLE, proof(20_000));
+    const sibling = new ConnectedDealer(SIBLING_TABLE, proof(siblingDeadline));
+    const engines: [string, ServerTableEngine][] = [
+      [ZOMBIE_TABLE, zombie],
+      [SIBLING_TABLE, sibling],
+    ];
+    const server = Object.assign(Object.create(GameServer.prototype), {
+      tableEngines: new Map(engines),
+      tournamentOwnedTables: new Set(engines.map(([id]) => id)),
+    }) as GameServer;
+    const manager = new ConnectedManager(TOURNAMENT_ID, server, GENERATION, 20_000);
+    manager.activate(engines);
+    manager.wire(zombie);
+    manager.wire(sibling);
+    zombie.activate();
+    sibling.activate();
+    return {
+      zombie,
+      sibling,
+      manager,
+      advance: (value: number) => {
+        now = value;
+      },
+      cleanup: async () => {
+        manager.fenceForServerShutdown();
+        await Promise.allSettled([zombie.stop(), sibling.stop()]);
+      },
+    };
+  }
+
+  it('keeps the manager lease and the sibling dealing while the zombie stop is in flight', async () => {
+    const f = await zombieRenewal();
+    const gate = deferred();
+    try {
+      // The zombie's stop cannot settle until this owned writer does.
+      f.zombie.holdSettlement(gate.promise);
+      // The exact watchdog call (GameServer.zombie_engine_rebuilt, tournament branch).
+      f.zombie.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+      expect(f.zombie.isRunning()).toBe(false);
+      // The restart signal is a microtask; the replacement is registered before
+      // its first await.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(f.manager.replacing(ZOMBIE_TABLE, f.zombie)).toBe(true);
+      expect(f.zombie.isTerminalDrainedForTournamentLease(ZOMBIE_TABLE, proof(35_000))).toBe(false);
+      expect(f.zombie.isTerminalFencedForTournamentLease(ZOMBIE_TABLE, proof(35_000))).toBe(true);
+      const zombieRenewal = vi.spyOn(f.zombie, 'renewEngineLeaseProof');
+      const zombieProof = f.zombie.getEngineLeaseAuthority();
+
+      f.advance(15_000);
+      expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(true);
+      expect(f.manager.isRunning()).toBe(true);
+      expect(f.sibling.isRunning()).toBe(true);
+      expect(f.sibling.getEngineLeaseAuthority()).toMatchObject({
+        proofDeadlineMonotonicMs: 35_000,
+      });
+      // The zombie was neither asked to renew nor revived.
+      expect(zombieRenewal).not.toHaveBeenCalled();
+      expect(f.zombie.getEngineLeaseAuthority()).toEqual(zombieProof);
+      expect(f.zombie.isRunning()).toBe(false);
+      // A second pass, still in flight, still holds.
+      expect(f.manager.renewTournamentLeaseProof(GENERATION, 40_000)).toBe(true);
+      expect(f.manager.isRunning()).toBe(true);
+    } finally {
+      gate.resolve();
+      await f.cleanup();
+    }
+  });
+
+  it('keeps the manager lease while the replacement is booked for a retry after a failed stop', async () => {
+    const f = await zombieRenewal();
+    try {
+      // A stop that rejects before the process fence is released is the shape
+      // the recovery books a retry for, naming this exact generation.
+      vi.spyOn(f.zombie, 'stop').mockRejectedValueOnce(new Error('stop reply lost'));
+      f.zombie.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.manager.replacing(ZOMBIE_TABLE, f.zombie)).toBe(true);
+      f.advance(15_000);
+      expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(true);
+      expect(f.manager.isRunning()).toBe(true);
+      expect(f.sibling.isRunning()).toBe(true);
+      expect(f.sibling.getEngineLeaseAuthority()).toMatchObject({
+        proofDeadlineMonotonicMs: 35_000,
+      });
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it('still fences the tournament for a fenced dealer that nobody is replacing', async () => {
+    const f = await zombieRenewal();
+    const gate = deferred();
+    try {
+      f.zombie.holdSettlement(gate.promise);
+      // The same fence without the owner signal: no replacement is registered.
+      f.zombie.fenceForEngineLeaseLoss('tournament_table_zombie', false);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(f.manager.replacing(ZOMBIE_TABLE, f.zombie)).toBe(false);
+      f.advance(15_000);
+      expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(false);
+      expect(f.manager.isRunning()).toBe(false);
+      expect(f.sibling.isRunning()).toBe(false);
+    } finally {
+      gate.resolve();
+      await f.cleanup();
+    }
+  });
+
+  it('still fences the tournament when a live sibling truly cannot renew', async () => {
+    // The sibling's own proof lapsed at 10s; at 15s it is a live dealer that
+    // cannot be renewed, and that is a lost lease whatever the zombie is doing.
+    const f = await zombieRenewal(10_000);
+    const gate = deferred();
+    try {
+      f.zombie.holdSettlement(gate.promise);
+      f.zombie.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(f.manager.replacing(ZOMBIE_TABLE, f.zombie)).toBe(true);
+      f.advance(15_000);
+      expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(false);
+      expect(f.manager.isRunning()).toBe(false);
+      expect(f.sibling.isRunning()).toBe(false);
+    } finally {
+      gate.resolve();
+      await f.cleanup();
+    }
+  });
+
+  it('still fences the tournament when the replaced dealer has lost server ownership', async () => {
+    const f = await zombieRenewal();
+    const gate = deferred();
+    const stranger = new ConnectedDealer(ZOMBIE_TABLE, proof(30_000));
+    try {
+      f.zombie.holdSettlement(gate.promise);
+      f.zombie.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+      await Promise.resolve();
+      await Promise.resolve();
+      (
+        f.manager as unknown as { gameServer: { tableEngines: Map<string, ServerTableEngine> } }
+      ).gameServer.tableEngines.set(ZOMBIE_TABLE, stranger);
+      f.advance(15_000);
+      expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(false);
+      expect(f.sibling.isRunning()).toBe(false);
+    } finally {
+      gate.resolve();
+      await stranger.stop();
       await f.cleanup();
     }
   });

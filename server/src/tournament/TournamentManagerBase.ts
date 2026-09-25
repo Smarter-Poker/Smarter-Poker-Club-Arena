@@ -338,6 +338,8 @@ export abstract class TournamentManagerBase {
   private readonly tableEngineRecoveries = new WeakMap<ServerTableEngine, Promise<void>>();
   /** One causally-triggered retry per durable table; healthy tables arm none. */
   private readonly tableEngineRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The exact dead generation each booked retry names (null: a missing table to re-admit). */
+  private readonly tableEngineRecoveryExpected = new Map<string, ServerTableEngine | null>();
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
@@ -1100,9 +1102,33 @@ export abstract class TournamentManagerBase {
       // A retired original can retain or replay F06 custody in both registries.
       // The exact admitted replay keeps its own barrier and outcome checks;
       // neither it nor an idle original needs a renewed gameplay proof.
+      //
+      // ONE ZOMBIE TABLE DOES NOT FENCE ITS TOURNAMENT (2026-09-25, release
+      // 778075b4). A dealer the zombie watchdog killed
+      // (GameServer: `fenceForEngineLeaseLoss('tournament_table_zombie', true)`)
+      // is fenced, stopped and cannot renew: its proof is expired by that
+      // fence, and `renewEngineLeaseProof` refuses an expired proof by
+      // design. Its stop was signalled to this manager by the same fence and
+      // is in flight here, in `tableEngineRecoveries`, or booked for a retry
+      // that names it (`tableEngineRecoveryExpected`). Until that stop
+      // completes it is not yet drained, so it fell through to the renewal
+      // below, refused, and this manager fenced EVERY sibling table for it.
+      // Single-table zombie kills at 19:54:05 and 20:15:20 UTC quarantined
+      // 17 managers with `tournament_lease_lost_stop_failed` and left 50
+      // tables idle for hours, while GameServer's comment at the kill
+      // promised the opposite ("its identity-CAS replacement preserves the
+      // tournament lease").
+      //
+      // A fenced dealer this manager is replacing is treated like a drained
+      // original: it needs no gameplay proof (it cannot mutate), ownership is
+      // still checked, and the manager's own lease is not lost for it. A
+      // fenced dealer NOBODY is replacing, and a live dealer that truly cannot
+      // renew, still fence the tournament exactly as before.
       if (
         engine.isTerminalDrainedForTournamentLease?.(tableId, authority) ||
-        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority)
+        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority) ||
+        (engine.isTerminalFencedForTournamentLease?.(tableId, authority) &&
+          this.isReplacingManagedTableEngine(tableId, engine))
       ) {
         if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
           this.fenceForTournamentLeaseLoss();
@@ -1117,6 +1143,22 @@ export abstract class TournamentManagerBase {
     }
     this.armTournamentLeaseExpiryTimer();
     return true;
+  }
+
+  /**
+   * True while this manager holds a replacement operation for this exact
+   * dealer generation (`tableEngineRecoveries`, one per object) or a booked
+   * retry that names it (`tableEngineRecoveryTimers` with
+   * `tableEngineRecoveryExpected`, armed by the failed attempt before the
+   * operation is released). Read-only; it starts nothing.
+   */
+  private isReplacingManagedTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    return (
+      this.tableEngines.get(tableId) === engine &&
+      (this.tableEngineRecoveries.has(engine) ||
+        (this.tableEngineRecoveryTimers.has(tableId) &&
+          this.tableEngineRecoveryExpected.get(tableId) === engine))
+    );
   }
 
   /** Read-time fence used after every heartbeat, including UNKNOWN results. */
@@ -1258,6 +1300,7 @@ export abstract class TournamentManagerBase {
     const timer = this.tableEngineRecoveryTimers.get(tableId);
     if (timer) this.clearLifecycleTimeout(timer);
     this.tableEngineRecoveryTimers.delete(tableId);
+    this.tableEngineRecoveryExpected.delete(tableId);
     if (resetAttempts) this.tableEngineRecoveryAttempts.delete(tableId);
   }
 
@@ -1266,6 +1309,7 @@ export abstract class TournamentManagerBase {
       this.clearLifecycleTimeout(timer);
     }
     this.tableEngineRecoveryTimers.clear();
+    this.tableEngineRecoveryExpected.clear();
     this.tableEngineRecoveryAttempts.clear();
   }
 
@@ -1388,6 +1432,7 @@ export abstract class TournamentManagerBase {
     timer = this.setLifecycleTimeout(async () => {
       if (this.tableEngineRecoveryTimers.get(tableId) !== timer) return;
       this.tableEngineRecoveryTimers.delete(tableId);
+      this.tableEngineRecoveryExpected.delete(tableId);
       if (!this.lifecycleIsCurrent(lifecycle)) {
         this.tableEngineRecoveryAttempts.delete(tableId);
         return;
@@ -1428,6 +1473,7 @@ export abstract class TournamentManagerBase {
       }
     }, delayMs);
     this.tableEngineRecoveryTimers.set(tableId, timer);
+    this.tableEngineRecoveryExpected.set(tableId, expected);
   }
 
   /** Admit a table retired after a failed start, after proving it is still live. */

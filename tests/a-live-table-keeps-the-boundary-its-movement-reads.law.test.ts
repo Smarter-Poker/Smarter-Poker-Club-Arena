@@ -54,6 +54,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { sliceSqlStatement } from './helpers/sourceWindow';
 
 const ROOT = path.resolve(__dirname, '..');
 const MIG_DIR = path.join('supabase', 'migrations');
@@ -83,6 +84,22 @@ function currentDefiner(qualified: string): string {
   return definers[definers.length - 1];
 }
 
+/**
+ * The guard's own CREATE statement, bounded by the statement and not by a byte
+ * count - tests/unit/noFixedSizeSourceWindows.test.ts, which caught this file
+ * reaching for slice(0, 400) on its first attempt.
+ */
+function boundaryGuard(): { file: string; stmt: string } {
+  const file = currentDefiner('smarter_private.f06_movement_boundary_retained');
+  return {
+    file,
+    stmt: sliceSqlStatement(
+      BODY.get(file) as string,
+      'CREATE OR REPLACE FUNCTION smarter_private.f06_movement_boundary_retained'
+    ),
+  };
+}
+
 describe('a live table keeps the boundary its movement reads', () => {
   it('scans a real migration tree (an empty sweep must not read as a pass)', () => {
     // CLAUDE.md 10.86 rule 2.
@@ -91,30 +108,26 @@ describe('a live table keeps the boundary its movement reads', () => {
 
   describe('the boundary guard exists, and the retention job is its reader', () => {
     it('smarter_private.f06_movement_boundary_retained is defined, STABLE and SECURITY DEFINER', () => {
-      const file = currentDefiner('smarter_private.f06_movement_boundary_retained');
-      const body = BODY.get(file) as string;
-      const decl = body.slice(
-        body.toLowerCase().indexOf('function smarter_private.f06_movement_boundary_retained')
-      );
-      expect(/\bstable\b/i.test(decl.slice(0, 400)), `${file}: the guard must be STABLE`).toBe(
-        true
-      );
+      const { file, stmt } = boundaryGuard();
+      expect(/\bstable\b/i.test(stmt), `${file}: the guard must be STABLE`).toBe(true);
       expect(
-        /security\s+definer/i.test(decl.slice(0, 400)),
+        /security\s+definer/i.test(stmt),
         `${file}: the guard must be SECURITY DEFINER - sp_prune_hand_history is SECURITY ` +
           'INVOKER and its search_path does not include smarter_private'
       ).toBe(true);
     });
 
     it("it is keyed on the table's LAST committed hand, which is the row f06_movement_prior loads", () => {
-      const file = currentDefiner('smarter_private.f06_movement_boundary_retained');
-      const body = BODY.get(file) as string;
+      const { file, stmt } = boundaryGuard();
       expect(
-        /max\s*\(\s*a?\.?hand_number\s*\)[\s\S]{0,200}hand_atomic_commits/i.test(body) ||
-          /hand_atomic_commits[\s\S]{0,400}max\s*\(\s*\w*\.?hand_number\s*\)/i.test(body),
-        `${file}: the guard must select max(hand_number) from hand_atomic_commits. ` +
-          'f06_movement_prior loads exactly that row and validates its post-commit payload ' +
-          'hash, request hash and stack receipt out of it; nothing else can reconstruct it.'
+        /max\s*\(\s*\w*\.?hand_number\s*\)/i.test(stmt),
+        `${file}: the guard must key on max(hand_number) - the LAST committed hand`
+      ).toBe(true);
+      expect(
+        /hand_atomic_commits/i.test(stmt),
+        `${file}: that maximum must come from hand_atomic_commits. f06_movement_prior loads ` +
+          'exactly that row and validates its post-commit payload hash, request hash and ' +
+          'stack receipt out of it; nothing else can reconstruct it.'
       ).toBe(true);
     });
 
@@ -149,8 +162,11 @@ describe('a live table keeps the boundary its movement reads', () => {
       // code. A literal interval here would take that decision away from him.
       const file = currentDefiner('public.sp_prune_hand_history');
       expect(
-        /horse_retention_days[\s\S]{0,200}hand_history_retention_policy/i.test(
-          BODY.get(file) as string
+        ['horse_retention_days', 'hand_history_retention_policy'].every((t) =>
+          sliceSqlStatement(
+            BODY.get(file) as string,
+            'CREATE OR REPLACE FUNCTION public.sp_prune_hand_history'
+          ).includes(t)
         ),
         `${file}: the window must come from hand_history_retention_policy.horse_retention_days`
       ).toBe(true);
@@ -228,9 +244,17 @@ describe('a live table keeps the boundary its movement reads', () => {
       // one is an identity conflict.
       const { file, arm } = acceptedArm();
       expect(
-        /a\.hand_id\s+is\s+null\s+and\s+exists\s*\([\s\S]{0,300}hand_atomic_commits/i.test(arm),
+        /a\.hand_id\s+is\s+null\s+and\s+exists\s*\(/i.test(arm),
         `${file}: when no commit row matches the permit's own evidence, the arm must still ` +
           'refuse if some other commit exists at (table_id, hand_number)'
+      ).toBe(true);
+      expect(
+        /hand_atomic_commits\s+c\b/i.test(arm) &&
+          /c\.table_id\s*=\s*h\.table_id/i.test(arm) &&
+          /c\.hand_number\s*=\s*h\.hand_number/i.test(arm),
+        `${file}: that refusal must look for a commit at the permit's OWN ` +
+          '(table_id, hand_number), which is what leaves an EMPTY coordinate as the only ' +
+          'case where the permit alone is trusted'
       ).toBe(true);
     });
 

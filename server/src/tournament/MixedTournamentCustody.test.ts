@@ -469,6 +469,124 @@ for (const gap of [
     expect(s.tournamentEngines.get(id(1))).toBe(m);
   });
 }
+/**
+ * A REFUSED CAPTURE NAMES ITS GUARD (2026-09-25). Every guard keeps the exact
+ * condition the cases above already pin; these prove that a null answer now
+ * says which guard gave it, one distinct token per guard, and that a packet
+ * clears the record.
+ */
+it('the strict premanifest capture names the clause that makes this scene mixed', async () => {
+  const { m } = await mixedStopped();
+  expect(await m.captureDrainedF06Custody()).toBeNull();
+  // The scene holds an unresolved seat move; that clause is read first.
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'drained',
+    refused: 'stale_before_admission_read',
+    detail: 'pending_seat_moves',
+  });
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('a successor that is the origin generation is refused by name', async () => {
+  const { m } = await mixedStopped();
+  expect(await m.captureMixedF06Custody(id(2))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({ path: 'mixed', refused: 'successor_is_origin' });
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('a scene with nothing to transfer is refused by name', async () => {
+  const { m } = await mixedStopped();
+  m.retainedTournamentBreakSources.clear();
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({ path: 'mixed', refused: 'nothing_to_transfer' });
+});
+it('active stopped-original custody is refused by name', async () => {
+  const { m } = await mixedStopped();
+  m.activeStoppedOriginalCustody.add(id(4));
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'active_stopped_original_custody',
+  });
+  m.activeStoppedOriginalCustody.clear();
+});
+it('an original that still holds process work has no readable drained identity', async () => {
+  const { m, engines } = await mixedStopped();
+  (engines[0][1] as any).readContinuationTasks.add(Promise.resolve());
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'physical_identity_unreadable',
+  });
+  (engines[0][1] as any).readContinuationTasks.clear();
+});
+it('an original missing from the manager registry names the clause of the originals gate', async () => {
+  const { m } = await mixedStopped();
+  m.tableEngines.delete(id(3));
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'originals_not_drained',
+    detail: 'engine_registry_changed',
+  });
+});
+it('an orphaned retirement reservation is refused by name', async () => {
+  const { s, m } = await mixedStopped();
+  (s.tournamentRetirementCustody as any).held.set(id(3), '1');
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'retirement_reservation_refused',
+  });
+});
+it('an unreadable physical identity is refused by name', async () => {
+  const { m, engines } = await mixedStopped();
+  (engines[0][1] as any).captureDrainedF06Identity = undefined;
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'physical_identity_unreadable',
+  });
+});
+it('a physical map with an extra global engine names the stale clause before prepare', async () => {
+  const { s, m } = await mixedStopped();
+  s.tableEngines.set(
+    id(20),
+    new ServerTableEngine(id(20), {
+      scope: 'tournament',
+      verified: true,
+      tournamentId: id(1),
+      generation: id(2),
+      proofDeadlineMonotonicMs: performance.now() + 30_000,
+    })
+  );
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'stale_before_prepare',
+    detail: 'physical_map_incomplete',
+  });
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('a packet clears the refusal, and the transfer names its own refusals', async () => {
+  const { s, m } = await mixedStopped();
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  s.drainedF06TournamentCustody.set(id(1), {});
+  expect(await s.transferDrainedF06Custody(id(1), m)).toBe(false);
+  expect(s.tournamentCustodyRefusals.get(m)).toEqual({
+    path: 'transfer',
+    refused: 'custody_already_held',
+  });
+  expect(warn).toHaveBeenCalledOnce();
+  expect(JSON.parse(warn.mock.calls[0][1] as string)).toEqual({
+    tournamentId: id(1),
+    path: 'transfer',
+    refused: 'custody_already_held',
+    detail: null,
+    priorAttempts: 0,
+  });
+  s.drainedF06TournamentCustody.delete(id(1));
+  expect(await m.captureMixedF06Custody(id(9))).not.toBeNull();
+  expect(m.lastF06CustodyRefusal()).toBeNull();
+});
 it('keeps a pending UUID changed during observation attached to its original owner', async () => {
   const { s, m } = await mixedStopped();
   mocks.rpc.mockImplementation(async (name, a) => {

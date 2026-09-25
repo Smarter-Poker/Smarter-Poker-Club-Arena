@@ -96,6 +96,14 @@
 -- 10.9 test 4: the body re-derives all six figures and aborts unless every one
 -- matches the probe. It was proved first in a rolled-back transaction (11.5).
 
+-- THIS FILE CREATES NO PERSISTENT OBJECT, so it states its own proof, which is
+-- the convention tests/a-merged-migration-must-be-live.law.test.ts binds from
+-- 20260920 onward: two UPDATEs on a record table leave nothing in pg_proc or
+-- pg_class for a reader to look up, so the reader is told exactly what to run.
+-- Both expressions were run read-only against production on 2026-09-25 and
+-- both returned true.
+-- @live-proof: (SELECT count(*) = 2 FROM public.accounting_deferred_obligations WHERE period_start = '2026-09-14 07:00:00+00' AND period_end = '2026-09-21 07:00:00+00' AND reason LIKE '%RESTATED 2026-09-21 by migration 20260921082544%')
+-- @live-proof: (SELECT round(sum(pending_amount),2) = 138303.43 FROM public.accounting_deferred_obligations WHERE period_start = '2026-09-14 07:00:00+00' AND period_end = '2026-09-21 07:00:00+00')
 BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='280s';

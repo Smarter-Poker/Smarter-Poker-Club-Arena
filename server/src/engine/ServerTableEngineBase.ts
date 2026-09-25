@@ -6097,7 +6097,45 @@ export abstract class ServerTableEngineBase {
    * gate reads and the reason an operator reads can never disagree.
    */
   maintenanceDurabilityReason(): string | null {
-    if (this.hasUnretiredStoppedTimeBankCustody()) return 'stopped_bank_custody_unconfirmed';
+    /* THE STOPPED-CUSTODY REFUSAL HAS THREE OUTCOMES, NOT TWO (2026-09-25).
+       ────────────────────────────────────────────────────────────────────
+       This used to answer one string, `stopped_bank_custody_unconfirmed`, for
+       every terminal engine still holding a stopped time bank - and on
+       2026-09-25 that was 137 of ~324 tables, holding the platform's restart
+       certificate shut for 8 consecutive breaks.
+
+       "Unconfirmed" conflated two different facts:
+
+         · the bank is genuinely NOT on disk, so a restart would lose a
+           player's time bank - which must refuse, exactly as
+           `bank_park_write_incomplete` refuses; and
+         · the bank IS on disk and what is unconfirmed is only this PROCESS's
+           in-memory handoff to a replacement engine - a handoff that, for a
+           terminal engine, no code path in this process can ever complete
+           (see hasUnretiredStoppedTimeBankCustody). Answering "not yet" to a
+           question whose true answer is "never" is CLAUDE.md 10.86 rule 1, and
+           it is the same shape MaintenanceBreak bounded for the F06 class in
+           #4909 after it held engine 8825af51 shut for 70 breaks.
+
+       The cause is fixed in persistPresenceForRestart rather than papered over
+       here: a terminal engine now WRITES the frozen custody it already holds,
+       so `hasUnretiredStoppedTimeBankCustody` clears on its own arithmetic and
+       its own evidence. No allow-list, no relaxed threshold, no gate passed
+       over. What is left is naming the residue, and all three still refuse:
+       `unwritten` is a real bank at stake, `unreadable` is "I could not tell",
+       and the durable case returns no reason at all because there is nothing
+       left to report. */
+    if (this.hasUnretiredStoppedTimeBankCustody()) {
+      // Accounting still in flight is the one case we cannot even ASK about:
+      // a debit whose outcome is unknown must not be frozen into a snapshot.
+      if (
+        this.timeBankAccountingUnconfirmed ||
+        this.timeBankAccountingPending.size > 0 ||
+        this.presenceSavePending > 0
+      )
+        return 'stopped_bank_custody_unreadable';
+      return 'stopped_bank_custody_unwritten';
+    }
     if (!this.maintenancePaused) return null;
     if (this.timeBankAccountingUnconfirmed) return 'accounting_unconfirmed';
     if (this.timeBankAccountingPending.size > 0) return 'accounting_pending';
@@ -6224,6 +6262,92 @@ export abstract class ServerTableEngineBase {
     return this.maintenanceDurabilityReason() === null;
   }
 
+  /**
+   * MAKE A TERMINAL ENGINE'S STOPPED TIME BANK DURABLE (2026-09-25).
+   *
+   * A tournament table that breaks goes terminal, and at that fence
+   * `stoppedTimeBankCustody` freezes every seated player's bank - already
+   * past `cancelActiveForTable`, already past every pending accounting event,
+   * already refused by `captureParkedTimeBanks` if any bank were active or
+   * unrestorable. It is final, immutable, and exactly what a `'parked'`
+   * capture would have produced.
+   *
+   * It was never written down. Every `persistPresenceForRestart('parked')`
+   * call site is inside the dealing loop (`if (this.maintenancePaused) await
+   * ...`), and a terminal engine has no dealing loop, so when the break's
+   * fan-out calls `pauseForMaintenance` on it the only path it can take is
+   * `'announced'` - and `'announced'` passes `timeBanks: undefined`, writes
+   * `time_bank_snapshot: null`, and records no acknowledgement, because line
+   * 6284 only sets `acknowledgedTimeBankPark` when `when === 'parked'`.
+   *
+   * So `hasUnretiredStoppedTimeBankCustody()` compared a null acknowledgement
+   * against a real custody hand number and answered "unconfirmed" for ever.
+   * On 2026-09-25 that was 137 tables, every one of them holding the restart
+   * certificate shut, and it is why an engine 6 commits behind main could not
+   * be replaced by the release that carried its own fix.
+   *
+   * The fix is the write, not an exemption. This persists the custody the
+   * engine is already holding, at the custody's OWN hand number, in the shape
+   * `loadTimeBanksFromPark(tableId, handCount)` reads back - so the bank is
+   * genuinely recoverable by the next process, and the existing arithmetic in
+   * `hasUnretiredStoppedTimeBankCustody()` then clears by itself. If the write
+   * is refused the acknowledgement is not recorded and the gate stays shut:
+   * a bank we could not persist is still a bank at stake (CLAUDE.md 10.86,
+   * fail closed).
+   *
+   * Called ONLY from the `'announced'` path, which is the only path a terminal
+   * engine can reach. STRICTLY ADDITIVE: it returns true, owning this park,
+   * only when it has actually written the custody down and acknowledged it.
+   * Every other answer is false and falls through to the behaviour this file
+   * already had, so nothing that used to be written stops being written. A
+   * decline therefore records no acknowledgement and the restart gate stays
+   * shut - a bank we could not persist is still a bank at stake (10.86).
+   */
+  private shouldPersistStoppedCustody(): boolean {
+    const custody = this.stoppedTimeBankCustody;
+    if (
+      !this.terminal ||
+      !custody ||
+      this.stoppedTimeBankCustodyTransferred ||
+      !this.hasUnretiredStoppedTimeBankCustody()
+    )
+      return false;
+    // Never freeze an unknown debit into a snapshot, and never write while
+    // another presence save for this table is still in flight.
+    if (
+      this.timeBankAccountingUnconfirmed ||
+      this.timeBankAccountingPending.size > 0 ||
+      this.presenceSavePending > 1
+    )
+      return false;
+    // A live engine for this table is the authority on its park row; the
+    // upsert is keyed on table_id and must never clobber a newer snapshot.
+    // Same predicate captureDrainedF06Identity already uses for "I am alone".
+    if (ServerTableEngineBase.liveEngines.has(this.tableId)) return false;
+    return Number.isSafeInteger(custody.handNumber) && custody.handNumber >= 0;
+  }
+
+  private async persistStoppedCustodyForRestart(generation: number): Promise<boolean> {
+    const custody = this.stoppedTimeBankCustody;
+    if (!custody) return false;
+    const banks = structuredClone(custody.banks) as Record<string, ParkedTimeBank>;
+    const saved = await savePresenceAtPark({
+      tableId: this.tableId,
+      disconnectStates: structuredClone(custody.disconnectStates),
+      engineInstance: `${INSTANCE_ID}:stopped_custody`,
+      handNumber: custody.handNumber,
+      timeBanks: banks,
+    });
+    if (generation !== this.maintenanceCheckpointGeneration) return true;
+    if (this.stoppedTimeBankCustody !== custody) return true;
+    if (!saved) return false;
+    this.acknowledgedTimeBankPark = {
+      handNumber: custody.handNumber,
+      banks: this.timeBankCustodyFingerprint(custody.banks),
+    };
+    return true;
+  }
+
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
     this.presenceSavePending++;
     const generation = this.maintenanceCheckpointGeneration;
@@ -6236,6 +6360,19 @@ export abstract class ServerTableEngineBase {
     await previous;
     try {
       if (generation !== this.maintenanceCheckpointGeneration) return;
+      // ONLY the announcement path. A terminal engine can reach no other (every
+      // 'parked' call site is inside the dealing loop it no longer has), and
+      // this must never stand in for the 'parked' path's accounting work.
+      //
+      // The decision is SYNCHRONOUS on purpose. An `await` here, taken even
+      // when this engine has no stopped custody, adds a microtask before the
+      // ordinary write and changes the interleaving of a concurrent
+      // announcement and park - which is pinned by ParkedTimeBank's "orders a
+      // slow announcement before the final bank snapshot". A fix has no
+      // business shifting the timing of the paths it is not fixing.
+      if (when === 'announced' && this.shouldPersistStoppedCustody()) {
+        if (await this.persistStoppedCustodyForRestart(generation)) return;
+      }
       if (when === 'parked') {
         this.parkedBankSaveComplete = false;
         // Complete the real hand-boundary transition, including its accounting

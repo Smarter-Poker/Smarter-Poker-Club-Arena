@@ -1207,27 +1207,7 @@ export class MaintenanceBreak {
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || this.phase !== 'last_hand') return;
 
-    // Anything created during the last-hand wait, and anything that somehow
-    // slipped the first pass, is parked now. Cheap, and it makes "every table
-    // is parked" true rather than probable.
-    this.parkEveryEngine();
-
-    const stragglers = this.unparkedTables();
-    this.unparkedAtCountdown = stragglers.length;
-    this.peakUnparked = stragglers.length;
     this.readyForRestartAtMs = null;
-    if (stragglers.length > 0) {
-      // Not fatal, and deliberately not blocking. A table wedged mid-hand must
-      // not hold the platform's break open past the hour - the tournament
-      // break made the same call for the same reason - but the restart gate
-      // below refuses to fire while any table is unparked, so a straggler
-      // costs us a restart window, never a player's hand.
-      console.warn(
-        `[MaintenanceBreak] ${stragglers.length} table(s) had not parked when the countdown ` +
-          `started: ${stragglers.slice(0, 5).join(', ')}. The break runs on time; the restart ` +
-          `gate stays shut until they land.`
-      );
-    }
 
     /* announcedAt is the durable schedule authority. A delayed save or a
        briefly delayed event loop may make this method execute after :55, but
@@ -1240,6 +1220,8 @@ export class MaintenanceBreak {
     // Close the deploy gate before changing any of its semantic fields.
     this.durableConfirmed = false;
     this.phase = 'counting_down';
+    this.unparkedAtCountdown = 0;
+    this.peakUnparked = 0;
     /* beginCountdown is also the explicit/manual entry point. An intentional
        early call starts its five minutes immediately; an on-time or late
        scheduled call stays anchored to the already-promised boundary and can
@@ -1291,6 +1273,68 @@ export class MaintenanceBreak {
         error
       );
       this.reportFault('countdown', 'held_without_restart', error, countingDown.announcedAt);
+    }
+    if (!this.lifecycleIsCurrent(generation) || this.phase !== 'counting_down') return;
+    this.sweepStragglersAfterCertificate();
+  }
+
+  /* THE CERTIFICATE IS OPENED BEFORE THE FLEET IS SWEPT (2026-09-25).
+     ───────────────────────────────────────────────────────────────────
+     This second park pass and the straggler census used to run at the TOP of
+     beginCountdown, ahead of the countdown row's durable save, under a comment
+     calling them "cheap". They are not cheap and nobody had measured them.
+
+     `breakStartedAt` is pinned to the PROMISED :55, which is right - a slow
+     event loop is never permission to extend the freeze - so every millisecond
+     spent here before `durableConfirmed` is charged against the only headroom
+     the release has. The break is BREAK_DURATION_MS (300000ms) and
+     engine-release-transaction.sh admits a cutover on 285000ms of it, so the
+     certificate has to exist within 15000ms of :55:00.000 or the release is
+     arithmetically unreachable.
+
+     Measured on 2026-09-25 from runs 36155409978, 36157652866 and 36157811057
+     (7 consecutive breaks, every first complete certificate observation):
+     15375, 15939, 16408, 18455, 19060, 19846 and 76869 ms after remainingMs
+     was 300000. SEVEN OF SEVEN outside the window; the floor missed it by
+     375ms. That is the whole 6.7-day freeze, and it is CLAUDE.md 10.86 rule 4:
+     #5026 correctly budgeted the PUBLISHER's entry cost, wrote that the
+     headroom was "today 0", and nobody budgeted the ENGINE's own cost of
+     opening the certificate - which consumed all 15000ms by itself, walking
+     ~324 engines twice on one core.
+
+     So the order is inverted. Nothing here decides the countdown row's
+     content: `persistedState()` carries phase, announcedAt and breakEndsAt
+     only, `unparkedAtCountdown` and `peakUnparked` are diagnostics, and the
+     first park pass already ran at :53 in announceLastHand. Nothing resumes
+     early either - `breakEndsAt` is untouched.
+
+     Safety is unchanged in the direction that matters. `readyForRestart` still
+     requires `unparkedTables()` to be empty, that census is computed LIVE on
+     every /health read rather than from anything recorded here, and a table
+     with cards in the air is counted by `engine.isRunning() &&
+     !engine.isBetweenHands()` whether or not `pauseForMaintenance` has reached
+     it yet. The release script additionally demands its own physical witness,
+     `handsInFlightTotal === 0`. A certificate that exists but is not yet ready
+     is the ordinary case both sides already handle. */
+  private sweepStragglersAfterCertificate(): void {
+    // Anything created during the last-hand wait, and anything that somehow
+    // slipped the :53 pass, is parked now.
+    this.parkEveryEngine();
+
+    const stragglers = this.unparkedTables();
+    this.unparkedAtCountdown = stragglers.length;
+    if (stragglers.length > this.peakUnparked) this.peakUnparked = stragglers.length;
+    if (stragglers.length > 0) {
+      // Not fatal, and deliberately not blocking. A table wedged mid-hand must
+      // not hold the platform's break open past the hour - the tournament
+      // break made the same call for the same reason - but the restart gate
+      // refuses to fire while any table is unparked, so a straggler costs us a
+      // restart window, never a player's hand.
+      console.warn(
+        `[MaintenanceBreak] ${stragglers.length} table(s) had not parked when the countdown ` +
+          `started: ${stragglers.slice(0, 5).join(', ')}. The break runs on time; the restart ` +
+          `gate stays shut until they land.`
+      );
     }
   }
 

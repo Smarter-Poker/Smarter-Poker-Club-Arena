@@ -846,13 +846,52 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           );
         };
         const exactEngines = originals.map(([tableId, engine]) => {
-          require(uuid(tableId) &&
-            !retained.has(engine) &&
-            tableMap.get(tableId) === engine &&
-            ownedTables.has(tableId) &&
-            manager.tableEngines.get(tableId) === engine &&
-            engine instanceof modules.base.ServerTableEngineBase &&
-            engine.tableId === tableId, 'mixed_original_registry_disagreement');
+          /* ═══ A REGISTRY DISAGREEMENT NAMES THE TABLE AND THE FACT (2026-09-25) ═══
+
+             This conjunction is the first thing every release meets, and until
+             today it refused as seven facts at once: `stage: preflight`,
+             `attemptedTables: 0`, `checkpointOutcome: not_started`, and no table
+             and no condition anywhere in the receipt (run 36144951750, the 14:03
+             window - the first refusal here since the `registrations` comparison
+             was cleared). Which of the seven is false is the whole finding,
+             because they fail for different reasons and only one of them is
+             recoverable without replacing this process: an original that a
+             PREVIOUS attempt already unregistered from the global map is absent
+             from `tableMap` and present everywhere else, while a replaced or
+             re-seated engine is absent from `manager.tableEngines` instead.
+
+             `witness` evaluates the same sub-expressions in the same
+             left-to-right order and stops at the first false one, so nothing
+             extra is read on a path the original `&&` short-circuited, and it
+             refuses with the same code. Observability only; no check, threshold
+             or outcome moves. CLAUDE.md 10.86 rules 1 and 3: "I could not prove
+             this" must say which fact it could not prove, to a reader - here the
+             release receipt, the same one that carried the key today. */
+          witness(
+            'mixed_original_registry_disagreement',
+            [
+              ['registry.table_id', () => uuid(tableId)],
+              ['registry.engine_not_already_retained', () => !retained.has(engine)],
+              ['registry.global_table_map', () => tableMap.get(tableId) === engine],
+              ['registry.owned_tables', () => ownedTables.has(tableId)],
+              ['registry.manager_table_engines', () => manager.tableEngines.get(tableId) === engine],
+              ['registry.engine_base', () => engine instanceof modules.base.ServerTableEngineBase],
+              ['registry.engine_self_table', () => engine.tableId === tableId],
+            ],
+            () => ({
+              failedTable: uuid(tableId) ? tableId : describe(tableId),
+              observedDetail: [
+                `tournament=${uuid(manager.tournamentId) ? manager.tournamentId : describe(manager.tournamentId)}`,
+                `originals=${originals.length}`,
+                `globalPresent=${tableMap.has(tableId)}`,
+                `globalIsSame=${tableMap.get(tableId) === engine}`,
+                `owned=${ownedTables.has(tableId)}`,
+                `managerPresent=${manager.tableEngines.has(tableId)}`,
+                `managerIsSame=${manager.tableEngines.get(tableId) === engine}`,
+                `alreadyRetained=${retained.has(engine)}`,
+              ].join(','),
+            })
+          );
           retained.add(engine);
           const permit = engine.f06CurrentPermit;
           require(permit === null ||

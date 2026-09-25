@@ -2086,6 +2086,53 @@ describe('exact 8825 retained original custody retirement', () => {
     expect(f.server.tableEngines.size).toBe(3);
     expect(f.rpcCalls).toEqual([]);
   });
+  /* ═══ A REGISTRY DISAGREEMENT NAMES THE TABLE AND THE FACT (2026-09-25) ═══
+
+     `mixed_original_registry_disagreement` is the first conjunction every
+     release meets, and it used to refuse as seven facts at once with no table
+     and no condition anywhere in the receipt. Run 36144951750 (the 14:03 UTC
+     window) is the measurement: the FIRST refusal on this path after the
+     `registrations` comparison was cleared, and all it could say was
+     `stage: preflight, attemptedTables: 0, checkpointOutcome: not_started`.
+
+     Which fact is false is the whole finding, because they are not equally
+     recoverable. An original that a PREVIOUS attempt already unregistered from
+     the global map - which is what run 36144233010 did at 14:05 after
+     committing both custody transfers, before its inspector outcome was lost -
+     is absent from `tableEngines` and present in its manager, and only a
+     replacement of this process clears it. A re-seated engine is the other way
+     round. The receipt now says which. */
+  it.each([
+    [
+      'an original a previous attempt already unregistered from the global map',
+      (f: any) => f.server.tableEngines.delete(f.originals[1].engine.tableId),
+      'registry.global_table_map',
+      'globalPresent=false,globalIsSame=false',
+    ],
+    [
+      'an original the global map now holds under a different engine',
+      (f: any) => f.server.tableEngines.set(f.originals[1].engine.tableId, new f.Table(910)),
+      'registry.global_table_map',
+      'globalPresent=true,globalIsSame=false',
+    ],
+  ])('names %s', async (_label, alter, failedCheck, detail) => {
+    const f = mixedFixture();
+    const tableId = f.originals[1].engine.tableId;
+    alter(f);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck,
+      failedTable: tableId,
+    });
+    expect(String(result.observedDetail)).toContain(detail);
+    expect(String(result.observedDetail)).toContain(
+      `tournament=615783bf-15e3-40b7-9368-75f21b6ac53b`
+    );
+    // Nothing was asked of the database and nothing was retired.
+    expect(f.rpcCalls).toEqual([]);
+  });
   // The live 8825 lease-loss pass re-runs `stopTournamentManagerIfOwned` every
   // ~5 s for the retained managers. Each retry bumps the seat move authority
   // revision and replaces the serial tail without moving any custody, so

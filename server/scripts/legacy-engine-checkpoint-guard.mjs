@@ -213,6 +213,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let bankDisposition = null;
   let unstartedReplacements = 0;
   let unstartedDepartures = 0;
+  // Observability only: how many retained managers the rows proved this guard
+  // had already sealed in an earlier run, so this run transferred nothing for
+  // them. Never read by a decision.
+  let sealedManagers = 0;
   // Observability only: which tables held an F06 permit that no process could
   // ever resolve, and the phase each permit was in when the rows proved the
   // felt quiet. Never read by a decision.
@@ -388,7 +392,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // and position. `reason` above is untouched for existing parsers.
     ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
-    ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
+    ...(retained8825
+      ? { skippedUnstarted, unstartedReplacements, unstartedDepartures, sealedManagers }
+      : {}),
     ...(bankDisposition === null ? {} : { bankDisposition }),
     ...(unresolvableCustody === null ? {} : { unresolvableCustody }),
     ...(nativeWorkMembers === null ? {} : { nativeWorkMembers }),
@@ -773,6 +779,200 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       };
       const bankRows = new Map();
       const pending = [];
+      /* ═══ A SEALED CUSTODY TRANSFER IS NOT TRANSFERRED TWICE (2026-09-25) ═══
+
+         Run 36144233010 is the measurement. The publisher gave up on this
+         guard's call (`inspector operation outcome unknown`, stage
+         `mixed_custody`, 65 tables bank-checkpointed and verified) while the
+         guard went on inside the engine and FINISHED: both transfers were
+         committed (`f06_manager_custody_transfers` holds 5a387a75 under
+         origin generation 66291622 and 615783bf under b3d06bad) and both
+         originals were retired through `unregisterTournamentTableEngine`,
+         which is why `/health.maintenance` went from
+         `{f06_preparation_unresolved: 1}` to `unparkedTables: 0`.
+
+         The release transaction requires this checkpoint again on every
+         release while the sealed predecessor is 8825, and each run carries a
+         FRESH `transfer_id`/`successor_generation` pair per manager. What the
+         next run meets in-process: 8825 `unregisterOwnedTournamentTableEngine`
+         deletes from `GameServer.tableEngines` and `tournamentOwnedTables`
+         only (TournamentManagerOwnership.ts:60-72); the manager's own
+         `tableEngines`, `retainedTournamentBreakSources` and
+         `drainedF06Originals` are untouched, because the stop retry that
+         would delete them (TournamentManagerBase.ts:5836-5839) throws
+         `retained an unresolved seat-move UUID` first, every ~5 s, for ever.
+         So `captureDrainedF06Originals()` still answers the same engines, the
+         manager is still in `tournamentEngines` (a failed
+         `stopOwnedTournamentManager` keeps the slot, :86-101), and the
+         capture below refuses `mixed_original_registry_disagreement` at
+         `tableMap.get(tableId) === engine` before any RPC - and had it not,
+         the observe call would have refused `F06_MIXED_TRANSFER_CHANGED`
+         (migration 20260921155216 L181-182: the prior row's ids must equal
+         the call's, and the intent's are new). Every future release would die
+         at a checkpoint whose work is done: the forever block one level up
+         (CLAUDE.md 10.86 rule 4), made by this guard.
+
+         So the ROWS are asked first, per retained manager and before any
+         prepare call. `fn_f06_find_mixed_manager_custody` returns the one
+         open transfer for the tournament. A receipt whose `origin_generation`
+         is this manager's lease generation, and whose `local_proof` names
+         this exact process (release, instance, container, pid) and this
+         exact manager, is a transfer THIS guard sealed. Such a manager makes
+         no observe and no commit; the intent's fresh ids for it are simply
+         unused; its originals are not required to be registered or drained,
+         because they were retired; and an original that is STILL registered
+         under the exact engine identity the row names is retired through the
+         same CAS, since that is the one step the sealing run had left and the
+         rows already hold its custody. A receipt for another generation is
+         not this manager's seal and takes the full path exactly as before. A
+         receipt for this generation that names another process or manager
+         refuses, named, rather than reaching the database's refusal. A lookup
+         that did not answer is COULD NOT TELL and refuses (10.86 rules 1-2).
+         Nothing in this lookup writes, and no check a manager that is NOT
+         sealed meets has moved. */
+      const prefix = (value) =>
+        uuid(value) || /^[0-9a-f]{64}$/.test(String(value)) ? String(value).slice(0, 8) : describe(value);
+      const sealedTransfer = async (manager) => {
+        checkMaintenance();
+        const response = await modules.client.supabase.rpc('fn_f06_find_mixed_manager_custody', {
+          p_tournament_id: manager.tournamentId,
+        });
+        checkMaintenance();
+        witness(
+          'mixed_sealed_lookup_unknown',
+          [
+            ['rpc.transport', () => !response.error],
+            ['rpc.body', () => record(response.data)],
+            ['rpc.ok', () => response.data.ok === true],
+            ['rpc.tournament', () => response.data.tournament_id === manager.tournamentId],
+            [
+              'rpc.receipt',
+              () =>
+                response.data.receipt === null ||
+                response.data.receipt === undefined ||
+                record(response.data.receipt),
+            ],
+          ],
+          () => ({
+            failedField: 'fn_f06_find_mixed_manager_custody',
+            failedTable: manager.tournamentId,
+            observed: sqlState(response.error?.code),
+            observedDetail: [
+              `sqlstate=${sqlState(response.error?.code)}`,
+              `refusal=${refusalToken(response.error?.message)}`,
+              `body=${describe(response.data)}`,
+              `receipt=${describe(response.data?.receipt)}`,
+            ]
+              .join(',')
+              .slice(0, 512),
+          })
+        );
+        const receipt = response.data.receipt ?? null;
+        if (receipt === null || receipt.origin_generation !== manager.tournamentLeaseGeneration)
+          return null;
+        const checkpoint = receipt.local_proof?.release_checkpoint;
+        witness(
+          'mixed_sealed_transfer_foreign',
+          [
+            ['receipt.tournament_id', () => receipt.tournament_id === manager.tournamentId],
+            ['receipt.transfer_id', () => uuid(receipt.transfer_id)],
+            [
+              'receipt.successor_generation',
+              () =>
+                uuid(receipt.successor_generation) &&
+                receipt.successor_generation !== manager.tournamentLeaseGeneration,
+            ],
+            ['receipt.local_proof', () => record(receipt.local_proof) && record(checkpoint)],
+            ['receipt.canonical_proof', () => record(receipt.canonical_proof)],
+            ['release_checkpoint.kind', () => checkpoint.kind === 'legacy_engine_checkpoint_8825_v1'],
+            ['release_checkpoint.source', () => checkpoint.source === release],
+            [
+              'release_checkpoint.instance_id',
+              () => checkpoint.instance_id === options.expectedInstanceId,
+            ],
+            ['release_checkpoint.container_id', () => checkpoint.container_id === intent.container],
+            ['release_checkpoint.process_id', () => checkpoint.process_id === options.expectedPid],
+            [
+              'local_proof.manager_id',
+              () =>
+                receipt.local_proof.manager_id === manager.managerLifecycleDiagnostics.instanceId,
+            ],
+          ],
+          () => ({
+            failedTable: manager.tournamentId,
+            // Identifier prefixes only, as the other custody records carry
+            // them; anything not uuid-shaped is reduced by `describe`.
+            observed: prefix(receipt.transfer_id),
+            observedDetail: [
+              `origin=${prefix(receipt.origin_generation)}`,
+              `instance=${describe(checkpoint?.instance_id)}`,
+              `container=${prefix(checkpoint?.container_id)}`,
+              `manager=${prefix(receipt.local_proof?.manager_id)}`,
+              `expectedManager=${prefix(manager.managerLifecycleDiagnostics?.instanceId)}`,
+            ]
+              .join(',')
+              .slice(0, 512),
+          })
+        );
+        return detached(receipt);
+      };
+      const retainSealed = (manager, proposal, receipt) => {
+        const named = receipt.local_proof.engines;
+        require(Array.isArray(named) &&
+          named.length > 0 &&
+          named.length <= maxTables &&
+          named.every((row) => record(row) && uuid(row.table_id) && uuid(row.engine_id)) &&
+          new Set(named.map((row) => row.table_id)).size === named.length, 'mixed_sealed_receipt_shape');
+        // The row is the record of what was transferred. A stopped manager can
+        // admit nothing, so every engine it still holds must be one the row
+        // names, under the same engine identity; anything else is not a seal
+        // this guard made.
+        require(manager.tableEngines instanceof Map &&
+          manager.tableEngines.size <= maxTables &&
+          [...manager.tableEngines].every(([id, engine]) =>
+            named.some(
+              (row) => row.table_id === id && row.engine_id === engine?.lifecycleDiagnostics?.instanceId
+            )
+          ), 'mixed_sealed_original_unnamed');
+        const exactEngines = [];
+        for (const row of named) {
+          const tableId = row.table_id;
+          const engine = tableMap.get(tableId);
+          if (engine === undefined) {
+            // The sealing run's CAS already ran for this table. 8825 deletes
+            // the global slot and the owned mark together or not at all
+            // (TournamentManagerOwnership.ts:66-70), so a table gone from one
+            // and not the other is not something this guard did.
+            require(!ownedTables.has(tableId), 'mixed_sealed_original_registry_disagreement');
+            retiredOriginals.add(tableId);
+            continue;
+          }
+          // Still registered: the sealing run committed its row and did not
+          // reach this table's CAS. Only the exact stopped, terminal engine the
+          // row names, held by this manager, is retired - never a replacement
+          // behind the same table id.
+          require(!retained.has(engine) &&
+            engine instanceof modules.base.ServerTableEngineBase &&
+            engine.tableId === tableId &&
+            engine.lifecycleDiagnostics?.instanceId === row.engine_id &&
+            ownedTables.has(tableId) &&
+            manager.tableEngines.get(tableId) === engine &&
+            engine.running === false &&
+            engine.terminal === true &&
+            engine.hasReleasedProcessOwnership() === true, 'mixed_sealed_original_registry_disagreement');
+          retained.add(engine);
+          exactEngines.push({ tableId, engine });
+        }
+        sealedManagers++;
+        retainedManagers.push({
+          manager,
+          proposal,
+          sealed: true,
+          receipt,
+          exactEngines,
+          capturedLeaseGeneration: manager.tournamentLeaseGeneration,
+        });
+      };
       for (const proposal of intent.custody) {
         const manager = managerMap.get(proposal.tournament_id);
         require(manager instanceof modules.manager.TournamentManager &&
@@ -785,6 +985,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         boundMethods(manager, manager.tournamentId, manager.tournamentLeaseGeneration, [
           'captureDrainedF06Originals',
         ]);
+        // Rows first. A manager this guard already sealed takes none of the
+        // drain, registry or receipt requirements below: they describe custody
+        // that has already moved.
+        const sealed = await sealedTransfer(manager);
+        if (sealed !== null) {
+          retainSealed(manager, proposal, sealed);
+          continue;
+        }
         const originals = manager.captureDrainedF06Originals();
         require(Array.isArray(originals) &&
           originals.length > 0 &&
@@ -1896,6 +2104,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       stage = 'mixed_custody';
       progress('mixed_custody');
       for (const capture of retainedManagers) {
+        // A sealed manager's transfer is already in the rows: no observe, no
+        // commit, no readback. Its fresh intent ids stay unused.
+        if (capture.sealed === true) continue;
         const { manager, proposal, local } = capture;
         const input = {
           p_transfer_id: proposal.transfer_id,
@@ -2165,6 +2376,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          (`F06_MIXED_CANONICAL_CHANGED`), so nothing that could move between
          the phases is admitted by the split. */
       for (const capture of retainedManagers) {
+        if (capture.sealed === true) continue;
         const { manager, proposal, local } = capture;
         const { rpc, input, proof } = capture.commit;
         const committed = await rpc('fn_f06_prepare_mixed_manager_custody', {
@@ -2190,7 +2402,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // calls are synchronous and all captured local objects remain untouched.
       checkAll();
       for (const capture of retainedManagers) {
-        require(record(capture.receipt), 'mixed_custody_receipt_missing');
+        if (capture.sealed === true) {
+          // The seal was proved from rows at capture. What is retired below is
+          // only what that row named and this process still holds, and only
+          // while the same manager still owns the same generation.
+          require(server.tournamentEngines.get(capture.manager.tournamentId) === capture.manager &&
+            capture.manager.tournamentLeaseGeneration ===
+              capture.capturedLeaseGeneration, 'mixed_sealed_owner_changed');
+        } else require(record(capture.receipt), 'mixed_custody_receipt_missing');
         for (const { tableId, engine } of capture.exactEngines) {
           checkAll();
           require(server.unregisterTournamentTableEngine(tableId, engine) ===

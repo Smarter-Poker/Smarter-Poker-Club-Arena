@@ -95,6 +95,10 @@ function checkpointSummary(value) {
     'checkpointOutcome',
     'paidAccountingQualification',
     'restartAuthorized',
+    // How many retained managers the rows proved an earlier run had already
+    // sealed, so this run transferred nothing for them (2026-09-25). A count,
+    // validated like every other count; absent from a guard that predates it.
+    'sealedManagers',
   ];
   const result = {};
   for (const key of keys) {

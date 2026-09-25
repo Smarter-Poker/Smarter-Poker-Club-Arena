@@ -706,6 +706,170 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 51 });
   });
 
+  /** Phase 6B: a labeled non-complete context keeps the complete request's numeric facts. */
+  function labeledContextRequest(
+    contextStatus: 'incomplete' | 'warming' | 'stale',
+    requestId: number
+  ): FastHorseDecisionRequest {
+    const request = phase6TournamentRequest(requestId);
+    const tournament = request.gameState.tournament!;
+    return rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        tournament: {
+          ...tournament,
+          contextStatus,
+          contextIssues: [TOURNAMENT_CONTEXT_INCOMPLETE, `tournament_context_${contextStatus}`],
+          sourceAgeMs: null,
+          tournamentId: null,
+          tournamentType: '',
+          tournamentStatus: '',
+          gameVariant: '',
+          entrants: 0,
+          playersLeft: 0,
+          spotsPaid: 0,
+          avgStackChips: 0,
+          medianStackChips: 0,
+          currentLevel: 0,
+          levelDurationMin: null,
+          levelElapsedMin: null,
+          stacks: [],
+          payoutPct: [],
+        },
+      },
+    });
+  }
+
+  it.each(['incomplete', 'warming', 'stale'] as const)(
+    'Phase 6B: routes a real %s-context decision through the atlas as incomplete_context with zero shifts',
+    async (contextStatus) => {
+      const h = harness(true);
+      h.runtime.receive(labeledContextRequest(contextStatus, 70));
+      await h.runtime.drain();
+      const result = h.messages.at(-1);
+      if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+      expect(result.requestId).toBe(70);
+      const receipt = result.decision.tournamentPreflopAttribution!;
+      expect(receipt.reason).toBe('incomplete_context');
+      expect(receipt.status).toBe('unavailable');
+      expect(receipt.lookup!.coordinate.gameFamily).toBe('nlh');
+      expect(receipt.lookup!.coordinate.contextStatus).toBe(contextStatus);
+      expect(receipt.lookup!.policy.source).toBe('labeled_fallback');
+      expect(receipt.lookup!.policy.fallbackReason).toBe('incomplete_context');
+      expect(Object.values(receipt.lookup!.policy.shifts)).toEqual([0, 0, 0, 0, 0]);
+    }
+  );
+
+  it('Phase 6B: the complete control on the same request reaches the atlas baseline', async () => {
+    const h = harness(true);
+    h.runtime.receive(phase6TournamentRequest(71));
+    await h.runtime.drain();
+    const result = h.messages.at(-1);
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+    const receipt = result.decision.tournamentPreflopAttribution!;
+    expect(receipt.reason).toBe('atlas_forwarded');
+    expect(receipt.status).toBe('atlas_evaluated');
+    expect(receipt.lookup!.policy.source).toBe('deterministic_baseline');
+  });
+
+  it('Phase 6B: a dealt sit-out counts in the census but never as a covering stack', async () => {
+    const request = phase6TournamentRequest(72);
+    const sitOut = {
+      ...request.gameState.players[1],
+      seat: 4,
+      user_id: 'horse-4',
+      username: 'Horse Four',
+      stack: 500,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: true,
+      is_sitting_out: true,
+    };
+    const players = [...request.gameState.players, sitOut];
+    const tournament = request.gameState.tournament!;
+    const mFor = (opponents: Array<{ userId: string; stackChips: number }>) =>
+      buildTournamentMState({
+        stackChips: request.player.stack,
+        smallBlind: tournament.currentSmallBlind!,
+        bigBlind: tournament.currentBigBlind!,
+        ante: tournament.currentAnte!,
+        anteType: tournament.anteType!,
+        playersAtTable: 3,
+        nextSmallBlind: tournament.nextSmallBlind,
+        nextBigBlind: tournament.nextBigBlind,
+        nextAnte: tournament.nextAnte,
+        minutesToNextLevel: tournament.nextBlindInMin,
+        opponentStacks: opponents,
+      });
+    const withRequest = (m: ReturnType<typeof buildTournamentMState>) =>
+      rekey({
+        ...request,
+        gameState: {
+          ...request.gameState,
+          players,
+          tournament: { ...tournament, seatsPerTable: 3, playersAtTable: 3, m },
+        },
+      });
+
+    // Three dealt seats scale effective M by 0.3; only the actionable opponent can cover.
+    const canonical = mFor([{ userId: 'horse-3', stackChips: 96 }]);
+    expect(canonical.effectiveM).toBeCloseTo(canonical.realM * 0.3, 10);
+    expect(canonical.coveringOpponents.map((opponent) => opponent.userId)).toEqual(['horse-3']);
+    const accepted = harness(true);
+    accepted.runtime.receive(withRequest(canonical));
+    await accepted.runtime.drain();
+    expect(accepted.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 72 });
+
+    // Listing the sit-out's 500 chips as cover is not the canonical M and is refused.
+    const inflated = mFor([
+      { userId: 'horse-3', stackChips: 96 },
+      { userId: 'horse-4', stackChips: 500 },
+    ]);
+    expect(inflated.coveringOpponents.map((opponent) => opponent.userId)).toEqual([
+      'horse-3',
+      'horse-4',
+    ]);
+    const refused = harness();
+    refused.runtime.receive(withRequest(inflated));
+    await refused.runtime.drain();
+    expect(refused.decisionsAtRng).toEqual([]);
+    expect(refused.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament M state does not match the canonical snapshot',
+    });
+  });
+
+  it('Phase 6B: an Omaha tournament request takes the named unsupported_variant fallback', async () => {
+    const request = phase6TournamentRequest(73);
+    const tournament = request.gameState.tournament!;
+    const omaha = rekey({
+      ...request,
+      player: { ...snapshot.player },
+      gameState: {
+        ...request.gameState,
+        gameVariant: 'plo4',
+        bettingStructure: 'pot_limit',
+        variantRules: snapshot.gameState.variantRules,
+        legalActions: snapshot.gameState.legalActions,
+        minRaiseTo: snapshot.gameState.minRaiseTo,
+        maxRaiseTo: snapshot.gameState.maxRaiseTo,
+        tournament: { ...tournament, gameVariant: 'plo4' },
+      },
+    });
+    const h = harness(true);
+    h.runtime.receive(omaha);
+    await h.runtime.drain();
+    const result = h.messages.at(-1);
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+    const receipt = result.decision.tournamentPreflopAttribution!;
+    expect(receipt.reason).toBe('unsupported_variant');
+    expect(receipt.status).toBe('unavailable');
+    expect(receipt.lookup!.coordinate.gameFamily).toBe('omaha');
+    expect(receipt.lookup!.policy.source).toBe('labeled_fallback');
+    expect(Object.values(receipt.lookup!.policy.shifts)).toEqual([0, 0, 0, 0, 0]);
+  });
+
   it('rejects an implicit tournament context and a non-canonical M snapshot', async () => {
     const missing = phase6TournamentRequest(52);
     const h1 = harness();

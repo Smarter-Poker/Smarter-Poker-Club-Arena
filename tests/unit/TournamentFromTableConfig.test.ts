@@ -10,11 +10,10 @@
  * This file pins the mapping into a real TournamentConfig. The assertions are
  * chosen around the things the tournament engine will refuse or mis-run:
  *
- *   - max_players must be POSITIVE. fn_register_for_tournament refuses entry
- *     when current_players >= max_players, so 0 means nobody can ever register.
+ *   - MTT entry counts are unlimited, including restored numeric-cap drafts.
  *   - an SNG only starts when FULL, so min must equal max or it sits in
  *     REGISTERING until the stale-SNG sweeper cancels and refunds it.
- *   - payouts must total 100 and must pay fewer places than the field size.
+ *   - provisional MTT payouts must not depend on an imagined maximum field.
  *   - blinds must never decrease across playing levels.
  */
 import { describe, it, expect } from 'vitest';
@@ -46,9 +45,9 @@ const base: TournamentFormInput = {
 };
 
 describe('field size', () => {
-  it('an MTT uses the configured range', () => {
+  it('an MTT ignores the retired entry range', () => {
     const c = buildTournamentConfig(base, 'nlh');
-    expect(c.maxPlayers).toBe(100);
+    expect(c.maxPlayers).toBeNull();
     expect(c.minPlayers).toBe(10);
   });
 
@@ -58,10 +57,10 @@ describe('field size', () => {
     expect(c.minPlayers).toBe(18);
   });
 
-  it('never produces a zero or negative field', () => {
+  it('keeps a positive MTT start threshold without imposing a field limit', () => {
     const c = buildTournamentConfig({ ...base, maxPlayersRange: 0, minPlayers: 0 }, 'nlh');
-    expect(c.maxPlayers).toBeGreaterThan(0);
-    expect(c.minPlayers).toBeGreaterThanOrEqual(2);
+    expect(c.maxPlayers).toBeNull();
+    expect(c.minPlayers).toBe(3);
   });
 });
 
@@ -74,10 +73,11 @@ describe('payouts', () => {
     }
   });
 
-  it('pay fewer places than the field, so the bubble can exist', () => {
+  it('keeps provisional payouts independent of legacy field caps', () => {
     for (const field of [9, 18, 27, 100, 300]) {
       const c = buildTournamentConfig({ ...base, maxPlayersRange: field }, 'nlh');
-      expect(c.payoutStructure.length).toBeLessThan(c.maxPlayers);
+      expect(c.maxPlayers).toBeNull();
+      expect(c.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
     }
   });
 
@@ -219,9 +219,12 @@ describe('start time', () => {
     expect(c.startTime).toBeInstanceOf(Date);
   });
 
-  it('is dropped when it is in the past — that trips the auto-cancel', () => {
-    const c = buildTournamentConfig({ ...base, startTime: '2020-01-01T12:00' }, 'nlh');
-    expect(c.startTime).toBeUndefined();
+  // 20260924033701: a past start used to be dropped here and silently become
+  // "a minute from now". It is refused with the sentence every surface uses.
+  it('is refused when it is in the past, never silently replaced', () => {
+    expect(() => buildTournamentConfig({ ...base, startTime: '2020-01-01T12:00' }, 'nlh')).toThrow(
+      'Pick A Start Time In The Future.'
+    );
   });
 
   it('is ignored for an SNG, which starts when it fills', () => {
@@ -249,7 +252,7 @@ describe('payout structure choice (2026-08-22)', () => {
     }
   });
 
-  it('each choice still totals 100 and pays fewer places than the field', () => {
+  it('each choice totals 100 with an unlimited field', () => {
     for (const choice of ['payout1', 'payout3', 'payout20']) {
       for (const field of [4, 9, 50, 300]) {
         const c = buildTournamentConfig(
@@ -258,7 +261,8 @@ describe('payout structure choice (2026-08-22)', () => {
         );
         const total = c.payoutStructure.reduce((s, p) => s + p.percentage, 0);
         expect(Math.abs(total - 100)).toBeLessThanOrEqual(0.01);
-        expect(c.payoutStructure.length).toBeLessThan(c.maxPlayers);
+        expect(c.maxPlayers).toBeNull();
+        expect(c.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
       }
     }
   });
@@ -447,10 +451,11 @@ describe('parity fields (2026-08-22)', () => {
       tournamentId: '11111111-1111-1111-1111-111111111111',
       seatsAwarded: 3,
     });
-    // Without a target the toggle is inert - never a cash-paying "satellite".
-    const noTarget = buildTournamentConfig({ ...base, nextStepSatellite: true }, 'nlh');
-    expect(noTarget.type).toBe('mtt');
-    expect(noTarget.satelliteTarget).toBeUndefined();
+    // Without a target the toggle is refused (20260924033701). It used to build
+    // a plain MTT without saying so; never a cash-paying "satellite" either way.
+    expect(() => buildTournamentConfig({ ...base, nextStepSatellite: true }, 'nlh')).toThrow(
+      'Pick The Target Tournament This Satellite Awards Seats Into.'
+    );
   });
 });
 
@@ -526,4 +531,29 @@ describe('spin catalogue', () => {
       expect(cfg.spinType).toBeUndefined();
     }
   });
+});
+
+describe('retired MTT entry cap compatibility', () => {
+  it.each([undefined, 0, 2, 100, 1000000, -1, Number.MAX_SAFE_INTEGER])(
+    'ignores legacy cap %s for MTTs and satellites while keeping table seats',
+    (legacyCap) => {
+      for (const nextStepSatellite of [false, true]) {
+        const input = Object.freeze({
+          ...base,
+          maxPlayersRange: legacyCap,
+          minPlayers: 12,
+          tableSize: 6,
+          nextStepSatellite,
+          satelliteTargetId: 'd3000000-0000-4000-8000-000000000099',
+          satelliteSeats: 3,
+        });
+        const mapped = buildTournamentConfig(input, 'nlh');
+        expect(mapped.maxPlayers).toBeNull();
+        expect(mapped.minPlayers).toBe(12);
+        expect(mapped.tableSize).toBe(6);
+        expect(mapped.type).toBe(nextStepSatellite ? 'satellite' : 'mtt');
+        expect(input.maxPlayersRange).toBe(legacyCap);
+      }
+    }
+  );
 });

@@ -1,110 +1,131 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  HAND-FOR-HAND BANNER — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+ *  HAND-FOR-HAND BANNER — #ClubArenaConsole (2026-09-14)
+ *
+ *  A BANNER IS NOT A CARD. Nothing here is a frame: no border, no radius, no
+ *  fill, no gradient, no plate. The bubble is inked straight onto the black
+ *  glass - the state as a lit bullet, the title in the master's gold, the
+ *  counts in the console's copy grey - and closed top and bottom by an
+ *  engraved rule (a black cut with a hairline of light on it), the same rule
+ *  the console body scores between rows. Sizes are in cqw against the banner,
+ *  so a 320px phone and a 430px phone get the same picture.
+ *
+ *  WHAT IT REPLACED: `border-radius: 12px` over
+ *  `linear-gradient(135deg, rgba(234,179,8,.15), rgba(245,158,11,.1))` with a
+ *  1px amber rim, `#eab308` lettering and a green `#22c55e` burst - a control
+ *  drawn in CSS, in two colours the schema does not own.
+ *
+ *  ANIMATION LAW (CLAUDE.md 10.6): all three animations survived the rebuild,
+ *  moved onto the mechanisms that replaced their old carriers, and none of
+ *  them can be switched off. The pulse and the flash now move opacity rather
+ *  than repaint a background that no longer exists; the bounce is unchanged.
+ * ═══════════════════════════════════════════════════════════════════════════════ */
 
 .hfh-banner {
-  position: relative;
+  container-type: inline-size;
+  display: flex;
+  align-items: flex-start;
+  gap: 2.6cqw;
   width: 100%;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(245, 158, 11, 0.1));
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  border-radius: 12px;
-  overflow: hidden;
+  /* Side air so the lit bullet never sits on the edge of whatever panel the
+     banner is dropped into. */
+  padding: 2.8cqw 3cqw;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-/* ── Pulsing background ── */
-.hfh-pulse {
-  position: absolute;
-  inset: 0;
-  background: rgba(234, 179, 8, 0.05);
+/* The lit bullet: a typographic mark in the master's own ink, not a drawn
+   circle and not a decorative glyph stuck on top. It carries the pulse the
+   banner's old background layer used to carry. */
+.hfh-dot {
+  flex: 0 0 auto;
+  font-size: 5cqw;
+  line-height: 1.15;
   animation: hfh-pulse-anim 2s ease-in-out infinite;
 }
 
 @keyframes hfh-pulse-anim {
   0%,
   100% {
-    opacity: 0;
-  }
-  50% {
     opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
   }
 }
 
 /* ── Content ── */
 .hfh-content {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.hfh-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hfh-icon {
-  font-size: 16px;
+  align-items: flex-start;
+  gap: 1.2cqw;
+  min-width: 0;
 }
 
 .hfh-text {
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: 3px;
-  color: #eab308;
-  text-shadow: 0 0 20px rgba(234, 179, 8, 0.4);
+  font-size: 4.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .hfh-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  flex-wrap: wrap;
+  gap: 2cqw;
+  color: #d7dee7;
+  font-size: 3.3cqw;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .hfh-separator {
-  color: rgba(255, 255, 255, 0.2);
+  font-size: 3.6cqw;
+  line-height: 1;
 }
 
 .hfh-bubble-text {
-  font-size: 11px;
+  font-size: 2.9cqw;
   font-weight: 700;
-  letter-spacing: 2px;
-  color: rgba(234, 179, 8, 0.5);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 /* ── Bubble Burst ── */
 .hfh-burst {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.1));
-  border-color: rgba(34, 197, 94, 0.3);
   animation: hfh-burst-flash 0.5s ease-out;
 }
 
 @keyframes hfh-burst-flash {
   0% {
-    background: rgba(34, 197, 94, 0.4);
+    opacity: 0.25;
   }
+
   100% {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.1));
+    opacity: 1;
   }
 }
 
 .hfh-burst-content {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 1.2cqw;
+  min-width: 0;
 }
 
 .hfh-burst-icon {
-  font-size: 32px;
+  flex: 0 0 auto;
+  font-size: 5.6cqw;
+  line-height: 1.1;
   animation: hfh-burst-bounce 0.6s ease-out;
 }
 
@@ -112,23 +133,40 @@
   0% {
     transform: scale(0);
   }
+
   50% {
     transform: scale(1.3);
   }
+
   100% {
     transform: scale(1);
   }
 }
 
 .hfh-burst-text {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 3px;
-  color: #22c55e;
-  text-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+  font-size: 5cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .hfh-burst-sub {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: #d7dee7;
+  font-size: 3.4cqw;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+/*
+ * Reduced motion collapses the MOTION, never the MEANING: every word and every
+ * number stays exactly where it is and fully legible; only the movement stops.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .hfh-dot,
+  .hfh-burst,
+  .hfh-burst-icon {
+    animation: none;
+    opacity: 1;
+  }
 }

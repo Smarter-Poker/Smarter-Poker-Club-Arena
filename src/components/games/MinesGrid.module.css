@@ -5,11 +5,25 @@
   padding: 12px;
   box-sizing: border-box;
 }
+
 .stage {
   position: relative;
   aspect-ratio: 1;
   width: 100%;
   filter: drop-shadow(0 12px 12px #0009);
+}
+.board[data-terminal='true'] {
+  animation-name: mine-board-complete;
+  animation-fill-mode: both;
+}
+@keyframes mine-board-complete {
+  0% {
+    opacity: 0.88;
+  }
+  20%,
+  100% {
+    opacity: 1;
+  }
 }
 .stage::before {
   content: '';
@@ -34,6 +48,42 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: clamp(4px, 0.65vw, 9px);
+  perspective: 900px;
+}
+
+/* What the board is worth now, and what the next tile adds: read before every pick. */
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.readouts div {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #638ba566;
+  border-radius: 8px;
+  background: #0b1b2de0;
+}
+.readouts dt {
+  font:
+    500 11px/1.3 Inter,
+    sans-serif;
+  color: #a3bdd5;
+}
+.readouts dd {
+  margin: 0;
+  font:
+    800 18px/1.1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  color: #ffe9a8;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.readouts dd[data-sign='loss'] {
+  color: #ffb09a;
 }
 .tile {
   position: relative;
@@ -102,6 +152,57 @@
     inset 0 0 20px #73d6ff21,
     0 0 0 1px #8de3ff;
 }
+/* A tile turns over to show its face: the pick as it lands, the rest in the cascade. */
+.tile[data-flip='true'] {
+  animation: tile-flip 0.48s ease-out both;
+}
+.tile[data-cascade='true'] {
+  animation-duration: 0.42s;
+}
+/* The rest of the board, turned over after the round, reads dimmer than the picks. */
+.tile[data-revealed='true'][data-picked='false'] .gem {
+  filter: drop-shadow(0 5px 3px #0007) brightness(0.72) saturate(0.7);
+}
+/* The mine that ended the round: a blast ring, then it stays lit. */
+.tile[data-hit='true'] {
+  border-color: #ff745b;
+  box-shadow:
+    inset 0 0 22px #ff5a3c55,
+    0 0 0 2px #ff745b,
+    0 0 26px #ff5a3c88;
+  animation: tile-blast 0.6s ease-out both;
+}
+@keyframes tile-flip {
+  from {
+    transform: rotateY(-90deg);
+  }
+  to {
+    transform: rotateY(0);
+  }
+}
+@keyframes tile-blast {
+  0% {
+    transform: scale(0.9);
+    box-shadow:
+      inset 0 0 22px #ff5a3c55,
+      0 0 0 0 #ff745b,
+      0 0 0 #ff5a3c00;
+  }
+  35% {
+    transform: scale(1.12);
+    box-shadow:
+      inset 0 0 22px #ff5a3c55,
+      0 0 0 6px #ff745b,
+      0 0 40px #ff5a3ccc;
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      inset 0 0 22px #ff5a3c55,
+      0 0 0 2px #ff745b,
+      0 0 26px #ff5a3c88;
+  }
+}
 .seal {
   transform: rotate(-45deg);
   font-size: clamp(22px, 3.5vw, 45px);
@@ -148,19 +249,35 @@
   }
 }
 @media (max-width: 760px) {
+  /* THE BOARD IS CAPPED BY THE SPACE THE CONSOLE LEAVES IT, NOT BY THE PHONE.
+     min(100%, 500px) gives the board the whole column, and on a phone the
+     console is that one column: at 375 x 667 the board took all 359px of it
+     and put Book and the tile plate 67px below the fold, in every round. The
+     stage is square and is the board's width less its padding, so the width is
+     what caps the height. The subtrahend is the chrome the board shares the
+     column with, term by term: the back link (44) + the console header (50) +
+     the playfield's padding (16) + the controls with their plates (158) + the
+     board's own readouts, caption and padding (107), and 15px of slack. It
+     stops biting above roughly 755px of viewport, so a modern phone held
+     upright still gets the full column. */
   .board {
-    width: min(100%, 500px);
+    width: min(100%, 500px, calc(100dvh - 390px));
     padding: 10px 5px;
   }
   .tile {
     border-radius: 5px;
   }
 }
+/* Motion collapses; every mine, every gem and the blast ring still read. */
 @media (prefers-reduced-motion: reduce) {
   .gem {
     animation: none;
   }
-  .tile {
+  .tile,
+  .tile[data-flip='true'],
+  .tile[data-cascade='true'],
+  .tile[data-hit='true'] {
     transition: none;
+    animation: none;
   }
 }

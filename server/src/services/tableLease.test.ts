@@ -431,7 +431,9 @@ describe('heartbeatTables', () => {
     ).resolves.toEqual({
       status: 'answered',
       proofs: [],
-      lostTableIds: [TABLE],
+      // Authority is NOT extended - that is what this case pins. It is also
+      // not a loss: the database answered `kept` for this exact generation.
+      lostTableIds: [],
     });
   });
 
@@ -578,4 +580,264 @@ describe('table heartbeat lock isolation', () => {
       });
     }
   );
+});
+
+/* ───────────────────────────────────────────────────────────────────────────
+   A DIAMOND ARENA CASH TABLE (2026-09-20)
+
+   The Diamond Arena's cash tables are ordinary rows in `tables`, so they take
+   exactly the same lease as a chip table and the lease never learns the asset.
+   That sameness is the property worth pinning: a Diamond seat holds real
+   custody in `poker_diamond_custody`, so two engine containers dealing one
+   Diamond table would settle one hand twice against one custody row, and the
+   only thing standing between those two containers is this module.
+
+   These cases drive the real module against a fake `claim_table_lease_v2`,
+   `release_table_leases_v2` and `heartbeat_table_leases_v4` that apply the
+   rules the SQL applies, including the stale window the CLIENT sends, so the
+   recovery case is decided by the same argument production sends.
+   ───────────────────────────────────────────────────────────────────────── */
+const DIAMOND_TABLE = '30000000-0000-4000-8000-000000000001';
+const DIAMOND_GENERATION_A = 'bbbbbbbb-0000-4000-8000-00000000000a';
+const DIAMOND_GENERATION_B = 'bbbbbbbb-0000-4000-8000-00000000000b';
+const DIAMOND_GENERATION_C = 'bbbbbbbb-0000-4000-8000-00000000000c';
+
+interface FakeLeaseRow {
+  holder: string;
+  generation: string;
+  ageSeconds: number;
+}
+
+/** One row per table id, the way `engine_table_leases` keeps it. */
+function fakeLeaseDatabase() {
+  const rows = new Map<string, FakeLeaseRow>();
+  const handler = (fn: string, args: Record<string, unknown>) => {
+    if (fn === 'claim_table_lease_v2') {
+      const tableId = String(args.p_table_id);
+      const instance = String(args.p_instance_id);
+      const requested = String(args.p_requested_generation);
+      const staleSeconds = Number(args.p_stale_seconds);
+      const held = rows.get(tableId);
+      const reclaimable = !held || held.ageSeconds >= staleSeconds;
+      if (held && held.holder !== instance && !reclaimable) {
+        return {
+          data: [{ granted: false, holder: held.holder, holder_age_seconds: held.ageSeconds }],
+          error: null,
+        };
+      }
+      rows.set(tableId, { holder: instance, generation: requested, ageSeconds: 0 });
+      return {
+        data: [
+          {
+            granted: true,
+            holder: instance,
+            holder_age_seconds: 0,
+            lease_generation: requested,
+            protocol_version: 2,
+          },
+        ],
+        error: null,
+      };
+    }
+    if (fn === 'release_table_leases_v2') {
+      const instance = String(args.p_instance_id);
+      const claims = args.p_claims as Array<{ table_id: string; lease_generation: string }>;
+      let released = 0;
+      for (const claim of claims) {
+        const held = rows.get(claim.table_id);
+        if (
+          held &&
+          held.holder === instance &&
+          held.generation.toLowerCase() === claim.lease_generation.toLowerCase()
+        ) {
+          rows.delete(claim.table_id);
+          released++;
+        }
+      }
+      return { data: released, error: null };
+    }
+    if (fn === 'heartbeat_table_leases_v4') {
+      const instance = String(args.p_instance_id);
+      const staleSeconds = Number(args.p_stale_seconds);
+      const claims = args.p_claims as Array<{ table_id: string; lease_generation: string }>;
+      return {
+        data: claims.map((claim) => {
+          const held = rows.get(claim.table_id);
+          if (!held) return { table_id: claim.table_id, state: 'missing', lease_generation: null };
+          if (
+            held.holder !== instance ||
+            held.generation.toLowerCase() !== claim.lease_generation.toLowerCase()
+          )
+            return { table_id: claim.table_id, state: 'taken', lease_generation: held.generation };
+          if (held.ageSeconds >= staleSeconds)
+            return { table_id: claim.table_id, state: 'stale', lease_generation: held.generation };
+          return { table_id: claim.table_id, state: 'kept', lease_generation: held.generation };
+        }),
+        error: null,
+      };
+    }
+    throw new Error('the lease module called an unexpected RPC: ' + fn);
+  };
+  return { rows, handler };
+}
+
+describe('a Diamond Arena cash table', () => {
+  it('has exactly one owner at a time, and the loser deals nothing', async () => {
+    const { rows, handler } = fakeLeaseDatabase();
+    rpc.mockImplementation(handler);
+    const engineA = await loadLease(true);
+    const engineB = await loadLease(true);
+    expect(engineA.INSTANCE_ID).not.toBe(engineB.INSTANCE_ID);
+
+    await expect(engineA.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_A)).resolves.toEqual({
+      status: 'granted',
+      verified: true,
+      leaseGeneration: DIAMOND_GENERATION_A,
+      proofDeadlineMonotonicMs: expect.any(Number),
+    });
+
+    await expect(engineB.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_B)).resolves.toEqual({
+      status: 'owned_elsewhere',
+      conflict: expect.objectContaining({
+        tableId: DIAMOND_TABLE,
+        holder: engineA.INSTANCE_ID,
+        holderAgeSeconds: 0,
+      }),
+    });
+    /* The refusal is recorded where health reads it, and the row is untouched:
+       the Diamond table still belongs to the instance that proved it. */
+    expect(engineB.recentLeaseConflicts().map((c) => c.tableId)).toEqual([DIAMOND_TABLE]);
+    expect(rows.get(DIAMOND_TABLE)).toEqual({
+      holder: engineA.INSTANCE_ID,
+      generation: DIAMOND_GENERATION_A,
+      ageSeconds: 0,
+    });
+    /* Only the winner renews, and the loser's renewal says `taken` rather than
+       quietly extending a second dealer over the same custody. */
+    await expect(
+      engineA.heartbeatTables([{ tableId: DIAMOND_TABLE, leaseGeneration: DIAMOND_GENERATION_A }])
+    ).resolves.toMatchObject({
+      status: 'answered',
+      proofs: [expect.objectContaining({ tableId: DIAMOND_TABLE })],
+      lostTableIds: [],
+    });
+    await expect(
+      engineB.heartbeatTables([{ tableId: DIAMOND_TABLE, leaseGeneration: DIAMOND_GENERATION_B }])
+    ).resolves.toMatchObject({ status: 'answered', proofs: [], lostTableIds: [DIAMOND_TABLE] });
+  });
+
+  it('asks for the lease by table id alone, so a Diamond table cannot be given a weaker one', async () => {
+    /* Nothing in the claim names the asset, the club or the arena. A Diamond
+       table and a chip table are indistinguishable to this module, which is
+       why no Diamond-only lease path can exist to be got wrong. */
+    const { handler } = fakeLeaseDatabase();
+    rpc.mockImplementation(handler);
+    const lease = await loadLease(true);
+    await lease.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_A);
+    const [fn, args] = rpc.mock.calls[0] as [string, Record<string, unknown>];
+    expect(fn).toBe('claim_table_lease_v2');
+    expect(Object.keys(args).sort()).toEqual([
+      'p_instance_id',
+      'p_requested_generation',
+      'p_stale_seconds',
+      'p_table_id',
+      'p_version',
+    ]);
+    expect(JSON.stringify(args)).not.toMatch(/asset|club|arena|diamond/i);
+  });
+
+  it('releases its own exact generation and cannot release a successor', async () => {
+    const { rows, handler } = fakeLeaseDatabase();
+    rpc.mockImplementation(handler);
+    const engineA = await loadLease(true);
+    const engineB = await loadLease(true);
+    await engineA.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_A);
+
+    await expect(
+      engineA.releaseTables([{ tableId: DIAMOND_TABLE, leaseGeneration: DIAMOND_GENERATION_A }])
+    ).resolves.toEqual({ status: 'confirmed', releasedCount: 1, attempts: 1 });
+    expect(rows.has(DIAMOND_TABLE)).toBe(false);
+
+    /* A released Diamond table is immediately available, so a handoff does not
+       cost the table thirty dark seconds. */
+    await expect(
+      engineB.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_B)
+    ).resolves.toMatchObject({
+      status: 'granted',
+      verified: true,
+      leaseGeneration: DIAMOND_GENERATION_B,
+    });
+
+    /* And a late duplicate release from the previous owner, with the previous
+       generation, is a confirmed zero: it evicts nobody. */
+    await expect(
+      engineA.releaseTables([{ tableId: DIAMOND_TABLE, leaseGeneration: DIAMOND_GENERATION_A }])
+    ).resolves.toEqual({ status: 'confirmed', releasedCount: 0, attempts: 1 });
+    expect(rows.get(DIAMOND_TABLE)).toMatchObject({
+      holder: engineB.INSTANCE_ID,
+      generation: DIAMOND_GENERATION_B,
+    });
+  });
+
+  it('recovers a Diamond table whose holder went stale, and states the window it recovers by', async () => {
+    const { rows, handler } = fakeLeaseDatabase();
+    rpc.mockImplementation(handler);
+    const engineB = await loadLease(true);
+    const engineC = await loadLease(true);
+    await engineB.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_B);
+
+    /* Engine B's container stops answering. Its row is still there, and the
+       one thing that must not happen is the Diamond table staying dark. */
+    rows.get(DIAMOND_TABLE)!.ageSeconds = engineB.LEASE_STALE_SECONDS;
+
+    await expect(
+      engineB.heartbeatTables([{ tableId: DIAMOND_TABLE, leaseGeneration: DIAMOND_GENERATION_B }])
+    ).resolves.toEqual({ status: 'answered', proofs: [], lostTableIds: [DIAMOND_TABLE] });
+    /* Stale is reclaimable, not a split brain: it is counted where re-admission
+       reads it and it raises no conflict against a foreign holder. */
+    expect(engineB.reclaimableLeaseCount()).toBe(1);
+    expect(engineB.recentLeaseConflicts()).toEqual([]);
+
+    await expect(
+      engineC.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_C)
+    ).resolves.toMatchObject({
+      status: 'granted',
+      verified: true,
+      leaseGeneration: DIAMOND_GENERATION_C,
+    });
+    expect(rows.get(DIAMOND_TABLE)).toEqual({
+      holder: engineC.INSTANCE_ID,
+      generation: DIAMOND_GENERATION_C,
+      ageSeconds: 0,
+    });
+
+    /* The recovery window is the client's own constant, sent to the database on
+       every claim and every renewal. A thirty second hold is the whole reason a
+       stale Diamond table comes back rather than waiting for a human. */
+    for (const [fn, args] of rpc.mock.calls as Array<[string, Record<string, unknown>]>) {
+      if (fn === 'release_table_leases_v2') continue;
+      expect(args.p_stale_seconds, fn).toBe(30);
+    }
+    expect(engineC.LEASE_STALE_SECONDS).toBe(30);
+  });
+
+  it('never hands a Diamond table to a second dealer when the database cannot answer', async () => {
+    /* The inversion this whole module exists to avoid runs the other way for a
+       money table: an unreadable answer must not be read as "free". */
+    const lease = await loadLease(true);
+    rpc.mockResolvedValue({ data: null, error: { message: 'schema reload' } });
+    await expect(lease.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_A)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_error',
+      requestedGeneration: DIAMOND_GENERATION_A,
+      mayHaveCommitted: true,
+    });
+    rpc.mockRejectedValue(new Error('ECONNRESET'));
+    await expect(lease.claimTableLease(DIAMOND_TABLE, DIAMOND_GENERATION_A)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_threw',
+      requestedGeneration: DIAMOND_GENERATION_A,
+      mayHaveCommitted: true,
+    });
+  });
 });

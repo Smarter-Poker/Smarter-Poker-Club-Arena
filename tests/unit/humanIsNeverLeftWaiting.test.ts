@@ -23,6 +23,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { seatCopy } from '../../src/components/table/seatExitCopy';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
@@ -76,7 +77,12 @@ describe('fillHumanSeatFirstGame', () => {
 
 describe('the client wait is named, never silent', () => {
   it('escalates the footer after 30 stalled seconds and says the seat is safe', () => {
-    expect(TABLE_PAGE).toContain('Still Filling Your Game, Your Seat And Chips Are Safe');
+    /* The sentence lives in components/table/seatExitCopy since 2026-09-19,
+       keyed by the seat's asset; a chip seat still reads exactly this. */
+    expect(seatCopy('chips').stillFillingSeatIsSafe).toBe(
+      'Still Filling Your Game, Your Seat And Chips Are Safe'
+    );
+    expect(TABLE_PAGE).toContain('seatCopy(tableState.arenaAsset).stillFillingSeatIsSafe');
     const arm = sliceEnclosingBlock(TABLE_PAGE, 'seat_first_wait_exceeded', 0, 3);
     expect(arm).toContain('30_000');
   });

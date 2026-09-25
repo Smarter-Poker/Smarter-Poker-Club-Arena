@@ -23,7 +23,7 @@ import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
 import { getPlayerCountCaps } from '../config/RakeConfig.js';
 import {
-  loadTable,
+  loadTournamentBlinds,
   loadSeatedPlayers,
   supabase,
   autoRebuyHorse,
@@ -487,8 +487,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Observe the server-driven seats before classifying stale presence,
         // using the same heartbeat path as the periodic table tick. Human
         // presence, voluntary sit-outs and time-bank state remain untouched.
+        /* A HORSE IS NEVER ABSENT (2026-09-23).
+
+           This used to be a bare heartbeat, and it leaned on a side effect
+           that heartbeat no longer has. Until today a reconnect edge cleared
+           the consecutive-timeout ladder and the away-blind budget, so beating
+           a restored horse silently reset both. It does not any more: a beat
+           is proof of a SOCKET, and only a voluntary action proves a player -
+           otherwise a frozen phone's once-per-orbit edge disarms every rule
+           that could ever free its seat. See DisconnectEngine.heartbeat.
+
+           A horse has no phone and no person. It runs inside this process, so
+           when the engine restores one it is not observing a socket, it is
+           asserting presence outright - and the strike ladder, whose entire
+           job is to find a seat nobody is behind, means nothing on a seat the
+           server itself is playing. Leaving stale strikes on a restored horse
+           is what would force its turn and sit it out, which is the exact
+           thing this block exists to prevent.
+
+           So the horse says what it means. recordPlayerActed is the API for
+           "this seat acted of its own accord", which is true of a horse every
+           hand, and it clears the ladder, the away-blind budget and the stale
+           protection deadline together. Human presence, voluntary sit-outs and
+           time-bank state remain untouched, exactly as before. */
         for (const p of this.seatedPlayers) {
-          if (p.is_horse) this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+          /* Kept as an INCLUSION rather than `if (!p.is_horse) continue`, which
+             reads as a fourth horse exclusion to check-horses-are-players and
+             is not one: this block gives a horse MORE than a human gets, never
+             less. Dan 2026-08-27, binding: horses are never excluded by design. */
+          if (p.is_horse) {
+            /* Only the seat that was actually AWAY is being restored. A horse
+               already CONNECTED keeps its history, and a horse SAT_OUT keeps
+               its sit-out, its eviction clock and its strikes - a restoration
+               is not an excuse to erase either. */
+            const wasDisconnected =
+              this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state === 'DISCONNECTED';
+            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+            if (wasDisconnected) this.disconnectEngine.recordPlayerActed(this.tableId, p.user_id);
+          }
         }
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
@@ -1705,10 +1741,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       return Promise.resolve();
     const originalTable = this.tableInfo;
     const lifecycle = originalTable.lifecycle;
+    const tournamentId = originalTable.tournament_id;
     const current = () =>
       this.lifecycleCanMutate() &&
       this.tableInfo === originalTable &&
-      this.tableInfo.lifecycle === lifecycle;
+      this.tableInfo.lifecycle === lifecycle &&
+      this.tableInfo.tournament_id === tournamentId;
     return this.runOwnedReadContinuation(() => this.refreshBlindsOwned(current, originalTable));
   }
 
@@ -1725,7 +1763,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         if (!current()) return;
-        const data = await loadTable(this.tableId);
+        const data = await loadTournamentBlinds(this.tableId, table.tournament_id!);
         if (!current()) return;
         if (data) {
           /* AND TELL THE FELT (2026-09-09). `TABLE_META_UPDATE` - the message
@@ -1777,8 +1815,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // DEAL HAND — Complete hand lifecycle
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  // A reserved/unknown permit belongs to its original preparation until that
+  // continuation exits. Recovery must not mistake an ordinary awaited read for
+  // failed admission and retire the table before its controller can start.
+  private f06HandPreparation: object | null = null;
+
+  protected override f06PreparationDrained(): boolean {
+    return this.f06HandPreparation === null;
+  }
+
+  getF06RecoverablePermit(): ReturnType<ServerTableEngineDealing['getF06RetainedPermit']> {
+    return this.f06HandPreparation || this.f06CurrentPermit?.hasPreparedCancellation()
+      ? null
+      : this.getF06RetainedPermit();
+  }
+
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
+    // Resume an already-owned cancellation with the same immutable identity.
+    // A lost response never permits allocation of a different hand first.
+    if (this.f06CurrentPermit?.hasPreparedCancellation()) await this.cancelF06PreparedHand();
     const releaseSeatBoundary = await this.acquireSeatBoundary();
+    const preparation = {};
+    this.f06HandPreparation = preparation;
     const completedHandNumber = this.handCount;
     let handStarted = false;
     try {
@@ -1826,6 +1884,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandCommunityCards3 = [];
       this.currentHandBombPot = null;
       this.currentHandVariant = null;
+      // KILL POTS: per-hand record and cancellation. The ledger itself
+      // (killSchedule) persists across hands by design.
+      this.currentHandKillRecord = null;
+      this.currentHandKillCancellation = null;
       this.currentHandWinnersByBoard = [];
       // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
       this.currentHandPerPotAwards = [];
@@ -2604,6 +2666,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
 
+      /* ── KILL POT (rule manifest kill-v1) ────────────────────────────────
+         Decided HERE, once, at the hand boundary, from the settings the table
+         row holds now: a change of mode or threshold takes effect at the next
+         hand, and a pending kill keeps the mode frozen into it. A kill is
+         played only if its killer is in the roster this hand is dealt to;
+         otherwise it is cancelled with the reason recorded on this hand's row.
+         Pure - nothing is committed until the controller exists (below), so
+         a deal that is prepared and then abandoned changes nothing. */
+      const killSettings = this.killSettingsFromTable();
+      const killDecision = this.killSchedule.decide({
+        settings: killSettings,
+        variant: bombHandVariant ?? this.dealtGameVariant(),
+        isTournament: this.isTournamentTable(),
+        isBombHand: Boolean(bombPotConfig),
+        asset: this.tableInfo.arena?.asset === 'diamonds' ? 'diamonds' : 'chips',
+        baseBigBlind: Number(this.tableInfo.big_blind),
+        roster: players.map((p) => ({ userId: p.user_id, seat: p.seat_number })),
+        sbSeat,
+        bbSeat,
+      });
+
       const config: HandConfig = {
         asset: this.tableInfo.arena?.asset ?? 'chips',
         tableId: this.tableId,
@@ -2650,6 +2733,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
         allInOrFold: this.tableInfo.all_in_or_fold ?? false,
         bombPot: bombPotConfig,
+        // KILL POT: the frozen kill state and the hand's effective limits.
+        killPot: killDecision.kind === 'kill' ? killDecision.hand : undefined,
         /**
          * A BOMB HAND HAS NO STRADDLE (2026-08-29).
          *
@@ -2773,6 +2858,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           : undefined
       );
       const preparedController = this.handController;
+      // KILL POT: the hand exists, so the deal decision is committed. A
+      // cancellation is final; a kill stays pending until this hand SETTLES.
+      this.killSchedule.commitDeal(killDecision);
+      this.currentHandKillSettings = killSettings;
+      this.currentHandKillCancellation =
+        killDecision.kind === 'cancel' ? killDecision.cancellation : null;
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
       // these exact players to this exact total.
@@ -3204,6 +3295,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // that can arrive during asynchronous hand preparation.
       if (!handStarted) this.handCount = completedHandNumber;
       releaseSeatBoundary();
+      try {
+        // The exact continuation has finished all preparation awaits and never
+        // invoked permit.start. Fence that permit before durably releasing it;
+        // a pause checkpoint alone cannot survive a process replacement.
+        if (!handStarted && (this.isNextHandPaused() || !this.running))
+          await this.cancelF06PreparedHand();
+      } finally {
+        if (this.f06HandPreparation === preparation) this.f06HandPreparation = null;
+      }
     }
   }
 

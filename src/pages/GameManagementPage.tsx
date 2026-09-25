@@ -1,3 +1,10 @@
+import {
+  isUnlimitedTournamentFormat,
+  isKnownTournamentFormat,
+  readTournamentFormat,
+  getTournamentFormatKind,
+  getTournamentEntryCapacity,
+} from '../utils/tournamentPresentation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUnionRouteId } from '../hooks/useUnionRouteId';
@@ -45,6 +52,8 @@ import {
   releaseManagedGameWork,
 } from './gameManagementIdentity';
 import styles from './GameManagementPage.module.css';
+import RescheduleStageControl from '../components/tournament/RescheduleStageControl';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 
 type Scope = 'club' | 'union';
 type View = 'all' | 'running' | 'scheduled' | 'closed';
@@ -56,6 +65,7 @@ interface HostClub {
 }
 
 interface ManagedGame {
+  format_contract?: unknown;
   id: string;
   kind: ManagedGameKind;
   name: string;
@@ -64,7 +74,9 @@ interface ManagedGame {
   hostName: string;
   variant: string;
   players: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
   startTime: string | null;
   smallBlind: number;
   bigBlind: number;
@@ -120,7 +132,10 @@ function toManagedGame(
     hostName: hostNames[row.club_id] || fallbackName,
     variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
     players: row.players || 0,
-    maxPlayers: row.max_players || 0,
+    maxPlayers: row.kind === 'tournament' ? getTournamentEntryCapacity(row) : row.max_players || 0,
+    format_contract: readTournamentFormat(row),
+    tournament_type: row.tournament_type,
+    satellite_target_id: row.satellite_target_id,
     startTime: row.start_time ?? null,
     smallBlind: Number(row.small_blind || 0),
     bigBlind: Number(row.big_blind || 0),
@@ -177,10 +192,15 @@ function formatTime(value: string | null): string {
 }
 
 function managedGameFamily(game: ManagedGame): ArenaGameFamily {
+  if (game.kind === 'tournament') {
+    const kind = getTournamentFormatKind(game);
+    if (kind === 'spin') return 'spins';
+    if (kind === 'sng') return 'heads-up';
+    return 'mtt'; // shared tournament artwork; no admission classification
+  }
   const variant = game.variant.toLowerCase();
   if (variant.includes('spin')) return 'spins';
   if (variant.includes('heads') || variant.includes('hu')) return 'heads-up';
-  if (game.kind === 'tournament') return 'mtt';
   if (variant.includes('plo') || variant.includes('omaha') || variant.includes('flo')) return 'plo';
   return 'nlh';
 }
@@ -189,6 +209,8 @@ function managedGameStatus(game: ManagedGame): ArenaGameStatus {
   if (game.bucket === BUCKET_CLOSED) return 'closed';
   const status = game.status.toLowerCase().replace(/_/g, '-');
   if (status === 'active') return 'running';
+  // Multi-day, between days: the event is live and stopped overnight.
+  if (status === 'bagged') return 'paused';
   if (status === 'registration-open') return 'registering';
   const supported: ArenaGameStatus[] = [
     'open',
@@ -255,6 +277,7 @@ export function ScheduleCloseDialog({
         }}
       >
         <SpadeConsole
+          onClose={busy ? undefined : onClose}
           eyebrow="Governed Lifecycle"
           title="Schedule Close"
           titleId="schedule-close-title"
@@ -314,6 +337,9 @@ export function EditGameDialog({
   const [startTime, setStartTime] = useState(
     game.startTime ? new Date(game.startTime).toISOString().slice(0, 16) : ''
   );
+  const unlimitedMtt = game.kind === 'tournament' && isUnlimitedTournamentFormat(game);
+  const entryCapacityLocked =
+    game.kind === 'tournament' && (!isKnownTournamentFormat(game) || unlimitedMtt);
   const tableStructureLocked =
     game.kind === 'table' &&
     (Boolean(game.contract?.contractLocked) ||
@@ -321,7 +347,9 @@ export function EditGameDialog({
 
   const dirty =
     name !== game.name ||
-    (!tableStructureLocked && maxPlayers !== String(game.maxPlayers || 9)) ||
+    (!entryCapacityLocked &&
+      !tableStructureLocked &&
+      maxPlayers !== String(game.maxPlayers || 9)) ||
     (game.kind === 'table' &&
       !tableStructureLocked &&
       (smallBlind !== String(game.smallBlind || 1) ||
@@ -362,12 +390,12 @@ export function EditGameDialog({
       setValidationError('Enter a game name.');
       return null;
     }
-    if (!tableStructureLocked && (!Number.isInteger(seats) || seats < 2)) {
+    if (!entryCapacityLocked && !tableStructureLocked && (!Number.isInteger(seats) || seats < 2)) {
       setValidationError('Maximum players must be a whole number of at least two.');
       return null;
     }
     const patch: ManagedGamePatch = { name: trimmedName };
-    if (!tableStructureLocked) patch.maxPlayers = seats;
+    if (!entryCapacityLocked && !tableStructureLocked) patch.maxPlayers = seats;
     if (game.kind === 'table' && !tableStructureLocked) {
       const small = Number(smallBlind);
       const big = Number(bigBlind);
@@ -427,6 +455,7 @@ export function EditGameDialog({
         }}
       >
         <SpadeConsole
+          onClose={busy ? undefined : requestClose}
           eyebrow="Safe Pre-Game Changes"
           title={`Edit ${game.kind === 'table' ? 'Table' : 'Tournament'}`}
           titleId="edit-game-title"
@@ -447,18 +476,20 @@ export function EditGameDialog({
             Game Name
             <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} required />
           </label>
-          <label>
-            Maximum Players
-            <input
-              type="number"
-              min="2"
-              max={game.kind === 'table' ? '10' : '1000000'}
-              value={maxPlayers}
-              onChange={(e) => setMaxPlayers(e.target.value)}
-              disabled={tableStructureLocked}
-              required
-            />
-          </label>
+          {!entryCapacityLocked && (
+            <label>
+              Maximum Players
+              <input
+                type="number"
+                min="2"
+                max={game.kind === 'table' ? '10' : undefined}
+                value={maxPlayers}
+                onChange={(e) => setMaxPlayers(e.target.value)}
+                disabled={tableStructureLocked}
+                required
+              />
+            </label>
+          )}
           {game.kind === 'table' ? (
             <div className={styles.fieldGrid}>
               <label>
@@ -574,6 +605,7 @@ export function ContractHistoryDialog({
         aria-labelledby="contract-title"
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Published Contract History"
           title={game.name}
           titleId="contract-title"
@@ -1600,10 +1632,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         gameType: game.variant.toUpperCase(),
                         stakes:
                           game.kind === 'table' ? `${game.smallBlind}/${game.bigBlind}` : undefined,
-                        players: `${game.players}/${game.maxPlayers || '0'}`,
+                        players: `${game.players}${game.maxPlayers !== null ? `/${game.maxPlayers}` : ''}`,
                         registered:
                           game.kind === 'tournament'
-                            ? `${game.players}/${game.maxPlayers || '0'}`
+                            ? `${game.players}${game.maxPlayers !== null ? `/${game.maxPlayers}` : ''}`
                             : undefined,
                         buyIn:
                           game.kind === 'table'
@@ -1612,7 +1644,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         startTime:
                           game.kind === 'tournament' ? formatTime(game.startTime) : undefined,
                         status: managedGameStatus(game),
-                        statusLabel: game.status.replace(/_/g, ' '),
+                        statusLabel: isBaggedStatus(game.status)
+                          ? DAY_COMPLETE_LABEL
+                          : game.status.replace(/_/g, ' '),
                         rules: [],
                       }}
                       actions={{
@@ -1719,6 +1753,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       )}
                     </div>
                     <div className={styles.rowActions}>
+                      {/* Multi-day: Reschedule Day 2, only while the next day
+                          is scheduled; renders nothing otherwise. */}
+                      {game.kind === 'tournament' && !closed && isBaggedStatus(game.status) && (
+                        <RescheduleStageControl tournamentId={game.id} status={game.status} />
+                      )}
                       {/*
                       Open, Pause, Schedule and Close are all gated on !closed
                       and Edit was not, so a finished game could be renamed and

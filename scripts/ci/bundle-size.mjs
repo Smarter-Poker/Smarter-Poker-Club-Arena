@@ -83,8 +83,14 @@ async function main() {
     process.exit(1);
   }
 
+  // `diamond-test.*` is the standalone Diamond bonus test entry, built by a
+  // second Vite pass (vite.config.ts, TEST_ENTRY). It shares the directory so
+  // the origin pools it and the service worker caches it like every other
+  // chunk, but no player downloads it, so it is not charged to the budget that
+  // guards what players download.
   const all = (await readdir(ASSETS))
     .filter((f) => f.endsWith('.js') || f.endsWith('.css'))
+    .filter((f) => !f.startsWith('diamond-test.'))
     .map((f) => path.join(ASSETS, f));
 
   if (all.length === 0) {
@@ -174,7 +180,16 @@ async function main() {
   // gz, versus main's 296kB. No new source module enters first paint.
   // This accounts for the new product surface with 77kB total headroom;
   // initial-load limits and the entry-module gate remain unchanged.
-  const TOTAL_GZ_CEILING = 2800;
+  // 2026-09-24: raised to 2840 with the owner's explicit approval (Dan, in the
+  // #5193 delivery session) for the club and union diamond commerce UI.
+  // Paired builds with the same dependencies: main 91837c041 2794kB gz; #5193
+  // 2816kB gz. A source-map audit of every chunk found no module in two
+  // chunks; the one duplicated vendor (immer 10 beside immer 11) was removed
+  // in #5196. The growth is new product surface: the staff Commerce Desk
+  // route (+14.6kB gz with its stylesheet) and the owner Diamond Costs page
+  // (+6.4kB gz). Initial load is unchanged at 307kB gz; the initial-load
+  // limits and the entry-module gate are untouched.
+  const TOTAL_GZ_CEILING = 2840;
   const TOTAL_RAW_CEILING = 10000;
 
   const biggest = all

@@ -4,12 +4,16 @@
  * The deterministic VM owns only clock/transport/retirement collaborators.
  * Full composition/scope evidence is external to this behavioral test.
  */
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { resolve } from 'node:path';
 import ts from 'typescript';
+const batchRpc = vi.hoisted(() => vi.fn());
+vi.mock('./services/supabase/client.js', () => ({
+  supabase: { rpc: (...args: unknown[]) => batchRpc(...args) },
+}));
 const source = fs.readFileSync(resolve(process.cwd(), 'src/GameServer.ts'), 'utf8');
 const ast = ts.createSourceFile('GameServer.ts', source, ts.ScriptTarget.Latest, true),
   cls = ast.statements.filter(ts.isClassDeclaration).find((x) => x.name?.text === 'GameServer');
@@ -40,7 +44,13 @@ const deferred = () => {
   });
   return { promise, resolve, reject };
 };
-type Rpc = (args: any[], call: number) => Promise<any>;
+type Rpc = (
+  args: any[],
+  call: number,
+  onBatch?: (outcome: any) => void,
+  isCurrent?: () => boolean,
+  claimIsCurrent?: (claim: any) => boolean
+) => Promise<any>;
 type Timer = {
   fn: () => void;
   at: number;
@@ -81,16 +91,26 @@ function harness({
     clearTimeout: (t: Timer) => {
       timers = timers.filter((x) => x !== t);
     },
-    heartbeatTables: (args: any[]) => {
+    heartbeatTables: (
+      args: any[],
+      onBatch?: (outcome: any) => void,
+      isCurrent?: () => boolean,
+      claimIsCurrent?: (claim: any) => boolean
+    ) => {
       cashCalls++;
       return cash
-        ? cash(args, cashCalls)
+        ? cash(args, cashCalls, onBatch, isCurrent, claimIsCurrent)
         : Promise.resolve({ status: 'answered', proofs: [], lostTableIds: [] });
     },
-    heartbeatTournaments: (args: any[]) => {
+    heartbeatTournaments: (
+      args: any[],
+      onBatch?: (outcome: any) => void,
+      isCurrent?: () => boolean,
+      claimIsCurrent?: (claim: any) => boolean
+    ) => {
       tournamentCalls++;
       return tournament
-        ? tournament(args, tournamentCalls)
+        ? tournament(args, tournamentCalls, onBatch, isCurrent, claimIsCurrent)
         : Promise.resolve({ status: 'answered', proofs: [], lostTournamentIds: [] });
     },
     TABLE_LEASE_PROOF_WINDOW_MS: 20000,
@@ -210,6 +230,229 @@ const tourProof = () => ({
   status: 'answered',
   proofs: [{ tournamentId: 't', leaseGeneration: 'tour1', proofDeadlineMonotonicMs: 999999 }],
   lostTournamentIds: [],
+});
+
+test.each(['cash', 'tournament'] as const)(
+  '%s actual heartbeat batches renew healthy owners on later passes beside a retained sibling',
+  async (scope) => {
+    vi.resetModules();
+    batchRpc.mockReset();
+    const tableLease = await import('./services/tableLease.js');
+    const tournamentLease = await import('./services/tournamentLease.js');
+    const heartbeat = (
+      scope === 'cash' ? tableLease.heartbeatTables : tournamentLease.heartbeatTournaments
+    ) as any;
+    const generation = 'bbbbbbbb-0000-4000-8000-000000000001';
+    const id = (n: number) => `aaaaaaaa-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+    const rowKey = scope === 'cash' ? 'table_id' : 'tournament_id';
+    const held = deferred();
+    let heldCalls = 0;
+    const kept = (claims: any[]) => ({
+      data: claims.map((claim) => ({ ...claim, state: 'kept' })),
+      error: null,
+    });
+    let heldClaims: any[] = [];
+    batchRpc.mockImplementation((_name, args) => {
+      if (args.p_claims.some((claim: any) => claim[rowKey] === id(500))) {
+        heldCalls++;
+        heldClaims = args.p_claims;
+        return held.promise;
+      }
+      return Promise.resolve(kept(args.p_claims));
+    });
+    const h = harness({
+      [scope]: (args: any[], _call: number, onBatch: any, current: any, claimCurrent: any) =>
+        heartbeat(args, onBatch, current, claimCurrent),
+    });
+    tableLease._setTableLeaseMonotonicNowForTests(() => h.stats().now);
+    tournamentLease._setTournamentLeaseMonotonicNowForTests(() => h.stats().now);
+    const owners = Array.from({ length: 501 }, () => {
+      const owner: any = scope === 'cash' ? engine(generation) : manager(generation);
+      owner.deadline = 20000;
+      const current = () => owner.current && h.stats().now < owner.deadline;
+      if (scope === 'cash') {
+        owner.hasCurrentEngineLeaseAuthority = current;
+        owner.renewEngineLeaseProof = (proof: any) => {
+          if (!current() || h.stats().now >= proof.proofDeadlineMonotonicMs) return false;
+          owner.deadline = proof.proofDeadlineMonotonicMs;
+          owner.renewed++;
+          return true;
+        };
+        owner.fenceForEngineLeaseLoss = () => {
+          owner.current = false;
+          owner.fenced++;
+        };
+      } else {
+        owner.hasCurrentTournamentLeaseAuthority = current;
+        owner.renewTournamentLeaseProof = (gen: string, deadline: number) => {
+          if (!current() || gen !== owner.gen || h.stats().now >= deadline) return false;
+          owner.deadline = deadline;
+          owner.renewed++;
+          return true;
+        };
+        owner.fenceForTournamentLeaseLoss = () => {
+          owner.current = false;
+          owner.fenced++;
+        };
+      }
+      return owner;
+    });
+    const registry = scope === 'cash' ? h.p.tableEngines : h.p.tournamentEngines;
+    owners.forEach((owner, i) => registry.set(id(i), owner));
+    await h.advance(5000);
+    void h.p.renewOwnedEngineLeaseProofs();
+    await h.flush();
+    assert.equal(
+      owners[0].renewed,
+      1,
+      'fast validated proof must reach its owner before the sibling settles'
+    );
+    assert.equal(owners[0].deadline, 25000);
+    for (let pass = 0; pass < 8; pass++) {
+      await h.advance(5000);
+      void h.p.renewOwnedEngineLeaseProofs();
+      await h.flush();
+      assert.equal(
+        owners[0].renewed,
+        pass + 2,
+        'the ordinary next pass must renew the healthy batch'
+      );
+      assert.equal(owners[0].fenced, 0);
+      assert.equal(heldCalls, 1, 'the retained exact claim cannot be dispatched twice');
+    }
+    assert(owners[500].fenced > 0, 'unknown sibling still expires under its original proof');
+    held.resolve(kept(heldClaims));
+    await h.flush();
+    assert.equal(owners[500].renewed, 0, 'late transport cannot resurrect expired authority');
+    tableLease._setTableLeaseMonotonicNowForTests();
+    tournamentLease._setTournamentLeaseMonotonicNowForTests();
+  }
+);
+
+test.each(['cash', 'tournament'] as const)(
+  '%s batch callbacks fence exact missing owners synchronously and ignore replacement/shutdown',
+  async (scope) => {
+    for (const transition of ['missing', 'replacement', 'shutdown'] as const) {
+      vi.resetModules();
+      batchRpc.mockReset();
+      const tableLease = await import('./services/tableLease.js');
+      const tournamentLease = await import('./services/tournamentLease.js');
+      const heartbeat = (
+        scope === 'cash' ? tableLease.heartbeatTables : tournamentLease.heartbeatTournaments
+      ) as any;
+      const generation = 'bbbbbbbb-0000-4000-8000-000000000001';
+      const id = 'aaaaaaaa-0000-4000-8000-000000000001';
+      const rowKey = scope === 'cash' ? 'table_id' : 'tournament_id';
+      const held = deferred();
+      batchRpc.mockReturnValue(held.promise);
+      const h = harness({
+        [scope]: (...[args, _call, onBatch, current, claimCurrent]: Parameters<Rpc>) =>
+          heartbeat(args, onBatch, current, claimCurrent),
+      });
+      const registry = scope === 'cash' ? h.p.tableEngines : h.p.tournamentEngines;
+      const original = scope === 'cash' ? engine(generation) : manager(generation);
+      const replacement = scope === 'cash' ? engine(generation) : manager(generation);
+      registry.set(id, original);
+      await h.p.renewOwnedEngineLeaseProofs();
+      if (transition === 'replacement') registry.set(id, replacement);
+      if (transition === 'shutdown') {
+        h.p.lifecycleGeneration++;
+        h.p.running = false;
+      }
+      held.resolve({
+        data: [{ [rowKey]: id, lease_generation: generation, state: 'missing' }],
+        error: null,
+      });
+      await h.flush();
+      assert.equal(original.fenced, transition === 'missing' ? 1 : 0);
+      assert.equal(original.renewed, 0);
+      assert.equal(replacement.fenced, 0);
+      assert.equal(replacement.renewed, 0);
+    }
+  }
+);
+
+test.each(['cash', 'tournament'] as const)(
+  '%s shutdown renewal waits for an old exact transport without accepting its stale callback',
+  async (scope) => {
+    vi.resetModules();
+    batchRpc.mockReset();
+    const tableLease = await import('./services/tableLease.js');
+    const tournamentLease = await import('./services/tournamentLease.js');
+    const heartbeat = (
+      scope === 'cash' ? tableLease.heartbeatTables : tournamentLease.heartbeatTournaments
+    ) as any;
+    const generation = 'bbbbbbbb-0000-4000-8000-000000000001';
+    const id = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const rowKey = scope === 'cash' ? 'table_id' : 'tournament_id';
+    const response = {
+      data: [{ [rowKey]: id, lease_generation: generation, state: 'kept' }],
+      error: null,
+    };
+    const held = deferred();
+    batchRpc.mockReturnValueOnce(held.promise).mockResolvedValue(response);
+    const h = harness({
+      [scope]: (...[args, _call, onBatch, current, claimCurrent]: Parameters<Rpc>) =>
+        heartbeat(args, onBatch, current, claimCurrent),
+    });
+    const registry = scope === 'cash' ? h.p.tableEngines : h.p.tournamentEngines;
+    const original = scope === 'cash' ? engine(generation) : manager(generation);
+    registry.set(id, original);
+    await h.p.renewOwnedEngineLeaseProofs();
+    h.p.lifecycleGeneration++;
+    h.p.running = false;
+    h.p.shutdownOwnershipLeaseRenewalActive = true;
+    await h.p.renewOwnedEngineLeaseProofs();
+    assert.equal(
+      batchRpc.mock.calls.length,
+      1,
+      'shutdown cannot overlap the same original transport'
+    );
+    held.resolve(response);
+    await h.flush();
+    assert.equal(original.renewed, 0, 'the primary lifecycle callback has been revoked');
+    await h.p.renewOwnedEngineLeaseProofs();
+    await h.flush();
+    assert.equal(batchRpc.mock.calls.length, 2);
+    assert.equal(original.renewed, 1, 'the actual shutdown owner can receive its own fresh proof');
+  }
+);
+
+test('a manager finishing during a retained batch is classified before its callback fence', async () => {
+  vi.resetModules();
+  batchRpc.mockReset();
+  const lease = await import('./services/tournamentLease.js');
+  const generation = 'bbbbbbbb-0000-4000-8000-000000000001';
+  const id = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const held = deferred();
+  batchRpc.mockReturnValue(held.promise);
+  const h = harness({
+    tournament: (args, _call, onBatch, current, claimCurrent) =>
+      lease.heartbeatTournaments(args, onBatch, current, claimCurrent),
+  });
+  const m = manager(generation) as any;
+  m.running = true;
+  m.expired = false;
+  m.hasCurrentTournamentLeaseAuthority = () => !m.expired;
+  m.renewTournamentLeaseProof = () => m.running && !m.expired;
+  m.stoodDownWithItsLeaseIntact = () => !m.running && !m.expired;
+  m.fenceForTournamentLeaseLoss = () => {
+    m.expired = true;
+    m.running = false;
+    m.fenced++;
+  };
+  h.p.tournamentEngines.set(id, m);
+  await h.p.renewOwnedEngineLeaseProofs();
+  m.running = false; // The ordinary completion/resume-failure stand-down.
+  held.resolve({
+    data: [{ tournament_id: id, lease_generation: generation, state: 'kept' }],
+    error: null,
+  });
+  await h.flush();
+  await h.p.renewOwnedEngineLeaseProofs();
+  assert.equal(h.p.tournamentResumeDistress, 0);
+  assert.equal(h.reports.filter((label) => label === 'GameServer.tournament_lease_lost').length, 0);
+  assert(h.retired.length > 0, 'the existing pass still retires the finished manager');
 });
 test('exact primary loop escapes deadline; healthy scope continues; retained requests stay bounded', async () => {
   const hang = deferred(),

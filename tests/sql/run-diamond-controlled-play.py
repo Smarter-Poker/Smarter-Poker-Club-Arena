@@ -9,7 +9,8 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SQL = ROOT / 'tests/sql'
 DB = 'poker_diamond_phase6_play_test'
-BIN = '/opt/homebrew/opt/postgresql@17/bin/'
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+BIN = PG_BIN + '/'
 CONN = ['-h', '/tmp/codex-diamond-phase2-pg', '-p', '55472']
 CMD = [BIN+'psql', '-X', '-q', '-At', *CONN, '-d', DB,
        '-v', 'ON_ERROR_STOP=1', '-P', 'pager=off']

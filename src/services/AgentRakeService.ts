@@ -103,15 +103,39 @@ const rakeChannels = new Map<
   { channel: ReturnType<typeof supabase.channel>; listeners: Set<() => void> }
 >();
 
+/**
+ * A roles read that can say it FAILED (Stats contract truth, 2026-09-20).
+ *
+ * `getMyAgentRoles` used to return [] on an RPC error, and [] is also the
+ * honest answer for a player who holds no agent role. Its only caller, the
+ * Player Stats page, therefore read "we could not ask" as "you hold nothing":
+ * a dropped connection removed a real agent's Downline Rake section and, for
+ * an agent with no rake of their own, left them on "No Rake In This Window",
+ * a statement about their book made on no evidence. `error` separates the two. It is set only when the read failed,
+ * and `roles` is empty in that case - a failure never invents a role, and it
+ * never stands in for an empty list either.
+ */
+export interface AgentRolesRead {
+  roles: AgentRoleRow[];
+  /** Set only when fn_my_agent_roles could not be read. */
+  error?: string;
+}
+
 export const AgentRakeService = {
-  /** Agent roles the signed-in user holds. Empty → hide rake reporting entirely. */
-  async getMyAgentRoles(): Promise<AgentRoleRow[]> {
+  /**
+   * Agent roles the signed-in user holds, WITH the read status.
+   *
+   * An empty `roles` and no `error` means "no roles": hide rake reporting.
+   * An `error` means the list is unknown, and the caller must say so rather
+   * than hide the section.
+   */
+  async getMyAgentRoles(): Promise<AgentRolesRead> {
     const { data, error } = await supabase.rpc('fn_my_agent_roles');
     if (error) {
       reportError(error, 'AgentRakeService.getMyAgentRoles');
-      return [];
+      return { roles: [], error: error.message || error.code || 'read_failed' };
     }
-    return (data ?? []) as AgentRoleRow[];
+    return { roles: (data ?? []) as AgentRoleRow[] };
   },
 
   async getDownlineRake(opts: {
@@ -151,11 +175,24 @@ export const AgentRakeService = {
   },
 
   /**
-   * Live trigger. rake_records is deliberately NOT in the realtime publication
-   * — it would broadcast every hand on the platform to every subscriber, which
-   * is both a firehose and a cross-club data leak. agent_commissions is
-   * published and is written as rake is earned, so it is the correct signal.
-   * Returns an unsubscribe function.
+   * Live trigger, and it is NOT live. Returns an unsubscribe function.
+   *
+   * `rake_records` is deliberately NOT in the realtime publication - it would
+   * broadcast every hand on the platform to every subscriber, which is both a
+   * firehose and a cross-club data leak. That part still holds.
+   *
+   * What no longer holds is the next sentence, which said "agent_commissions is
+   * published and is written as rake is earned, so it is the correct signal".
+   * It was the correct signal, and it was published, until the 2026-09-06
+   * publication trim: 1,802,610 writes against 6.7M live rows put it among the
+   * eleven tables the trim keeps out. So this channel joins, reports SUBSCRIBED
+   * and delivers nothing.
+   *
+   * The consumer is covered meanwhile: DownlineRakePanel wraps this in a 30s
+   * poll it describes as a fallback "in case the socket drops", and that poll is
+   * now the whole mechanism. Left in place rather than deleted because the
+   * subscription is correct for a scoped carrier and the panel does not break
+   * without it - but do not read this as a live feed.
    */
   subscribeToRake(clubId: string | undefined, onChange: () => void): () => void {
     /* ONE CHANNEL PER CLUB, SHARED. The name used to carry a random suffix, so

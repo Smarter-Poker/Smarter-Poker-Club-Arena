@@ -34,6 +34,10 @@ export function useGameManagementRealtime({
   const onPayload = useCallback(
     (change: { new?: ManagementEventRow }) => {
       const event = change.new;
+      /* An event ARRIVING is the only thing that proves this feed delivers.
+         Anything before the first one is a hope, so the status below is only
+         promoted here. A scope mismatch still counts: the row reached us. */
+      setStatus('live');
       if (!event || event.scope_kind !== scope || event.scope_id !== scopeId) return;
       switch (event.event_type) {
         case 'ticker_settings_changed':
@@ -76,12 +80,27 @@ export function useGameManagementRealtime({
     onPayload,
     onSubscriptionStatus: (next) => {
       if (next === 'SUBSCRIBED') {
-        setStatus('live');
+        /* SUBSCRIBED IS A TRANSPORT FACT, NOT A DELIVERY FACT. This used to set
+           'live' here, and the page painted a green "Live" badge. But
+           game_management_events is NOT in the supabase_realtime publication
+           (1,027,487 writes over 3.1M rows; it is one of the eleven the
+           2026-09-06 trim keeps out), so this channel joins, reports SUBSCRIBED
+           and then receives nothing, for ever - and the operator was told the
+           feed was live the whole time.
+
+           Joining no longer promotes the status. Only an arriving row does, in
+           onPayload above. That is honest while the table is unpublished, and
+           it repairs itself the moment a real delivery path exists: the first
+           event flips it to 'live' with no further change here.
+
+           The resync stays: it is the authoritative read this page is built on,
+           and it is the reason the page has correct data at all right now. */
         onResync();
+        setStatus((prev) => (prev === 'live' ? 'live' : 'connecting'));
       } else if (next === 'CHANNEL_ERROR' || next === 'TIMED_OUT' || next === 'CLOSED') {
         setStatus('degraded');
       } else {
-        setStatus('connecting');
+        setStatus((prev) => (prev === 'live' ? 'live' : 'connecting'));
       }
     },
     onSubscriptionError: () => setStatus('degraded'),

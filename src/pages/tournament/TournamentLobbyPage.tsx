@@ -1,4 +1,11 @@
 import type { TournamentEntryWindowRow } from '../../utils/tournamentEntryWindow';
+import {
+  isUnlimitedTournamentFormat,
+  getTournamentFormatKind,
+  readTournamentFormat,
+  isTournamentEntryUnavailable,
+  getTournamentEntryCapacity,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY PAGE — Browse & Register for Tournaments
@@ -6,7 +13,7 @@ import type { TournamentEntryWindowRow } from '../../utils/tournamentEntryWindow
  * Central hub for discovering and joining tournaments across all clubs
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { readClubContextParam } from '../../utils/clubScopedPath';
 import { supabase } from '../../lib/supabase';
@@ -34,11 +41,15 @@ import { totalBuyIn } from '../../utils/buyIn';
 import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
+import { SpadeConsole } from '../../components/console/SpadeConsole';
+import { useTournamentStageViews } from '../../hooks/useTournamentStageView';
+import { dayCompleteLabel, nextDayStartsLabel } from '../../utils/multiDaySchedule';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
 
 interface Tournament extends TournamentEntryWindowRow {
+  format_contract?: unknown;
   id: string;
   name: string;
   clubId: string;
@@ -52,17 +63,20 @@ interface Tournament extends TournamentEntryWindowRow {
   prizePool: number;
   guaranteedPrize: number;
   startTime: string;
-  status: 'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED';
+  status: 'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'BAGGED' | 'COMPLETED' | 'CANCELLED';
   currentPlayers: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
   startingChips: number;
   structureFacts: MttStructureDescription;
-  isRegistered: boolean;
+  /** true / false from the batch read; null when that read did not answer. */
+  isRegistered: boolean | null;
   gameType: string;
   lateRegMins: number;
   isRebuy: boolean;
   variant: string;
   tournamentType: string;
+  spinMultiplier: number | null;
+  satellite_target_id?: string | null;
   isBounty: boolean;
   isPko: boolean;
   isMysteryBounty: boolean;
@@ -76,7 +90,11 @@ interface Tournament extends TournamentEntryWindowRow {
 }
 
 export default function TournamentLobbyPage() {
-  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+  /* Only `register` is bound. The hook's `isRegistering` was destructured and
+     never read - each card owns the busy state for its own plate, because the
+     board shows many and one shared flag would grey out every Take A Seat on
+     the page while one of them worked. */
+  const { register: registerMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const { user } = useAuthUser();
@@ -110,12 +128,25 @@ export default function TournamentLobbyPage() {
     (async () => {
       try {
         const resolvedId = await resolveClubUUID(clubId);
-        const { data } = await supabase
+        /* The error is bound, because PostgREST RESOLVES with `{ error }`
+           rather than throwing: `const { data }` alone put a failed read and
+           "this club is in no union" in the same shape, and the catch below
+           never saw it. The outcome on a failed read is unchanged and
+           deliberate - fail OPEN, leaving Create Tournament offered, because
+           refusing the affordance on an unreadable row would hide the one way
+           out of an empty board from every standalone club during a blip; the
+           server refuses a union club's create anyway. What changes is that
+           the failure is now reported instead of silently read as "no union". */
+        const { data, error } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
+        if (error) {
+          reportError(error, 'TournamentLobbyPage.unionMembershipUnreadable');
+          return;
+        }
         if (isMounted.current && data) setIsInUnion(true);
       } catch (e) {
         reportError(e, 'TournamentLobbyPage.async');
@@ -200,12 +231,14 @@ export default function TournamentLobbyPage() {
   useEffect(() => {
     // Get all running tournament IDs from current tournaments
     const runningTournamentIds = tournamentsRef.current
-      .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING'].includes(t.status))
+      .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'].includes(t.status))
       .map((t) => t.id);
 
     // Cleanup old channels for tournaments no longer running
     const channelMap = channelRefsRef.current;
-    for (const [tourneyId, channel] of channelMap.entries()) {
+    /* keys(), not entries(): the loop closes a channel by KEY through the bus
+       and never touched the bound value, which read as an unused binding. */
+    for (const tourneyId of [...channelMap.keys()]) {
       if (!runningTournamentIds.includes(tourneyId)) {
         masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
         channelMap.delete(tourneyId);
@@ -307,7 +340,15 @@ export default function TournamentLobbyPage() {
     try {
       // Fetch active tournaments first (REGISTERING/RUNNING/ANNOUNCED), then completed
       // Two queries to ensure active tournaments always appear regardless of limit
+      /* THIS IS A POSTGREST COLUMN LIST, NOT CODE. Every line inside the
+         backticks below is sent to the server verbatim, so a block comment
+         written in there becomes part of the query string. Reasons go here.
+
+         `spin_multiplier` is read so a RUNNING Spin's card can print what it
+         actually pays; utils/spinReveal is what keeps the draw secret while
+         the game is still filling. */
       const fields = `
+                    format_contract,
                     id,
                     name,
                     club_id,
@@ -323,6 +364,8 @@ export default function TournamentLobbyPage() {
                     game_type,
                     variant,
                     tournament_type,
+                    spin_multiplier,
+                    satellite_target_id,
                     late_reg_mins,
                     late_reg_levels,
                     rebuy_levels,
@@ -353,7 +396,8 @@ export default function TournamentLobbyPage() {
       let activeQuery = supabase
         .from('tournaments')
         .select(fields)
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+        // BAGGED: a multi-day event between days stays on the board.
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'])
         .lte('start_time', seventyTwoHoursOut)
         .order('is_pinned', { ascending: false })
         .order('start_time', { ascending: true });
@@ -363,7 +407,7 @@ export default function TournamentLobbyPage() {
         .from('tournaments')
         .select(fields)
         .eq('is_pinned', true)
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'])
         .gt('start_time', seventyTwoHoursOut)
         .order('start_time', { ascending: true });
 
@@ -393,12 +437,22 @@ export default function TournamentLobbyPage() {
       if (clubId) {
         try {
           resolvedClubId = await resolveClubUUID(clubId);
-          const { data: ucRow } = await supabase
+          /* Bound for the same reason as the membership read above: an
+             unreadable `union_clubs` row and "not in a union" were the same
+             value here, and this one decides SCOPE. The fallback is already
+             the safe direction - no union id means this club's own games
+             only, never a sibling's private ones - so the behaviour does not
+             change; the difference is that a union player seeing a board with
+             every union game missing now leaves a trace of why. */
+          const { data: ucRow, error: ucError } = await supabase
             .from('union_clubs')
             .select('union_id')
             .eq('club_id', resolvedClubId)
             .limit(1)
             .maybeSingle();
+          if (ucError) {
+            reportError(ucError, 'TournamentLobbyPage.unionScopeUnreadable');
+          }
           unionId = ucRow?.union_id ?? null;
         } catch (e) {
           reportError(e, 'TournamentLobbyPage.map');
@@ -483,20 +537,36 @@ export default function TournamentLobbyPage() {
       }
 
       if (!error && data) {
-        // Check which tournaments user is registered for
-        let registrations: string[] = [];
+        /* WHICH TOURNAMENTS THIS PLAYER IS ALREADY IN - ONE QUERY, AND THE
+           THIRD OUTCOME IS KEPT (2026-09-21).
+
+           `regData?.map(...) || []` folded a FAILED read into an empty list,
+           and an empty list reads as "registered for nothing". Every card
+           then rendered a live "Register (buy-in)" button at a player who was
+           already in, and pressing it is a second entry attempt against real
+           money. A read that did not answer is its own outcome and is carried
+           as one (CLAUDE.md 10.86 rule 1): `null` here, which is exactly what
+           TournamentLobbyCard's `knownRegistration` contract means by "my
+           batch query failed, go and look for yourself". */
+        let registrations: string[] | null = [];
         if (user?.id) {
-          const { data: regData } = await supabase
+          const { data: regData, error: regError } = await supabase
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', user.id);
-          registrations = regData?.map((r) => r.tournament_id) || [];
+          if (regError) {
+            reportError(regError, 'TournamentLobbyPage.registrationsUnreadable');
+            registrations = null;
+          } else {
+            registrations = (regData ?? []).map((r) => r.tournament_id);
+          }
         }
 
         if (!isMounted.current) return;
 
         const mapped: Tournament[] = data.map((t: any) => ({
           id: t.id,
+          format_contract: readTournamentFormat(t),
           name: t.name,
           clubId: t.club_id,
           // hide_club_name (2026-08-22): the owner chose to keep the club off
@@ -512,10 +582,13 @@ export default function TournamentLobbyPage() {
           startTime: t.start_time,
           status: t.status,
           currentPlayers: t.current_players || 0,
-          maxPlayers: t.max_players || 0, // 0 = unlimited (only SNG/Spin have caps)
+          maxPlayers: getTournamentEntryCapacity(t),
+          satellite_target_id: t.satellite_target_id,
           startingChips: t.starting_chips || 0,
           structureFacts: describeStoredMttStructure(t.blind_structure, t.starting_chips),
-          isRegistered: registrations.includes(t.id),
+          /* `null` (the read failed) is carried through as null rather than
+             collapsed to false; the card refuses to guess in that case. */
+          isRegistered: registrations === null ? null : registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
           lateRegMins: t.late_reg_mins || 0,
           late_reg_levels: t.late_reg_levels,
@@ -529,7 +602,8 @@ export default function TournamentLobbyPage() {
           isRebuy: t.is_rebuy || false,
           guaranteedPrize: t.guaranteed_prize || 0,
           variant: t.variant || 'freezeout',
-          tournamentType: t.tournament_type || 'MTT',
+          tournamentType: t.tournament_type || '',
+          spinMultiplier: t.spin_multiplier ?? null,
           isBounty: t.is_bounty || t.bounty_amount > 0 || /bounty/i.test(t.name) || false,
           isPko: t.is_pko || /\bpko\b/i.test(t.name) || /progressive\s*k/i.test(t.name) || false,
           isMysteryBounty: t.is_mystery_bounty || /mystery/i.test(t.name) || false,
@@ -573,6 +647,10 @@ export default function TournamentLobbyPage() {
       toast.error('That Tournament Is No Longer Listed');
       return;
     }
+    if (isTournamentEntryUnavailable(t, t.currentPlayers)) {
+      toast.error('Tournament entry is unavailable');
+      return;
+    }
     await registerMtt(
       {
         id: t.id,
@@ -594,6 +672,27 @@ export default function TournamentLobbyPage() {
     );
   };
 
+  /* NOTHING ON THIS PAGE CALLS THIS TODAY, AND IT IS NOT DEAD CODE TO DELETE
+     ON SIGHT (read before removing, 2026-09-21).
+
+     The card's Unregister plate navigates to `/tournaments/:id` on purpose -
+     leaving a tournament moves money (a wallet refund or a ticket back), and
+     the details page is where a player sees which, with a confirmation. So the
+     one-tap path was deliberately removed from the board and this handler was
+     left behind.
+
+     It is still named by `tests/unit/tournamentTicketUnregisterSurfaces.test.ts`,
+     which lists this file among the surfaces that must report the COMMITTED
+     rail rather than assuming which one paid, and that assertion is satisfied
+     by `tournamentUnregisterSuccessText` below. (The same law also forbids the
+     hard-coded sentence that assumes the wallet. It is not repeated here: that
+     law greps this file, so quoting the banned phrase in a comment turns it
+     red - which is exactly what the first draft of this note did.) Deleting
+     the handler means removing this file from that list in the same commit,
+     with the reason, and that is a change to a money-copy law's subject rather
+     than a tidy-up. If the board is ever given a direct unregister again, this
+     is the shape it takes. Either way it is a decision, not a lint fix. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleUnregister = async (tournamentId: string) => {
     if (!user?.id) return;
     try {
@@ -623,16 +722,11 @@ export default function TournamentLobbyPage() {
       if (typeFilter !== 'all') {
         switch (typeFilter) {
           case 'mtt':
-            return (
-              (t.variant === 'freezeout' || t.tournamentType === 'MTT') &&
-              !t.isBounty &&
-              !t.isPko &&
-              !t.isMysteryBounty
-            );
+            return isUnlimitedTournamentFormat(t) && !t.isBounty && !t.isPko && !t.isMysteryBounty;
           case 'sng':
-            return t.variant === 'sng';
+            return getTournamentFormatKind(t) === 'sng';
           case 'spin':
-            return t.variant === 'spin';
+            return getTournamentFormatKind(t) === 'spin';
           case 'bounty':
             return t.isBounty && !t.isPko && !t.isMysteryBounty;
           case 'pko':
@@ -652,13 +746,15 @@ export default function TournamentLobbyPage() {
       // Then by status priority: RUNNING > REGISTERING > ANNOUNCED > COMPLETED
       const statusPriority: Record<string, number> = {
         RUNNING: 0,
-        REGISTERING: 1,
-        ANNOUNCED: 2,
-        COMPLETED: 3,
-        CANCELLED: 4,
+        // Multi-day, between days: under way, just below the events dealing.
+        BAGGED: 1,
+        REGISTERING: 2,
+        ANNOUNCED: 3,
+        COMPLETED: 4,
+        CANCELLED: 5,
       };
-      const aPriority = statusPriority[a.status] ?? 5;
-      const bPriority = statusPriority[b.status] ?? 5;
+      const aPriority = statusPriority[a.status] ?? 6;
+      const bPriority = statusPriority[b.status] ?? 6;
       if (aPriority !== bPriority) return aPriority - bPriority;
       // Then by start time
       return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
@@ -704,6 +800,26 @@ export default function TournamentLobbyPage() {
     )
     .sort((a, b) => a.order - b.order);
 
+  /* Multi-day cards: read the stage view for the BAGGED rows only, and only
+     when the multi-day capability is available. No plan, no line. */
+  const stageViews = useTournamentStageViews(
+    tournaments.filter((t) => t.status === 'BAGGED').map((t) => t.id)
+  );
+  const stageNoteFor = (id: string) => {
+    const view = stageViews[id];
+    if (!view) return undefined;
+    return {
+      headline: dayCompleteLabel(view.currentStage?.dayNo),
+      next: view.nextStart
+        ? nextDayStartsLabel(
+            view.nextStart.dayNo,
+            view.nextStart.scheduledStartUtc,
+            view.nextStart.timeZone
+          )
+        : null,
+    };
+  };
+
   const upcomingCount = tournaments.filter((t) =>
     ['ANNOUNCED', 'REGISTERING'].includes(t.status)
   ).length;
@@ -724,41 +840,44 @@ export default function TournamentLobbyPage() {
           { label: 'Loaded', value: tournaments.length },
         ]}
       />
-      {/* Quick Stats */}
-      <div className={styles.quickStats}>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{upcomingCount}</span>
-          <span className={styles.statLabel}>Upcoming</span>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{runningCount}</span>
-          <span className={styles.statLabel}>Live Now</span>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{tournaments.length}</span>
-          <span className={styles.statLabel}>Total</span>
-        </div>
-      </div>
+      {/* ── THE BOARD (#ClubArenaConsole, 2026-09-20). The casino header above
+          is the route family's pinned anchor and already carries the three
+          counts, so the quick-stats strip that repeated them is gone. What a
+          player does here - search, and narrow by state and by format - sits
+          on the spade master: the search field is the one drawn control (the
+          art paints no field), and every filter is a lit word on the glass,
+          the chosen one white, the rest muted. Nothing is a pill. */}
+      <SpadeConsole
+        as="section"
+        className={styles.board}
+        eyebrow="Tournament Lobby"
+        title="Find Your Game"
+        pill={`${filteredTournaments.length}`}
+        pillInk="blue"
+        foot="foot"
+      >
+        <label className={styles.searchField} htmlFor="tournament-lobby-search">
+          <span className="sc-label sc-ink--blue">Search</span>
+          <input
+            id="tournament-lobby-search"
+            type="search"
+            placeholder="Search Tournaments..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={styles.searchInput}
+          />
+        </label>
 
-      {/* Search */}
-      <div className={styles.searchBar}>
-        <input
-          type="text"
-          placeholder="Search Tournaments..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className={styles.searchInput}
-        />
-      </div>
-
-      {/* Status Filters */}
-      <div className={styles.filters}>
-        <div className={styles.filterGroup}>
+        <nav className={styles.filters} aria-label="Filter By State">
           {(['all', 'upcoming', 'REGISTERING', 'RUNNING', 'COMPLETED'] as TournamentStatus[]).map(
             (status) => (
               <button
                 key={status}
-                className={`${styles.filterBtn} ${statusFilter === status ? styles.active : ''}`}
+                type="button"
+                aria-pressed={statusFilter === status}
+                className={`${styles.filter} ${
+                  statusFilter === status ? 'sc-ink--white' : 'sc-ink--muted'
+                }`}
                 onClick={() => setStatusFilter(status as TournamentStatus)}
               >
                 {status === 'all'
@@ -773,18 +892,17 @@ export default function TournamentLobbyPage() {
               </button>
             )
           )}
-        </div>
-      </div>
+        </nav>
 
-      {/* Type Filters */}
-      <div className={styles.filters}>
-        <div className={styles.filterGroup}>
+        <nav className={styles.filters} aria-label="Filter By Format">
           {(
             ['all', 'mtt', 'sng', 'spin', 'bounty', 'pko', 'mystery'] as TournamentTypeFilter[]
           ).map((tf) => (
             <button
               key={tf}
-              className={`${styles.filterBtn} ${styles.typeBtn} ${typeFilter === tf ? styles.active : ''}`}
+              type="button"
+              aria-pressed={typeFilter === tf}
+              className={`${styles.filter} ${typeFilter === tf ? 'sc-ink--white' : 'sc-ink--muted'}`}
               onClick={() => setTypeFilter(tf as TournamentTypeFilter)}
             >
               {tf === 'all'
@@ -802,8 +920,8 @@ export default function TournamentLobbyPage() {
                           : 'Mystery'}
             </button>
           ))}
-        </div>
-      </div>
+        </nav>
+      </SpadeConsole>
 
       {/* Tournament List */}
       <div className={styles.tournamentList}>
@@ -814,26 +932,55 @@ export default function TournamentLobbyPage() {
             ))}
           </div>
         ) : filteredTournaments.length === 0 ? (
-          <div className={styles.empty}>
-            <span className={styles.emptyIcon}></span>
-            <p>No Tournaments Found</p>
+          <SpadeConsole
+            as="section"
+            className={styles.board}
+            eyebrow="Tournament Lobby"
+            title="Nothing Scheduled"
+            pill="0"
+            pillInk="muted"
+            foot="foot"
+          >
+            <p className={`sc-copy sc-copy--center ${styles.emptyCopy}`}>No Tournaments Found</p>
             {clubId && !isInUnion && (
               /* 2026-08-27: this linked to /clubs/:id/create-tournament, a
                  route that has never existed — the button 404'd into the
                  catch-all. The create-table picker is the real entry: its
-                 SNG/MTT tabs build tournaments. */
-              <Link to={`/clubs/${clubId}/create-table`} className={styles.createBtn}>
-                + Create Tournament
-              </Link>
+                 SNG/MTT tabs build tournaments. One action, so it is a lit
+                 word on the glass, never a lone plate. */
+              <p className={styles.emptyWay}>
+                <Link
+                  to={`/clubs/${clubId}/create-table`}
+                  className={`${styles.link} sc-ink--blue`}
+                >
+                  Create Tournament
+                </Link>
+              </p>
             )}
-          </div>
+          </SpadeConsole>
         ) : (
           groupedTournaments.map((group) => (
-            <div key={group.label}>
-              {/* Time Group Header */}
+            <section key={group.label} aria-labelledby={`tl-window-${group.order}`}>
+              {/* An engraved rule with the window printed on it, not a bar.
+                  It is a real heading: a player running a screen reader down a
+                  seventy-two-hour board has no other way to tell where one
+                  window ends and the next begins, and the bare number beside
+                  it read as "Now 1" with nothing to say what the 1 counted. */}
               <div className={styles.groupHeader}>
-                <span className={styles.groupLabel}>{group.label}</span>
-                <span className={styles.groupCount}>{group.tournaments.length}</span>
+                <h2
+                  id={`tl-window-${group.order}`}
+                  className={`${styles.groupLabel} sc-label sc-ink--blue`}
+                >
+                  {group.label}
+                </h2>
+                <span
+                  className={`${styles.groupCount} sc-label sc-ink--muted`}
+                  aria-label={`${group.tournaments.length} ${
+                    group.tournaments.length === 1 ? 'Tournament' : 'Tournaments'
+                  }`}
+                >
+                  {group.tournaments.length}
+                </span>
               </div>
 
               {/* Tournaments in Group */}
@@ -842,11 +989,12 @@ export default function TournamentLobbyPage() {
                   <TournamentLobbyCard
                     tournament={{
                       id: tournament.id,
+                      format_contract: tournament.format_contract,
                       name: tournament.name,
                       type:
-                        tournament.variant === 'sng'
+                        getTournamentFormatKind(tournament) === 'sng'
                           ? 'sng'
-                          : tournament.variant === 'spin'
+                          : getTournamentFormatKind(tournament) === 'spin'
                             ? 'spin'
                             : tournament.isMysteryBounty
                               ? 'mystery'
@@ -869,7 +1017,9 @@ export default function TournamentLobbyPage() {
                               ? 'registering'
                               : tournament.status === 'RUNNING'
                                 ? 'running'
-                                : 'cancelled',
+                                : tournament.status === 'BAGGED'
+                                  ? 'bagged'
+                                  : 'cancelled',
                       blindStructure: tournament.structureFacts.speedLabel ?? 'Unconfirmed',
                       structureFacts: tournament.structureFacts,
                       gameType: tournament.gameType,
@@ -881,6 +1031,13 @@ export default function TournamentLobbyPage() {
                       prize_pool_finalized: tournament.prize_pool_finalized,
                       current_level: tournament.current_level,
                       started_at: tournament.started_at,
+                      /* The Spin rule's own inputs: `spinReveal` needs the
+                         format and the state to decide whether the wheel has
+                         turned, and the card prints the ladder ceiling until
+                         it has. */
+                      variant: tournament.variant,
+                      tournament_type: tournament.tournamentType,
+                      spin_multiplier: tournament.spinMultiplier,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
                       isBounty: tournament.isBounty,
@@ -893,11 +1050,21 @@ export default function TournamentLobbyPage() {
                       isVipOnly: tournament.isVipOnly,
                       isAllInOrFold: tournament.isAllInOrFold,
                     }}
+                    /* THE ANSWER IS ALREADY IN HAND (2026-09-21). The page
+                       reads every one of this player's registrations in ONE
+                       query above. Not passing it made each card run its own
+                       `tournament_players` lookup on mount - on a 72-hour
+                       board that is twenty to forty extra round trips per
+                       load, for a question already answered. The card's own
+                       header says this; the lobby is simply the surface that
+                       never got wired to it. */
+                    knownRegistration={tournament.isRegistered}
+                    stageNote={stageNoteFor(tournament.id)}
                     onRegister={() => handleRegister(tournament.id)}
                   />
                 </div>
               ))}
-            </div>
+            </section>
           ))
         )}
       </div>

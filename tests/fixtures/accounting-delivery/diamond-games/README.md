@@ -106,3 +106,31 @@ transfer, and unchanged historical v2 replay. The actual captured history RPC in
 `wheel-v3-history-dependency.sql` returns the mixed version receipts. Its source
 hash/ACL and exact candidate qualification are in `wheel-v3-provenance.json`.
 All monetary probe effects are rolled back, with the maintained all-row check.
+
+The v3 probe now sets the authenticated `request.jwt.claims` role as PostgREST
+does. `SET ROLE authenticated` alone was insufficient: a nested SECURITY DEFINER
+writer becomes `postgres`, and an absent JWT made the real service-context helper
+take its privileged branch. The real profile trigger was present but its browser
+guard was therefore not exercised. With the JWT present, the old guard rejects
+the wheel owner credit with SQLSTATE 42501. Migration `20260918230314` admits only
+the reviewed `fn_wheel_spin_v2` caller, preserving all other guard text and ACLs.
+The same full v3 probe now executes every primary/Upgrade prize and all four
+bonus games with that guard active. Additional assertions reject direct currency
+and VIP writes, verify the diamond mirror cannot be changed independently, and
+refuse direct authenticated access to the private ledger writer.
+`wheel-guard-dependencies.sql` carries the exact read-only declaration-function
+capture and empty isolated stores, allowing the migration's real guard-history
+declaration to execute. No production user, session or currency is used.
+
+The 2026-09-21 settlement burn and quiet ledger (owner rulings R14, R16, R17)
+add `quiet-ledger-dependencies.sql` (the 20260921052548 roster gate the capture
+predates, so the latent union-prize refusal is reproduced before migration
+20260921202827 closes it) and `daily-burn-dependencies.sql` (the owner agreement
+RPC and the two read-only supports the trial balance report needs). Migration
+20260921202834 is installed twice: once over `diamond_custody_legacy`, a copy
+seeded by `daily-burn-legacy-seed.sql` with a day settled under the pre-burn
+contract and an older open day, asserted untouched by `daily-burn-legacy-assert.sql`;
+and once over the probe database before `diamond-spins-daily-profit-burn.sql` and
+`diamond-spins-every-movement-has-a-ledger-row.sql`. The two-connection race now
+runs on the burn contract and its assert expects one transfer of 80, one register
+burn of 20, one quiet notification and no push.

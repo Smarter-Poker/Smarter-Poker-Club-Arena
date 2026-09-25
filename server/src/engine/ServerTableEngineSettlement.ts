@@ -43,7 +43,6 @@ import {
   processHandPostCommitObligations,
   recordBBJNearMiss,
   resolveJackpotSiblingClubIds,
-  completeHandSnapshot,
   supabase,
 } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
@@ -624,15 +623,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
-    // SETTLEMENT STEP 8 (partial): Mark hand snapshot as complete
-    // FIX 137: Bible V8 §7.17
-    // Reported, not swallowed. A snapshot that never completes leaves the hand
-    // marked in-flight in the recovery path, and `.catch(() => {})` meant the
-    // only way to learn that was to go looking for it. It still must not throw
-    // into settlement — the hand is over and the money is already moved.
-    completeHandSnapshot(this.tableId, this.handCount).catch((err) =>
-      reportError(err, 'ServerTableEngine.complete_hand_snapshot_error')
-    );
+    // The retained original hand transaction completes this snapshot only
+    // after its accepted financial receipt. HAND_COMPLETE alone is not proof.
 
     // SETTLEMENT STEP 5: Capture rake and BBJ fee (calculated in HandController)
     if ((event as any).rake !== undefined) {
@@ -1452,6 +1444,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // the barrier, so chain it - the loop may deal only when BOTH the rest of
     // this method and every post-hand task are done reading this hand's
     // capture fields.
+    // KILL POT (kill-v1): the trigger is evaluated once, here, from this hand's
+    // authoritative settlement, and its record rides into the hand's own row.
+    this.settleKillPot();
     const priorBarrier = this.postHandTasksPromise;
     const postTasks = this.postHandTasks(players, persistenceGeneration).catch((err) => {
       this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
@@ -1593,6 +1588,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       communityCards2: [...this.currentHandCommunityCards2],
       communityCards3: [...this.currentHandCommunityCards3],
       bombPot: this.currentHandBombPot,
+      // KILL POT: this hand's kill_pot record (kill hand, next kill, cancellation).
+      killPot: this.currentHandKillRecord,
       ritExtraBoards: this.currentHandRitExtraBoards,
       ritBoards: this.currentHandRitBoards,
       startedAt: this.currentHandStartedAt,
@@ -1978,6 +1975,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        `rake_records`, `rake_attributions` or `bbj_contributions`, so the
        booking and history land together under exactly this id. */
     const v_handId = randomUUID();
+    // KILL POT: a kill this hand triggers is keyed to the row it is written in.
+    const killPotRecord = this.killSchedule.bindTriggerHandId(
+      snap.handNumber,
+      v_handId,
+      snap.killPot
+    );
     // A response-body timeout may replay the exact RPC. Time is part of the
     // accepted-hand payload hash, so freeze it once; recomputing Date.now()
     // on retry turns a committed hand into a deterministic payload conflict.
@@ -2290,6 +2293,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // (trigger reason, ante, board count - spec §20).
             communityCards3: snap.communityCards3,
             bombPot: snap.bombPot,
+            // KILL POT (kill-v1): null on a hand that neither played, set nor
+            // cancelled a kill. The atomic insert names only real columns.
+            killPot: killPotRecord,
             // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
             // rit_board_N pseudo-actions in `actions` stay for old readers.
             ritBoards: snap.ritExtraBoards,
@@ -2833,10 +2839,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // A5 FIX (2026-08-08): the retries are exhausted, but the rake is
             // ALREADY out of the pot. Reporting an error and moving on destroyed
             // those chips — nothing on disk said they were owed. Queue the exact
-            // arguments so the FeeReconciler can re-drive them. Re-driving is
-            // safe: atomic_distribute_rake is gated on the hand
-            // (uq_rake_records_hand_id), so an entry that actually did land is a
-            // no-op rather than a double-bank.
+            // arguments so the owed fee is on disk. This is the protocol-1
+            // compatibility path (no verified lease, no envelope), which
+            // production refuses at fn_ca_commit_hand_settlement; since
+            // 2026-09-22 no engine timer re-drives the claim (FeeReconciler.ts).
             await queueUnbankedFee('rake', {
               tableId: this.tableId,
               clubId: this.tableInfo?.club_id,

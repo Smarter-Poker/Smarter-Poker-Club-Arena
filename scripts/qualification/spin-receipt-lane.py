@@ -252,10 +252,7 @@ def main():
                                  'lane_cleanup_'+args.execution,deadline)
             verifier.pid = verifier.json('SELECT to_jsonb(pg_backend_pid());')
             ids=','.join(str(s.pid) for s in sessions if s.pid is not None) or '0'
-            events['backend_cleanup'] = verifier.json("SELECT jsonb_build_object('backends',"
-                "(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()),"
-                f"'locks',(SELECT count(*) FROM pg_locks WHERE pid IN ({ids})));" )
-            require(events['backend_cleanup']=={'backends':0,'locks':0},'owned backend or lock remains')
+            R.observe_backend_cleanup(verifier, ids, deadline, events)
             events['cleanup_verified']=True
         except BaseException as error: events['cleanup_failure']=str(error)
         finally:

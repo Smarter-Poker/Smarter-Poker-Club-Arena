@@ -142,6 +142,7 @@ describe('the money bubble reads the last paid place, not how many places pay', 
 describe('the satellite mapper reads real columns', () => {
   const row = {
     id: 'sat-1',
+    format_contract: 'mtt-v2',
     name: 'Sunday Feeder',
     status: 'REGISTERING',
     tournament_type: 'satellite',
@@ -174,8 +175,12 @@ describe('the satellite mapper reads real columns', () => {
     // `is_satellite` is not a column, so the old test was always false and the
     // type fell through. Every row here was selected by satellite_target_id.
     expect(mapSatelliteRowToCard({ ...row, tournament_type: null }).type).toBe('satellite');
-    // A more specific type still refines it.
-    expect(mapSatelliteRowToCard({ ...row, tournament_type: 'spin' }).type).toBe('spin');
+    // Target-linked satellites remain unlimited despite a stale fixed-format type.
+    for (const tournament_type of ['spin', 'SNG', 'SATELLITE']) {
+      const card = mapSatelliteRowToCard({ ...row, tournament_type, max_players: 2 });
+      expect(card.type).toBe('satellite');
+      expect(card.maxPlayers).toBeNull();
+    }
   });
 
   it('falls back to the collected pool when there is no guarantee', () => {

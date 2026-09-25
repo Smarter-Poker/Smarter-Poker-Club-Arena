@@ -17,7 +17,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-async function fixture(failure = '', beginOutcome = 'committed') {
+async function fixture(failure = '', beginOutcome = 'committed', prepareThroughDealer = false) {
   let releaseBegin: ((value: any) => void) | null = null;
   let originalRow: any = null;
   let beginReached = false;
@@ -49,6 +49,7 @@ async function fixture(failure = '', beginOutcome = 'committed') {
     tableEngines: new Map([[source, engine]]),
     tournamentOwnedTables: new Set([source]),
     tournamentRetirementCustody: new TournamentRetirementCustody(),
+    maintenanceBreak: { adopt: vi.fn() },
   });
   const manager: any = new TournamentManager(event, server, lease, performance.now() + 60000);
   Object.assign(manager, { running: true, eliminationSweepDeadlineAt: 0 });
@@ -78,6 +79,8 @@ async function fixture(failure = '', beginOutcome = 'committed') {
   const query: any = {
     select: () => query,
     eq: () => query,
+    neq: () => query,
+    or: async () => ({ data: [{ id: source }, { id: destination }], error: null }),
     is: async () => ({
       data: [{ id: seat, user_id: user, seat_number: 1, stack: 100, occupancy_id: occupancy }],
       error: null,
@@ -90,7 +93,9 @@ async function fixture(failure = '', beginOutcome = 'committed') {
   );
   const rpc = vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
     calls.push({ name, p: structuredClone(p) });
+    if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
     if (name === 'fn_f06_begin_hand') {
+      if (beginOutcome === 'live_reserved') return { data: canonicalBegin(), error: null };
       if (beginOutcome.startsWith('pending_')) {
         if (beginOutcome === 'pending_reserved') canonicalBegin();
         return new Promise<any>((resolve) => {
@@ -114,6 +119,11 @@ async function fixture(failure = '', beginOutcome = 'committed') {
         excluded: !!durable,
         break_id: durable?.break_id ?? null,
       });
+    if (name === 'fn_f06_cancel_prepared_hand') {
+      expect(originalRow?.state).toBe('reserved');
+      originalRow = { ...originalRow, state: 'never_started', evidence_id: p.p_permit_id };
+      return ok({ ...originalRow, ok: true });
+    }
     if (name === 'fn_f06_request_park') {
       durable ??= {
         ok: true,
@@ -174,6 +184,11 @@ async function fixture(failure = '', beginOutcome = 'committed') {
       };
       return ok({ ...originalRow, ok: true });
     }
+    if (name === 'fn_f06_continue_no_start_last_table')
+      return {
+        data: null,
+        error: { code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' },
+      };
     if (name === 'fn_f06_begin_break') {
       durable.state = 'begun';
       durable.members = p.p_members.map((m: any) => ({
@@ -241,12 +256,14 @@ async function fixture(failure = '', beginOutcome = 'committed') {
     (n, p) => supabase.rpc(n, p) as any,
     () => true
   );
-  const beginResult = permit.reserve().then(
+  const beginResult = (prepareThroughDealer ? Promise.resolve() : permit.reserve()).then(
     () => ({ ok: true, error: null }),
     (error) => ({ ok: false, error })
   );
-  if (!beginOutcome.startsWith('pending_')) expect((await beginResult).ok).toBe(false);
-  engine.f06CurrentPermit = permit;
+  if (!prepareThroughDealer && !beginOutcome.startsWith('pending_'))
+    expect((await beginResult).ok).toBe(false);
+  if (prepareThroughDealer) engine.installF06HandAdmission(() => permit);
+  else engine.f06CurrentPermit = permit;
   engine.running = true;
   return {
     beginResult,
@@ -617,6 +634,7 @@ it.each(['committed', 'absent', 'pending_reserved'])(
     f.rpc.mockImplementation((async (name: string, p: any) => {
       if (p?.p_table_id !== destination) return rpc(name, p);
       destinationCalls.push({ name, p: structuredClone(p) });
+      if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
       if (name === 'fn_f06_hand_number_state')
         return {
           data: {
@@ -685,6 +703,7 @@ it.each(['committed', 'absent', 'pending_reserved'])(
       expect(next.handCount).toBe(1000002);
       expect(next.getF06RetainedPermit().phase).toBe('attempted');
       expect(destinationCalls.map((c) => c.name)).toEqual([
+        'fn_ca_resume_hand_submission',
         'fn_f06_hand_number_state',
         'fn_f06_allocate_hand_number',
         'fn_f06_hand_number_state',
@@ -697,6 +716,584 @@ it.each(['committed', 'absent', 'pending_reserved'])(
       next.activeHandWaitRelease?.release('test_cleanup');
       next.preciseTimer.dispose();
       await dealing;
+    }
+  }
+);
+
+it.each(['continue', 'fail', 'pause', 'unknown_reply'])(
+  'ordinary reserved preparation is not original recovery while its allowance read is pending: %s',
+  async (outcome) => {
+    const f = await fixture(
+      'fn_f06_request_park',
+      outcome === 'unknown_reply' ? 'pending_reserved' : 'live_reserved',
+      true
+    );
+    const roster = [
+      {
+        user_id: user,
+        seat_number: 1,
+        stack: 100,
+        occupancy_id: occupancy,
+        seat_id: seat,
+        seat_joined_at: '2026-09-12T00:00:00Z',
+        username: 'First player',
+        is_horse: false,
+      },
+      {
+        user_id: id(20),
+        seat_number: 2,
+        stack: 100,
+        occupancy_id: id(41),
+        seat_id: id(42),
+        seat_joined_at: '2026-09-12T00:00:00Z',
+        username: 'Second player',
+        is_horse: false,
+      },
+    ];
+    Object.assign(f.engine, {
+      tableInfo: {
+        id: source,
+        tournament_id: event,
+        game_type: 'tournament',
+        game_variant: 'nlh',
+        max_players: 2,
+        current_players: 2,
+        status: 'waiting',
+        small_blind: 10,
+        big_blind: 20,
+        ante: 0,
+        action_time_seconds: 15,
+      },
+      seatedPlayers: roster,
+      knownPlayerIds: new Set(roster.map((p) => p.user_id)),
+      lastButtonSeat: 2,
+      lastBigBlindSeat: 2,
+      dealtInUserIds: new Set(roster.map((p) => p.user_id)),
+      bombPotSchedPersistedJson: 'null',
+      eventShadowEnabled: false,
+      isCurrentEngine: () => true,
+      allocateGlobalHandNumber: async () => 1000001,
+      refreshRakeConfig: async () => {},
+      persistHoleCardsWithRetry: async () => {},
+      flushSnapshot: async () => {},
+    });
+    let release!: () => void;
+    const allowance = new Promise<Map<string, number>>((resolve, reject) => {
+      release = () =>
+        outcome === 'fail' ? reject(new Error('original preparation failed')) : resolve(new Map());
+    });
+    const allowanceRead = vi.fn(() => allowance);
+    f.engine.fetchTimeBankExtras = allowanceRead;
+    const handEvents: any[] = [];
+    f.engine.handleHandEvent = async (event: any) => {
+      handEvents.push(event);
+    };
+    let dealError: unknown;
+    const dealing = f.engine.dealHand(roster).catch((e: unknown) => {
+      dealError = e;
+    });
+    try {
+      if (outcome === 'unknown_reply') {
+        for (let i = 0; i < 100 && !f.calls.some((call) => call.name === 'fn_f06_begin_hand'); i++)
+          await Promise.resolve();
+        expect(f.engine.getF06RetainedPermit().phase).toBe('unknown');
+        await f.manager.recoverF06OriginalAdmissions();
+        expect(f.calls.some((call) => call.name === 'fn_f06_request_park')).toBe(false);
+        f.releaseBegin(f.lateBegin());
+      }
+      for (let i = 0; i < 100 && !allowanceRead.mock.calls.length && !dealError; i++)
+        await Promise.resolve();
+      expect(dealError).toBeUndefined();
+      expect(allowanceRead).toHaveBeenCalledOnce();
+      expect(f.engine.getF06RetainedPermit().phase).toBe('reserved');
+      expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(false);
+      // This is the real scheduled recovery decision, during the real dealer's
+      // asynchronous gap after BEGIN and before its synchronous controller start.
+      await f.manager.recoverF06OriginalAdmissions();
+      expect(f.calls.some((call) => call.name === 'fn_f06_request_park')).toBe(false);
+      expect(f.engine.stop).not.toHaveBeenCalled();
+      expect(
+        f.manager.bindStoppedOriginalBreak({
+          source_table_id: source,
+          break_id: id(98),
+          state: 'park_requested',
+          lifecycle: '1',
+        })
+      ).toBe(false);
+      if (outcome === 'pause') f.engine.pauseAfterHand(120000, { beforeNextHand: true });
+      release();
+      for (
+        let i = 0;
+        i < 100 && !handEvents.some((event) => event.type === 'HAND_START') && !dealError;
+        i++
+      )
+        await Promise.resolve();
+      if (outcome === 'continue' || outcome === 'unknown_reply') {
+        expect(dealError).toBeUndefined();
+        expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(true);
+        expect(f.engine.getF06RetainedPermit().phase).toBe('attempted');
+        await f.manager.recoverF06OriginalAdmissions();
+        expect(f.engine.stop).not.toHaveBeenCalled();
+      } else {
+        await dealing;
+        if (outcome === 'fail') expect(String(dealError)).toContain('original preparation failed');
+        else expect(dealError).toBeUndefined();
+        expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(false);
+        if (outcome === 'pause') {
+          // A paused original preparation is durably cancelled by its own
+          // exact permit, without manufacturing a table-retirement operation.
+          await f.manager.recoverF06OriginalAdmissions();
+          expect(
+            f.calls.filter((call) => call.name === 'fn_f06_cancel_prepared_hand')
+          ).toHaveLength(1);
+          expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(0);
+          expect(f.engine.getF06RetainedPermit()).toBeNull();
+        } else {
+          await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow(
+            'outcome unproven'
+          );
+          expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(1);
+          expect(f.engine.getF06RetainedPermit().binding.permit_id).toBe(id(8));
+        }
+      }
+    } finally {
+      release();
+      f.engine.running = false;
+      f.engine.activeHandWaitRelease?.release('test_cleanup');
+      f.engine.preciseTimer.dispose();
+      await dealing;
+    }
+  }
+);
+
+it('a replacement Manager admission cannot reconstruct an unresolved original permit to cancel it', async () => {
+  const f = await fixture('', 'committed');
+  const original = f.engine.getF06RetainedPermit();
+  const replacement = new ServerTableEngine(source) as any;
+  Object.defineProperty(replacement, 'ready', { value: Promise.resolve(false) });
+  vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+  f.manager.tableEngines.set(source, replacement);
+  f.server.tableEngines.set(source, replacement);
+  const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+  f.rpc.mockImplementation((async (name: string) => {
+    if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
+    expect(name).toBe('fn_f06_hand_number_state');
+    return {
+      data: {
+        ok: true,
+        table_id: source,
+        lifecycle: '1',
+        can_reserve: false,
+        blocked_reason: 'hand_permit_unresolved',
+        used_hand_number_max: '1000001',
+        next_hand_number_candidate: '1000002',
+        unresolved_permit: original,
+      },
+      error: null,
+    };
+  }) as any);
+  try {
+    f.manager.startManagedTableEngine(replacement, 'test replacement');
+    await Promise.allSettled([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+    expect(replacement.start).not.toHaveBeenCalled();
+    expect(replacement.getF06RetainedPermit()).toBeNull();
+    expect(recovery).toHaveBeenCalledOnce();
+    expect(f.engine.getF06RetainedPermit()).toEqual(original);
+    expect(f.calls.some((call) => call.name === 'fn_f06_cancel_prepared_hand')).toBe(false);
+  } finally {
+    f.engine.running = false;
+    f.engine.preciseTimer.dispose();
+    replacement.preciseTimer.dispose();
+  }
+});
+
+async function lastTableFixture() {
+  const f = await fixture();
+  f.manager.eligibleBreakDestinations.mockResolvedValue([]);
+  const fresh: any = new ServerTableEngine(source);
+  vi.spyOn(fresh, 'start').mockImplementation(async () => {
+    fresh.running = true;
+  });
+  Object.defineProperty(fresh, 'ready', { value: Promise.resolve(true) });
+  f.manager.createManagedTableEngine = vi.fn(() => fresh);
+  const originalRpc = f.rpc.getMockImplementation()!;
+  let receipt: any = null;
+  let continuationFailure: any = null;
+  let lostAfterCommit = false;
+  let currentGeneration = lease;
+  f.rpc.mockImplementation((async (name: string, p: any) => {
+    if (name === 'fn_f06_continue_no_start_last_table') {
+      f.calls.push({ name, p: structuredClone(p) });
+      f.events.push(name);
+      expect(f.engine.hasReleasedProcessOwnership()).toBe(true);
+      expect(f.engine.getF06RetainedPermit()).toBeNull();
+      expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
+      if (continuationFailure) return { data: null, error: continuationFailure };
+      const state = f.state();
+      receipt ??= {
+        ok: true,
+        state: 'continued_never_started',
+        receipt_id: id(81),
+        credit: 0,
+        tournament_id: event,
+        table_id: source,
+        lifecycle: '1',
+        break_id: state.break_id,
+        park_custody_id: state.custody_id,
+        park_revision: state.revision,
+        lease_generation: currentGeneration,
+        original_generation: lease,
+        permit_id: id(8),
+        hand_number: '1000001',
+      };
+      // The native companion owns actual withdrawal/locks. This transport
+      // fixture returns the immutable same receipt after a committed lost reply.
+      if (lostAfterCommit) {
+        lostAfterCommit = false;
+        return { data: null, error: { message: 'committed reply lost' } };
+      }
+      return { data: { ...receipt }, error: null };
+    }
+    if (name === 'fn_f06_hand_number_state')
+      return {
+        data: {
+          ok: true,
+          table_id: source,
+          lifecycle: '1',
+          can_reserve: !!receipt,
+          blocked_reason: receipt ? null : 'source_excluded',
+          unresolved_permit: null,
+          used_hand_number_max: '1000001',
+          next_hand_number_candidate: receipt ? '1000002' : null,
+        },
+        error: null,
+      };
+    return originalRpc(name, p);
+  }) as any);
+  return {
+    ...f,
+    fresh,
+    receipt: () => receipt,
+    loseReply: () => {
+      lostAfterCommit = true;
+    },
+    refuse: (error: any) => {
+      continuationFailure = error;
+    },
+    useGeneration: (value: string) => {
+      currentGeneration = value;
+    },
+  };
+}
+
+it('last table original positive no-start uses one receipt and real registry CAS into fresh admission', async () => {
+  const f = await lastTableFixture();
+  await f.manager.recoverF06OriginalAdmissions();
+  await Promise.all([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+  expect(f.receipt()?.state).toBe('continued_never_started');
+  expect(f.originalState().state).toBe('never_started');
+  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.manager.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.fresh.start).toHaveBeenCalledTimes(1);
+  expect(f.engine.running).toBe(false);
+  expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+  expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
+  expect(
+    f.calls.some((c) =>
+      [
+        'fn_f06_begin_break',
+        'fn_move_tournament_player',
+        'fn_f06_close_break',
+        'fn_f06_ack_cleanup',
+      ].includes(c.name)
+    )
+  ).toBe(false);
+  f.fresh.running = false;
+});
+
+it('last table lost committed continuation replays exact identity before fresh registry admission', async () => {
+  const f = await lastTableFixture();
+  f.loseReply();
+  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow('outcome unproven');
+  expect(f.receipt()).not.toBeNull();
+  expect(f.server.tableEngines.get(source)).toBe(f.engine);
+  expect(f.manager.pendingNoStartContinuations.size).toBe(1);
+  expect(f.fresh.start).not.toHaveBeenCalled();
+  await f.manager.recoverF06OriginalAdmissions();
+  await Promise.all([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+  const calls = f.calls.filter((c) => c.name === 'fn_f06_continue_no_start_last_table');
+  expect(calls).toHaveLength(2);
+  expect(calls[1].p).toEqual(calls[0].p);
+  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+  expect(f.calls.filter((c) => c.name === 'fn_f06_finish_original_no_start')).toHaveLength(1);
+  f.fresh.running = false;
+});
+
+it.each([
+  { code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' },
+  { code: '55000', message: 'F06_CONTINUATION_POSITIVE_ORIGINAL_REQUIRED' },
+  { code: '42501', message: 'current lease refused' },
+])(
+  'last table known refusal preserves stopped original and never admits fresh: $message',
+  async (error) => {
+    const f = await lastTableFixture();
+    f.refuse(error);
+    await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
+    expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+    expect(f.server.tableEngines.get(source)).toBe(f.engine);
+    expect(f.fresh.start).not.toHaveBeenCalled();
+    expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
+  }
+);
+
+it('successor startup continues only positive terminal no-start, then uses normal fresh admission', async () => {
+  const f = await lastTableFixture();
+  f.refuse({ code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' });
+  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
+  expect(f.originalState().state).toBe('never_started');
+  const successorLease = id(82);
+  f.useGeneration(successorLease);
+  f.refuse(null);
+  const candidate: any = new ServerTableEngine(source);
+  vi.spyOn(candidate, 'stop').mockImplementation(async () => {
+    candidate.running = false;
+    candidate.terminal = true;
+  });
+  vi.spyOn(candidate, 'hasReleasedProcessOwnership').mockReturnValue(true);
+  Object.defineProperty(candidate, 'ready', { value: Promise.resolve(true) });
+  const start = vi.spyOn(candidate, 'start').mockImplementation(async () => {});
+  // A successor owns a fresh process registry; the old owner remains retired.
+  f.server.tournamentRetirementCustody = new TournamentRetirementCustody();
+  f.server.tableEngines.set(source, candidate);
+  const manager: any = new TournamentManager(
+    event,
+    f.server,
+    successorLease,
+    performance.now() + 60000
+  );
+  manager.running = true;
+  manager.tableEngines.set(source, candidate);
+  const token = {};
+  manager.lifecycleEpoch.current = () => token;
+  manager.lifecycleIsCurrent = () => true;
+  manager.createManagedTableEngine = vi.fn(() => f.fresh);
+  const query: any = {
+    select: () => query,
+    eq: () => query,
+    neq: () => query,
+    or: async () => ({ data: [{ id: source }], error: null }),
+  };
+  vi.mocked(supabase.from).mockReturnValue(query);
+  manager.startManagedTableEngine(candidate, 'successor no-start fixture');
+  while (manager.tableEngineRunJobs.size) await Promise.all([...manager.tableEngineRunJobs]);
+  expect(f.receipt()?.lease_generation).toBe(successorLease);
+  expect(start).not.toHaveBeenCalled();
+  expect(candidate.stop).toHaveBeenCalled();
+  expect(f.fresh.start).toHaveBeenCalledTimes(1);
+  expect(manager.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.originalState().state).toBe('never_started');
+  expect(f.calls.filter((c) => c.name === 'fn_f06_finish_original_no_start')).toHaveLength(1);
+  f.fresh.running = false;
+});
+
+it('multi-table source exclusion remains available to movement admission without stopping candidate', async () => {
+  const f = await lastTableFixture();
+  f.engine.f06CurrentPermit = null;
+  const query: any = {
+    select: () => query,
+    eq: () => query,
+    neq: () => query,
+    or: async () => ({ data: [{ id: source }, { id: destination }], error: null }),
+  };
+  vi.mocked(supabase.from).mockReturnValue(query);
+  expect(await f.manager.continueExcludedNoStartTable(source, f.engine, () => true)).toBe(false);
+  expect(f.engine.stop).not.toHaveBeenCalled();
+  expect(f.calls.some((c) => c.name === 'fn_f06_continue_no_start_last_table')).toBe(false);
+});
+
+it.each(['valid', 'unresolved', 'wrong custody', 'wrong proof', 'owner changed'])(
+  'replacement Manager admits only exact canonical movement custody: %s',
+  async (mode) => {
+    const f = await fixture('', 'absent');
+    const replacement: any = new ServerTableEngine(source, {
+      scope: 'tournament',
+      verified: true,
+      generation: lease,
+      tournamentId: event,
+      proofDeadlineMonotonicMs: performance.now() + 60_000,
+    });
+    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
+    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+    const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+    f.manager.tableEngines.set(source, replacement);
+    f.server.tableEngines.set(source, replacement);
+    const seen: string[] = [];
+    f.rpc.mockImplementation((async (name: string, p: any) => {
+      seen.push(name);
+      if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
+      if (name === 'fn_f06_hand_number_state')
+        return {
+          data: {
+            ok: true,
+            table_id: source,
+            lifecycle: '252200',
+            can_reserve: false,
+            blocked_reason: mode === 'unresolved' ? 'hand_permit_unresolved' : 'source_excluded',
+            unresolved_permit: mode === 'unresolved' ? { permit_id: id(8) } : null,
+            used_hand_number_max: '12297119',
+            next_hand_number_candidate: null,
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_table_state')
+        return {
+          data: {
+            ok: true,
+            table_id: source,
+            lifecycle: '252200',
+            excluded: true,
+            break_id: id(50),
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_break_state')
+        return {
+          data: {
+            ok: true,
+            reason: null,
+            break_id: id(50),
+            tournament_id: event,
+            source_table_id: source,
+            lifecycle: '252200',
+            state: 'park_requested',
+            revision: '0',
+            custody_id: null,
+            custody_generation: null,
+            members: [],
+            terminal_handoff_required: false,
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_admit_parked_movement') {
+        if (mode === 'owner changed') f.manager.tableEngines.delete(source);
+        return {
+          data: {
+            ok: true,
+            mode: 'movement_only',
+            admission_id: p.p_admission_id,
+            tournament_id: event,
+            lease_generation: lease,
+            table_id: source,
+            lifecycle: '252200',
+            break_id: id(50),
+            custody_id: mode === 'wrong custody' ? id(51) : p.p_custody_id,
+            revision: '1',
+            proof_hash: mode === 'wrong proof' ? null : 'a'.repeat(64),
+          },
+          error: null,
+        };
+      }
+      throw new Error('unexpected RPC: ' + name);
+    }) as any);
+    try {
+      f.manager.startManagedTableEngine(replacement, 'test movement admission');
+      await Promise.allSettled([
+        ...f.manager.tableEngineRunJobs,
+        ...f.manager.tableEngineStartJobs,
+      ]);
+      if (mode === 'valid') {
+        expect(start).toHaveBeenCalledOnce();
+        expect(recovery).not.toHaveBeenCalled();
+        expect(replacement.f06MovementAdmission.receipt.lifecycle).toBe('252200');
+        expect(replacement.f06Allocator).toBeNull();
+        expect(replacement.getF06RetainedPermit()).toBeNull();
+      } else {
+        expect(start).not.toHaveBeenCalled();
+        expect(recovery).toHaveBeenCalledOnce();
+      }
+      expect(seen.slice(0, 2)).toEqual([
+        'fn_ca_resume_hand_submission',
+        'fn_f06_hand_number_state',
+      ]);
+      expect(seen).not.toContain('fn_f06_begin_hand');
+      expect(seen).not.toContain('fn_f06_allocate_hand_number');
+      expect(seen).not.toContain('fn_f06_finish_original_no_start');
+    } finally {
+      f.engine.running = false;
+      f.engine.preciseTimer.dispose();
+      replacement.preciseTimer.dispose();
+    }
+  }
+);
+
+it.each(['accepted', 'pending', 'lost owner'])(
+  'retained original continuation precedes actual replacement admission: %s',
+  async (outcome) => {
+    const f = await fixture('', 'committed');
+    const replacement = new ServerTableEngine(source) as any;
+    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
+    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+    f.manager.tableEngines.set(source, replacement);
+    f.server.tableEngines.set(source, replacement);
+    vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+    const order: string[] = [];
+    f.rpc.mockImplementation((async (name: string) => {
+      order.push(name);
+      if (name === 'fn_ca_resume_hand_submission') {
+        if (outcome === 'lost owner') f.invalidate();
+        return {
+          data:
+            outcome === 'pending'
+              ? { found: true, completed: false, reason: 'original_failure_or_handoff_unproven' }
+              : {
+                  found: true,
+                  completed: true,
+                  success: true,
+                  atomic_hand_commit: true,
+                  snapshot_completed: true,
+                  post_commit_completed: true,
+                  table_id: source,
+                  history_id: id(42),
+                  submission_id: id(42),
+                  submission_hash: 'a'.repeat(64),
+                  hand_number: '1000001',
+                },
+          error: null,
+        };
+      }
+      if (name !== 'fn_f06_hand_number_state') throw new Error('Unexpected admission RPC ' + name);
+      return {
+        data: {
+          ok: true,
+          table_id: source,
+          lifecycle: '1',
+          can_reserve: true,
+          blocked_reason: null,
+          used_hand_number_max: '1000001',
+          next_hand_number_candidate: '1000002',
+          unresolved_permit: null,
+        },
+        error: null,
+      };
+    }) as any);
+    try {
+      f.manager.startManagedTableEngine(replacement, 'retained admission test');
+      await Promise.allSettled([
+        ...f.manager.tableEngineRunJobs,
+        ...f.manager.tableEngineStartJobs,
+      ]);
+      expect(order).toEqual(
+        outcome === 'accepted'
+          ? ['fn_ca_resume_hand_submission', 'fn_f06_hand_number_state']
+          : ['fn_ca_resume_hand_submission']
+      );
+      expect(start).toHaveBeenCalledTimes(outcome === 'accepted' ? 1 : 0);
+      expect(replacement.getF06RetainedPermit()).toBeNull();
+    } finally {
+      replacement.preciseTimer.dispose();
+      f.engine.preciseTimer.dispose();
     }
   }
 );

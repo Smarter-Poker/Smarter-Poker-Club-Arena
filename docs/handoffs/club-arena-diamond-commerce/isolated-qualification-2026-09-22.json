@@ -1,0 +1,510 @@
+{
+  "passed": 126,
+  "results": [
+    {
+      "test": "D29 the orphaned club_creation price row is removed at install",
+      "result": "PASS"
+    },
+    {
+      "test": "D26 every supported product has a published price and no comparison claim",
+      "result": "PASS"
+    },
+    {
+      "test": "D80 unsupported offerings carry no published price",
+      "result": "PASS"
+    },
+    {
+      "test": "catalog v1 publishes nine prices",
+      "result": "PASS"
+    },
+    {
+      "test": "D74 a published price cannot be edited in place",
+      "result": "PASS"
+    },
+    {
+      "test": "D74 a price version is never deleted",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 the internal purchase helper is not browser-executable",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 the renewal consumer door is service-only",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 commerce tables are not browser-readable",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 cross-tenant scope status is refused",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 a non-owner cannot quote for another club",
+      "result": "PASS"
+    },
+    {
+      "test": "D01 trial activation creates one grant",
+      "result": "PASS"
+    },
+    {
+      "test": "D01 trial activation replay returns the same grant",
+      "result": "PASS"
+    },
+    {
+      "test": "D01 no duplicate trial and no diamond issuance",
+      "result": "PASS"
+    },
+    {
+      "test": "D51 the trial is a fixed 720-hour interval",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 only the owner activates a trial",
+      "result": "PASS"
+    },
+    {
+      "test": "D47 a later scope of the same operator inherits the original trial end",
+      "result": "PASS"
+    },
+    {
+      "test": "D02 included operating actions are admitted during the trial",
+      "result": "PASS"
+    },
+    {
+      "test": "D02 the trial right records zero paid principal",
+      "result": "PASS"
+    },
+    {
+      "test": "quote inside trial prices 700",
+      "result": "PASS"
+    },
+    {
+      "test": "D02 a period quoted inside the trial starts at the trial end",
+      "result": "PASS"
+    },
+    {
+      "test": "D02 no operator-service debit before the trial ends, even by direct call",
+      "result": "PASS"
+    },
+    {
+      "test": "D02 post-trial authorization attaches to the trial right at the trial end",
+      "result": "PASS"
+    },
+    {
+      "test": "D02 an authorization records no debit",
+      "result": "PASS"
+    },
+    {
+      "test": "D27 two trial reminders are recorded durably",
+      "result": "PASS"
+    },
+    {
+      "test": "D27 reminders are not delivered before they are due",
+      "result": "PASS"
+    },
+    {
+      "test": "D27 a due reminder is delivered exactly once",
+      "result": "PASS"
+    },
+    {
+      "test": "D22 after expiry with enforcement in shadow the answer names the refusal without refusing",
+      "result": "PASS"
+    },
+    {
+      "test": "D09 the due first-period authorization is claimed under a lease",
+      "result": "PASS"
+    },
+    {
+      "test": "D73 a leased obligation is not handed to a second worker",
+      "result": "PASS"
+    },
+    {
+      "test": "D73 execution under a stale lease is refused",
+      "result": "PASS"
+    },
+    {
+      "test": "D03 the first paid period charges exactly the accepted amount at the trial end",
+      "result": "PASS"
+    },
+    {
+      "test": "D51 the paid period begins exactly where the trial ended, no gap",
+      "result": "PASS"
+    },
+    {
+      "test": "D20 the journal carries one exact spend to revenue:club_commerce",
+      "result": "PASS"
+    },
+    {
+      "test": "R2-A04 exactly one linked Mint retirement of 700",
+      "result": "PASS"
+    },
+    {
+      "test": "R2-A03 / D37 purchased lots are consumed FIFO first (600 of 700) and the operation-linked delta is retained",
+      "result": "PASS"
+    },
+    {
+      "test": "D09 the standing authorization carries forward to the new period",
+      "result": "PASS"
+    },
+    {
+      "test": "D27 one receipt notice per purchase",
+      "result": "PASS"
+    },
+    {
+      "test": "D68 a recovered receipt keeps the original total and charges nothing",
+      "result": "PASS"
+    },
+    {
+      "test": "the scope status shows the active capacity right",
+      "result": "PASS"
+    },
+    {
+      "test": "a renewal quote is placed at the end of the current period",
+      "result": "PASS"
+    },
+    {
+      "test": "D03 a prepaid renewal charges once",
+      "result": "PASS"
+    },
+    {
+      "test": "D04 same key and payload replays the receipt without a second debit",
+      "result": "PASS"
+    },
+    {
+      "test": "D31 the same quote under a new key names the same purchase and cannot double grant",
+      "result": "PASS"
+    },
+    {
+      "test": "D05 the same key with a different payload refuses",
+      "result": "PASS"
+    },
+    {
+      "test": "D32 a second quote for the same period cannot buy it twice",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 a quote is bound to its actor",
+      "result": "PASS"
+    },
+    {
+      "test": "two consecutive capacity periods, no overlap",
+      "result": "PASS"
+    },
+    {
+      "test": "D06 an expired quote refuses and asks for a requote",
+      "result": "PASS"
+    },
+    {
+      "test": "D74 staff publishes a new price version prospectively",
+      "result": "PASS"
+    },
+    {
+      "test": "D06 a catalog change withdraws an unconsumed quote instead of charging a different amount",
+      "result": "PASS"
+    },
+    {
+      "test": "D74 one published price per product after publication",
+      "result": "PASS"
+    },
+    {
+      "test": "D18 an accepted purchase keeps its price version and amount",
+      "result": "PASS"
+    },
+    {
+      "test": "D74 catalog administration requires staff",
+      "result": "PASS"
+    },
+    {
+      "test": "D07 insufficient available balance fails whole, writes nothing",
+      "result": "PASS"
+    },
+    {
+      "test": "D66 a benign roster change between quote and commit does not requote",
+      "result": "PASS"
+    },
+    {
+      "test": "D33 a swallowed lot-write failure is detected by the persisted-delta postcondition and the whole purchase rolls back",
+      "result": "PASS"
+    },
+    {
+      "test": "D34 a swallowed register failure is detected by the exact linked Mint row check and the purchase rolls back",
+      "result": "PASS"
+    },
+    {
+      "test": "D33/D34 an incident filed inside the rolled-back transaction is not left behind as false evidence",
+      "result": "PASS"
+    },
+    {
+      "test": "D35 the same quote succeeds once the writes are provable, with its exact register row",
+      "result": "PASS"
+    },
+    {
+      "test": "D35 the verifier accepted the exact matching register row",
+      "result": "PASS"
+    },
+    {
+      "test": "D19 refunds are issued by staff, not self-served",
+      "result": "PASS"
+    },
+    {
+      "test": "D36 / D38 a refund to a 2x-multiplier wallet returns exactly 200 gross, settles 50 of debt and adds 150 to the balance",
+      "result": "PASS"
+    },
+    {
+      "test": "D41 the refund journal row is exact and classified refund",
+      "result": "PASS"
+    },
+    {
+      "test": "D17 the refund is registered as one exact issuance, no excess diamonds",
+      "result": "PASS"
+    },
+    {
+      "test": "D39 / D65 operation-linked lot provenance is restored, bounded by what this purchase consumed",
+      "result": "PASS"
+    },
+    {
+      "test": "D17 a refund replay credits nothing twice",
+      "result": "PASS"
+    },
+    {
+      "test": "D40 cumulative returns stay within the net paid allocation",
+      "result": "PASS"
+    },
+    {
+      "test": "D17 a full return revokes only that line right",
+      "result": "PASS"
+    },
+    {
+      "test": "D17 other overlapping paid rights remain valid",
+      "result": "PASS"
+    },
+    {
+      "test": "D64 a refund the wallet cannot receive is refused whole and remains owed, nothing partially credited",
+      "result": "PASS"
+    },
+    {
+      "test": "D64 the same refund request succeeds once the wallet has room, exactly once",
+      "result": "PASS"
+    },
+    {
+      "test": "upgrade fixture: X holds a paid 100-member period",
+      "result": "PASS"
+    },
+    {
+      "test": "D11 a 700 -> 1,500 upgrade at half period credits the unused 350 against 750 for the remainder: 400 diamonds, whole diamonds, residue never in favor of free capacity",
+      "result": "PASS"
+    },
+    {
+      "test": "D11 the upgrade charges once, exactly the quoted amount",
+      "result": "PASS"
+    },
+    {
+      "test": "D11 the old right is superseded at the switch and the new right keeps the original period end",
+      "result": "PASS"
+    },
+    {
+      "test": "D54 the amended right carries its net paid and its value basis (net plus the credited unused value)",
+      "result": "PASS"
+    },
+    {
+      "test": "D54 a staged upgrade costs the same as the direct upgrade within whole-diamond residues, and residues never buy free capacity",
+      "result": "PASS"
+    },
+    {
+      "test": "D11 a downgrade is prospective, never an interrupted period",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 an empty basket is refused",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 a flat product cannot be multiplied",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 a zero quantity is refused",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 an excessive quantity is refused",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 two lines of one kind cannot expand rights twice",
+      "result": "PASS"
+    },
+    {
+      "test": "D80 an unsupported offering cannot be quoted",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 a union product cannot be bought for a club",
+      "result": "PASS"
+    },
+    {
+      "test": "D76 a request key shorter than eight characters is refused",
+      "result": "PASS"
+    },
+    {
+      "test": "union back office prices 1,000 per covered club: 2 clubs = 2,000",
+      "result": "PASS"
+    },
+    {
+      "test": "D46 covered quantity is a purchase, not an affiliation side effect",
+      "result": "PASS"
+    },
+    {
+      "test": "D45 / D46 a club joining a union with back office only is neither debited nor refunded; its standalone capacity stands",
+      "result": "PASS"
+    },
+    {
+      "test": "union insurance module is min(200 x covered clubs, 1,000)",
+      "result": "PASS"
+    },
+    {
+      "test": "D12 the union owner records an explicit sponsorship budget",
+      "result": "PASS"
+    },
+    {
+      "test": "D42 a club owner cannot create a union sponsorship",
+      "result": "PASS"
+    },
+    {
+      "test": "D42 a delegate cannot quote against the sponsor budget from an end-user session",
+      "result": "PASS"
+    },
+    {
+      "test": "D12 an unrelated club cannot use the union budget",
+      "result": "PASS"
+    },
+    {
+      "test": "D12 the sponsor pays for a covered club at the catalog price, no discount",
+      "result": "PASS"
+    },
+    {
+      "test": "D42 a sponsor quote cannot be submitted from another session",
+      "result": "PASS"
+    },
+    {
+      "test": "D12 the sponsor is debited once; the club owner is not debited",
+      "result": "PASS"
+    },
+    {
+      "test": "D12 the beneficiary holds the right",
+      "result": "PASS"
+    },
+    {
+      "test": "D43 committed charges are tracked against the budget",
+      "result": "PASS"
+    },
+    {
+      "test": "D43 two covered clubs racing for the last 500 of budget: one commits, one is refused, committed never exceeds the budget",
+      "result": "PASS"
+    },
+    {
+      "test": "D44 the sponsor revokes future spending",
+      "result": "PASS"
+    },
+    {
+      "test": "D44 a revoked sponsorship cannot be quoted against",
+      "result": "PASS"
+    },
+    {
+      "test": "D44 revocation neither removes paid rights nor debits the club owner",
+      "result": "PASS"
+    },
+    {
+      "test": "D44 a sponsored right cannot be turned into a mandate on the club owner",
+      "result": "PASS"
+    },
+    {
+      "test": "D10 the due mandate is claimed",
+      "result": "PASS"
+    },
+    {
+      "test": "D10 a price increase above the accepted ceiling does not auto-charge and leaves a visible attention state",
+      "result": "PASS"
+    },
+    {
+      "test": "D27 the attention notice is delivered once",
+      "result": "PASS"
+    },
+    {
+      "test": "D09 the owner re-authorizes at a higher ceiling",
+      "result": "PASS"
+    },
+    {
+      "test": "D50 cancellation disables the future renewal",
+      "result": "PASS"
+    },
+    {
+      "test": "D50 a cancelled mandate is never claimed and the paid current period stands",
+      "result": "PASS"
+    },
+    {
+      "test": "D49 a renewal resumed beyond the accepted lateness window charges nothing and creates no historic debt",
+      "result": "PASS"
+    },
+    {
+      "test": "D22 staff records the admission enforcement event",
+      "result": "PASS"
+    },
+    {
+      "test": "D22 an entitled club is admitted",
+      "result": "PASS"
+    },
+    {
+      "test": "D22 approval within capacity is admitted",
+      "result": "PASS"
+    },
+    {
+      "test": "D22 approval beyond purchased capacity is refused, nothing else is locked",
+      "result": "PASS"
+    },
+    {
+      "test": "D22 opening a table is not blocked by roster capacity",
+      "result": "PASS"
+    },
+    {
+      "test": "D11 a capacity below the approved roster cannot be bought",
+      "result": "PASS"
+    },
+    {
+      "test": "D63 an expired license refuses new discretionary operation and the purchased balance is untouched",
+      "result": "PASS"
+    },
+    {
+      "test": "D21 / D22 withdrawals, records and settlement are never gated",
+      "result": "PASS"
+    },
+    {
+      "test": "D78 disabling checkout refuses new purchases",
+      "result": "PASS"
+    },
+    {
+      "test": "D78 delivered paid rights and receipts remain while checkout is disabled",
+      "result": "PASS"
+    },
+    {
+      "test": "D70 unrelated owners purchase concurrently without a global lock",
+      "result": "PASS"
+    },
+    {
+      "test": "D20 wallet, journal and register conservation: every paid diamond has one spend and one retirement; every refund one exact issuance; waivers move nothing",
+      "result": "PASS"
+    },
+    {
+      "test": "D21 / D28 no commerce trigger sits in the gameplay or seating path",
+      "result": "PASS"
+    },
+    {
+      "test": "no band-aid: the commerce boundary owns its outcomes; nothing repairs them later",
+      "result": "PASS"
+    }
+  ],
+  "migration": "20260922143541_club_and_union_diamond_commerce.sql"
+}

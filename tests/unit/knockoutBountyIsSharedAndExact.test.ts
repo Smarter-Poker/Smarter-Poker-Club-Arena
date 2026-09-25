@@ -158,9 +158,22 @@ describe('the wiring: the engine sends shares and TablePage reads them', () => {
     );
   });
 
-  it('the pot-win float label is formatChipAward, never Math.round', () => {
-    expect(TABLE).toContain("import { formatChipAward } from '../utils/format'");
-    expect(TABLE).toContain('const label = formatChipAward(amount)');
+  /**
+   * MOVED 2026-09-20, NOT WEAKENED. The label still goes through one formatter
+   * and still keeps every cent at a chip table; what changed is that the
+   * formatter is now told which UNIT the table pays in, because at a Diamond
+   * table the two-place branch below prints a fraction of a Diamond that the
+   * bounty bank cannot pay. `formatAwardAtUnit` RETURNS `formatChipAward`
+   * unchanged at the chip unit - asserted by construction in
+   * `tests/unit/aDiamondEventIsPricedInDiamonds.test.ts` - so the chip contract
+   * this test was written about is identical, one call deeper.
+   */
+  it('the pot-win float label is one unit-bearing formatter, never Math.round', () => {
+    expect(TABLE).toContain("import { formatAwardAtUnit, formatChipAward } from '../utils/format'");
+    expect(TABLE).toContain('const label = formatAwardAtUnit(amount, feltUnitCentsRef.current)');
+    // And the unit is read, not guessed: the ref follows the table's own arena.
+    expect(TABLE).toContain('const feltUnitCents = arenaAssetUnitCents(tableState.arenaAsset)');
+    expect(TABLE).toContain('feltUnitCentsRef.current = feltUnitCents');
     expect(TABLE).not.toMatch(/'\+' \+ \(amount >= 1 \? Math\.round\(amount\)/);
   });
 

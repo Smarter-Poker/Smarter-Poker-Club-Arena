@@ -210,6 +210,7 @@ function fixture(
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
   rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'fn_ca_resume_hand_submission') return { error: null, data: { found: false } };
     if (name === 'fn_f06_hand_number_state' || name === 'fn_f06_allocate_hand_number') {
       expect(args).toEqual({
         p_tournament_id: EVENT,
@@ -630,7 +631,13 @@ describe('actual manager launch reaches the first hand and action timer after th
       expect(f.manager.blindTimer).toBeNull();
       await f.manager.advanceBlindLevel(f.row.blind_structure);
       expect(f.manager.currentLevel).toBe(0);
-      expect(rpc.mock.calls.map(([name]) => name)).toEqual(['fn_f06_hand_number_state']);
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        // Adoption first looks for a reserved hand a dead generation left
+        // (abandonedGenerationDoor.ts); this table holds none.
+        'fn_f06_hand_number_state',
+        'fn_ca_resume_hand_submission',
+        'fn_f06_hand_number_state',
+      ]);
       await vi.advanceTimersByTimeAsync(59_999);
       expectNoHand(f);
       expect(f.row.level_started_at).toBeNull();
@@ -639,6 +646,8 @@ describe('actual manager launch reaches the first hand and action timer after th
       expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
       expect(f.manager.currentLevel).toBe(0);
       expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_f06_hand_number_state',
+        'fn_ca_resume_hand_submission',
         'fn_f06_hand_number_state',
         'fn_f06_allocate_hand_number',
         'fn_f06_hand_number_state',

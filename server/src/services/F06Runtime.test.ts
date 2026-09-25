@@ -81,6 +81,8 @@ it('real Dealing method waits for permit before preparing or starting a hand', a
     seatedPlayers: roster,
     tableInfo: {},
     handCount: 0,
+    running: true,
+    tournamentMovePauseOwners: new Set(),
     acquireSeatBoundary: async () => release,
     isTournamentTable: () => true,
     takePreparedHandNumber: () => null,
@@ -232,21 +234,31 @@ it('actual Manager shared admission starts only after resolved projection and pr
         order.push('recovery');
       },
     });
-    const spy = vi.spyOn(supabase, 'rpc').mockResolvedValue({
-      data: {
-        ok: true,
-        table_id: id(2),
-        lifecycle: '1',
-        can_reserve: !unresolved,
-        blocked_reason: unresolved ? 'hand_permit_unresolved' : null,
-        used_hand_number_max: '1000000',
-        next_hand_number_candidate: unresolved ? null : '1000001',
-        unresolved_permit: unresolved ? { permit_id: id(6) } : null,
-      },
-      error: null,
-    } as never);
+    const spy = vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string) => {
+      if (name === 'fn_ca_resume_hand_submission') {
+        return { data: { found: false }, error: null } as never;
+      }
+      expect(name).toBe('fn_f06_hand_number_state');
+      return {
+        data: {
+          ok: true,
+          table_id: id(2),
+          lifecycle: '1',
+          can_reserve: !unresolved,
+          blocked_reason: unresolved ? 'hand_permit_unresolved' : null,
+          used_hand_number_max: '1000000',
+          next_hand_number_candidate: unresolved ? null : '1000001',
+          unresolved_permit: unresolved ? { permit_id: id(6) } : null,
+        },
+        error: null,
+      } as never;
+    }) as never);
     manager.startManagedTableEngine(engine, 'test');
     await Promise.all([...manager.tableEngineRunJobs]);
+    expect(spy.mock.calls.map(([name]) => name)).toEqual([
+      'fn_ca_resume_hand_submission',
+      'fn_f06_hand_number_state',
+    ]);
     spy.mockRestore();
     expect(order).toEqual(
       unresolved ? ['booked-start-held', 'recovery'] : ['booked-start-held', 'installed', 'started']
@@ -362,8 +374,23 @@ it.each(['reservation', 'movement', 'none'])(
       stop: () => new Promise<void>((_, r) => (reject = r)),
       hasReleasedProcessOwnership: () => true,
       hasClaimedTournamentMoveBoundary: () => claimed,
+      // Nothing was ever parked on this incumbent, so the real
+      // ServerTableEngineBase.hasUnretiredStoppedTimeBankCustody() is false
+      // for it: no stopped capture, no pending accounting, no outstanding
+      // presence write. That is what makes the slot safe to hand over.
+      hasUnretiredStoppedTimeBankCustody: () => false,
     };
-    const replacement = {};
+    const replacement = {
+      // The no-capture branch of
+      // ServerTableEngineBase.adoptStoppedTimeBankCustody(): when the original
+      // holds no stopped capture, adoption succeeds exactly when the original
+      // has nothing unretired that taking the map slot would strand. Give the
+      // incumbent above an unretired bank and this refuses, which is the
+      // production `throw error` path. The capture-carrying branch is pinned
+      // against the real class in engine/ParkedTimeBank.test.ts.
+      adoptStoppedTimeBankCustody: (original: { hasUnretiredStoppedTimeBankCustody(): boolean }) =>
+        !original.hasUnretiredStoppedTimeBankCustody(),
+    };
     s.tableEngines.set(binding.tableId, incumbent);
     const pending = s.replaceTableEngine(binding.tableId, incumbent, replacement);
     await Promise.resolve();

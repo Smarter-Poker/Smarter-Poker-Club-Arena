@@ -1,0 +1,44 @@
+[
+  {
+    "note": "Immutable original cash/tournament flow evidence; no monetary mutation.",
+    "table_name": "chip_ledger",
+    "declared_at": "2026-09-18T00:41:08.979478+00:00",
+    "trigger_name": "original_union_pnl_flow"
+  },
+  {
+    "note": "Original compact population/balance evidence in the owning transaction; no monetary mutation.",
+    "table_name": "table_seats",
+    "declared_at": "2026-09-18T00:20:41.323003+00:00",
+    "trigger_name": "union_pnl_original_inventory"
+  },
+  {
+    "note": "Refuses deletion of complete original population through TRUNCATE.",
+    "table_name": "table_seats",
+    "declared_at": "2026-09-18T00:20:41.323003+00:00",
+    "trigger_name": "union_pnl_original_inventory_no_truncate"
+  },
+  {
+    "note": "Original registration population includes every player; no monetary mutation.",
+    "table_name": "tournament_players",
+    "declared_at": "2026-09-18T00:20:41.323003+00:00",
+    "trigger_name": "union_pnl_original_inventory"
+  },
+  {
+    "note": "Refuses deletion of original registration population through TRUNCATE.",
+    "table_name": "tournament_players",
+    "declared_at": "2026-09-18T00:20:41.323003+00:00",
+    "trigger_name": "union_pnl_original_inventory_no_truncate"
+  },
+  {
+    "note": "Original scope and open-liability inventory; no instrument valuation or monetary mutation.",
+    "table_name": "tournaments",
+    "declared_at": "2026-09-18T00:20:41.323003+00:00",
+    "trigger_name": "union_pnl_original_inventory"
+  },
+  {
+    "note": "Refuses deletion of original scope/obligation population through TRUNCATE.",
+    "table_name": "tournaments",
+    "declared_at": "2026-09-18T00:20:41.323003+00:00",
+    "trigger_name": "union_pnl_original_inventory_no_truncate"
+  }
+]

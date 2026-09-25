@@ -19,6 +19,24 @@ const job = (yaml: string, name: string) => {
 
 const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
 const publish = read('.github/workflows/publish-club-arena.yml');
+/**
+ * The origin job's shell is the step text PLUS the activation transaction it
+ * pipes to the host. That transaction was a heredoc inside the step until
+ * 2026-09-22, when the step outgrew the size GitHub Actions accepts for one
+ * `run` and the workflow stopped parsing. Reading both keeps every pin below
+ * pointed at the same bytes, in the same order they execute.
+ */
+const originActivate = read('.github/scripts/publish-origin-activate.sh');
+const ACTIVATION_PIPE = '< .github/scripts/publish-origin-activate.sh';
+const originJob = () => {
+  const text = job(publish, 'publish-to-origin');
+  const pipe = text.indexOf(ACTIVATION_PIPE);
+  expect(pipe, 'the origin job must pipe the activation transaction').toBeGreaterThan(-1);
+  const after = pipe + ACTIVATION_PIPE.length;
+  // Spliced where it runs, so every ordering pin below still reads the real
+  // sequence: stage, transfer, activate, then the separate rollback step.
+  return `${text.slice(0, after)}\n${originActivate}${text.slice(after)}`;
+};
 const publishCode = uncommented(publish);
 const buildProvenance = read('scripts/stamp-build-provenance.mjs');
 const ci = read('.github/workflows/ci.yml');
@@ -203,7 +221,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('uses only the Club Arena origin credential names', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toContain('secrets.CA_ORIGIN_HOST');
     expect(origin).toContain('secrets.CA_ORIGIN_SSH_KEY');
     expect(origin).toContain('secrets.CA_ORIGIN_HOST_KEY');
@@ -211,7 +229,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('uses the dedicated identity and pinned host key as the only SSH trust path', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const count = (needle: string) => origin.split(needle).length - 1;
     const transports = count('UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts');
 
@@ -232,14 +250,14 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('requires both the built artifact and the test verdict before publishing', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toContain('needs: [publish-needed, build-and-store, client-tests]');
     expect(origin).toContain("needs.build-and-store.result == 'success'");
     expect(origin).toContain("needs.client-tests.result == 'success'");
   });
 
   it('checks out the exact publish control before invoking repository proof scripts', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const checkout = origin.indexOf('- name: Checkout the exact protected-main publish control');
     const download = origin.indexOf('- name: Download the dist built by the previous job');
     const proof = origin.indexOf(
@@ -254,13 +272,13 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('has read-only repository authority while the origin SSH key performs the publish', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toMatch(/^\s+contents:\s*read\s*$/m);
     expect(origin).not.toMatch(/^\s+(?:contents|actions):\s*write\s*$/m);
   });
 
   it('uploads an immutable release and swaps current only after the transfer', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const upload = origin.indexOf('"$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/incoming/$STAGE_NAME/"');
     const manifest = origin.indexOf(
       '(cd "$STAGE" && sha256sum --strict -c .release-manifest.sha256'
@@ -277,9 +295,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('reuses a sealed same-SHA release even when a rebuild has new run-time metadata', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const existingReleaseStart = origin.indexOf('if [ -e "$FINAL" ] || [ -L "$FINAL" ]');
-    const existingReleaseEnd = origin.indexOf('else\n            mv -- "$STAGE" "$FINAL"');
+    const existingReleaseEnd = origin.indexOf('else\n  mv -- "$STAGE" "$FINAL"');
     expect(existingReleaseStart).toBeGreaterThan(-1);
     expect(existingReleaseEnd).toBeGreaterThan(existingReleaseStart);
     const existingRelease = origin.slice(existingReleaseStart, existingReleaseEnd);
@@ -316,7 +334,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('seals the exact pre-manifest current release for first-adoption rollback under the activation lock', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const lock = origin.indexOf('flock -w 45 9');
     const seal = origin.indexOf('seal_current_release_for_rollback \\');
     const pool = origin.indexOf('assert_additive_pool_has_no_collision "$FINAL/assets"');
@@ -344,7 +362,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('requires the artifact to prove its exact clean protected-main CI source', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const gateStart = origin.indexOf(
       'EXPECTED_SHA="${{ needs.publish-needed.outputs.target_sha }}"'
     );
@@ -366,7 +384,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('performs the final decision as a host-locked compare-and-swap', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const lock = origin.indexOf('flock -w 45 9');
     const readCurrent = origin.indexOf(
       'CURRENT_SHA=$(read_exact_build_info_sha "$ROOT/current/build-info.json")',
@@ -382,7 +400,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('parses every publish-authority build-info as strict JSON, never matching text with sed', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toContain(
       'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info < dist/build-info.json)'
     );
@@ -393,7 +411,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('flushes release bytes before activation and the symlink rename before success', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"');
     const flushes = [...origin.matchAll(/sync -f "\$ROOT"/g)].map((match) => match.index!);
     expect(flushes.some((index) => index < swap)).toBe(true);
@@ -402,7 +420,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('serializes the additive pool with activation and gives mutable fonts one pointer', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const lock = origin.indexOf('flock -w 45 9');
     const collisionGuard = origin.indexOf(
       'assert_additive_pool_has_no_collision "$FINAL/assets"',
@@ -422,7 +440,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('rejects both changed bytes and files omitted from an existing manifest', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toContain('verify_complete_manifest "$STAGE"');
     expect(origin).toContain('verify_complete_manifest "$FINAL"');
     expect(origin).toContain("find . -type f ! -path './.release-manifest.sha256' -print0");
@@ -435,14 +453,14 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     );
     expect(jobTimeouts).toHaveLength(5);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toContain('timeout 35s ssh');
     expect(origin).toContain('timeout 240s rsync');
     expect(origin).toContain('-o ServerAliveCountMax=2');
   });
 
   it('cleans the exact staging path and credentials on every terminal path', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     expect(origin).toContain("if: always() && steps.verdict.outputs.verdict == 'publish'");
     expect(origin).toContain('rm -rf -- "$ROOT/incoming/$STAGE_NAME"');
     expect(origin).toContain('- name: Remove origin credentials and control sockets');
@@ -452,7 +470,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('proves the exact ca_sha from the live origin before declaring success', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const proof = origin.slice(
       origin.indexOf('- name: Verify the origin serves this bundle'),
       origin.indexOf('- name: Restore the previously verified release after any publish failure')
@@ -473,7 +491,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('restores the exact prior immutable release when post-activation proof fails', () => {
-    const origin = job(publish, 'publish-to-origin');
+    const origin = originJob();
     const verify = origin.indexOf('- name: Verify the origin serves this bundle');
     const rollback = origin.indexOf(
       '- name: Restore the previously verified release after any publish failure'

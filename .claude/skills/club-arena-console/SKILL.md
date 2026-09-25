@@ -9,7 +9,7 @@ description: >
   Club Arena, or asks for before/after screenshots of a Club Arena surface.
   Every agent or subagent doing the work must read this file in full and pass it
   to any subagent it spawns.
-version: 1.3.0
+version: 1.5.0
 ---
 
 # #ClubArenaConsole — The Painted-Chassis Standard
@@ -92,31 +92,34 @@ The adaptation rules are strict:
 Quoted verbatim, with what each one means at the keyboard. These were paid for
 one review round at a time. Do not relitigate them.
 
-| Dan                                                                                                                                                                                                     | In practice                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "CLEAN FRAMES"                                                                                                                                                                                          | One frame per surface. Nothing partial, nothing cut off, nothing incomplete at any edge.                                                                                                                                                                                  |
-| "CLEAN CONSISTENT BACKGROUNDS (INSIDE THE CARD, BUTTON OR ICON AND OUTSIDE IT)"                                                                                                                         | One tone inside a well and outside it. An inpaint band that is lighter than the glass beside it is a defect.                                                                                                                                                              |
-| "NOTHING CAN BE COPY PASTED OR OVERLAPPED"                                                                                                                                                              | Never repeat a plate PNG twice on one surface, never overlay art on art.                                                                                                                                                                                                  |
-| "ALL FONTS AND BUTTONS MUST BE CENTERED INSIDE THEIR FRAMES"                                                                                                                                            | Text is centred in the painted **face**, not in the zone box.                                                                                                                                                                                                             |
-| "FRAMES SHOULD NEVER SIT ON TOP OF FRAMES"                                                                                                                                                              | No CSS card around a painted card. The art is the frame.                                                                                                                                                                                                                  |
-| "EVERYTHING MUST BE CLEAN AND CRISP"                                                                                                                                                                    | Native resolution, native ratio. Never stretch, never 9-slice across a feature.                                                                                                                                                                                           |
-| "ALL ICONS SHOULD FEEL ORGANIC, AND BUILT INTO THE FRAMES"                                                                                                                                              | An emblem is part of the render or it is not there. Never a glyph stuck on top.                                                                                                                                                                                           |
-| "ALL BACKGROUNDS ON EVERYTHING MUST ALWAYS BE REMOVED"                                                                                                                                                  | Transparent PNGs on black. No panel fills.                                                                                                                                                                                                                                |
-| "ALL FONTS MUST FEEL ORGANIC AND NATURAL AND MATCH THE LOOK AND FEEL OF THE DYNAMIC IMAGE THEY ARE INSIDE OF"                                                                                           | Use the master's own inks (see §3.4), Roboto Condensed for chrome type, Inter for copy.                                                                                                                                                                                   |
-| "YOU CAN NEVER JUST COPY AND PASTE A BUTTON, CARD OR ANYTHING EVER, YOU MUST CREATE IT"                                                                                                                 | Derive new art from the master by surgery (§5), never by duplicating a component.                                                                                                                                                                                         |
-| "NEVER USE DECIMAL POINTS ON ANY FORWARD FACING PAGE"                                                                                                                                                   | `compactChips()`. Whole numbers under 1,000.                                                                                                                                                                                                                              |
-| "ONCE SOMETHING HITS OVER 1,000 USE 1K, IF ITS 1200 USE 1.2K, IF ITS 10,000 USE 10K"                                                                                                                    | One decimal above 1K, **always rounded down**, `.0` stripped. Never overstate.                                                                                                                                                                                            |
-| "ALWAYS USE SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS"                                                                                                                                      | §3.4 only.                                                                                                                                                                                                                                                                |
-| "MAKE SURE FONT SIZES NEVER GO OVER THE EDGES OF THE FRAME"                                                                                                                                             | Every printed string is fitted (§3.3), and fits the face, not the rim.                                                                                                                                                                                                    |
-| "THE SLIDER NEEDS TO GO UP AND DOWN, NOT SIDE TO SIDE (SIDE TO SIDE SWIPES THE PAGE)"                                                                                                                   | Vertical range inputs at the felt; a horizontal drag is the table-switch gesture.                                                                                                                                                                                         |
-| "THEY SHOULD JUST BE STAND ALONE IMAGES WITH FRAMES AROUND THEM"                                                                                                                                        | Nothing paints outside the frame. See the tiling trap, §7.1.                                                                                                                                                                                                              |
-| "I PREFER IT WITH ONLY AN ICON AT THE TOP ... IT SHOULD BE A FLAT BOTTOM"                                                                                                                               | Crest at the top, flat closing cap at the bottom, no chip.                                                                                                                                                                                                                |
-| "I DON'T WANT EVERY SINGLE FRAME AND BUTTON TO BE 100% EXACTLY THE SAME, JUST THE SAME STYLE"                                                                                                           | Dress may vary (emblem / no emblem). Structure may not.                                                                                                                                                                                                                   |
-| "I DO NOT WANT EVERY SINGLE CARD TO LOOK EXACTLY THE SAME, THEY SHOULD NOT ALL HAVE THE SAME FRAME, WITH THE SAME SPADE AT THE TOP MIDDLE ... NOT ALL THE SAME BORING COOKIE CUTTER STYLE" (2026-09-13) | One chassis with five badges is not variety. Frame FAMILIES are cut from the master by surgery (§5) and assigned by section; each family has its own crests and ink. This supersedes "structure may not vary" above: structure varies BETWEEN families, never within one. |
-| "THE 'SPADE' ICON IS PERFECT, HIGH DEFINITION DYNAMIC ICON WITH DEPTH AND THE 3D LOOK AND FEEL ... THE REST ARE ALL CHEAP LOOKING, FLAT AND BORING" (2026-09-13)                                        | Every crest matches the spade: a polished-chrome catch on the emblem, a quilted body, a blue LED at its base, and the rails MITRED INTO the housing. The club, diamond and crown crests fail all four and are to be repainted (§3.6).                                     |
-| "YOU MUST STICK TO THE SMARTER.POKER COLOR SCHEMA" (2026-09-13)                                                                                                                                         | Every colour on a surface is a token the schema already owns. Never a derived tone, not even a darkened one: 24 "shadow" stops computed from the browns they replaced were rejected on sight. See §3.4.                                                                   |
-| Rates keep one decimal (2026-09-13)                                                                                                                                                                     | The no-decimals rule is for chip counts. A percentage RATE (rakeback, commission, VPIP) keeps one decimal, because rounding 32.5% to 33% misstates a number a club owner is paid on, and the same law says never overstate.                                               |
-| The desktop ceiling (2026-09-13)                                                                                                                                                                        | A console stops growing at the master's own width (1000px) and centres. The art is never asked for more pixels than it has; a wide screen gets black margin, not a bigger phone. `--sc-max` may narrow it, never raise it.                                                |
+| Dan                                                                                                                                                                                                     | In practice                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "CLEAN FRAMES"                                                                                                                                                                                          | One frame per surface. Nothing partial, nothing cut off, nothing incomplete at any edge.                                                                                                                                                                                                                                                                                                                                                                  |
+| "CLEAN CONSISTENT BACKGROUNDS (INSIDE THE CARD, BUTTON OR ICON AND OUTSIDE IT)"                                                                                                                         | One tone inside a well and outside it. An inpaint band that is lighter than the glass beside it is a defect.                                                                                                                                                                                                                                                                                                                                              |
+| "NOTHING CAN BE COPY PASTED OR OVERLAPPED"                                                                                                                                                              | Never repeat a plate PNG twice on one surface, never overlay art on art.                                                                                                                                                                                                                                                                                                                                                                                  |
+| "ALL FONTS AND BUTTONS MUST BE CENTERED INSIDE THEIR FRAMES"                                                                                                                                            | Text is centred in the painted **face**, not in the zone box.                                                                                                                                                                                                                                                                                                                                                                                             |
+| "FRAMES SHOULD NEVER SIT ON TOP OF FRAMES"                                                                                                                                                              | No CSS card around a painted card. The art is the frame.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| "EVERYTHING MUST BE CLEAN AND CRISP"                                                                                                                                                                    | Native resolution, native ratio. Never stretch, never 9-slice across a feature.                                                                                                                                                                                                                                                                                                                                                                           |
+| "ALL ICONS SHOULD FEEL ORGANIC, AND BUILT INTO THE FRAMES"                                                                                                                                              | An emblem is part of the render or it is not there. Never a glyph stuck on top.                                                                                                                                                                                                                                                                                                                                                                           |
+| "ALL BACKGROUNDS ON EVERYTHING MUST ALWAYS BE REMOVED"                                                                                                                                                  | Transparent PNGs on black. No panel fills.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "ALL FONTS MUST FEEL ORGANIC AND NATURAL AND MATCH THE LOOK AND FEEL OF THE DYNAMIC IMAGE THEY ARE INSIDE OF"                                                                                           | Use the master's own inks (see §3.4), Roboto Condensed for chrome type, Inter for copy.                                                                                                                                                                                                                                                                                                                                                                   |
+| "YOU CAN NEVER JUST COPY AND PASTE A BUTTON, CARD OR ANYTHING EVER, YOU MUST CREATE IT"                                                                                                                 | Derive new art from the master by surgery (§5), never by duplicating a component.                                                                                                                                                                                                                                                                                                                                                                         |
+| "THE FIRST LETTER OF EVERY WORD MUST ALWAYS BE CAPITALIZED" (2026-09-14)                                                                                                                                | Every word a player reads, with no exception for where the string came from. Literals are gated; DATA IS NOT: a scenario name, a config label, a DB row, an enum, a hand name reaches the screen through `titleCase()` from `src/utils/titleCase.ts` at the print site. A lower-case word in a render is a defect, not a data quirk.                                                                                                                      |
+| "NOTHING SHOULD EVER REVEAL A HORSES IDENTITY" (2026-09-14)                                                                                                                                             | No badge, tag, toggle, filter, column, export or label in the client says which players are horses. Totals count everyone. `is_horse` stays in the plumbing and never reaches a screen. Law: `tests/a-horse-is-never-named.law.test.ts`.                                                                                                                                                                                                                  |
+| "THESE POP UPS OR EVENT LOGS (IF INTERNAL USE ONLY) DO NOT NEED DYNAMIC IMAGES AND POP UPS" (2026-09-14)                                                                                                | A surface no player and no club operator can reach - the QA harness, the bus event log, the platform's own engine, analytics and ads dashboards, anything under `src/pages/dev/` - is a tool for the house. The copy laws and the colour schema still bind it; the painted chassis does not. The inventory scanner carries the list in `INTERNAL_ONLY` and leaves them off the sweep. A CLUB owner is a customer: every operator page they open stays in. |
+| "NEVER USE DECIMAL POINTS ON ANY FORWARD FACING PAGE"                                                                                                                                                   | `compactChips()`. Whole numbers under 1,000.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| "ONCE SOMETHING HITS OVER 1,000 USE 1K, IF ITS 1200 USE 1.2K, IF ITS 10,000 USE 10K"                                                                                                                    | One decimal above 1K, **always rounded down**, `.0` stripped. Never overstate.                                                                                                                                                                                                                                                                                                                                                                            |
+| "ALWAYS USE SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS"                                                                                                                                      | §3.4 only.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "MAKE SURE FONT SIZES NEVER GO OVER THE EDGES OF THE FRAME"                                                                                                                                             | Every printed string is fitted (§3.3), and fits the face, not the rim.                                                                                                                                                                                                                                                                                                                                                                                    |
+| "THE SLIDER NEEDS TO GO UP AND DOWN, NOT SIDE TO SIDE (SIDE TO SIDE SWIPES THE PAGE)"                                                                                                                   | Vertical range inputs at the felt; a horizontal drag is the table-switch gesture.                                                                                                                                                                                                                                                                                                                                                                         |
+| "THEY SHOULD JUST BE STAND ALONE IMAGES WITH FRAMES AROUND THEM"                                                                                                                                        | Nothing paints outside the frame. See the tiling trap, §7.1.                                                                                                                                                                                                                                                                                                                                                                                              |
+| "I PREFER IT WITH ONLY AN ICON AT THE TOP ... IT SHOULD BE A FLAT BOTTOM"                                                                                                                               | Crest at the top, flat closing cap at the bottom, no chip.                                                                                                                                                                                                                                                                                                                                                                                                |
+| "I DON'T WANT EVERY SINGLE FRAME AND BUTTON TO BE 100% EXACTLY THE SAME, JUST THE SAME STYLE"                                                                                                           | Dress may vary (emblem / no emblem). Structure may not.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "I DO NOT WANT EVERY SINGLE CARD TO LOOK EXACTLY THE SAME, THEY SHOULD NOT ALL HAVE THE SAME FRAME, WITH THE SAME SPADE AT THE TOP MIDDLE ... NOT ALL THE SAME BORING COOKIE CUTTER STYLE" (2026-09-13) | One chassis with five badges is not variety. Frame FAMILIES are cut from the master by surgery (§5) and assigned by section; each family has its own crests and ink. This supersedes "structure may not vary" above: structure varies BETWEEN families, never within one.                                                                                                                                                                                 |
+| "THE 'SPADE' ICON IS PERFECT, HIGH DEFINITION DYNAMIC ICON WITH DEPTH AND THE 3D LOOK AND FEEL ... THE REST ARE ALL CHEAP LOOKING, FLAT AND BORING" (2026-09-13)                                        | Every crest matches the spade: a polished-chrome catch on the emblem, a quilted body, a blue LED at its base, and the rails MITRED INTO the housing. The club, diamond and crown crests fail all four and are to be repainted (§3.6).                                                                                                                                                                                                                     |
+| "YOU MUST STICK TO THE SMARTER.POKER COLOR SCHEMA" (2026-09-13)                                                                                                                                         | Every colour on a surface is a token the schema already owns. Never a derived tone, not even a darkened one: 24 "shadow" stops computed from the browns they replaced were rejected on sight. See §3.4.                                                                                                                                                                                                                                                   |
+| Rates keep one decimal (2026-09-13)                                                                                                                                                                     | The no-decimals rule is for chip counts. A percentage RATE (rakeback, commission, VPIP) keeps one decimal, because rounding 32.5% to 33% misstates a number a club owner is paid on, and the same law says never overstate.                                                                                                                                                                                                                               |
+| The desktop ceiling (2026-09-13)                                                                                                                                                                        | A console stops growing at the master's own width (1000px) and centres. The art is never asked for more pixels than it has; a wide screen gets black margin, not a bigger phone. `--sc-max` may narrow it, never raise it.                                                                                                                                                                                                                                |
 
 **When Dan corrects something, fix it in the master or the kit — not in the one
 surface he happened to point at.** Every surface drawn from that art inherits
@@ -133,6 +136,13 @@ platform's publisher, not just you.
   `src/utils/popupStyle.ts` is the single transform. Gates:
   `scripts/ci/check-title-case.mjs`, `check-painted-text-case.mjs`,
   `check-nav-title-case.mjs`.
+  **The gates read literals only.** Anything printed from data (config
+  tables, scenario fixtures, Supabase rows, enums, `shortLabel`s) bypasses
+  them, and that is where "Aces full of Jacks or better" and "Normal hand
+  (baseline)" reached Dan's sheet on 2026-09-14. Wrap dynamic copy in
+  `titleCase()` where it is printed, and add that wrap to your review of
+  every state you render: read each rendered PNG for a lower-case word before
+  you show it.
 - **No em dashes** anywhere in UI text (`check-ui-text.mjs`). "Em bars" means the
   character `—`, and nothing else — it is not a rule about artwork.
 - **No `:hover`, ever** (`tests/no-hover-effects.law.test.ts`). Use `:active` and
@@ -236,6 +246,50 @@ painted zones line up with the DOM printed into them at any width.
 **(b) Everything sizes in `cqw`.** The outermost card sets
 `container-type: inline-size`; every font size, gap and pad is `cqw`. A 320 px
 phone and a 430 px phone then get the same picture, not the same pixels.
+
+**Percentage padding is not a percentage of the element.** It resolves against
+the containing block's inline size, so on a painted plate whose own width is
+capped (`width: min(Npx, 100%)`) every percentage inset is inflated by
+`containerWidth / plateWidth`, and the plate is right only at the one width
+where those two agree. Three World Hub Marketplace surfaces were each mostly
+destroyed by it, all live until 2026-09-19:
+
+- `RewardTelemetryConsole.module.css` `.statePanel`, the sign-in panel on all
+  100 reward detail pages: `padding: 18%` against a 1180px console on a
+  `min(440px, 100%)` plate is 212.4px a side, so the 440x789 plate held a
+  **15.2 x 364px content box**, its heading on four lines and its call to
+  action 96px wide.
+- `pages/hub/merch-store/fulfillment.module.css` `.status`:
+  `padding: 4.3% 7% 4.3% 26%` against a 1396px page on a `min(720px, 100%)`
+  plate is inflated 1396/720 = 1.938x, so padding-left was 362.95px and
+  **92.0% of the plate was dead area**. Past roughly a 2226px viewport its
+  content box reaches zero width.
+- `src/components/diamond-store/DiamondStoreShell.module.css`
+  `.premiumDataCard`: `padding: 10% 9%` gave 57.9px and 52.1px on a VIP benefit
+  row with a 220px floor and `overflow: hidden`, and the longest benefit filled
+  115px of a 115.2px content box, one line from being cut off.
+
+**`container-type: inline-size` on the plate itself does not fix it.** Container
+units resolve against the nearest **ancestor** container, never the element that
+declares the containment, so a plate with nothing above it falls back to the
+small viewport: `26cqw` measured **374.4px** at a 1440 viewport, worse than the
+362.95px it would have replaced. Hold the plate's own width in a custom property
+and derive the insets from it. Verified at page widths 366, 900, 1396 and 2200:
+
+```css
+.status {
+  --status-plate-width: min(720px, 100%);
+
+  width: var(--status-plate-width);
+  padding: calc(var(--status-plate-width) * 0.043) calc(var(--status-plate-width) * 0.07)
+    calc(var(--status-plate-width) * 0.043) calc(var(--status-plate-width) * 0.26);
+}
+```
+
+That keeps the same fraction of the same painted artwork, is identical at the
+width where the old rule happened to be right, and stays right above it.
+`container-type` on an **ancestor** is still correct and is what (b) describes;
+this is about the element carrying the percentages itself.
 
 **(c) Every printed string is fitted.** `useFitText(text, 1, minRatio)` measures
 the span against its box and writes a `--fit` scale:
@@ -654,10 +708,32 @@ node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs
 ```
 
 Scores every page, modal, sheet, panel and card in `src/` by how far it is from
-the standard - CSS corner radii and gradients count against it, references to
+the standard - PAINTED corner radii and gradients count against it, references to
 `club-buttons/` or the console kit zero it out, a `:hover` rule is weighted five
 times because it is forbidden outright. A surface already on a master scores 0.
 `--json` gives the machine-readable list.
+
+**Painted, not merely present (2026-09-22).** `border-radius: 0` and
+`box-shadow: none` do not draw a frame, they refuse one, and they are the exact
+pair 3.5 tells you to write to switch the `metallic-popups` chassis off. The
+scorer used to count them, so the more correctly a surface obeyed 3.5 the more
+generic this said it was: `LeaderboardSettlementCard` prints as rows on
+`LeaderboardPage`'s console glass and owns no frame at all, and it was nominated
+for a rebuild on one zeroed corner and one refused shadow, its only two matching
+lines. Values are read and judged now. If you ever re-touch that counter, judge
+the DECLARATION - a negative lookahead behind `\s*` backtracks to zero width and
+matches `border-radius:` inside `border-radius: 0;`.
+
+**Two rows are ruled off by hand, and both maps say why.** `RULED` carries a
+surface that is finished work without a test whose title says so; it also
+carries `src/components/common/Card.tsx`, which is not a surface at all -
+nothing in `src/` renders any of its six exports, its only importer is the
+`components/common` barrel, and the barrel's only importer takes `ErrorBoundary`
+alone. A primitive several surfaces compose is not a thing a player looks at:
+move its callers onto `SpadeConsole` or retire it, never paint chrome onto a
+generic box to take a count to zero. Both rulings are pinned by
+`tests/unit/consoleInventoryIsHonest.test.ts`, so they re-open on their own if
+the tree stops matching them.
 
 Work the list in **traffic order, not score order**. What a seated player meets
 every hand beats an admin page nobody opens twice a week:
@@ -721,10 +797,61 @@ Two literal branches beat one clever ternary.
 
 **7.11 Follow the current tool's execution contract.** Keep the returned operation/session identity for long commands and read its terminal result. Do not assume an obsolete host tool timeout behavior or launch detached repair services to finish a push.
 
-**7.12 Merged is not landed.** Check the current PR state before every follow-up push.
+**7.11b The harness must load the fonts.** The Mac has neither Roboto
+Condensed nor Inter installed; `index.html` loads them from Google Fonts and
+so does `harness/card-harness.html` (since 2026-09-13). Without them every
+fitted label measures wrong and the render lies. `useFitText` measures on
+mount, so shoot after `document.fonts.ready`.
+
+**7.12 Merged is not landed.** Autopilot can squash-merge in under two minutes; check the current PR state before every follow-up push.
 A follow-up push to a merged branch exits 0 and reaches nobody. If the PR has
 merged, start a **new branch off current `main`**; the `guard-merged-branch.sh`
 hook refuses that push and prints the recovery.
+
+**7.14 A ZONE TABLE IS NOT SAFE BECAUSE IT LOOKS TIDY, AND A BAND IS NOT THE
+TEXT (2026-09-22).** Two of the three families declared head zones that
+overlap. The shark's `title` ran y 76-142 and its `subtitle` y 126-148 on a
+head 154 rows tall, so a console given both printed one through the other; the
+riveted pair shared four rows. Both subtitle bands were also SHORTER than the
+line they hold, and `.sc-zone` clips, so what did print was cut off under the
+letters (10.3 rows of a 15.9-row line on the shark). Nobody saw either, because
+no live caller on either family passes a subtitle.
+
+- **The head's room is set by its own height; the type is set by the console's
+  WIDTH.** `7cqw` is the same fraction everywhere, so a squat head spends more
+  of itself on each line: the shark head is 0.210 of its master's width against
+  the spade's 0.348, which is 1.66x the vertical cost per line. Never carry
+  another family's y numbers across. Measure that master's glass.
+- **A band has to reach the bottom of its ink.** Measured at 393px: the ink
+  ends 0.98 of the font size below the band top for the title (line-height
+  1.2) and 1.10 for the eyebrow, subtitle and pill (line-height 1.6, which
+  puts half a line of leading above the caps before they start).
+- **The text is centred while the line box fits the band and sits from the
+  band's TOP once it does not.** So shrinking a band that already fits keeps
+  the text still only if you keep the band's CENTRE, and shrinking one past the
+  line box moves the text to the top and cuts the bottom.
+- **Ask the component, not the table.** Most zones are alternatives: `title` is
+  wider than `titleBesidePill` and deliberately runs under the pill slot
+  because it is only ever used without a pill. `consoleHeadZones(family, {
+eyebrow, subtitle, pill })` returns the set a head really paints, the console
+  prints from it, and `tests/painted-zones-never-overlap.law.test.ts` reads the
+  same function. If you add a family or a line, it is already covered.
+- **A head that cannot hold a third line gets its own three-line bands**, the
+  way the title already steps aside for a pill. Do not shrink the two-line
+  bands everything live renders in.
+
+`docs/changelog/2026-09-22-the-console-zones-that-sat-on-each-other.md`.
+
+**7.13 A merge conflict between a console render and a main change is never
+resolved by taking a side.** On 2026-09-13 "main wins on product logic" threw
+away eleven approved renders (Buy-In among them) to keep deltas of 2 to 122
+lines. Rebase the delta onto the render instead: `git checkout
+<render-commit> -- <file>`, then `git diff <merge-base> origin/main -- <file>
+
+> /tmp/d.patch && git apply -3 /tmp/d.patch`, resolve the few hunks by hand,
+and prove it with `git diff -w origin/main -- <file>`(only chassis lines may
+differ). Then re-pair the stylesheet: a TSX from one side with a CSS from the
+other fails`check-css-modules`and grows the`classNamesResolve` baseline.
 
 ---
 

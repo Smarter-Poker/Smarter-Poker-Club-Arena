@@ -85,9 +85,17 @@ export default function PresenceIndicator({
         {
           event: '*',
           schema: 'public',
-          /* Same missing table, same silence: a subscription to a table that
-             does not exist never delivers a row, so the dot never updated
-             after its first read either. profiles is where is_online lives. */
+          /* THE TABLE IS NOT MISSING, IT IS UNPUBLISHED, and the difference
+             decides the repair. `profiles` exists and is where is_online
+             lives; it is simply not in the supabase_realtime publication -
+             1,000,061 writes over 120 columns, 45.29ms per change, the worst
+             per-change cost measured on 2026-09-06. So this delivers nothing
+             and the dot never moves after its first read.
+
+             Republishing it to drive an online dot would be the most expensive
+             possible way to do it. Presence is a channel feature, not a row
+             change: the correct carrier is Realtime Presence, which needs no
+             publication and no row image at all. */
           table: 'profiles',
           filter: `id=eq.${userId}`,
         },

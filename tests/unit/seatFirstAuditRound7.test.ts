@@ -73,10 +73,10 @@ describe('the post-spin result card never invents a losing result', () => {
 });
 
 describe('seat-first recovery restores the FORMAT, not only the price', () => {
-  it('it sets tournamentFormat from the variant and the seat count', () => {
-    expect(table).toContain(
-      "setTournamentFormat(isSpin ? 'spin' : maxP > 0 && maxP <= 2 ? 'sng' : 'mtt');"
-    );
+  it('it sets tournamentFormat from the persisted fixed format', () => {
+    expect(table).toContain('const formatKind = getTournamentFormatKind(row)');
+    expect(table).toContain('isSeatFirstTournamentFormat(row) && maxP !== null');
+    expect(table).toContain("setTournamentFormat(isSpin ? 'spin' : 'sng');");
   });
 });
 

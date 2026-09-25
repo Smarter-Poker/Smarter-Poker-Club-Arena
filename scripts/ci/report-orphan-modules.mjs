@@ -53,8 +53,17 @@ const TESTS = join(ROOT, 'tests');
  */
 const BASELINE_ORPHANS = 32;
 
-/** Entry points: reachable by definition, whatever imports them. */
-const ENTRY_POINTS = new Set(['src/main.tsx', 'src/App.tsx', 'src/vite-env.d.ts']);
+/** Entry points: reachable by definition, whatever imports them.
+ * src/diamond-test.tsx is the module diamond-test.html loads: the standalone
+ * Diamond bonus test entry, built by scripts/build-diamond-test.mjs as its own
+ * Vite pass (2026-09-19). An HTML entry is reached by the build, not by an
+ * import, exactly as main.tsx is reached by index.html. */
+const ENTRY_POINTS = new Set([
+  'src/main.tsx',
+  'src/App.tsx',
+  'src/vite-env.d.ts',
+  'src/diamond-test.tsx',
+]);
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {

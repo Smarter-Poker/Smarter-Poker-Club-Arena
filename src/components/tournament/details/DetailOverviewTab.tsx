@@ -1,4 +1,8 @@
 import { useTournamentHandForHand } from '../../../hooks/useTournamentHandForHand';
+import {
+  readTournamentFormat,
+  getTournamentEntryCapacity,
+} from '../../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DETAIL / OVERVIEW TAB — everything about the event, on one screen
@@ -58,17 +62,25 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { useMaintenanceBreak } from '../../../hooks/useMaintenanceBreak';
 import { serverNow } from '../../../utils/serverClock';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
+import { formatPrizeAtUnit, moneySuffixAtUnit, moneyWordAtUnit } from '../../../utils/format';
+import {
+  CHIP_UNIT_CENTS,
+  normalizeUnitCents,
+} from '../../../../server/src/tournament/tournamentUnit';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import TournamentDealReview from '../TournamentDealReview';
 import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
+import MultiDayStagePanel from './MultiDayStagePanel';
+import { isBaggedStatus } from '../../../utils/multiDaySchedule';
 import {
   activationStatusLine,
   formatCents,
@@ -185,6 +197,10 @@ export default function DetailOverviewTab({
   const isRunning = status === 'RUNNING';
   const handForHand = useTournamentHandForHand(tournament.id, currentUserId, isRunning);
   const isCompleted = status === 'COMPLETED';
+  /* BAGGED (multi-day, between days): live, but no table and no clock. It is
+     neither finished nor about to start, so it gets its own hero line and no
+     one-second heartbeat. */
+  const isBagged = isBaggedStatus(status);
   const { maintenanceBreak } = useMaintenanceBreak();
   const eventPaused = isRunning && tournament?.on_break === true;
   const [observedPause, setObservedPause] = useState<{
@@ -244,11 +260,11 @@ export default function DetailOverviewTab({
     startAtMs - Date.now() > -86_400_000;
 
   useEffect(() => {
-    if (isCompleted) return;
+    if (isCompleted || isBagged) return;
     if (!isRunning && !startsWithinADay) return;
     const id = setInterval(() => setTick((n) => (n + 1) % 86_400), 1000);
     return () => clearInterval(id);
-  }, [isCompleted, isRunning, startsWithinADay]);
+  }, [isCompleted, isBagged, isRunning, startsWithinADay]);
 
   /* Who is still in, counted ONCE. `field` below builds its figures from this
      same list, so the deal gate and the displayed count cannot disagree -- and
@@ -347,6 +363,22 @@ export default function DetailOverviewTab({
 
   const payoutStructure = useMemo(() => resolvePayoutStructure(tournament) ?? [], [tournament]);
 
+  /* THE GRID THIS EVENT PAYS ON (2026-09-20). The place ladder below already
+     read it per row; the advertised top mystery chest is cents off
+     `fn_mystery_bounty_inventory` and needs the same answer, plus the noun
+     that goes with it. One reading, used by both. */
+  const overviewUnitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
+  /* A PODIUM PRIZE AT THAT UNIT (2026-09-21). The podium printed "Chips" after
+     every prize, so a finished Diamond event read as though it had paid its
+     winners in chips. Compact chips at a chip event, character for character
+     as before; whole Diamonds at a Diamond one; the word follows the unit. */
+  const podiumPrize = (n: number) =>
+    `${
+      normalizeUnitCents(overviewUnitCents) === CHIP_UNIT_CENTS
+        ? chipsCompact(n)
+        : formatPrizeAtUnit(n, overviewUnitCents)
+    } ${moneyWordAtUnit(overviewUnitCents)}`;
+
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
   const prize = useMemo(() => {
     return {
@@ -374,13 +406,16 @@ export default function DetailOverviewTab({
 
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
-    const maxPlayers = Number(tournament?.max_players) || 0;
+    const maxPlayers = tournament ? getTournamentEntryCapacity(tournament) : null;
     return [
       {
         key: 'remaining',
         label: 'Remaining',
         value: chips(field.alive),
-        sub: maxPlayers > 0 ? `of ${chips(maxPlayers)} max` : `of ${chips(field.entries)} entries`,
+        sub:
+          maxPlayers !== null
+            ? `of ${chips(maxPlayers)} max`
+            : `of ${chips(field.entries)} entries`,
         tone: 'accent',
       },
       {
@@ -417,18 +452,7 @@ export default function DetailOverviewTab({
       },
       { key: 'out', label: 'Eliminated', value: chips(field.eliminated) },
     ];
-  }, [
-    field,
-    tables,
-    level,
-    isRunning,
-    isCompleted,
-    clockPaused,
-    lateRegText,
-    prize,
-    tournament?.max_players,
-    tournament?.starting_chips,
-  ]);
+  }, [field, tables, level, isRunning, isCompleted, clockPaused, lateRegText, prize, tournament]);
 
   /* ── Rule tags. One wrapping row; these were six separate paragraphs. ── */
   const tags = useMemo(() => {
@@ -530,7 +554,14 @@ export default function DetailOverviewTab({
     ];
 
     if (t.is_bounty) {
-      const parts = [`${money(Number(t.bounty_amount) || 0)} per KO`];
+      /* THE HEAD AT THE EVENT'S UNIT (2026-09-21): `money` at a chip event,
+         exactly as before, and whole Diamonds that say so at a Diamond one. */
+      const head = Number(t.bounty_amount) || 0;
+      const parts = [
+        normalizeUnitCents(overviewUnitCents) === CHIP_UNIT_CENTS
+          ? `${money(head)} per KO`
+          : `${formatPrizeAtUnit(head, overviewUnitCents)}${moneySuffixAtUnit(overviewUnitCents)} per KO`,
+      ];
       if (t.is_pko) parts.push('50% to knocker, 50% to bounty');
       /* `mystery_bounty_min` / `mystery_bounty_max` used to be appended here.
          They were a per-head advertised RANGE drawn at registration time, and
@@ -553,7 +584,10 @@ export default function DetailOverviewTab({
       rows.push({
         key: 'mysterytop',
         label: 'Top Mystery Bounty',
-        value: top > 0 ? `${formatCents(top)} Chips` : 'Drawn When The Mystery Phase Opens',
+        value:
+          top > 0
+            ? `${formatCents(top, overviewUnitCents)} ${moneyWordAtUnit(overviewUnitCents)}`
+            : 'Drawn When The Mystery Phase Opens',
         tone: 'accent',
       });
       rows.push({
@@ -562,7 +596,7 @@ export default function DetailOverviewTab({
         value: activationStatusLine(mysteryBounty?.inventory ?? null),
       });
     }
-    if (t.variant === 'spin' || t.tournament_type === 'SPIN') {
+    if (readTournamentFormat(t) === 'spin-v1') {
       rows.push({
         key: 'spin',
         label: 'Spin Multiplier',
@@ -578,7 +612,15 @@ export default function DetailOverviewTab({
       });
     }
     return rows;
-  }, [tournament, blindLevels, isRunning, isCompleted, field.entries, mysteryBounty?.inventory]);
+  }, [
+    tournament,
+    blindLevels,
+    isRunning,
+    isCompleted,
+    field.entries,
+    mysteryBounty?.inventory,
+    overviewUnitCents,
+  ]);
 
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
@@ -600,11 +642,11 @@ export default function DetailOverviewTab({
           prizeValue: Number.isFinite(recorded)
             ? recorded
             : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place)
+              ? placePrize(pool, payoutStructure, row.place, overviewUnitCents)
               : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder, overviewUnitCents]);
 
   /**
    * The runners-up list under the podium.
@@ -699,7 +741,7 @@ export default function DetailOverviewTab({
       : '-'
     : isRunning
       ? clockText(level.remaining)
-      : isCompleted
+      : isCompleted || isBagged
         ? '-'
         : untilText(secondsToStart);
   const heroEyebrow = clockPaused
@@ -708,13 +750,17 @@ export default function DetailOverviewTab({
       ? level.isBreak
         ? 'Break Ends In'
         : `Level ${level.index + 1} Ends In`
-      : 'Starts In';
+      : isBagged
+        ? 'Day Complete'
+        : 'Starts In';
   const heroNote = clockPaused
     ? `Level ${level.index + 1} Clock Paused`
     : maintenanceNote ||
       (isRunning
         ? `Running Since ${shortDate(tournament.started_at)}`
-        : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
+        : isBagged
+          ? 'Chips Are Bagged Until The Next Day Starts'
+          : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">
@@ -747,7 +793,7 @@ export default function DetailOverviewTab({
                   <span className="dov-podium__place">{ordinal(player.position)}</span>
                   <span className="dov-podium__name">{player.username}</span>
                   <span className="dov-podium__prize">
-                    {prizeValue > 0 ? `${chipsCompact(prizeValue)} Chips` : '-'}
+                    {prizeValue > 0 ? podiumPrize(prizeValue) : '-'}
                   </span>
                 </div>
               ))}
@@ -792,7 +838,13 @@ export default function DetailOverviewTab({
             <div className="dov-hero__blinds">
               <div className="dov-blind">
                 <span className="dov-blind__label">
-                  {isRunning ? (level.isBreak ? 'On Break' : 'Blinds') : 'Opening Blinds'}
+                  {isRunning
+                    ? level.isBreak
+                      ? 'On Break'
+                      : 'Blinds'
+                    : isBagged
+                      ? 'Blinds'
+                      : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
                   {level.amountsKnown
@@ -828,6 +880,10 @@ export default function DetailOverviewTab({
           )}
         </div>
       )}
+
+      {/* Multi-day schedule, bag, leaders and Day 2 seat. Renders null unless
+          the multi-day capability is available and this event has a plan. */}
+      <MultiDayStagePanel tournamentId={tournament.id} status={tournament.status} />
 
       {/* Bubble play. Renders null unless hand-for-hand is actually on. */}
       {isRunning && handForHand === true && (

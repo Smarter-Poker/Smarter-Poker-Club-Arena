@@ -1,0 +1,59 @@
+{
+  "observed_at": "2026-09-17T19:47:00Z",
+  "rows": [
+    {
+      "signature": "fn_accounting_tournament_terminal_fee_receipt(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_terminal_fee_receipt(p_tournament_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$DECLARE r record;proof jsonb;fp text;credits numeric;n int;BEGIN\n SELECT * INTO r FROM public.accounting_tournament_fee_recognitions WHERE tournament_id=p_tournament_id;\n IF NOT FOUND THEN RETURN NULL; END IF;\n SELECT md5(COALESCE(string_agg(public.fn_accounting_tournament_fee_fingerprint(q),':' ORDER BY q.id),'')) INTO fp\n  FROM public.rake_records q WHERE q.tournament_id=p_tournament_id AND q.is_tournament;\n IF r.source_fingerprint IS DISTINCT FROM fp THEN RAISE EXCEPTION 'recognized_tournament_fee_sources_changed' USING ERRCODE='23514'; END IF;\n proof:=public.fn_accounting_tournament_bank_proof(r.tournament_id,r.recognized_at,r.bank_club_id,r.union_id,r.net_rake,r.union_wallet_transaction_id,r.bank_journal_id);\n SELECT COALESCE(sum(x.rake_credit),0),count(*) INTO credits,n FROM public.accounting_tournament_recognized_sources x WHERE x.tournament_id=p_tournament_id;\n IF (r.status='banked_accrual_deferred' AND (n<>0 OR r.plan->>'payable' IS DISTINCT FROM 'false' OR NULLIF(r.plan->>'reason','') IS NULL))\n  OR (r.status<>'banked_accrual_deferred' AND (credits IS DISTINCT FROM r.net_rake\n    OR n<>(SELECT count(*) FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=p_tournament_id)\n    OR EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f LEFT JOIN public.accounting_tournament_recognized_sources x ON x.source_id=f.id\n      WHERE f.tournament_id=p_tournament_id AND (x.source_id IS NULL OR x.tournament_id IS DISTINCT FROM p_tournament_id\n        OR x.recognized_at IS DISTINCT FROM r.recognized_at OR x.rake_credit IS DISTINCT FROM CASE WHEN x.disposition='earned' THEN f.rake_credit ELSE 0 END))\n    OR EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f\n      JOIN public.accounting_tournament_recognized_sources x ON x.source_id=f.id AND x.disposition='earned'\n      CROSS JOIN LATERAL jsonb_array_elements(f.contract->'tiers')tier\n      WHERE f.tournament_id=p_tournament_id AND (tier->>'amount')::numeric>0 AND NOT EXISTS(\n       SELECT 1 FROM public.agent_commissions c WHERE c.source_type='tournament_fee_accrual' AND c.source_id=f.id\n        AND c.user_id::text=tier->>'user_id' AND c.club_id=f.club_id AND c.created_at=r.recognized_at\n        AND c.amount=(tier->>'amount')::numeric AND c.commission_rate=(tier->>'rate')::numeric)))) THEN\n  RAISE EXCEPTION 'tournament_fee_recognition_source_receipt_incomplete' USING ERRCODE='23514'; END IF;\n RETURN proof||jsonb_build_object('accounting_version',2,'tournament_id',p_tournament_id,'status',r.status,\n  'source_fingerprint',fp,'reason',r.plan->>'reason','payable',r.status='recognized','recognized_source_count',n);\nEND$function$\n",
+      "source_md5": "fe640a4463e3eb49afdef52d49b8817c",
+      "definition_md5": "6e446f6d6d19ec8b28b31d124a8c6ac3",
+      "owner": "postgres",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "signature": "fn_ca_lock_settlement_lane_for_satellite_finish(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_for_satellite_finish(p_satellite_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_held text := COALESCE(current_setting('ca.finish_lane_tournament', true), '');\n  v_target_id uuid;\n  v_first uuid;\n  v_second uuid;\nBEGIN\n  IF v_held <> '' THEN\n    -- Re-entry inside a finish transaction: everything below is held.\n    PERFORM public.fn_ca_lock_settlement_lane_for_finish(NULL);\n    RETURN;\n  END IF;\n  IF p_satellite_id IS NOT NULL THEN\n    SELECT COALESCE(t.satellite_target_id, t.satellite_target)\n      INTO v_target_id\n      FROM public.tournaments t\n     WHERE t.id = p_satellite_id;\n  END IF;\n  IF p_satellite_id IS NULL OR v_target_id IS NULL OR v_target_id = p_satellite_id THEN\n    -- No target to scope to: the whole lane, as it always was.\n    PERFORM public.fn_ca_lock_settlement_lane_global();\n    RETURN;\n  END IF;\n  -- G shared, F exclusive (one finish at a time, satellite or not), then\n  -- both T keys exclusively in uuid order. A rolling authority or hand of\n  -- either tournament waits on its T; two satellites into one target are\n  -- serialised by F; no other transaction holds two T keys at once.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-finish-lane:v1', 0));\n  IF p_satellite_id::text < v_target_id::text THEN\n    v_first := p_satellite_id; v_second := v_target_id;\n  ELSE\n    v_first := v_target_id; v_second := p_satellite_id;\n  END IF;\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || v_first::text, 0));\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || v_second::text, 0));\n  -- Re-entry names the satellite; T(target) is held for the transaction's\n  -- life regardless, which is what the target's guards read.\n  PERFORM set_config('ca.finish_lane_tournament', p_satellite_id::text, true);\nEND;\n$function$\n",
+      "source_md5": "c0f7edc3cdef54d9c920d44b94627b11",
+      "definition_md5": "0aaaac620ce2f34f2cd9523c4323a12e",
+      "owner": "postgres",
+      "proconfig": ["search_path=public, pg_temp"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "signature": "fn_lock_accounting_tournament_recognition_week(uuid,timestamp with time zone)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_lock_accounting_tournament_recognition_week(p_tournament_id uuid, p_recognized_at timestamp with time zone)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$DECLARE scope record;week_start timestamptz;week_end timestamptz;BEGIN\n week_start:=public.fn_union_week_start(p_recognized_at);\n week_end:=((week_start AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles';\n FOR scope IN\n  WITH scopes AS (\n   SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id=p_tournament_id\n   UNION\n   -- The actual bank also participates in the same close order. A legacy event\n   -- may have no captured contributor; this names its game bank, never guesses\n   -- a contributor's historical membership or commission agreement.\n   SELECT f.union_id,t.club_id FROM public.tournaments t\n    JOIN public.accounting_tournament_fee_sources f ON f.tournament_id=t.id WHERE t.id=p_tournament_id AND t.club_id IS NOT NULL\n   UNION\n   SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t\n    WHERE t.id=p_tournament_id AND t.club_id IS NOT NULL\n     AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)\n  ) SELECT DISTINCT coordinator_union_id,club_id,\n   CASE WHEN coordinator_union_id IS NULL THEN 'club-accounting:'||club_id::text ELSE 'union-accounting:'||coordinator_union_id::text END\n    ||':'||extract(epoch FROM week_start)::text||':'||extract(epoch FROM week_end)::text lock_key\n  FROM scopes ORDER BY lock_key\n LOOP\n  PERFORM pg_advisory_xact_lock(hashtextextended(scope.lock_key,0));\n  IF EXISTS(SELECT 1 FROM public.accounting_routed_settlement_runs r WHERE r.period_start<=p_recognized_at AND r.period_end>p_recognized_at\n   AND ((r.union_id IS NOT NULL AND r.union_id=scope.coordinator_union_id)\n     OR (r.standalone_club_id IS NOT NULL AND scope.coordinator_union_id IS NULL AND r.standalone_club_id=scope.club_id))) THEN\n   RAISE EXCEPTION 'tournament_accrual_closed_period_requires_adjustment' USING ERRCODE='23514'; END IF;\n END LOOP;\nEND$function$\n",
+      "source_md5": "f79e7bfac318844c729b1b5a0c4f4c33",
+      "definition_md5": "d5339cec8b0e00be748c4c15bc3dba83",
+      "owner": "postgres",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    }
+  ]
+}

@@ -20,14 +20,13 @@ import type { FloorWin } from '../../services/DiamondGamesService';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { compactChips } from '../../utils/format';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
+import { DIAMOND_GAME_TITLES } from '../../utils/diamondGameTitles';
 import styles from '../../pages/diamondGames.module.css';
 
+/** One name per game, from the single source; the wheel is not a bonus game. */
 const GAME_WORD: Record<FloorWin['game'], string> = {
   wheel: 'Diamond Wheel',
-  plinko: 'Diamond Plinko',
-  crash: 'Diamond Crash',
-  crossing: 'Donkey Crossing',
-  mines: 'Diamond Mines',
+  ...DIAMOND_GAME_TITLES,
 };
 
 /** Chips as the player reads them: whole figures compact, a fractional prize exact (it IS the prize). */

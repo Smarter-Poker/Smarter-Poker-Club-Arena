@@ -16,6 +16,12 @@ import {
 } from '../../config/spinSpec';
 import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
 import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
+import {
+  TOURNAMENT_CREATE_ERRORS,
+  payoutTotalIsValid,
+  rebuyWindowIsOpen,
+  startTimeIsPast,
+} from '../../lib/tournamentCreationRules';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
@@ -29,6 +35,12 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
+import {
+  WEEKDAY_NAMES,
+  scheduleWriteTimeZone,
+  localClockTime,
+  scheduleZoneLabel,
+} from '../../utils/scheduleTimeZone';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import {
   manualTournamentBlindPreset,
@@ -80,19 +92,6 @@ interface Props {
  * see the header of tournamentFromTableConfig for why the old exclusion was
  * wrong about this engine.
  */
-/**
- * The field cap an MTT-shaped format starts at.
- *
- * Not "unlimited": `fn_create_tournament` refuses `maxPlayers <= 0`, and
- * registration is refused once `current_players >= max_players`, so a zero cap
- * is a locked door rather than an open one. Live MTT caps in production run
- * 30-500; 500 is the top of that range and the operator can lower it.
- */
-// MTT fields have no operator-set cap. The database still requires a positive
-// safety ceiling, so creation uses a deliberately unreachable technical guard
-// while registration and payouts continue to follow the actual field.
-const DEFAULT_MTT_FIELD = '1000000';
-
 type MttEntryRules = 'freezeout' | 'rebuy' | 'reentry' | 'free_buy';
 type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
 
@@ -159,14 +158,10 @@ export default function CreateTournamentModal({
   // field in this form is digits-only for the same reason.
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
-  const [maxPlayers, setMaxPlayers] = useState('50');
+  const [maxPlayers, setMaxPlayers] = useState('6');
   const [payoutPercent, setPayoutPercent] = useState<10 | 15 | 20>(10);
-  /* THE TWO NUMBERS THE DATABASE REFUSES ON live in src/lib/tournamentFieldRules
-     so they can be tested without rendering this form. See that file's header:
-     `maxPlayers: 0` ("unlimited") made every MTT-shaped format uncreatable, and
-     the sng6 preset paired with "Heads Up (2)" paid two places into a two-seat
-     field, which the RPC refuses as `more_paid_places_than_players`. */
-  const fieldCap = fieldCapFor(maxPlayers);
+  const isSngOrSpin = format === 'sng' || format === 'spin';
+  const fieldCap = isSngOrSpin ? fieldCapFor(maxPlayers) : null;
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
     'turbo'
   );
@@ -317,20 +312,27 @@ export default function CreateTournamentModal({
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
   const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
-  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
+  /** The owner's IANA zone: a recurring event keeps it (null = UTC). */
+  const scheduleTimeZone = useMemo(() => scheduleWriteTimeZone(), []);
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(() =>
+    scheduleTimeZone ? new Date().getDate() : new Date().getUTCDate()
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /** The weekday and UTC time this event starts, read from the start-time
-   *  fields (or "about now" for an event that starts now). */
+  /** The weekday and time this event starts, read from the start-time
+   *  fields (or "about now" for an event that starts now), on the owner's own
+   *  clock when the device names its zone (saved with the row, so 8:00 PM
+   *  stays 8:00 PM local across daylight saving), else in UTC as before. */
   const weeklySlotFromStart = useCallback((): { daysOfWeek: number[]; startTimesUtc: string[] } => {
     const when =
       startTimeMode === 'scheduled' && scheduledDate && scheduledTime
         ? new Date(`${scheduledDate}T${scheduledTime}`)
         : new Date(Date.now() + 10 * 60 * 1000);
     const at = Number.isFinite(when.getTime()) ? when : new Date(Date.now() + 10 * 60 * 1000);
+    if (scheduleTimeZone) return { daysOfWeek: [at.getDay()], startTimesUtc: [localClockTime(at)] };
     return { daysOfWeek: [at.getUTCDay()], startTimesUtc: [at.toISOString().slice(11, 16)] };
-  }, [startTimeMode, scheduledDate, scheduledTime]);
+  }, [startTimeMode, scheduledDate, scheduledTime, scheduleTimeZone]);
 
   // ── The buy-in, split ──
   // total = what the player pays (the typed whole number)
@@ -346,21 +348,11 @@ export default function CreateTournamentModal({
   //
   // The rate is asked for rather than restated: the ternary that used to live
   // here was a SIXTH copy of the rule, keyed on the format LABEL, so a duel
-  // created under any other label still quoted 10%. rakeRateFor keys on seats.
-  // NOTE: `isSngOrSpin` is declared further down and cannot be used here — a
-  // const referenced above its declaration is a TDZ ReferenceError at render,
-  // not a lint warning. The same condition, inline.
+  // created under any other label still quoted 10%. Fixed formats use seats.
   const quotedRakeRate = useMemo(
     () =>
       rakeRateFor({
         variant: format,
-        /* EVERY format has a real field size now, so every format is priced on
-           it. The old comment said "an MTT sends 0, which rakeRateFor reads as
-           unknown seats" — that 0 was the same 0 the database refuses, so no
-           MTT priced this way was ever created. rakeRateFor's law is keyed on
-           SEATS ("a two-handed game is a duel whatever its label says"), and
-           `fn_create_tournament` is being brought onto the same rule in this
-           change; passing the cap is what makes the quote match the charge. */
         maxPlayers: fieldCap,
       }),
     [format, fieldCap]
@@ -370,9 +362,7 @@ export default function CreateTournamentModal({
     [buyIn, quotedRakeRate]
   );
 
-  // MTT ladders are finalized against actual entries in the database. The
-  // technical capacity is not a field estimate (it can be one million).
-  // Keep creation provisional instead of building 150,000 mostly zero shares.
+  // MTT ladders are finalized against actual entries in the database.
   const payoutStructure = useMemo(() => {
     if (format === 'sng') {
       const mp = parseInt(maxPlayers) || 0;
@@ -381,7 +371,6 @@ export default function CreateTournamentModal({
     return provisionalMttPayoutStructure();
   }, [maxPlayers, format]);
 
-  const isSngOrSpin = format === 'sng' || format === 'spin';
   // Display the same Free Buy overrides that buildRpcConfig applies. Keep the
   // draft inputs: omitted rebuy chips follow the selected starting stack, and
   // returning to a paid format retains its editable terms.
@@ -446,20 +435,16 @@ export default function CreateTournamentModal({
   /* TournamentService rejects a payout table that does not total 100%, and a
      rejection AFTER the operator has clicked Create reads as a failure they
      cannot see the cause of. Same rule, checked here, so the button is simply
-     disabled with the reason printed beside it. */
+     disabled with the reason printed beside it. It is the SHARED rule
+     (tournamentCreationRules): within 1 of 100, as the database allows, and a
+     zero total is refused. This screen used to hold its own 0.5. */
   const payoutsTotal = useMemo(
     () => effectivePayouts.reduce((sum, pp) => sum + (Number(pp.percentage) || 0), 0),
     [effectivePayouts]
   );
-  const payoutsValid = Math.abs(payoutsTotal - 100) < 0.5;
+  const payoutsValid = payoutTotalIsValid(payoutsTotal);
   const blindsValid = Array.isArray(effectiveBlinds) && effectiveBlinds.length > 0;
 
-  /* The payout editor prices places against a pool that does not exist yet.
-     For an SNG or a Spin the field size is exact - the game starts when the
-     last seat sells - so the amounts are real. An MTT states its projection at
-     its own CAP rather than at a hard-coded 50: the cap is what registration
-     actually stops at, and it is a number the operator chose. It is still a
-     ceiling, not a promise, which is why the helper text below says so. */
   const isSatellite = format === 'satellite';
 
   // Load candidate target tournaments (upcoming, non-satellite in this club) once
@@ -526,56 +511,34 @@ export default function CreateTournamentModal({
            stale value. */
         setGameVariant((v) => (canRunAsSpin(v) ? v : 'NLH'));
         break;
-      /* THERE IS NO SUCH THING AS AN UNLIMITED FIELD HERE (2026-08-31).
-         Every one of these branches used to set '0' with the comment
-         "0 = unlimited", and `fn_create_tournament` opens with
-
-           v_max_players := COALESCE((p_config->>'maxPlayers')::int, 0);
-           IF v_max_players <= 0 THEN RETURN 'max_players_must_be_positive';
-
-         so EVERY MTT, bounty, satellite and XMTT this modal offered was
-         refused by the database before a row was written. Registration is
-         also refused once current_players >= max_players, so 0 would lock
-         everyone out even if the insert succeeded. `tournamentFromTableConfig`
-         has said exactly this in a comment since 2026-08-19 and clamps to
-         `Math.max(2, ...)`; this screen never got the same fix.
-
-         DEFAULT_MTT_FIELD is a real cap the operator can change, sized against
-         what production actually runs (live MTT caps range 30-500). */
       case 'mtt_rebuy':
         setMttEntryRules('rebuy');
-        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(true);
         break;
       case 'mtt_reentry':
         setMttEntryRules('reentry');
-        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(true);
         break;
       case 'bounty':
       case 'progressive_bounty':
       case 'mystery_bounty':
-        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('10');
         setAddOnAvailable(false);
         break;
       case 'satellite':
         setMttEntryRules('freezeout');
-        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
         break;
       case 'xmtt':
-        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
         break;
       case 'mtt_freezeout':
       default:
         setMttEntryRules('freezeout');
-        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
     }
@@ -589,7 +552,6 @@ export default function CreateTournamentModal({
   const applyMttEntryRules = (rules: MttEntryRules) => {
     setMttEntryRules(rules);
     setLateRegLevels('8');
-    setMaxPlayers(DEFAULT_MTT_FIELD);
     setAddOnAvailable(rules !== 'freezeout');
     /* FREE BUY (Dan 2026-09-04). The first entry is free and the rebuys and
        add-ons are paid, so it is NOT a freeroll - a freeroll never charges.
@@ -631,7 +593,6 @@ export default function CreateTournamentModal({
       return;
     }
     setFormat(style);
-    setMaxPlayers(DEFAULT_MTT_FIELD);
     setLateRegLevels('8');
   };
 
@@ -648,11 +609,11 @@ export default function CreateTournamentModal({
     /* A SCHEDULED start in the past creates a tournament that can never begin.
        coreValid only checks the two date strings are non-empty, so an owner
        picking yesterday got no feedback at all. A minute of slack, for a form
-       filled in while the clock moves. */
+       filled in while the clock moves: the shared rule every surface uses. */
     if (startTimeMode === 'scheduled') {
       const startsAt = new Date(`${scheduledDate}T${scheduledTime}`).getTime();
-      if (!Number.isFinite(startsAt) || startsAt < Date.now() - 60_000) {
-        toast.error('Pick A Start Time In The Future');
+      if (!Number.isFinite(startsAt) || startTimeIsPast(startsAt)) {
+        toast.error(TOURNAMENT_CREATE_ERRORS.start_time_in_past);
         submittingRef.current = false;
         setIsSubmitting(false);
         return;
@@ -663,8 +624,7 @@ export default function CreateTournamentModal({
       // ── Satellite validation: without a target it silently becomes a cash
       // payout, defeating the point (winners should earn seats). ──
       if (isSatellite && !satelliteTargetId) {
-        toast.error('Pick The Target Tournament This Satellite Awards Seats Into');
-        submittingRef.current = false;
+        toast.error(TOURNAMENT_CREATE_ERRORS.satellite_target_required);
         submittingRef.current = false;
         setIsSubmitting(false);
         return;
@@ -898,7 +858,7 @@ export default function CreateTournamentModal({
         tableSize: Math.min(
           clampInt(tableSize, 2, 10, 9),
           maxSeatsTheDeckAllows(gameVariant.toLowerCase()),
-          fieldCap
+          fieldCap ?? 10
         ),
         addonBreakMinutes: addOnAvailable ? 1 : undefined,
         earlyBirdEnabled,
@@ -945,6 +905,7 @@ export default function CreateTournamentModal({
             effectiveSchedule.mode === 'times'
               ? effectiveSchedule.startTimesUtc.filter((t) => t.trim() !== '')
               : [],
+          timeZone: scheduleTimeZone,
           intervalMinutes:
             effectiveSchedule.mode === 'interval' ? effectiveSchedule.intervalMinutes : null,
           active: true,
@@ -1051,6 +1012,14 @@ export default function CreateTournamentModal({
     };
   }, [onClose, isSubmitting]);
 
+  const rebuyWindowOpen = rebuyWindowIsOpen({
+    isRebuy,
+    isReentry,
+    lateRegistrationLevels: parseInt(lateRegLevels) || 0,
+    buyIn: Number(buyIn) || 0,
+    type: format,
+  });
+
   const coreValid = (() => {
     if (!name.trim()) return false;
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
@@ -1059,13 +1028,15 @@ export default function CreateTournamentModal({
       if (Number(buyIn) !== 0) return false;
     } else if (!isWholeBuyIn(buyIn)) return false;
     if (isNaN(parseInt(startingChips)) || parseInt(startingChips) <= 0) return false;
-    /* EVERY format needs a real field now, not only SNG and Spin: the database
-       refuses a non-positive cap, so "unlimited" was uncreatable. */
-    if (!Number.isFinite(parseInt(maxPlayers)) || parseInt(maxPlayers) < 2) return false;
+    if (isSngOrSpin && (!Number.isFinite(parseInt(maxPlayers)) || parseInt(maxPlayers) < 2)) {
+      return false;
+    }
     // Scheduled tournament must have date+time
     if (startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime)) return false;
-    // Late reg levels must be valid if set
-    if ((isRebuy || isReentry) && parseInt(lateRegLevels) <= 0) return false;
+    // Rebuys and re-entries are sold only while late registration is open.
+    // `parseInt('') <= 0` is false, so a cleared field used to pass here and
+    // send a window of 0. The shared rule reads it as 0 and refuses.
+    if (!rebuyWindowOpen) return false;
     return true;
   })();
 
@@ -1091,6 +1062,7 @@ export default function CreateTournamentModal({
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <form className={styles.form} onSubmit={handleSubmit}>
           <SpadeConsole
+            onClose={isSubmitting ? undefined : onClose}
             eyebrow={unionId ? 'Union Tournament Command' : 'Club Tournament Command'}
             title={unionId ? 'Create Union Tournament' : 'Create Tournament'}
             subtitle="Configure, Validate, Then Publish"
@@ -1256,11 +1228,6 @@ export default function CreateTournamentModal({
                   </div>
                 </div>
               )}
-              {/* THE MTT FAMILY HAD NO FIELD CONTROL AT ALL (2026-08-31), and
-                sent 0 for "unlimited" — which the database refuses outright, so
-                every MTT, bounty, satellite and XMTT built here failed before a
-                row was written. There is no unlimited field: registration stops
-                at the cap, so the cap has to be a number the operator chooses. */}
               <div className={styles.col}>
                 <div className={styles.formGroup}>
                   {isSngOrSpin ? (
@@ -2248,6 +2215,13 @@ export default function CreateTournamentModal({
                     Same Day And Time Every Week, With This Configuration. Next Week's Event Is
                     Published As Soon As This One Is Created.
                   </span>
+                  {repeatsWeekly && (
+                    <span className={styles.helperText} data-testid="repeats-weekly-local-time">
+                      {`Every ${WEEKDAY_NAMES[weeklySlotFromStart().daysOfWeek[0]] ?? ''} At ${
+                        weeklySlotFromStart().startTimesUtc[0] ?? ''
+                      } ${scheduleZoneLabel(scheduleTimeZone)}`}
+                    </span>
+                  )}
                 </div>
                 {!repeatsWeekly && (
                   <div className={styles.formGroup}>
@@ -2311,6 +2285,7 @@ export default function CreateTournamentModal({
                       </label>
                     )}
                     <WeeklyScheduleEditor
+                      timeZone={scheduleTimeZone}
                       value={schedule}
                       onChange={setSchedule}
                       hideDays={scheduleCadence !== 'weekly'}
@@ -2322,7 +2297,10 @@ export default function CreateTournamentModal({
 
             {/* ── Validation Summary ── */}
             {!canSubmit && !isSubmitting && (
-              <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
+              <div
+                className={styles.validationSummary}
+                style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}
+              >
                 {!name.trim() && <p>Tournament Name Is Required</p>}
                 {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
                 {!payoutsValid && (
@@ -2340,8 +2318,8 @@ export default function CreateTournamentModal({
                 {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
                   <p>Scheduled Date And Time Are Required</p>
                 )}
-                {(isRebuy || isReentry) && parseInt(lateRegLevels) <= 0 && (
-                  <p>Late Reg Levels Must Be Set When Rebuys/Re-Entries Are Enabled</p>
+                {!rebuyWindowOpen && (
+                  <p>{TOURNAMENT_CREATE_ERRORS.rebuy_requires_late_registration}</p>
                 )}
                 {!bountyValid && isBountyFormat && <p>Bounty Configuration Is Incomplete</p>}
               </div>

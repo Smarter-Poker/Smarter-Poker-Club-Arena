@@ -158,6 +158,7 @@ function tournament(name = 'Confirmed Event') {
     current_players: 4,
     status: 'REGISTERING',
     tournament_type: 'MTT',
+    format_contract: 'mtt-v2',
   };
 }
 function answer(query: Query): Reply {
@@ -433,6 +434,7 @@ describe('the mounted ticker recovers without stale account data or overlapping 
         ? ok([
             {
               id: 'overlay',
+              format_contract: 'mtt-v2',
               name: 'Confirmed Overlay',
               status: 'RUNNING',
               start_time: new Date(Date.now() - 60_000).toISOString(),

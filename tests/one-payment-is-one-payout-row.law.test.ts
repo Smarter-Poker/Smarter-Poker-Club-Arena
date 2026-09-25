@@ -91,7 +91,8 @@ function withoutCreditPrimitive(sql: string): string {
 }
 
 /**
- * A whole-event satellite has three mutually exclusive delivery branches.
+ * Both maintained satellite settlement authorities have three mutually
+ * exclusive delivery branches.
  * Cash uses fn_credit_and_log (which owns its payout row); an actual target
  * seat and a noncash tournament ticket move no wallet money, so those branches
  * write their own payout evidence. Remove that authority from the generic
@@ -107,7 +108,7 @@ function withoutCreditPrimitive(sql: string): string {
  */
 function withoutSeparatedSatelliteDelivery(sql: string): string {
   const signature =
-    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_settle_satellite_tournament(?:_pre_money_path_gate)?\s*\(/gi;
+    /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.(?:fn_settle_satellite_tournament(?:_pre_money_path_gate)?|fn_ca_settle_satellite_cohort)\s*\(/gi;
   let result = sql;
   let start = signature.exec(result)?.index ?? -1;
   while (start >= 0) {
@@ -161,6 +162,61 @@ function hasMixedPayoutWriters(sql: string): boolean {
 }
 
 describe('one payment is one payout row', () => {
+  const cohortMigration = readFileSync(
+    join(MIGRATIONS, '20260917201651_satellite_multi_qualifier_receipt_v3.sql'),
+    'utf8'
+  );
+  const cohortDefinition =
+    cohortMigration.match(
+      /CREATE FUNCTION public\.fn_ca_settle_satellite_cohort\([\s\S]*?\bAS \$function\$[\s\S]*?\$function\$\s*;/
+    )?.[0] ?? '';
+
+  it('the qualifier cohort uses the same proved separation of noncash evidence and cash credit', () => {
+    expect(cohortDefinition).toContain('CREATE FUNCTION public.fn_ca_settle_satellite_cohort(');
+    const nextStatement = '\nSELECT fn_credit_and_log();';
+    expect(withoutSeparatedSatelliteDelivery(cohortDefinition + nextStatement)).toBe(nextStatement);
+  });
+
+  it('does not grant the separated-delivery exemption to an unknown owner', () => {
+    const unknown = cohortDefinition.replace('fn_ca_settle_satellite_cohort(', 'unknown_owner(');
+    expect(withoutSeparatedSatelliteDelivery(unknown)).toBe(unknown);
+  });
+
+  it.each([
+    {
+      name: 'a payout insert in the cash branch',
+      from: "ELSIF v_delivery_kind = 'cash' THEN",
+      to: "ELSIF v_delivery_kind = 'cash' THEN\n      INSERT INTO public.tournament_payouts DEFAULT VALUES;",
+    },
+    {
+      name: 'a credit in the noncash seat branch',
+      from: "IF v_delivery_kind = 'seat' THEN\n",
+      to: "IF v_delivery_kind = 'seat' THEN\n      PERFORM public.fn_credit_and_log();\n",
+    },
+    {
+      name: 'a credit in the noncash ticket branch',
+      from: "ELSIF v_delivery_kind = 'ticket' THEN\n",
+      to: "ELSIF v_delivery_kind = 'ticket' THEN\n      PERFORM public.fn_credit_and_log();\n",
+    },
+    {
+      name: 'a third payout write outside the delivery branches',
+      from: '  IF v_remainder > 0 THEN\n',
+      to: '  INSERT INTO public.tournament_payouts DEFAULT VALUES;\n  IF v_remainder > 0 THEN\n',
+    },
+    {
+      name: 'missing whole-pool proof',
+      from: 'v_paid IS DISTINCT FROM v_pool',
+      to: 'false',
+    },
+  ])('still refuses $name in the cohort authority', ({ from, to }) => {
+    expect(cohortDefinition).toContain(from);
+    // There is an earlier planning branch with the same seat condition. Mutate
+    // the final delivery branch that actually owns the payout-evidence write.
+    const at = cohortDefinition.lastIndexOf(from);
+    const unsafe = cohortDefinition.slice(0, at) + to + cohortDefinition.slice(at + from.length);
+    expect(withoutSeparatedSatelliteDelivery(unsafe)).toBe(unsafe);
+  });
+
   it('the corrective migration exists and removes exactly the duplicate record', () => {
     const f = files.find((x) => x.includes('one_payment_is_one_payout_row'));
     expect(f, 'the corrective migration must not be deleted').toBeTruthy();

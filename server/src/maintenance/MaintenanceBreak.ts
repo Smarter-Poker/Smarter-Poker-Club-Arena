@@ -128,6 +128,10 @@ export interface PausableTableEngine {
    * the restart gate asks (PHASE 2, 2026-09-02) - see `unparkedTables`.
    */
   isBetweenHands(): boolean;
+  /** Positive original preparation disposition must survive process replacement. */
+  hasUnresolvedF06Preparation?(): boolean;
+  /** Stopped originals still own actual banks until custody is confirmed. */
+  hasUnretiredStoppedTimeBankCustody?(): boolean;
   /** Initialized time banks have reached the durable park row. */
   isMaintenanceStateDurable?(): boolean;
   /**
@@ -245,6 +249,8 @@ export interface ResumeWavesProgress {
 export interface MaintenanceBreakDeps {
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;
+  /** Durable original preparations retained across a process replacement. */
+  retainedPreparationBlockers?(): readonly string[];
   /** False once the process is shutting down; stops any further scheduling. */
   isRunning(): boolean;
   /** Discrete per-table event frame to every subscriber of that table. */
@@ -1457,6 +1463,11 @@ export class MaintenanceBreak {
       tablesResumed: 0,
       thawOk,
     };
+    /* The one number that says whether the engine can still be replaced. A
+       break that never certified is counted here the moment it ends, because
+       the row that records the same fact in the database is read by nothing. */
+    if (this.readyForRestartAtMs === null) this.breaksSinceRestartCertified += 1;
+    else this.breaksSinceRestartCertified = 0;
     const completedState = this.releaseBoundaryOnly ? null : this.persistedState();
     const durableState = this.lastDurableState;
     const releasedByV3 = this.releaseBoundaryOnly || Boolean(this.deps.thaw);
@@ -1763,14 +1774,175 @@ export class MaintenanceBreak {
   /** Last reason breakdown computed by `unparkedTables`, for /health. */
   private unparkedReasonCounts: Record<string, number> = {};
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  ONE STUCK PERMIT CANNOT HOLD THE WHOLE PLATFORM (2026-09-19)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The F06 test below is first and unconditional, and it is right to be: an
+   * unresolved hand-number preparation means a number may be allocated and
+   * its fate unproven, which is not a thing to restart on top of. It even
+   * counts a STOPPED engine, deliberately - "unresolved original preparation
+   * blocks maintenance even after a stop".
+   *
+   * What it had no answer for is a permit that never resolves. There is no
+   * bound on it, so one table can hold `readyForRestart` shut for every other
+   * table on the platform, for as long as the process lives. And because the
+   * engine restarts only inside a certified break, that also means the engine
+   * can never be replaced - including by the build that would fix whatever
+   * wedged the permit.
+   *
+   * MEASURED IN PRODUCTION, from `engine_maintenance_break_log`. This engine
+   * instance started at 21:56 on 2026-09-18. Every break it has held since:
+   *
+   *   22:55  unparked 1  ready_for_restart_at NULL
+   *   23:55  unparked 1  ready_for_restart_at NULL
+   *   00:05  unparked 1  ready_for_restart_at NULL   (recovery window)
+   *   00:14  unparked 1  ready_for_restart_at NULL   (recovery window)
+   *   00:55  unparked 1  ready_for_restart_at NULL
+   *   01:55  unparked 1  ready_for_restart_at NULL
+   *
+   * against 13:55 through 21:55 the same day, every one of which had zero
+   * unparked tables and certified in 4.5 to 86 seconds. `/health` named the
+   * cause the whole time: `unparkedReasons: { f06_preparation_unresolved: 1 }`.
+   *
+   * Six consecutive engine releases failed on that shut gate, including two
+   * off-cycle recovery windows the release itself asked for, and production
+   * sat four and a half hours behind main with no route forward.
+   *
+   * THE RULE THIS MODULE ALREADY ESTABLISHED, APPLIED ONE MORE TIME. The
+   * zombie reaper's own comment states it: a pause that outlives any
+   * legitimate one "is a wedged table, and MUST still be reaped - otherwise
+   * this guard would trade 'breaks get dismantled' for 'a stuck table never
+   * recovers', which is the worse bug". A fail-closed gate with no bound, on
+   * a resource the whole platform shares, is the same trade in a new place.
+   *
+   * So the gate is now bounded, and ONLY the gate. A permit unresolved for
+   * longer than any legitimate resolution could take stops holding every
+   * other table's restart certificate shut; it does not stop being reported,
+   * and nothing else about F06 changes. `GameServer.drainHands` still refuses
+   * to call such a table parked, bounded by its own drain budget, and the
+   * permit's own money-safety path is untouched.
+   *
+   * Ten minutes is deliberately far past any real window - a permit is
+   * prepared between hands and resolves in seconds, and it matches the
+   * MAX_HEALTHY_PAUSE_MS figure the reaper already uses for "no legitimate
+   * pause is this long". Holding the process beyond that does not make the
+   * hand more resolved; it only guarantees that the recovery which WOULD
+   * resolve it can never run.
+   */
+  static readonly F06_UNRESOLVED_GATE_MS = 10 * 60_000;
+  /**
+   * Breaks that have ended without the restart certificate ever opening.
+   *
+   * This is the alarm that was missing. The gate being shut is recorded per
+   * break in `engine_maintenance_break_log.ready_for_restart_at`, which no
+   * alert rule reads, so six consecutive shut breaks and four and a half
+   * hours of undeployable production produced no signal at all - /health said
+   * `status: ok` throughout, because every table was dealing. It is the
+   * RESTART that was impossible, not the poker.
+   *
+   * Zero is healthy. One is a break that lost its window and will be retried.
+   * Two or more in a row means the engine cannot be replaced at all, which is
+   * an outage of the deploy route however well the felt is running.
+   */
+  private breaksSinceRestartCertified = 0;
+
+  /** Consecutive breaks that ended with no restart certificate. */
+  breaksSinceRestartCertified_(): number {
+    return this.breaksSinceRestartCertified;
+  }
+
+  private f06UnresolvedSince: Map<string, number> = new Map();
+  private f06StuckAnnounced: Set<string> = new Set();
+  private f06StuckTableCount = 0;
+
+  /** Tables whose F06 preparation has outlived the gate, for /health. */
+  f06StuckTables(): number {
+    return this.f06StuckTableCount;
+  }
+
+  /**
+   * Has this table's unresolved F06 preparation stayed inside the bound?
+   *
+   * One definition for both blocker classes - the manager-retained
+   * preparations and the per-engine ones. Two copies of a bound drift, and a
+   * bound that applies to only one of two paths is what left the unbounded one
+   * holding the platform shut for 70 breaks.
+   *
+   * True  - still inside F06_UNRESOLVED_GATE_MS; it holds the gate.
+   * False - past it. Still named, counted, published and alertable; it simply
+   *         stops deciding whether every other table may be restarted.
+   */
+  private f06PreparationHoldsGate(tableId: string): boolean {
+    const since = this.f06UnresolvedSince.get(tableId) ?? this.now();
+    this.f06UnresolvedSince.set(tableId, since);
+    const heldForMs = this.now() - since;
+    if (heldForMs <= MaintenanceBreak.F06_UNRESOLVED_GATE_MS) return true;
+    if (!this.f06StuckAnnounced.has(tableId)) {
+      this.f06StuckAnnounced.add(tableId);
+      console.error(
+        `[MaintenanceBreak] table ${tableId} has held an unresolved F06 preparation for ` +
+          `${Math.round(heldForMs / 1000)}s, past the ${Math.round(
+            MaintenanceBreak.F06_UNRESOLVED_GATE_MS / 1000
+          )}s gate. It no longer holds the platform's restart certificate shut. ` +
+          `Its engine needs replacing; the permit is process-local and only that clears it.`
+      );
+    }
+    return false;
+  }
+
   private unparkedTables(): string[] {
     const out: string[] = [];
     const reasons: Record<string, number> = {};
+    const seenUnresolved = new Set<string>();
+    let stuck = 0;
     const count = (reason: string) => {
       reasons[reason] = (reasons[reason] ?? 0) + 1;
     };
+    /* THE SAME BOUND, APPLIED TO THE OTHER BLOCKER CLASS (2026-09-21).
+       The per-engine test below has been bounded since #4909, for the reason
+       written above it: a fail-closed gate with no bound, on a resource the
+       whole platform shares, trades "breaks get dismantled" for "a stuck table
+       never recovers", and the second is the worse bug. THIS loop - the
+       manager-retained preparations - was left unbounded in that change, and
+       it is the one that then held engine 8825af51 shut for 70 consecutive
+       breaks: unparked_at_countdown was 1 at every single countdown while
+       thaw_ok stayed true and ~158 tables resumed each time. The felt was
+       healthy; only the restart was impossible, including the restart that
+       carried the fix. Same class, same bound, same reason strings, so the
+       release gate needs no new vocabulary to understand it. */
+    for (const tableId of this.deps.retainedPreparationBlockers?.() ?? []) {
+      seenUnresolved.add(tableId);
+      if (this.f06PreparationHoldsGate(tableId)) {
+        out.push(tableId);
+        count('f06_preparation_unresolved');
+        continue;
+      }
+      stuck += 1;
+      count('f06_preparation_stuck');
+    }
     for (const [tableId, engine] of this.deps.engines()) {
       try {
+        if (engine.hasUnretiredStoppedTimeBankCustody?.()) {
+          out.push(tableId);
+          count('stopped_bank_custody_unconfirmed');
+          continue;
+        }
+        if (engine.hasUnresolvedF06Preparation?.()) {
+          seenUnresolved.add(tableId);
+          if (this.f06PreparationHoldsGate(tableId)) {
+            out.push(tableId);
+            count('f06_preparation_unresolved');
+            continue;
+          }
+          /* Past the bound. Still named, still counted, still on /health and
+             still alertable - it simply no longer decides whether 195 other
+             tables may be restarted. */
+          stuck += 1;
+          count('f06_preparation_stuck');
+          continue;
+        }
         if (!engine.isRunning()) continue;
         if (!engine.isBetweenHands()) {
           out.push(tableId);
@@ -1788,6 +1960,14 @@ export class MaintenanceBreak {
         // throws on inspection is already being handled by the reapers.
       }
     }
+    /* A table that resolved its preparation starts clean; a table that left
+       the fleet takes its entry with it. Neither may inherit an old clock. */
+    for (const tableId of [...this.f06UnresolvedSince.keys()]) {
+      if (seenUnresolved.has(tableId)) continue;
+      this.f06UnresolvedSince.delete(tableId);
+      this.f06StuckAnnounced.delete(tableId);
+    }
+    this.f06StuckTableCount = stuck;
     this.unparkedReasonCounts = reasons;
     if (this.phase === 'counting_down' && out.length > this.peakUnparked) {
       this.peakUnparked = out.length;
@@ -2270,6 +2450,13 @@ export class MaintenanceBreak {
       unparkedTables: unparked.length,
       // Why, not just how many: see maintenanceDurabilityReason on the engine.
       unparkedReasons: { ...this.unparkedReasonCounts },
+      /* See the fields these come from. `f06StuckTables` is a permit that has
+         outlived the gate and no longer holds every other table's restart
+         shut; `breaksSinceRestartCertified` is how many breaks in a row have
+         ended with no restart certificate at all. Both are identification
+         only - neither decides anything. */
+      f06StuckTables: this.f06StuckTableCount,
+      breaksSinceRestartCertified: this.breaksSinceRestartCertified,
       readyForRestart: this.readyForRestart(),
       reason: this.reason,
       resumeWaves: this.resumeWaves,

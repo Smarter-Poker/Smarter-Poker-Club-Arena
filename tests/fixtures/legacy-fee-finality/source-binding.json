@@ -1,0 +1,108 @@
+{
+  "repository_files": {
+    "scripts/ci/classify-ci-changes.mjs": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
+    "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
+    "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+    "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
+    "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+    "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
+    "tests/fixtures/legacy-fee-finality/README.md": "14a2c2c5c54825bcff66334f51620f8ca0de5733c80de81e6bef4da57be37bb8",
+    "tests/fixtures/legacy-fee-finality/after.sql": "0ab6450fb4d8829211681f91df45025c2cc6b50d0764168fdc31c499524c4c55",
+    "tests/fixtures/legacy-fee-finality/before.sql": "2adf8490208f2d0b86d7c9198f28473ff27a77379e17ad4ce6b9647e9e7eacb5",
+    "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
+    "tests/fixtures/legacy-fee-finality/capture-authority-catalog.json": "8b3dcacb46c85ca4b9680269db90f1b50545a4f7d5b84b4d46f1dbb554da4467",
+    "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql": "031c69e47876e67eff9262a476ee3915c2fc1058cf18f62a4a2e6d4e46812903",
+    "tests/fixtures/legacy-fee-finality/captured-access.json": "80dcf01be5df2dfcca354aa26c9d61e89296d331da103b5f6e13af851e6ade37",
+    "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
+    "tests/fixtures/legacy-fee-finality/custody-resolution.sql": "d076f12aaf5cf8a655c7faab0423553ef3db69da3c142cd00270b16d0ede5b9b",
+    "tests/fixtures/legacy-fee-finality/fn_accounting_tournament_terminal_fee_receipt.sql": "5f64d87c72fd19b262acb31350a767aa1700f836f73b56cb8b949acd5442e4a5",
+    "tests/fixtures/legacy-fee-finality/fn_ca_capture_tournament_fee_from_recorded_evidence.sql": "20700318438d4327f341461dae183723d20b45383641e156d6700e38ee4cfcbf",
+    "tests/fixtures/legacy-fee-finality/fn_ca_supply_snapshot.sql": "9ae7b70e2db6a081801447edcba3e6e4ba6dfe289b7dd0ab75827b30cf735e35",
+    "tests/fixtures/legacy-fee-finality/fn_ca_tournament_terminal_receipt.sql": "d20f6fd70701a14bd3c18eda744f3ee255a27c9911977e3d6a2de442056ac438",
+    "tests/fixtures/legacy-fee-finality/fn_complete_tournament_terminal.sql": "934e3b57a39481ab128b0756438478a5f09fcbd67b95111ea346bf85f61d2c91",
+    "tests/fixtures/legacy-fee-finality/fn_complete_tournament_terminal_pre_seat_guard.sql": "5bb2f9a55554b4f3ea33c2ab0e27ecda49eaba84330697b1bd74513c7b79912f",
+    "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
+    "tests/fixtures/legacy-fee-finality/fn_settle_tournament_rake.sql": "c24c8dedae18ea4d59f8a61ca70c11ea68c2d271ab58350b2932fdb8c1276589",
+    "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_escrow_is_immutable.sql": "064e76f3bca86201e929bff261b0cc548228438d896667131b505fd157690691",
+    "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
+    "tests/fixtures/legacy-fee-finality/fn_tournament_finish_readiness.sql": "edd0280b88c37410ce5e159f232d837ee7fcf94f4935fd2b3f6a911a819c302f",
+    "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
+    "tests/fixtures/legacy-fee-finality/original-cohort.json": "b3cc068fad47d9eb7ab4e46486c38ae9476f6fb5b2f69f127f9ff9f7debba9bc",
+    "tests/fixtures/legacy-fee-finality/original-fees.json": "35b501dd4040670dd1a60768dd51b0763d8483d9e6fa80adae6a32a7b3ab2e45",
+    "tests/fixtures/legacy-fee-finality/pko-binding.json": "8aefb53217efaedd7d5233cf93473c41df387f4c0143fbbbab2f82ecee9343ea",
+    "tests/fixtures/legacy-fee-finality/pko-opening.sql": "ff412064f1b2f2a16fce6846d699c0e19c06f76b69b68e47fc325ac7ec8ca28b",
+    "tests/fixtures/legacy-fee-finality/pko-original-canonical.json": "484d5f7c46f82faa7ff93702f5bc205e8b0a0cfe861e451a713a4ac7ed3d274c",
+    "tests/fixtures/legacy-fee-finality/pko-original-cohort.json": "0ba4acb267e47216bd770abfdb7936610bbbcbf1cd173537955dcc3ba9fe8a72",
+    "tests/fixtures/legacy-fee-finality/pko-original-fees.json": "c280278971fd63583fcfb30be4bbd52489bb56ff5fd3e8768260d2b6c87eefbd",
+    "tests/fixtures/legacy-fee-finality/pko-original-funding-scope.json": "3598ec96fe335a1b2af6efee66345defbd71016f698305360805d311703312ad",
+    "tests/fixtures/legacy-fee-finality/positive-opening.sql": "70990985932d8b0a8518e4342a394e3c104d4119e75529496ddc2cd25b4e2e86",
+    "tests/fixtures/legacy-fee-finality/positive-restore-terms.sql": "25763351166caea11a2dfdeab18d2d9b4d52cad593ed019427fd0241860e7198",
+    "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
+    "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871"
+  },
+  "expected_assertion_executions": 128,
+  "assertion_breakdown": {
+    "opening": 2,
+    "original_funding": 2,
+    "pko_originals": 5,
+    "predecessor_refusal": 24,
+    "late_custody_rollback": 16,
+    "first_close_races": 2,
+    "eight_finality_and_replay": 40,
+    "combined_custody_weekly": 2,
+    "supply": 1,
+    "negative_controls": 14,
+    "original_terms_restored": 2,
+    "late_recognition_rollback": 1,
+    "five_canonical_resolutions": 15,
+    "retained_pko": 2
+  },
+  "protected_integration": {
+    "decoder_head": "8288901545473b4188b010fc0cb8418c8d28152d",
+    "changed_binding_inputs": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "bf8a270bccf7633dd982890b528f6a7a68a2a1c2e4348e52ec7e910052902727",
+        "current": "91d29218a4968dfcd108a1eca98ac82360bd5d7da58997cb4c234c0583cd1332"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql",
+        "previous": "faf50075be170c410f6477ca9d5577d946ed735416e6245b32d0ffc5c5238b19",
+        "current": "031c69e47876e67eff9262a476ee3915c2fc1058cf18f62a4a2e6d4e46812903"
+      }
+    ],
+    "qualification": "Native run20 passed128 assertions and13 actual receipts on identical product SQL, qualifier, raw data and decoder. Integration retains upstream F06 CI selection; classifier suite rerun. Generated capture bootstrap differs only by removing one trailing blank line."
+  },
+  "restamp_audit": [
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
+      "to": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21 by migration 20260921052548 (installed 20260921060422). The only change to this runner is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list. No existing phase, fixture, candidate or assertion in this file was altered."
+    },
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694",
+      "to": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21: the native accounting cluster now declares LC_ALL=C/LANG=C for its own initdb and pg_ctl lifecycle commands, because an inherited UTF-8 locale made the macOS postmaster refuse to start ('postmaster became multithreaded during startup') and the runner died before its first assertion. No financial function, fixture body, assertion or captured definition changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+      "to": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+      "on": "2026-09-22",
+      "why": "Restamped 2026-09-22 with the Diamond Wheel v4 migration (owner rulings 2026-09-21, R2/R12/R13/R15 and the server half of R18). The only change to this classifier is two alternations widened so the wheel v4 receipt fixture, its replay test and the generated browser mirror reach the PostgreSQL accounting job that runs their probes: wheel-(?:earned|v3)-postgres-receipts gains v4, the wheel*PostgresContract test list gains V4PostgresContract, and src/utils gains wheelV4Model. No lane was narrowed, no path lost a job, and nothing else in the file changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6",
+      "to": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
+      "on": "2026-09-23",
+      "why": "Restamped 2026-09-23 (branch feat/cashier-phase5-statements, see cashier_statements_rebinding_20260923 in tests/fixtures/full-weekly-accounting/source-binding.json): tests/fixtures/cashier-statements/ joins the accounting fixture-directory alternation, so a change under it selects the PostgreSQL accounting job and its routing tests. One alternative is added to one selector; no branch is removed or narrowed, and no financial function, fixture body, assertion or captured definition of this fixture changed."
+    }
+  ]
+}

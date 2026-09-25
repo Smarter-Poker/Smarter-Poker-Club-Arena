@@ -381,6 +381,19 @@ $FILES"
       ;;
   esac
 
+  # Migration presence uses Git and the tracked schema manifest, not credentials.
+  # Check the whole branch: a follow-up push can otherwise hide an earlier
+  # migration behind HEAD~1 or the previous remote feature-branch tip.
+  MIGRATION_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
+                   || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+  if [ -z "$MIGRATION_BASE" ]; then
+    echo "[club-arena pre-push] BLOCKED: cannot establish the migration branch base."
+    FAIL=1
+  elif ! node scripts/ci/check-migrations-applied.mjs "$MIGRATION_BASE"; then
+    echo "[club-arena pre-push] BLOCKED by check-migrations-applied (CI runs this too)"
+    FAIL=1
+  fi
+
   # 0. Repo-wide invariants. Both are ~100ms.
   #
   #    CORRECTED 2026-08-28. This comment used to say branch protection was

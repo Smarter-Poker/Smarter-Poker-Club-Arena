@@ -4,6 +4,12 @@ import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // Hosted client checks use Node 20; production preflight remains pinned to Node 22.
+// The fixture also accepts Node 26, which is what the Mac running the local
+// prechecks is on - see the allowlist in
+// tests/operations/legacy-checkpoint-transport.mjs. Before that was widened,
+// all twelve of these failed on that machine at the version assert, before any
+// inspector work ran at all, and the failure was being written off as a Node
+// incompatibility that it never was.
 // Both execute the real controller and target with native inspector APIs.
 
 describe('actual isolated legacy checkpoint transport', () => {
@@ -17,6 +23,9 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['two', 'multiple instances refuse checkpoint invocation'],
     ['preexisting', 'an inspector owned by another caller remains untouched'],
     ['cleanup_close_timeout', 'missing close notification stays unknown without a competing close'],
+    ['refusal', 'validated native refusal and counts survive successful inspector cleanup'],
+    ['refusal_cleanup_timeout', 'cleanup refusal retains the original native refusal evidence'],
+    ['malformed_refusal', 'unrecognized or wrongly typed summary values cannot become diagnostics'],
   ])(
     '%s: %s',
     (scenario) => {

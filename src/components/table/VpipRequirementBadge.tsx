@@ -9,6 +9,15 @@
  *
  * His closing rule for the whole spec: **Data is dynamic. Design is immutable.**
  *
+ * ── 2026-09-23: THE FRAMES ARE GONE ────────────────────────────────────────
+ * Dan: "THE VPIP EXTERIOR AND INTERIOR FRAMES NEED TO BE REMOVED AND IT SHOULD
+ * JUST DISPLAY 'VPIP', UNDER IT THE ACTUAL PERCENTAGE, AND UNDER THAT THE
+ * 'TABLE MIN'." The plaque below this note is history; the badge is now three
+ * text rows on the felt - VPIP, the live figure, TABLE MIN N% - with no bezel, no
+ * face, no readout window, no blue accents and no CURRENT caption. The rules
+ * that outlast the plaque are kept: one dynamic field, one size input, no
+ * pass/fail colouring, no animation but a fade, the value a real text node.
+ *
  * WHY THIS IS CSS AND NOT HIS PNG. Dan's own recommendation, and the spec's
  * section 3 states it as a prohibition: the supplied artwork carries `54%`
  * baked into it, so shipping the raster would freeze the one thing that has to
@@ -145,32 +154,23 @@ function VpipRequirementBadgeInner({
          scripts/ci/check-title-case.mjs reads attributes too. */
       aria-label={`Current VPIP ${displayVpip}. Minimum Required VPIP ${minimumVpip} Percent.`}
     >
-      <div className="vpipBadge__face">
-        <div className="vpipBadge__title">VPIP</div>
-
-        <div className="vpipBadge__currentFrame">
-          <div className="vpipBadge__currentWindow">
-            <div className="vpipBadge__blueAccent vpipBadge__blueAccent--top" aria-hidden="true" />
-            <div className="vpipBadge__currentLabel">CURRENT</div>
-            {/* aria-live on the ONE field that changes. The wrapper carries
-                role="status" for the full sentence; this narrows what is
-                re-announced to the number, so a reader is not read the
-                minimum again every time the percentage ticks. */}
-            <div className="vpipBadge__currentValue" aria-live="polite">
-              {displayVpip}
-            </div>
-            <div
-              className="vpipBadge__blueAccent vpipBadge__blueAccent--bottom"
-              aria-hidden="true"
-            />
-          </div>
-        </div>
-
-        <div className="vpipBadge__minimum">
-          <span className="vpipBadge__dash" aria-hidden="true" />
-          <span className="vpipBadge__minText">MIN {minimumVpip}%</span>
-          <span className="vpipBadge__dash" aria-hidden="true" />
-        </div>
+      {/* ── THREE ROWS, NO FRAMES (Dan 2026-09-23) ─────────────────────────
+          "The VPIP exterior and interior frames need to be removed and it
+          should just display VPIP, under it the actual percentage, and under
+          that the table min." The machined plaque of 2026-09-07 - outer
+          bezel, black face, inner frame, readout window, two blue lights and
+          a CURRENT caption - is gone. What is left is the three facts, one to
+          a row, in the same metallic type, at the same single size input. */}
+      <div className="vpipBadge__title">VPIP</div>
+      {/* aria-live on the ONE field that changes. The wrapper carries
+          role="status" for the full sentence; this narrows what is
+          re-announced to the number, so a reader is not read the minimum
+          again every time the percentage ticks. */}
+      <div className="vpipBadge__currentValue" aria-live="polite">
+        {displayVpip}
+      </div>
+      <div className="vpipBadge__minimum">
+        <span className="vpipBadge__minText">TABLE MIN {minimumVpip}%</span>
       </div>
     </div>
   );

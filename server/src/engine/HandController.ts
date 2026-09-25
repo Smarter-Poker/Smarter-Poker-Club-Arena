@@ -37,6 +37,7 @@ import {
   isShortDeckVariant,
 } from './VariantRules.js';
 import { isDiamondCashVariant } from '../domain/DiamondCashBoundary.js';
+import { handFixedLimitSmallBet, type KillHandState } from './KillPot.js';
 
 import type {
   Card,
@@ -273,10 +274,34 @@ export class HandController {
     dealerSeat: number,
     private readonly readPublicTournamentStage?: import('./HorsePublicTournamentStage.js').HorsePublicTournamentReader
   ) {
+    /* KILL POT (kill-v1): a kill hand needs a fixed-limit game and its killer
+       dealt in. The engine guarantees both before it builds the config; if
+       either is ever missing, the kill is dropped HERE, before any reader
+       sizes from it, so posting, sizing and the published state agree that
+       this is a base-limit hand. */
+    if (config.killPot) {
+      const kill = config.killPot;
+      const killerDealt = players.some(
+        (p) => p.seat === kill.killerSeat && p.user_id === kill.killerUserId && !p.is_sitting_out
+      );
+      if (!isFixedLimitVariant(config.gameVariant) || !killerDealt) {
+        reportError(
+          new Error(
+            `[HandController] hand ${config.handNumber} dropped its kill: ` +
+              (killerDealt
+                ? `variant ${config.gameVariant} is not fixed limit`
+                : 'killer not dealt in')
+          ),
+          'HandController.kill_pot_dropped'
+        );
+        config = { ...config, killPot: undefined };
+      }
+    }
     if (config.asset === 'diamonds') {
       const amounts = [
         config.smallBlind,
         config.bigBlind,
+        ...(config.killPot ? [config.killPot.killBlind, config.killPot.bigBet] : []),
         config.ante ?? 0,
         ...players.map((player) => player.stack),
         ...(config.straddles ?? []).map((straddle) => straddle.amount),
@@ -299,8 +324,15 @@ export class HandController {
       // rule it already applied to every other amount on the hand. The ante is
       // rounded to the table's own unit below and the boundary refuses a row
       // whose ante could not be whole, so neither half can produce a fraction.
+      /* A DIAMOND TOURNAMENT HAND IS A TOURNAMENT HAND (Phase 8, 2026-09-14).
+         `config.isTournament` was refused here from Phase 6 until the
+         tournament money doors existed. They do now - the entry is custody
+         and the database pays the places from it - and a tournament hand
+         already arrives with the deductions this guard refuses set to
+         nothing: rakeConfig is zero and the BBJ fee off for every tournament
+         table, so the same checks below hold it to the same rule. What a
+         tournament hand deals is tournament chips, whole by construction. */
       if (
-        config.isTournament ||
         /* 2026-09-12: the nine games the chip cash screen offers, not the one
            this arena opened with. Every place a pot is divided was already
            made unit-aware while it was NLH only, the hi-lo split included, so
@@ -312,7 +344,7 @@ export class HandController {
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled
       ) {
-        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
+        throw new Error('Diamond Certification Requires A Supported Game With No Deductions');
       }
     }
     this.config = config;
@@ -330,8 +362,14 @@ export class HandController {
       communityCards3: [],
       pot: 0,
       currentBet: 0,
-      lastRaise: config.bigBlind,
-      minRaise: config.bigBlind,
+      // A kill hand's preflop wager unit is the kill blind (the effective
+      // small bet), not the base big blind.
+      lastRaise: isFixedLimitVariant(config.gameVariant)
+        ? handFixedLimitSmallBet(config)
+        : config.bigBlind,
+      minRaise: isFixedLimitVariant(config.gameVariant)
+        ? handFixedLimitSmallBet(config)
+        : config.bigBlind,
       dealerSeat,
       currentPlayerSeat: -1,
       players: this.initializePlayers(players),
@@ -538,7 +576,21 @@ export class HandController {
       }
     }
 
-    const sbPlayer = this.state.players.find((p) => p.seat === sbSeat);
+    /* KILL POT (kill-v1): the killer posts a LIVE kill blind. A killer who is
+       already the small or big blind posts ONLY the kill blind, in place of
+       that blind - one live contribution - so their ordinary blind is skipped
+       below and the other blind posts normally. The constructor has already
+       dropped a kill whose killer is not dealt in. */
+    const kill = this.config.killPot;
+    const killer = kill
+      ? this.state.players.find(
+          (p) => p.seat === kill.killerSeat && p.user_id === kill.killerUserId && !p.is_sitting_out
+        )
+      : undefined;
+    const killerSeat = killer ? killer.seat : -1;
+
+    const foundSbPlayer = this.state.players.find((p) => p.seat === sbSeat);
+    const sbPlayer = foundSbPlayer && foundSbPlayer.seat !== killerSeat ? foundSbPlayer : undefined;
     if (sbPlayer) {
       const sbAmount = Math.min(smallBlind, sbPlayer.stack);
       sbPlayer.bet = sbAmount;
@@ -548,7 +600,8 @@ export class HandController {
       if (sbPlayer.stack === 0) sbPlayer.is_all_in = true;
     }
 
-    const bbPlayer = this.state.players.find((p) => p.seat === bbSeat);
+    const foundBbPlayer = this.state.players.find((p) => p.seat === bbSeat);
+    const bbPlayer = foundBbPlayer && foundBbPlayer.seat !== killerSeat ? foundBbPlayer : undefined;
     if (bbPlayer) {
       const bbAmount = Math.min(bigBlind, bbPlayer.stack);
       bbPlayer.bet = bbAmount;
@@ -592,7 +645,8 @@ export class HandController {
           dbPlayer &&
           !dbPlayer.is_sitting_out &&
           dbPlayer.seat !== sbSeat &&
-          dbPlayer.seat !== bbSeat
+          dbPlayer.seat !== bbSeat &&
+          dbPlayer.seat !== killerSeat
         ) {
           // Dead SB goes straight to pot (dead money, not a live bet)
           const deadSBAmount = Math.min(smallBlind, dbPlayer.stack);
@@ -618,7 +672,13 @@ export class HandController {
     if (this.config.bbOnlyPosts && this.config.bbOnlyPosts.length > 0) {
       for (const bp of this.config.bbOnlyPosts) {
         const p = this.state.players.find((pl) => pl.seat === bp.seat);
-        if (p && p.seat !== sbSeat && p.seat !== bbSeat && !p.is_sitting_out) {
+        if (
+          p &&
+          p.seat !== sbSeat &&
+          p.seat !== bbSeat &&
+          p.seat !== killerSeat &&
+          !p.is_sitting_out
+        ) {
           const amt = Math.min(bigBlind, p.stack);
           p.bet = amt;
           p.totalInvested += amt;
@@ -627,6 +687,25 @@ export class HandController {
           if (p.stack === 0) p.is_all_in = true;
         }
       }
+    }
+
+    /* The kill blind itself. Live: it is the killer's bet, and it is the
+       preflop bet level - currentBet = max(big blind, kill blind) - and the
+       first preflop wager for the cap (fixedLimitStreetBounds starts the
+       preflop level at the street bet, which on a kill hand IS the kill
+       blind). A short killer is all in for their stack; the level stays the
+       full kill blind, exactly as a short big blind leaves the level at the
+       full big blind, so nobody else's price moves and no chips are made. */
+    if (kill && killer) {
+      const killAmount = Math.min(kill.killBlind, killer.stack);
+      killer.bet = killAmount;
+      killer.totalInvested += killAmount;
+      killer.stack -= killAmount;
+      this.state.pot += killAmount;
+      if (killer.stack === 0) killer.is_all_in = true;
+      this.state.currentBet = Math.max(this.state.currentBet, bigBlind, kill.killBlind);
+      this.state.lastRaise = kill.smallBet;
+      this.state.minRaise = kill.smallBet;
     }
 
     /**
@@ -672,7 +751,10 @@ export class HandController {
       blind.dead = Math.round((blind.dead - ante) * 100) / 100;
     }
 
-    if (this.config.ante && this.config.bigBlindAnte && bbPlayer) {
+    // The big-blind SEAT fronts the table ante. A killer in that seat posts the
+    // kill blind in place of the blind, not in place of the ante.
+    const bbaPlayer = bbPlayer ?? foundBbPlayer;
+    if (this.config.ante && this.config.bigBlindAnte && bbaPlayer) {
       // The BB fronts the whole table. Unlike an individual ante, this stays
       // shared dead money and is paid from the stack remaining after the blind.
       const totalBBA = bigBlindAnteTotal(
@@ -680,12 +762,12 @@ export class HandController {
         activePlayers.length,
         this.config.bigBlind
       );
-      const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
-      bbPlayer.totalInvested += bbaAmount;
-      bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
-      bbPlayer.stack -= bbaAmount;
+      const bbaAmount = Math.min(totalBBA, bbaPlayer.stack);
+      bbaPlayer.totalInvested += bbaAmount;
+      bbaPlayer.deadInvested = (bbaPlayer.deadInvested ?? 0) + bbaAmount;
+      bbaPlayer.stack -= bbaAmount;
       this.state.pot += bbaAmount;
-      if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
+      if (bbaPlayer.stack === 0) bbaPlayer.is_all_in = true;
     }
 
     /** FORCED MONEY, SNAPSHOT TWO OF THREE: blinds + antes. */
@@ -740,6 +822,11 @@ export class HandController {
       const bbAmount = Math.min(bigBlind, bbPlayer.bet);
       if (bbAmount > 0) blindsPostings.push({ seat: bbSeat, type: 'big_blind', amount: bbAmount });
     }
+    if (kill && killer) {
+      const killAmount = Math.min(kill.killBlind, killer.bet);
+      if (killAmount > 0)
+        blindsPostings.push({ seat: killer.seat, type: 'kill_blind', amount: killAmount });
+    }
     if (blindsPostings.length > 0) {
       this.emit({ type: 'BLINDS_POSTED', postings: blindsPostings } as any);
     }
@@ -783,7 +870,15 @@ export class HandController {
 
       // Blind bucket. `post` covers a dead blind and a "post BB to enter" —
       // forced, but neither of the two named blinds.
-      const blindKind = p.seat === sbSeat ? 'sb' : p.seat === bbSeat ? 'bb' : 'post';
+      // The killer's live post is the kill blind, whichever seat they hold.
+      const blindKind =
+        p.seat === killerSeat
+          ? 'kill_blind'
+          : p.seat === sbSeat
+            ? 'sb'
+            : p.seat === bbSeat
+              ? 'bb'
+              : 'post';
       push(blindKind, round2(b.total - b.dead), false);
       push('post', b.dead, true);
 
@@ -1112,7 +1207,7 @@ export class HandController {
         isFullRaiseFlag = raiseSize >= bettingState.minRaise - 0.005;
         if (raiseSize > this.state.lastRaise) this.state.lastRaise = raiseSize;
         // Bible V8 §4.14: Keep minRaise in sync — must be at least lastRaise or BB
-        this.state.minRaise = Math.max(this.config.bigBlind, this.state.lastRaise);
+        this.state.minRaise = Math.max(this.wagerUnit(), this.state.lastRaise);
         const chipsAdded = actualAmount - player.bet;
         player.totalInvested += chipsAdded;
         player.stack -= chipsAdded;
@@ -1139,7 +1234,7 @@ export class HandController {
           if (isFullRaiseFlag) {
             this.state.lastRaise = rs;
             // Bible V8 §4.14: Keep minRaise in sync for full-raise all-ins
-            this.state.minRaise = Math.max(this.config.bigBlind, this.state.lastRaise);
+            this.state.minRaise = Math.max(this.wagerUnit(), this.state.lastRaise);
             // Bible V8 §4.21: Full-raise all-in counts as aggression for showdown order
             this.state.lastAggressorSeat = seat;
           }
@@ -1592,7 +1687,7 @@ export class HandController {
     // moving INTO.
     const incomingStage = this.nextStageAfter(this.state.stage);
     const streetReset = isFixedLimitVariant(this.config.gameVariant)
-      ? fixedLimitBetSize(this.config.bigBlind, incomingStage)
+      ? this.streetBetSize(incomingStage)
       : this.config.bigBlind;
     this.state.lastRaise = streetReset;
     this.state.minRaise = streetReset;
@@ -3249,11 +3344,7 @@ export class HandController {
     // here as well as rejected in validateAction so the button never appears.
     const wagersCapped =
       isFixedLimitVariant(this.config.gameVariant) &&
-      isFixedLimitCapped(
-        this.state.actionHistory,
-        this.state.stage,
-        fixedLimitBetSize(this.config.bigBlind, this.state.stage)
-      );
+      isFixedLimitCapped(this.state.actionHistory, this.state.stage, this.streetBetSize());
     if (toCall === 0) {
       actions.push('check');
 
@@ -3345,6 +3436,34 @@ export class HandController {
   }
 
   /**
+   * KILL POT (kill-v1): the fixed-limit wager for a street, sized from the
+   * hand's EFFECTIVE small bet - the kill's on a kill hand, the big blind
+   * otherwise. Every fixed-limit reader in this controller goes through here.
+   */
+  private streetBetSize(stage: HandStage = this.state.stage): number {
+    return fixedLimitBetSize(handFixedLimitSmallBet(this.config), stage);
+  }
+
+  /** The minimum wager unit: the effective small bet on fixed limit, else the big blind. */
+  private wagerUnit(): number {
+    return isFixedLimitVariant(this.config.gameVariant)
+      ? handFixedLimitSmallBet(this.config)
+      : this.config.bigBlind;
+  }
+
+  /** The hand's effective fixed-limit small bet, or null on any other structure. */
+  public getFixedLimitSmallBet(): number | null {
+    return isFixedLimitVariant(this.config.gameVariant)
+      ? handFixedLimitSmallBet(this.config)
+      : null;
+  }
+
+  /** This hand's frozen kill state, or null on a base-limit hand. */
+  public getKillHandState(): KillHandState | null {
+    return this.config.killPot ?? null;
+  }
+
+  /**
    * The legal betting bounds for a player about to act, under whichever
    * structure this table's variant uses.
    *
@@ -3361,22 +3480,22 @@ export class HandController {
         this.state.pot,
         this.state.currentBet,
         player.bet,
-        this.config.bigBlind,
+        this.wagerUnit(),
         this.state.lastRaise,
         false,
         {
           // Small bet preflop and flop, big bet turn and river.
-          betSize: fixedLimitBetSize(this.config.bigBlind, this.state.stage),
+          betSize: this.streetBetSize(),
           raiseSize: fixedLimitStreetBounds(
             this.state.actionHistory,
             this.state.stage,
-            fixedLimitBetSize(this.config.bigBlind, this.state.stage),
+            this.streetBetSize(),
             this.state.currentBet
           ).raiseSize,
           capped: isFixedLimitCapped(
             this.state.actionHistory,
             this.state.stage,
-            fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+            this.streetBetSize()
           ),
         }
       );
@@ -3493,7 +3612,7 @@ export class HandController {
     // street's fixed bet. An intervening caller does not inherit another
     // player's rights, and turn/river use the big bet rather than the blind.
     const reopenIncrement = isFixedLimitVariant(this.config.gameVariant)
-      ? fixedLimitBetSize(this.config.bigBlind, this.state.stage) / 2
+      ? this.streetBetSize() / 2
       : Math.max(this.config.bigBlind, this.state.lastRaise);
     if (playerLastIdx !== -1 && this.state.currentBet - player.bet >= reopenIncrement - 0.005) {
       return true;
@@ -3581,9 +3700,7 @@ export class HandController {
       minRaiseTo,
       maxRaiseTo,
       structure: bettingState.structure ?? 'no_limit',
-      fixedBetSize: isFixedLimitVariant(this.config.gameVariant)
-        ? fixedLimitBetSize(this.config.bigBlind, this.state.stage)
-        : null,
+      fixedBetSize: isFixedLimitVariant(this.config.gameVariant) ? this.streetBetSize() : null,
       wagersCapped: bettingState.wagersCapped === true,
     };
   }
@@ -3596,6 +3713,21 @@ export class HandController {
       timedRake: this.config.rakeConfig.timedRake
         ? { ...this.config.rakeConfig.timedRake }
         : undefined,
+    };
+  }
+
+  /** Dealt stakes stay fixed even when the table advances to its next level. */
+  public getBlindSnapshot(): {
+    smallBlind: number;
+    bigBlind: number;
+    ante: number;
+    bigBlindAnte: boolean;
+  } {
+    return {
+      smallBlind: this.config.smallBlind,
+      bigBlind: this.config.bigBlind,
+      ante: this.config.ante ?? 0,
+      bigBlindAnte: this.config.bigBlindAnte === true,
     };
   }
 

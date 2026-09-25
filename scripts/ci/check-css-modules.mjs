@@ -26,6 +26,21 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve, join, relative, sep } from 'node:path';
 
+/**
+ * A module sheet may be a manifest of `@import './partial.css';` lines (Vite
+ * inlines them with postcss-import before postcss-modules scopes the result,
+ * so the partials share the module's one scope). Read the sheet the way the
+ * bundler does: with every relative quoted import inlined, in order.
+ */
+function readStylesheet(file, seen = new Set()) {
+  if (seen.has(file)) return '';
+  seen.add(file);
+  return readFileSync(file, 'utf8').replace(
+    /^@import\s+['"](\.[^'"]+)['"]\s*;\s*$/gm,
+    (_match, rel) => readStylesheet(resolve(dirname(file), rel), seen)
+  );
+}
+
 const ROOT = resolve(process.cwd(), 'src');
 
 /**
@@ -67,7 +82,7 @@ for (const file of walk(ROOT)) {
 
   let css;
   try {
-    css = readFileSync(resolve(dirname(file), rel), 'utf8');
+    css = readStylesheet(resolve(dirname(file), rel));
   } catch {
     failures.push(`${file}: imports ${rel}, which does not exist`);
     continue;

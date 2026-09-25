@@ -47,6 +47,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import { describeStoredMttStructure } from '../../../../server/src/tournament/mttStructureDescription';
+import {
+  readTournamentFormat,
+  getTournamentEntryCapacity,
+} from '../../../utils/tournamentPresentation';
 import { totalBuyIn } from '../../../utils/buyIn';
 
 /**
@@ -56,6 +60,7 @@ import { totalBuyIn } from '../../../utils/buyIn';
  */
 export const SATELLITE_COLUMNS = [
   'id',
+  'format_contract',
   'name',
   'status',
   'tournament_type',
@@ -91,7 +96,8 @@ export const SATELLITE_COLUMNS = [
 /** A satellite list is a handful of events, never a page of them. */
 export const SATELLITE_LIMIT = 200;
 
-const LIVE_STATUSES = ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING'] as const;
+// BAGGED: a multi-day satellite between days is still live.
+const LIVE_STATUSES = ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING', 'BAGGED'] as const;
 
 export interface SatelliteRow {
   id: string;
@@ -99,7 +105,7 @@ export interface SatelliteRow {
 }
 
 type CardType = 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
-type CardStatus = 'registering' | 'running' | 'finished' | 'cancelled';
+type CardStatus = 'registering' | 'running' | 'bagged' | 'finished' | 'cancelled';
 
 const num = (v: unknown): number => {
   const n = Number(v);
@@ -117,26 +123,15 @@ export function speedLabel(minutes: number): string {
 }
 
 export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
-  const tournType = String(sat.tournament_type || '').toLowerCase();
-  /**
-   * Every row this mapper ever sees was selected by
-   * `.eq('satellite_target_id', tournamentId)`, so it IS a satellite by
-   * definition and that is the default. The old mapper tested `sat.is_satellite`
-   * — a column that does not exist on `tournaments`, so the test was always
-   * false and the type fell through to whatever came next, or to 'mtt'. The
-   * query filter is the authority here; the type column only refines it.
-   */
-  let type: CardType = 'satellite';
-  if (tournType === 'spin') type = 'spin';
-  else if (tournType === 'sng') type = 'sng';
-  else if (sat.is_mystery_bounty) type = 'mystery';
-  else if (sat.is_pko) type = 'pko';
-  else if (sat.is_bounty) type = 'bounty';
+  // The target-link query establishes satellite identity, including legacy SNG rows.
+  const type: CardType = 'satellite';
 
   let status: CardStatus = 'finished';
   const rawStatus = String(sat.status || '').toUpperCase();
   if (['ANNOUNCED', 'REGISTERING', 'LATE_REG'].includes(rawStatus)) status = 'registering';
   else if (rawStatus === 'RUNNING') status = 'running';
+  // Between days, never "finished" by default.
+  else if (rawStatus === 'BAGGED') status = 'bagged';
   else if (['CANCELLED', 'ABORTED'].includes(rawStatus)) status = 'cancelled';
 
   const structureFacts = describeStoredMttStructure(sat.blind_structure, sat.starting_chips);
@@ -158,7 +153,8 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
     blindStructure: structureFacts.speedLabel ?? 'Unconfirmed',
     blindDuration: structureFacts.openingMinutes ?? undefined,
     structureFacts,
-    maxPlayers: num(sat.max_players),
+    format_contract: readTournamentFormat(sat),
+    maxPlayers: getTournamentEntryCapacity(sat),
     registeredPlayers: num(sat.current_players),
     startsAt: sat.start_time as string | undefined,
     started_at: sat.started_at as string | undefined,

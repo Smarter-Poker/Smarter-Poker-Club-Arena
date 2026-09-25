@@ -82,11 +82,32 @@ describe('tournamentEventBridge', () => {
     expect(names()).toEqual(['TOURNAMENT_BREAK', 'BREAK_START', 'TOURNAMENT_BREAK', 'BREAK_START']);
   });
 
-  it('ignores everything that is not a break, and bad input', () => {
-    relayTournamentEvent(tid(), { type: 'level_up', payload: {} });
-    relayTournamentEvent(tid(), { type: 'player_eliminated', payload: {} });
+  /**
+   * This used to assert that level_up and player_eliminated were ignored, and
+   * that was right when the bridge only carried breaks. It no longer is: both
+   * now have a real cross-client producer for the first time, because their only
+   * previous emitter (TournamentTimerService.handleLevelChange) never runs -
+   * nothing in src/ calls startTimer(). What must still be ignored is a type the
+   * bridge does not map and input it cannot read.
+   */
+  it('ignores an unmapped type and unreadable input', () => {
+    relayTournamentEvent(tid(), { type: 'chip_race', payload: { level: 4 } });
+    relayTournamentEvent(tid(), { type: 'level_up', payload: {} }); // no level
+    relayTournamentEvent(tid(), { type: 'player_eliminated', payload: {} }); // no player
     relayTournamentEvent(tid(), null);
     relayTournamentEvent('', { type: 'tournament_break', payload: {} });
     expect(names()).toEqual([]);
+  });
+
+  it('relays a well-formed level and elimination, which is the point of the change', () => {
+    const id = tid();
+    relayTournamentEvent(id, { type: 'level_up', payload: { level: 3, smallBlind: 100 } });
+    relayTournamentEvent(id, {
+      type: 'player_eliminated',
+      payload: { userId: 'u-4', position: 12 },
+    });
+    expect(names()).toEqual(['BLIND_LEVEL_CHANGE', 'TOURNAMENT_UPDATED', 'PLAYER_ELIMINATED']);
+    // index 3 is the fourth level played; the room calls it LEVEL 4.
+    expect(emitted.calls[0][1].level).toBe(4);
   });
 });

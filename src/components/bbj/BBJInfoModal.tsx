@@ -28,6 +28,7 @@
  * follows it: the main pool, or the flat mini for this table's stakes.
  */
 
+import { titleCase } from '../../utils/titleCase';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import BBJRecentHits from './BBJRecentHits';
@@ -47,6 +48,7 @@ import {
   miniPauseReason,
 } from '../../config/bbjMini';
 import { miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './BBJInfoModal.css';
 
 export interface BBJInfoModalProps {
@@ -275,16 +277,53 @@ export function BBJInfoModal({
     switchTab(TABS[next].key);
   };
 
+  /* THE HEADER FOLLOWS THE ROW: the main pool, or the flat mini for this
+     table's stakes. Printed as the console's title, whole chips, never
+     overstated (Math.trunc) and never a decimal on a forward-facing page. */
+  const headline = isMini
+    ? !mini
+      ? 'Reading'
+      : !mini.enabled
+        ? 'Off'
+        : miniTier
+          ? miniTier.payable
+            ? Math.trunc(miniTier.amount).toLocaleString('en-US')
+            : 'Paused'
+          : miniRange
+            ? miniRange.lo === miniRange.hi
+              ? Math.trunc(miniRange.lo).toLocaleString('en-US')
+              : `${Math.trunc(miniRange.lo).toLocaleString('en-US')} - ${Math.trunc(miniRange.hi).toLocaleString('en-US')}`
+            : /* "Off" is only true when the switch is off. A club whose
+                 reserve is at its floor is PAUSED, and the subtitle says so -
+                 the same words the jackpot page uses. */
+              miniPause === 'reserve_at_floor'
+              ? 'Paused'
+              : 'Off'
+    : Math.trunc(Number(poolAmount || 0)).toLocaleString('en-US');
+  const sublabel =
+    isMini && (miniTier || miniPause)
+      ? miniPause
+        ? BBJ_MINI_PAUSE_TEXT[miniPause]
+        : `Flat, At ${miniTier?.label} Stakes`
+      : undefined;
+
   /* PORTALLED TO THE BODY, like every other overlay here (Modal, Dropdown,
    * AdvancedFilters, TournamentRankingCard). This was the only one rendered
    * inline in the page tree, which means a single `transform`, `filter` or
    * `contain` on any ancestor turns it into that ancestor's containing block -
    * and a "fixed" backdrop that is really positioned against a card in the
-   * lobby is exactly the kind of thing that looks like the page tearing. */
+   * lobby is exactly the kind of thing that looks like the page tearing.
+   *
+   * ONE CONSOLE (#ClubArenaConsole): the spade master. The pool is the
+   * engraved title, the tier the word in the painted pill slot, the stakes
+   * line the subtitle; the three pages and the Bad Beat Jackpot | Mini pair
+   * are lit words on the glass, and CLOSE is the lit word at the foot. The
+   * `bbj-modal__amount--mini` modifier on the dialog is what makes a flat
+   * mini read as a smaller figure than the pool. */
   return createPortal(
     <div className="bbj-modal__backdrop" onClick={onClose} role="presentation">
       <div
-        className="bbj-modal"
+        className={isMini ? 'bbjc bbj-modal__amount--mini' : 'bbjc'}
         ref={dialogRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
@@ -293,270 +332,246 @@ export function BBJInfoModal({
         aria-modal="true"
         aria-label="Bad Beat Jackpot"
       >
-        <div className="bbj-modal__header">
-          <div className="bbj-modal__title">
-            <span className="bbj-modal__label">
-              {isMini ? 'MINI BAD BEAT JACKPOT' : 'BAD BEAT JACKPOT'}
-            </span>
-            {isMini ? (
-              <span className="bbj-modal__amount bbj-modal__amount--mini">
-                {!mini
-                  ? 'Reading'
-                  : !mini.enabled
-                    ? 'Off'
-                    : miniTier
-                      ? miniTier.payable
-                        ? Math.trunc(miniTier.amount).toLocaleString('en-US')
-                        : 'Paused'
-                      : miniRange
-                        ? miniRange.lo === miniRange.hi
-                          ? Math.trunc(miniRange.lo).toLocaleString('en-US')
-                          : `${Math.trunc(miniRange.lo).toLocaleString('en-US')} - ${Math.trunc(miniRange.hi).toLocaleString('en-US')}`
-                        : /* "Off" is only true when the switch is off. A club
-                             whose reserve is at its floor is PAUSED, and the
-                             sublabel below says so - the same words the
-                             jackpot page uses. */
-                          miniPause === 'reserve_at_floor'
-                          ? 'Paused'
-                          : 'Off'}
-              </span>
-            ) : (
-              <span className="bbj-modal__amount">
-                {Number(poolAmount || 0).toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            )}
-            {isMini && (miniTier || miniPause) && (
-              <span className="bbj-modal__sublabel">
-                {miniPause ? BBJ_MINI_PAUSE_TEXT[miniPause] : `Flat, At ${miniTier?.label} Stakes`}
-              </span>
-            )}
-          </div>
-          <button className="bbj-modal__close" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
-
-        <div
-          className="bbj-modal__tabs"
-          role="tablist"
-          aria-label="Bad Beat Jackpot Sections"
-          onKeyDown={onTabsKeyDown}
+        <SpadeConsole
+          onClose={onClose}
+          eyebrow={isMini ? 'MINI BAD BEAT JACKPOT' : 'BAD BEAT JACKPOT'}
+          title={headline}
+          subtitle={sublabel}
+          pill={isMini ? 'Mini' : 'Main'}
+          pillInk={isMini ? 'gold' : 'blue'}
+          foot="foot"
+          className="bbjc__console"
         >
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              id={`bbj-tab-${t.key}`}
-              aria-selected={tab === t.key}
-              aria-controls="bbj-tabpanel"
-              tabIndex={tab === t.key ? 0 : -1}
-              className={`bbj-modal__tab${tab === t.key ? ' is-active' : ''}`}
-              onClick={() => switchTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* THE SECOND ROW - not a fourth tab. Dan: "a clickable tab for the
-            mini (shouldn't be a main feature)". It sits under the three pages
-            and swaps the page in place, so Winner / Basic / Qualifying keep
-            their meaning and the mini is one tap away on each. */}
-        <div className="bbj-modal__tiers" role="group" aria-label="Which Jackpot">
-          <button
-            type="button"
-            className={`bbj-modal__tier${!isMini ? ' is-active' : ''}`}
-            aria-pressed={!isMini}
-            onClick={() => switchTier('main')}
+          <div
+            className="bbj-modal__tabs"
+            role="tablist"
+            aria-label="Bad Beat Jackpot Sections"
+            onKeyDown={onTabsKeyDown}
           >
-            Bad Beat Jackpot
-          </button>
-          <button
-            type="button"
-            className={`bbj-modal__tier${isMini ? ' is-active' : ''}`}
-            aria-pressed={isMini}
-            onClick={() => switchTier('mini')}
-          >
-            Mini
-          </button>
-        </div>
-
-        <div
-          className="bbj-modal__body"
-          id="bbj-tabpanel"
-          role="tabpanel"
-          aria-labelledby={`bbj-tab-${tab}`}
-          tabIndex={0}
-        >
-          {tab === 'winner' &&
-            (openHandPayoutId ? (
-              <BBJHandDetail
-                payoutId={openHandPayoutId}
-                onBack={() => setOpenHandPayoutId(null)}
-                currentUserName={currentUserName}
-                currentUserId={currentUserId}
-              />
-            ) : (
-              <BBJRecentHits
-                key={tier}
-                poolId={poolId}
-                limit={5}
-                currentUserName={currentUserName}
-                currentUserId={currentUserId}
-                onOpenHand={setOpenHandPayoutId}
-                poolAmount={poolAmount}
-                kind={tier}
-              />
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                role="tab"
+                id={`bbj-tab-${t.key}`}
+                aria-selected={tab === t.key}
+                aria-controls="bbj-tabpanel"
+                tabIndex={tab === t.key ? 0 : -1}
+                className={`bbj-modal__tab${tab === t.key ? ' is-active' : ''}`}
+                onClick={() => switchTab(t.key)}
+              >
+                {t.label}
+              </button>
             ))}
+          </div>
 
-          {tab === 'basic' && isMini && (
-            <div className="bbj-modal__rules">
-              {hasTableContext && miniInfo.eligible && miniTier && (
-                <div className="bbj-modal__here">
-                  <span className="bbj-modal__rule-label">If It Hits At This Table</span>
-                  <p className="bbj-modal__rule-text">
-                    {miniPause ? (
-                      <>
-                        Paused At {miniTier.label} Stakes - {BBJ_MINI_PAUSE_TEXT[miniPause]}
-                      </>
-                    ) : (
-                      <>
-                        <strong>{Math.trunc(miniTier.amount).toLocaleString('en-US')}</strong> Flat
-                        ({miniTier.label} Stakes)
-                      </>
+          {/* THE SECOND ROW - not a fourth tab. Dan: "a clickable tab for the
+              mini (shouldn't be a main feature)". It sits under the three pages
+              and swaps the page in place, so Winner / Basic / Qualifying keep
+              their meaning and the mini is one tap away on each. */}
+          <div className="bbj-modal__tiers" role="group" aria-label="Which Jackpot">
+            <button
+              type="button"
+              className={`bbj-modal__tier${!isMini ? ' is-active' : ''}`}
+              aria-pressed={!isMini}
+              onClick={() => switchTier('main')}
+            >
+              Bad Beat Jackpot
+            </button>
+            <button
+              type="button"
+              className={`bbj-modal__tier${isMini ? ' is-active' : ''}`}
+              aria-pressed={isMini}
+              onClick={() => switchTier('mini')}
+            >
+              Mini
+            </button>
+          </div>
+
+          <div
+            className="bbj-modal__body"
+            id="bbj-tabpanel"
+            role="tabpanel"
+            aria-labelledby={`bbj-tab-${tab}`}
+            tabIndex={0}
+          >
+            {tab === 'winner' &&
+              (openHandPayoutId ? (
+                <BBJHandDetail
+                  payoutId={openHandPayoutId}
+                  onBack={() => setOpenHandPayoutId(null)}
+                  currentUserName={currentUserName}
+                  currentUserId={currentUserId}
+                />
+              ) : (
+                <BBJRecentHits
+                  key={tier}
+                  poolId={poolId}
+                  limit={5}
+                  currentUserName={currentUserName}
+                  currentUserId={currentUserId}
+                  onOpenHand={setOpenHandPayoutId}
+                  poolAmount={poolAmount}
+                  kind={tier}
+                />
+              ))}
+
+            {tab === 'basic' && isMini && (
+              <div className="bbj-modal__rules">
+                {hasTableContext && miniInfo.eligible && miniTier && (
+                  <div className="bbj-modal__here">
+                    <span className="bbj-modal__rule-label">If It Hits At This Table</span>
+                    <p className="bbj-modal__rule-text">
+                      {miniPause ? (
+                        <>
+                          Paused At {miniTier.label} Stakes - {BBJ_MINI_PAUSE_TEXT[miniPause]}
+                        </>
+                      ) : (
+                        <>
+                          <strong>{Math.trunc(miniTier.amount).toLocaleString('en-US')}</strong>{' '}
+                          Flat ({miniTier.label} Stakes)
+                        </>
+                      )}
+                    </p>
+                    {!miniPause && (
+                      <div className="bbj-modal__split">
+                        <div className="bbj-modal__split-row">
+                          <span>Bad Beat Hand</span>
+                          <span>
+                            {BBJ_MINI_SPLIT_PERCENT.loser} &middot;{' '}
+                            {Math.trunc(miniTier.amount * BBJ_MINI_SPLIT.loser).toLocaleString(
+                              'en-US'
+                            )}
+                          </span>
+                        </div>
+                        <div className="bbj-modal__split-row">
+                          <span>Won The Hand</span>
+                          <span>
+                            {BBJ_MINI_SPLIT_PERCENT.winner} &middot;{' '}
+                            {Math.trunc(miniTier.amount * BBJ_MINI_SPLIT.winner).toLocaleString(
+                              'en-US'
+                            )}
+                          </span>
+                        </div>
+                        <div className="bbj-modal__split-row">
+                          <span>Everyone Else Dealt In</span>
+                          <span>
+                            {BBJ_MINI_SPLIT_PERCENT.table} &middot;{' '}
+                            {Math.trunc(miniTier.amount * BBJ_MINI_SPLIT.table).toLocaleString(
+                              'en-US'
+                            )}
+                          </span>
+                        </div>
+                      </div>
                     )}
-                  </p>
-                  {!miniPause && (
+                  </div>
+                )}
+                {hasTableContext && !miniInfo.eligible && (
+                  <div className="bbj-modal__here">
+                    <p className="bbj-modal__rule-text">
+                      The Mini Bad Beat Jackpot Is Not Available For {miniInfo.variantLabel}.
+                    </p>
+                  </div>
+                )}
+                <BBJBasicPanel kind="mini" mini={mini} highlightBB={bigBlind} />
+                <p className="bbj-modal__fineprint">
+                  Chips Are Credited To Your Stack At The Table The Moment It Hits, And They Leave
+                  With You.
+                </p>
+              </div>
+            )}
+
+            {tab === 'basic' && !isMini && (
+              <div className="bbj-modal__rules">
+                {hasTableContext && info.eligible && (
+                  <div className="bbj-modal__here">
+                    <span className="bbj-modal__rule-label">If It Hits At This Table</span>
+                    <p className="bbj-modal__rule-text">
+                      <strong>{pct}%</strong> Of The Pool
+                      {poolAmount > 0 && (
+                        <> (About {Math.trunc(tableShare).toLocaleString('en-US')} Today)</>
+                      )}
+                    </p>
                     <div className="bbj-modal__split">
                       <div className="bbj-modal__split-row">
                         <span>Bad Beat Hand</span>
                         <span>
-                          {BBJ_MINI_SPLIT_PERCENT.loser} &middot;{' '}
-                          {Math.trunc(miniTier.amount * BBJ_MINI_SPLIT.loser).toLocaleString(
-                            'en-US'
-                          )}
+                          50% &middot; {Math.trunc(tableShare * 0.5).toLocaleString('en-US')}
                         </span>
                       </div>
                       <div className="bbj-modal__split-row">
                         <span>Won The Hand</span>
                         <span>
-                          {BBJ_MINI_SPLIT_PERCENT.winner} &middot;{' '}
-                          {Math.trunc(miniTier.amount * BBJ_MINI_SPLIT.winner).toLocaleString(
-                            'en-US'
-                          )}
+                          25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
                         </span>
                       </div>
                       <div className="bbj-modal__split-row">
                         <span>Everyone Else Dealt In</span>
                         <span>
-                          {BBJ_MINI_SPLIT_PERCENT.table} &middot;{' '}
-                          {Math.trunc(miniTier.amount * BBJ_MINI_SPLIT.table).toLocaleString(
-                            'en-US'
-                          )}
+                          25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
                         </span>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
-              {hasTableContext && !miniInfo.eligible && (
-                <div className="bbj-modal__here">
-                  <p className="bbj-modal__rule-text">
-                    The Mini Bad Beat Jackpot Is Not Available For {miniInfo.variantLabel}.
-                  </p>
-                </div>
-              )}
-              <BBJBasicPanel kind="mini" mini={mini} highlightBB={bigBlind} />
-              <p className="bbj-modal__fineprint">
-                Chips Are Credited To Your Stack At The Table The Moment It Hits, And They Leave
-                With You.
-              </p>
-            </div>
-          )}
-
-          {tab === 'basic' && !isMini && (
-            <div className="bbj-modal__rules">
-              {hasTableContext && info.eligible && (
-                <div className="bbj-modal__here">
-                  <span className="bbj-modal__rule-label">If It Hits At This Table</span>
-                  <p className="bbj-modal__rule-text">
-                    <strong>{pct}%</strong> Of The Pool
-                    {poolAmount > 0 && (
-                      <> (About {Math.trunc(tableShare).toLocaleString('en-US')} Today)</>
-                    )}
-                  </p>
-                  <div className="bbj-modal__split">
-                    <div className="bbj-modal__split-row">
-                      <span>Bad Beat Hand</span>
-                      <span>
-                        50% &middot; {Math.trunc(tableShare * 0.5).toLocaleString('en-US')}
-                      </span>
-                    </div>
-                    <div className="bbj-modal__split-row">
-                      <span>Won The Hand</span>
-                      <span>
-                        25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
-                      </span>
-                    </div>
-                    <div className="bbj-modal__split-row">
-                      <span>Everyone Else Dealt In</span>
-                      <span>
-                        25% &middot; {Math.trunc(tableShare * 0.25).toLocaleString('en-US')}
-                      </span>
-                    </div>
                   </div>
-                </div>
-              )}
-              {hasTableContext && !info.eligible && (
-                <div className="bbj-modal__here">
-                  <p className="bbj-modal__rule-text">
-                    The Bad Beat Jackpot Is Not Available For {info.variantLabel}, So No Fee Is
-                    Taken At This Table.
-                  </p>
-                </div>
-              )}
-              <BBJBasicPanel poolAmount={poolAmount} highlightBB={bigBlind} />
-              <p className="bbj-modal__fineprint">
-                Chips Are Credited To Your Stack At The Table The Moment It Hits, And They Leave
-                With You.
-              </p>
-            </div>
-          )}
-
-          {tab === 'qualifying' && (
-            <div className="bbj-modal__rules">
-              {hasTableContext && (
-                <div className="bbj-modal__here">
-                  {(isMini ? miniInfo.eligible : info.eligible) ? (
-                    <>
-                      <span className="bbj-modal__rule-label">At This Table</span>
-                      <p className="bbj-modal__rule-text">
-                        {isMini ? miniInfo.shortLabel : info.shortLabel}
-                      </p>
-                      {(isMini ? miniInfo.subLabel : info.subLabel) && (
-                        <p className="bbj-modal__rule-sub">
-                          {isMini ? miniInfo.subLabel : info.subLabel}
-                        </p>
-                      )}
-                    </>
-                  ) : (
+                )}
+                {hasTableContext && !info.eligible && (
+                  <div className="bbj-modal__here">
                     <p className="bbj-modal__rule-text">
-                      The {isMini ? 'Mini ' : ''}Bad Beat Jackpot Is Not Available For{' '}
-                      {info.variantLabel}.
+                      The Bad Beat Jackpot Is Not Available For {info.variantLabel}, So No Fee Is
+                      Taken At This Table.
                     </p>
-                  )}
-                </div>
-              )}
-              <BBJQualifyingHands
-                kind={tier}
-                highlightVariantKey={gameType ? normalizeVariantKey(gameType) : null}
-              />
-            </div>
-          )}
-        </div>
+                  </div>
+                )}
+                <BBJBasicPanel poolAmount={poolAmount} highlightBB={bigBlind} />
+                <p className="bbj-modal__fineprint">
+                  Chips Are Credited To Your Stack At The Table The Moment It Hits, And They Leave
+                  With You.
+                </p>
+              </div>
+            )}
+
+            {tab === 'qualifying' && (
+              <div className="bbj-modal__rules">
+                {hasTableContext && (
+                  <div className="bbj-modal__here">
+                    {(isMini ? miniInfo.eligible : info.eligible) ? (
+                      <>
+                        <span className="bbj-modal__rule-label">At This Table</span>
+                        <p className="bbj-modal__rule-text">
+                          {titleCase(isMini ? miniInfo.shortLabel : info.shortLabel)}
+                        </p>
+                        {(isMini ? miniInfo.subLabel : info.subLabel) && (
+                          <p className="bbj-modal__rule-sub">
+                            {isMini ? miniInfo.subLabel : info.subLabel}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="bbj-modal__rule-text">
+                        The {isMini ? 'Mini ' : ''}Bad Beat Jackpot Is Not Available For{' '}
+                        {info.variantLabel}.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <BBJQualifyingHands
+                  kind={tier}
+                  highlightVariantKey={gameType ? normalizeVariantKey(gameType) : null}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="bbjc__actions">
+            <button
+              type="button"
+              className="bbjc-word sc-ink--white"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              Close
+            </button>
+          </div>
+        </SpadeConsole>
       </div>
     </div>,
     document.body

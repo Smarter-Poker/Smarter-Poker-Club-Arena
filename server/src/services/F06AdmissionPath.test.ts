@@ -9,7 +9,7 @@ const a = src.indexOf('    const operation = (async () => {');
 const b = src.indexOf('    })().catch(async (error) => {', a);
 const body = src.slice(a + '    const operation = (async () => {'.length, b);
 const js = ts.transpileModule(
-  `async function run(lifecycle,tableId,engine,supabase,nodeCrypto,F06HandPermit){${body}}`,
+  `async function run(lifecycle,tableId,engine,supabase,nodeCrypto,F06HandPermit,resumeRetainedHandSubmission,INSTANCE_ID){${body}}`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }
 ).outputText;
 const run = new Function(js + '; return run;')();
@@ -63,7 +63,9 @@ function fixture(data: unknown) {
       { randomUUID: () => 'uuid' },
       class {
         constructor(public binding: unknown) {}
-      }
+      },
+      async () => null,
+      'original-fixture-instance'
     );
   return {
     invoke,

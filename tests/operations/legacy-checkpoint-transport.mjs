@@ -9,7 +9,13 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 const { runLegacyEngineCheckpoint } = await import(process.argv[3]);
 const scenario = process.argv[2];
-assert.match(process.version, /^v(?:20|22)\./);
+// The runtimes this fixture is allowed to prove itself on. CI stays pinned to
+// 20 and 22; 26 is here because the Mac that runs the local prechecks is on it,
+// and the GATE - not the behaviour - was what failed there. All twelve
+// scenarios were run on v26.3.0 before this line was widened and every one
+// exited 0 with sameProcessAliveAfterCleanup, portClosed and normalExit true.
+// Nothing below this line is relaxed.
+assert.match(process.version, /^v(?:20|22|26)\./);
 assert.equal(typeof WebSocket, 'function');
 assert.equal(typeof process.getBuiltinModule, 'function');
 assert.equal(
@@ -39,7 +45,11 @@ try {
     ? 'hang'
     : scenario === 'exception'
       ? 'throw'
-      : 'success';
+      : scenario.startsWith('refusal')
+        ? 'refusal'
+        : scenario === 'malformed_refusal'
+          ? 'malformed_refusal'
+          : 'success';
   const count = scenario === 'zero' ? 0 : scenario === 'two' ? 2 : 1;
   writeFileSync(
     join(directory, 'owner.mjs'),
@@ -51,7 +61,9 @@ try {
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
-      "  if(process.argv[2]==='hang')return new Promise(()=>{});",
+      "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
+      "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
+      "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
       "  return {ok:true,completedCalls:1,privatePayload:'synthetic-secret-must-not-export'};",
       ' }',
       '}',
@@ -203,7 +215,7 @@ try {
       if (socket.readyState === WebSocket.OPEN) clientCloseWhileOpen++;
       return close(...args);
     };
-    if (scenario === 'cleanup_close_timeout') {
+    if (['cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)) {
       const addEventListener = socket.addEventListener.bind(socket);
       socket.addEventListener = (type, listener, options) =>
         addEventListener(
@@ -285,10 +297,12 @@ try {
     result = await runLegacyEngineCheckpoint({
       ...options,
       ...(scenario === 'timeout' ? { workBudgetMs: 500 } : {}),
-      ...(['success', 'cleanup_close_timeout'].includes(scenario)
+      ...(['success', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)
         ? { createWebSocket: observedWebSocket }
         : {}),
-      ...(scenario === 'cleanup_close_timeout' ? { cleanupBudgetMs: 200 } : {}),
+      ...(['cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)
+        ? { cleanupBudgetMs: 200 }
+        : {}),
     });
     if (scenario === 'success')
       assert.deepEqual(result, {
@@ -301,12 +315,26 @@ try {
       });
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
-    if (scenario === 'timeout') assert.equal(result.reason, 'inspector operation outcome unknown');
-    if (['success', 'cleanup_close_timeout'].includes(scenario)) {
+    if (scenario === 'timeout') {
+      assert.equal(result.reason, 'inspector operation outcome unknown');
+      // An unknown outcome says how far the guard got (2026-09-24): the
+      // record it left on the target's global object, held to its shape, and
+      // nothing else that was on it.
+      assert.deepEqual(result.progress, {
+        elapsedMs: 123,
+        attemptedTables: 0,
+        completedCalls: 0,
+        verifiedTables: 0,
+        stage: 'preflight',
+        note: 'joinPreviousWork',
+      });
+      assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
+    }
+    if (['success', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)) {
       assert.equal(clientCloseWhileOpen, 0, 'client must not race the native inspector close');
       assert.equal(clientCloseCalls, 0, 'scheduled native shutdown owns the close handshake');
     }
-    if (scenario === 'cleanup_close_timeout') {
+    if (['cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)) {
       assert.equal(result.reason, 'inspector cleanup not verified');
       assert.equal(result.inspectorClosed, false);
       assert.equal(result.checkpointInvoked, true);
@@ -315,6 +343,31 @@ try {
         withheldCloseNotifications > 0,
         'real close notification was deliberately withheld'
       );
+    }
+    if (scenario.startsWith('refusal')) {
+      assert.equal(
+        result.reason,
+        scenario === 'refusal' ? 'mixed_bank_not_restorable' : 'inspector cleanup not verified'
+      );
+      assert.deepEqual(result.checkpoint, {
+        schema: 'legacy-engine-checkpoint/v1',
+        ok: false,
+        reason: 'mixed_bank_not_restorable',
+        stage: 'preflight',
+        attemptedTables: 0,
+        completedCalls: 0,
+        verifiedTables: 0,
+        bankCount: 0,
+        uninitializedSeats: 0,
+        readyForRestart: false,
+        checkpointOutcome: 'not_started',
+        paidAccountingQualification: 'native_pending_registry_unqualified',
+        restartAuthorized: false,
+      });
+    }
+    if (scenario === 'malformed_refusal') {
+      assert.equal(result.reason, 'native checkpoint did not qualify');
+      assert.deepEqual(result.checkpoint, { ok: false });
     }
     if (['zero', 'two'].includes(scenario)) {
       assert.equal(result.reason, 'target checkpoint evaluation refused');
@@ -326,7 +379,7 @@ try {
   mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
-  if (!['preexisting', 'cleanup_close_timeout'].includes(scenario))
+  if (!['preexisting', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario))
     assert.equal(result.inspectorClosed, true);
   send('state');
   assert.deepEqual(await next('state'), {
@@ -362,6 +415,7 @@ try {
       sameProcessAliveAfterCleanup: true,
       portClosed: true,
       normalExit: true,
+      ...(scenario.includes('refusal') ? { checkpointResult: result } : {}),
     })
   );
 } catch (error) {

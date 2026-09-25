@@ -41,13 +41,17 @@
  */
 
 import { supabase } from './supabase/client.js';
+import { leaseHeartbeatRpc } from './leaseHeartbeatSession.js';
 /* Counted, not merely returned: every branch below that declines to renew a
    lease used to be silent, and repeated silent declines are exactly how a
    table ends up restarting every twenty seconds with nothing to read. */
 import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
 import { throttledLeaseWarning } from './leaseWarningThrottle.js';
-import { mapLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
+import {
+  mapLeaseHeartbeatBatches,
+  RetainedLeaseHeartbeatBatches,
+} from './leaseHeartbeatBatches.js';
 
 /** Matches the table lease, and the RPC default. */
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
@@ -142,7 +146,7 @@ export type TournamentLeaseHeartbeatOutcome =
     }
   | {
       status: 'uncertain';
-      reason: 'rpc_error' | 'rpc_threw';
+      reason: 'rpc_error' | 'rpc_threw' | 'pending';
     };
 
 function unverifiedClaimResult(
@@ -287,8 +291,16 @@ export async function claimTournamentLease(
  * from the instant before this RPC began. A busy exact generation extends
  * nothing; the existing proof deadline and expiry timer remain authoritative.
  */
+const retainedTournamentHeartbeats = new RetainedLeaseHeartbeatBatches<
+  TournamentLeaseHeartbeatClaim,
+  TournamentLeaseHeartbeatOutcome
+>();
+
 export async function heartbeatTournaments(
-  claims: TournamentLeaseHeartbeatClaim[]
+  claims: TournamentLeaseHeartbeatClaim[],
+  onBatch?: (outcome: TournamentLeaseHeartbeatOutcome) => void,
+  ownerIsCurrent: () => boolean = () => true,
+  claimIsCurrent: (claim: TournamentLeaseHeartbeatClaim) => boolean = () => true
 ): Promise<TournamentLeaseHeartbeatOutcome> {
   if (claims.length === 0) {
     return { status: 'answered', proofs: [], lostTournamentIds: [] };
@@ -319,6 +331,27 @@ export async function heartbeatTournaments(
   }
   const capturedClaims = claims.map((claim) => ({ ...claim }));
   const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
+  if (onBatch) {
+    retainedTournamentHeartbeats.dispatch(
+      capturedClaims,
+      (claim) => `${claim.tournamentId.toLowerCase()}/${claim.leaseGeneration.toLowerCase()}`,
+      () => ownerIsCurrent() && tournamentLeaseMonotonicNow() < proofDeadlineMonotonicMs,
+      (batch) => {
+        const currentClaims = batch.filter(claimIsCurrent);
+        return currentClaims.length
+          ? heartbeatTournamentBatch(currentClaims, proofDeadlineMonotonicMs)
+          : Promise.resolve({ status: 'answered', proofs: [], lostTournamentIds: [] });
+      },
+      onBatch,
+      (error) =>
+        warnTournamentLease(
+          'batch_delivery_failed',
+          `[lease] heartbeat batch delivery failed: ${String(error)}`
+        )
+    );
+    // Dispatch is not a renewal. Only a validated batch callback proves one.
+    return { status: 'uncertain', reason: 'pending' };
+  }
   const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
     heartbeatTournamentBatch(batch, proofDeadlineMonotonicMs)
   );
@@ -329,8 +362,9 @@ export async function heartbeatTournaments(
     if (outcome.status !== 'answered') continue;
     answered = true;
     for (const proof of outcome.proofs) {
+      // A proof that outran its own window extends nothing. It is not a loss:
+      // the database answered `kept` for this exact generation to produce it.
       if (tournamentLeaseMonotonicNow() < proof.proofDeadlineMonotonicMs) proofs.push(proof);
-      else lostTournamentIds.push(proof.tournamentId);
     }
     lostTournamentIds.push(...outcome.lostTournamentIds);
   }
@@ -342,15 +376,42 @@ export async function heartbeatTournaments(
 
 async function heartbeatTournamentBatch(
   claims: TournamentLeaseHeartbeatClaim[],
-  proofDeadlineMonotonicMs: number
+  passDeadlineMonotonicMs: number
 ): Promise<TournamentLeaseHeartbeatOutcome> {
   const tournamentIds = claims.map((claim) => claim.tournamentId);
-  // A queue must never turn an expired pass into a fresh ownership window.
-  if (tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
-    return { status: 'answered', proofs: [], lostTournamentIds: tournamentIds };
+  /* ═══ A QUEUED BATCH HAS NO EVIDENCE OF LOSS (2026-09-21) ═════════════
+     A batch that waited out its own window learned NOTHING about ownership -
+     it never asked. Returning `answered` with every claim in
+     lostTournamentIds turned that silence into a verdict: GameServer fences
+     each named manager, which kills every table engine under it, which
+     discards whatever hand was mid-commit as `lease_proof_expired`.
+
+     UNKNOWN extends nothing and accuses nothing. The manager keeps exactly
+     the authority it already had, its ordinary expiry timer still owns the
+     decision, and the next pass asks again 5s later - so a batch that never
+     ran costs a renewal, never a lease. */
+  if (tournamentLeaseMonotonicNow() >= passDeadlineMonotonicMs) {
+    return { status: 'uncertain', reason: 'pending' };
   }
+  /* ═══ A PROOF IS MEASURED FROM THE REQUEST THAT EARNED IT ══════════════
+     The window used to be opened once per PASS, before the first request went
+     out, and then handed to all 27 batches of a 13,000-tournament fleet. Four
+     workers drain 500 claims per request, so the seventh round spent most of
+     the shared 20s waiting its turn; the database answered `kept` and the
+     answer was discarded for arriving late. Measured 2026-09-17/18: 13,813
+     and 13,082 tournaments, 7 rounds per worker, 146 and 284 tournament hands
+     lost - against ZERO on every day whose fleet fitted in one round.
+
+     The deadline belongs to the request, not the pass. `heartbeat_at` is set
+     by THIS statement, so a reading taken immediately before it is a
+     conservative floor for it - exactly what the pass-wide value was for the
+     FIRST batch - and it stays well inside the audited 30s stale window. */
+  const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v4', {
+    /* LEASE RENEWAL CANNOT QUEUE BEHIND GAME TRAFFIC (2026-09-24): the
+       dedicated session when configured, the shared client otherwise. Same
+       arguments, same { data, error } answer. See leaseHeartbeatSession.ts. */
+    const { data, error } = await leaseHeartbeatRpc('tournament', {
       p_instance_id: INSTANCE_ID,
       p_claims: claims.map((claim) => ({
         tournament_id: claim.tournamentId,
@@ -445,6 +506,16 @@ async function heartbeatTournamentBatch(
         proofs.push({ ...claim, proofDeadlineMonotonicMs });
         continue;
       }
+
+      /* A RENEWAL THAT ARRIVED LATE IS STILL A RENEWAL (2026-09-21)
+         `kept` on the exact generation is the database saying this instance
+         owned the row and that it advanced `heartbeat_at`. If the answer got
+         back too late to open a fresh local window it grants no proof - but
+         it is the strongest possible evidence AGAINST loss, and it used to
+         fall through to lostTournamentIds and fence the manager.
+
+         Treated like `busy`: no renewal, no accusation. */
+      if (row.state === 'kept' && exactGeneration) continue;
 
       // A locked exact generation is UNKNOWN, never a renewal. GameServer
       // checks the existing monotonic deadline after this response and its

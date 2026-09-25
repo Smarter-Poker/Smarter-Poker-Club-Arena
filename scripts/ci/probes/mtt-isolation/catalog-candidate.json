@@ -1,0 +1,88 @@
+{
+  "status": "pending_new_activation_composition",
+  "notice": "Retained six race contracts only; no activation migration is present or invoked by preparation.",
+  "required_cases": [
+    {
+      "path": "scripts/ci/probes/mtt-isolation/creation-commit.spec",
+      "sha256": "bf19570cefe5e90d5ec9802c1610cb6e2fab26420f8bc75483c65ef59ea6e2e6",
+      "case": "creation_commit",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "created",
+        "b": "existing_active"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_commit"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/creation-rollback.spec",
+      "sha256": "e4fea41c3d0e53e0ef119ad16afadf17f71ea22175d111290b4b028002a72836",
+      "case": "creation_rollback",
+      "permutations": 1,
+      "expected_outcomes": {
+        "b": "created"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_rollback"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/edit-after-creation.spec",
+      "sha256": "311de607a8cec2462c98d0303359cfc675c0cae49932fd7a22d6421e465c539e",
+      "case": "edit_after_creation",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "created",
+        "b": "edit_refused"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: edit_after_creation"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/edit-before-creation.spec",
+      "sha256": "b48554f058ee8e501d35f8bcb8b741d5866fca353231a84f86e6fa61ed28f310",
+      "case": "edit_before_creation",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "target_unsupported",
+        "b": "edited"
+      },
+      "committed_new_tournaments": 0,
+      "registered_blocker": "b",
+      "registered_waiter": "a",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: edit_before_creation"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/restart-commit.spec",
+      "sha256": "5317d7928bd18873c3a42a38a3cf95009fc4343dc2fb1117d7b5f6973700e4de",
+      "case": "restart_commit",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "created",
+        "b": "duplicate_refused"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: restart_commit"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/restart-rollback.spec",
+      "sha256": "2016c17bf9232bf44b5f2b8bc607ae9868f29095d1e19602418161fd98022100",
+      "case": "restart_rollback",
+      "permutations": 1,
+      "expected_outcomes": {
+        "b": "created"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: restart_rollback"
+    }
+  ]
+}

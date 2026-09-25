@@ -1,3 +1,4 @@
+import { getTournamentEntryCapacity } from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB DASHBOARD — Comprehensive Club Analytics
@@ -21,7 +22,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
-import { getLocalStorage, setLocalStorage, removeLocalStorage } from '../../lib/storage';
+import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
 import PageSkeleton from '../../components/common/PageSkeleton';
@@ -200,6 +201,7 @@ interface RevenueData {
 
 interface TournamentData {
   live: Array<{
+    format_contract?: unknown;
     id: string;
     name: string;
     status: string;
@@ -207,7 +209,9 @@ interface TournamentData {
     buy_in: number;
     prize_pool: number;
     players: number;
-    max_players: number;
+    max_players: number | null;
+    tournament_type?: string | null;
+    satellite_target_id?: string | null;
     start_time: string;
   }>;
   recent: Array<{
@@ -287,18 +291,6 @@ export default function ClubDashboard() {
   const [sortBy, setSortBy] = useState<SortId>(() =>
     getLocalStorage('ca_dashboard_sort', 'profit')
   );
-  // A viewing filter, never a persisted one. The register in
-  // scripts/ci/check-horses-are-players.mjs sanctions this toggle on the
-  // condition that it DEFAULTS to showing horses; remembering an operator's
-  // tick across sessions made the horse-less leaderboard the default for
-  // them from then on, without the box being visible on the page they landed
-  // on. Same shape as ClubDataPage's chip now: useState(false), per visit.
-  const [hideHorses, setHideHorses] = useState<boolean>(false);
-  useEffect(() => {
-    // Tombstone: ca_dashboard_hide_horses was persisted until 2026-09-04.
-    removeLocalStorage('ca_dashboard_hide_horses');
-  }, []);
-
   const [visiblePlayers, setVisiblePlayers] = useState<Set<string>>(new Set());
   const [isRecalculating, setIsRecalculating] = useState(false);
   // null until the membership read answers. 'player' was the placeholder
@@ -796,10 +788,7 @@ export default function ClubDashboard() {
   }, [memberSearch, memberSort, memberRole, dateRange]);
 
   // ── Derived leaderboard (filter + sort applied client-side on <=100 rows) ──
-  const rankedPlayers = useMemo(
-    () => rankPlayers(topPlayers, sortBy, hideHorses),
-    [topPlayers, hideHorses, sortBy]
-  );
+  const rankedPlayers = useMemo(() => rankPlayers(topPlayers, sortBy), [topPlayers, sortBy]);
 
   // Tables tab: the server returns live tables fullest-first; sortClubTables
   // keeps that order stable across a background refresh that may reorder
@@ -897,9 +886,6 @@ export default function ClubDashboard() {
   const [membersReady, setMembersReady] = useState(false);
   const memberFiltered = memberSearch.trim().length > 0 || memberRole !== '';
 
-  // Derived from the RANKED set, so with "Humans only" on the caption
-  // describes the rows actually on screen rather than quietly including the
-  // horses the user just filtered out.
   useEffect(() => {
     const played = rankedPlayers.reduce((s, p) => s + p.handsPlayed, 0);
     const attributed = rankedPlayers.reduce((s, p) => s + p.handsAttributed, 0);
@@ -921,7 +907,6 @@ export default function ClubDashboard() {
       'display_name',
       'role',
       'status',
-      'is_horse',
       'is_online',
       'joined_at',
       'last_active',
@@ -935,7 +920,6 @@ export default function ClubDashboard() {
         esc(m.displayName),
         esc(m.role),
         esc(m.status),
-        m.isHorse,
         m.isOnline,
         esc(m.joinedAt ?? ''),
         esc(m.lastActive ?? ''),
@@ -947,17 +931,8 @@ export default function ClubDashboard() {
     downloadClubCsv([header.join(','), ...rows].join('\n'), `members-page${memberPage + 1}`);
   };
 
-  // The file says what it holds: a horse-filtered export is named as one.
   const exportLeaderboardCsv = () =>
-    downloadClubCsv(
-      leaderboardToCsv(rankedPlayers),
-      hideHorses ? 'leaderboard-people' : 'leaderboard'
-    );
-
-  // The toggle is only offered when it can do something. The server masks
-  // is_horse for everyone below owner / co_owner / admin, so for them every
-  // row reads false and the box was a control wired to nothing.
-  const horseFlagVisible = topPlayers.some((p) => p.isHorse);
+    downloadClubCsv(leaderboardToCsv(rankedPlayers), 'leaderboard');
 
   if (loading && !club) {
     return (
@@ -1267,24 +1242,6 @@ export default function ClubDashboard() {
                     <option value="winrate">Win Rate</option>
                     <option value="biggest">Biggest Pot</option>
                   </select>
-                  {horseFlagVisible && (
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: '0.78rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={hideHorses}
-                        onChange={(e) => setHideHorses(e.target.checked)}
-                      />
-                      Hide Horses
-                    </label>
-                  )}
                   {rankedPlayers.length > 0 && (
                     <button
                       onClick={exportLeaderboardCsv}
@@ -1306,11 +1263,7 @@ export default function ClubDashboard() {
 
               <div className={styles.leaderboard}>
                 {rankedPlayers.length === 0 ? (
-                  <p className={styles.empty}>
-                    {hideHorses && topPlayers.length > 0
-                      ? `Every Player With Hands ${rangeLabel} Is A Horse`
-                      : `No Hands Played ${rangeLabel}`}
-                  </p>
+                  <p className={styles.empty}>No Hands Played {rangeLabel}</p>
                 ) : (
                   rankedPlayers.slice(0, LEADERBOARD_VISIBLE).map((player) => (
                     <Link
@@ -1360,22 +1313,6 @@ export default function ClubDashboard() {
                       </div>
                       <span className={styles.playerName}>
                         {player.displayName}
-                        {player.isHorse && (
-                          <span
-                            title="Horse"
-                            style={{
-                              marginLeft: 6,
-                              fontSize: '0.6rem',
-                              padding: '1px 5px',
-                              borderRadius: 6,
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              color: 'var(--text-secondary, #9aa)',
-                              verticalAlign: 'middle',
-                            }}
-                          >
-                            H
-                          </span>
-                        )}
                         <span
                           style={{
                             display: 'block',
@@ -1405,8 +1342,7 @@ export default function ClubDashboard() {
                       marginTop: 4,
                     }}
                   >
-                    See All {formatInt(rankedPlayers.length)} Ranked{' '}
-                    {hideHorses ? 'People (Horses Hidden)' : 'Players'} {'→'}
+                    See All {formatInt(rankedPlayers.length)} Ranked Players {'→'}
                   </button>
                 )}
               </div>
@@ -1420,7 +1356,7 @@ export default function ClubDashboard() {
                 >
                   Profit Measured From Post-Hand Stack Movement On{' '}
                   {formatInt(attribution.attributed)} Of {formatInt(attribution.played)}{' '}
-                  {hideHorses ? 'Person-Hands (Horses Hidden)' : 'Player-Hands'} {rangeLabel}
+                  Player-Hands {rangeLabel}
                   {attribution.played > 0 && (
                     <> ({Math.round((attribution.attributed / attribution.played) * 100)}%)</>
                   )}
@@ -1580,21 +1516,6 @@ export default function ClubDashboard() {
                     <div className={styles.playerInfo}>
                       <span className={styles.playerName}>
                         {m.displayName}
-                        {m.isHorse && (
-                          <span
-                            title="Horse"
-                            style={{
-                              marginLeft: 6,
-                              fontSize: '0.6rem',
-                              padding: '1px 5px',
-                              borderRadius: 6,
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              color: 'var(--text-secondary, #9aa)',
-                            }}
-                          >
-                            H
-                          </span>
-                        )}
                         {m.role && m.role !== 'player' && m.role !== 'member' && (
                           <span
                             style={{
@@ -1984,7 +1905,10 @@ export default function ClubDashboard() {
                           <span className={styles.playerStats}>
                             {(t.variant || 'NLH').toUpperCase()} {'•'} Buy-In{' '}
                             {formatChips(t.buy_in)} {'•'} {formatInt(t.players)}
-                            {t.max_players ? `/${formatInt(t.max_players)}` : ''} Entered
+                            {getTournamentEntryCapacity(t) !== null
+                              ? `/${formatInt(t.max_players ?? 0)}`
+                              : ''}{' '}
+                            Entered
                           </span>
                         </div>
                         <span

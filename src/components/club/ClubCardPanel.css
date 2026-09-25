@@ -1,333 +1,174 @@
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ClubCardPanel — Four-Zone Structured Layout
-   ═══════════════════════════════════════════════════════════════════════════════
-   ZONES: ID Plate → Image Viewport → Name Plate → Stats Bar
-   Aspect Ratio: 3:4 (wider, more balanced than the old 604:1024)
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB CARD - on the spade console (#ClubArenaConsole)
 
-/* ── Root Container ────────────────────────────────────────────────────────── */
+   The chassis, its inks, its type and its head zones come from
+   SpadeConsole.css. This sheet only lays the club's own art and its three
+   figures onto the black glass between the rails.
+
+   WHAT WAS DELETED. A 10px rounded shell with a 4px brushed-nickel border, a
+   three-stop gradient fill and two shadows; a gradient ID plate with an inset
+   rivet line and its own bottom rule; a recessed gradient viewport; a gradient
+   name plate; a gradient stats bar with a third rule; a radial glow behind the
+   logo; and the union variant, which re-coloured all four of those borders
+   gold. Five drawn plates around one picture, which is a frame on a frame on a
+   frame - and the master already paints the frame.
+
+   THE UNION DRESS IS INK, NOT STRUCTURE (Dan: "I don't want every single frame
+   and button to be 100% exactly the same, just the same style"): the painted
+   pill and the fallback mark go gold and nothing else changes.
+
+   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6), at its original duration and
+   its original stagger: clubCardShimmer (2s) on the skeleton, clubCardFadeIn
+   (0.4s) on the art, clubCardStatLabelReveal (0.4s, 0.1/0.2/0.3s),
+   clubCardPanelStatReveal (0.6s, 0.15/0.3/0.45s) and clubCardActivePulse (2s
+   infinite after 0.6s) on a live ACTIVE count. The last two of those were
+   named `statLabelReveal` and `activePulse`; @keyframes is a GLOBAL namespace
+   in a plain stylesheet, so both carry this component's prefix now.
+
+   No border-radius on a card, tile, pill or plate. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .club-card-panel {
-  box-sizing: border-box;
   position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 10px;
-  background-color: #0a1120 !important;
+  /* The carousel wrapper owns the gesture and the depth opacity; the card
+     itself has never been clickable and must not start now. */
+  pointer-events: none;
   opacity: 1 !important;
-
-  -webkit-transform: translateZ(0);
   transform: translateZ(0);
   backface-visibility: hidden;
-  background-image: linear-gradient(180deg, #12192e 0%, #0a1120 40%, #0d1528 100%);
-  border: 4px solid rgba(176, 181, 185, 0.95); /* Brushed nickel exterior */
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  pointer-events: none;
 }
 
-/* Union variant — gold border accent */
-.club-card-panel--union {
-  border-color: rgba(240, 208, 112, 0.95); /* Thick Gold exterior */
-}
+/* ── Until the art lands ──────────────────────────────────────────────── */
 
-/* ── Skeleton shimmer — visible until image loads ──────────────────────────── */
 .club-card-skeleton {
   position: absolute;
   inset: 0;
   z-index: 10;
   background: linear-gradient(
     90deg,
-    rgba(10, 20, 40, 0.9) 0%,
-    rgba(15, 30, 55, 0.9) 50%,
-    rgba(10, 20, 40, 0.9) 100%
+    rgb(10 20 40 / 90%) 0%,
+    rgb(15 30 55 / 90%) 50%,
+    rgb(10 20 40 / 90%) 100%
   );
   background-size: 200% 100%;
   animation: clubCardShimmer 2s infinite;
-  border-radius: 10px;
 }
 
 @keyframes clubCardShimmer {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ZONE 1 — ID Plate (top strip)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-.club-card-id-plate {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  background: linear-gradient(180deg, rgba(60, 80, 120, 0.8) 0%, rgba(35, 50, 80, 0.9) 100%);
-  border-bottom: 2px solid rgba(176, 181, 185, 0.6);
-  /* Metal riveted look */
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
-  min-height: 32px;
-}
+/* ── The club's own art, on the glass ─────────────────────────────────── */
 
-.club-card-id-text {
-  font-family: 'Rajdhani', 'Inter', 'Segoe UI', sans-serif;
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 1.5px;
-  color: #d0d8e8;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.8),
-    0 1px 3px rgba(0, 0, 0, 0.6);
-  white-space: nowrap;
-  text-transform: uppercase;
-}
-
-/* Union variant — gold ID text */
-
-/* Union variant — gold interior line */
-.club-card-panel--union .club-card-id-plate {
-  border-bottom: 2px solid rgba(240, 208, 112, 0.75);
-}
-
-.club-card-panel--union .club-card-id-text {
-  color: #f0d070;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.8),
-    0 0 10px rgba(240, 208, 112, 0.3);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ZONE 2 — Image Viewport (center area)
-   ═══════════════════════════════════════════════════════════════════════════════ */
 .club-card-viewport {
-  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 100%;
   aspect-ratio: 1 / 1;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
-  position: relative;
-  margin: 0;
-  border-radius: 0;
-  /* Recessed viewport look */
-  background: linear-gradient(145deg, rgba(5, 10, 22, 0.9) 0%, rgba(8, 16, 32, 0.95) 100%);
 }
 
-/* Baked card image — covers entire viewport */
-.club-card-viewport-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  animation: clubCardFadeIn 0.4s ease-out;
-}
-
-/* Logo — fill the entire viewport */
-.club-card-logo-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  padding: 16px;
-}
-
-.club-card-logo-backdrop {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 65%);
-  animation: clubCardFadeIn 0.8s ease-out;
-  pointer-events: none;
-}
-
+.club-card-viewport-img,
 .club-card-viewport-logo {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.7));
   animation: clubCardFadeIn 0.4s ease-out;
-  z-index: 2;
+}
+
+.club-card-viewport-img {
+  object-fit: cover;
+}
+
+.club-card-viewport-logo {
+  object-fit: contain;
 }
 
 @keyframes clubCardFadeIn {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
 }
 
-/* Fallback — icon placeholder */
-.club-card-viewport-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
+/* The mark takes its colour from the console's own inks on the element. */
 .club-card-fallback-icon {
-  font-size: 48px;
-  color: rgba(0, 212, 255, 0.6);
-  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
+  font-size: 22cqw;
+  line-height: 1;
 }
 
-/* Union fallback icon — gold */
-.club-card-panel--union .club-card-fallback-icon {
-  color: rgba(240, 208, 112, 0.7);
-  filter: drop-shadow(0 0 12px rgba(240, 208, 112, 0.3));
-}
+/* ── Three figures, three engraved rows ───────────────────────────────── */
 
-/* Vignette removed for cleaner logos */
-.club-card-viewport::after {
-  display: none;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ZONE 3 — Name Plate (below image)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-.club-card-name-plate {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 10px;
-  margin: 0;
-  background: linear-gradient(180deg, rgba(18, 28, 50, 0.9) 0%, rgba(12, 20, 38, 0.95) 100%);
-  border-top: 2px solid rgba(176, 181, 185, 0.5);
-  min-height: 30px;
-  /* 1cqw = 1% of the card's width, for the name size at the end of the file. */
-  container-type: inline-size;
-}
-
-.club-card-name-text {
-  font-family: 'Rajdhani', 'Inter', 'Segoe UI', sans-serif;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 2px;
-  color: #ffffff;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.9),
-    0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 12px rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
-  text-transform: uppercase;
-  text-align: center;
-  max-width: 95%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ZONE 4 — Stats Bar (bottom section)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-.club-card-stats-bar {
-  /* Container for cqw font scaling below — 1cqw = 1% of this bar's width,
-     which IS the card's width. */
-  container-type: inline-size;
-  flex: 0 0 auto;
+.club-card-stats {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 8px 12px 10px;
-  background: linear-gradient(180deg, rgba(10, 18, 32, 0.95) 0%, rgba(8, 14, 28, 1) 100%);
-  border-top: 2px solid rgba(176, 181, 185, 0.5);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
-}
-
-/* ── Stats Row ─────────────────────────────────────────────────────────────── */
-.club-card-stats-row {
-  box-sizing: border-box;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  width: 100%;
-  gap: 2px;
 }
 
 .club-card-stat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-/* Cyan labels */
 .club-card-stat-label {
-  font-family: 'Inter', 'Roboto', sans-serif;
-  font-weight: 600;
-  font-size: 8px;
-  letter-spacing: 0.3px;
-  color: #a5eff0;
-  margin-bottom: 1px;
-  text-shadow:
-    0 0 5px rgba(0, 212, 255, 0.4),
-    0 0 10px rgba(0, 212, 255, 0.2);
-  text-transform: uppercase;
-  white-space: nowrap;
-  line-height: 1.3;
-  /* Dan 2026-08-24: "THE FONTS... NEED TO SCALE DOWN CORRECTLY WITH THE CARD
-     IMAGES, THEY SHOULD NEVER BE CUT OFF OR MEM... FUNCTIONALITY USED."
-     No ellipsis — the cqw sizing below guarantees MEMBERS fits its third of
-     any card the carousel can produce, so there is nothing left to truncate. */
-  overflow: visible;
-  max-width: none;
-  animation: statLabelReveal 0.4s ease-out both;
+  min-width: 0;
+  animation: clubCardStatLabelReveal 0.4s ease-out both;
 }
 
 /* Staggered label reveal */
 .club-card-stat:nth-child(1) .club-card-stat-label {
   animation-delay: 0.1s;
 }
+
 .club-card-stat:nth-child(2) .club-card-stat-label {
   animation-delay: 0.2s;
 }
+
 .club-card-stat:nth-child(3) .club-card-stat-label {
   animation-delay: 0.3s;
 }
 
-@keyframes statLabelReveal {
+@keyframes clubCardStatLabelReveal {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
 }
 
-/* Glowing values */
 .club-card-stat-value {
-  font-family: 'Inter', 'Roboto', sans-serif;
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 1px;
-  color: #adf9f9;
-  text-shadow:
-    0 0 4px rgba(0, 255, 255, 0.8),
-    0 0 12px rgba(0, 212, 255, 0.9),
-    0 0 20px rgba(0, 150, 255, 0.7);
+  font-size: 5cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.01em;
+  text-align: right;
+  white-space: nowrap;
   animation: clubCardPanelStatReveal 0.6s ease-out both;
 }
 
-/* Staggered reveal for each stat column */
+/* Staggered reveal for each stat row */
 .club-card-stat:nth-child(1) .club-card-stat-value {
   animation-delay: 0.15s;
 }
+
 .club-card-stat:nth-child(2) .club-card-stat-value {
   animation-delay: 0.3s;
 }
+
 .club-card-stat:nth-child(3) .club-card-stat-value {
   animation-delay: 0.45s;
 }
@@ -337,124 +178,80 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-/* Club level — slightly bigger */
-.club-card-stat-value--level {
-  font-size: 20px;
-  line-height: 1;
-  margin-top: 4px;
+/* Players actually online: the master's green, and the same infinite pulse
+   chained behind the same entrance reveal. */
+.club-card-stat--active .club-card-stat-value {
+  animation:
+    clubCardPanelStatReveal 0.6s ease-out both,
+    clubCardActivePulse 2s ease-in-out 0.6s infinite;
 }
 
-/* Dan 2026-09-09: ACTIVE was one figure that mixed cash seats with tournament
-   seats. The split prints under the total in the label ink, one line, no
-   wrap: "21 CASH  270 EVENTS". Sized in cqw like the rest of the rail so it
-   never leaves its third of the card. */
+/* Dan 2026-09-09: ACTIVE mixed cash seats with tournament seats, so 291
+   beside a lobby of 21 cash players looked wrong. The split prints under the
+   total, spanning the row, in the label's small caps and the muted ink; the
+   separator is a hairline cut in the glass, not a drawn dot. */
 .club-card-stat-split {
+  grid-column: 1 / -1;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
-  margin-top: 1px;
-  font-family: 'Inter', 'Roboto', sans-serif;
-  font-weight: 600;
-  font-size: 7px;
-  letter-spacing: 0.2px;
-  line-height: 1.2;
-  color: #a5eff0;
-  text-shadow:
-    0 0 5px rgba(0, 212, 255, 0.35),
-    0 0 10px rgba(0, 212, 255, 0.15);
-  text-transform: uppercase;
+  gap: 1.6cqw;
+  margin-top: -0.6cqw;
+  font-size: 2.6cqw;
+  font-variant-numeric: tabular-nums lining-nums;
   white-space: nowrap;
-  animation: statLabelReveal 0.4s ease-out 0.45s both;
 }
+
 .club-card-stat-split-part {
   white-space: nowrap;
 }
+
 .club-card-stat-split-dot {
-  width: 2px;
-  height: 2px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.7;
+  width: 1px;
+  height: 2.4cqw;
+  background: rgb(255 255 255 / 25%);
   flex: 0 0 auto;
 }
 
-/* Active players — green pulse when online */
-.club-card-stat--active .club-card-stat-value {
-  color: #00ff88;
-  text-shadow:
-    0 0 4px rgba(0, 255, 136, 0.8),
-    0 0 12px rgba(0, 255, 136, 0.6),
-    0 0 20px rgba(0, 255, 136, 0.4);
-  /* Chain: entrance reveal first, then infinite pulse after 0.6s delay */
-  animation:
-    clubCardPanelStatReveal 0.6s ease-out both,
-    activePulse 2s ease-in-out 0.6s infinite;
-}
-
-@keyframes activePulse {
+@keyframes clubCardActivePulse {
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.7;
   }
 }
 
-/* ── Union Variant — Gold Stats ────────────────────────────────────────────── */
-.club-card-panel--union .club-card-stat-label {
-  color: #e8d090;
-  text-shadow:
-    0 0 5px rgba(240, 208, 112, 0.4),
-    0 0 10px rgba(240, 208, 112, 0.2);
-}
-
-.club-card-panel--union .club-card-stat-value {
-  color: #f0d878;
-  text-shadow:
-    0 0 4px rgba(255, 215, 0, 0.8),
-    0 0 12px rgba(240, 208, 112, 0.9),
-    0 0 20px rgba(180, 140, 20, 0.7);
-}
-
-.club-card-panel--union .club-card-stat--active .club-card-stat-value {
-  color: #00ff88;
-  text-shadow:
-    0 0 4px rgba(0, 255, 136, 0.8),
-    0 0 12px rgba(0, 255, 136, 0.6),
-    0 0 20px rgba(0, 255, 136, 0.4);
-  /* Must re-declare animation chain — this selector has higher specificity */
-  animation:
-    clubCardPanelStatReveal 0.6s ease-out both,
-    activePulse 2s ease-in-out 0.6s infinite;
-}
-
-/* ── Level progress line (Dan 2026-08-20, 1-55 member ladder) ─────────────────
-   Three pixels at the foot of the stats bar. A level badge on its own cannot
-   tell a club whether it just levelled up or is one member short of the next;
-   this can, without spending any of the card's very limited vertical budget. */
+/* ── Level progress (Dan 2026-08-20, 1-55 member ladder) ──────────────────
+   Three pixels at the foot of the figures. A bare number cannot tell a club
+   whether it just levelled or is one member short of the next; this can,
+   without spending any of the card's very limited vertical budget. It is a
+   groove cut in the glass with a lit fill, not a rounded gradient bar. */
 .club-card-level-track {
   width: 100%;
-  height: 3px;
-  margin-top: 8px;
-  border-radius: 2px;
-  background: rgba(100, 140, 200, 0.16);
+  height: 0.9cqw;
+  margin-top: 2cqw;
   overflow: hidden;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
+
 .club-card-level-fill {
   display: block;
   height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #1877f2 0%, #00d4ff 100%);
+  background: #45adff;
   transition: width 0.6s cubic-bezier(0.22, 0.9, 0.3, 1);
 }
+
 @media (prefers-reduced-motion: reduce) {
   .club-card-level-fill {
     transition: none;
@@ -569,6 +366,20 @@
     0 0 4px rgba(255, 215, 0, 0.8),
     0 0 12px rgba(255, 200, 0, 0.7),
     0 0 20px rgba(255, 160, 0, 0.45);
+}
+
+/* A word where a clock would be ("None Scheduled", "Unavailable"): the slot
+   was sized for five tabular digits, so the word comes down a step and drops
+   the digit tracking to stay inside its half of the rail on a 165px card. */
+.club-card-stat-value--word {
+  font-size: 10px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+@supports (font-size: 1cqw) {
+  .club-card-stat-value--word {
+    font-size: clamp(7px, 5cqw, 10px);
+  }
 }
 
 /* Inside the last ten seconds it turns red and pulses. */

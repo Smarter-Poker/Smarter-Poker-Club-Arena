@@ -245,6 +245,7 @@ describe('TournamentLobbyCard — an unanswered entry check is not "not entered"
     id: 't1',
     name: 'Sunday Major',
     type: 'mtt' as const,
+    format_contract: 'mtt-v2',
     buyIn: 100,
     prizePool: 5000,
     maxPlayers: 0,
@@ -363,6 +364,7 @@ describe('TournamentLobbyCard — numbers measured, not parsed back out of copy'
       id: 'late-card',
       name: 'Live Window',
       type: 'mtt' as const,
+      format_contract: 'mtt-v2',
       buyIn: 10,
       prizePool: 100,
       maxPlayers: 100,
@@ -379,7 +381,10 @@ describe('TournamentLobbyCard — numbers measured, not parsed back out of copy'
       </MemoryRouter>
     );
     await waitFor(() => {
-      expect(screen.getByText('Late Reg: 1 Lvl Left')).toBeTruthy();
+      /* On the console the window prints as a label/value row (LATE REG in
+         the master's blue, the countdown in gold beside it) and the pill in
+         the header well says Late Reg too; the countdown is the pin. */
+      expect(screen.getByText('1 Lvl Left')).toBeTruthy();
     });
     rerender(
       <MemoryRouter>

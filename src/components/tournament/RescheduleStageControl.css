@@ -1,0 +1,44 @@
+/* Reschedule Day 2 on the table-management board. One column at 375px. */
+.md-reschedule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.md-reschedule__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.md-reschedule__field input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  /* The board's own field ink (GameManagementPage's dialog inputs), so the
+     two fields are not white browser defaults on the black board (visual
+     acceptance 2026-09-24). */
+  padding: 10px 12px;
+  border: 1px solid rgb(94 116 134 / 52%);
+  color: #f4f7fb;
+  background: #05080c;
+  color-scheme: dark;
+  font:
+    600 16px/1.2 Inter,
+    sans-serif;
+}
+
+.md-reschedule__label {
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.md-reschedule__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

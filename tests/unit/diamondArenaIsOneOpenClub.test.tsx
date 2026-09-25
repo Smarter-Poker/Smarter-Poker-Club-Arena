@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import { sliceStatement } from '../helpers/sourceWindow';
 import type { ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 
-const mocks = vi.hoisted(() => ({ workspace: vi.fn(), navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ workspace: vi.fn(), navigate: vi.fn(), arenaContext: vi.fn() }));
 
 vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
   useClubWorkspace: mocks.workspace,
@@ -38,6 +38,17 @@ vi.mock('react-router-dom', async () => {
 });
 vi.mock('../../src/components/arena/ArenaAccessBoundary', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+/* For the door census below, which renders the REAL boundary. */
+vi.mock('../../src/services/ArenaContextService', () => ({
+  getArenaContext: mocks.arenaContext,
+}));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    auth: {
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => undefined } } }),
+    },
+  },
 }));
 
 import ClubMemberGuard from '../../src/components/auth/ClubMemberGuard';
@@ -221,5 +232,99 @@ describe('Played with diamonds: no chip ledger row belongs on a Diamond surface'
     expect(clubWalletRows('owner', { standalone: true })).toEqual(
       clubWalletRows('owner', { standalone: true, chipWallet: true })
     );
+  });
+});
+
+/**
+ * A DIAMOND PLAYER CAN FIND THEIR WAY (2026-09-19).
+ *
+ * Phase 7 opened the lobby and left every other route under the arena on the
+ * safe shell, which was right for the operator doors and wrong for the player
+ * ones: Tournaments, Players, a member's profile and Messages all rendered
+ * "Welcome To Diamond Arena" instead of their page. The boundary now opens
+ * exactly the player routes and keeps the shell on everything else, so "no
+ * unions or agents" still holds on a typed URL.
+ */
+describe('One open club: the boundary opens the player doors and keeps the shell on the rest', () => {
+  const DIAMOND_ID = '002c2d27-9584-4e52-835a-bb2be148fc81';
+  const context: ArenaAccessContext & { cashGamesEnabled: boolean } = {
+    ...diamond,
+    arena: { id: DIAMOND_ID, kind: 'diamond_arena', asset: 'diamonds' },
+    cashGamesEnabled: false,
+  };
+
+  async function boundaryAt(path: string) {
+    const { default: RealBoundary } = await vi.importActual<
+      typeof import('../../src/components/arena/ArenaAccessBoundary')
+    >('../../src/components/arena/ArenaAccessBoundary');
+    mocks.arenaContext.mockResolvedValue(context);
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/*"
+            element={
+              <RealBoundary clubKey="diamond-arena">
+                <div>The Page Itself</div>
+              </RealBoundary>
+            }
+          />
+          <Route
+            path="/clubs/:clubId"
+            element={
+              <RealBoundary clubKey="diamond-arena">
+                <div>The Page Itself</div>
+              </RealBoundary>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+  }
+
+  it.each([
+    '/clubs/diamond-arena/tournaments',
+    '/clubs/diamond-arena/members',
+    '/clubs/diamond-arena/members/user-1',
+    '/clubs/diamond-arena/members/user-1/statistics',
+    '/clubs/diamond-arena/messages',
+    `/clubs/${DIAMOND_ID}/members`,
+  ])('renders the page, not the shell, on the player route %s', async (path) => {
+    await boundaryAt(path);
+    expect(await screen.findByText('The Page Itself')).toBeTruthy();
+    expect(screen.queryByText('Welcome To')).toBeNull();
+    expect(screen.queryByText('You Are Already A Member.')).toBeNull();
+    // The closed-games notice belongs above the lobby, not above the roster.
+    expect(screen.queryByText('Diamond Games Are Not Open For Play Yet.')).toBeNull();
+  });
+
+  it.each(['/clubs/diamond-arena', '/clubs/diamond-arena/lobby'])(
+    'renders the lobby under the closed-games notice on %s',
+    async (path) => {
+      await boundaryAt(path);
+      expect(await screen.findByText('The Page Itself')).toBeTruthy();
+      expect(screen.getByText('Diamond Games Are Not Open For Play Yet.')).toBeTruthy();
+      expect(screen.queryByText('You Are Already A Member.')).toBeNull();
+    }
+  );
+
+  it.each([
+    '/clubs/diamond-arena/agents',
+    '/clubs/diamond-arena/finance',
+    '/clubs/diamond-arena/operations',
+    '/clubs/diamond-arena/control',
+    '/clubs/diamond-arena/cashier',
+    '/clubs/diamond-arena/settlement',
+    '/clubs/diamond-arena/agent-dashboard',
+    '/clubs/diamond-arena/wheel',
+    '/clubs/diamond-arena/diamond-games',
+    '/clubs/diamond-arena/settings',
+    '/clubs/diamond-arena/hand-review',
+    '/clubs/diamond-arena/members/user-1/anything-else',
+    `/clubs/${DIAMOND_ID}/finance`,
+  ])('keeps the safe shell on the operator route %s', async (path) => {
+    await boundaryAt(path);
+    expect(await screen.findByText('You Are Already A Member.')).toBeTruthy();
+    expect(screen.queryByText('The Page Itself')).toBeNull();
   });
 });

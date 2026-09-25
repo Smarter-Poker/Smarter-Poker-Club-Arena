@@ -22,11 +22,24 @@
  *   SPUN for five seconds before the player sees it. `busy` therefore covers
  *   the animation as well as the request, and the spin is counted when it
  *   lands, not when it is asked for.
+ *
+ * MOVED 2026-09-21 (owner ruling, R18): the wheel's run now ACCUMULATES. A
+ * landed spin is tallied (`tallyWheelRun`) rather than merely counted, a
+ * refusal ends the run with the server's reason rather than a bare "Stopped",
+ * and the run is declared to and closed at the server (`runBegin`/`runEnd`).
+ * The pins below on the counting line and the refusal text moved with it; the
+ * runner itself, its four verdicts and its one press path are unchanged. The
+ * wheel's plate offers 5, 10 and 25 (`WHEEL_RUN_SIZES`), R1's "5/10/25".
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { AUTO_RUN_SIZES, autoRunVerdict, cycleRunSize } from '../src/utils/autoRun';
+import {
+  AUTO_RUN_SIZES,
+  WHEEL_RUN_SIZES,
+  autoRunVerdict,
+  cycleRunSize,
+} from '../src/utils/autoRun';
 
 const ROOT = resolve(__dirname, '..');
 const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -113,22 +126,35 @@ describe('the wheel and crash share their repeat-round runner', () => {
     }
     expect(seen).toEqual([...AUTO_RUN_SIZES.slice(1), 0]);
   });
+
+  it('the wheel offers 5, 10 and 25 spins, and cycles those back to Off (R1, R18)', () => {
+    expect(WHEEL_RUN_SIZES).toEqual([0, 5, 10, 25]);
+    expect(WHEEL).toContain('cycleRunSize(size, WHEEL_RUN_SIZES)');
+    let n: number = 0;
+    const seen: number[] = [];
+    for (let i = 0; i < WHEEL_RUN_SIZES.length; i++) {
+      n = cycleRunSize(n, WHEEL_RUN_SIZES);
+      seen.push(n);
+    }
+    expect(seen).toEqual([5, 10, 25, 0]);
+  });
 });
 
 describe('the run stops wherever a thumb would be stopped', () => {
   it('on any blocker the page would print', () => {
-    expect(WHEEL).toContain('{ busy: spinning || pending !== null, blocker, ready: canSpin }');
+    expect(WHEEL).toContain(
+      '{ busy: spinning || pending !== null || preparing, blocker, ready: canSpin }'
+    );
   });
 
   it('on a refusal from the server', () => {
-    const spin = WHEEL.slice(
-      WHEEL.indexOf('const handleSpin'),
-      WHEEL.indexOf('const handleLanded')
-    );
-    expect(spin).toContain("endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null)");
-    // Once in the refusal branch and once in the catch: a request that never
-    // answered must not leave a run pressing into the dark.
-    expect(spin.match(/endAuto\(autoRunRef\.current/g)?.length).toBe(2);
+    const spin = WHEEL.slice(WHEEL.indexOf('const handleSpin'), WHEEL.indexOf('const playAward'));
+    // Once in the refusal branch, with the server's own reason, and once in
+    // the catch: a request that never answered must not leave a run pressing
+    // into the dark. (Moved 2026-09-21, R18: the reason reaches the summary.)
+    expect(spin).toContain("endAuto(result.error || 'The Spin Was Refused')");
+    expect(spin).toContain("endAuto('The Spin Is Not Confirmed')");
+    expect(spin.match(/endAuto\(/g)?.length).toBe(2);
   });
 
   it('and the stop plate is the run plate, in red, while it runs', () => {
@@ -175,7 +201,11 @@ describe('the wheel turns before the spin is counted', () => {
   it('the count moves on landing, where the result finally belongs to the player', () => {
     const landed = WHEEL.slice(WHEEL.indexOf('const handleLanded'));
     const block = landed.slice(0, landed.indexOf('const handleVerify'));
-    expect(block).toContain('setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));');
+    // Moved 2026-09-21 (R18): the landing tallies the spin, which is the count
+    // plus the prize or game it won. tallyWheelRun is exercised in
+    // tests/unit/autoRun.test.ts; this pins where it is called.
+    expect(block).toContain('setAutoRun((r) => (r ? tallyWheelRun(r, result, prizeLabel) : r));');
+    expect(block).not.toContain('done: r.done + 1');
   });
 
   it('the wheel pause remains shorter than Crash', () => {

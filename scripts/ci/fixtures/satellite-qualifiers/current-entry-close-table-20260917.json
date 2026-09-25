@@ -1,0 +1,182 @@
+{
+  "captured_at": "2026-09-17T20:25:06.154Z",
+  "tables": [
+    {
+      "rls": true,
+      "name": "tournament_entry_close_receipts",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "close_mode",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entry_closed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "final_prize_pool",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payout_structure_snapshot",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "manager_wake_id",
+          "type": "bigint",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reprice_completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_tournament_entry_close_receipts_pending",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_entry_close_receipts_pending ON public.tournament_entry_close_receipts USING btree (entry_closed_at, tournament_id) WHERE (reprice_completed_at IS NULL)"
+        },
+        {
+          "name": "tournament_entry_close_receipts_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_entry_close_receipts_pkey ON public.tournament_entry_close_receipts USING btree (tournament_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "aaa_require_satellite_economics_at_entry_close",
+          "enabled": "O",
+          "function": "trg_require_satellite_economics_at_entry_close()",
+          "definition": "CREATE TRIGGER aaa_require_satellite_economics_at_entry_close BEFORE INSERT ON public.tournament_entry_close_receipts FOR EACH ROW EXECUTE FUNCTION trg_require_satellite_economics_at_entry_close()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "tournament_entry_close_receipts_close_mode_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((close_mode = ANY (ARRAY['levels'::text, 'minutes'::text, 'immediate'::text, 'addon'::text])))"
+        },
+        {
+          "name": "tournament_entry_close_receipts_final_prize_pool_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((final_prize_pool >= (0)::numeric))"
+        },
+        {
+          "name": "tournament_entry_close_receipts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "tournament_entry_close_receipts_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        }
+      ]
+    }
+  ]
+}

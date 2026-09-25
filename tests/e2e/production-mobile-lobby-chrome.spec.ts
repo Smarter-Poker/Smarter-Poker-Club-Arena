@@ -1,4 +1,5 @@
 import { test, expect, devices, type Page } from '@playwright/test';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -27,21 +28,13 @@ const TITLE_CENTRE_PCT = 54.65;
 test.use({ ...devices['iPhone 13'] });
 
 async function openLobby(page: Page) {
-  await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForTimeout(500);
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: the club lobby is behind a login');
 
-  /* A club message is a legitimate full-screen welcome at the door. Close it
-     through its own X, without persisting anything. */
-  const close = page.getByRole('button', { name: 'Close Club Message' });
-  const opened = await close
-    .waitFor({ state: 'visible', timeout: 3_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (opened) {
-    await close.click();
-    await expect(close).toBeHidden({ timeout: 8_000 });
-  }
+  // Either optional welcome can cover a later tab action. Use the original
+  // public dismissals, including the shared handler for a delayed Diamond offer.
+  await prepareCashLobbyActions(page);
   await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
 }
 
@@ -60,13 +53,19 @@ async function bottomEdge(page: Page) {
 }
 
 test.describe('the mobile lobby chrome on production', () => {
+  // The 30s default expired after the first successful wallet-count assertion
+  // in run 35310320354. Allow the existing bounded navigation/readiness (30s +
+  // 45s), greeting (3s + 8s), count (20s), persistence (4s) and geometry phases
+  // to finish. No individual readiness deadline or visual assertion is relaxed.
+  test.describe.configure({ timeout: 120_000 });
+
   test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {
     await openLobby(page);
     const small = page.locator('.lobby-wallets-trigger__copy small');
 
     /* The number the viewer's role decides, in the wallet's own words. Not a
        placeholder, and not the empty bay that a wiped count leaves behind. */
-    await expect.poll(() => small.textContent(), { timeout: 20_000 }).toMatch(/^\d+ Balances?$/);
+    await expect(small).toHaveText(/^\d+ Balances?$/, { timeout: 20_000 });
     const printed = await small.textContent();
 
     /* ...and there is still a count once every balance has had time to load.
@@ -100,6 +99,14 @@ test.describe('the mobile lobby chrome on production', () => {
 
   test('the filter row locks under Find Your Game when the lobby scrolls', async ({ page }) => {
     await openLobby(page);
+    // The remembered MTT tab can legitimately be empty. Select the populated
+    // aggregate through the same UI a player uses before measuring its sort row.
+    const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
+    await allGames.click();
+    await expect(allGames).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('arena-lobby-game-card').first()).toBeVisible({
+      timeout: 45_000,
+    });
     const sortbar = page.locator('.lobby-sortbar');
     await expect(sortbar).toBeVisible({ timeout: 45_000 });
     await expect(sortbar).toHaveCSS('position', 'sticky');

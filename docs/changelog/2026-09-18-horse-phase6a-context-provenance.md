@@ -1,0 +1,13 @@
+# Horse Phase 6A: bind the source that actually informed the hand
+
+A tournament level refresh could update table metadata while the active hand retained its old blind configuration. Horse requests previously read that newer metadata. Tournament Horses now read the active HandController's dealt blinds and ante for their request, M calculation and second-look sizing. Cash behavior and the controller's chip arithmetic are unchanged.
+
+Each successful tournament-cache publication now owns a unique entry identity, successful refresh generation, read interval, completeness/issues and digest of the detached, deeply frozen context. Failed/in-flight refreshes retain the previous publication. Late and evicted entries cannot replace current data. This is a process-local observation of several independent database reads, not an atomic database snapshot or downstream proof of every source row.
+
+The actual decision contains separate cache provenance and current-hand projection. Worker validation binds that projection to the table/hand/actor fence and exact dealt census/blinds. The full request digest includes provenance, while the sampling projection excludes only this new observational field. Existing strategy inputs remain bound.
+
+New provenance produces private Phase 6 attribution v2 with the maintained atlas revision, copied source/projection, actual lookup and original reference proposal. Existing client, accepted-action witness and retained lifecycle validation carry and verify it. Entirely missing or downgraded receipts cannot qualify a successful new preflop decision; legacy missing evidence, postflop and explicitly labeled brain exceptions remain distinct. Public action nodes continue to read only their allowlist.
+
+Focused regression evidence includes cache failures before the repair (7 failed, 13 passed), repaired cache (21 passed), actual-controller old/new-level failures before the repair (2 failed, 16 passed), and current connected controller cases (19 passed). Worker/source binding, unchanged sampling, v2 witness immutability, source substitution, receipt removal, atlas mismatch and retained lifecycle checks run in the existing server suite. Final candidate hooks and protected CI must pass before delivery; publication and finite natural accepted-use verification are recorded separately in the owning delivery evidence.
+
+The four-stage plan is [Phase 6 build plan](../horse-brain-phase6-build-plan-2026-09-18.md). This change implements 6A only. It does not calibrate a deeper atlas, certify GTO strength, activate a new strategy, create a database store or claim full-population capture. The actual atlas source postimage is retained with release evidence; its named revision alone does not prove strategic correctness.

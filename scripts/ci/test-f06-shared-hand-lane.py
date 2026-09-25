@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -90,6 +91,9 @@ try:
     r = command([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-w', 'start'])
     require(r.returncode == 0, r.stderr)
     run('fixture', (ROOT / 'scripts/ci/probes/f06-shared-hand-lane/fixture.sql').read_text())
+    index = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_index_qualification.py'))
+    index['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('snapshotIndex', {}).get('passed') is True, 'Snapshot access-path qualification did not complete')
     before = run('snapshot-before', snapshot)
     with holder():
         probe('pure-stack-column-does-not-fire', 'UPDATE table_seats SET stack=101 WHERE id=2 RETURNING stack;', '101')
@@ -143,6 +147,93 @@ try:
     probe('canonical-receipted-roster-move', bound + receipt + "UPDATE tournament_players SET table_id='00000000-0000-4000-8000-000000000001',seat_number=2 WHERE id=2 RETURNING seat_number;", '2')
     run('browser-execution-still-closed', "SELECT NOT has_function_privilege('anon','smarter_private.f06_source_guard()','EXECUTE') AND NOT has_function_privilege('authenticated','smarter_private.f06_source_guard()','EXECUTE');", 't')
     require(run('all-probes-rolled-back', snapshot) == before, 'Probe leaked player state')
+    extension = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py'))
+    extension['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('unsettledAbort', {}).get('passed') is True, 'Interrupted-hand qualification did not complete')
+    require(results.get('successorAbort', {}).get('passed') is True, 'Successor interrupted-hand qualification did not complete')
+    require(results.get('generationAbort', {}).get('passed') is True, 'Generation disposition qualification did not complete')
+    require(results.get('mixedAbort', {}).get('passed') is True, 'Mixed interrupted-hand qualification did not complete')
+    require(results.get('mixedCohorts', {}).get('passed') is True, 'Mixed post-cutover cohorts did not complete')
+    require(results.get('mixedHuPrior', {}).get('passed') is True, 'Mixed HU prior-commit qualification did not complete')
+    require(results.get('mixedHuPriorAbort', {}).get('passed') is True, 'Mixed HU original-abort qualification did not complete')
+    prepared = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py'))
+    prepared['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('preparedCancellation', {}).get('passed') is True, 'Prepared cancellation qualification did not complete')
+    continuation = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/no_start_continuation_qualification.py'))
+    continuation['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('noStartContinuation', {}).get('passed') is True, 'No-start continuation did not complete')
+    spin = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/spin_prior_qualification.py'))
+    spin['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('spinPrior', {}).get('passed') is True, 'Prior-backed Spin disposition qualification did not complete')
+    completed = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/completed_mtt_qualification.py'))
+    completed['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('completedMtt', {}).get('passed') is True, 'Completed MTT boundary qualification did not complete')
+    interrupted = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py'))
+    interrupted['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('interruptedCustody', {}).get('passed') is True, 'Original interrupted custody qualification did not complete')
+    retention = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_retention_qualification.py'))
+    retention['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('snapshotRetention', {}).get('passed') is True, 'Unresolved snapshot retention did not qualify')
+    projected = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/earlybird_projected_qualification.py'))
+    projected['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('earlybirdProjected', {}).get('passed') is True, 'Original projected witness did not qualify')
+    retained = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retained_mtt_qualification.py'))
+    retained['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('retainedMtt', {}).get('passed') is True, 'Retained MTT qualification did not complete')
+    lease_retention = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/lease_reaper_qualification.py'))
+    lease_retention['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('leaseReaper', {}).get('passed') is True, 'Unresolved F06 lease retention did not qualify')
+    # The historical cohort replays the retired-origin scenario on the same fixed
+    # fixture ids (1401/1402), so it cannot run after the ordinary lane has seeded
+    # them. Clone the clean prerequisite state here, in this same owned cluster,
+    # while retained + lease_reaper are done and retired_origin has not yet run.
+    # Earlier qualifiers move this lane onto their own database, so clone whatever
+    # cmd[-1] currently names rather than assuming the initial one.
+    prerequisite_db = cmd[-1]
+    clone_db = 'f06_historical_prerequisite'
+    require(re.fullmatch('[a-z][a-z0-9_]*', prerequisite_db) is not None, 'Unexpected prerequisite database identity')
+    run('historical-prerequisite-clone', 'CREATE DATABASE ' + clone_db + ' TEMPLATE ' + prerequisite_db + ';')
+    retired = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retired_origin_qualification.py'))
+    retired['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('retiredOrigin', {}).get('passed') is True, 'Retired original authority qualification did not complete')
+    stopped_banks = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/stopped_bank_qualification.py'))
+    stopped_banks['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('stoppedBanks', {}).get('passed') is True, 'Stopped original bank qualification did not complete')
+    # The historical qualifier re-executes the ordinary retired-origin module and
+    # reuses its log names, its `out` side files and its results keys. Give it its
+    # own output directory and its own results mapping so no ordinary evidence or
+    # verdict is overwritten, and point the real psql argv at the untouched clone
+    # for the whole nested run, restoring the lane's database in a finally.
+    historical_out = out / 'historical'
+    historical_out.mkdir()
+    historical_results = {'cases': [], 'passed': False}
+
+    def historical_run(name, sql, expected=None, error=None):
+        r = command(cmd, sql)
+        (historical_out / (name + '.log')).write_text(r.stdout + r.stderr)
+        passed = (r.returncode != 0 and error in r.stderr) if error else r.returncode == 0
+        if expected is not None:
+            passed = passed and r.stdout.rstrip('\n') == expected
+        results['cases'].append({'name': 'historical/' + name, 'passed': passed})
+        require(passed, 'historical/' + name + ': ' + r.stdout[-500:] + r.stderr[-1500:])
+        return r.stdout.rstrip('\n')
+
+    def historical_probe(name, sql, expected=None, error=None):
+        return historical_run(name, 'BEGIN;\n' + sql + '\nROLLBACK;', expected, error)
+
+    historical = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/historical_bank_qualification.py'))
+    cmd[-1] = clone_db
+    try:
+        historical_run('historical-runs-on-the-clone', 'SELECT current_database();', clone_db)
+        historical['qualify'](ROOT, historical_out, cmd, command, historical_run, historical_probe, require, historical_results)
+    finally:
+        cmd[-1] = prerequisite_db
+    run('historical-ordinary-database-restored', 'SELECT current_database();', prerequisite_db)
+    results['historicalLoss'] = historical_results.get('historicalLoss')
+    results['historicalRetiredOrigin'] = historical_results.get('retiredOrigin')
+    results['historicalRetiredOtherZero'] = historical_results.get('retiredOtherZero')
+    require((results['historicalLoss'] or {}).get('passed') is True,
+            'Historical MTT bank loss qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

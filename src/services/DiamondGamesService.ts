@@ -3,19 +3,31 @@
  *  DIAMOND GAMES SERVICE - Plinko and Crash
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan 2026-09-08: two alternates to the Diamond Wheel, a Plinko board and a
- * Crash (Aviator-style) curve, 50x or higher, a crash pays nothing, the 20
- * percent edge kept, and neither ever pays out more than it takes in.
+ * Dan 2026-09-08 asked for two alternates to the Diamond Wheel: a Plinko board
+ * and a Crash (Aviator-style) curve, 50x or higher, the 20 percent edge kept,
+ * and neither ever paying out more than it takes in.
+ *
+ * A CRASH HAS NOT PAID NOTHING SINCE 2026-09-19 (migration 20260919034436, and
+ * the reason the sentence above used to end differently). Every round seals a
+ * guaranteed minimum - a tenth of the stake on an ordinary wheel award, half on
+ * a Super one, fn_diamond_bonus_minimum - and funds it out of its own odds, so
+ * a lost round still pays that minimum and the curve crashes sooner. The 50x is
+ * the old ask, not the limit a round gets: since the wheel-award release the cap
+ * comes from the award (fn_diamond_game_cap_cents scales it by base over total),
+ * 20x to 100x in practice, and `cap_cents` on each quoted bet is what the server
+ * will actually promise.
  *
  * NOTHING IS DECIDED HERE. fn_diamond_game_state says what a bet can win right
  * now (the cap the pool can promise on it), fn_plinko_drop and fn_crash_start /
- * fn_crash_settle are the money doors, and the browser draws what they say:
- * the ball follows the path the server rolled, the curve is read off the
- * server's clock. The design: supabase/migrations/20260908010241.
+ * fn_crash_settle / fn_crash_cashout are the money doors, and the browser draws
+ * what they say: the ball follows the path the server rolled, the curve is read
+ * off the server's clock. The design: supabase/migrations/20260908010241.
  */
 
 import { supabase } from '../lib/supabase';
 import { validateCrashSettlement } from '../utils/crashReceipt';
+import { crashCashoutFloorCents, crashPointFloorCents } from '../utils/diamondGamesFairness';
+import { bonusAdded, bonusTotal, earnedReceiptBudget } from '../utils/bonusGameBudget';
 
 export type DiamondGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 
@@ -164,6 +176,24 @@ export interface CrashRound {
   status: CrashStatus;
   bet_diamonds: number;
   bet_chips: number;
+  award_id?: string;
+  bonus?: {
+    base_diamonds: number;
+    entry_diamonds: number;
+    boost_multiplier: 1 | 2;
+    added_diamonds: number;
+    total_diamonds: number;
+  };
+  minimum_payout_chips?: number;
+  /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half.
+   *  4: half the stake, or for a Super award what the player paid. */
+  payout_version?: 1 | 2 | 3 | 4;
+  /** The first hundredth this round's own contract lets a player book: 1.01x
+   *  before contract 4, 1.11x from it. Mirrors fn_crash_cashout / fn_crash_decide. */
+  cashout_floor_cents: number;
+  /** The lowest point this round's own contract can crash at: 1.00x before
+   *  contract 4, 1.10x from it. Mirrors fn_crash_point_cents. */
+  crash_floor_cents: number;
   diamonds_per_chip: number;
   cap_cents: number;
   growth_k: number;
@@ -443,11 +473,22 @@ function normaliseTable(raw: Record<string, unknown>): PlinkoTable {
   };
 }
 
+/** The receipt versions this client knows how to price. Anything else is not a
+ *  contract it can read, so it is not one it pretends to. */
+const CRASH_PAYOUT_VERSIONS = [1, 2, 3, 4] as const;
+
 export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
+  const version = (CRASH_PAYOUT_VERSIONS as readonly number[]).includes(
+    raw.payout_version as number
+  )
+    ? (raw.payout_version as 1 | 2 | 3 | 4)
+    : undefined;
   const outcome = raw.outcome ? rec(raw.outcome) : null;
   const fairness = rec(raw.fairness);
   const balances = rec(raw.balances);
   const pool = rec(raw.pool);
+  const funded = earnedReceiptBudget(raw);
+  if (raw.award_id != null && !funded) throw new Error('The Crash Award Could Not Be Verified');
   return {
     ok: raw.ok === true,
     error: raw.error ? String(raw.error) : undefined,
@@ -463,6 +504,32 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
     status: (raw.status as CrashStatus) ?? 'open',
     bet_diamonds: num(raw.bet_diamonds),
     bet_chips: num(raw.bet_chips),
+    ...(funded?.award
+      ? {
+          award_id: funded.award.id,
+          bonus: {
+            base_diamonds: funded.base,
+            entry_diamonds: funded.award.entryDiamonds,
+            boost_multiplier: funded.award.boostMultiplier,
+            added_diamonds: bonusAdded(funded),
+            total_diamonds: bonusTotal(funded),
+          },
+        }
+      : {}),
+    minimum_payout_chips:
+      raw.minimum_payout_chips === undefined ? undefined : num(raw.minimum_payout_chips),
+    // A RECEIPT KEEPS THE CONTRACT IT WAS SEALED WITH (2026-09-23). This read
+    // the two versions that existed when it was written and turned anything
+    // else into `undefined`, so from the moment production began sealing
+    // payout_version 4 every crash round reached the page claiming the oldest
+    // contract of all: the cash-out opened at 1.01x where the server refuses
+    // under 1.11x, and the in-browser verifier recomputed the point at the
+    // 1.00x floor, which disagrees with the sealed point on about half of all
+    // real rolls. An unknown version is still dropped - the client cannot price
+    // a rule it does not have - but every version it CAN read survives the read.
+    payout_version: version,
+    cashout_floor_cents: crashCashoutFloorCents(version),
+    crash_floor_cents: crashPointFloorCents(version),
     diamonds_per_chip: num(raw.diamonds_per_chip),
     cap_cents: num(raw.cap_cents),
     growth_k: num(raw.growth_k),
@@ -684,12 +751,16 @@ const DiamondGamesService = {
     expected?: CrashRound,
     displayedCents?: number
   ): Promise<CrashRound> {
+    // The floor is the round's own, not a constant: fn_crash_cashout refuses a
+    // contract-4 round under 1.11x, and a request the server will refuse never
+    // leaves this client.
+    const floor = crashCashoutFloorCents(expected?.payout_version);
     if (
       cashout &&
       displayedCents !== undefined &&
-      (!Number.isSafeInteger(displayedCents) || displayedCents < 101)
+      (!Number.isSafeInteger(displayedCents) || displayedCents < floor)
     )
-      throw new Error('Cash Out Starts At 1.01x');
+      throw new Error(`Cash Out Starts At ${(floor / 100).toFixed(2)}x`);
     const { data, error } =
       cashout && displayedCents !== undefined
         ? await supabase.rpc('fn_crash_cashout', {

@@ -62,6 +62,7 @@ import {
   profileStatsFromV2,
   type PokerStats,
 } from '../utils/profileStats';
+import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -150,7 +151,14 @@ const VARIANT_LABEL: Record<string, string> = {
   plo5: 'PLO5',
   plo6: 'PLO6',
   pineapple: 'Pineapple',
-  ofc: 'OFC',
+  /* Legacy spellings, never a game on offer: Open-Face Chinese is excluded
+     (owner decision 2026-09-22) and was never dealt. `ofc_pineapple` rows were
+     Crazy Pineapple, so they read as `pineapple` does; a bare `ofc` names no
+     game this platform runs, so it reads as the platform's 'Poker' for a
+     variant it cannot name. Both need a row, because the lookup below
+     upper-cases an unmapped key and would print them back as OFC. */
+  ofc_pineapple: 'Pineapple',
+  ofc: 'Poker',
   short_deck: 'Short Deck',
 };
 const variantLabel = (v: string) => VARIANT_LABEL[v] || v.toUpperCase();
@@ -495,7 +503,14 @@ export default function ProfilePage() {
           retryFetch(
             () =>
               supabase
-                .rpc('ca_player_stats_overview_v2', { p_user: requestedUserId, p_days: null })
+                .rpc('ca_player_stats_overview_v2', {
+                  /* Scoped to chips: this figure is a chip figure and must
+                     never silently become a chip+Diamond total. See
+                     src/services/statsScope.ts. */
+                  ...statsScopeArgs(CHIP_STATS),
+                  p_user: requestedUserId,
+                  p_days: null,
+                })
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMountedRef }
           ),
@@ -683,7 +698,14 @@ export default function ProfilePage() {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
               supabase
-                .rpc('ca_player_stats_overview_v2', { p_user: requestedUserId, p_days: null })
+                .rpc('ca_player_stats_overview_v2', {
+                  /* Scoped to chips: this figure is a chip figure and must
+                     never silently become a chip+Diamond total. See
+                     src/services/statsScope.ts. */
+                  ...statsScopeArgs(CHIP_STATS),
+                  p_user: requestedUserId,
+                  p_days: null,
+                })
                 .then(({ data, error }) => {
                   const freshStats = !error ? profileStatsFromV2(data) : null;
                   if (freshStats && ownsActiveAccount(requestedUserId)) {

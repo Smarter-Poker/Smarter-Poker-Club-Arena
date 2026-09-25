@@ -55,26 +55,42 @@ const overlayVariants = {
   exit: { opacity: 0, backdropFilter: 'blur(0px)', transition: { duration: 0.2 } },
 };
 
-const modalVariants = {
-  hidden: { opacity: 0, scale: 0.92, y: 30 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    y: 0,
-    transition: {
-      type: 'spring',
-      damping: 28,
-      stiffness: 350,
-      mass: 1.2,
-      velocity: 2,
-    },
-  },
-  exit: {
-    opacity: 0,
-    scale: 0.9,
-    y: 20,
-    transition: { type: 'spring', damping: 30, stiffness: 300, duration: 0.2 },
-  },
+/**
+ * THE CARD IS ANIMATED ONCE, AND BY THE CLOCK (2026-09-20).
+ *
+ * `.ca-modal` used to carry TWO animators for the same entrance: the
+ * `caModalSlideUp` keyframes in Modal.css and a framer-motion spring writing
+ * `opacity`/`scale`/`y` inline. A CSS animation outranks an inline style for
+ * as long as it runs, so for 350ms a player saw the keyframes and the spring's
+ * output was invisible; when the keyframes ended the card SNAPPED to wherever
+ * the spring had got to.
+ *
+ * That snap is not cosmetic, because the two animators keep different clocks.
+ * The keyframes are time-based and finish 350ms after they start whatever else
+ * the page is doing. framer-motion integrates on `requestAnimationFrame` and
+ * clamps each step to 40ms (`maxElapsed` in framer-motion 11), so its wall
+ * clock stretches with the frame interval. Measured on the real
+ * DiamondBustPrompt at an iPhone 13 viewport, with the main thread deliberately
+ * starved, the card sat at the spring's `scale(0.92) translateY(30px)` start
+ * pose and only reached rest at:
+ *
+ *   frames ~16ms -> 466ms      frames 250ms -> 1280ms      frames 1000ms -> 3030ms
+ *
+ * A popup whose dismiss control is still travelling seconds after it opened is
+ * a control a player is asked to hit while it moves, and it is why the live
+ * lobby certificate could not click Not Now on the Diamond Spins invitation:
+ * production run 35505980028, `element is not stable`.
+ *
+ * So the entrance belongs to the keyframes alone - they are what a player has
+ * actually been seeing, and they land on time on any frame budget. Presence
+ * and the exit stay with framer-motion, which is what AnimatePresence is for;
+ * nothing here removes or shortens an animation (CLAUDE.md 10.6).
+ */
+const modalExit = {
+  opacity: 0,
+  scale: 0.9,
+  y: 20,
+  transition: { type: 'spring', damping: 30, stiffness: 300, duration: 0.2 },
 };
 
 /**
@@ -137,13 +153,18 @@ export function Modal({
       document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
 
-      // Focus the first focusable element in the modal
+      // Focus the first focusable element in the modal - skipping the
+      // console's painted X, which sits first in the DOM on every popup since
+      // 2026-09-23 and is the last resort for initial focus, never the first
+      // (see useFocusTrap for the same rule).
       setTimeout(() => {
         if (modalRef.current) {
-          const focusable = modalRef.current.querySelector(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          ) as HTMLElement;
-          focusable?.focus();
+          const focusable = Array.from(
+            modalRef.current.querySelectorAll<HTMLElement>(
+              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            )
+          );
+          (focusable.find((el) => !el.classList.contains('sc__close')) ?? focusable[0])?.focus();
         }
       }, 0);
     }
@@ -174,10 +195,7 @@ export function Modal({
           <motion.div
             ref={modalRef}
             className={`ca-modal ca-modal--${size} ${className}`}
-            variants={modalVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
+            exit={modalExit}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"

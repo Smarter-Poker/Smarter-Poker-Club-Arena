@@ -1,0 +1,1591 @@
+{
+  "capturedAt": "2026-09-19T15:08:00Z",
+  "project": "kuklfnapbkmacvwxktbh",
+  "source": "Read-only PostgreSQL catalogs; no production user data",
+  "tables": [
+    {
+      "relname": "social_posts",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "default": "'text'::text",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "media_urls",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "like_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "comment_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "share_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "view_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "visibility",
+          "type": "text",
+          "default": "'public'::text",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_pinned",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_flagged",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_deleted",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "achievement_data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "search_vector",
+          "type": "tsvector",
+          "default": "to_tsvector('english'::regconfig, COALESCE(content, ''::text))",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "link_url",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "link_title",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "link_description",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "link_image",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "link_site_name",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "thumbnail_url",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transcode_status",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "original_media_url",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transcode_error",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transcoded_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cover_frames",
+          "type": "text[]",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cover_frame_index",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ai_label",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "audience_mode",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "audience_list",
+          "type": "text[]",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "share_to_story",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "metadata_location",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "topics",
+          "type": "text[]",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "origin_type",
+          "type": "text",
+          "default": "'user_upload'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "playback_type",
+          "type": "text",
+          "default": "'external_embed'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "topic",
+          "type": "text",
+          "default": "'unknown'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rights_status",
+          "type": "text",
+          "default": "'unknown'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_asset_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "youtube_video_id",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "canonical_asset_key",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "publication_key",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "legacy_transition_expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fk_social_posts_author_id_profiles",
+          "definition": "FOREIGN KEY (author_id) REFERENCES profiles(id) ON DELETE CASCADE",
+          "foreign_table": "profiles"
+        },
+        {
+          "name": "social_posts_audience_mode_chk",
+          "definition": "CHECK (((audience_mode IS NULL) OR (audience_mode = ANY (ARRAY['public'::text, 'friends'::text, 'friends_except'::text, 'specific'::text, 'only_me'::text, 'custom'::text])))) NOT VALID",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_author_id_fkey",
+          "definition": "FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+          "foreign_table": "auth.users"
+        },
+        {
+          "name": "social_posts_comment_count_check",
+          "definition": "CHECK ((comment_count >= 0))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_content_check",
+          "definition": "CHECK ((char_length(content) <= 2000))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_embed_rights_check",
+          "definition": "CHECK (((rights_status <> 'embed_only'::text) OR (playback_type = 'youtube_embed'::text)))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_like_count_check",
+          "definition": "CHECK ((like_count >= 0))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_managed_library_integrity_check",
+          "definition": "CHECK ((((origin_type <> 'video_library'::text) AND (source_asset_id IS NULL) AND (publication_key IS NULL)) OR ((origin_type = 'video_library'::text) AND (source_asset_id IS NOT NULL) AND (youtube_video_id IS NOT NULL) AND (canonical_asset_key IS NOT NULL) AND (publication_key IS NOT NULL))))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_origin_type_check",
+          "definition": "CHECK ((origin_type = ANY (ARRAY['user_upload'::text, 'story'::text, 'social_post'::text, 'video_library'::text, 'horse'::text, 'pokernews'::text, 'generated'::text, 'legacy'::text])))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_playback_type_check",
+          "definition": "CHECK ((playback_type = ANY (ARRAY['native'::text, 'youtube_embed'::text, 'external_embed'::text])))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_rights_status_check",
+          "definition": "CHECK ((rights_status = ANY (ARRAY['unknown'::text, 'embed_only'::text, 'owned'::text, 'licensed'::text, 'user_authorized'::text, 'restricted'::text])))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_share_count_check",
+          "definition": "CHECK ((share_count >= 0))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_source_asset_id_fkey",
+          "definition": "FOREIGN KEY (source_asset_id) REFERENCES video_library_videos(id) ON DELETE RESTRICT",
+          "foreign_table": "video_library_videos"
+        },
+        {
+          "name": "social_posts_topic_check",
+          "definition": "CHECK ((topic = ANY (ARRAY['unknown'::text, 'poker'::text, 'cash'::text, 'tournament'::text, 'slots'::text, 'sports'::text, 'other'::text])))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_view_count_check",
+          "definition": "CHECK ((view_count >= 0))",
+          "foreign_table": null
+        },
+        {
+          "name": "social_posts_visibility_check",
+          "definition": "CHECK ((visibility = ANY (ARRAY['public'::text, 'followers'::text, 'private'::text])))",
+          "foreign_table": null
+        }
+      ]
+    },
+    {
+      "relname": "social_stories",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "media_url",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "media_type",
+          "type": "character varying(20)",
+          "default": "'image'::character varying",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "background_color",
+          "type": "character varying(255)",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": "(now() + '24:00:00'::interval)",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "view_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "default": "true",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "link_url",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fk_social_stories_author_id_profiles",
+          "definition": "FOREIGN KEY (author_id) REFERENCES profiles(id) ON DELETE CASCADE",
+          "foreign_table": "profiles"
+        },
+        {
+          "name": "social_stories_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "foreign_table": null
+        }
+      ]
+    },
+    {
+      "relname": "celebration_queue",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reward_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reward_name",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "diamonds",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rarity",
+          "type": "text",
+          "default": "'common'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "icon",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "dismissed",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "celebration_queue_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "foreign_table": null
+        },
+        {
+          "name": "celebration_queue_user_id_fkey",
+          "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+          "foreign_table": "auth.users"
+        },
+        {
+          "name": "fk_celebration_queue_user_id_profiles",
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+          "foreign_table": "profiles"
+        }
+      ]
+    },
+    {
+      "relname": "reward_claims",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxt/postgres,authenticated=rxt/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reward_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "diamonds_awarded",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "multiplier",
+          "type": "numeric(3,2)",
+          "default": "1.0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fk_reward_claims_user_id_profiles",
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+          "foreign_table": "profiles"
+        },
+        {
+          "name": "reward_claims_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "foreign_table": null
+        },
+        {
+          "name": "reward_claims_reward_id_fkey",
+          "definition": "FOREIGN KEY (reward_id) REFERENCES reward_definitions(id)",
+          "foreign_table": "reward_definitions"
+        },
+        {
+          "name": "reward_claims_user_id_fkey",
+          "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+          "foreign_table": "auth.users"
+        }
+      ]
+    },
+    {
+      "relname": "reward_definitions",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxt/postgres,authenticated=rxt/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "default": "'standard'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "subcategory",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "base_amount",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "max_amount",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_repeatable",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cooldown_hours",
+          "type": "integer",
+          "default": "24",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bypasses_cap",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rarity",
+          "type": "text",
+          "default": "'common'::text",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "icon",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "reward_definitions_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "foreign_table": null
+        }
+      ]
+    },
+    {
+      "relname": "video_library_videos",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxt/postgres,authenticated=rxt/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "youtube_video_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "video_url",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "thumbnail_url",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "duration",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "views_text",
+          "type": "text",
+          "default": "'0'::text",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "views_count",
+          "type": "bigint",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "scraped_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "enriched_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tags",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "availability_status",
+          "type": "text",
+          "default": "'unknown'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "embeddable",
+          "type": "boolean",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "availability_checked_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "availability_failure_reason",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "availability_source",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "video_library_videos_availability_status_check",
+          "definition": "CHECK ((availability_status = ANY (ARRAY['unknown'::text, 'verified'::text, 'unavailable'::text, 'private'::text, 'restricted'::text, 'embed_disabled'::text, 'error'::text])))",
+          "foreign_table": null
+        },
+        {
+          "name": "video_library_videos_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "foreign_table": null
+        },
+        {
+          "name": "video_library_videos_type_check",
+          "definition": "CHECK ((type = ANY (ARRAY['cash'::text, 'tournament'::text, 'slots'::text])))",
+          "foreign_table": null
+        },
+        {
+          "name": "video_library_videos_verified_availability_check",
+          "definition": "CHECK ((((availability_status = 'verified'::text) AND (embeddable IS TRUE) AND (availability_checked_at IS NOT NULL)) OR ((availability_status <> 'verified'::text) AND (embeddable IS DISTINCT FROM true))))",
+          "foreign_table": null
+        },
+        {
+          "name": "video_library_videos_youtube_video_id_key",
+          "definition": "UNIQUE (youtube_video_id)",
+          "foreign_table": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "signature": "claim_reward(uuid,text,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.claim_reward(p_user_id uuid, p_reward_id text, p_metadata jsonb DEFAULT '{}'::jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n    v_reward reward_definitions%ROWTYPE;\n    v_balance user_diamond_balance%ROWTYPE;\n    v_multiplier DECIMAL(3,2) := 1.0;\n    v_diamonds INTEGER;\n    v_daily_cap INTEGER := 500;\n    v_today_earned INTEGER;\n    v_claim_id UUID;\nBEGIN\n    -- Get reward definition\n    SELECT * INTO v_reward FROM reward_definitions WHERE id = p_reward_id;\n    IF NOT FOUND THEN\n        RETURN jsonb_build_object('success', false, 'error', 'Reward not found');\n    END IF;\n    \n    -- Get or create user balance\n    SELECT * INTO v_balance FROM user_diamond_balance WHERE user_id = p_user_id;\n    IF NOT FOUND THEN\n        INSERT INTO user_diamond_balance (user_id, balance, lifetime_earned)\n        VALUES (p_user_id, 0, 0)\n        RETURNING * INTO v_balance;\n    END IF;\n    \n    -- Check if non-repeatable reward already claimed\n    IF NOT v_reward.is_repeatable THEN\n        IF EXISTS (SELECT 1 FROM reward_claims WHERE user_id = p_user_id AND reward_id = p_reward_id) THEN\n            RETURN jsonb_build_object('success', false, 'error', 'Already claimed', 'already_claimed', true);\n        END IF;\n    END IF;\n    \n    -- Calculate streak multiplier\n    IF v_balance.current_streak >= 7 THEN\n        v_multiplier := 2.0;\n    ELSIF v_balance.current_streak >= 3 THEN\n        v_multiplier := 1.5;\n    END IF;\n    \n    -- Calculate diamonds\n    v_diamonds := FLOOR(v_reward.base_amount * v_multiplier);\n    \n    -- Check daily cap (unless bypasses_cap is true)\n    IF NOT COALESCE(v_reward.bypasses_cap, false) THEN\n        SELECT COALESCE(SUM(diamonds_awarded), 0) INTO v_today_earned\n        FROM reward_claims\n        WHERE user_id = p_user_id AND created_at::date = CURRENT_DATE;\n        \n        IF v_today_earned >= v_daily_cap THEN\n            RETURN jsonb_build_object('success', false, 'error', 'Daily cap reached', 'cap_reached', true);\n        END IF;\n        \n        -- Reduce to stay under cap\n        IF v_today_earned + v_diamonds > v_daily_cap THEN\n            v_diamonds := v_daily_cap - v_today_earned;\n        END IF;\n    END IF;\n    \n    -- Create the claim\n    INSERT INTO reward_claims (user_id, reward_id, diamonds_awarded, multiplier, metadata)\n    VALUES (p_user_id, p_reward_id, v_diamonds, v_multiplier, p_metadata)\n    RETURNING id INTO v_claim_id;\n    \n    -- Update balance\n    UPDATE user_diamond_balance\n    SET balance = balance + v_diamonds,\n        lifetime_earned = lifetime_earned + v_diamonds,\n        updated_at = NOW()\n    WHERE user_id = p_user_id;\n    \n    -- Queue celebration\n    INSERT INTO celebration_queue (user_id, reward_id, reward_name, diamonds, rarity, icon, message)\n    VALUES (\n        p_user_id,\n        p_reward_id,\n        v_reward.name,\n        v_diamonds,\n        v_reward.rarity,\n        v_reward.icon,\n        CASE v_reward.rarity\n            WHEN 'legendary' THEN 'LEGENDARY ACHIEVEMENT!'\n            WHEN 'epic' THEN 'EPIC DISCOVERY!'\n            WHEN 'rare' THEN 'RARE FIND!'\n            ELSE 'DIAMONDS EARNED!'\n        END\n    );\n    \n    RETURN jsonb_build_object(\n        'success', true,\n        'claim_id', v_claim_id,\n        'reward_id', p_reward_id,\n        'reward_name', v_reward.name,\n        'diamonds', v_diamonds,\n        'multiplier', v_multiplier,\n        'rarity', v_reward.rarity,\n        'icon', v_reward.icon,\n        'new_balance', v_balance.balance + v_diamonds\n    );\nEND;\n$function$\n",
+      "definition_md5": "7529dddd2e04426432a1fdc113086a6b",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_social_reward_award(uuid,text,text,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_social_reward_award(p_user_id uuid, p_action_key text, p_reference_id text, p_target_id text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_created_at timestamptz;\nBEGIN\n    IF p_user_id IS NULL OR p_action_key IS NULL THEN RETURN; END IF;\n    -- Anti-farming: the 24h account-age gate every HTTP endpoint applied.\n    -- A profile we cannot find is NOT paid - fail closed.\n    SELECT created_at INTO v_created_at FROM public.profiles WHERE id = p_user_id;\n    IF v_created_at IS NULL OR (now() - v_created_at) < interval '24 hours' THEN RETURN; END IF;\n    PERFORM public.award_diamonds_v2(p_user_id, p_action_key, p_reference_id, p_target_id,\n                                     jsonb_build_object('source','db_trigger'));\nEXCEPTION WHEN OTHERS THEN\n    RAISE WARNING '[social-reward] % failed for user %: %', p_action_key, p_user_id, SQLERRM;\n    RETURN;\nEND $function$\n",
+      "definition_md5": "3a5860f2bd54aa80e3e54931ef90876a",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_can_view_post(uuid,text,text[])",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_can_view_post(p_author_id uuid, p_audience_mode text, p_audience_list text[])\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_viewer uuid;\n  v_mode text;\nBEGIN\n  v_viewer := auth.uid();\n  v_mode := COALESCE(p_audience_mode, 'public');\n\n  -- Author always sees their own posts.\n  IF v_viewer IS NOT NULL AND v_viewer = p_author_id THEN\n    RETURN TRUE;\n  END IF;\n\n  IF v_mode = 'public' THEN\n    RETURN TRUE;\n  END IF;\n\n  -- All non-public modes require the viewer to be authenticated.\n  IF v_viewer IS NULL THEN\n    RETURN FALSE;\n  END IF;\n\n  IF v_mode = 'only_me' THEN\n    RETURN FALSE; -- author already returned above\n  END IF;\n\n  IF v_mode = 'friends' THEN\n    RETURN public.fn_are_friends(v_viewer, p_author_id);\n  END IF;\n\n  IF v_mode = 'friends_except' THEN\n    -- audience_list holds excluded user ids\n    RETURN public.fn_are_friends(v_viewer, p_author_id)\n       AND NOT (v_viewer::text = ANY(COALESCE(p_audience_list, '{}'::text[])));\n  END IF;\n\n  IF v_mode IN ('specific', 'custom') THEN\n    RETURN v_viewer::text = ANY(COALESCE(p_audience_list, '{}'::text[]));\n  END IF;\n\n  -- Unknown mode: fail closed.\n  RETURN FALSE;\nEND;\n$function$\n",
+      "definition_md5": "ec85ac8337898f3e47bc1d3d1199108e",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_is_public_video_playback_eligible(text,text,text,uuid,text,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_is_public_video_playback_eligible(p_playback_type text, p_rights_status text, p_playback_url text, p_author_id uuid, p_youtube_video_id text, p_canonical_asset_key text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT CASE\n    WHEN p_playback_type = 'youtube_embed' THEN\n      p_rights_status IN ('embed_only', 'owned', 'licensed')\n      AND p_youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n      AND p_canonical_asset_key = 'youtube:' || p_youtube_video_id\n      AND public.fn_extract_youtube_video_id(p_playback_url) = p_youtube_video_id\n      AND public.fn_has_fresh_public_youtube_verification(p_youtube_video_id)\n    WHEN p_playback_type = 'native' THEN\n      p_rights_status IN ('owned', 'licensed', 'user_authorized')\n      AND public.fn_is_user_video_storage_url(p_playback_url, p_author_id)\n      AND (\n        (\n          p_rights_status = 'user_authorized'\n          AND\n          p_youtube_video_id IS NULL\n          AND p_canonical_asset_key LIKE 'native:%'\n        )\n        OR (\n          p_rights_status IN ('owned', 'licensed')\n          AND (\n            p_youtube_video_id IS NULL\n            OR (\n              p_canonical_asset_key = 'youtube:' || p_youtube_video_id\n              AND public.fn_has_fresh_public_youtube_verification(p_youtube_video_id)\n            )\n          )\n        )\n      )\n    ELSE false\n  END\n$function$\n",
+      "definition_md5": "e058af269888d9db622c7003b9876b7b",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "signature": "fn_is_video_library_asset_eligible(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_is_video_library_asset_eligible(p_asset_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1\n    FROM public.video_library_videos v\n    WHERE v.id = p_asset_id\n      AND v.youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n      AND v.youtube_video_id NOT LIKE 'FAKE%'\n      AND v.type IN ('cash', 'tournament')\n      AND v.availability_status = 'verified'\n      AND v.embeddable IS TRUE\n      AND v.availability_checked_at IS NOT NULL\n      AND v.availability_checked_at >= now() - interval '7 days'\n      AND v.availability_checked_at <= now() + interval '5 minutes'\n      AND NOT EXISTS (\n        SELECT 1\n        FROM public.youtube_embed_failures f\n        WHERE f.video_id = v.youtube_video_id\n          AND f.verification_status = 'confirmed'\n          AND f.resolved = false\n      )\n  )\n$function$\n",
+      "definition_md5": "296372702ded9ce20a4d19804c14e476",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "signature": "fn_is_video_library_lineage_eligible(uuid,text,text,text,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_is_video_library_lineage_eligible(p_asset_id uuid, p_youtube_video_id text, p_canonical_asset_key text, p_publication_key text, p_playback_url text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1\n    FROM public.video_library_videos v\n    WHERE v.id = p_asset_id\n      AND p_youtube_video_id = v.youtube_video_id\n      AND p_canonical_asset_key = 'youtube:' || v.youtube_video_id\n      AND p_publication_key = 'video-library:' || v.id::text\n      AND public.fn_extract_youtube_video_id(p_playback_url) = v.youtube_video_id\n      AND public.fn_is_video_library_asset_eligible(v.id)\n  )\n$function$\n",
+      "definition_md5": "80880ffedc928c4c4f4f29229d54d451",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "legacy_transition_eligible(social_posts)",
+      "definition": "CREATE OR REPLACE FUNCTION public.legacy_transition_eligible(p_post social_posts)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT (p_post).content_type = 'video'\n    AND COALESCE((p_post).is_deleted, false) = false\n    AND (p_post).visibility IS DISTINCT FROM 'private'\n    AND (p_post).playback_type = 'youtube_embed'\n    AND (p_post).rights_status IN ('embed_only', 'owned', 'licensed')\n    AND (p_post).youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n    AND (p_post).youtube_video_id NOT LIKE 'FAKE%'\n    AND (p_post).canonical_asset_key =\n      'youtube:' || (p_post).youtube_video_id\n    AND public.fn_extract_youtube_video_id(\n          NULLIF((p_post).media_urls ->> 0, '')\n        ) = (p_post).youtube_video_id\n    AND EXISTS (\n      SELECT 1\n      FROM public.video_reels_legacy_transition_rows transition_row\n      JOIN public.video_reels_legacy_transition_state transition_state\n        ON transition_state.transition_key = 'phase1-public-youtube'\n       AND transition_state.captured_at = transition_row.captured_at\n       AND transition_state.expires_at = transition_row.expires_at\n      WHERE transition_row.surface = 'social_posts'\n        AND transition_row.row_id = (p_post).id\n        AND transition_row.youtube_video_id = (p_post).youtube_video_id\n        AND transition_row.row_snapshot =\n          public.fn_legacy_youtube_post_transition_snapshot(p_post)\n        AND transition_row.expires_at =\n          (p_post).legacy_transition_expires_at\n        AND transition_row.captured_at <= now() + interval '5 minutes'\n        AND transition_row.expires_at =\n          transition_row.captured_at + interval '7 days'\n        AND transition_row.expires_at > now()\n    )\n    AND NOT EXISTS (\n      SELECT 1\n      FROM public.youtube_embed_failures failure\n      WHERE failure.video_id = (p_post).youtube_video_id\n        AND failure.verification_status = 'confirmed'\n        AND failure.resolved = false\n    )\n$function$\n",
+      "definition_md5": "1f46895b63d874a18c2da0190836c4ac",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_queue_video_transcode()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_queue_video_transcode()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF NEW.content_type = 'video'\n     AND (NEW.media_urls->>0) IS NOT NULL\n     AND (\n       (NEW.media_urls->>0) ILIKE '%.mov'\n       OR (NEW.media_urls->>0) ILIKE '%.hevc'\n       OR (NEW.media_urls->>0) ILIKE '%.heic'\n       OR (NEW.media_urls->>0) ILIKE '%.mkv'\n       OR (NEW.media_urls->>0) ILIKE '%.avi'\n       OR (NEW.media_urls->>0) ILIKE '%.mp4'\n       OR (NEW.media_urls->>0) ILIKE '%.m4v'\n       OR (NEW.media_urls->>0) ILIKE '%.webm'\n       OR (NEW.media_urls->>0) ILIKE '%/live-recordings/%'\n     )\n     -- Only queue when a thumbnail is actually missing: a client-supplied\n     -- poster frame should not trigger a re-encode just for extraction.\n     AND (NEW.thumbnail_url IS NULL OR NEW.thumbnail_url = '')\n  THEN\n    NEW.transcode_status := 'queued';\n    NEW.original_media_url := (NEW.media_urls->>0);\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition_md5": "96da541712286581c374b0a6d0298600",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_auto_create_story_from_post()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_auto_create_story_from_post()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    -- Wrap in exception handler so a failed story insert never blocks the post\n    BEGIN\n        INSERT INTO social_stories (\n            author_id,\n            content,\n            media_url,\n            media_type,\n            created_at,\n            expires_at,\n            is_active\n        )\n        VALUES (\n            NEW.author_id,\n            LEFT(NEW.content, 200),\n            CASE WHEN NEW.media_urls IS NOT NULL AND jsonb_array_length(NEW.media_urls) > 0\n                 THEN NEW.media_urls->>0\n                 ELSE NULL\n            END,\n            CASE\n                WHEN NEW.media_urls IS NOT NULL AND jsonb_array_length(NEW.media_urls) > 0 THEN\n                    CASE WHEN NEW.media_urls->>0 ILIKE '%.mp4' OR NEW.media_urls->>0 ILIKE '%video%'\n                         THEN 'video'\n                         ELSE 'image'\n                    END\n                ELSE NULL\n            END,\n            NOW(),\n            NOW() + INTERVAL '24 hours',\n            true\n        );\n    EXCEPTION WHEN OTHERS THEN\n        -- Silently swallow - story creation is optional, never block the post\n        RAISE WARNING '[fn_auto_create_story_from_post] Failed: %', SQLERRM;\n    END;\n\n    RETURN NEW;  -- CRITICAL: Always return NEW so the INSERT proceeds\nEND;\n$function$\n",
+      "definition_md5": "361d53230ceac434d88a7785dd66530a",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "trgfn_award_social_post()",
+      "definition": "CREATE OR REPLACE FUNCTION public.trgfn_award_social_post()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n    IF COALESCE(NEW.is_deleted,false) THEN RETURN NEW; END IF;\n    IF length(btrim(COALESCE(NEW.content,''))) < 20 THEN RETURN NEW; END IF;\n    PERFORM public.fn_social_reward_award(NEW.author_id,'social_post',\n        'social_post_'||NEW.author_id::text||'_'||NEW.id::text, NEW.id::text);\n    RETURN NEW;\nEXCEPTION WHEN OTHERS THEN RETURN NEW; END $function$\n",
+      "definition_md5": "c06b9bc893b963718ccac1ffc6aeec91",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_social_post_reward()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_social_post_reward()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\ndeclare    v_result JSONB;\nbegin    -- Call the existing reward bus to claim the 'social_post_share' reward (15 diamonds)\n    v_result := claim_reward(NEW.author_id, 'social_post_share', jsonb_build_object('post_id', NEW.id));\n        RETURN NEW;\n        EXCEPTION WHEN OTHERS then    -- If reward fails, don't block the post_frequency    RETURN NEW;\n        END;\n        $function$\n",
+      "definition_md5": "12d3f0751ffd93fa7036e6f852eb4dd8",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_guard_legacy_transition_marker()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_legacy_transition_marker()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF (TG_OP = 'INSERT' AND NEW.legacy_transition_expires_at IS NOT NULL)\n     OR (\n       TG_OP = 'UPDATE'\n       AND NEW.legacy_transition_expires_at IS DISTINCT FROM\n           OLD.legacy_transition_expires_at\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '42501',\n      MESSAGE = 'legacy YouTube transition markers are immutable migration evidence';\n  END IF;\n\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "a2415e5851fd2ed52d6b4be34c8187f5",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_guard_managed_video_lineage()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_video_lineage()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_asset_youtube_id text;\n  v_playback_url text;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND OLD.origin_type = 'video_library'\n     AND NEW.origin_type IS DISTINCT FROM 'video_library'\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed video lineage cannot be declassified in place';\n  END IF;\n\n  IF NEW.origin_type IS DISTINCT FROM 'video_library'\n     AND NEW.source_asset_id IS NULL\n     AND NEW.publication_key IS NULL\n  THEN\n    RETURN NEW;\n  END IF;\n\n  IF TG_TABLE_NAME = 'social_reels'\n     AND COALESCE(to_jsonb(NEW) ->> 'source_type', '') <> 'video_library'\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed Reel source_type must be video_library';\n  END IF;\n\n  IF NEW.origin_type IS DISTINCT FROM 'video_library'\n     OR NEW.source_asset_id IS NULL\n     OR NEW.youtube_video_id IS NULL\n     OR NEW.canonical_asset_key IS NULL\n     OR NEW.publication_key IS NULL\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed video lineage fields must be complete and coherent';\n  END IF;\n\n  SELECT v.youtube_video_id\n  INTO v_asset_youtube_id\n  FROM public.video_library_videos v\n  WHERE v.id = NEW.source_asset_id;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23503',\n      MESSAGE = 'managed video source asset does not exist';\n  END IF;\n\n  IF TG_TABLE_NAME = 'social_posts' THEN\n    v_playback_url := NULLIF(NEW.media_urls ->> 0, '');\n  ELSE\n    v_playback_url := NULLIF(NEW.video_url, '');\n  END IF;\n\n  IF NEW.youtube_video_id IS DISTINCT FROM v_asset_youtube_id\n     OR NEW.canonical_asset_key IS DISTINCT FROM\n        'youtube:' || v_asset_youtube_id\n     OR NEW.publication_key IS DISTINCT FROM\n        'video-library:' || NEW.source_asset_id::text\n     OR public.fn_extract_youtube_video_id(v_playback_url)\n        IS DISTINCT FROM v_asset_youtube_id\n     OR (\n       TG_TABLE_NAME = 'social_reels'\n       AND public.fn_extract_youtube_video_id(\n             NULLIF(to_jsonb(NEW) ->> 'original_youtube_url', '')\n           )\n           IS DISTINCT FROM v_asset_youtube_id\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed video lineage does not match the referenced asset';\n  END IF;\n\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "463f377d0d81931b8db33df6912e6aec",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_guard_managed_video_provenance()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_video_provenance()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF COALESCE(auth.role()::text, '') <> 'service_role'\n     AND (\n       NEW.origin_type = 'video_library'\n       OR NEW.source_asset_id IS NOT NULL\n       OR NEW.publication_key IS NOT NULL\n       OR COALESCE(to_jsonb(NEW) ->> 'source_type', '') = 'video_library'\n       OR (\n         TG_OP = 'UPDATE'\n         AND (\n           OLD.origin_type = 'video_library'\n           OR OLD.source_asset_id IS NOT NULL\n           OR OLD.publication_key IS NOT NULL\n           OR COALESCE(to_jsonb(OLD) ->> 'source_type', '') = 'video_library'\n         )\n       )\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '42501',\n      MESSAGE = 'managed video provenance may only be written by the service role';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "b332721b36411f8a83ff66bde793571e",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_guard_managed_post_visibility()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_post_visibility()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF NEW.origin_type = 'video_library'\n     AND NEW.visibility = 'public'\n     AND (\n       COALESCE(auth.role()::text, '') <> 'service_role'\n       OR current_setting('app.video_library_publish_asset_id', true)\n          IS DISTINCT FROM NEW.source_asset_id::text\n       OR NOT public.fn_is_video_library_lineage_eligible(\n         NEW.source_asset_id,\n         NEW.youtube_video_id,\n         NEW.canonical_asset_key,\n         NEW.publication_key,\n         NULLIF(NEW.media_urls ->> 0, '')\n       )\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '42501',\n      MESSAGE = 'managed library posts may only be published by publish_video_library_reel';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "7f8b9d0fbe9c5dabb91d2af9da38f0c6",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_social_posts_video_contract_defaults()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_social_posts_video_contract_defaults()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_first_url text;\n  v_yt_id text;\n  v_provenance_yt_id text;\n  v_prior_yt_id text;\n  v_inferred_topic text;\n  v_caller_role text := COALESCE(auth.role()::text, '');\n  v_user_storage_video boolean := false;\nBEGIN\n  IF NEW.content_type IS DISTINCT FROM 'video' THEN\n    RETURN NEW;\n  END IF;\n\n  v_first_url := NULLIF(NEW.media_urls ->> 0, '');\n  v_yt_id := public.fn_extract_youtube_video_id(v_first_url);\n  IF TG_OP = 'UPDATE' THEN\n    v_prior_yt_id := COALESCE(\n      public.fn_extract_youtube_video_id(NULLIF(OLD.media_urls ->> 0, '')),\n      public.fn_extract_youtube_video_id(OLD.original_media_url),\n      CASE\n        WHEN OLD.youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n          THEN OLD.youtube_video_id\n        ELSE NULL\n      END\n    );\n  END IF;\n  v_inferred_topic := public.fn_infer_video_topic(NEW.metadata, NEW.topics);\n\n  IF v_inferred_topic <> 'unknown' THEN\n    NEW.topic := v_inferred_topic;\n  END IF;\n\n  IF NEW.origin_type = 'user_upload' AND EXISTS (\n    SELECT 1\n    FROM public.profiles p\n    WHERE p.id = NEW.author_id\n      AND COALESCE(p.is_horse, false)\n  ) THEN\n    NEW.origin_type := 'horse';\n  END IF;\n\n  IF v_yt_id IS NOT NULL THEN\n    PERFORM public.fn_queue_youtube_verification(\n      v_yt_id,\n      'social_post_write'\n    );\n    NEW.youtube_video_id := v_yt_id;\n    NEW.canonical_asset_key := 'youtube:' || v_yt_id;\n    NEW.playback_type := 'youtube_embed';\n    IF COALESCE(auth.role()::text, '') <> 'service_role'\n       OR NEW.rights_status NOT IN ('owned', 'licensed')\n    THEN\n      NEW.rights_status := 'embed_only';\n    END IF;\n  ELSIF public.fn_is_platform_public_storage_url(v_first_url)\n  THEN\n    NEW.playback_type := 'native';\n    v_provenance_yt_id := COALESCE(\n      public.fn_extract_youtube_video_id(NEW.original_media_url),\n      CASE\n        WHEN NEW.youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n          THEN NEW.youtube_video_id\n        ELSE NULL\n      END,\n      v_prior_yt_id\n    );\n    -- A service worker may not publish a downloaded YouTube rendition by\n    -- directly rewriting the post. The completion RPC first retires the exact\n    -- claim, then exposes that completed job id as transaction-local proof for\n    -- both the Reel and post updates.\n    IF v_provenance_yt_id IS NOT NULL\n       AND (\n         TG_OP = 'INSERT'\n         OR OLD.playback_type IS DISTINCT FROM 'native'\n         OR NULLIF(OLD.media_urls ->> 0, '') IS DISTINCT FROM v_first_url\n       )\n       AND (\n         v_caller_role <> 'service_role'\n         OR NEW.rights_status NOT IN ('owned', 'licensed')\n         OR NOT EXISTS (\n           SELECT 1\n           FROM public.video_transcode_jobs completion_job\n           JOIN public.social_reels completion_reel\n             ON completion_reel.id = completion_job.reel_id\n           WHERE completion_job.id = current_setting(\n                   'app.youtube_native_completion_job_id', true\n                 )\n             AND completion_job.status = 'completed'\n             AND completion_job.reel_id = completion_reel.id\n             AND completion_reel.source_post_id = NEW.id\n             AND completion_job.user_id IS NOT DISTINCT FROM NEW.author_id\n             AND completion_job.rights_status IS NOT DISTINCT FROM NEW.rights_status\n             AND completion_job.canonical_asset_key = 'youtube:' || v_provenance_yt_id\n             AND completion_job.output_url IS NOT DISTINCT FROM\n               split_part(split_part(v_first_url, '?', 1), '#', 1)\n         )\n       )\n    THEN\n      RAISE EXCEPTION USING\n        ERRCODE = '42501',\n        MESSAGE = 'YouTube-derived native posts may only be published by complete_rights_cleared_youtube_transcode';\n    END IF;\n    -- A rights-cleared worker replaces only the playable URL. Retain the\n    -- source identity so the native and embed representations deduplicate.\n    IF v_caller_role = 'service_role'\n       AND NEW.rights_status IN ('owned', 'licensed')\n       AND v_provenance_yt_id IS NOT NULL\n    THEN\n      NEW.youtube_video_id := v_provenance_yt_id;\n      NEW.canonical_asset_key := 'youtube:' || v_provenance_yt_id;\n    ELSE\n      NEW.youtube_video_id := NULL;\n      NEW.canonical_asset_key := 'native:' || md5(v_first_url);\n    END IF;\n    v_user_storage_video := public.fn_is_user_video_storage_url(\n      v_first_url,\n      NEW.author_id\n    );\n    IF v_caller_role = 'authenticated'\n       AND auth.uid() = NEW.author_id\n       AND v_user_storage_video\n    THEN\n      NEW.rights_status := 'user_authorized';\n    ELSIF v_caller_role = 'service_role'\n       AND NEW.rights_status = 'user_authorized'\n       AND v_user_storage_video\n    THEN\n      NEW.rights_status := 'user_authorized';\n    ELSIF v_caller_role <> 'service_role'\n       OR NEW.rights_status NOT IN ('owned', 'licensed')\n    THEN\n      NEW.rights_status := 'unknown';\n    END IF;\n  ELSIF NEW.playback_type = 'youtube_embed'\n     OR NEW.youtube_video_id IS NOT NULL\n  THEN\n    v_provenance_yt_id := public.fn_extract_youtube_video_id(\n      NEW.original_media_url\n    );\n    IF v_provenance_yt_id IS NOT NULL THEN\n      NEW.media_urls := CASE\n        WHEN jsonb_typeof(NEW.media_urls) = 'array'\n          AND jsonb_array_length(NEW.media_urls) > 0\n        THEN jsonb_set(\n          NEW.media_urls,\n          '{0}',\n          to_jsonb(NEW.original_media_url),\n          false\n        )\n        ELSE jsonb_build_array(NEW.original_media_url)\n      END;\n      NEW.youtube_video_id := v_provenance_yt_id;\n      NEW.canonical_asset_key := 'youtube:' || v_provenance_yt_id;\n      NEW.playback_type := 'youtube_embed';\n      IF v_caller_role <> 'service_role'\n         OR NEW.rights_status NOT IN ('owned', 'licensed')\n      THEN\n        NEW.rights_status := 'embed_only';\n      END IF;\n    ELSE\n      NEW.youtube_video_id := NULL;\n      NEW.canonical_asset_key := CASE\n        WHEN v_first_url IS NOT NULL THEN 'external:' || md5(v_first_url)\n        ELSE NULL\n      END;\n      NEW.playback_type := 'external_embed';\n      NEW.rights_status := 'unknown';\n    END IF;\n  ELSE\n    -- Caller-supplied playback/rights labels never turn an arbitrary URL into\n    -- native media. Only the exact project Storage branch above can do that.\n    NEW.youtube_video_id := NULL;\n    NEW.canonical_asset_key := CASE\n      WHEN v_first_url IS NOT NULL THEN 'external:' || md5(v_first_url)\n      ELSE NULL\n    END;\n    NEW.playback_type := 'external_embed';\n    NEW.rights_status := 'unknown';\n  END IF;\n\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "491b60dc12f376f4e7a48d9ee97deed2",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_social_posts_video_to_reel_mirror()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_social_posts_video_to_reel_mirror()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_first_url text;\n  v_yt_id text;\n  v_playback_type text;\n  v_rights_status text;\n  v_source_type text;\n  v_origin_type text;\nBEGIN\n  IF NEW.content_type IS DISTINCT FROM 'video'\n     OR NEW.media_urls IS NULL\n     OR jsonb_typeof(NEW.media_urls) <> 'array'\n     OR jsonb_array_length(NEW.media_urls) = 0\n  THEN\n    RETURN NEW;\n  END IF;\n\n  v_first_url := NULLIF(NEW.media_urls ->> 0, '');\n  IF v_first_url IS NULL THEN\n    RETURN NEW;\n  END IF;\n\n  v_yt_id := public.fn_extract_youtube_video_id(v_first_url);\n  v_playback_type := CASE\n    WHEN v_yt_id IS NOT NULL THEN 'youtube_embed'\n    ELSE NEW.playback_type\n  END;\n  v_rights_status := CASE\n    WHEN v_yt_id IS NOT NULL\n         AND NEW.rights_status NOT IN ('owned', 'licensed') THEN 'embed_only'\n    ELSE NEW.rights_status\n  END;\n  v_source_type := CASE\n    WHEN NEW.origin_type = 'video_library' THEN 'video_library'\n    WHEN v_playback_type = 'native' THEN 'native'\n    WHEN v_yt_id IS NOT NULL THEN 'youtube'\n    ELSE 'user'\n  END;\n  v_origin_type := CASE\n    WHEN NEW.origin_type = 'user_upload' THEN 'social_post'\n    ELSE NEW.origin_type\n  END;\n\n  IF EXISTS (\n    SELECT 1 FROM public.social_reels r WHERE r.source_post_id = NEW.id\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.publication_key IS NOT NULL AND EXISTS (\n    SELECT 1\n    FROM public.social_reels r\n    WHERE r.origin_type = 'video_library'\n      AND r.publication_key = NEW.publication_key\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.canonical_asset_key IS NOT NULL AND NEW.origin_type = 'video_library'\n     AND EXISTS (\n       SELECT 1\n       FROM public.social_reels r\n       WHERE r.origin_type = 'video_library'\n         AND r.canonical_asset_key = NEW.canonical_asset_key\n     )\n  THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.origin_type <> 'video_library' AND EXISTS (\n    SELECT 1\n    FROM public.social_reels r\n    WHERE r.author_id = NEW.author_id\n      AND r.video_url = v_first_url\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  INSERT INTO public.social_reels (\n    author_id,\n    video_url,\n    thumbnail_url,\n    caption,\n    source_post_id,\n    is_public,\n    source_type,\n    youtube_video_id,\n    original_youtube_url,\n    media_status,\n    origin_type,\n    playback_type,\n    topic,\n    rights_status,\n    source_asset_id,\n    canonical_asset_key,\n    publication_key,\n    native_processing_requested\n  ) VALUES (\n    NEW.author_id,\n    v_first_url,\n    NEW.thumbnail_url,\n    NEW.content,\n    NEW.id,\n    COALESCE(NEW.visibility = 'public', false),\n    v_source_type,\n    v_yt_id,\n    CASE WHEN v_yt_id IS NOT NULL THEN v_first_url ELSE NULL END,\n    'ready',\n    v_origin_type,\n    v_playback_type,\n    NEW.topic,\n    v_rights_status,\n    NEW.source_asset_id,\n    COALESCE(\n      NEW.canonical_asset_key,\n      CASE WHEN v_yt_id IS NOT NULL THEN 'youtube:' || v_yt_id END\n    ),\n    NEW.publication_key,\n    false\n  );\n\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  -- Managed publication must remain atomic. Legacy user-post behavior keeps its\n  -- historical best-effort mirror so an unrelated Reel error cannot lose a post.\n  IF NEW.origin_type = 'video_library' THEN\n    RAISE;\n  END IF;\n  RAISE WARNING 'fn_social_posts_video_to_reel_mirror skipped post % (%)', NEW.id, SQLERRM;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "e93f449a35010868750d7492d6df43cd",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_create_social_post(uuid,text,text,text[],text,jsonb,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_create_social_post(p_author_id uuid, p_content text DEFAULT ''::text, p_content_type text DEFAULT 'text'::text, p_media_urls text[] DEFAULT '{}'::text[], p_visibility text DEFAULT 'public'::text, p_achievement_data jsonb DEFAULT NULL::jsonb, p_thumbnail_url text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_post_id uuid;\n  v_media_jsonb jsonb := to_jsonb(COALESCE(p_media_urls, '{}'::text[]));\n  v_caller_role text := COALESCE(auth.role()::text, '');\n  v_caller_uid uuid := auth.uid();\nBEGIN\n  IF v_caller_role = 'authenticated' THEN\n    IF v_caller_uid IS NULL OR p_author_id IS DISTINCT FROM v_caller_uid THEN\n      RETURN jsonb_build_object(\n        'success', false,\n        'error', 'forbidden: authenticated users may only post as themselves'\n      );\n    END IF;\n  ELSIF v_caller_role <> 'service_role' THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'error', 'forbidden: anonymous callers cannot create posts'\n    );\n  END IF;\n\n  INSERT INTO public.social_posts (\n    author_id,\n    content,\n    content_type,\n    media_urls,\n    visibility,\n    achievement_data,\n    thumbnail_url,\n    created_at,\n    updated_at\n  ) VALUES (\n    p_author_id,\n    p_content,\n    p_content_type,\n    v_media_jsonb,\n    p_visibility,\n    p_achievement_data,\n    p_thumbnail_url,\n    now(),\n    now()\n  )\n  RETURNING id INTO v_post_id;\n\n  RETURN jsonb_build_object(\n    'success', true,\n    'id', v_post_id,\n    'author_id', p_author_id,\n    'content', p_content,\n    'content_type', p_content_type,\n    'created_at', now(),\n    'media_urls', v_media_jsonb,\n    'thumbnail_url', p_thumbnail_url,\n    'like_count', 0,\n    'comment_count', 0\n  );\nEXCEPTION WHEN OTHERS THEN\n  RETURN jsonb_build_object('success', false, 'error', SQLERRM);\nEND\n$function$\n",
+      "definition_md5": "9aabed2309d652f85614fcc0e265fe65",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "triggers": [
+    {
+      "tgname": "tr_queue_video_transcode",
+      "definition": "CREATE TRIGGER tr_queue_video_transcode BEFORE INSERT ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_queue_video_transcode()",
+      "function": "fn_queue_video_transcode()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_queue_video_transcode()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF NEW.content_type = 'video'\n     AND (NEW.media_urls->>0) IS NOT NULL\n     AND (\n       (NEW.media_urls->>0) ILIKE '%.mov'\n       OR (NEW.media_urls->>0) ILIKE '%.hevc'\n       OR (NEW.media_urls->>0) ILIKE '%.heic'\n       OR (NEW.media_urls->>0) ILIKE '%.mkv'\n       OR (NEW.media_urls->>0) ILIKE '%.avi'\n       OR (NEW.media_urls->>0) ILIKE '%.mp4'\n       OR (NEW.media_urls->>0) ILIKE '%.m4v'\n       OR (NEW.media_urls->>0) ILIKE '%.webm'\n       OR (NEW.media_urls->>0) ILIKE '%/live-recordings/%'\n     )\n     -- Only queue when a thumbnail is actually missing: a client-supplied\n     -- poster frame should not trigger a re-encode just for extraction.\n     AND (NEW.thumbnail_url IS NULL OR NEW.thumbnail_url = '')\n  THEN\n    NEW.transcode_status := 'queued';\n    NEW.original_media_url := (NEW.media_urls->>0);\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition_md5": "96da541712286581c374b0a6d0298600",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_auto_story_on_post",
+      "definition": "CREATE TRIGGER trg_auto_story_on_post AFTER INSERT ON public.social_posts FOR EACH ROW WHEN ((new.origin_type IS DISTINCT FROM 'video_library'::text)) EXECUTE FUNCTION fn_auto_create_story_from_post()",
+      "function": "fn_auto_create_story_from_post()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_auto_create_story_from_post()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    -- Wrap in exception handler so a failed story insert never blocks the post\n    BEGIN\n        INSERT INTO social_stories (\n            author_id,\n            content,\n            media_url,\n            media_type,\n            created_at,\n            expires_at,\n            is_active\n        )\n        VALUES (\n            NEW.author_id,\n            LEFT(NEW.content, 200),\n            CASE WHEN NEW.media_urls IS NOT NULL AND jsonb_array_length(NEW.media_urls) > 0\n                 THEN NEW.media_urls->>0\n                 ELSE NULL\n            END,\n            CASE\n                WHEN NEW.media_urls IS NOT NULL AND jsonb_array_length(NEW.media_urls) > 0 THEN\n                    CASE WHEN NEW.media_urls->>0 ILIKE '%.mp4' OR NEW.media_urls->>0 ILIKE '%video%'\n                         THEN 'video'\n                         ELSE 'image'\n                    END\n                ELSE NULL\n            END,\n            NOW(),\n            NOW() + INTERVAL '24 hours',\n            true\n        );\n    EXCEPTION WHEN OTHERS THEN\n        -- Silently swallow - story creation is optional, never block the post\n        RAISE WARNING '[fn_auto_create_story_from_post] Failed: %', SQLERRM;\n    END;\n\n    RETURN NEW;  -- CRITICAL: Always return NEW so the INSERT proceeds\nEND;\n$function$\n",
+      "definition_md5": "361d53230ceac434d88a7785dd66530a",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_award_social_post",
+      "definition": "CREATE TRIGGER trg_award_social_post AFTER INSERT ON public.social_posts FOR EACH ROW EXECUTE FUNCTION trgfn_award_social_post()",
+      "function": "trgfn_award_social_post()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trgfn_award_social_post()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n    IF COALESCE(NEW.is_deleted,false) THEN RETURN NEW; END IF;\n    IF length(btrim(COALESCE(NEW.content,''))) < 20 THEN RETURN NEW; END IF;\n    PERFORM public.fn_social_reward_award(NEW.author_id,'social_post',\n        'social_post_'||NEW.author_id::text||'_'||NEW.id::text, NEW.id::text);\n    RETURN NEW;\nEXCEPTION WHEN OTHERS THEN RETURN NEW; END $function$\n",
+      "definition_md5": "c06b9bc893b963718ccac1ffc6aeec91",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_reward_social_post",
+      "definition": "CREATE TRIGGER trg_reward_social_post AFTER INSERT ON public.social_posts FOR EACH ROW WHEN ((new.origin_type IS DISTINCT FROM 'video_library'::text)) EXECUTE FUNCTION fn_social_post_reward()",
+      "function": "fn_social_post_reward()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_social_post_reward()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\ndeclare    v_result JSONB;\nbegin    -- Call the existing reward bus to claim the 'social_post_share' reward (15 diamonds)\n    v_result := claim_reward(NEW.author_id, 'social_post_share', jsonb_build_object('post_id', NEW.id));\n        RETURN NEW;\n        EXCEPTION WHEN OTHERS then    -- If reward fails, don't block the post_frequency    RETURN NEW;\n        END;\n        $function$\n",
+      "definition_md5": "12d3f0751ffd93fa7036e6f852eb4dd8",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_social_posts_legacy_transition_marker_guard",
+      "definition": "CREATE TRIGGER trg_social_posts_legacy_transition_marker_guard BEFORE INSERT OR UPDATE OF legacy_transition_expires_at ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_guard_legacy_transition_marker()",
+      "function": "fn_guard_legacy_transition_marker()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_guard_legacy_transition_marker()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF (TG_OP = 'INSERT' AND NEW.legacy_transition_expires_at IS NOT NULL)\n     OR (\n       TG_OP = 'UPDATE'\n       AND NEW.legacy_transition_expires_at IS DISTINCT FROM\n           OLD.legacy_transition_expires_at\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '42501',\n      MESSAGE = 'legacy YouTube transition markers are immutable migration evidence';\n  END IF;\n\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "a2415e5851fd2ed52d6b4be34c8187f5",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "tgname": "trg_social_posts_managed_lineage_guard",
+      "definition": "CREATE TRIGGER trg_social_posts_managed_lineage_guard BEFORE INSERT OR UPDATE OF origin_type, source_asset_id, youtube_video_id, canonical_asset_key, publication_key, media_urls ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_video_lineage()",
+      "function": "fn_guard_managed_video_lineage()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_video_lineage()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_asset_youtube_id text;\n  v_playback_url text;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND OLD.origin_type = 'video_library'\n     AND NEW.origin_type IS DISTINCT FROM 'video_library'\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed video lineage cannot be declassified in place';\n  END IF;\n\n  IF NEW.origin_type IS DISTINCT FROM 'video_library'\n     AND NEW.source_asset_id IS NULL\n     AND NEW.publication_key IS NULL\n  THEN\n    RETURN NEW;\n  END IF;\n\n  IF TG_TABLE_NAME = 'social_reels'\n     AND COALESCE(to_jsonb(NEW) ->> 'source_type', '') <> 'video_library'\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed Reel source_type must be video_library';\n  END IF;\n\n  IF NEW.origin_type IS DISTINCT FROM 'video_library'\n     OR NEW.source_asset_id IS NULL\n     OR NEW.youtube_video_id IS NULL\n     OR NEW.canonical_asset_key IS NULL\n     OR NEW.publication_key IS NULL\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed video lineage fields must be complete and coherent';\n  END IF;\n\n  SELECT v.youtube_video_id\n  INTO v_asset_youtube_id\n  FROM public.video_library_videos v\n  WHERE v.id = NEW.source_asset_id;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23503',\n      MESSAGE = 'managed video source asset does not exist';\n  END IF;\n\n  IF TG_TABLE_NAME = 'social_posts' THEN\n    v_playback_url := NULLIF(NEW.media_urls ->> 0, '');\n  ELSE\n    v_playback_url := NULLIF(NEW.video_url, '');\n  END IF;\n\n  IF NEW.youtube_video_id IS DISTINCT FROM v_asset_youtube_id\n     OR NEW.canonical_asset_key IS DISTINCT FROM\n        'youtube:' || v_asset_youtube_id\n     OR NEW.publication_key IS DISTINCT FROM\n        'video-library:' || NEW.source_asset_id::text\n     OR public.fn_extract_youtube_video_id(v_playback_url)\n        IS DISTINCT FROM v_asset_youtube_id\n     OR (\n       TG_TABLE_NAME = 'social_reels'\n       AND public.fn_extract_youtube_video_id(\n             NULLIF(to_jsonb(NEW) ->> 'original_youtube_url', '')\n           )\n           IS DISTINCT FROM v_asset_youtube_id\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'managed video lineage does not match the referenced asset';\n  END IF;\n\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "463f377d0d81931b8db33df6912e6aec",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_social_posts_managed_provenance_guard",
+      "definition": "CREATE TRIGGER trg_social_posts_managed_provenance_guard BEFORE INSERT OR UPDATE OF origin_type, source_asset_id, publication_key ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_video_provenance()",
+      "function": "fn_guard_managed_video_provenance()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_video_provenance()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF COALESCE(auth.role()::text, '') <> 'service_role'\n     AND (\n       NEW.origin_type = 'video_library'\n       OR NEW.source_asset_id IS NOT NULL\n       OR NEW.publication_key IS NOT NULL\n       OR COALESCE(to_jsonb(NEW) ->> 'source_type', '') = 'video_library'\n       OR (\n         TG_OP = 'UPDATE'\n         AND (\n           OLD.origin_type = 'video_library'\n           OR OLD.source_asset_id IS NOT NULL\n           OR OLD.publication_key IS NOT NULL\n           OR COALESCE(to_jsonb(OLD) ->> 'source_type', '') = 'video_library'\n         )\n       )\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '42501',\n      MESSAGE = 'managed video provenance may only be written by the service role';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "b332721b36411f8a83ff66bde793571e",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_social_posts_managed_visibility_guard",
+      "definition": "CREATE TRIGGER trg_social_posts_managed_visibility_guard BEFORE INSERT OR UPDATE OF visibility, origin_type, source_asset_id, youtube_video_id, canonical_asset_key, publication_key, media_urls ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_post_visibility()",
+      "function": "fn_guard_managed_post_visibility()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_post_visibility()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF NEW.origin_type = 'video_library'\n     AND NEW.visibility = 'public'\n     AND (\n       COALESCE(auth.role()::text, '') <> 'service_role'\n       OR current_setting('app.video_library_publish_asset_id', true)\n          IS DISTINCT FROM NEW.source_asset_id::text\n       OR NOT public.fn_is_video_library_lineage_eligible(\n         NEW.source_asset_id,\n         NEW.youtube_video_id,\n         NEW.canonical_asset_key,\n         NEW.publication_key,\n         NULLIF(NEW.media_urls ->> 0, '')\n       )\n     )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '42501',\n      MESSAGE = 'managed library posts may only be published by publish_video_library_reel';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "7f8b9d0fbe9c5dabb91d2af9da38f0c6",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_social_posts_video_contract_defaults",
+      "definition": "CREATE TRIGGER trg_social_posts_video_contract_defaults BEFORE INSERT OR UPDATE OF author_id, content_type, media_urls, metadata, topics, origin_type, playback_type, topic, rights_status ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_social_posts_video_contract_defaults()",
+      "function": "fn_social_posts_video_contract_defaults()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_social_posts_video_contract_defaults()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_first_url text;\n  v_yt_id text;\n  v_provenance_yt_id text;\n  v_prior_yt_id text;\n  v_inferred_topic text;\n  v_caller_role text := COALESCE(auth.role()::text, '');\n  v_user_storage_video boolean := false;\nBEGIN\n  IF NEW.content_type IS DISTINCT FROM 'video' THEN\n    RETURN NEW;\n  END IF;\n\n  v_first_url := NULLIF(NEW.media_urls ->> 0, '');\n  v_yt_id := public.fn_extract_youtube_video_id(v_first_url);\n  IF TG_OP = 'UPDATE' THEN\n    v_prior_yt_id := COALESCE(\n      public.fn_extract_youtube_video_id(NULLIF(OLD.media_urls ->> 0, '')),\n      public.fn_extract_youtube_video_id(OLD.original_media_url),\n      CASE\n        WHEN OLD.youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n          THEN OLD.youtube_video_id\n        ELSE NULL\n      END\n    );\n  END IF;\n  v_inferred_topic := public.fn_infer_video_topic(NEW.metadata, NEW.topics);\n\n  IF v_inferred_topic <> 'unknown' THEN\n    NEW.topic := v_inferred_topic;\n  END IF;\n\n  IF NEW.origin_type = 'user_upload' AND EXISTS (\n    SELECT 1\n    FROM public.profiles p\n    WHERE p.id = NEW.author_id\n      AND COALESCE(p.is_horse, false)\n  ) THEN\n    NEW.origin_type := 'horse';\n  END IF;\n\n  IF v_yt_id IS NOT NULL THEN\n    PERFORM public.fn_queue_youtube_verification(\n      v_yt_id,\n      'social_post_write'\n    );\n    NEW.youtube_video_id := v_yt_id;\n    NEW.canonical_asset_key := 'youtube:' || v_yt_id;\n    NEW.playback_type := 'youtube_embed';\n    IF COALESCE(auth.role()::text, '') <> 'service_role'\n       OR NEW.rights_status NOT IN ('owned', 'licensed')\n    THEN\n      NEW.rights_status := 'embed_only';\n    END IF;\n  ELSIF public.fn_is_platform_public_storage_url(v_first_url)\n  THEN\n    NEW.playback_type := 'native';\n    v_provenance_yt_id := COALESCE(\n      public.fn_extract_youtube_video_id(NEW.original_media_url),\n      CASE\n        WHEN NEW.youtube_video_id ~ '^[A-Za-z0-9_-]{11}$'\n          THEN NEW.youtube_video_id\n        ELSE NULL\n      END,\n      v_prior_yt_id\n    );\n    -- A service worker may not publish a downloaded YouTube rendition by\n    -- directly rewriting the post. The completion RPC first retires the exact\n    -- claim, then exposes that completed job id as transaction-local proof for\n    -- both the Reel and post updates.\n    IF v_provenance_yt_id IS NOT NULL\n       AND (\n         TG_OP = 'INSERT'\n         OR OLD.playback_type IS DISTINCT FROM 'native'\n         OR NULLIF(OLD.media_urls ->> 0, '') IS DISTINCT FROM v_first_url\n       )\n       AND (\n         v_caller_role <> 'service_role'\n         OR NEW.rights_status NOT IN ('owned', 'licensed')\n         OR NOT EXISTS (\n           SELECT 1\n           FROM public.video_transcode_jobs completion_job\n           JOIN public.social_reels completion_reel\n             ON completion_reel.id = completion_job.reel_id\n           WHERE completion_job.id = current_setting(\n                   'app.youtube_native_completion_job_id', true\n                 )\n             AND completion_job.status = 'completed'\n             AND completion_job.reel_id = completion_reel.id\n             AND completion_reel.source_post_id = NEW.id\n             AND completion_job.user_id IS NOT DISTINCT FROM NEW.author_id\n             AND completion_job.rights_status IS NOT DISTINCT FROM NEW.rights_status\n             AND completion_job.canonical_asset_key = 'youtube:' || v_provenance_yt_id\n             AND completion_job.output_url IS NOT DISTINCT FROM\n               split_part(split_part(v_first_url, '?', 1), '#', 1)\n         )\n       )\n    THEN\n      RAISE EXCEPTION USING\n        ERRCODE = '42501',\n        MESSAGE = 'YouTube-derived native posts may only be published by complete_rights_cleared_youtube_transcode';\n    END IF;\n    -- A rights-cleared worker replaces only the playable URL. Retain the\n    -- source identity so the native and embed representations deduplicate.\n    IF v_caller_role = 'service_role'\n       AND NEW.rights_status IN ('owned', 'licensed')\n       AND v_provenance_yt_id IS NOT NULL\n    THEN\n      NEW.youtube_video_id := v_provenance_yt_id;\n      NEW.canonical_asset_key := 'youtube:' || v_provenance_yt_id;\n    ELSE\n      NEW.youtube_video_id := NULL;\n      NEW.canonical_asset_key := 'native:' || md5(v_first_url);\n    END IF;\n    v_user_storage_video := public.fn_is_user_video_storage_url(\n      v_first_url,\n      NEW.author_id\n    );\n    IF v_caller_role = 'authenticated'\n       AND auth.uid() = NEW.author_id\n       AND v_user_storage_video\n    THEN\n      NEW.rights_status := 'user_authorized';\n    ELSIF v_caller_role = 'service_role'\n       AND NEW.rights_status = 'user_authorized'\n       AND v_user_storage_video\n    THEN\n      NEW.rights_status := 'user_authorized';\n    ELSIF v_caller_role <> 'service_role'\n       OR NEW.rights_status NOT IN ('owned', 'licensed')\n    THEN\n      NEW.rights_status := 'unknown';\n    END IF;\n  ELSIF NEW.playback_type = 'youtube_embed'\n     OR NEW.youtube_video_id IS NOT NULL\n  THEN\n    v_provenance_yt_id := public.fn_extract_youtube_video_id(\n      NEW.original_media_url\n    );\n    IF v_provenance_yt_id IS NOT NULL THEN\n      NEW.media_urls := CASE\n        WHEN jsonb_typeof(NEW.media_urls) = 'array'\n          AND jsonb_array_length(NEW.media_urls) > 0\n        THEN jsonb_set(\n          NEW.media_urls,\n          '{0}',\n          to_jsonb(NEW.original_media_url),\n          false\n        )\n        ELSE jsonb_build_array(NEW.original_media_url)\n      END;\n      NEW.youtube_video_id := v_provenance_yt_id;\n      NEW.canonical_asset_key := 'youtube:' || v_provenance_yt_id;\n      NEW.playback_type := 'youtube_embed';\n      IF v_caller_role <> 'service_role'\n         OR NEW.rights_status NOT IN ('owned', 'licensed')\n      THEN\n        NEW.rights_status := 'embed_only';\n      END IF;\n    ELSE\n      NEW.youtube_video_id := NULL;\n      NEW.canonical_asset_key := CASE\n        WHEN v_first_url IS NOT NULL THEN 'external:' || md5(v_first_url)\n        ELSE NULL\n      END;\n      NEW.playback_type := 'external_embed';\n      NEW.rights_status := 'unknown';\n    END IF;\n  ELSE\n    -- Caller-supplied playback/rights labels never turn an arbitrary URL into\n    -- native media. Only the exact project Storage branch above can do that.\n    NEW.youtube_video_id := NULL;\n    NEW.canonical_asset_key := CASE\n      WHEN v_first_url IS NOT NULL THEN 'external:' || md5(v_first_url)\n      ELSE NULL\n    END;\n    NEW.playback_type := 'external_embed';\n    NEW.rights_status := 'unknown';\n  END IF;\n\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "491b60dc12f376f4e7a48d9ee97deed2",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "tgname": "trg_social_posts_video_to_reel_mirror",
+      "definition": "CREATE TRIGGER trg_social_posts_video_to_reel_mirror AFTER INSERT ON public.social_posts FOR EACH ROW EXECUTE FUNCTION fn_social_posts_video_to_reel_mirror()",
+      "function": "fn_social_posts_video_to_reel_mirror()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_social_posts_video_to_reel_mirror()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_first_url text;\n  v_yt_id text;\n  v_playback_type text;\n  v_rights_status text;\n  v_source_type text;\n  v_origin_type text;\nBEGIN\n  IF NEW.content_type IS DISTINCT FROM 'video'\n     OR NEW.media_urls IS NULL\n     OR jsonb_typeof(NEW.media_urls) <> 'array'\n     OR jsonb_array_length(NEW.media_urls) = 0\n  THEN\n    RETURN NEW;\n  END IF;\n\n  v_first_url := NULLIF(NEW.media_urls ->> 0, '');\n  IF v_first_url IS NULL THEN\n    RETURN NEW;\n  END IF;\n\n  v_yt_id := public.fn_extract_youtube_video_id(v_first_url);\n  v_playback_type := CASE\n    WHEN v_yt_id IS NOT NULL THEN 'youtube_embed'\n    ELSE NEW.playback_type\n  END;\n  v_rights_status := CASE\n    WHEN v_yt_id IS NOT NULL\n         AND NEW.rights_status NOT IN ('owned', 'licensed') THEN 'embed_only'\n    ELSE NEW.rights_status\n  END;\n  v_source_type := CASE\n    WHEN NEW.origin_type = 'video_library' THEN 'video_library'\n    WHEN v_playback_type = 'native' THEN 'native'\n    WHEN v_yt_id IS NOT NULL THEN 'youtube'\n    ELSE 'user'\n  END;\n  v_origin_type := CASE\n    WHEN NEW.origin_type = 'user_upload' THEN 'social_post'\n    ELSE NEW.origin_type\n  END;\n\n  IF EXISTS (\n    SELECT 1 FROM public.social_reels r WHERE r.source_post_id = NEW.id\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.publication_key IS NOT NULL AND EXISTS (\n    SELECT 1\n    FROM public.social_reels r\n    WHERE r.origin_type = 'video_library'\n      AND r.publication_key = NEW.publication_key\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.canonical_asset_key IS NOT NULL AND NEW.origin_type = 'video_library'\n     AND EXISTS (\n       SELECT 1\n       FROM public.social_reels r\n       WHERE r.origin_type = 'video_library'\n         AND r.canonical_asset_key = NEW.canonical_asset_key\n     )\n  THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.origin_type <> 'video_library' AND EXISTS (\n    SELECT 1\n    FROM public.social_reels r\n    WHERE r.author_id = NEW.author_id\n      AND r.video_url = v_first_url\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  INSERT INTO public.social_reels (\n    author_id,\n    video_url,\n    thumbnail_url,\n    caption,\n    source_post_id,\n    is_public,\n    source_type,\n    youtube_video_id,\n    original_youtube_url,\n    media_status,\n    origin_type,\n    playback_type,\n    topic,\n    rights_status,\n    source_asset_id,\n    canonical_asset_key,\n    publication_key,\n    native_processing_requested\n  ) VALUES (\n    NEW.author_id,\n    v_first_url,\n    NEW.thumbnail_url,\n    NEW.content,\n    NEW.id,\n    COALESCE(NEW.visibility = 'public', false),\n    v_source_type,\n    v_yt_id,\n    CASE WHEN v_yt_id IS NOT NULL THEN v_first_url ELSE NULL END,\n    'ready',\n    v_origin_type,\n    v_playback_type,\n    NEW.topic,\n    v_rights_status,\n    NEW.source_asset_id,\n    COALESCE(\n      NEW.canonical_asset_key,\n      CASE WHEN v_yt_id IS NOT NULL THEN 'youtube:' || v_yt_id END\n    ),\n    NEW.publication_key,\n    false\n  );\n\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  -- Managed publication must remain atomic. Legacy user-post behavior keeps its\n  -- historical best-effort mirror so an unrelated Reel error cannot lose a post.\n  IF NEW.origin_type = 'video_library' THEN\n    RAISE;\n  END IF;\n  RAISE WARNING 'fn_social_posts_video_to_reel_mirror skipped post % (%)', NEW.id, SQLERRM;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "e93f449a35010868750d7492d6df43cd",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "policies": [
+    {
+      "schemaname": "public",
+      "tablename": "celebration_queue",
+      "policyname": "Service role manages",
+      "permissive": "PERMISSIVE",
+      "roles": "{service_role}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "celebration_queue",
+      "policyname": "Users dismiss own celebrations",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "UPDATE",
+      "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "celebration_queue",
+      "policyname": "Users view own celebrations",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "reward_claims",
+      "policyname": "Service role inserts",
+      "permissive": "PERMISSIVE",
+      "roles": "{service_role}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "reward_claims",
+      "policyname": "Users view own claims",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "reward_definitions",
+      "policyname": "reward_definitions_public_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "reward_definitions",
+      "policyname": "reward_definitions_service_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{service_role}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "policyname": "Audience-aware view",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "fn_can_view_post(author_id, audience_mode, audience_list)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "policyname": "Users can create their own posts",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((author_id = ( SELECT auth.uid() AS uid)) OR (((( SELECT auth.jwt() AS jwt) ->> 'role'::text) = 'service_role'::text) AND (author_id = '00000000-0000-0000-0000-000000000001'::uuid)))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "policyname": "Users can delete own posts",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "DELETE",
+      "qual": "(( SELECT auth.uid() AS uid) = author_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "policyname": "Users can update own posts",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(( SELECT auth.uid() AS uid) = author_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "policyname": "video_posts_public_select_guard",
+      "permissive": "RESTRICTIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "((COALESCE(is_deleted, false) = false) AND ((author_id = ( SELECT auth.uid() AS uid)) OR (visibility IS DISTINCT FROM 'private'::text)) AND fn_can_view_post(author_id, COALESCE(audience_mode, NULLIF(visibility, 'public'::text), 'public'::text), audience_list) AND ((content_type IS DISTINCT FROM 'video'::text) OR (author_id = ( SELECT auth.uid() AS uid)) OR legacy_transition_eligible(social_posts.*) OR fn_is_public_video_playback_eligible(playback_type, rights_status, NULLIF((media_urls ->> 0), ''::text), author_id, youtube_video_id, canonical_asset_key)) AND (legacy_transition_eligible(social_posts.*) OR (origin_type <> 'video_library'::text) OR fn_is_video_library_lineage_eligible(source_asset_id, youtube_video_id, canonical_asset_key, publication_key, NULLIF((media_urls ->> 0), ''::text))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_stories",
+      "policyname": "Public read access",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_stories",
+      "policyname": "Users can create their own stories",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(author_id = ( SELECT auth.uid() AS uid))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_stories",
+      "policyname": "Users can delete their own stories",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "DELETE",
+      "qual": "(author_id = ( SELECT auth.uid() AS uid))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "policyname": "video_library_public_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "fn_is_video_library_asset_eligible(id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "policyname": "video_library_videos_service_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{service_role}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    }
+  ],
+  "indexes": [
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "idx_social_posts_author",
+      "indexdef": "CREATE INDEX idx_social_posts_author ON public.social_posts USING btree (author_id)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "idx_social_posts_author_id",
+      "indexdef": "CREATE INDEX idx_social_posts_author_id ON public.social_posts USING btree (author_id, created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "idx_social_posts_canonical_asset_key",
+      "indexdef": "CREATE INDEX idx_social_posts_canonical_asset_key ON public.social_posts USING btree (canonical_asset_key) WHERE (canonical_asset_key IS NOT NULL)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "idx_social_posts_created",
+      "indexdef": "CREATE INDEX idx_social_posts_created ON public.social_posts USING btree (created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "idx_social_posts_transcode_queued",
+      "indexdef": "CREATE INDEX idx_social_posts_transcode_queued ON public.social_posts USING btree (transcode_status, created_at DESC) WHERE (transcode_status = ANY (ARRAY['queued'::text, 'running'::text]))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "uq_social_posts_video_library_asset",
+      "indexdef": "CREATE UNIQUE INDEX uq_social_posts_video_library_asset ON public.social_posts USING btree (source_asset_id) WHERE ((origin_type = 'video_library'::text) AND (source_asset_id IS NOT NULL))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "uq_social_posts_video_library_canonical",
+      "indexdef": "CREATE UNIQUE INDEX uq_social_posts_video_library_canonical ON public.social_posts USING btree (canonical_asset_key) WHERE ((origin_type = 'video_library'::text) AND (canonical_asset_key IS NOT NULL))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_posts",
+      "indexname": "uq_social_posts_video_library_publication",
+      "indexdef": "CREATE UNIQUE INDEX uq_social_posts_video_library_publication ON public.social_posts USING btree (publication_key) WHERE ((origin_type = 'video_library'::text) AND (publication_key IS NOT NULL))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_stories",
+      "indexname": "idx_social_stories_author",
+      "indexdef": "CREATE INDEX idx_social_stories_author ON public.social_stories USING btree (author_id, expires_at)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "social_stories",
+      "indexname": "idx_stories_created",
+      "indexdef": "CREATE INDEX idx_stories_created ON public.social_stories USING btree (created_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "indexname": "idx_video_library_availability_due",
+      "indexdef": "CREATE INDEX idx_video_library_availability_due ON public.video_library_videos USING btree (availability_status, availability_checked_at)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "indexname": "idx_vlv_scraped_at",
+      "indexdef": "CREATE INDEX idx_vlv_scraped_at ON public.video_library_videos USING btree (scraped_at DESC)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "indexname": "idx_vlv_source_scraped",
+      "indexdef": "CREATE INDEX idx_vlv_source_scraped ON public.video_library_videos USING btree (source_id, scraped_at DESC NULLS LAST)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "indexname": "idx_vlv_type_scraped",
+      "indexdef": "CREATE INDEX idx_vlv_type_scraped ON public.video_library_videos USING btree (type, scraped_at DESC NULLS LAST)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "video_library_videos",
+      "indexname": "idx_vlv_views_count",
+      "indexdef": "CREATE INDEX idx_vlv_views_count ON public.video_library_videos USING btree (views_count DESC NULLS LAST)"
+    }
+  ],
+  "policyRows": [
+    {
+      "kind": "catalog",
+      "row": {
+        "active": true,
+        "category": "social",
+        "diamonds": 10,
+        "lifetime": false,
+        "action_key": "social_post",
+        "updated_at": "2026-07-31T22:20:14.566704+00:00",
+        "max_per_day": 2,
+        "counts_toward_daily_cap": true
+      }
+    }
+  ],
+  "scope": "Text replay post, exact rewards and automatic story; video branches retained and unexercised",
+  "existingDependencies": "Canonical profiles/diamond journal/Mint/reward writer and user_diamond_balance from existing fixture",
+  "existingRewardWriter": {
+    "signature": "award_diamonds_v2(uuid,text,text,text,jsonb)",
+    "definitionMD5": "5c3f0cfa1e932d72b52c667374fbcb8c",
+    "bodySHA256": "568a58bf86a8fc7a159feb9708f11b6e83170f630d713afab53f459f1870bdc4",
+    "fixtureWitnessMatches": true
+  },
+  "definitionsFileSHA256": "085c12e3ccd40460f59d67ae3b26c17fa19be18fa732a5a219958867ddc09c81",
+  "defaultPrivileges": [
+    {
+      "role": "postgres",
+      "schema": "public",
+      "object_type": "f",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "role": "postgres",
+      "schema": "public",
+      "object_type": "S",
+      "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}"
+    },
+    {
+      "role": "postgres",
+      "schema": "public",
+      "object_type": "r",
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}"
+    }
+  ]
+}

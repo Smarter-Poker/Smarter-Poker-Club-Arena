@@ -49,8 +49,10 @@
  *
  *   leaderboardBoost 0.06   LeaderboardService applies no boost of any kind.
  *   themes 3                nothing reads it; Table Studio sells themes singly.
- *   clubCreation 3          fn_get_club_creation_eligibility caps EVERYONE at
- *                           4 club memberships. Not a VIP benefit, not 3.
+ *   clubCreation 3          the club membership cap is the same for everyone
+ *                           and the server owns its number (preflight:
+ *                           fn_get_club_creation_eligibility). Not a VIP
+ *                           benefit, not 3.
  *
  * What a VIP gets is now exactly what the server meters: 100 rabbit hunts
  * (fn_consume_rabbit_hunt), 120 time-bank seconds (fn_time_bank_allowance),

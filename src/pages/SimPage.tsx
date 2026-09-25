@@ -18,13 +18,14 @@
  * not touch this page — drop it in ALL_SCENARIOS and it shows up in the dropdown.
  */
 
+import { titleCase } from '../utils/titleCase';
 import React, { useState, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { PotDisplay } from '../components/table/PotDisplay';
 import { ALL_SCENARIOS, type Scenario, type SimStep, type SimViewState } from '../sim/scenarios';
 import { SEAT_POSITIONS_6MAX } from '../lib/tableSeatGeometry';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import './SimPage.css';
 
 // SEAT_POSITIONS_6MAX is imported from src/lib/tableSeatGeometry.ts — the
@@ -107,58 +108,63 @@ const SimPage: React.FC = () => {
 
   return (
     <div className="sim-page">
-      <div className="sim-page__header">
-        <div className="sim-page__title-row">
-          <h1 className="sim-page__title">Club Arena - Sim</h1>
-        </div>
-        <p className="sim-page__subtitle">
+      {/* The stepper (#ClubArenaConsole): scenario, step and description on
+          the glass, Prev and Next on the two painted plates, Reset a lit word. */}
+      <SpadeConsole
+        className="sim-page__console"
+        eyebrow="Club Arena Sim"
+        title="Scenario Stepper"
+        pill={`Step ${stepIdx + 1} / ${scenario.steps.length}`}
+        pillInk="blue"
+        plates={{
+          secondary: { label: 'Prev', onClick: goPrev, disabled: stepIdx === 0 },
+          primary: {
+            label: 'Next',
+            ink: 'white',
+            onClick: goNext,
+            disabled: stepIdx === scenario.steps.length - 1,
+          },
+        }}
+      >
+        <p className="sc-copy sim-page__subtitle sc-ink--muted">
           Deterministic Scenario Playback. No Live Engine. Each Step Is A Scripted State Snapshot Of
           What The UI SHOULD Render At That Moment.
         </p>
 
         <div className="sim-page__controls">
-          <label className="sim-page__label">
+          <label className="sim-page__label sc-label sc-ink--blue" htmlFor="sim-scenario">
             Scenario
-            <select className="sim-page__select" value={scenarioIdx} onChange={onPickScenario}>
-              {ALL_SCENARIOS.map((s, i) => (
-                <option key={s.id} value={i}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
           </label>
-
-          <div className="sim-page__step-controls">
-            <button
-              className="sim-page__btn"
-              onClick={goPrev}
-              disabled={stepIdx === 0}
-              type="button"
-            >
-              ◀ Prev
-            </button>
-            <span className="sim-page__step-counter">
-              Step {stepIdx + 1} / {scenario.steps.length}
-            </span>
-            <button
-              className="sim-page__btn"
-              onClick={goNext}
-              disabled={stepIdx === scenario.steps.length - 1}
-              type="button"
-            >
-              Next ▶
-            </button>
-            <button className="sim-page__btn sim-page__btn--reset" onClick={goReset} type="button">
-              Reset
-            </button>
-          </div>
+          <select
+            id="sim-scenario"
+            className="sim-page__select"
+            value={scenarioIdx}
+            onChange={onPickScenario}
+          >
+            {ALL_SCENARIOS.map((s, i) => (
+              <option key={s.id} value={i}>
+                {titleCase(s.name)}
+              </option>
+            ))}
+          </select>
         </div>
 
         {scenario.bug ? (
-          <div className="sim-page__bug-badge">REGRESSION: {scenario.bug}</div>
+          <div className="sim-page__bug-badge sc-ink--red">
+            Regression: {titleCase(scenario.bug)}
+          </div>
         ) : null}
-        <p className="sim-page__description">{scenario.description}</p>
-      </div>
+        <p className="sc-copy sim-page__description">{titleCase(scenario.description)}</p>
+
+        <div className="sim-page__step-controls">
+          <span className="sim-page__step-counter sc-ink--silver">
+            Step {stepIdx + 1} / {scenario.steps.length}
+          </span>
+          <button className="sim-page__word sc-ink--white" onClick={goReset} type="button">
+            Reset
+          </button>
+        </div>
+      </SpadeConsole>
 
       {/* ─────────────────────────────────────────────────────────
           The felt — oval table with 6 seat positions, center pot,
@@ -188,7 +194,7 @@ const SimPage: React.FC = () => {
 
           {/* Winner hand-strength label — visible only at showdown / hand complete */}
           {state.winningHandName ? (
-            <div className="sim-page__winner-label">{state.winningHandName}</div>
+            <div className="sim-page__winner-label sc-ink--gold">{state.winningHandName}</div>
           ) : null}
 
           {/* Seats — rotated so hero always appears at bottom */}
@@ -251,8 +257,15 @@ const SimPage: React.FC = () => {
       {/* ─────────────────────────────────────────────────────────
           Step log — all steps in this scenario, current highlighted.
           ───────────────────────────────────────────────────────── */}
-      <section className="sim-page__log">
-        <h2 className="sim-page__log-heading">Event Log</h2>
+      <SpadeConsole
+        as="section"
+        className="sim-page__console sim-page__log"
+        eyebrow="This Scenario"
+        title="Event Log"
+        pill={`${scenario.steps.length} Steps`}
+        pillInk="muted"
+        foot="foot"
+      >
         <ol className="sim-page__log-list">
           {scenario.steps.map((s, i) => (
             <li
@@ -265,24 +278,29 @@ const SimPage: React.FC = () => {
               onClick={() => setStepIdx(i)}
             >
               <div className="sim-page__log-row">
-                <span className="sim-page__log-event">{s.event}</span>
-                <span className="sim-page__log-label">{s.label}</span>
+                <span className="sim-page__log-event sc-ink--blue">{titleCase(s.event)}</span>
+                <span
+                  className={`sim-page__log-label ${i === stepIdx ? 'sc-ink--white' : 'sc-ink--silver'}`}
+                >
+                  {titleCase(s.label)}
+                </span>
               </div>
               {s.expect && i === stepIdx ? (
-                <div className="sim-page__log-expect">
-                  <strong>Expect:</strong> {s.expect}
+                <div className="sc-copy sim-page__log-expect">
+                  <strong className="sim-page__expect-word sc-ink--gold">Expect:</strong>{' '}
+                  {titleCase(s.expect)}
                 </div>
               ) : null}
             </li>
           ))}
         </ol>
-      </section>
 
-      {/* Raw-state inspector so we can eyeball what the UI is being fed */}
-      <details className="sim-page__inspector">
-        <summary>Raw State (Debug)</summary>
-        <pre className="sim-page__inspector-pre">{JSON.stringify(state, null, 2)}</pre>
-      </details>
+        {/* Raw-state inspector so we can eyeball what the UI is being fed */}
+        <details className="sim-page__inspector">
+          <summary className="sim-page__inspector-summary sc-ink--blue">Raw State (Debug)</summary>
+          <pre className="sim-page__inspector-pre">{JSON.stringify(state, null, 2)}</pre>
+        </details>
+      </SpadeConsole>
     </div>
   );
 };

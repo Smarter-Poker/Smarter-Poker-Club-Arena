@@ -1,832 +1,1001 @@
-/**
- * Hand Detail Modal  #SMARTERCASINOREALISM
- *
- * The dealer's hand-breakdown plate. Obsidian and gunmetal structure, chrome
- * type, restrained broadcast blue for the active control, brass only for what
- * is the viewer's own. Rajdhani display figures, monospace eyebrows, Inter
- * body. Light mode is the same hierarchy in brushed silver.
- *
- * Geometry (Dan 2026-08-27): a side panel filling three quarters of the WIDTH
- * on desktop; on a phone a three-quarter-HEIGHT bottom sheet anchored to the
- * bottom so the top quarter is a tappable backdrop and the header is nowhere
- * near the status bar. Both pay the top inset, and the installed-app floor at
- * the foot of the file makes that impossible to lose.
- *
- * No hover effects (tests/no-hover-effects.law.test.ts). Motion scales with
- * --animation-speed and collapses under prefers-reduced-motion.
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   HAND DETAIL - on the spade console (#ClubArenaConsole)
+
+   The chassis, its inks and its two painted plates come from SpadeConsole.css.
+   This sheet keeps the GEOMETRY the two hand surfaces were given on
+   2026-08-27 - three quarters of the height on a phone, anchored to the
+   bottom, so there is a backdrop left to tap, and the safe-area inset paid at
+   the top - and it keeps every animation. What it stops doing is painting:
+   the sheet is transparent, and the spade master stands inside it.
+
+   WHAT WAS DELETED. A rounded panel with its own border and shadow; a grey
+   header bar carrying three 32px square icon buttons; a pill tab strip; a
+   rounded card per showdown row; bordered board blocks; a boxed rake panel;
+   and a rounded "Show What Would Have Come" button. Every one of them drew a
+   control the master paints, or drew a card where a row belongs.
+
+   Rows are separated by an engraved rule - a black line with a light lip, the
+   same cut the master's own chrome rules are made of. No border-radius on a
+   card, tile, pill or button, no gradient, no box-shadow on a box, no :hover.
+   The ONE thing still drawn is the hand-position slider, which the master
+   paints nowhere and fifty hands cannot do without.
+
+   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6), at its full duration and
+   scaled by --animation-speed exactly as before: hdmSlideIn on the panel,
+   hdmSlideUp on the phone sheet, and the drag-to-dismiss transform the
+   component drives inline.
+
+   THE ORDER OF THE LAST TWO MEDIA BLOCKS IS LOAD-BEARING. The app-mode floor
+   for `.hdm-header` must be the LAST rule in this file that pads that element,
+   or a later `padding` shorthand silently resets it and the top of the sheet
+   goes back under the clock. Pinned three ways by
+   tests/unit/handHistorySheets.test.tsx.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .hdm-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1600;
-  background: rgba(2, 4, 7, 0.66);
+  z-index: 1250;
   display: flex;
-  align-items: stretch;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  animation: hdmFadeIn calc(0.2s * var(--animation-speed, 1)) ease;
 }
 
-.hdm-panel {
-  --hdm-void: #030609;
-  --hdm-black: #080d12;
-  --hdm-panel: #0c1118;
-  --hdm-panel-raised: #111823;
-  --hdm-gunmetal: #26333d;
-  --hdm-chrome: #dce8f0;
-  --hdm-steel: #b9cad7;
-  --hdm-blue: #3aa8ff;
-  --hdm-blue-hot: #8ad2ff;
-  --hdm-brass: #d6ad52;
-  --hdm-muted: #8391a1;
-  --hdm-up: #3fb950;
-  --hdm-down: #ff6b6b;
-  --hdm-line: rgba(185, 202, 215, 0.12);
-  --hdm-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
-  --hdm-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
-  --hdm-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+@keyframes hdmFadeIn {
+  from {
+    opacity: 0;
+  }
 
+  to {
+    opacity: 1;
+  }
+}
+
+/* The sheet is the space the picture stands in, and paints nothing itself.
+
+   ── THE PICTURE FITS THE SHEET (Dan 2026-09-23) ───────────────────────────
+   "PREVIOUS HAND IS CUT OFF AND DOESN'T DISPLAY PROPERLY." His screenshot: the
+   phone sheet open with its rails running off the top edge - no crest, no
+   HAND DETAIL, no date line - and the plates at the foot. The console was
+   TALLER than the sheet: head (34.8vw) + foot (27.7vw) + the strip + four
+   fixed rows + a 34dvh page came to ~740px inside a 633px sheet, and the
+   sheet was the scroller, so what fit was whichever end the browser settled
+   on. On his phone that was the bottom.
+
+   The sheet no longer scrolls at all. The console is the sheet's flex item
+   and fills it; its head and foot keep their painted ratio; its body takes
+   whatever height is left, and the ONE thing inside it that scrolls is the
+   page (.hdm-body), exactly as that rule's own heading says: "scrolls inside
+   the rails, so the plates never leave". The crest cannot leave either now,
+   because nothing above the page can be pushed out of a box it fits by
+   construction. */
+.hdm-panel {
   display: flex;
   flex-direction: column;
-  width: 75vw;
-  min-width: min(480px, 100vw);
-  max-width: 100vw;
-  height: 100%;
-  color: var(--hdm-chrome);
-  font-family: var(--hdm-body);
-  background:
-    radial-gradient(circle at 10% 0%, rgba(58, 168, 255, 0.08), transparent 30rem),
-    linear-gradient(180deg, var(--hdm-black) 0%, var(--hdm-void) 70%, #020304 100%);
-  border-right: 1px solid var(--hdm-gunmetal);
-  box-shadow:
-    16px 0 40px rgba(0, 0, 0, 0.55),
-    inset -1px 0 0 rgba(185, 202, 215, 0.1);
+  width: min(440px, 100%);
+  max-height: 100%;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: hidden;
+  overscroll-behavior: contain;
   animation: hdmSlideIn calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes hdmSlideIn {
   from {
-    transform: translateX(-24px);
     opacity: 0;
+    transform: translateY(10px) scale(0.98);
   }
+
   to {
-    transform: translateX(0);
     opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes hdmSlideUp {
   from {
-    transform: translateY(24px);
     opacity: 0;
+    transform: translateY(12%);
   }
+
   to {
-    transform: translateY(0);
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
-/* Grab handle, shown only where the panel IS a sheet. */
-.hdm-grab {
-  display: none;
-  justify-content: center;
-  padding: 8px 0 2px;
-  flex-shrink: 0;
-  cursor: grab;
-  touch-action: none;
+.hdm-panel:focus {
+  outline: none;
 }
 
-.hdm-grab span {
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(185, 202, 215, 0.28);
-}
-
-/* ── Header: machined plate ─────────────────────────────────────────────── */
+/* THE TOP OF THE SHEET: the drag affordance, and the strip that pays the
+   safe-area inset. The global popup chassis paints every `__header` that is a
+   direct child of a dialog, so every longhand it sets is switched off - the
+   frame is in the art. */
 .hdm-header {
+  flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 8px;
-  background: linear-gradient(180deg, rgba(185, 202, 215, 0.06), transparent 70%);
-  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.14);
-}
-
-.hdm-header__titles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.hdm-eyebrow {
-  font-family: var(--hdm-mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--hdm-blue);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hdm-title {
-  font-family: var(--hdm-display);
-  font-size: 1.2rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.hdm-header__actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.hdm-icon-btn {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  border: 1px solid var(--hdm-gunmetal);
-  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
-  color: var(--hdm-steel);
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+  padding-top: 12px;
+  padding-bottom: 8px;
+  border: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  touch-action: none;
+  cursor: grab;
 }
 
-.hdm-icon-btn:active {
-  transform: translateY(1px);
-  box-shadow: none;
+.hdm-grab {
+  width: 36px;
+  height: 3px;
+  background: rgb(255 255 255 / 22%);
 }
 
-.hdm-icon-btn:focus-visible {
-  outline: 2px solid var(--hdm-blue);
-  outline-offset: 2px;
+.hdm-console {
+  /* Fills the sheet under the strip and never overflows it; see .hdm-panel. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
+
+/* The painted head and foot keep their ratio; the body between them is the
+   part that gives. `.sc` is already a flex column (SpadeConsole.css). */
+.hdm-console .sc__head,
+.hdm-console .sc__foot {
+  flex: 0 0 auto;
+}
+
+.hdm-console .sc__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Hidden on the x axis, and on the y axis ONLY until the rows above the
+     page no longer fit (2026-09-24). The subheader and the copy row are
+     fixed-height and the page keeps a floor (see .hdm-body); on a sheet too
+     short for both - a phone in landscape, an SE - the glass scrolls so the
+     rows and the page are both reachable, instead of the page collapsing to
+     nothing under rows that were clipped with no scroller anywhere. On any
+     sheet tall enough this never scrolls, and the page stays the one
+     scroller. */
+  overflow: hidden auto;
+}
+
+/* ── When, at what stakes, in what game ───────────────────────────────── */
 
 .hdm-subheader {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 14px 10px;
-  font-family: var(--hdm-mono);
-  font-size: 11px;
-  color: var(--hdm-muted);
-  border-bottom: 1px solid var(--hdm-gunmetal);
-  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+  gap: 1.2cqw 3cqw;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.5cqw 2cqw;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .hdm-variant {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(58, 168, 255, 0.35);
-  background: rgba(58, 168, 255, 0.1);
-  color: var(--hdm-blue-hot);
+  margin-left: 1.6cqw;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
   font-style: normal;
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
+/* ── Taking the hand with you: three lit words on one engraved row ────── */
+
 .hdm-sn {
-  margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
+  gap: 1.6cqw 5cqw;
   align-items: center;
-  gap: 6px;
-  color: var(--hdm-blue);
+  padding: 1.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .hdm-copy {
+  appearance: none;
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border-radius: 4px;
-  border: 1px solid var(--hdm-gunmetal);
-  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
-  color: var(--hdm-blue);
-  font-family: var(--hdm-mono);
-  font-size: 11px;
+  gap: 1.4cqw;
+  align-items: baseline;
+  /* A control on a phone still has to be hittable. */
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-family: inherit;
+  font-size: 3cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.04em;
+  text-shadow:
+    0 -0.1cqw 0 rgb(255 255 255 / 40%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
-}
-
-.hdm-copy:active {
-  transform: translateY(1px);
-  box-shadow: none;
-}
-
-.hdm-copy:focus-visible {
-  outline: 2px solid var(--hdm-blue);
-  outline-offset: 2px;
+  touch-action: manipulation;
+  white-space: nowrap;
 }
 
 .hdm-copy__hint {
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--hdm-muted);
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-/* ── Body ───────────────────────────────────────────────────────────────── */
+.hdm-copy:active {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.hdm-copy:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.4cqw;
+}
+
+/* ── The page: scrolls inside the rails, so the plates never leave ────── */
+
 .hdm-body {
-  flex: 1;
-  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2.6cqw;
+  /* Was `max-height: 46dvh` (34dvh on a phone): a fixed share of the
+     viewport that did not know how tall the head, the foot and the fixed
+     rows around it were, which is how the console outgrew its sheet. It is
+     the flexible row of the console's body now and takes exactly what is
+     left (Dan 2026-09-23, see .hdm-panel). */
+  flex: 1 1 auto;
+  /* A floor, not a share of the viewport: the page can never be squeezed
+     below this by the fixed rows above it. When the glass cannot hold the
+     rows plus this floor, the glass scrolls (see .hdm-console .sc__body). */
+  min-height: 120px;
+  padding-right: 1cqw;
   overflow-y: auto;
-  padding: 10px 12px 16px;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
 .hdm-body:focus-visible {
-  outline: 2px solid var(--hdm-blue);
-  outline-offset: -2px;
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
 }
 
-/* With real width, the shared rundown's streets read as two columns. */
-@media (min-width: 900px) {
-  .hdm-body .hdv {
-    display: block;
-    column-count: 2;
-    column-gap: 18px;
-  }
-
-  .hdm-body .hdv > * {
-    break-inside: avoid;
-    -webkit-column-break-inside: avoid;
-    margin-bottom: 8px;
-  }
-}
+/* ── Section heads ────────────────────────────────────────────────────── */
 
 .hdm-section-head {
   display: flex;
+  gap: 3cqw;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 4px 6px;
-  font-family: var(--hdm-mono);
-  font-size: 10px;
+  padding: 2.4cqw 0.5cqw 1cqw;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--hdm-steel);
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .hdm-section-count {
-  color: var(--hdm-muted);
-  letter-spacing: 0.08em;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
-/* Pot line at the top of the summary */
+/* ── The pot line ─────────────────────────────────────────────────────── */
+
 .hdm-potline {
   display: flex;
-  align-items: baseline;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--hdm-line);
-  border-radius: 4px;
-  background: var(--hdm-panel);
-  font-variant-numeric: tabular-nums;
+  gap: 1.2cqw 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.hdm-potline--top {
+  border-top: 0;
+  box-shadow: none;
 }
 
 .hdm-potline__label {
-  font-family: var(--hdm-mono);
-  font-size: 10px;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--hdm-muted);
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .hdm-potline__pots {
   display: flex;
-  gap: 12px;
-  font-family: var(--hdm-display);
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--hdm-chrome);
+  flex-wrap: wrap;
+  gap: 1cqw 2.4cqw;
+  margin-right: auto;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
 }
 
 .hdm-potline__drop {
-  margin-left: auto;
-  font-family: var(--hdm-mono);
-  font-size: 10px;
-  color: var(--hdm-muted);
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
-.hdm-empty {
-  padding: 40px 24px;
-  text-align: center;
-  font-family: var(--hdm-display);
-  font-size: 15px;
-  letter-spacing: 0.03em;
-  line-height: 1.5;
-  color: var(--hdm-muted);
-}
+/* ── Boards ───────────────────────────────────────────────────────────── */
 
-.hdm-empty--inline {
-  padding: 18px 12px;
-}
-
-/* ── Boards ─────────────────────────────────────────────────────────────── */
-.hdm-boards {
-  margin-top: 6px;
+.hdm-boards,
+.hdm-rabbit,
+.hdm-showdown,
+.hdm-yours {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .hdm-board {
   display: flex;
+  gap: 2.4cqw;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border: 1px solid var(--hdm-line);
-  border-radius: 4px;
-  background: var(--hdm-panel);
-  margin-bottom: 4px;
+  padding: 1.8cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .hdm-board__badge {
-  flex-shrink: 0;
-  min-width: 52px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(58, 168, 255, 0.35);
-  background: rgba(58, 168, 255, 0.1);
-  color: var(--hdm-blue-hot);
-  font-family: var(--hdm-mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  min-width: 14cqw;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  text-align: center;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
 .hdm-board__cards {
   display: flex;
-  gap: 3px;
   flex-wrap: wrap;
+  gap: 1cqw;
+  align-items: center;
 }
 
-/* Cards every run shares recede; the divergence is what reads. */
-.hdm-board__cards .hdm-card--shared {
-  opacity: 0.45;
-  filter: grayscale(0.4);
+/* The cards the runs share, before they diverge. */
+.hdm-card--shared {
+  opacity: 0.42;
 }
 
-/* ── Showdown rows ──────────────────────────────────────────────────────── */
-.hdm-showdown,
-.hdm-yours {
-  margin-top: 6px;
+.hdm-card--rabbit {
+  filter: drop-shadow(0 0 0.8cqw rgb(69 173 255 / 55%));
 }
+
+/* ── Rabbit hunt ──────────────────────────────────────────────────────── */
+
+.hdm-rabbit__btn {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 0.5cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  font-family: inherit;
+  font-size: 3.1cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hdm-rabbit__btn:disabled {
+  color: #4a5462;
+  -webkit-text-fill-color: #4a5462;
+  text-shadow: none;
+  cursor: not-allowed;
+}
+
+.hdm-rabbit__btn:active:not(:disabled) {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.hdm-rabbit__btn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── Showdown: one player, one engraved row ───────────────────────────── */
 
 .hdm-sd {
   display: grid;
-  grid-template-columns: minmax(84px, 1.1fr) minmax(0, 2fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.4cqw 3cqw;
   align-items: center;
-  gap: 8px 10px;
-  padding: 8px 10px;
-  margin-bottom: 4px;
-  border: 1px solid var(--hdm-line);
-  border-radius: 4px;
-  background: var(--hdm-panel);
-}
-
-.hdm-sd.is-winner {
-  border-color: rgba(63, 185, 80, 0.4);
-  box-shadow: inset 3px 0 0 var(--hdm-up);
-}
-
-.hdm-sd.is-low {
-  background: rgba(58, 168, 255, 0.05);
-}
-
-.hdm-sd.is-you .hdm-sd__name {
-  color: var(--hdm-brass);
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .hdm-sd__who {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  gap: 0.4cqw;
   min-width: 0;
 }
 
 .hdm-sd__name {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--hdm-display);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--hdm-chrome);
-  line-height: 1.1;
-  word-break: break-word;
+  gap: 1.6cqw;
+  align-items: baseline;
+  min-width: 0;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.3cqw;
+  font-weight: 800;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
+}
+
+.hdm-sd.is-you .hdm-sd__name {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .hdm-sd__pos {
-  font-family: var(--hdm-mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  color: var(--hdm-muted);
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
+/* A tag is a lit word, never a pill. */
 .hdm-tag {
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-family: var(--hdm-mono);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: 2.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
 .hdm-tag--low {
-  background: rgba(58, 168, 255, 0.18);
-  color: var(--hdm-blue-hot);
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .hdm-tag--private {
-  background: rgba(214, 173, 82, 0.16);
-  color: var(--hdm-brass);
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .hdm-sd__cards {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-  min-width: 0;
+  gap: 1cqw 1.6cqw;
+  align-items: center;
+  grid-column: 1 / -1;
 }
 
-.hdm-sd__cards .hdm-idle {
+/* The five that played are lit; the rest of the holding is dimmed, so the eye
+   lands on the hand rather than on the cards. */
+.hdm-idle {
   opacity: 0.4;
-  filter: grayscale(0.5);
 }
 
-.hdm-sd__cards .hdm-plays {
-  opacity: 1;
+.hdm-plays {
+  filter: drop-shadow(0 0 0.7cqw rgb(255 215 0 / 45%));
 }
 
-.hdm-sd__cards .hdm-private,
 .hdm-sd__cards .card-image.hdm-private {
-  outline: 1px dashed rgba(214, 173, 82, 0.6);
+  outline: 1px solid rgb(255 215 0 / 45%);
   outline-offset: 1px;
-  border-radius: 3px;
 }
 
 .hdm-sd__handname {
-  margin-left: 4px;
-  font-family: var(--hdm-display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--hdm-steel);
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.hdm-sd.is-winner .hdm-sd__handname {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.hdm-sd.is-low .hdm-sd__handname {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .hdm-sd__right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  white-space: nowrap;
+  display: grid;
+  gap: 0.4cqw;
+  justify-items: end;
+  text-align: right;
 }
 
 .hdm-sd__collected {
-  font-family: var(--hdm-mono);
-  font-size: 10px;
-  color: var(--hdm-muted);
-  font-variant-numeric: tabular-nums;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
 .hdm-sd__net {
-  font-family: var(--hdm-display);
-  font-size: 17px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--hdm-steel);
-  min-height: 1em;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
+  white-space: nowrap;
 }
 
+/* The house green and the console's red. A signed figure is the one place a
+   colour carries meaning rather than dressing. */
 .hdm-sd__net.is-up {
-  color: var(--hdm-up);
+  color: #3fb950;
+  -webkit-text-fill-color: #3fb950;
+  text-shadow:
+    0 0 1cqw rgb(63 185 80 / 55%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .hdm-sd__net.is-down {
-  color: var(--hdm-down);
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .hdm-sd__net.is-blank {
   color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
 }
 
 .hdm-sd__pot {
-  font-family: var(--hdm-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.3cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--hdm-muted);
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
-/* ── Navigator: oldest to newest, newest at the right ───────────────────── */
-.hdm-nav {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-top: 1px solid var(--hdm-gunmetal);
-  background: var(--hdm-panel);
-}
+/* ── Your own rake on this hand ───────────────────────────────────────── */
 
-.hdm-nav__arrow {
-  border: 1px solid var(--hdm-gunmetal);
-  border-radius: 4px;
-  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
-  color: var(--hdm-blue);
-  font-size: 0.9rem;
-  cursor: pointer;
-  padding: 4px 10px;
-  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
-}
-
-.hdm-nav__arrow:active {
-  transform: translateY(1px);
-  box-shadow: none;
-}
-
-.hdm-nav__arrow:focus-visible {
-  outline: 2px solid var(--hdm-blue);
-  outline-offset: 2px;
-}
-
-.hdm-nav__arrow:disabled {
-  color: var(--hdm-muted);
-  opacity: 0.45;
-  cursor: default;
-}
-
-.hdm-nav__track {
-  flex: 1;
+.hdm-rake-share {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.hdm-nav__label {
-  font-family: var(--hdm-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--hdm-steel);
-  font-variant-numeric: tabular-nums;
-}
-
-.hdm-nav__track input[type='range'] {
-  width: 100%;
-  accent-color: var(--hdm-blue);
-}
-
-/* ── Tabs: two machined keys ────────────────────────────────────────────── */
-.hdm-tabs {
-  display: flex;
-  gap: 8px;
-  padding: 8px 14px calc(10px + env(safe-area-inset-bottom, 0));
-  background: var(--hdm-panel);
-}
-
-.hdm-tab {
-  flex: 1;
-  padding: 10px 0;
-  border-radius: 4px;
-  font-family: var(--hdm-display);
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
-  border: 1px solid var(--hdm-gunmetal);
-  color: var(--hdm-steel);
-  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
-}
-
-.hdm-tab:active {
-  transform: translateY(1px);
-  box-shadow: none;
-}
-
-.hdm-tab:focus-visible {
-  outline: 2px solid var(--hdm-blue);
-  outline-offset: 2px;
-}
-
-.hdm-tab--active {
-  background: linear-gradient(180deg, #1f7fd6, #145ea3);
-  border-color: rgba(58, 168, 255, 0.6);
-  color: #f4f9ff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 0 0 1px rgba(58, 168, 255, 0.15);
-}
-
-/* ── Your rake on this hand (Dan 2026-08-30) ────────────────────────────── */
-.hdm-rake-share {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 4px;
-  background: var(--hdm-panel, #0c1118);
-  border: 1px solid var(--hdm-line, rgba(185, 202, 215, 0.12));
+  min-width: 0;
 }
 
 .hdm-rake-share__title {
-  font-family: var(--hdm-mono, monospace);
-  font-size: 10px;
+  padding: 2.4cqw 0.5cqw 1cqw;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--hdm-muted, #8391a1);
-  margin-bottom: 6px;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .hdm-rake-share__rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .hdm-rake-share__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 0.86rem;
-  font-variant-numeric: tabular-nums;
+  padding: 1.8cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 2.9cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.hdm-rake-share__row span {
-  color: var(--hdm-steel, #b9cad7);
+.hdm-rake-share__row strong {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.1cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
+  white-space: nowrap;
 }
 
 .hdm-rake-share__row.is-primary strong {
-  color: var(--hdm-brass, #d6ad52);
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-/* ── Phones: a three-quarter-height bottom sheet ────────────────────────── */
+/* ── Empty states ─────────────────────────────────────────────────────── */
+
+.hdm-empty {
+  padding: 6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 3.1cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-align: center;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.hdm-empty--inline {
+  padding: 3.4cqw 0.5cqw;
+}
+
+/* The one action on the empty sheet: a lit word above the flat closing cap. */
+.hdm-word-btn {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 1cqw 0 0;
+  padding: 2cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  font-family: inherit;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hdm-word-btn:active {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.hdm-word-btn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── Paging through the table's hands ─────────────────────────────────── */
+
+.hdm-nav {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2cqw;
+  align-items: center;
+  padding: 1.6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.hdm-nav__arrow {
+  appearance: none;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-family: inherit;
+  font-size: 3.4cqw;
+  line-height: 1;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hdm-nav__arrow:disabled {
+  color: #3a424d;
+  -webkit-text-fill-color: #3a424d;
+  text-shadow: none;
+  cursor: not-allowed;
+}
+
+.hdm-nav__arrow:active:not(:disabled) {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.hdm-nav__arrow:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+.hdm-nav__track {
+  display: grid;
+  gap: 0.8cqw;
+  justify-items: center;
+  min-width: 0;
+}
+
+.hdm-nav__label {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 2.7cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.08em;
+  text-shadow:
+    0 -0.1cqw 0 rgb(255 255 255 / 40%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
+  white-space: nowrap;
+}
+
+/* THE ONE CONTROL THE MASTER PAINTS NOWHERE. Cut down to an engraved track
+   and a square lit handle: no rounded rail, no gradient, no shadow. */
+.hdm-nav__track input[type='range'] {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 20px;
+  margin: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hdm-nav__track input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
+  background: transparent;
+}
+
+.hdm-nav__track input[type='range']::-moz-range-track {
+  height: 2px;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
+  background: transparent;
+}
+
+.hdm-nav__track input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 8px;
+  height: 16px;
+  margin-top: -8px;
+  border: 0;
+  background: #45adff;
+}
+
+.hdm-nav__track input[type='range']::-moz-range-thumb {
+  width: 8px;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background: #45adff;
+}
+
+.hdm-nav__track input[type='range']:focus-visible {
+  outline: 0.6cqw solid #8fd4ff !important;
+  outline-offset: 0.4cqw;
+}
+
+/* ── The two views: engraved words on the glass, not a pill bar ───────── */
+
+.hdm-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.hdm-tab {
+  appearance: none;
+  /* A tab on a phone still has to be hittable. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 0.5cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-family: inherit;
+  font-size: 2.7cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hdm-tab--active {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0 2cqw rgb(49 168 255 / 30%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.hdm-tab:active {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.hdm-tab:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── The phone sheet: three quarters, on the bottom, backdrop above it ── */
+
 @media (max-width: 640px) {
   .hdm-overlay {
     align-items: flex-end;
-    justify-content: stretch;
+    padding: 0;
   }
 
   .hdm-panel {
     width: 100vw;
-    min-width: 0;
-    height: 75vh;
     height: 75dvh;
-    border-right: none;
-    border-top: 1px solid var(--hdm-gunmetal);
-    border-radius: 12px 12px 0 0;
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6);
+    max-height: 75dvh;
+    padding: 0 12px 12px !important;
     animation: hdmSlideUp calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .hdm-grab {
-    display: flex;
   }
 
   .hdm-header {
     padding-top: calc(12px + env(safe-area-inset-top, 0px));
   }
-
-  .hdm-sd {
-    grid-template-columns: minmax(72px, 1fr) minmax(0, 1.6fr) auto;
-    gap: 6px 8px;
-  }
-
-  .hdm-potline__pots {
-    font-size: 16px;
-  }
-}
-
-@media (max-width: 380px) {
-  .hdm-sd {
-    grid-template-columns: 1fr auto;
-  }
-
-  .hdm-sd__cards {
-    grid-column: 1 / -1;
-  }
-}
-
-/* ── Light mode: brushed silver, same hierarchy ─────────────────────────── */
-[data-theme='light'] .hdm-overlay {
-  background: rgba(20, 35, 50, 0.4);
-}
-
-[data-theme='light'] .hdm-panel {
-  --hdm-void: #d9e0e6;
-  --hdm-black: #e6ebef;
-  --hdm-panel: #f1f4f7;
-  --hdm-panel-raised: #ffffff;
-  --hdm-gunmetal: #aab8c3;
-  --hdm-chrome: #0d161d;
-  --hdm-steel: #3f5261;
-  --hdm-blue: #146bb3;
-  --hdm-blue-hot: #0f5a99;
-  --hdm-brass: #8a6a24;
-  --hdm-muted: #5f7181;
-  --hdm-up: #4dc660;
-  --hdm-down: #c0392b;
-  --hdm-line: rgba(20, 35, 50, 0.14);
-  background:
-    radial-gradient(circle at 10% 0%, rgba(20, 107, 179, 0.08), transparent 30rem),
-    linear-gradient(180deg, #eef2f5 0%, var(--hdm-void) 100%);
-  box-shadow:
-    16px 0 40px rgba(20, 35, 50, 0.18),
-    inset -1px 0 0 #fff;
-}
-
-[data-theme='light'] .hdm-header {
-  background: linear-gradient(180deg, #fff, transparent 70%);
-  box-shadow: inset 0 1px 0 #fff;
-}
-
-[data-theme='light'] .hdm-variant,
-[data-theme='light'] .hdm-board__badge {
-  background: rgba(20, 107, 179, 0.08);
-  border-color: rgba(20, 107, 179, 0.3);
-}
-
-[data-theme='light'] .hdm-tab--active {
-  background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hdm-overlay,
   .hdm-panel {
     animation: none;
   }
 }
 
-/* PWA GUARANTEE: last in the file on purpose. The header's own rule sets a
-   `padding` shorthand, and a shorthand resets padding-top; equal specificity
-   means source order decides. Nothing that pads .hdm-header may follow. */
+/* THE APP-MODE FLOOR, LAST IN THE FILE.
+   env(safe-area-inset-top) resolves to 0 in the installed app on some devices,
+   which silently deletes the phone rule above and puts the top of the sheet
+   under the clock. Equal specificity, so source order decides: nothing below
+   this line may pad `.hdm-header` again. */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .hdm-header {
     padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   RABBIT HUNT FROM THE REPLAYER (P5, 2026-09-05)
-   The felt shows the offer for ~2.5s; the engine holds it for ninety seconds.
-   This is the rest of that window. The cards belong to the buyer alone, so
-   they are marked apart from the board that actually ran.
-   ═══════════════════════════════════════════════════════════════════════════ */
-.hdm-rabbit {
-  margin-top: 10px;
-}
-
-.hdm-rabbit__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(240, 180, 70, 0.35);
-  background: rgba(240, 180, 70, 0.12);
-  color: rgba(255, 226, 160, 0.95);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition:
-    background 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.12s ease;
-}
-
-/* PRESS, NOT HOVER (tests/no-hover-effects.law.test.ts). Dan: "Remove hover
-   entirely, everywhere." Most play is on a phone, where :hover does not
-   exist and iOS synthesises a sticky one on first tap. :active is the
-   affordance a finger actually produces. */
-.hdm-rabbit__btn:active:not(:disabled) {
-  background: rgba(240, 180, 70, 0.2);
-  border-color: rgba(240, 180, 70, 0.55);
-  transform: scale(0.98);
-}
-
-.hdm-rabbit__btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* These cards never ran. They are the buyer's alone, and they must not read
-   as part of the board above them. */
-.hdm-card--rabbit {
-  opacity: 0.9;
-  outline: 1px dashed rgba(240, 180, 70, 0.5);
-  outline-offset: 1px;
-  border-radius: 3px;
 }

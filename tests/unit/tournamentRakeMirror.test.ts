@@ -53,6 +53,7 @@ describe('server buyIn mirrors client buyIn', () => {
       { tournamentType: 'MTT', maxPlayers: 2 },
       { tournamentType: 'SATELLITE', variant: 'sng', maxPlayers: 2 },
       { tournamentType: 'SNG', maxPlayers: 2, satellite_target_id: 'target' },
+      { tournamentType: 'SNG', variant: 'sng', maxPlayers: 2, satellite_target_id: 'target' },
       { tournamentType: 'SNG', maxPlayers: 2, satelliteTargetId: 'target' },
       { tournamentType: 'SNG', maxPlayers: 2, satellite_target: 'target' },
       { tournamentType: 'SNG', maxPlayers: 2, satelliteTarget: { tournamentId: 'target' } },

@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -14,6 +18,9 @@ const service = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
+const surface = readDailyChallengesSurface();
 const titleCaseMigration = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260901030700_daily_mission_catalog_title_case.sql'),
   'utf8'
@@ -89,20 +96,22 @@ describe('daily challenge dashboard contract', () => {
     expect(service).toContain("supabase.rpc('get_daily_challenge_dashboard_v3'");
     expect(service).toContain('retryFetch(');
     expect(service).toContain('{ maxRetries: 2, baseDelayMs: 250 }');
-    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
-    expect(page).not.toContain('dailyChallengeService.getAllChallenges(uid)');
-    expect(page).not.toContain('dailyChallengeService.getStats(uid)');
-    expect(page).not.toContain('dailyChallengeService.getStreak(uid)');
-    expect(page).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
-    expect(page).toContain('const dashboard = await dailyChallengeService.getDashboard(userId);');
-    expect(page).toContain('ready = dashboard.vault.items;');
-    expect(page).toContain(
+    expect(dashboard).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getAllChallenges(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getStats(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getStreak(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
+    expect(actions).toContain(
+      'const dashboard = await dailyChallengeService.getDashboard(userId);'
+    );
+    expect(actions).toContain('ready = dashboard.vault.items;');
+    expect(actions).toContain(
       'if (!userId || claimAllGuardRef.current || economyGuardRef.current) return;'
     );
-    expect(page).toContain('claimAllGuardRef.current = true;');
-    expect(page).toContain('claimAllGuardRef.current = false;');
-    expect(page).not.toContain('const ready = rewardVault.items;');
-    expect(page).toContain('width: `${stats?.milestoneProgressPercent ?? 0}%`');
+    expect(actions).toContain('claimAllGuardRef.current = true;');
+    expect(actions).toContain('claimAllGuardRef.current = false;');
+    expect(surface).not.toContain('const ready = rewardVault.items;');
+    expect(readDailyChallengesUnit('MissionStreakConsole.tsx')).toContain('width: `${stats?.milestoneProgressPercent ?? 0}%`');
   });
 
   it('returns a coherent dashboard revision for dropped-event reconciliation', () => {

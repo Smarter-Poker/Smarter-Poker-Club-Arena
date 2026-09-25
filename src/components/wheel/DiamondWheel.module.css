@@ -1,30 +1,36 @@
+/* The wheel is a stack of layers inside one clipped frame. Everything that
+   moves (the rotor, the pointer, the lamps, the winner's glow) is its own
+   compositor layer animated by transform or opacity only; the housing, rim,
+   hub and selector holder are painted once and never repaint. No SVG
+   attribute changes per frame, no animated filters (owner ruling 2026-09-21,
+   R20: the phone repainted two full SVG wheels on the main thread every
+   frame). */
 .frame {
   position: relative;
   margin: 0 auto;
   aspect-ratio: 1;
   isolation: isolate;
-}
-.svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-  position: relative;
+  overflow: hidden;
+  contain: paint;
 }
 .frame[data-presentation='cabinet'] {
   aspect-ratio: 720 / 485;
-  overflow: hidden;
 }
 .frame[data-presentation='cabinet'][data-prize-scale='2'] {
   aspect-ratio: 360 / 345;
 }
-.frame[data-presentation='cabinet'] .svg {
-  overflow: hidden;
-  filter: drop-shadow(0 15px 6px #000);
+.frame[data-presentation='assembly'] {
+  aspect-ratio: 360 / 415;
+}
+.frame[data-fit-viewport] {
+  width: 100% !important;
+  height: 100%;
+  aspect-ratio: auto;
 }
 .aura {
   position: absolute;
   inset: 8%;
+  z-index: 0;
   border-radius: 50%;
   background: radial-gradient(circle, transparent 55%, rgb(24 119 242 / 14%) 65%, transparent 74%);
   filter: blur(16px);
@@ -36,6 +42,87 @@
 .frame[data-upgraded] .aura {
   background: radial-gradient(circle, transparent 50%, rgb(255 215 0 / 30%) 66%, transparent 75%);
 }
+.frame[data-presentation='assembly'] .aura {
+  display: none;
+}
+
+/* The whole 1000-unit wheel space in CSS pixels, positioned by the frame's
+   measured aperture. The front wheel covers the upgrade card bodies until
+   UPGRADE lands; it recedes around the shared axle, revealing the complete
+   illustrated cards. */
+.stage {
+  position: absolute;
+  z-index: 1;
+  transform-origin: 50% 50%;
+  transition: transform calc(650ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.25, 1);
+  pointer-events: none;
+}
+.layerSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.rotor {
+  position: absolute;
+  transform-origin: 50% 50%;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.housing {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+.winnerGlow {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-origin: 50% 50%;
+  will-change: opacity;
+  animation: wheel-breathe calc(1.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+.lamp {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f4f7fb 0%, #45adff 22%, rgb(24 119 242 / 0) 100%);
+  opacity: 0.45;
+  will-change: opacity;
+  animation: wheel-lamp calc(2.16s * var(--animation-speed, 1)) linear infinite;
+}
+.frame[data-phase='spinning'] .lamp {
+  transform: scale(1.6);
+}
+.pointer {
+  position: absolute;
+  z-index: 4;
+  will-change: transform;
+}
+.pointer img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  user-select: none;
+}
+.pointerGlow {
+  opacity: 0;
+  will-change: opacity;
+  animation: selector-reflection calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes selector-reflection {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .bonus,
 .chips,
 .reward,
@@ -44,18 +131,6 @@
 }
 .locked {
   opacity: 0.4;
-}
-.segText {
-  font-family: 'Roboto Condensed', Inter, sans-serif;
-  font-weight: 900;
-  letter-spacing: 0.3px;
-  fill: #f4f7fb;
-  text-shadow:
-    0 2px 0 #000,
-    0 -1px 0 rgb(255 255 255 / 30%);
-}
-.upgrade .segText {
-  fill: #ffd700;
 }
 .hubLabel {
   font-family: 'Roboto Condensed', Inter, sans-serif;
@@ -69,29 +144,33 @@
   transform-origin: 500px 490px;
   animation: wheel-gem calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
 }
-.prizeFloat {
-  animation: wheel-prize calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-  filter: drop-shadow(0 7px 4px rgb(0 0 0 / 70%));
-}
 .sectorLight {
   opacity: 0.55;
 }
-[data-winner] .sectorLight {
-  opacity: 1;
-  filter: drop-shadow(0 0 8px #45adff);
-  animation: wheel-breathe calc(1.4s * var(--animation-speed, 1)) ease-in-out infinite;
+/* Off screen, the decorative loops stop where they are (the frame's
+   IntersectionObserver sets data-offscreen). An owed spin is JS-driven and is
+   never paused by this. */
+.frame[data-offscreen] .aura,
+.frame[data-offscreen] .lamp,
+.frame[data-offscreen] .pointerGlow,
+.frame[data-offscreen] .winnerGlow,
+.frame[data-offscreen] .hubStone {
+  animation-play-state: paused;
 }
-[data-winner] .prizeFloat {
-  animation: wheel-winning-prize calc(1.8s * var(--animation-speed, 1)) ease-in-out infinite;
-}
-.lamp {
-  opacity: 0.45;
-  animation: wheel-lamp calc(2.16s * var(--animation-speed, 1)) linear infinite;
-}
-.frame[data-phase='spinning'] .lamp {
-  r: 8;
+/* Reduced motion: the idle drift already stops (DiamondWheel.tsx); the
+   decorative loops settle to their resting look. The spin itself is owed and
+   keeps its full duration (data-motion="keep"). */
+@media (prefers-reduced-motion: reduce) {
+  .aura,
+  .lamp,
+  .pointerGlow,
+  .winnerGlow,
+  .hubStone {
+    animation: none;
+  }
+  .winnerGlow {
+    opacity: 1;
+  }
 }
 @keyframes wheel-breathe {
   0%,
@@ -111,24 +190,6 @@
     transform: translateY(-3px) scale(1.02);
   }
 }
-@keyframes wheel-prize {
-  0%,
-  100% {
-    transform: translateY(1px) rotate(-1.5deg);
-  }
-  50% {
-    transform: translateY(-5px) rotate(1.5deg);
-  }
-}
-@keyframes wheel-winning-prize {
-  0%,
-  100% {
-    transform: scale(1.04);
-  }
-  50% {
-    transform: scale(1.13) translateY(-3px);
-  }
-}
 @keyframes wheel-lamp {
   0%,
   20%,
@@ -139,15 +200,4 @@
   12% {
     opacity: 1;
   }
-}
-
-.frame[data-presentation='assembly'] {
-  aspect-ratio: 360 / 415;
-  overflow: hidden;
-}
-.frame[data-presentation='assembly'] .svg {
-  overflow: hidden;
-}
-.frame[data-presentation='assembly'] .aura {
-  display: none;
 }

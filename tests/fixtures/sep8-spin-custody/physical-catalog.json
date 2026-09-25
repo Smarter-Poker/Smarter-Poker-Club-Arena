@@ -1,0 +1,1279 @@
+{
+  "tables": [
+    {
+      "rls": true,
+      "name": "hand_state_snapshots",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "config_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "dealer_seat",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "players_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "stage",
+          "type": "text",
+          "default": "'preflop'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_complete",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "pending_deadlines",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "disconnect_states",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "hand_state_snapshots_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX hand_state_snapshots_pkey ON public.hand_state_snapshots USING btree (id)"
+        },
+        {
+          "name": "idx_hand_snapshots_one_active_per_table",
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false)"
+        },
+        {
+          "name": "idx_hand_state_snapshots_created_at",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_hand_state_snapshots_created_at ON public.hand_state_snapshots USING btree (created_at DESC)"
+        }
+      ],
+      "policies": [
+        {
+          "name": "hand_state_snapshots_service_only",
+          "qual": "true",
+          "check": "true",
+          "roles": [
+            "service_role"
+          ],
+          "command": "*",
+          "permissive": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "a00_f06_cancelled_preparation",
+          "enabled": "O",
+          "function": "smarter_private.f06_cancelled_preparation_writer_guard()",
+          "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()"
+        }
+      ],
+      "force_rls": true,
+      "constraints": [
+        {
+          "name": "hand_state_snapshots_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "hand_state_snapshots_table_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "hand_private_state",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hole_cards",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_strength",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "private_data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "saved_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "hand_private_state_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX hand_private_state_pkey ON public.hand_private_state USING btree (id)"
+        },
+        {
+          "name": "uq_hand_private_state_table",
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX uq_hand_private_state_table ON public.hand_private_state USING btree (table_id) WHERE (table_id IS NOT NULL)"
+        }
+      ],
+      "policies": [
+        {
+          "name": "users_delete_own_hands",
+          "qual": "(( SELECT auth.uid() AS uid) = player_id)",
+          "check": null,
+          "roles": [
+            "public"
+          ],
+          "command": "d",
+          "permissive": true
+        },
+        {
+          "name": "users_insert_own_hands",
+          "qual": null,
+          "check": "(( SELECT auth.uid() AS uid) = player_id)",
+          "roles": [
+            "public"
+          ],
+          "command": "a",
+          "permissive": true
+        },
+        {
+          "name": "users_read_own_hands",
+          "qual": "(( SELECT auth.uid() AS uid) = player_id)",
+          "check": null,
+          "roles": [
+            "public"
+          ],
+          "command": "r",
+          "permissive": true
+        },
+        {
+          "name": "users_update_own_hands",
+          "qual": "(( SELECT auth.uid() AS uid) = player_id)",
+          "check": "(( SELECT auth.uid() AS uid) = player_id)",
+          "roles": [
+            "public"
+          ],
+          "command": "w",
+          "permissive": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "a00_f06_cancelled_preparation",
+          "enabled": "O",
+          "function": "smarter_private.f06_cancelled_preparation_writer_guard()",
+          "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_private_state FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "fk_hand_private_state_player_id_profiles",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "hand_private_state_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "hand_private_state_player_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (player_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "engine_table_leases",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        }
+      ],
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "engine_version",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "acquired_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "lease_generation",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "protocol_version",
+          "type": "integer",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "engine_table_leases_instance_idx",
+          "constraint": false,
+          "definition": "CREATE INDEX engine_table_leases_instance_idx ON public.engine_table_leases USING btree (instance_id)"
+        },
+        {
+          "name": "engine_table_leases_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX engine_table_leases_pkey ON public.engine_table_leases USING btree (table_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "engine_table_leases_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (table_id)"
+        },
+        {
+          "name": "engine_table_leases_protocol_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))"
+        }
+      ]
+    }
+  ],
+  "observed_at": "2026-09-18T12:41:28.36445+00:00",
+  "private_tables": [
+    {
+      "rls": true,
+      "name": "f06_prepared_hand_cancellations",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "permit_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "lifecycle",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "custody_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "f06_prepared_hand_cancellations_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_prepared_hand_cancellations_pkey ON smarter_private.f06_prepared_hand_cancellations USING btree (permit_id)"
+        },
+        {
+          "name": "f06_prepared_hand_cancellations_table_id_hand_number_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_prepared_hand_cancellations_table_id_hand_number_key ON smarter_private.f06_prepared_hand_cancellations USING btree (table_id, hand_number)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "f06_prepared_cancellation_immutable",
+          "enabled": "O",
+          "function": "smarter_private.f06_prepared_cancellation_immutable()",
+          "definition": "CREATE TRIGGER f06_prepared_cancellation_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_prepared_hand_cancellations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_prepared_cancellation_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "f06_prepared_hand_cancellations_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (permit_id)"
+        },
+        {
+          "name": "f06_prepared_hand_cancellations_table_id_hand_number_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (table_id, hand_number)"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "f06_no_start_continuations",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "receipt_id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "break_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "permit_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "lifecycle",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "original_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "current_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "park",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "permit",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "roster",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "prior_committed",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "f06_no_start_continuations_break_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_no_start_continuations_break_id_key ON smarter_private.f06_no_start_continuations USING btree (break_id)"
+        },
+        {
+          "name": "f06_no_start_continuations_permit_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_no_start_continuations_permit_id_key ON smarter_private.f06_no_start_continuations USING btree (permit_id)"
+        },
+        {
+          "name": "f06_no_start_continuations_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_no_start_continuations_pkey ON smarter_private.f06_no_start_continuations USING btree (receipt_id)"
+        },
+        {
+          "name": "f06_no_start_continuations_table_id_hand_number_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_no_start_continuations_table_id_hand_number_key ON smarter_private.f06_no_start_continuations USING btree (table_id, hand_number)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "f06_no_start_continuation_immutable",
+          "enabled": "O",
+          "function": "smarter_private.f06_no_start_continuation_immutable()",
+          "definition": "CREATE TRIGGER f06_no_start_continuation_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_no_start_continuations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_no_start_continuation_immutable()"
+        },
+        {
+          "name": "f06_no_start_continuation_no_truncate",
+          "enabled": "O",
+          "function": "smarter_private.f06_no_start_continuation_immutable()",
+          "definition": "CREATE TRIGGER f06_no_start_continuation_no_truncate BEFORE TRUNCATE ON smarter_private.f06_no_start_continuations FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.f06_no_start_continuation_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "f06_no_start_continuations_break_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (break_id)"
+        },
+        {
+          "name": "f06_no_start_continuations_permit_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (permit_id)"
+        },
+        {
+          "name": "f06_no_start_continuations_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (receipt_id)"
+        },
+        {
+          "name": "f06_no_start_continuations_table_id_hand_number_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (table_id, hand_number)"
+        }
+      ]
+    }
+  ],
+  "trigger_functions": [
+    {
+      "owner": "postgres",
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "smarter_private.f06_prepared_cancellation_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_prepared_cancellation_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_PREPARED_CANCELLATION_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+      "source_md5": "55b942212973a9f10ba6a6d3174bf048",
+      "definition_md5": "02bf681ff7ba388c19cbdebb9efe42ac",
+      "security_definer": false
+    },
+    {
+      "owner": "postgres",
+      "config": [
+        "search_path=pg_catalog, public, smarter_private"
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "smarter_private.f06_cancelled_preparation_writer_guard()",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE t uuid;\nBEGIN\n -- Resolve the table even before BEGIN is visible; an absent permit cannot\n -- let an already-started writer cross cancellation's exclusive lane.\n SELECT tournament_id INTO t FROM public.tables WHERE id=NEW.table_id;\n IF t IS NOT NULL THEN\n IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1',0))\n OR NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'; END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_prepared_hand_cancellations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number)\n OR EXISTS(SELECT 1 FROM smarter_private.f06_no_start_continuations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number) THEN\n RAISE EXCEPTION 'F06_CANCELLED_PREPARATION_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN NEW;\nEND $function$\n",
+      "source_md5": "2e7bb0d5bdd6b540eb9974bb78743e46",
+      "definition_md5": "a7467e2cb64bab202a359eed42432299",
+      "security_definer": true
+    },
+    {
+      "owner": "postgres",
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "smarter_private.f06_no_start_continuation_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_no_start_continuation_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_CONTINUATION_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+      "source_md5": "a180b238189c1c47641a787c989b22b1",
+      "definition_md5": "2c87da2a00030dcc36ecb62bf51b2a89",
+      "security_definer": false
+    }
+  ]
+}

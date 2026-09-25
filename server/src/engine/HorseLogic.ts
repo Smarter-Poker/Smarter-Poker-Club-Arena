@@ -942,6 +942,12 @@ export interface HorseGameStateV2 extends HorseGameState {
   maxRaiseTo?: number | null;
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   fixedBetSize?: number | null;
+  /**
+   * KILL POT (kill-v1): the hand's effective fixed-limit small bet. Equals
+   * bigBlind except on a kill hand, where it is the kill's raised small bet.
+   * Null or absent off fixed limit (and on older fixtures, meaning bigBlind).
+   */
+  fixedLimitSmallBet?: number | null;
   wagersCapped?: boolean;
   commitmentCapRemaining?: number | null;
   /** Live side-pot layers with exact eligibility, before settlement. */
@@ -969,6 +975,8 @@ export interface HorseGameStateV2 extends HorseGameState {
     contextStatus?: TournamentContextStatus;
     contextIssues?: string[];
     sourceAgeMs?: number | null;
+    /** Observational source/hand identity. Bound by the worker, excluded from RNG sampling. */
+    contextProvenance?: import('./HorseTournamentContextProvenance.js').HorseTournamentDecisionProvenance;
     tournamentId?: string | null;
     tournamentType?: string;
     tournamentStatus?: string;

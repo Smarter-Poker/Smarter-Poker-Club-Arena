@@ -13,7 +13,8 @@
   gap: 7px;
   color: #aabdd0;
 }
-.entry input {
+.entry input,
+.entry select {
   box-sizing: border-box;
   width: 100%;
   min-height: 46px;
@@ -41,6 +42,21 @@
   accent-color: #30b9ff;
   flex: none;
 }
+.offer {
+  min-height: 44px;
+  padding: 8px 0;
+  background: transparent;
+  color: #45adff;
+  border: 0;
+  text-align: left;
+  font:
+    700 18px 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
+/* The Plinko drop selector (R6): the same plate the console's bays use for a
+   control, printed with the value and the drops it makes. Nothing is pressed
+   until the player presses it. */
 .drops {
   border: 0;
   margin: 0;
@@ -48,44 +64,51 @@
   min-width: 0;
 }
 .drops legend {
-  color: #b9cce1;
+  color: #99acc3;
+  font-size: 12px;
   padding: 0 0 8px;
 }
 .choices {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
 }
 .choices button {
   display: grid;
   gap: 2px;
-  min-height: 54px;
+  min-height: 56px;
   min-width: 0;
-  padding: 7px 3px;
-  border-radius: 6px;
-  border: 1px solid #3c526d;
-  background: linear-gradient(#24374d, #152437);
-  color: #d5e3f3;
+  padding: 8px 4px;
+  border-radius: 7px;
+  border: 1px solid #486581;
+  background: #203650;
+  color: #ecf4ff;
   cursor: pointer;
-  box-shadow: inset 0 1px #ffffff17;
+  font: inherit;
 }
 .choices button[aria-pressed='true'] {
-  background: linear-gradient(#124e76, #0c314e);
-  border-color: #52c8ff;
-  box-shadow:
-    inset 0 0 0 1px #52c8ff,
-    0 0 14px #168ec12b;
-  color: #fff;
+  background: linear-gradient(#32b4f5, #0973c3);
+  border-color: #64cdff;
+  color: #031525;
 }
 .choices strong {
-  font-size: 17px;
-}
-.choices strong span {
-  color: #68ceff;
-  font-size: 10px;
+  font:
+    700 20px/1.1 'Roboto Condensed',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 .choices small {
   font-size: 11px;
+}
+.choices button[aria-pressed='true'] small {
+  color: #062036;
+}
+.promise {
+  color: #ffd98a;
+  font-weight: 700;
+}
+.entry[data-guarantee='super'] > span {
+  color: #ffd98a;
 }
 .total {
   margin: 0;
@@ -117,8 +140,8 @@
   opacity: 0.45;
   cursor: default;
 }
-@media (max-width: 760px) {
-  .choices {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+
+.entry select {
+  min-width: 0;
+  font-size: 16px;
 }

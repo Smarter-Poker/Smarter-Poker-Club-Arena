@@ -1,0 +1,22 @@
+{
+  "_owner": "agent/codex/union-spin-mixed-cutover-20260918",
+  "_comment": "Guarded successor source, not an installed-production claim. Original mixed-cutover Spin proof is created only by the existing settlement transaction; immutable legacy batches remain unchanged.",
+  "tables": ["accounting_mixed_cutover_spin_fee_proofs"],
+  "functions": [
+    "fn_accounting_mixed_cutover_spin_proof_valid",
+    "fn_accounting_qualify_mixed_cutover_spin_fee"
+  ],
+  "columns": {
+    "accounting_mixed_cutover_spin_fee_proofs": [
+      "rake_record_id",
+      "tournament_id",
+      "cutover_at",
+      "original_batch",
+      "source_manifest",
+      "original_evidence",
+      "canonical_sources",
+      "qualified_at",
+      "transaction_id"
+    ]
+  }
+}

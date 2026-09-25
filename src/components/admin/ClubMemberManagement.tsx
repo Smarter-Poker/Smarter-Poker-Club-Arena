@@ -9,7 +9,6 @@ import { CLUB_ROLES, ROLE_LABEL, normaliseRole, type ClubRole } from '../../type
 import { roleColor } from '../club/RoleBadge';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { MembershipService } from '../../services/MembershipService';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -177,28 +176,18 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     }
   };
 
-  // A PostgREST update that matches no row (RLS said no, or the row is gone)
-  // answers 204 with no error. `.select()` makes the row count visible, so a
-  // refusal is reported as one instead of as success.
+  // club_members.status is server owned (trg_club_members_status_guard refuses
+  // a browser write), so Ban and Unban go through the one status door,
+  // fn_club_set_member_status via MembershipService.updateStatus. It resolves
+  // only when the server confirms the member now has the status asked for, and
+  // otherwise throws the server's refusal, which is what the toast shows.
   const toggleBan = async (memberId: string, currentlyBanned: boolean) => {
     if (busyId) return;
     setBusyId(memberId);
     try {
-      const resolvedId = await resolveClubUUID(clubId);
-      const { data, error } = await supabase
-        .from('club_members')
-        .update({ status: currentlyBanned ? 'active' : 'banned' })
-        .eq('club_id', resolvedId)
-        .eq('user_id', memberId)
-        .select('user_id');
-
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('The Club Did Not Accept The Change. Your Role May Not Allow It.');
-      }
+      await MembershipService.updateStatus(clubId, memberId, currentlyBanned ? 'active' : 'banned');
 
       if (isMounted.current) toast.success(currentlyBanned ? 'Member Unbanned' : 'Member Banned');
-      masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
       reportError(err, 'ClubMemberManagement.toggleBan');

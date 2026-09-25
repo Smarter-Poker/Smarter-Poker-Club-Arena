@@ -64,17 +64,22 @@ describe('VIP Cards Modal', () => {
     const onClose = vi.fn();
 
     const view = render(<VIPCardsModal isOpen={true} onClose={onClose} vipStatus="none" />);
-    const close = screen.getByRole('button', { name: 'Close VIP Benefits' });
+    /* The first focusable is the X in the console's corner since 2026-09-23
+       (Dan: every popup closes from its top right); the foot's Close plate is
+       still there, further down the order. */
+    const corner = screen.getByRole('button', { name: 'Close' });
+    expect(corner.className).toContain('sc__close');
+    expect(screen.getByRole('button', { name: 'Close VIP Benefits' })).toBeTruthy();
     const join = screen.getByRole('link', { name: 'Join Club Arena For A Membership' });
 
-    await waitFor(() => expect(close).toHaveFocus());
+    await waitFor(() => expect(corner).toHaveFocus());
     expect(document.body.style.overflow).toBe('hidden');
 
     join.focus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(close).toHaveFocus();
+    expect(corner).toHaveFocus();
 
-    close.focus();
+    corner.focus();
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(join).toHaveFocus();
 

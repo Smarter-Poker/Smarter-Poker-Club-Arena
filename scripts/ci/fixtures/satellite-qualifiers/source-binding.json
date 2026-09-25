@@ -1,0 +1,23 @@
+{
+  "description": "Exact empty canonical catalog plus retained real financial closure; no production business data or financial stubs. Synthetic opening and future ABI are confined to the private test cluster.",
+  "base_sql_sha256": "f3cde7bbfa44bc027b37c09bf5fb6d937ebc2a9058de9228389958916caaf70f",
+  "financial_foundation_sha256": "fd06746931e108a9a111c7e711d761f486b205f57eb4152457fc2d0877f3f0a1",
+  "files": {
+    "current-committed-terms-20260917.json": "e1ad04af2d8891199009874df4667c7f2ba99fc2dc5443933c85443a5774c4f5",
+    "current-dependencies-level2.json": "0d8b13d3d89bcc73230b8d3d22dce2d43b782d01def9363a24bb96ad96ead18b",
+    "current-dependencies-level3.json": "373569abfef1a2f90b71434a1d885bc7053cc431fcb759bcfb1987c49c7d9e78",
+    "current-dependencies-level4.json": "d03df815df7389f1d82a954a621205e64b9de35b67b93dfca49a15992a9faaf1",
+    "current-dependencies-level5.json": "239d754e540d4f556a4f361e2292c20e6d2f4cebbe9ca333d0c40f575d0929a3",
+    "current-dependent-guards-20260917.json": "eed6ae20452c3bcd31cc1a4ad74854fbafe579b999aaf79788a7c0ada6eeecec",
+    "current-entry-close-functions-20260917.json": "848ece62fd1d96eeaf95ac3b6dec3159576f5ebd68ae4b10e6f2d78bb490dd07",
+    "current-entry-close-table-20260917.json": "b1cc77864ffc14627037515d8372453eb769f8ff0ed2fa3861d51a0c681298e3",
+    "current-fee-cutover-20260917.json": "6fef211036b15c19f36f8e3fc1c1f22ec42889e9eacc071e9b6f11b7b0db4f83",
+    "current-rake-triggers-20260917.json": "1ece9307972c3e25fdbaedaeece05e2bf3a589cef7edcb92433b4cd7466510b8",
+    "current-rank-survivors-20260917.json": "6f564f34574df8aadba1d8100816e05d19c4ae0a016c5b80a8b5042f30615515",
+    "current-satellite-dependencies.json": "13a90e7e01714f379bbd336ce0fc401e849fcb969d8f72ed7cfe029fcb5f16d2",
+    "current-satellite-settlement.json": "1b965bebaa809fd5d22eb34530b23a8e5e800177730921823d909a41c4172e44",
+    "current-tables-20260917.json": "cd24a8b6fe53f76909ac66d079cb5d3748f3d4293d4fbcb5bb592e571dd4646e",
+    "current-terminal-triggers-20260917.json": "32d58034247a9c9eb590273185a50352309f3e4a1d13e556238971a557b180d5",
+    "financial-foundation-supplement.sql": "99139dc7cfb0cb6a1f4b58edbfa5a2ad23a989cf8e7c7376a08084aa8b1a146d"
+  }
+}

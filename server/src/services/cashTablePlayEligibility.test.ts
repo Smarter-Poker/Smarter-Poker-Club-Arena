@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertDiamondCashSettingsOpen,
+  assertDiamondTournamentSettingsOpen,
   DiamondCashPolicyClosedError,
 } from './cashTablePlayEligibility.js';
 
@@ -92,5 +93,81 @@ describe('Diamond cash policy evidence', () => {
         undefined
       )
     ).toThrow('Diamond cash settings read failed');
+  });
+});
+
+describe('Diamond tournament policy evidence (Phase 8)', () => {
+  it('opens only on an error-free explicit true bound to this arena', () => {
+    expect(() =>
+      assertDiamondTournamentSettingsOpen(
+        TABLE,
+        ARENA,
+        { club_id: ARENA, tournaments_enabled: true },
+        null
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertDiamondTournamentSettingsOpen(
+        TABLE,
+        ARENA,
+        { club_id: ARENA, tournaments_enabled: false },
+        null
+      )
+    ).toThrow('Diamond Tournaments Are Not Open');
+  });
+
+  it('reads the tournament switch, never the cash one', () => {
+    // cash open, tournaments closed: a tournament table is refused
+    expect(() =>
+      assertDiamondTournamentSettingsOpen(
+        TABLE,
+        ARENA,
+        { club_id: ARENA, cash_games_enabled: true, tournaments_enabled: false },
+        null
+      )
+    ).toThrow('Diamond Tournaments Are Not Open');
+    // a row that carries only the cash switch is malformed for a tournament read
+    expect(() =>
+      assertDiamondTournamentSettingsOpen(
+        TABLE,
+        ARENA,
+        { club_id: ARENA, cash_games_enabled: true },
+        null
+      )
+    ).toThrow(/unavailable|malformed/);
+  });
+
+  it.each(
+    [
+      null,
+      undefined,
+      [],
+      { club_id: 'other-arena', tournaments_enabled: false },
+      { club_id: ARENA, tournaments_enabled: null },
+      { club_id: ARENA, tournaments_enabled: 'false' },
+      { club_id: ARENA, tournaments_enabled: 0 },
+    ].map((data) => ({ data }))
+  )('keeps missing, malformed or incorrectly bound data actionable: %j', ({ data }) => {
+    expect(() => assertDiamondTournamentSettingsOpen(TABLE, ARENA, data, null)).toThrow(
+      /unavailable|malformed/
+    );
+  });
+
+  it.each([false, true])('a read failure is unknown even when the body says %s', (enabled) => {
+    const cause = new Error('supabase_timeout');
+    try {
+      assertDiamondTournamentSettingsOpen(
+        TABLE,
+        ARENA,
+        { club_id: ARENA, tournaments_enabled: enabled },
+        cause
+      );
+      throw new Error('missing failure');
+    } catch (error) {
+      expect(error).toMatchObject({
+        message: 'Diamond tournament settings read failed: supabase_timeout',
+        cause,
+      });
+    }
   });
 });

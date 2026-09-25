@@ -24,6 +24,8 @@ const pending = () => ({
 function setup() {
   const engine = Object.create(ServerTableEngine.prototype) as any;
   engine.tableId = TABLE;
+  engine.running = true;
+  engine.tournamentMovePauseOwners = new Set();
   engine.tableInfo = { cluster_id: 'game' };
   engine.seatedPlayers = [
     { seat_id: SEAT, user_id: USER, occupancy_id: ORIGINAL, seat_number: 1, stack: 10 },

@@ -45,13 +45,13 @@ finish_fixture() {
         result=1
       fi
     fi
-    if ! "$pgbin/pg_ctl" -D "$fixture/data" -m immediate stop > "$fixture/stop.log" 2>&1; then
+    if ! LC_ALL=C LANG=C "$pgbin/pg_ctl" -D "$fixture/data" -m immediate stop > "$fixture/stop.log" 2>&1; then
       result=1
       shutdown_failed=1
     fi
     started=0
   fi
-  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
+  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log payee-document-privacy.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
     if [ -f "$fixture/$artifact" ]; then
       if ! cp "$fixture/$artifact" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/$artifact"; then
         result=1
@@ -94,7 +94,14 @@ python3 "$root/tests/fixtures/pnl-evidence/verify-wrapper-source-binding.py"
 
 # Use sequential independent clusters. The real pg_cron launcher can keep a
 # database connection even with job launching disabled, so do not clone it.
-for phase in rejection-provenance rejection-authority rejection-privacy-bypass rejection-privacy rejection-messenger-reader rejection-push-writer rejection-push-rotation rejection-credit-request rejection-cashier-document rejection-correction-document rejection-browser-period rejection-correction-writer acceptance correction-writer-concurrency rejection-credit-reduction credit-reduction-concurrency; do
+phases=(rejection-provenance rejection-authority rejection-privacy-bypass rejection-privacy rejection-messenger-reader rejection-push-writer rejection-push-rotation rejection-credit-request rejection-cashier-document rejection-correction-document rejection-browser-period rejection-correction-writer acceptance spin-mixed-cutover legacy-fee-finality sep8-spin-custody earlybird-fee-custody correction-writer-concurrency rejection-credit-reduction credit-reduction-concurrency)
+# A focused invocation reuses this exact original schema and activation path.
+# The normal protected invocation still executes every existing phase.
+if [ "${1:-}" = --spin-mixed-cutover-only ]; then phases=(spin-mixed-cutover); fi
+if [ "${1:-}" = --legacy-fee-finality-only ]; then phases=(legacy-fee-finality); fi
+if [ "${1:-}" = --sep8-spin-custody-only ]; then phases=(sep8-spin-custody); fi
+if [ "${1:-}" = --earlybird-fee-custody-only ]; then phases=(earlybird-fee-custody); fi
+for phase in "${phases[@]}"; do
 mkdir "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
 fixture=$(mktemp -d "$ACCOUNTING_FIXTURE_PARENT/accounting-activation.XXXXXX")
 fixture_retained=0
@@ -113,8 +120,12 @@ fixture_bootstrap=postgres
 # The bootstrap superuser cannot be demoted. Only the acceptance cluster later
 # tests managed postgres permissions, so give it a separate bootstrap identity.
 if [ "$phase" = acceptance ]; then fixture_bootstrap=accounting_fixture_bootstrap; fi
-"$pgbin/initdb" -D "$fixture/data" -U "$fixture_bootstrap" -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
-"$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
+# A UTF-8 locale inherited from the caller makes Apple's libc resolve it on a
+# helper thread and the postmaster refuses to start ("postmaster became
+# multithreaded during startup"). This cluster is already --no-locale/UTF8, so
+# declare the C locale for its own lifecycle commands.
+LC_ALL=C LANG=C "$pgbin/initdb" -D "$fixture/data" -U "$fixture_bootstrap" -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
+LC_ALL=C LANG=C "$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
   -o "-k $fixture/socket -p 55507 -h '' -c shared_preload_libraries=pg_cron -c cron.database_name=$fixture_db -c cron.launch_active_jobs=off" start > "$fixture/start.log" 2>&1
 started=1
 if [ "$phase" = acceptance ]; then
@@ -156,7 +167,22 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U postgres -h "$fixture/socket" -p
 # Actual extension-owned unrelated job: disabled launcher makes it inert.
 "${psql[@]}" -A -t -d "$fixture_db" -c "SELECT cron.schedule('fixture-full-activation-unrelated','17 * * * *','SELECT 1');" > "$fixture/cron-fixture.log"
 "${psql[@]}" -A -t -d "$fixture_db" -c 'SELECT jsonb_agg(to_jsonb(j) ORDER BY j.jobid) FROM cron.job j;' > "$fixture/cron-before.json"
-if [ "$phase" = rejection-privacy ]; then
+if [ "$phase" = earlybird-fee-custody ]; then
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
+python3 "$root/scripts/dev/qualify-sep8-spin-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/current-custody" --bootstrap-only
+python3 "$root/scripts/dev/qualify-earlybird-fee-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = sep8-spin-custody ]; then
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
+python3 "$root/scripts/dev/qualify-sep8-spin-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = legacy-fee-finality ]; then
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = spin-mixed-cutover ]; then
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-spin-mixed-cutover.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = rejection-privacy ]; then
 # Earlier guards correctly reject client inheritance of service_role. Stage
 # the exact source-bound prefix first so this distinct probe reaches 161500.
 # This qualifies that privacy component's guard, not a full-bundle rollback.
@@ -370,6 +396,8 @@ PY
   -f "$root/tests/fixtures/accounting-alert-38644/regression.sql" 2>&1 | tee "$fixture/historical-conflict.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/pnl-evidence/hooks-seed.sql" \
+  -f "$root/supabase/migrations/20260921023420_the_squareup_quotes_the_recorded_eco_and_the_rake_leg_names_.sql" \
+  -f "$root/supabase/migrations/20260921065613_the_tournament_rake_leg_names_the_club_it_was_earned_in.sql" \
   -f "$root/tests/fixtures/pnl-evidence/hooks-regression.sql" 2>&1 | tee "$fixture/pnl-hooks.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/rakeback-write-authority/regression.sql" 2>&1 | tee "$fixture/period-authority.log"
@@ -379,6 +407,14 @@ PY
   -f "$root/tests/fixtures/messenger-private-accounting/messenger-private-readers-regression.sql" 2>&1 | tee "$fixture/messenger-privacy.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/messenger-private-accounting/messenger-private-weekly-summary-regression.sql" 2>&1 | tee "$fixture/messenger-weekly.log"
+# A document addressed to a person is private to that person, a rakeback
+# distribution belongs to its two parties, and a roster is not enumerable. The
+# preimage commits the three defects as the installed predecessor answers them,
+# the candidate is applied, and the regression asks the same questions again.
+"${psql[@]}" -A -t -d "$fixture_db" \
+  -f "$root/tests/fixtures/messenger-private-accounting/payee-document-privacy-preimage.sql" \
+  -f "$root/supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql" \
+  -f "$root/tests/fixtures/messenger-private-accounting/payee-document-privacy-regression.sql" 2>&1 | tee "$fixture/payee-document-privacy.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/push-subscription-ownership/push-subscription-ownership-regression.sql" 2>&1 | tee "$fixture/push-ownership.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
@@ -406,6 +442,9 @@ python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regressi
 fi
 finish_fixture
 done
+# The focused command is complete after its own cleanup; unrelated maintained
+# post-loop suites remain mandatory for the normal protected invocation.
+if [ "${1:-}" = --spin-mixed-cutover-only ] || [ "${1:-}" = --legacy-fee-finality-only ] || [ "${1:-}" = --sep8-spin-custody-only ] || [ "${1:-}" = --earlybird-fee-custody-only ]; then exit 0; fi
 
 # Original boundary capture is a separate prospective successor, never part of
 # the sealed installed 37-component migration or a replay of it.

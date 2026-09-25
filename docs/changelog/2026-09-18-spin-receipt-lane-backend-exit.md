@@ -1,0 +1,9 @@
+# Spin receipt-lane backend exit observation
+
+The Spin qualification in CI run 35304725360 passed its nine receipt-lane business cases and observed successful exits for all three psql clients, then refused because its immediate PostgreSQL readback still saw one backend and eight locks. The successful run 35303668582 used the same receipt-lane and Session source hashes and observed zero at its first read. A client exit is not proof that its server backend has finished exiting.
+
+The receipt-lane caller now uses the existing `observe_backend_cleanup` helper. It retains every observation within the original five-second cleanup deadline and requires both backend and lock counts to become zero before that deadline. It neither terminates a backend nor repeats a business operation. All financial assertions, SQL bodies, role checks and cleanup refusals remain unchanged. The exact source manifest and wrapper pin include the corrected caller.
+
+Two controls in the existing `test_spin_expiry_wrapper.py` execute the actual receipt-lane main cleanup path with a controlled psql transport. They reproduce the old single-observation refusal, verify delayed server exit, and retain failure when the original deadline expires. They preserve exact-once business execution and the original cleanup deadline for all clients. These controls are not database qualification; the existing isolated PostgreSQL candidate image remains the native gate.
+
+Validation before commit: both new controls fail on the original caller and pass after the repair; the receipt-lane class passes 12/12 and the full wrapper source controls pass 114/114. The first native invocation correctly refused the uncommitted manifest before allocating or starting PostgreSQL. Native candidate qualification remains pending the exact committed source; that refusal is not a failed database behavior result.

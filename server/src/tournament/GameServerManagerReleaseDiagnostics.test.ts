@@ -7,6 +7,12 @@ const tournamentId = 'aaaaaaaa-0000-4000-8000-000000000001';
 const generation = 'bbbbbbbb-0000-4000-8000-000000000001';
 const successorGeneration = 'cccccccc-0000-4000-8000-000000000001';
 class Harness extends TournamentManagerBase {
+  async captureDrainedF06Custody() {
+    return null;
+  }
+  async captureMixedF06Custody() {
+    return null;
+  }
   protected startEliminationChecker() {}
   protected async recalculateEliminatedPrizes() {
     return true;
@@ -21,6 +27,9 @@ function manager(gen = generation): any {
 function server(original: any): any {
   return Object.assign(Object.create(GameServer.prototype), {
     tournamentEngines: new Map([[tournamentId, original]]),
+    drainedF06TournamentCustody: new Map(),
+    tournamentManagerAdmissionLeaseGenerations: new Map(),
+    completedF06TournamentCustody: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentDiagnosticRetirements: new Map(),
     tournamentManagerLeaseReleaseOperations: new Map(),

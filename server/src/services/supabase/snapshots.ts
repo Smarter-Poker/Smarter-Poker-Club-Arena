@@ -219,6 +219,7 @@ export interface ParkedTimeBank {
   initialSeconds: number;
   baseSeconds: number;
   dbConsumedSeconds: number;
+  unlimitedActivations?: boolean;
 }
 
 export async function savePresenceAtPark(params: {
@@ -278,7 +279,16 @@ export async function loadPresenceFromPark(
   }
 }
 
-/** Read only explicitly initialized banks from this exact, still-current park. */
+/**
+ * Read explicitly initialized banks at the caller's proven completed-hand
+ * boundary. Startup reads authoritative history and excludes crash recovery
+ * before reaching this function; roster adoption then requires the exact
+ * occupancy. Those identities, not elapsed wall time, establish validity.
+ * A frozen table can remain at the same boundary throughout a long outage.
+ * Expiring its bank after twenty minutes loses purchased time (or grants a
+ * second allowance), even though neither a hand nor a seat changed.
+ * Presence alone still uses its TTL because it lacks these identity guards.
+ */
 export async function loadTimeBanksFromPark(
   tableId: string,
   handNumber: number,
@@ -293,12 +303,14 @@ export async function loadTimeBanksFromPark(
   const snapshot = data?.time_bank_snapshot;
   const parkedAt = Date.parse(String(data?.parked_at));
   if (
+    !Number.isSafeInteger(handNumber) ||
+    handNumber < 0 ||
+    !Number.isFinite(nowMs) ||
     !snapshot ||
     snapshot.version !== 1 ||
     snapshot.handNumber !== handNumber ||
     !Number.isFinite(parkedAt) ||
     nowMs < parkedAt ||
-    nowMs - parkedAt > PARKED_PRESENCE_FRESH_MS ||
     Date.parse(String(snapshot.parkedAt)) !== parkedAt ||
     !snapshot.players ||
     typeof snapshot.players !== 'object' ||
@@ -320,6 +332,7 @@ export async function loadTimeBanksFromPark(
         bank.dbConsumedSeconds,
       ].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0) ||
       !Number.isSafeInteger(bank.usesRemaining) ||
+      (bank.unlimitedActivations !== undefined && typeof bank.unlimitedActivations !== 'boolean') ||
       bank.remainingSeconds > bank.initialSeconds ||
       bank.baseSeconds > bank.initialSeconds ||
       bank.dbConsumedSeconds > bank.initialSeconds - bank.baseSeconds

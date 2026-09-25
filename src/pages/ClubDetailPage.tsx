@@ -30,13 +30,16 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { withClubContext } from '../utils/clubScopedPath';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { gameManagementService } from '../services/GameManagementService';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { operatingAccessRefusal } from '../services/CommerceDeskService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -980,6 +983,15 @@ export default function ClubDetailPage() {
             p_approve: action === 'approve',
           });
           if (error || !res?.success) {
+            // 20260924102056: an enforced commerce admission refuses a NEW
+            // member with the server's own sentence (code
+            // operating_access_required). Show it as written; the generic
+            // toast below would hide why the approval did not happen.
+            const admission = error ? null : operatingAccessRefusal(res);
+            if (admission) {
+              toast.error(admission);
+              break;
+            }
             throw new Error(res?.error || `Failed to ${action} request`);
           }
           // Drop from the pending list; approved members show up as active on reload.
@@ -1004,10 +1016,11 @@ export default function ClubDetailPage() {
           toast.success('Member Demoted To Player');
           break;
         }
+        // fn_club_set_member_status decides who may suspend whom and records
+        // it; updateStatus throws the server's refusal text, shown below.
         case 'suspend': {
-          const ok = await MembershipService.updateStatus(clubId, memberUserId, 'suspended' as any);
-          if (!ok) throw new Error('Failed to suspend member');
-          toast.success('Member suspended');
+          await MembershipService.updateStatus(clubId, memberUserId, 'suspended');
+          toast.success('Member Suspended');
           break;
         }
         case 'remove': {
@@ -1024,7 +1037,11 @@ export default function ClubDetailPage() {
       }
       loadClubData();
     } catch (error) {
-      toast.error(`Failed to ${action} member`);
+      toast.error(
+        action === 'suspend'
+          ? safeErrorMessage(error, 'Could Not Suspend This Member')
+          : `Failed to ${action} member`
+      );
     } finally {
       setMemberActionLoading(null);
     }
@@ -1344,11 +1361,11 @@ export default function ClubDetailPage() {
                 on ProfilePage. One surface owns claiming now; this is a way in. */}
             <div className={styles.card}>
               <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem' }}>Daily Challenges</h3>
-              <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#8a9aaa' }}>
+              <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#9aa5b3' }}>
                 A Fresh Set Of Challenges Every Day, Plus Weekly And Monthly Goals.
               </p>
               <button
-                onClick={() => navigate('/challenges')}
+                onClick={() => navigate(withClubContext('/challenges', clubId))}
                 style={{
                   padding: '8px 16px',
                   borderRadius: 8,

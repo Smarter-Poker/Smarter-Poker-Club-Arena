@@ -1,0 +1,11 @@
+# Snapshot history reads use the table and hand
+
+Completed-hand and later-hand proof queries used a sequential scan of the snapshot heap because the existing table index covers only incomplete hands. The retained production plan estimated cost 832353.29 for the table/hand range; the heap was 6,792,896,512 bytes. These reads could exceed the owning operation's timeout before proving custody.
+
+A full, nonunique btree on `(table_id, hand_number)` supplies equality and range access for all snapshots. It preserves duplicate historical rows and every existing proof predicate, including later-hand absence and row locking. No game authority, snapshot, stack, receipt or financial result changes.
+
+The owning operator executes the single statement in `scripts/ci/probes/f06-shared-hand-lane/snapshot-index/build-online.sql` over the existing approved direct/session connection, outside a transaction and subject to the existing maintenance safeguards. This follows `scripts/ops/build-stats-runout-index-concurrently.sql` and the recorded online installation in migration `20260909070610`. PostgreSQL requires concurrent builds outside a transaction block: [CREATE INDEX documentation](https://www.postgresql.org/docs/17/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY).
+
+The normal short recording migration requires that the online build already completed. It verifies exact name, relation, owner, default btree key types/order, nonuniqueness, no predicate/expression/included columns and valid/ready/live state. Missing or mismatched state refuses; there is no blocking build fallback. A valid existing index is reused. An unknown or interrupted build requires the owner to inspect that same operation and catalog, without a blind retry, scheduled job or global timeout change.
+
+Regression protection is invoked by the existing F06 native Accounting owner. Its isolated fixture retains duplicate completed snapshots, reproduces the sequential scans, executes the actual concurrent statement, and verifies equality, later range and `FOR SHARE` use the new index with identical rows. It rejects missing, incorrectly shaped, invalid, unready and wrongly owned indexes. Production build completion, catalog/history readback and bounded actual query plans remain separate delivery evidence.

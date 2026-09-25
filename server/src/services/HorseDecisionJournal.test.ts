@@ -336,6 +336,68 @@ describe('bounded immutable Horse archive custody', () => {
       },
       { synthetic: true }
     );
+  it('releases the catalog snapshot before segment I/O without mixing later writer commits', () => {
+    const dir = folder(),
+      writer = store(dir, { archive: options(dir) }),
+      first = recordForHand(1, 'committed'),
+      later = recordForHand(2, 'committed');
+    writer.append(first);
+    const reader = store(dir, { readOnly: true, archive: options(dir) });
+    const original = (reader as any).readSegment.bind(reader);
+    const read = vi.spyOn(reader as any, 'readSegment').mockImplementationOnce((meta) => {
+      // A real second SQLite connection must commit while this reader performs
+      // file/decompression work. DELETE journaling and busy_timeout stay real.
+      expect(writer.append(later)).toBe('recorded');
+      return original(meta);
+    });
+    try {
+      expect(reader.readHand(first.handKey)).toEqual([first]);
+      expect(read).toHaveBeenCalledOnce();
+    } finally {
+      read.mockRestore();
+    }
+    expect(reader.readHand(first.handKey)).toEqual([first, later]);
+  });
+  it.each(['committed', 'unrelated'])(
+    'retains captured pending %s custody after a writer finishes before decoding',
+    (pendingHand) => {
+      const dir = folder(),
+        writer = store(dir, { archive: options(dir) }),
+        native = catalog(dir),
+        first = recordForHand(1, 'committed'),
+        pending = recordForHand(2, pendingHand);
+      writer.append(first);
+      try {
+        native.exec(
+          "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+        );
+        expect(() => writer.append(pending)).toThrow('synthetic interruption');
+        const reader = store(dir, { readOnly: true, archive: options(dir) });
+        const original = (reader as any).readPendingSegments.bind(reader);
+        const decode = vi
+          .spyOn(reader as any, 'readPendingSegments')
+          .mockImplementationOnce((rows) => {
+            native.exec('DROP TRIGGER fail_index');
+            expect(writer.append(pending)).toBe('replayed');
+            return original(rows);
+          });
+        try {
+          if (pendingHand === 'committed')
+            expect(() => reader.readHand(first.handKey)).toThrow('Horse archive custody pending');
+          else expect(reader.readHand(first.handKey)).toEqual([first]);
+          expect(decode).toHaveBeenCalledOnce();
+        } finally {
+          decode.mockRestore();
+        }
+        expect(reader.storageStats().archive?.pendingSegments).toBe(0);
+        expect(reader.readHand(first.handKey)).toEqual(
+          pendingHand === 'committed' ? [first, pending] : [first]
+        );
+      } finally {
+        native.close();
+      }
+    }
+  );
   it.each([false, true])(
     'reads an unrelated committed hand during pending custody (readOnly=%s)',
     (readOnly) => {
@@ -562,6 +624,106 @@ describe('bounded immutable Horse archive custody', () => {
     });
     expect(readFileSync(join(dir, 'archive', 'segments', files[0]!))).toEqual(bytes);
   });
+  it('allocates catalog headroom for the existing archive without allocating the file eagerly', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    // Production exhausted 524288 pages at only 262387 of 500000 segments.
+    // The 4 GiB that followed covered ~6.7M records at the observed ~639 B
+    // each, short of the 8,000,000-record cap; 6 GiB covers the cap (~5.12 GB)
+    // with margin, so the named record refusal is reached before SQLITE_FULL.
+    const allocation = 6 * 1024 * 1024 * 1024;
+    expect(Number(writer.prepare('PRAGMA max_page_count').get()!.max_page_count) * 4096).toBe(
+      allocation
+    );
+    expect(s.storageStats().archive).toMatchObject({
+      maxCatalogBytes: allocation,
+      // Read back from the writer's own pragma, not repeated from the source.
+      appliedMaxCatalogBytes: allocation,
+      maxRecords: 100 * 16,
+      maxRowid: 0,
+    });
+    const reader = store(dir, { readOnly: true, archive: options(dir) });
+    expect(reader.storageStats().archive).toMatchObject({
+      maxCatalogBytes: allocation,
+      appliedMaxCatalogBytes: null,
+    });
+    expect(statSync(join(dir, 'archive', 'horse-journal-archive.sqlite')).size).toBeLessThan(
+      1024 * 1024
+    );
+  });
+  it('recovers exact pending custody after real SQLite catalog exhaustion on writer reopen', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    // A test-only index trigger consumes physical pages during publication,
+    // after the compressed batch has been reserved. No fake SQLite error.
+    writer.exec(`CREATE TABLE capacity_fixture(bytes BLOB);
+      CREATE TRIGGER exhaust_index BEFORE INSERT ON archive_events BEGIN
+        INSERT INTO capacity_fixture VALUES(zeroblob(524288)); END;`);
+    // Enough headroom for the named pre-reservation estimate (under 100
+    // pages for two records) and too little for the trigger's 2 x 129 pages.
+    const pages = Number(writer.prepare('PRAGMA page_count').get()!.page_count);
+    writer.exec(`PRAGMA max_page_count=${pages + 200};`);
+    let capacityError: unknown;
+    try {
+      s.appendBatch([record(), record(2)]);
+    } catch (error) {
+      capacityError = error;
+    }
+    expect(capacityError).toMatchObject({ errcode: 13 });
+    expect(horseJournalCapacityReason(capacityError)).toBe('archive_storage_capacity');
+    expect(s.storageStats().archive).toMatchObject({ records: 2, segments: 1, pendingSegments: 1 });
+    expect(() => s.readHand(record().handKey)).toThrow('custody pending');
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(files).toHaveLength(1);
+    const bytes = readFileSync(join(dir, 'archive', 'segments', files[0]!));
+    s.close();
+    // The normal source-configured writer opening restores allocation before
+    // finishPending. Leave the trigger in place to prove real space is usable.
+    const recovered = store(dir, { archive: options(dir) });
+    expect(recovered.appendBatch([record(), record(2)])).toEqual(['replayed', 'replayed']);
+    expect(recovered.readHand(record().handKey)).toEqual([record(), record(2)]);
+    expect(recovered.storageStats().archive).toMatchObject({
+      records: 2,
+      segments: 1,
+      pendingSegments: 0,
+    });
+    expect(readFileSync(join(dir, 'archive', 'segments', files[0]!))).toEqual(bytes);
+    expect(recovered.append(record(3))).toBe('recorded');
+    expect(recovered.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+  });
+  it('refuses a batch the catalog cannot index by name before reserving anything', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    expect(s.append(record())).toBe('recorded');
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    const pages = Number(writer.prepare('PRAGMA page_count').get()!.page_count),
+      before = s.storageStats().archive!,
+      files = readdirSync(join(dir, 'archive', 'segments'));
+    // Fewer free pages than one batch's documented margin, as a real writer
+    // connection would see them; no fake SQLite error and no trigger.
+    writer.exec(`PRAGMA max_page_count=${pages + 8};`);
+    let capacityError: unknown;
+    try {
+      s.appendBatch([record(2), record(3)]);
+    } catch (error) {
+      capacityError = error;
+    }
+    expect(capacityError).toMatchObject({ message: 'horse_archive_catalog_capacity' });
+    expect(horseJournalCapacityReason(capacityError)).toBe('archive_catalog_capacity');
+    // Nothing was reserved: no pending row, no usage charge, no staged file,
+    // and the hand reads exactly what it read before.
+    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
+    expect(s.readHand(record().handKey)).toEqual([record()]);
+    expect(s.append(record())).toBe('replayed');
+    // A replayed-only batch reserves nothing, so it is not refused.
+    expect(() => s.appendBatch([record()])).not.toThrow();
+    writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
+    expect(s.appendBatch([record(2), record(3)])).toEqual(['recorded', 'recorded']);
+    expect(s.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+  });
   it('recovers publication interrupted between hard-link creation and staging unlink', () => {
     const dir = folder(),
       s = store(dir, { archive: options(dir) }),
@@ -716,6 +878,21 @@ describe('bounded immutable Horse archive custody', () => {
         type: 'ACK',
         receipts: [{ status: 'recorded', eventId: record(2).eventId }],
       });
+      const stats = next();
+      worker.postMessage({ type: 'STATS' });
+      expect(await stats).toMatchObject({
+        type: 'STATS',
+        stats: {
+          archive: {
+            records: 1,
+            segments: 1,
+            pendingSegments: 0,
+            maxRecords: 1600,
+            maxRowid: 1,
+            appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+          },
+        },
+      });
       const stopped = next();
       worker.postMessage({ type: 'STOP' });
       expect(await stopped).toEqual({ type: 'STOPPED' });
@@ -728,21 +905,148 @@ describe('bounded immutable Horse archive custody', () => {
 });
 
 describe('archive capacity reporting uses the existing terminal failure path', () => {
-  it.each(['archive_bytes', 'archive_segments', 'archive_storage_capacity'])(
-    'reports %s without acknowledging uncaptured records',
-    async (reason) => {
+  it.each([
+    'archive_bytes',
+    'archive_segments',
+    'archive_catalog_capacity',
+    'archive_storage_capacity',
+  ])('reports %s without acknowledging uncaptured records', async (reason) => {
+    const w = new FakeWorker(),
+      notes: string[] = [],
+      p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+    p.record('decision', 'hand', 'turn', {});
+    w.emit({ type: 'READY' });
+    w.emit({ type: 'UNAVAILABLE', reason });
+    p.record('decision', 'hand', 'turn2', {});
+    await p.stop();
+    expect(notes).toContain('phase15_journal_' + reason);
+    expect(notes).not.toContain('phase15_journal_recorded');
+    expect(notes).toContain('phase15_journal_capture_unavailable');
+    expect(w.terminate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the journal says why it stopped and shows itself to /health', () => {
+  it('logs exactly one structured line when capture stops, with the named reason', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
       const w = new FakeWorker(),
-        notes: string[] = [],
-        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+        p = new HorseDecisionJournalPublisher(w, () => {});
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'READY' });
-      w.emit({ type: 'UNAVAILABLE', reason });
+      expect(warn).not.toHaveBeenCalled();
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_catalog_capacity' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        '[HorseDecisionJournal] capture stopped mode=failed reason=archive_catalog_capacity'
+      );
+      // A second failure signal, another record and the stop do not log again.
+      w.emit({ type: 'UNAVAILABLE' });
       p.record('decision', 'hand', 'turn2', {});
       await p.stop();
-      expect(notes).toContain('phase15_journal_' + reason);
-      expect(notes).not.toContain('phase15_journal_recorded');
-      expect(notes).toContain('phase15_journal_capture_unavailable');
-      expect(w.terminate).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(p.health()).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'archive_catalog_capacity',
+        queued: 1,
+      });
+    } finally {
+      warn.mockRestore();
     }
-  );
+  });
+  it('names the publisher fence that gave up when the writer never said', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {});
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      const head = (w.sent[0] as { records: HorseJournalRecord[] }).records[0]!;
+      w.emit({
+        type: 'ACK',
+        receipts: [{ eventId: 'wrong', sha256: head.sha256, status: 'recorded' }],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        '[HorseDecisionJournal] capture stopped mode=failed reason=ack_mismatch'
+      );
+      expect(p.health().lastFailureReason).toBe('ack_mismatch');
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('answers health from its cache and asks a ready writer at most once a second', () => {
+    let clock = 0;
+    const w = new FakeWorker(),
+      p = new HorseDecisionJournalPublisher(w, () => {}, { now: () => clock });
+    expect(p.health()).toEqual({
+      mode: 'starting',
+      lastFailureReason: null,
+      queued: 0,
+      appliedMaxCatalogBytes: null,
+      maxCatalogBytes: null,
+      catalogBytes: null,
+      pendingSegments: null,
+      records: null,
+      maxRecords: null,
+      maxRowid: null,
+      statsAgeMs: null,
+    });
+    // A writer that is not ready is not asked.
+    expect(w.sent).toEqual([]);
+    w.emit({ type: 'READY' });
+    expect(p.health().mode).toBe('ready');
+    expect(w.sent).toEqual([{ type: 'STATS' }]);
+    // Unanswered: the probe does not wait and does not ask again yet.
+    clock = 500;
+    p.health();
+    expect(w.sent).toHaveLength(1);
+    const archive = {
+      compressedBytes: 10,
+      segments: 1,
+      records: 3,
+      pendingSegments: 0,
+      catalogBytes: 40960,
+      maxRowid: 3,
+      maxBytes: 1024,
+      maxSegments: 100,
+      maxRecords: 1600,
+      maxCatalogBytes: 6 * 1024 * 1024 * 1024,
+      appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+    };
+    w.emit({ type: 'STATS', stats: { legacy: {}, archive } });
+    clock = 700;
+    expect(p.health()).toMatchObject({
+      mode: 'ready',
+      appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+      maxCatalogBytes: 6 * 1024 * 1024 * 1024,
+      catalogBytes: 40960,
+      pendingSegments: 0,
+      records: 3,
+      maxRecords: 1600,
+      maxRowid: 3,
+      statsAgeMs: 200,
+    });
+    // The reply released the throttle, so the next probe asks again.
+    expect(w.sent).toEqual([{ type: 'STATS' }, { type: 'STATS' }]);
+    // A stats reply is never an acknowledgement and never a failure: the
+    // in-flight batch stays queued until its own exact ACK, and a malformed
+    // reply is ignored rather than treated as a broken ACK.
+    p.record('decision', 'hand', 'turn', {});
+    const batch = w.sent[2] as { records: HorseJournalRecord[] };
+    w.emit({ type: 'STATS', stats: null });
+    w.emit({ type: 'STATS', stats: { archive: { records: 'many' } } });
+    expect(p.health()).toMatchObject({ mode: 'ready', queued: 1, records: null });
+    w.emit({
+      type: 'ACK',
+      receipts: [
+        {
+          eventId: batch.records[0]!.eventId,
+          sha256: batch.records[0]!.sha256,
+          status: 'recorded',
+        },
+      ],
+    });
+    expect(p.health()).toMatchObject({ mode: 'ready', queued: 0 });
+  });
 });

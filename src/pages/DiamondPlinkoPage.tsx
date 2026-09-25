@@ -1,12 +1,16 @@
-import { pendingBonus } from '../services/diamondBonusRecovery';
+import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
+import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
+import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
+import { useRefusedAward } from '../hooks/useRefusedAward';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
+import BonusCompletion from '../components/games/BonusCompletion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
-import BonusSetup from '../components/games/BonusSetup';
+import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import { useGameCooldown } from '../hooks/useGameCooldown';
 import PlinkoBoard from '../components/plinko/PlinkoBoard';
@@ -15,22 +19,36 @@ import DiamondGamesService, { type GameState } from '../services/DiamondGamesSer
 import {
   DiamondBonusService,
   BonusRefusal,
+  BonusUnreadable,
+  BONUS_SAVED,
   parsePlinkoBonus,
+  type BonusStart,
   type PlinkoBonus,
 } from '../services/DiamondBonusService';
 import {
+  PLINKO_MAX_DROPS,
   bonusTotal,
+  earnedReceiptBudget,
   bonusWalletDebit,
   gameChips,
+  plinkoDrops,
   validBonusBudget,
+  validPlinkoBudget,
 } from '../utils/bonusGameBudget';
+import { PLINKO_TABLES, diamondBonusFloor, plinkoTableForFloor } from '../utils/diamondBonusPayout';
+import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed, hmacSha256Hex, sha256Hex } from '../utils/wheelFairness';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { roundedMinePrize } from '../utils/diamondChoiceMath';
 import styles from './diamondGames.module.css';
+import plinkoStyles from './diamondPlinko.module.css';
 
+/** What the page says while it mends something by itself. */
+const RECONNECTING = 'Reconnecting To Plinko';
+const CHECKING_ENTRY = 'Checking Your Entry';
+const PREPARING_TICKET = 'Preparing Your Ticket';
 export default function DiamondPlinkoPage() {
   const { user } = useAuthUser();
   const { clubId } = useParams();
@@ -43,48 +61,141 @@ function DiamondPlinkoGame() {
   const [uuid, setUuid] = useState<string | null>(null);
   const [legacyState, setState] = useState<GameState | null>(null);
   const [quotedAmount, setQuotedAmount] = useState<number | null>(null);
-  const [selectedBudget, setBudget] = useBonusBudget(clubId, 'plinko');
+  const [selectedBudget, setBudget, offer] = useBonusBudget(clubId, 'plinko');
   const earned = useEarnedBonus(uuid, 'plinko', selectedBudget);
   const budget = earned.budget;
+  // Screen one of a won game is the Double Your Diamonds decision; screen two is
+  // the drop selector; only the player's tap on Drop Diamonds starts play (R9).
+  const offerAnswered = budget.award ? offer.answered(budget.award.id) : true;
+  const step = bonusEntryStep(budget, offerAnswered);
   const state = (earned.gameState as GameState | null) ?? legacyState;
-  const [tableVersion, setTableVersion] = useState(2);
   const [ticket, setTicket] = useState<{ id: string; hash: string } | null>(null);
   const [seed, setSeed] = useState(randomClientSeed);
   const [result, setResult] = useState<PlinkoBonus | null>(null);
+  const [completionId, setCompletionId] = useState<string | null>(null);
   const [landed, setLanded] = useState(0);
-  const [animating, setAnimating] = useState(false);
+  /** How many of the sealed drops the player has released onto the board. */
+  const [released, setReleased] = useState(0);
+  /** A sealed batch is still coming down until every one of its drops has landed. */
+  const animating = result !== null && landed < result.drops.length;
+  const allReleased = result !== null && released >= result.drops.length;
   const [busy, setBusy] = useState(false);
+  // A wager whose answer never arrived. The page settles it on its own
+  // schedule (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server answered the saved wager BONUS_SENDS_PER_REQUEST times and this
+  // browser could verify none of the answers. It stays saved (money may have
+  // moved) and is sent again on the next visit; on this one nothing more is
+  // sent for it and nothing holds the player.
+  const [saved, setSaved] = useState(false);
+  // The server refused a ticket that could no longer open a batch and charged
+  // nothing, so the same wager goes again on a fresh ticket - once per press.
+  const [restartOwed, setRestartOwed] = useState(false);
+  // A read or a ticket deal that failed is tried again by the page itself,
+  // on the same schedule as a saved wager. Nobody is told to refresh.
+  const [loadFailures, setLoadFailures] = useState(0);
+  const [loadTry, setLoadTry] = useState(0);
+  const [quoteFailures, setQuoteFailures] = useState(0);
+  const [quoteTry, setQuoteTry] = useState(0);
+  const [ticketFailures, setTicketFailures] = useState(0);
+  const [ticketTry, setTicketTry] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [waitSeconds, setWaitSeconds] = useGameCooldown();
   const live = useRef(true),
     busyRef = useRef(false),
     generation = useRef(0);
-  const held = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
+  const held = useRef<BonusStart | null>(null);
+  // The exact wager the server refused for its ticket alone. It goes again,
+  // unchanged but for the fresh ticket: never rebuilt from what the page
+  // happens to show by then (another award, another Double Down answer).
+  const owed = useRef<BonusStart | null>(null);
   const [stageRef, width] = useMeasuredWidth<HTMLDivElement>(300);
   const total = bonusTotal(budget);
+  const chosenDrops = plinkoDrops(budget);
+  const receiptBudget = result
+    ? earnedReceiptBudget(result as unknown as Record<string, unknown>)
+    : null;
+  const award = result ? receiptBudget?.award : budget.award;
+  const boost = award?.boostMultiplier === 2 ? 2 : 1;
+  const isSuper = boost === 2;
+  // What the player paid for this stake: the spin entry plus whatever Double
+  // Diamonds added on top of the funded base. Mirrors fn_diamond_game_paid_diamonds.
+  const paidDiamonds = award ? award.entryDiamonds + (total - award.entryDiamonds * boost) : total;
   const player = state?.player;
-  const table = state?.tables.find((t) => t.version === tableVersion) ?? state?.tables[0];
-  const paths = useMemo(() => result?.drops.map((ball) => ball.path_bits) ?? null, [result]);
+  const quotedBet = state?.bets.find((bet) => bet.bet_diamonds === total);
+  // THE BOARD FOLLOWS THE FLOOR (contract 4). The server's own quote names it
+  // for an award; for ordinary play the page computes the same two functions
+  // the server runs - the floor this stake seals, then the open board whose
+  // lowest slot carries it. It used to fall back to the board the BOOST named,
+  // which for ordinary play is Diamond (5), closed on 2026-09-21: no open board
+  // matched, so an ordinary entry could not be dealt at all.
+  const entryRate = state?.config?.diamonds_per_chip;
+  const entryFloor = (() => {
+    if (!entryRate || !total) return null;
+    try {
+      return diamondBonusFloor(total / entryRate, boost, award ? paidDiamonds : total, entryRate);
+    } catch {
+      return null;
+    }
+  })();
+  const wantedVersion =
+    earned.quote?.plinkoTable ??
+    (entryRate && entryFloor !== null ? plinkoTableForFloor(total / entryRate, entryFloor) : null);
+  const table = (state?.tables ?? []).find(
+    (option) =>
+      option.version === wantedVersion &&
+      (!quotedBet || (quotedBet.playable && quotedBet.cap_cents >= option.max_multiplier_cents))
+  );
+  const paths = useMemo(
+    () => result?.drops.slice(0, released).map((ball) => ball.path_bits) ?? null,
+    [result, released]
+  );
   const painted =
     result && animating
       ? result.multipliers_cents
-      : (table?.multipliers_cents ?? result?.multipliers_cents ?? []);
-  const blocked =
+      : (table?.multipliers_cents ??
+        result?.multipliers_cents ??
+        (wantedVersion === null ? undefined : PLINKO_TABLES[wantedVersion]?.multipliersCents) ??
+        []);
+  // What the server's own state says about dropping now. Deliberately without
+  // the entry quote, which blinks off during every drop and must not count as
+  // the server changing its mind.
+  const stateBlocked =
     !earned.ready ||
-    !validBonusBudget(budget) ||
-    quotedAmount !== total ||
+    step !== 'setup' ||
+    !validPlinkoBudget(budget) ||
     !state?.available ||
     state.frozen ||
     !state.player?.is_member ||
     state.player.spendable < bonusWalletDebit(budget) ||
     !table ||
-    !state.bets.some(
-      (b) => b.bet_diamonds === total && b.cap_cents >= table.max_multiplier_cents
-    ) ||
     state.player.rounds_today >= (state.config?.max_rounds_per_player_per_day ?? 0) ||
     waitSeconds > 0;
+  const blocked = stateBlocked || (!earned.award && quotedAmount !== total);
+  const refusal = useRefusedAward(earned.award?.id, stateBlocked);
+  /** One place decides what a refusal means; the drop and the replay both land here. */
+  const settleRefusal = (e: BonusRefusal, refused: BonusStart | null) => {
+    if (e.ticketGone && refused) {
+      // Only the ticket was refused and nothing was charged: the same wager
+      // goes again on a fresh ticket, by itself.
+      owed.current = refused;
+      setRestartOwed(true);
+      return;
+    }
+    // Anything else: read the award again so the page shows why, and let go of
+    // the player until the server's reasons change.
+    refusal.refuse(refused?.budget.award?.id);
+    void earned.refresh();
+  };
+  /** The chips this game pays whatever the drops do, shown before Start. */
+  const guaranteedChips = (() => {
+    if (result) return result.minimum_payout_chips ?? 0;
+    if (earned.quote) return earned.quote.minimumPayoutChips;
+    if (earned.award || earned.loading) return null;
+    return entryFloor;
+  })();
 
   const newTicket = useCallback(async () => {
     const next = await DiamondGamesService.commit('plinko');
@@ -94,16 +205,34 @@ function DiamondPlinkoGame() {
       !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(next.commit_id)
     )
       throw new Error(next.error ?? 'The Ticket Could Not Be Loaded');
-    if (live.current) setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+    if (live.current) {
+      setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+      // A fresh player seed for every ticket, chosen after its hash is on
+      // screen, so no dealt seed can have been picked knowing the player's
+      // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+      if (!owed.current) setSeed(randomClientSeed());
+    }
   }, []);
+  /** Reads the game and quotes the entry. Every read clears the quote before
+   * it asks, so the latest read owns the quote, whoever made it (the quote's
+   * own effect, the read after a drop, a replay): its answer is the quote, and
+   * its failure is counted here and read again on the quote's schedule below.
+   * A read overtaken by a newer one counts for nothing. */
   const load = useCallback(
     async (id: string, amount: number) => {
       const g = ++generation.current;
       setQuotedAmount(null);
-      const next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
+      let next: GameState;
+      try {
+        next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
+      } catch (error) {
+        if (live.current && g === generation.current) setQuoteFailures((count) => count + 1);
+        throw error;
+      }
       if (live.current && g === generation.current) {
         setState(next);
         setQuotedAmount(amount);
+        setQuoteFailures(0);
         setWaitSeconds(next.player?.seconds_until_next ?? 0);
       }
     },
@@ -120,24 +249,22 @@ function DiamondPlinkoGame() {
         setUuid(id);
         const pending = pendingBonus(user?.id ?? '', id, 'plinko');
         if (pending) {
+          // Replayed by useAutoSettle; a ticket follows once it is settled.
           held.current = pending;
           setBudget(pending.budget);
+          setSeed(pending.seed);
           setUncertain(true);
           setTicket(null);
-          setError('Check Your Saved Bonus Before Starting Another.');
-          return;
         }
-        const saved = await DiamondBonusService.latest(id, 'plinko');
-        if (cancelled) return;
-        if (saved) {
-          const previous = parsePlinkoBonus(saved);
-          setResult(previous);
-          setLanded(previous.drops.length);
-        }
-        await newTicket();
+        // The ticket is dealt by its own effect once the club is known.
+        setLoadFailures(0);
+        setError((current) => (current === RECONNECTING ? null : current));
       } catch (e) {
         reportError(e, 'DiamondPlinkoPage.load');
-        if (!cancelled) setError('Plinko Could Not Be Loaded. Try Refresh.');
+        if (!cancelled) {
+          setError(RECONNECTING);
+          setLoadFailures((count) => count + 1);
+        }
       }
     })();
     return () => {
@@ -145,55 +272,107 @@ function DiamondPlinkoGame() {
       live.current = false;
       generation.current++;
     };
-  }, [clubId, user?.id, newTicket, setBudget]);
+  }, [clubId, user?.id, setBudget, loadTry]);
+  useAutoSettle(loadFailures > 0, loadFailures, async () => {
+    setLoadTry((count) => count + 1);
+    return true;
+  });
   useEffect(() => {
-    if (!uuid || !validBonusBudget(budget)) return;
-    void load(uuid, total).catch((e) => {
-      reportError(e, 'DiamondPlinkoPage.quote');
-      if (live.current) setError('The Entry Could Not Be Checked. Try Refresh.');
-    });
-  }, [uuid, total, budget.base, load]);
+    if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
+    let cancelled = false;
+    // A failure is counted by load itself, whichever read it was.
+    load(uuid, total)
+      .then(() => {
+        if (cancelled || !live.current) return;
+        setError((current) => (current === CHECKING_ENTRY ? null : current));
+      })
+      .catch((e) => {
+        reportError(e, 'DiamondPlinkoPage.quote');
+        if (cancelled || !live.current) return;
+        setError(CHECKING_ENTRY);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uuid, total, budget.base, earned.loading, earned.required, load, quoteTry]);
+  useAutoSettle(quoteFailures > 0, quoteFailures, async () => {
+    setQuoteTry((count) => count + 1);
+    return true;
+  });
+  useEffect(() => {
+    if (earned.gameState)
+      setWaitSeconds((earned.gameState as GameState).player?.seconds_until_next ?? 0);
+  }, [earned.gameState, setWaitSeconds]);
 
   useEffect(() => {
     if (!earned.recoveredResult || result || animating || uncertain) return;
     try {
       const saved = parsePlinkoBonus(earned.recoveredResult);
       setResult(saved);
+      setReleased(saved.drops.length);
       setLanded(saved.drops.length);
+      setCompletionId(saved.id);
     } catch (error) {
       reportError(error, 'DiamondPlinkoPage.awardRecovery');
       setError('Your Saved Wheel Bonus Could Not Be Verified.');
     }
   }, [earned.recoveredResult, result, animating, uncertain]);
 
+  /** The tap on Drop Diamonds is the first drop; each further ball is the player's own release. */
   const accept = (next: PlinkoBonus, animate: boolean) => {
     earned.consume(next.award_id);
     setResult(next);
+    setCompletionId(next.id);
     setLanded(animate ? 0 : next.drops.length);
-    setAnimating(animate);
+    setReleased(animate ? Math.min(1, next.drops.length) : next.drops.length);
     held.current = null;
     setUncertain(false);
     setTicket(null);
     setError(null);
-    if (uuid) void load(uuid, total).catch((e) => reportError(e, 'DiamondPlinkoPage.after'));
+    if (uuid && !earned.required)
+      void load(uuid, total).catch((e) => reportError(e, 'DiamondPlinkoPage.after'));
   };
-  const play = async () => {
-    if (!uuid || !ticket || busyRef.current || blocked || animating || uncertain) return;
+  /** Stop sending a saved wager whose answers will not verify, let the player
+   * go, and read the game again. */
+  const keepForNextVisit = (id: string) => {
+    setSaved(true);
+    setError(BONUS_SAVED);
+    void earned.refresh();
+    if (!earned.required)
+      void load(id, validBonusBudget(budget) ? total : 100).catch((readError) =>
+        reportError(readError, 'DiamondPlinkoPage.saved')
+      );
+  };
+  /** Drops the batch the page shows, or - given `resend` - re-sends exactly the
+   * wager the server refused for its ticket, on the ticket now in hand. */
+  const play = async (resend?: BonusStart) => {
+    if (!uuid || !ticket || busyRef.current || (!resend && blocked) || animating || uncertain)
+      return;
     busyRef.current = true;
     generation.current++;
     setQuotedAmount(null);
     setBusy(true);
     setError(null);
     setVerified(null);
-    const request = {
-      clubId: uuid,
-      game: 'plinko' as const,
-      budget: { ...budget },
-      commitId: ticket.id,
-      serverSeedHash: ticket.hash,
-      seed,
-      tableVersion: table!.version,
-    };
+    // An emptied "Your Seed" is not a decision the player made about this
+    // batch: the service refuses a blank seed before anything is sent, and
+    // that refusal reads to the page exactly like the server's own. The page
+    // deals itself a seed instead, and shows the one the drops were sent with,
+    // so Bonus Proof still names what was actually used. A resend keeps its
+    // own seed, because it is the same wager going again.
+    const sent = seed.trim() ? seed : randomClientSeed();
+    if (!resend && sent !== seed) setSeed(sent);
+    const request: BonusStart = resend
+      ? { ...resend, commitId: ticket.id, serverSeedHash: ticket.hash }
+      : {
+          clubId: uuid,
+          game: 'plinko' as const,
+          budget: { ...budget },
+          commitId: ticket.id,
+          serverSeedHash: ticket.hash,
+          seed: sent,
+          tableVersion: table!.version,
+        };
     held.current = request;
     try {
       const next = parsePlinkoBonus(await DiamondBonusService.start(request, user?.id ?? ''));
@@ -201,43 +380,35 @@ function DiamondPlinkoGame() {
     } catch (e) {
       reportError(e, 'DiamondPlinkoPage.start');
       if (live.current) {
-        setUncertain(!(e instanceof BonusRefusal));
-        setError(
-          e instanceof BonusRefusal ? e.message : 'Check Your Bonus Before Starting Another.'
-        );
-      }
-    } finally {
-      busyRef.current = false;
-      if (live.current) setBusy(false);
-    }
-  };
-  const check = async () => {
-    if (!uuid || busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    try {
-      if (held.current && uncertain) {
-        const next = parsePlinkoBonus(
-          await DiamondBonusService.start(held.current, user?.id ?? '')
-        );
-        if (!live.current) return;
-        accept(next, false);
-      }
-      if (!live.current) return;
-      await earned.refresh();
-      await load(uuid, validBonusBudget(budget) ? total : 100);
-      if (!live.current) return;
-      if (!ticket || uncertain) await newTicket();
-      if (live.current) setError(null);
-    } catch (e) {
-      reportError(e, 'DiamondPlinkoPage.check');
-      if (live.current) {
-        setError(
-          e instanceof BonusRefusal ? e.message : 'Your Bonus Could Not Be Checked. Try Again.'
-        );
-        if (e instanceof BonusRefusal) {
+        if (e instanceof PriorBonusPending) {
+          // Another tab's wager is still saved: it settles first, by itself.
+          held.current = e.prior;
+          setBudget(e.prior.budget);
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Previous Bonus First');
+        } else if (e instanceof BonusRefusal) {
+          // Nothing was charged. The ticket is spent either way, so a fresh
+          // one is dealt; when the ticket itself was the refusal the same
+          // wager is sent again on it.
+          const refused = held.current;
           held.current = null;
           setUncertain(false);
+          setTicket(null);
+          setError(e.message);
+          settleRefusal(e, refused);
+          // This start cleared the entry quote. Read it again, so the next
+          // drop is not held on it until someone refreshes.
+          if (!earned.required) setQuoteTry((count) => count + 1);
+        } else if (e instanceof BonusUnreadable && e.final) {
+          setUncertain(true);
+          keepForNextVisit(uuid);
+        } else {
+          // The answer never arrived. The saved wager is replayed by
+          // useAutoSettle until the server says what happened.
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Bonus');
         }
       }
     } finally {
@@ -245,13 +416,119 @@ function DiamondPlinkoGame() {
       if (live.current) setBusy(false);
     }
   };
-  const finish = () => {
-    setAnimating(false);
-    if (result) setLanded(result.drops.length);
-    void newTicket().catch((e) => {
-      reportError(e, 'DiamondPlinkoPage.ticket');
-      if (live.current) setError('Refresh To Prepare Your Next Ticket.');
-    });
+  const check = async (): Promise<boolean> => {
+    if (!uuid || busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      if (held.current && uncertain) {
+        const next = parsePlinkoBonus(
+          await DiamondBonusService.start(held.current, user?.id ?? '')
+        );
+        if (!live.current) return true;
+        accept(next, false);
+      }
+      if (!live.current) return true;
+      await earned.refresh();
+      if (!earned.required) await load(uuid, validBonusBudget(budget) ? total : 100);
+      if (live.current) {
+        setError(null);
+        setSettleAttempts(0);
+      }
+    } catch (e) {
+      reportError(e, 'DiamondPlinkoPage.check');
+      if (live.current) {
+        if (e instanceof BonusRefusal) {
+          const refused = held.current;
+          held.current = null;
+          setUncertain(false);
+          setSettleAttempts(0);
+          setTicket(null);
+          setError(e.message);
+          settleRefusal(e, refused);
+        } else if (e instanceof BonusUnreadable && e.final) {
+          keepForNextVisit(uuid);
+        } else if (held.current) {
+          // Not an answer: the page tries again on its own schedule.
+          setSettleAttempts((count) => count + 1);
+          setError('Settling Your Bonus');
+        } else {
+          // The replay above answered and accept() let the wager go; what
+          // failed is the entry read that follows it, which counts itself and
+          // is read again on the quote's own schedule. Nothing is in flight,
+          // so the page must not say it is settling over a booked receipt.
+          setSettleAttempts(0);
+          setError(CHECKING_ENTRY);
+        }
+      }
+    } finally {
+      busyRef.current = false;
+      if (live.current) setBusy(false);
+    }
+    return true;
+  };
+  useAutoSettle(uncertain && !saved, settleAttempts, check);
+  // A wager the server refused for its ticket alone is sent again on the
+  // fresh ticket, once, without the player pressing Drop twice.
+  const playRef = useRef(play);
+  playRef.current = play;
+  const restarts = useRef(0);
+  useEffect(() => {
+    // The owed wager is re-sent as it was; only the server decides whether it
+    // can still start (a refusal now settles like any other).
+    if (!restartOwed || !ticket || uncertain || busy || animating) return;
+    setRestartOwed(false);
+    const wager = owed.current;
+    owed.current = null;
+    if (!wager || restarts.current >= 2) return;
+    restarts.current += 1;
+    void playRef.current(wager);
+  }, [restartOwed, ticket, uncertain, busy, animating]);
+  // Games paused by the platform come back by themselves after the break.
+  useStandingRefresh(Boolean(state?.frozen) && !busy && !uncertain && !animating, () => {
+    void earned.refresh();
+    if (!earned.required) setQuoteTry((count) => count + 1);
+  });
+  // A refused ticket is replaced without a press.
+  useEffect(() => {
+    if (ticket || uncertain || animating || !uuid) return;
+    let cancelled = false;
+    newTicket()
+      .then(() => {
+        if (cancelled || !live.current) return;
+        setTicketFailures(0);
+        setError((current) => (current === PREPARING_TICKET ? null : current));
+      })
+      .catch((e) => {
+        reportError(e, 'DiamondPlinkoPage.redeal');
+        if (cancelled || !live.current) return;
+        setError(PREPARING_TICKET);
+        setTicketFailures((count) => count + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticket, uncertain, animating, uuid, newTicket, ticketTry]);
+  useAutoSettle(ticketFailures > 0 && !ticket && !uncertain, ticketFailures, async () => {
+    setTicketTry((count) => count + 1);
+    return true;
+  });
+  /** Every released drop has landed. With drops still in hand, the board waits
+   * for the player. The next ticket is dealt by its own effect once they have. */
+  const landedAll = () => {
+    if (!result || released < result.drops.length) return;
+    setLanded(result.drops.length);
+  };
+  /** The player's own release of the next ball, or of every ball still in hand. */
+  const release = (all: boolean) => {
+    if (!result || allReleased) return;
+    setReleased(all ? result.drops.length : Math.min(result.drops.length, released + 1));
+  };
+  /** Show Results: the player skips the rest of a batch already fully released. */
+  const showResults = () => {
+    if (!result || !allReleased) return;
+    setLanded(result.drops.length);
+    landedAll();
   };
   const verify = async () => {
     if (!result || busyRef.current) return;
@@ -296,11 +573,30 @@ function DiamondPlinkoGame() {
       if (live.current) setBusy(false);
     }
   };
-  const shownWin = result
+  // Money in flight holds the page. A won game holds it only while it can
+  // actually start: an award this page cannot start (daily limit, a closed or
+  // paused game, a cooldown) never traps the player on it.
+  // A wager kept for the next visit has nothing in flight: it holds nothing.
+  const releaseGuard = useLiveBonusGuard(
+    !saved &&
+      ((Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
+        busy ||
+        uncertain ||
+        animating),
+    () => setError('Finish Your Bonus Game Before Leaving.')
+  );
+  const droppedChips = result
     ? result.drops
         .slice(0, landed)
         .reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0) / 100
     : 0;
+  // Every drop has landed, so the booked figure is the receipt: a Super batch
+  // whose drops fell short is topped up to its guarantee, and that is what paid.
+  const settled = Boolean(result) && landed >= (result?.drops.length ?? 0) && !animating;
+  const shownWin = settled ? (result?.payout_chips ?? 0) : droppedChips;
+  const toppedUp = Boolean(
+    result && settled && Math.round(result.payout_chips * 100) > Math.round(droppedChips * 100)
+  );
   return (
     <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button className={styles.back} onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}>
@@ -315,58 +611,87 @@ function DiamondPlinkoGame() {
               entryReady={earned.ready}
               awardLoading={earned.loading}
               awardError={earned.error}
-              onRefresh={() => void earned.refresh()}
               onChange={setBudget}
               diamonds={state?.player?.spendable ?? null}
-              disabled={busy || uncertain}
-              plinko
+              disabled={busy || uncertain || restartOwed}
+              game="plinko"
+              guarantee={earned.quote}
               clubId={clubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
+              offerAnswered={offerAnswered}
+              onOfferAnswered={offer.answer}
             />
           )
         }
-        title="Diamond Plinko"
+        title={diamondGameTitle('plinko', boost)}
         eyebrow="Diamond Spins"
-        pill={uncertain ? 'Check Bonus' : animating ? 'Dropping' : result ? 'Completed' : 'Ready'}
+        pill={
+          saved
+            ? 'Saved'
+            : uncertain
+              ? 'Settling'
+              : animating
+                ? 'Dropping'
+                : completionId
+                  ? 'Completed'
+                  : step === 'offer'
+                    ? 'Your Choice'
+                    : 'Ready'
+        }
         bays={[
           {
-            label: 'Table',
-            value: table?.name ?? 'Loading',
-            disabled: busy || animating || uncertain,
-            onPress: () => {
-              const tables = state?.tables ?? [];
-              if (tables.length)
-                setTableVersion(
-                  tables[
-                    (tables.findIndex((t) => t.version === table?.version) + 1) % tables.length
-                  ].version
-                );
-            },
-          },
-          {
             label: 'Per Drop',
-            value: String(animating ? result?.diamonds_per_drop : budget.denomination),
+            value: animating
+              ? (result?.diamonds_per_drop ?? 0).toLocaleString()
+              : budget.denomination === null
+                ? 'Choose'
+                : budget.denomination.toLocaleString(),
           },
           {
             label: 'Drops',
             value:
               animating && result
                 ? `${landed}/${result.drops.length}`
-                : validBonusBudget(budget)
-                  ? String(total / budget.denomination)
-                  : '0',
+                : chosenDrops === null
+                  ? 'Choose'
+                  : chosenDrops.toLocaleString(),
+          },
+          {
+            label: 'Guaranteed',
+            value: guaranteedChips === null ? 'Pending' : `${gameChips(guaranteedChips)} Chips`,
+            ink: isSuper ? 'gold' : undefined,
           },
           { label: 'Chip Prize', value: gameChips(shownWin), ink: 'gold' },
         ]}
         secondary={{
-          label: uncertain ? 'Check Bonus' : animating ? 'Show Results' : 'Refresh',
-          onClick: () => (animating ? finish() : void check()),
-          disabled: busy,
+          label: animating ? (allReleased ? 'Show Results' : 'Drop All') : 'Refresh',
+          onClick: () => (animating ? (allReleased ? showResults() : release(true)) : void check()),
+          disabled: busy || uncertain,
         }}
-        primary={{
-          label: waitSeconds > 0 ? `Ready In ${waitSeconds}s` : 'Drop Diamonds',
-          onClick: () => void play(),
-          disabled: busy || uncertain || animating || blocked || !ticket,
-        }}
+        primary={
+          animating
+            ? {
+                label: allReleased
+                  ? 'Dropping'
+                  : `Drop ${(released + 1).toLocaleString()} Of ${(result?.drops.length ?? 0).toLocaleString()}`,
+                onClick: () => release(false),
+                disabled: allReleased,
+              }
+            : {
+                label:
+                  waitSeconds > 0
+                    ? `Ready In ${waitSeconds}s`
+                    : step === 'offer'
+                      ? 'Answer The Offer First'
+                      : 'Drop Diamonds',
+                onClick: () => void play(),
+                disabled: busy || uncertain || blocked || !ticket,
+              }
+        }
       >
         <TodayLine
           used={player?.rounds_today ?? 0}
@@ -382,7 +707,7 @@ function DiamondPlinkoGame() {
             dropKey={result ? Number.parseInt(result.id.slice(0, 8), 16) : 0}
             batchPathBits={animating ? paths : null}
             onProgress={setLanded}
-            onLanded={finish}
+            onLanded={landedAll}
             restingSlot={
               result?.table_version === table?.version
                 ? (result?.drops[Math.max(0, landed - 1)]?.slot ?? null)
@@ -393,10 +718,15 @@ function DiamondPlinkoGame() {
         <p className="sc-copy" role="status">
           {error ??
             (animating
-              ? 'Every Drop Follows Your Saved Result.'
+              ? allReleased
+                ? 'Every Drop Follows Your Saved Result.'
+                : `${(result!.drops.length - released).toLocaleString()} ${result!.drops.length - released === 1 ? 'Drop' : 'Drops'} In Hand. Tap Drop For The Next Diamond, Or Drop All.`
               : result
-                ? `${gameChips(result.payout_chips)} Chips Booked From ${result.drops.length} Drops.`
-                : 'Choose Your Drop Value, Then Start Your Bonus.')}
+                ? `${gameChips(result.payout_chips)} Chips Booked From ${result.drops.length} Drops.${toppedUp ? ` Your Guarantee Of ${gameChips(result.minimum_payout_chips ?? 0)} Chips Topped Up The Drops.` : ''}`
+                : step === 'offer'
+                  ? 'Decide Whether To Double Your Diamonds, Then Choose Your Drops.'
+                  : ((earned.quote && guaranteeCopy('plinko', earned.quote)) ??
+                    'Choose Your Diamonds Per Drop. Start Your Bonus When You Are Ready.'))}
         </p>
         {!animating && blocked && state && (
           <p className="sc-copy">
@@ -405,23 +735,50 @@ function DiamondPlinkoGame() {
                 (earned.loading
                   ? 'Checking Your Wheel Award'
                   : 'Win Plinko On Diamond Spins To Play.'))
-              : !state.available
-                ? 'Plinko Is Not Open Here Yet.'
-                : !state.player?.is_member
-                  ? 'Join The Club To Play.'
-                  : state.player.spendable < bonusWalletDebit(budget)
-                    ? budget.award
-                      ? 'Buy More Diamonds Or Turn Off Double Down.'
-                      : 'Buy More Diamonds Or Change Your Entry.'
-                    : 'Refresh To Check This Entry And The Available Prize Cover.'}
+              : state.frozen
+                ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
+                : !state.available
+                  ? 'Plinko Is Not Open Here Yet.'
+                  : !state.player?.is_member
+                    ? 'Join The Club To Play.'
+                    : state.player.spendable < bonusWalletDebit(budget)
+                      ? budget.award
+                        ? 'Buy More Diamonds Or Turn Off Double Down.'
+                        : 'Buy More Diamonds Or Change Your Entry.'
+                      : step === 'offer'
+                        ? 'Answer The Double Your Diamonds Offer To Continue.'
+                        : !validPlinkoBudget(budget)
+                          ? `Choose Your Diamonds Per Drop. Every Value Divides Your ${bonusTotal(budget).toLocaleString()} Diamonds Into 1 To ${PLINKO_MAX_DROPS} Drops.`
+                          : !table
+                            ? budget.doubled
+                              ? 'This Bonus Does Not Cover A Doubled Entry. Choose Play Without To Play.'
+                              : 'The Plinko Table Is Not Open For This Entry. Return To The Wheel.'
+                            : waitSeconds > 0
+                              ? `Your Next Drop Is Ready In ${waitSeconds} Seconds.`
+                              : 'Checking This Entry And The Available Prize Cover'}
           </p>
         )}
       </GameConsole>
       <GamePanel title="How To Play" pill="Rules" foot="foot">
         <p className="sc-copy">
-          Your Entry Is Divided Into Drops At The Value You Choose. Each Ball Lands In A Prize Slot.
-          All Diamonds In This Bonus Are Played Together, And Your Chips Are Booked Automatically.
+          You Choose How Many Diamonds Each Drop Plays, From 1 To {PLINKO_MAX_DROPS} Drops Of Your
+          Entry. Every Diamond Lands In A Prize Slot, And Your Chips Are Booked When The Last Drop
+          Lands. Tap Drop For Each Diamond, Or Drop All To Release The Rest.
         </p>
+        <p className="sc-copy">
+          One Table For Every Game. Nobody Picks A Risk Level; It Is Built Into The Payout. The
+          Outer Slots Pay Up To {multiplierLabel(2000)}, And The Middle Slots Pay The Least. Fewer,
+          Bigger Drops Swing Further; More, Smaller Drops Land Closer To The Average.
+        </p>
+        {table && (
+          <p className="sc-copy">
+            This Game Plays The {table.name} Table, Top Prize{' '}
+            {multiplierLabel(table.max_multiplier_cents)} Per Drop.
+            {isSuper
+              ? ' Every Super Slot Pays, So Your Drops Return At Least Your Original Spin.'
+              : ''}
+          </p>
+        )}
       </GamePanel>
       <GamePanel
         title="Bonus Proof"
@@ -440,6 +797,9 @@ function DiamondPlinkoGame() {
             maxLength={64}
             disabled={busy || animating || uncertain}
             onChange={(e) => setSeed(e.target.value)}
+            onBlur={(e) => {
+              if (!e.target.value.trim()) setSeed(randomClientSeed());
+            }}
           />
         </label>
         {result && !animating && (
@@ -473,7 +833,23 @@ function DiamondPlinkoGame() {
               </div>
             ) : null;
           })}
+          {toppedUp && (
+            <div className={`${styles.row} ${plinkoStyles.guaranteeRow}`}>
+              <span className="sc-label">Your Super Guarantee</span>
+              <span>{gameChips(result.payout_chips)} Chips Booked</span>
+            </div>
+          )}
         </GamePanel>
+      )}
+      {result && completionId === result.id && !animating && !uncertain && !busy && (
+        <BonusCompletion
+          key={result.id}
+          clubId={clubId ?? ''}
+          clubUuid={uuid}
+          awardId={result.award_id ?? null}
+          chips={result.payout_chips}
+          detail={`${result.drops.length} Drops Completed.`}
+        />
       )}
     </div>
   );

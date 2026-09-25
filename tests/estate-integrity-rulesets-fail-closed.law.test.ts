@@ -16,7 +16,13 @@ const ROOT = resolve(__dirname, '..');
 const AUDIT = resolve(ROOT, '.github/scripts/estate-integrity.sh');
 const sandboxes: string[] = [];
 
-type FixtureMode = 'absent' | 'forbidden' | 'unreadable' | 'empty' | 'malformed';
+type FixtureMode =
+  | 'absent'
+  | 'forbidden'
+  | 'unreadable'
+  | 'empty'
+  | 'malformed'
+  | 'permission_blind';
 
 function runAudit(mode: FixtureMode) {
   const sandbox = mkdtempSync(join(tmpdir(), 'estate-integrity-rulesets-'));
@@ -52,9 +58,20 @@ case "\${1:-}" in
           unreadable) exit 75 ;;
           empty) exit 0 ;;
           malformed) printf '{"id":102,"target":"branch","rules":"not-an-array"}\\n' ;;
+          permission_blind) printf '{"id":102,"target":"branch","enforcement":"active"}\\n' ;;
           forbidden) valid_detail 102 '[{"context":"Stage B Release Freeze"}]' ;;
           absent) valid_detail 102 '[{"context":"Another Check"}]' ;;
         esac
+        ;;
+      repos/Smarter-Poker/Smarter-Poker-Diamond-Arena/contents/.github/workflows/agent-autopilot.yml|repos/Smarter-Poker/Smarter-Poker-Diamond-Arena/contents/.github/workflows/agent-open-pr.yml)
+        # Recorded in estate-integrity.sh's RETIRED_PATHS: that repo's own
+        # PR #64 (d70fcbcd1928, 2026-09-18) deleted both and added a test
+        # there to keep them retired. gh prints the 404 body on STDOUT and
+        # exits 1, which is the shape this fixture has to reproduce - the
+        # audit reported those paths as zero-byte files for five days by
+        # decoding that error as if it were content.
+        printf '{"message":"Not Found","status":"404"}\\n'
+        exit 1
         ;;
       repos/Smarter-Poker/*/contents/*)
         printf 'Z3VhcmQK\\n'
@@ -123,6 +140,33 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
     expect(result.status).toBe(1);
     expect(combined).toContain('unauthorized required context `Stage B Release Freeze`');
     expect(combined).toContain('102');
+  }, 15_000);
+
+  /**
+   * MEASURED 2026-09-19. Every branch ruleset in all seven repos had been
+   * reported as "empty or malformed detail" since 2026-09-09, and the audit
+   * had been red and unread for ten days. None of them was malformed. GitHub
+   * hands a caller without `Administration: Read` a WELL FORMED ruleset with
+   * `rules` and `bypass_actors` absent, which is a could-not-ask.
+   *
+   * It matters which one it says, because the thing it could not see was real:
+   * World Hub's main ruleset read bypass=0 on 2026-09-08 and carries an
+   * Integration bypass actor with mode `always` today. A message that says
+   * "malformed" sends the next reader to the API shape. A message that says
+   * "the token cannot see it" sends them to the App's permissions, which is
+   * where the answer is.
+   */
+  it('names the permission when the detail is well formed but rules are withheld', () => {
+    const { result, combined } = runAudit('permission_blind');
+
+    expect(result.status).toBe(1);
+    expect(combined).toContain('cannot see `rules` or `bypass_actors`');
+    expect(combined).toContain('Administration: Read');
+    expect(combined).toContain('102');
+    // It must NOT accuse the API of being malformed, which is the wrong repair.
+    expect(combined).not.toContain('wrong or absent');
+    // And nothing about that repo may be reported as verified.
+    expect(combined).not.toContain('estate-integrity: 0 problem(s).');
   }, 15_000);
 
   it('does not raise a forbidden-context alarm when every detail is valid and absent', () => {

@@ -41,8 +41,11 @@ import { CardImage } from '../table/CardImage';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentRankingCard.css';
 import { publicOrigin } from '../../lib/appBase';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 
 export interface TournamentRankingCardProps {
   result: TournamentResult;
@@ -69,6 +72,17 @@ export interface TournamentRankingCardProps {
   onDismiss: () => void;
   /** "Play Again" — where to send them. Usually the club's tournament list. */
   onPlayAgain?: () => void;
+  /**
+   * THE GRID THIS EVENT PAID ON (2026-09-20). Every figure on this card is a
+   * payout, and at a Diamond event `formatMoney`'s two forced decimal places
+   * advertise a fraction of a Diamond that no door in this estate accepts.
+   *
+   * Required and undefaulted: `a-tournament-prize-knows-its-unit.law.test.ts`
+   * exists because a defaulted unit made five surfaces look finished while
+   * every one of them was still on the cent grid. The host reads it from the
+   * session payload's own arena asset.
+   */
+  unitCents: number;
 }
 
 /** 1 -> "1st", 22 -> "22nd", 111 -> "111th". */
@@ -99,11 +113,21 @@ function shortDate(d: Date): string {
  * Medal palette by finish. Gold/silver/bronze are the podium; everything else
  * is steel, so 4th does not get a participation medal that looks like a prize.
  */
+/* DEFECT FOUND AND FIXED 2026-09-14. These returned `trc2-medal--gold` - ONE
+   dash, no BEM element - while the stylesheet has always declared
+   `.trc2__medal--gold`. Nothing matched, so `--trc2-medal-face`,
+   `--trc2-medal-edge`, `--trc2-medal-ink` and `--trc2-band` were never set on
+   any card: every medal rendered as an empty ring with no metal, every trophy
+   and numeral inherited the card's text colour, and EVERY place band fell
+   through to its `#233355` fallback. First, second and third have been
+   indistinguishable from 47th since the classes were written. The one thing
+   this card exists to say - which place this was - was said by the numeral
+   alone. */
 function medalClass(place: number | null): string {
-  if (place === 1) return 'trc2-medal--gold';
-  if (place === 2) return 'trc2-medal--silver';
-  if (place === 3) return 'trc2-medal--bronze';
-  return 'trc2-medal--steel';
+  if (place === 1) return 'trc2__medal--gold';
+  if (place === 2) return 'trc2__medal--silver';
+  if (place === 3) return 'trc2__medal--bronze';
+  return 'trc2__medal--steel';
 }
 
 /**
@@ -167,6 +191,17 @@ function formatMoney(n: number): string {
   });
 }
 
+/**
+ * The same figure at the unit the event paid on. `formatMoney` unchanged at a
+ * chip event - the same function, so a chip card is byte-identical by
+ * construction - and whole Diamonds at a Diamond one.
+ */
+function moneyAtUnit(n: number, unitCents: number): string {
+  return normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
+    ? formatMoney(n)
+    : formatPrizeAtUnit(n, unitCents);
+}
+
 /** 185 -> "3m 05s", 3725 -> "1h 02m". Never prints a unit that is zero. */
 function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -186,6 +221,7 @@ export default function TournamentRankingCard({
   endedAt,
   onDismiss,
   onPlayAgain,
+  unitCents,
 }: TournamentRankingCardProps) {
   const navigate = useNavigate();
   /* Desktop has no share sheet, so the button reports the clipboard copy on
@@ -252,7 +288,8 @@ export default function TournamentRankingCard({
 
   if (typeof document === 'undefined') return null;
 
-  const place = result.finishPlace;
+  const qualification = result.satelliteQualification;
+  const place = qualification ? null : result.finishPlace;
   const eventName = formatGameTitle(result.name || tableName || 'Tournament');
   const totalWon = (result.prize || 0) + (result.bountyWinnings || 0);
   /* MYSTERY BOUNTY (section 43). Cents, and absent on any non-mystery event. */
@@ -266,12 +303,19 @@ export default function TournamentRankingCard({
   /* "FIDGET SPINNER #3(11)" — event, finishing place, field size.
      Dan 2026-08-23: "remove the (3) after Spin PLO6 #1". On a Spin the field
      is ALWAYS three, so the bracket carries no information and just clutters
-     the line. An MTT keeps it: there "#3(128)" is most of the result. */
+     the line. An MTT keeps it: there "#3(128)" is most of the result.
+
+     ON THE CONSOLE the three facts are separated rather than concatenated: the
+     event is the engraved title, the place is the word in the painted pill
+     slot, and the field size joins the date in the subtitle. Same rule, same
+     omission on a Spin. */
   const showEntrants = !result.isSpin && !!result.entrants;
-  const eventLine =
-    place != null
-      ? `${eventName} #${place}${showEntrants ? `(${result.entrants})` : ''}`
-      : eventName;
+  const eventSubtitle = [
+    shortDate(endedAt ? new Date(endedAt) : new Date()),
+    showEntrants ? `${result.entrants} Entrants` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   /**
    * SHARE (Dan 2026-08-23: "REMOVE 'STAY OBSERVING' WITH A SHARE BUTTON").
@@ -285,10 +329,13 @@ export default function TournamentRankingCard({
    * the button itself — a toast provider is not guaranteed at this portal.
    */
   const handleShare = async () => {
-    const text =
-      place != null
+    const text = qualification
+      ? `I qualified in ${eventName} on Smarter.Poker.`
+      : place != null
         ? `I finished ${ordinal(place)} in ${eventName} on Smarter.Poker` +
-          (totalWon > 0 ? ` for ${formatMoney(totalWon)}.` : '.')
+          (totalWon > 0
+            ? ` for ${moneyAtUnit(totalWon, unitCents)}${moneySuffixAtUnit(unitCents)}.`
+            : '.')
         : `I just played ${eventName} on Smarter.Poker.`;
     try {
       const nav = navigator as Navigator & {
@@ -319,6 +366,34 @@ export default function TournamentRankingCard({
     navigate(result.isSpin ? '/tournaments?type=spin' : '/tournaments');
   };
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     ON THE CONSOLE (#ClubArenaConsole, 2026-09-14) - the VIP crest, because
+     this card is a finishing place.
+
+     Re-rendered, not rewritten. The portal, the Escape handler, the profile
+     read, the share sheet and its clipboard fallback, Play Again and its
+     navigate fallback, every ordinal, every figure and the whole mystery
+     bounty block are the ones that were here.
+
+     WHAT WAS PAINTED INSTEAD OF DRAWN: the card's 18px radius, its 2px blue
+     border, its navy gradient, the radial "arena" banner behind the medal, the
+     round steel close button, the bordered player card, the cyan-outlined
+     winning-hand box, the pill-shaped extra tags and the two gradient buttons.
+     All of that is the master's now - the frame, the header well, the pill
+     slot and the two action plates are painted, and this component prints into
+     them.
+
+     WHAT IS STILL DRAWN, AND WHY: the medal. No master contains a disc that
+     can carry an arbitrary finishing place (128th) at any size in four metals,
+     and Dan's trophy ruling (2026-08-23) is about what is inside that disc.
+     It is the one illustration on the sheet, and its ramp is COOL metal only -
+     tests/unit/rankingCardPalette.test.ts parses this stylesheet and fails on
+     any warm hue, which is Dan's "NO BROWNS OR YELLOWS" written down.
+
+     THE X IS STILL THE ONLY WAY OUT (Dan 2026-08-30: "USER MUST CLICK THE 'X'
+     TO CLOSE IT"). The backdrop is scenery and does not dismiss; the control
+     keeps its element and its handler and is now a lit word rather than a
+     drawn steel circle, which says what it does instead of implying it. */
   return createPortal(
     <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament Ranking">
       {/* Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop
@@ -328,16 +403,30 @@ export default function TournamentRankingCard({
       <div className="trc2__backdrop" />
 
       <div className="trc2__card">
-        {/* ── Title bar ── */}
-        <div className="trc2__titlebar">
-          <span className="trc2__title">RANKING</span>
-          <button className="trc2__close" onClick={onDismiss} aria-label="Close">
-            ×
-          </button>
-        </div>
-
-        {/* ── Event banner ── */}
-        <div className="trc2__banner">
+        <SpadeConsole
+          crest="vip"
+          /* RANKING is the card's own name in Dan's reference, and it is what
+             the engraved title says. The EVENT NAME is the long string here -
+             a real one runs past thirty characters - so it prints as the
+             subtitle, which has the full width of the well and does not sit
+             beside the pill; the place goes in the pill slot, where "#3" was
+             always going to fit. Putting the event in the title clipped it to
+             "SUNDAY DEEPSTACK BOUNTY HU" at 393px. */
+          eyebrow={eventSubtitle}
+          title={qualification ? 'Qualified' : 'Ranking'}
+          subtitle={eventName}
+          pill={place != null ? `#${place}` : undefined}
+          pillInk="silver"
+          plates={{
+            secondary: {
+              label: shared ? 'Link Copied' : 'Share',
+              ink: 'silver',
+              onClick: () => void handleShare(),
+            },
+            primary: { label: 'Play Again', ink: 'white', onClick: handlePlayAgain },
+          }}
+        >
+          {/* ── The brand line ── */}
           {/* Dan 2026-08-23: "remove the dots on the top." The marquee-bulb
               strip read as a rendering artefact rather than decoration. */}
           <div className="trc2__brand">
@@ -347,15 +436,9 @@ export default function TournamentRankingCard({
                 resolved from the tournament row by isSpinTournament, not
                 guessed from the event name.
                 Dan 2026-08-23: "remove the 'spin' after SmarterPoker" — the
-                line below already names the game, so on a Spin the badge is
+                title above already names the game, so on a Spin the badge is
                 pure repetition. An MTT keeps its badge. */}
             {!result.isSpin && <span className="trc2__brand-mark">TOURNAMENT</span>}
-          </div>
-          <div className="trc2__event">
-            <span className="trc2__event-date">
-              {shortDate(endedAt ? new Date(endedAt) : new Date())}
-            </span>{' '}
-            <span className="trc2__event-name">{eventLine}</span>
           </div>
 
           {/* ── Medal ── */}
@@ -369,155 +452,172 @@ export default function TournamentRankingCard({
             </div>
             <span className="trc2__medal-glow" aria-hidden="true" />
           </div>
-        </div>
 
-        {/* ── Place band ── */}
-        <div className={`trc2__placeband ${medalClass(place)}`}>
-          {place != null ? ordinal(place) : 'Finished'}
-        </div>
-
-        {/* ── Player row ── */}
-        <div className="trc2__player">
-          <img
-            className="trc2__avatar"
-            src={profile?.avatarUrl || generateDefaultAvatar()}
-            alt=""
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = generateDefaultAvatar();
-            }}
-          />
-          <div className="trc2__identity">
-            <span className="trc2__username">{profile?.username ?? ' '}</span>
-            {profile?.playerNumber != null && (
-              <span className="trc2__playernum">{profile.playerNumber}</span>
-            )}
+          {/* ── Place band ── */}
+          <div className={`trc2__placeband ${medalClass(place)}`}>
+            {qualification ? 'Qualified' : place != null ? ordinal(place) : 'Finished'}
           </div>
-          <div className="trc2__reward">
-            {/* Dan section 44: the champion's card must not imply the placement
-                prize was the whole story. It never was on this card - "Reward"
-                has always been prize + bounties - but a single opaque figure
-                does not SAY so, and in a mystery bounty event the split is
-                frequently most of the interest. The label names it as the
-                total, and the line underneath shows the two halves whenever
-                there are two. */}
-            <span className="trc2__reward-label">Total Payout:</span>
-            <span className="trc2__reward-value">{formatMoney(totalWon)}</span>
-          </div>
-        </div>
 
-        {/* ── Winning hand (if applicable) ── */}
-        {result.winningCards && result.winningCards.length > 0 && (
-          <div className="trc2__winning-hand">
-            <span className="trc2__winning-hand-label">Winning Hand</span>
-            <div className="trc2__winning-cards">
-              {result.winningCards.map((c, i) => (
-                <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
-              ))}
+          {/* ── Player row ── */}
+          <div className="trc2__player">
+            <img
+              className="trc2__avatar"
+              src={profile?.avatarUrl || generateDefaultAvatar()}
+              alt=""
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
+              }}
+            />
+            <div className="trc2__identity">
+              <span className="trc2__username sc-ink--silver">{profile?.username ?? ' '}</span>
+              {profile?.playerNumber != null && (
+                <span className="trc2__playernum sc-ink--muted">{profile.playerNumber}</span>
+              )}
+            </div>
+            <div className="trc2__reward">
+              {/* Dan section 44: the champion's card must not imply the placement
+                  prize was the whole story. It never was on this card - "Reward"
+                  has always been prize + bounties - but a single opaque figure
+                  does not SAY so, and in a mystery bounty event the split is
+                  frequently most of the interest. The label names it as the
+                  total, and the line underneath shows the two halves whenever
+                  there are two. */}
+              <span className="trc2__reward-label">
+                {qualification
+                  ? qualification.deliveryKind === 'seat'
+                    ? 'Target Entry:'
+                    : qualification.deliveryKind === 'ticket'
+                      ? 'Entry Ticket:'
+                      : 'Cash Award:'
+                  : 'Total Payout:'}
+              </span>
+              <span className="trc2__reward-value sc-ink--silver">
+                {moneyAtUnit(qualification?.amount ?? totalWon, unitCents)}
+                {/* The headline figure is otherwise a bare number, and a bare
+                    number in the Diamond Arena does not say what was won. Adds
+                    nothing at a chip event. */}
+                {moneySuffixAtUnit(unitCents)}
+              </span>
             </div>
           </div>
-        )}
 
-        {result.bountyWinnings > 0 && (
-          <div className="trc2__payout-split">
-            <span className="trc2__payout-part">
-              Prize <strong>{formatMoney(result.prize || 0)}</strong>
-            </span>
-            <span className="trc2__payout-plus" aria-hidden="true">
-              +
-            </span>
-            <span className="trc2__payout-part">
-              Bounties <strong>{formatMoney(result.bountyWinnings)}</strong>
-            </span>
+          {/* ── Winning hand (if applicable) ── */}
+          {result.winningCards && result.winningCards.length > 0 && (
+            <div className="trc2__winning-hand">
+              <span className="trc2__winning-hand-label">Winning Hand</span>
+              <div className="trc2__winning-cards">
+                {result.winningCards.map((c, i) => (
+                  <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.bountyWinnings > 0 && (
+            <div className="trc2__payout-split">
+              <span className="trc2__payout-part">
+                Prize <strong>{moneyAtUnit(result.prize || 0, unitCents)}</strong>
+              </span>
+              <span className="trc2__payout-plus" aria-hidden="true">
+                +
+              </span>
+              <span className="trc2__payout-part">
+                Bounties <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong>
+              </span>
+            </div>
+          )}
+
+          {/* Knockouts only appear when there were any — the reference card has
+              no room for a zero, and a zero says nothing. Same rule for rebuys
+              and add-ons, which the payload has always carried and the card has
+              never shown: in a rebuy event they are most of the story. */}
+          {(result.knockouts > 0 ||
+            result.bountyWinnings > 0 ||
+            mysteryCents > 0 ||
+            mysteryBounties > 0 ||
+            result.rebuys > 0 ||
+            result.addOns > 0) && (
+            <div className="trc2__extras">
+              {result.knockouts > 0 && (
+                <span className="trc2__extra">
+                  <strong>{result.knockouts}</strong> Knockout{result.knockouts === 1 ? '' : 's'}
+                </span>
+              )}
+              {result.bountyWinnings > 0 && (
+                <span className="trc2__extra">
+                  <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong> In Bounties
+                </span>
+              )}
+              {/* MYSTERY BOUNTY (Dan section 43). Three facts the bounty line
+                  above cannot carry: how many of those bounties were CHESTS, what
+                  they paid, and the biggest single one. In cents, so divided by
+                  100 here and nowhere else. */}
+              {mysteryBounties > 0 && (
+                <span className="trc2__extra">
+                  <strong>{mysteryBounties.toLocaleString('en-US')}</strong> Mystery Bount
+                  {mysteryBounties === 1 ? 'y' : 'ies'}
+                </span>
+              )}
+              {mysteryCents > 0 && (
+                <span className="trc2__extra">
+                  <strong>{moneyAtUnit(mysteryCents / 100, unitCents)}</strong> In Mystery Bounties
+                </span>
+              )}
+              {largestMysteryCents > 0 && (
+                <span className="trc2__extra">
+                  <strong>{moneyAtUnit(largestMysteryCents / 100, unitCents)}</strong> Largest Mystery
+                  Bounty
+                </span>
+              )}
+              {result.rebuys > 0 && (
+                <span className="trc2__extra">
+                  <strong>{result.rebuys}</strong> Rebuy{result.rebuys === 1 ? '' : 's'}
+                </span>
+              )}
+              {result.addOns > 0 && (
+                <span className="trc2__extra">
+                  <strong>{result.addOns}</strong> Add-On{result.addOns === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ── How the session actually went ──
+              Two facts the payload has always carried and this card threw away.
+              Deliberately NOT chips: Dan, "tournaments are never displayed by
+              chips, only what place you finished and how much you made." Time
+              and hands are neither — they are what you did, and on a Spin they
+              are the difference between a cooler and a grind. Rendered only when
+              known, so an older payload shows no empty row. */}
+          {(durationSeconds != null || handsPlayed != null) && (
+            <div className="trc2__session">
+              {durationSeconds != null && (
+                <span className="trc2__session-stat">
+                  <span className="trc2__session-label sc-ink--blue">Duration</span>
+                  <span className="trc2__session-value sc-ink--silver">
+                    {formatDuration(durationSeconds)}
+                  </span>
+                </span>
+              )}
+              {handsPlayed != null && (
+                <span className="trc2__session-stat">
+                  <span className="trc2__session-label sc-ink--blue">Hands</span>
+                  <span className="trc2__session-value sc-ink--silver">
+                    {handsPlayed.toLocaleString()}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* The way out, kept as its own control because the backdrop is not
+              one. The foot's two plates belong to Share and Play Again. */}
+          <div className="trc2__exit">
+            <button className="trc2__close" onClick={onDismiss} aria-label="Close">
+              Close
+            </button>
           </div>
-        )}
-
-        {/* Knockouts only appear when there were any — the reference card has
-            no room for a zero, and a zero says nothing. Same rule for rebuys
-            and add-ons, which the payload has always carried and the card has
-            never shown: in a rebuy event they are most of the story. */}
-        {(result.knockouts > 0 ||
-          result.bountyWinnings > 0 ||
-          mysteryCents > 0 ||
-          mysteryBounties > 0 ||
-          result.rebuys > 0 ||
-          result.addOns > 0) && (
-          <div className="trc2__extras">
-            {result.knockouts > 0 && (
-              <span className="trc2__extra">
-                <strong>{result.knockouts}</strong> Knockout{result.knockouts === 1 ? '' : 's'}
-              </span>
-            )}
-            {result.bountyWinnings > 0 && (
-              <span className="trc2__extra">
-                <strong>{formatMoney(result.bountyWinnings)}</strong> In Bounties
-              </span>
-            )}
-            {/* MYSTERY BOUNTY (Dan section 43). Three facts the bounty line
-                above cannot carry: how many of those bounties were CHESTS, what
-                they paid, and the biggest single one. In cents, so divided by
-                100 here and nowhere else. */}
-            {mysteryBounties > 0 && (
-              <span className="trc2__extra">
-                <strong>{mysteryBounties.toLocaleString('en-US')}</strong> Mystery Bount
-                {mysteryBounties === 1 ? 'y' : 'ies'}
-              </span>
-            )}
-            {mysteryCents > 0 && (
-              <span className="trc2__extra">
-                <strong>{formatMoney(mysteryCents / 100)}</strong> In Mystery Bounties
-              </span>
-            )}
-            {largestMysteryCents > 0 && (
-              <span className="trc2__extra">
-                <strong>{formatMoney(largestMysteryCents / 100)}</strong> Largest Mystery Bounty
-              </span>
-            )}
-            {result.rebuys > 0 && (
-              <span className="trc2__extra">
-                <strong>{result.rebuys}</strong> Rebuy{result.rebuys === 1 ? '' : 's'}
-              </span>
-            )}
-            {result.addOns > 0 && (
-              <span className="trc2__extra">
-                <strong>{result.addOns}</strong> Add-On{result.addOns === 1 ? '' : 's'}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* ── How the session actually went ──
-            Two facts the payload has always carried and this card threw away.
-            Deliberately NOT chips: Dan, "tournaments are never displayed by
-            chips, only what place you finished and how much you made." Time
-            and hands are neither — they are what you did, and on a Spin they
-            are the difference between a cooler and a grind. Rendered only when
-            known, so an older payload shows no empty row. */}
-        {(durationSeconds != null || handsPlayed != null) && (
-          <div className="trc2__session">
-            {durationSeconds != null && (
-              <span className="trc2__session-stat">
-                <span className="trc2__session-label">Duration</span>
-                <span className="trc2__session-value">{formatDuration(durationSeconds)}</span>
-              </span>
-            )}
-            {handsPlayed != null && (
-              <span className="trc2__session-stat">
-                <span className="trc2__session-label">Hands</span>
-                <span className="trc2__session-value">{handsPlayed.toLocaleString()}</span>
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* ── Actions ── */}
-        <div className="trc2__actions">
-          <button className="trc2__btn" onClick={() => void handleShare()}>
-            {shared ? 'Link Copied' : 'Share'}
-          </button>
-          <button className="trc2__btn trc2__btn--primary" onClick={handlePlayAgain}>
-            Play Again
-          </button>
-        </div>
+        </SpadeConsole>
       </div>
     </div>,
     document.body

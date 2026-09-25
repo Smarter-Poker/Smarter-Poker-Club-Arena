@@ -77,6 +77,27 @@ jobs:
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 
+      # 2026-09-23 (issue #5008). scripts/ci/recording-only.mjs lets the
+      # file-text guards stop predicting what an ALREADY-APPLIED migration will
+      # do. That is only honest if somebody asks production what actually
+      # happened, and this is the only job in the estate that already holds the
+      # database credentials AND already files an issue when it goes red - so
+      # it is the reader (CLAUDE.md 10.86 rule 3).
+      #
+      # Exit 3 is COULD NOT TELL and is deliberately NOT success: a recording
+      # whose evidence could not be checked is a recording nobody checked.
+      - name: Verify every recorded migration against production
+        id: recordings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          set +e
+          node scripts/ci/check-recorded-migrations-evidence.mjs 2>&1 | tee /tmp/recordings.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
       - name: Summary
         if: always()
         run: |
@@ -85,6 +106,12 @@ jobs:
             echo ""
             echo '```'
             cat /tmp/recorded.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "## Recorded migrations verified against production"
+            echo ""
+            echo '```'
+            cat /tmp/recordings.log 2>/dev/null || echo "(the check produced no output)"
             echo '```'
             echo ""
             echo "The applied SQL for each one is in"
@@ -118,4 +145,10 @@ jobs:
         if: steps.compare.outputs.status != '0'
         run: |
           echo "::error title=Unrecorded migrations::Production has applied migrations that this repo has no file for. See the job summary."
+          exit 1
+
+      - name: Fail the run when a recording's evidence does not hold
+        if: steps.recordings.outputs.status != '0'
+        run: |
+          echo "::error title=Recorded migration evidence::A row in scripts/ci/recorded-migrations.manifest.json is not what production holds, or a finding it exempts is still live. See the job summary."
           exit 1

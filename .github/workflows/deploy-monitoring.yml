@@ -341,6 +341,17 @@ jobs:
           # alone and a fixed short sleep cannot prove rule health.
           node scripts/ci/check-alert-rules-match.mjs
 
+      # A RUNBOOK LINK THAT ANSWERS NOTHING (2026-09-18). check-monitoring-drift
+      # deliberately does not fetch http(s) runbooks during a build, so nothing
+      # ever did, and 19 alerts pointed at a host answering 404 for as long as
+      # anyone could measure. This asks, from here, where the network is.
+      - name: Every runbook link leads somewhere
+        env:
+          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ env.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-runbook-links.mjs
+
       - name: Remove Hetzner SSH credentials
         if: always()
         run: |

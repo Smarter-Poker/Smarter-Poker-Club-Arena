@@ -41,6 +41,7 @@ tests that read the rotator source was re-run by script against the edited file 
 ## Findings (fixed unless marked)
 
 ### 1. P1 FIXED - the session-P&L ledger read returned an arbitrary 1,000 rows of rake; the
+
 book-win / stop-loss rule has never fired on a true figure
 `HorseSessionRotator.ts` old L364-385. `chip_ledger ... .not('table_id','is',null).limit(20_000)`,
 no order, no entity/category filter. PostgREST caps at db-max-rows = 1,000 (pagination.ts).
@@ -57,6 +58,7 @@ EMPTY + `invested_ledger_incomplete` reported (fail open to the heuristic, never
 The horse-id read now runs BEFORE the bankroll block so both reads are horses-only.
 
 ### 2. P1 FIXED - the invested sum spanned every previous sitting at the same table
+
 Same block. One `oldest` for the whole floor, no per-seat lower bound. Measured on live rows:
 summing since `now()-30h` vs since the seat's own `joined_at` differs for 145 of 337 seats, and
 the whole-window sum reads 49 seats as a stop-loss (standard policy) against 2 real ones.
@@ -66,6 +68,7 @@ at the new table: 95 of 337 seats have no ledger row at their table -> heuristic
 as before, never a wrong number.)
 
 ### 3. P1 FIXED - a "short break" of up to 5 min met the 5-minute sit-out eviction and ended as
+
 a cash-out
 `BREAK_MAX_MS = 5 * 60_000` == `DisconnectEngine.SITOUT_MAX_MS`; the sit-back only runs on the
 90 s cycle, and `evictExpiredSitOuts` cashes the seat out at 5:00 ("2 orbits or 5 minutes,
@@ -74,6 +77,7 @@ of breaks were evictions the rotator neither counted nor logged. Fix: `BREAK_MAX
 (max sit-back 4:30 < 5:00). Pinned against `DisconnectEngine.SITOUT_MAX_MS` at runtime.
 
 ### 4. P1 FIXED - the break map is memory and the engine restarts hourly
+
 A break started before the :55 restart came back as `table_seats.is_sitting_out = true`
 (the engine persists and restores it, clock seeded from `sit_out_at`) with no sit-back holder;
 the only exit was the eviction cash-out. Fix: seat read selects `is_sitting_out`; a horse
@@ -83,6 +87,7 @@ disconnect engine's strike rule sits out afterwards is not re-seated every cycle
 the row, not memory - the ChipContinuity rule.
 
 ### 5. P1 FIXED - one waiting person stood up two or three horses
+
 Old `releaseWanted = humansWaiting` counted `notified` rows. `fn_offer_open_seat` holds the
 freed chair for a notified person for 60 s, so the second cycle stood up another horse while the
 offer was live, and a third if a chair was already open with an expired offer. The Stable Hand
@@ -95,11 +100,13 @@ arrival) instead of always seat 1 - the same person always watching the lowest s
 tell.
 
 ### 6. P2 FIXED - the waitlist read was unpaged
+
 `table_waitlist ... .in('status', [...])`, no paging (fleet paged since 2026-09-06; queue hit
 10,004 rows on 08-31). 0 rows today. Now `fetchAllRows` keyset on id, incomplete -> clear
 (fail closed, unchanged direction).
 
 ### 7. P2 FIXED - `leave_pending` read but never selected; a leaving seat asked again and
+
 topped up on its way out
 `considerSeatChanges` read `seat.leave_pending === true` on a row that never carried the
 column (always undefined). The departure loop re-picked a `leave_pending` seat next cycle
@@ -108,6 +115,7 @@ seat cashing out at hand end. Fix: selected; `isLeaving()` gates the drain, the 
 loop, the lone stand, the tournament leave, the top-up pass, the break and the sit-back restore.
 
 ### 8. P2 FIXED - a `LEAVE_LOCKED` stay-clock refusal was re-asked every 90 s
+
 Every certain departure (book win, table change, release, tournament) re-picked the same seat
 and called `leaveTable` again; each refusal logs and emits `leave_blocked` on the table. The
 executor already holds the pair for `stay_remaining_ms`. Fix: `RotatorLeaveResult` carries
@@ -115,6 +123,7 @@ executor already holds the pair for `stay_remaining_ms`. Fix: `RotatorLeaveResul
 `leaveHeld` skips the seat until the clock lifts (+1 s).
 
 ### 9. P1 FIXED - top-ups sat inside the departure loop, behind its population floor and its
+
 4-departure `break`, and priced off `bb * 100`
 A short stack at a 3-handed table never reloaded; on a busy cycle no table after the 4th ever
 reached the reload code. And `buyIn = bb * 100`, `minBuyIn: bb*40`, `maxBuyIn: bb*200` ignored
@@ -127,11 +136,13 @@ max_buy_in` selected; `buyIn = referenceBuyIn(bb, tableMin, tableMax)` for the t
 swing, `sessionVerdict` and `topUpAllowance`.
 
 ### 10. P2 FIXED - the P0 commit d72f4be left a red pin
+
 `PagedReadsCannotLieAboutBeingComplete.test.ts` required `if (error || !chunk) return;`
 verbatim; the P0 patch (correctly) turned that into a reporting block. Pin updated to require
 the report AND the return. Would have been red on the Mac.
 
 ### 11. P2 FIXED - `HorseLifecycleManager.cleanupFinishedTournaments` re-checked April's
+
 tournaments every minute and never reached today's
 `.in('status',['COMPLETED','CANCELLED'])`, no order, no limit -> the first 1,000 of 143,769
 (oldest, from 2026-04-13), 1,801 horse registrations among them: ~4,600 queries per pass (log:
@@ -142,11 +153,13 @@ reset only when a row changed (every horse is 'available' today; nothing writes 
 any more - `detectStuckHorses`/`forceResetHorse` are therefore inert, left as is).
 
 ### 12. P2 FIXED - `cleanupStaleSeats` read `tables` one row per stale seat
+
 843 seats older than 4 h (676 tournament, 167 cluster - every one skipped after its own read),
 one query each, every minute. Fix: one chunked `tables` read (`HorseLifecycle.staleSeatTables`),
 fail closed on incomplete; the `if (tableRow?.cluster_id) continue;` law pin is untouched.
 
 ### 13. P1 FIXED - the fleet's first cycle after a restart ran with no stake band loaded
+
 `HorseLaneLoader` waited `BOOT_DELAY_MS = 20 s`; `HorseFleetManager.start()` launches its
 initial seeding at once. With the map empty, `stakeBandFor` answers 'micro' for EVERY horse, so
 `stakeBandAllows` admitted the whole fleet to micro tables and nothing else - the exact tell Dan
@@ -159,6 +172,7 @@ Measured: all 1000 horses carry `lane` and `stakeBand` (`[HorseLaneLoader] 1000 
 hash fallback)` x3 in the log); the self-tuner spreads `prevMods` so it preserves both keys.
 
 ### 14. P2 FIXED - HorseMind hydration replayed the OLDEST thousand hands
+
 `hand_history ... .order(created_at asc).limit(12000)` -> 1,000 rows (db-max-rows) from the
 start of the window: 1,555,838 hands in 72 h, 137/min, so a boot with no flush row replayed
 72-hour-old hands and a normal :55 boot's 5-10 min tail (~700-1,400 hands) was truncated when
@@ -166,6 +180,7 @@ over 1,000. Fix: newest-first keyset pages on `created_at` up to HYDRATION_MAX_H
 in dealt order; a failed page replays what was read.
 
 ### 15. P2 FIXED - the rebuy roll was read against the TABLE's club; every Midway horse
+
 reloaded with no bankroll opinion
 `horseRebuyAmount({ clubId: tableInfo.club_id })` -> `readClubChipBalances(fade0000...)` -> no
 `club_members` row for a union -> `roll undefined` -> legacy flat amount, while a DSS horse got
@@ -177,6 +192,7 @@ the TABLE's club treasury and checks `club_id` against it - consistent with what
 passes; not touched.
 
 ### 16. P2 FIXED - the 5-second rebuy window was held by a hard-coded `< 2`
+
 `ServerTableEngineDealing.anyBustedPlayerCanAffordARebuy`: `horseRebuys < 2` while the
 temperaments stop at 2 / 3 / 4 committed buy-ins. A gambler on its third reload got no pause
 and then reloaded in settlement step 5 (rhythm asymmetry, 10.5); a nit on its second got a pause
@@ -185,17 +201,20 @@ HorseRebuyPolicy, used there. `atRebuyStopLoss` (with its counter) unchanged for
 sites.
 
 ### 17. P3 NOT FIXED (documented) - departure cap is spent in table-id order
+
 `byTable` iterates ascending table_id and `break`s at 4; certain departures on low ids starve
 high ids on a busy cycle. Only binds when > 4 certain/hazard fires coincide (rare in steady
 state). Left; the pin `if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;` is load-bearing
 for HorseTournamentCommitment.test.
 
 ### 18. P3 NOT FIXED (other lane, config) - a DSS 50/100 table (min 2,000 / max 10,000) is open
+
 `tables` row: bb 50, 0/9 seated, `status <> 'closed'`. No DSS horse can ever sit it (`canSit`
 needs 125k standard; DSS p90 roll is 15,582; no DSS member holds band 'high') and Dan's
 2026-09-03 order was "close any tables over 2/5". Config row, not code; flagging.
 
 ### 19. P3 NOT FIXED (P0 lane) - stuck-REGISTERING tournaments with a past `start_time` count as
+
 an imminent game and stand horses up from cash
 `bookingIsAGame(start <= now+60m)` and `tournamentCommitmentVerdict` (msToStart clamps to 0 ->
 `certain`) both treat a tournament whose start has passed as "now"; 9 cash seats are owed today
@@ -203,26 +222,31 @@ to events that cannot start (the P0). Correct per `fn_concurrent_game_load` (lan
 mirror); resolves when the P0 lands and those events start. Not changed.
 
 ### 20. P3 NOTED (lane A file) - `ladder_exhausted=11` is priced club-blind
+
 `HorseFleetManager` ~L3510: `cheapestRef` is the cheapest table on the whole floor (DSS 0.02,
 ref 2) while `bankrolls` is keyed club:horse - so 11 stranded cannot come from roll size (every
 horse roll on the platform is >= 8,710). Likely a band/club restriction the gauge does not see.
 Not my file; measured for whoever picks it up.
 
 ### 21. VERIFIED - what "will it stand up hundreds" comes to
+
 See the measurement section: ~17 on the first pass, then <= 4/cycle + lone stands (4 today) +
 tournament leaves (9 today, all P0-driven). No path stands more than one horse per table per
 cycle. The retirement drain is unreachable (145 open cash tables, 145 with cluster_id, 0
 retiring, 0 parked, 0 breaking).
 
 ### 22. VERIFIED - `isActiveNow` over the 1000 real ids (horseHash reproduced in SQL)
+
 Awake fraction by UTC hour: 53.3% (14:00) to 59.8% (06:00), flat; ~55% as the header claims.
 No band is dark at any hour. No diurnal shape at all (nobody asked for one); noted only.
 
 ### 23. VERIFIED - `ca_horse_fleet_policy` equals `FLEET_POLICY_DEFAULTS` field for field
+
 One global row: enabled, not paused, no caps, bias 1.0, min humans 0, bands/variants/schedule
 null. Nothing withholds seating by policy.
 
 ### 24. VERIFIED - bankroll arithmetic vs live rolls
+
 Rolls (horses, per club): SHARK p10 15.8k / p50 34k / p90 239k; JAQK 24.8k / 44k / 287k; DSS
 8.7k / 10.4k / 15.6k; union row 25k / 25k / 222k. `canSit` at every open DSS stake through
 2/4 (ref 200: standard 5k, nit 8k) passes for essentially all 416; at DSS 5/10 (ref 500: 12.5k

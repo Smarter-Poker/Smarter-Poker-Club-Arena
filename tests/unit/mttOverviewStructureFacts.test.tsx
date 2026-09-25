@@ -151,7 +151,10 @@ describe('live tournament tabs share the committed blind amounts', () => {
     if (name === 'Overview') {
       const hero = container.querySelector('.dov-hero')!;
       expect(within(hero as HTMLElement).getByText('Level 370 Ends In')).toBeInTheDocument();
-      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(known ? '53K / 105K' : '-');
+      /* 52,500 prints as 52.5K: chipsCompact is compactChips (src/utils/format.ts),
+         the one compact formatter, which never rounds a figure UP to a number
+         the player does not have (#ClubArenaConsole, 2026-09-04). */
+      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(known ? '52.5K / 105K' : '-');
       if (known) expect(within(hero as HTMLElement).getByText('Ante 105K')).toBeInTheDocument();
       else
         expect(
@@ -236,7 +239,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
     expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('1:00');
     expect(blindClock().textContent).toContain('Paused');
     expect(rendered.container.querySelector('.dov-hero__meter')).toBeNull();
-    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(90_000);
     });
@@ -331,7 +334,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
     await flush();
     expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
     expect(blindClock().textContent).toContain('Paused');
-    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
   });
 
   it.each([null, 'invalid-anchor'])(
@@ -359,7 +362,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
       );
       expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
       expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
-      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
     }
   );
 
@@ -574,6 +577,64 @@ function props(startingChips: number, blindLevels: NormalisedBlindLevel[]): Tour
 }
 const value = (label: string) =>
   screen.getByText(label, { selector: 'dt' }).parentElement!.querySelector('dd')!.textContent;
+
+describe('recorded satellite qualifier ranking', () => {
+  it('preserves equal survivor outcomes in the real ranking and hero card', () => {
+    const input = props(1000, [level(10)]);
+    input.tournament = {
+      ...input.tournament,
+      status: 'COMPLETED',
+      format_contract: 'mtt-v2',
+      satellite_target_id: 'a1000000-0000-4000-8000-000000000001',
+    };
+    input.currentUserId = 'hero';
+    input.entries = [
+      {
+        id: 'hero-entry',
+        user_id: 'hero',
+        username: 'First Qualifier',
+        avatar_url: null,
+        status: 'winner',
+        chips: 3000,
+      },
+      {
+        id: 'other-entry',
+        user_id: 'other',
+        username: 'Other Qualifier',
+        avatar_url: null,
+        status: 'winner',
+        chips: 1000,
+      },
+      {
+        id: 'bubble-entry',
+        user_id: 'bubble',
+        username: 'Bubble Player',
+        avatar_url: null,
+        status: 'eliminated',
+        chips: 0,
+        position: 3,
+      },
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <RankingTab {...input} />
+      </MemoryRouter>
+    );
+    expect(container.querySelector('.rk-hero__label')?.textContent).toBe('Your Result');
+    expect(container.querySelector('.rk-hero__rank')?.textContent).toBe('Qualified');
+    expect(container.querySelector('.rk-hero')?.textContent).not.toContain('You Lead');
+    const rows = Array.from(container.querySelectorAll('.rk-item'));
+    expect(rows).toHaveLength(3);
+    for (const row of rows.slice(0, 2)) {
+      expect(row.querySelector('.rk-rank')?.textContent).toBe('-');
+      expect(row.querySelector('.rk-sub')?.textContent).toBe('Qualified');
+      expect(row.querySelector('button')).toBeNull();
+    }
+    expect(rows[2].querySelector('.rk-rank')?.textContent).toBe('3');
+    expect(rows[2].querySelector('.rk-sub')?.textContent).toBe('Finished 3rd');
+    expect(screen.queryByText('The Field Is In The Money')).toBeNull();
+  });
+});
 
 describe('Overview displays engine structure facts without changing tournament rules', () => {
   it.each([

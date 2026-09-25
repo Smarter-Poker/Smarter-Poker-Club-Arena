@@ -1,4 +1,5 @@
 import { isDiamondGameRoute } from './utils/diamondGameRoute';
+import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — App Component
@@ -46,7 +47,10 @@ import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
-import { shouldShowClubFooterForVisitor } from './components/club/clubFooterVisibility';
+import {
+  shouldShowClubFooterForVisitor,
+  shouldShowDiamondFooterFor,
+} from './components/club/clubFooterVisibility';
 import { useUserStore } from './stores/useUserStore';
 import { applyArenaScheme, arenaSchemeFor } from './lib/arenaScheme';
 import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
@@ -107,7 +111,12 @@ const TournamentResultsPage = lazyWithRetry(
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+// Keep the complete Daily Challenges presentation graph behind its route.
+// Auth/loading/crash paint is deliberately owned by the lazy route module so
+// players who never open Challenges do not pay for its artwork or instruments.
+const DailyChallengesRoute = lazyWithRetry(
+  () => import('./components/challenges/DailyChallengesRoute')
+);
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
@@ -139,6 +148,7 @@ const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
 const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
 const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'));
+const CashierStatementsPage = lazyWithRetry(() => import('./pages/CashierStatementsPage'));
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
 const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
@@ -155,6 +165,7 @@ const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
 const ClubDiamondGamesOperationsPage = lazyWithRetry(
   () => import('./pages/club/ClubDiamondGamesOperationsPage')
 );
+const ClubDiamondCostsPage = lazyWithRetry(() => import('./pages/club/ClubDiamondCostsPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -185,6 +196,7 @@ const ArenaGameCardsShowcasePage = lazyWithRetry(
   () => import('./pages/dev/ArenaGameCardsShowcasePage')
 );
 const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
+const DiamondBottomNav = lazyWithRetry(() => import('./components/arena/DiamondBottomNav'));
 const CustomizationStudioShowcasePage = lazyWithRetry(
   () => import('./pages/dev/CustomizationStudioShowcasePage')
 );
@@ -214,6 +226,9 @@ const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPag
 const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
 const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
+// One marketplace (Dan, 2026-09-21): the route hands the web to the World Hub
+// marketplace and keeps MarketplacePage for the native app and checkout returns.
+const MarketplaceRoute = lazyWithRetry(() => import('./pages/MarketplaceRoute'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
@@ -256,6 +271,7 @@ const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'
 const HandReplayerPage = lazyWithRetry(() => import('./pages/share/HandReplayerPage'));
 // VISIBLE FIX 2026-08-15: ShareHand emits /replay?h=<payload> for every share
 // channel, and no such route existed — every shared link 404'd.
+const SharedBonusReplayPage = lazyWithRetry(() => import('./pages/share/SharedBonusReplayPage'));
 const SharedHandReplayPage = lazyWithRetry(() => import('./pages/share/SharedHandReplayPage'));
 const SimPage = lazyWithRetry(() => import('./pages/SimPage'));
 
@@ -274,6 +290,10 @@ const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDa
 /* House ads: smarter.poker's own promotions, platform-staff only. The page
    gates on profiles.role and the API route behind it checks again. */
 const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
+/* Commerce Desk (2026-09-24): platform staff decide club and union diamond
+   refunds, run the catalog price lifecycle and verify comparison evidence.
+   PlatformStaffGuard closes the route; every door checks staff again. */
+const CommerceDeskPage = lazyWithRetry(() => import('./pages/admin/CommerceDeskPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -326,6 +346,18 @@ function FullApp() {
   /* A signed-out visitor on a public page (landing, Help Center, legal) is
      not shown the authenticated footer; see shouldShowClubFooterForVisitor. */
   const footerVisitorSignedIn = useUserStore((state) => state.isAuthenticated);
+  /* A DIAMOND PLAYER CAN FIND THEIR WAY (2026-09-19). Which bar owns the
+     bottom edge, read once: the Diamond bar stands on the arena's player
+     routes, on the arena lobby opened as a tab, and on /hand-history and
+     /stats while they carry the arena's scope. It is read here rather than
+     twice below because it also SUPPRESSES the chip bar, which is what keeps
+     one bottom edge carrying one bar on those last two. */
+  const diamondFooterVisible = shouldShowDiamondFooterFor(
+    location.pathname,
+    location.search,
+    inTabLobbyActive,
+    inTabLobbyClubId
+  );
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -678,6 +710,7 @@ function FullApp() {
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
               <Route path="/replay" element={<SharedHandReplayPage />} />
+              <Route path="/bonus-replay/:shareId" element={<SharedBonusReplayPage />} />
 
               {/* Scenario Sim — deterministic UI regression playback, no auth */}
               <Route path="/sim" element={<SimPage />} />
@@ -1060,6 +1093,18 @@ function FullApp() {
                   }
                 />
                 <Route
+                  path="unions/:unionId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="union" />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
@@ -1139,16 +1184,7 @@ function FullApp() {
                 />
 
                 {/* User */}
-                <Route
-                  path="challenges/:cycle?"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Daily Challenges">
-                        <DailyChallengesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="challenges/:cycle?" element={<DailyChallengesRoute />} />
                 <Route
                   path="profile"
                   element={
@@ -1410,6 +1446,21 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* Cashier Phase 5: the full cross-wallet statement and its
+                    export. Member-reachable like the Cashier itself; what it
+                    may show is decided by fn_cashier_statement_page. */}
+                <Route
+                  path="clubs/:clubId/cashier/statements"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierStatementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="clubs/:clubId/cashier-classic"
                   element={
@@ -1507,7 +1558,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Diamond Plinko">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.plinko}>
                           <DiamondPlinkoPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1519,7 +1570,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Diamond Crash">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.crash}>
                           <DiamondCrashPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1531,7 +1582,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Donkey Crossing">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.crossing}>
                           <DiamondChoicePage key="crossing" game="crossing" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1543,7 +1594,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Diamond Mines">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.mines}>
                           <DiamondChoicePage key="mines" game="mines" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1569,6 +1620,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Diamond Games Operations">
                           <ClubDiamondGamesOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="club" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -2118,11 +2181,23 @@ function FullApp() {
                 <Route
                   path="marketplace"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Marketplace">
-                        <MarketplacePage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Marketplace">
+                      {/* THE SAME PAGES AS THE WORLD HUB MARKETPLACE (Dan,
+                          2026-09-21). On the web this opens the matching
+                          /hub/diamond-store, /hub/vip-membership or
+                          /hub/club-shop page, which a signed-out visitor may
+                          read as well - so the guard belongs on the in-app
+                          storefront, which is rendered in the native app and
+                          for the two addresses only it can finish (a card
+                          checkout return, and a top-up carrying ?next=). */}
+                      <MarketplaceRoute
+                        storefront={
+                          <AuthGuard>
+                            <MarketplacePage />
+                          </AuthGuard>
+                        }
+                      />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route
@@ -2250,6 +2325,18 @@ function FullApp() {
                   }
                 />
                 <Route
+                  path="commerce-desk"
+                  element={
+                    <AuthGuard>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Commerce Desk">
+                          <CommerceDeskPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="engine"
                   element={
                     <AuthGuard>
@@ -2278,16 +2365,32 @@ function FullApp() {
             </Routes>
           </Suspense>
           {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
-              footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
-          {shouldShowClubFooterForVisitor(
-            location.pathname,
-            inTabLobbyActive,
-            inTabLobbyClubId,
-            footerVisitorSignedIn
-          ) && (
-            <ClubFooterMount
-              clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
-            />
+              footer is owed to the lobby, not to the URL (inTabLobbySurface).
+              ONE BOTTOM EDGE, ONE BAR: under the arena the chip rules already
+              answer false, but /hand-history and /stats are ESTATE pages the
+              chip footer has always been owed, and the Diamond bar follows the
+              player onto them while they are scoped to the arena. There the
+              two rules are both true and this guard is what decides it, so the
+              exclusivity is stated here rather than assumed. */}
+          {!diamondFooterVisible &&
+            shouldShowClubFooterForVisitor(
+              location.pathname,
+              inTabLobbyActive,
+              inTabLobbyClubId,
+              footerVisitorSignedIn
+            ) && (
+              <ClubFooterMount
+                clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
+              />
+            )}
+          {/* A DIAMOND PLAYER CAN FIND THEIR WAY (2026-09-19). The chip footer
+              stays off the Diamond Arena by the rules above; this is the bar
+              that stands in its place there, and on the two estate pages its
+              own doors open while they carry the arena's scope. */}
+          {diamondFooterVisible && (
+            <Suspense fallback={null}>
+              <DiamondBottomNav />
+            </Suspense>
           )}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive

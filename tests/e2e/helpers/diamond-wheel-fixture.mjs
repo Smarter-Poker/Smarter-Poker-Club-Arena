@@ -31,13 +31,41 @@ export function diamondWheelFixture() {
           import {MemoryRouter,useNavigate,useLocation} from 'react-router-dom';
           import {WheelExperience} from './src/components/wheel/WheelExperience';
           import {WheelCabinet,WheelPrizeGallery,WheelEntry} from './src/components/wheel/WheelCabinet';
+          import {useMeasuredWidth} from './src/hooks/useMeasuredWidth';
           const receipts=${JSON.stringify(receipts)};
           const previews=${JSON.stringify(wheel.filter((r) => r.secondary))};
-          window.wheelProof={finished:0,events:[]};
+          window.wheelProof={finished:0,events:[],upgradeStates:[]};
+          // Record short-lived rendered states in the browser. Serial driver
+          // assertions can miss a complete secondary spin under CI tracing.
+          const observeUpgrade=()=>{
+            const upper=document.querySelector('[aria-label="Upgrade Wheel"]');
+            const main=document.querySelector('[aria-label="Diamond Wheel"]');
+            if(!upper||!main)return;
+            const state={
+              phase:upper.dataset.phase,
+              expanded:document.querySelector('[data-wheel-assembly]').dataset.upgradeReveal,
+              selectors:upper.querySelectorAll('[data-wheel-selector]').length,
+              titles:upper.querySelectorAll('[data-card-design="title"]').length,
+              cards:upper.querySelectorAll('[data-card-design="full"]').length,
+              slots:upper.querySelectorAll('[data-slot]').length,
+              visible:upper.getBoundingClientRect().height>0&&getComputedStyle(upper).visibility==='visible',
+              scale:getComputedStyle(main.querySelector('[data-wheel-face]')).transform,
+              finished:window.wheelProof.finished,
+              destination:document.querySelector('[data-testid="destination"]').textContent,
+            };
+            const last=window.wheelProof.upgradeStates.at(-1);
+            if(JSON.stringify(last)!==JSON.stringify(state))window.wheelProof.upgradeStates.push(state);
+          };
+          new MutationObserver(observeUpgrade).observe(document.getElementById('root'),{
+            subtree:true,childList:true,attributes:true,
+            attributeFilter:['data-phase','data-upgrade-reveal','style'],
+          });
+          document.addEventListener('transitionend',observeUpgrade,true);
           function Fixture(){
             const kind=new URLSearchParams(window.location.search).get('kind')||'prize';
             const receipt=receipts[kind];const [spinning,setSpinning]=useState(false);
             const [entry,setEntry]=useState(receipt.entry_value_diamonds);const navigate=useNavigate();const location=useLocation();
+            const [stageRef,stageWidth]=useMeasuredWidth(300);
             const finish=()=>{
               window.wheelProof.finished++;window.wheelProof.events.push({event:'finished',time:performance.now()});
               setSpinning(false);
@@ -51,8 +79,8 @@ export function diamondWheelFixture() {
                   setup={<WheelEntry value={entry} disabled={spinning} onChange={setEntry}/>}
                   primary={{label:'Preview Spin',disabled:spinning,onClick:()=>setSpinning(true)}}
                   secondary={{label:'Buy More',disabled:spinning,onClick:()=>{}}}>
-                  <WheelExperience segments={receipt.segments} upgradeSegments={previews[0].secondary.segments} receipt={spinning?receipt:null} spinKey={1}
-                    spinning={spinning} size={900} onFinished={finish}/>
+                  <div ref={stageRef}><WheelExperience segments={receipt.segments} upgradeSegments={previews[0].secondary.segments} receipt={spinning?receipt:null} spinKey={1}
+                    spinning={spinning} size={Math.max(240,stageWidth)} onFinished={finish}/></div>
                 </WheelCabinet>
                 <WheelPrizeGallery segments={receipt.segments}/>
               </>:<h1>Earned Game Entry</h1>}

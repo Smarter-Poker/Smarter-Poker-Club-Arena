@@ -1,11 +1,27 @@
+import { isTournamentEntryUnavailable } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE - XMTT (Cross-Club Multi-Table Tournament) Lobby
  *  Ported from World Hub native page → Club Arena TSX
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE CONSOLE (#ClubArenaConsole, 2026-09-08). The page was a two-column split
+ * of rounded cards: a coloured status pill per row, a four-cell detail GRID, a
+ * gold value, a green value and four gradient buttons. It is Dan's approved
+ * spade master now - one console for the lobby head and its filters, one per
+ * tournament, one for the detail pane - and every figure prints as a row on the
+ * black glass, label in the master's lit blue on the left, value in silver on
+ * the right, with an engraved rule between rows. The status is a word in the
+ * well's painted pill slot rather than a coloured chip, and the two money
+ * actions are the plates painted into the foot.
+ *
+ * Nothing about what the page DOES has changed: the club resolution, the
+ * 30-second poll, the realtime and visibility refreshes, the shared
+ * registration hook that owns the one buy-in confirmation, the waitlist calls
+ * and the error banner are all exactly as they were.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -17,7 +33,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './XMTTPage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
-import { fmt, fmtChips } from '../utils/format';
+import { compactChips, fmtChips } from '../utils/format';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
@@ -28,6 +44,11 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolvePageClubId } from '../utils/resolvePageClubId';
+import {
+  SpadeConsole,
+  type ConsoleInk,
+  type PlateButtonProps,
+} from '../components/console/SpadeConsole';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -39,22 +60,23 @@ const formatDate = (ts: string | null) => {
   });
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { bg: string; color: string; label: string }> = {
-    registering: { bg: '#31A24C22', color: '#31A24C', label: 'REG OPEN' },
-    running: { bg: '#F5A62322', color: '#F5A623', label: 'RUNNING' },
-    completed: { bg: '#3A3B3C', color: '#B0B3B8', label: 'COMPLETE' },
-    cancelled: { bg: '#FA383E22', color: '#FA383E', label: 'CANCELLED' },
-  };
-  const c = map[status] || { bg: '#3A3B3C', color: '#B0B3B8', label: status?.toUpperCase() || '-' };
-  return (
-    <span className={styles.statusBadge} style={{ background: c.bg, color: c.color }}>
-      {c.label}
-    </span>
-  );
+/**
+ * The status, as a word in the master's own ink. It used to be a rounded chip
+ * with its own background and an amber that is not a house colour.
+ */
+const STATUS_INK: Record<string, { ink: ConsoleInk; label: string }> = {
+  registering: { ink: 'green', label: 'Reg Open' },
+  running: { ink: 'blue', label: 'Running' },
+  completed: { ink: 'muted', label: 'Complete' },
+  cancelled: { ink: 'red', label: 'Cancelled' },
+};
+
+function statusInk(status: string): { ink: ConsoleInk; label: string } {
+  return STATUS_INK[status] ?? { ink: 'muted', label: status?.toUpperCase() || '-' };
 }
 
 interface Tournament {
+  format_contract?: unknown;
   id: string;
   name: string;
   status: string;
@@ -62,7 +84,7 @@ interface Tournament {
   /** The PRIZE half of the split. Never render it alone - see totalBuyIn. */
   buy_in: number;
   buy_in_fee?: number | null;
-  max_players: number;
+  max_players: number | null;
   registered_count?: number;
   start_time?: string;
   created_at: string;
@@ -127,7 +149,7 @@ export default function XMTTPage() {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+            'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .or(await clubGamesOrFilter(uuid))
           .order('start_time', { ascending: false });
@@ -152,7 +174,7 @@ export default function XMTTPage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+            'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -264,6 +286,10 @@ export default function XMTTPage() {
       setActionError('That Tournament Is No Longer Listed');
       return;
     }
+    if (isTournamentEntryUnavailable(t, t.registered_count ?? 0)) {
+      setActionError('Tournament Entry Is Unavailable');
+      return;
+    }
     await registerMtt(
       {
         id: t.id,
@@ -308,41 +334,68 @@ export default function XMTTPage() {
   const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
   const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
 
-  // Load existing waitlist positions on mount for full-capacity tournaments
+  /* The SET of tournaments on screen, as one comparable value.
+     Sorted, so a poll that hands back the same events in a different order is
+     not a change; memoized, so it is a new string only when the ids differ and
+     the effect below cannot chase its own identity. */
+  const tournamentIdKey = useMemo(
+    () =>
+      tournaments
+        .map((t) => t.id)
+        .sort()
+        .join(','),
+    [tournaments]
+  );
+  const userId = user?.id;
+
+  // Load legacy waitlist positions so their owners can leave.
+  //
+  // A COUNT IS NOT AN IDENTITY. This was keyed on `tournaments.length`, and the
+  // lobby is a live list: one tournament closing registration as another opens
+  // leaves the length at 6 and the ids completely different. The effect
+  // therefore did not re-run, the new tournament's position was never fetched,
+  // and the player queued for it had no "Leave Waitlist" button to press -
+  // on a queue they cannot otherwise get out of. Keyed on the ids themselves,
+  // which change exactly when the set changes.
+  //
+  // A MERGE NEVER FORGETS. `setWaitlistPositions(prev => ({ ...prev, ... }))`
+  // only ever ADDED keys, so a tournament that left the list kept its entry in
+  // the map for as long as the page stayed open. Combined with the above, the
+  // page could print "Position #4" for a tournament that had already finished.
+  // The map is rebuilt from this run's answers instead of merged into, so an
+  // event that is no longer listed has no position - and a player who is no
+  // longer on a waitlist loses the stale number rather than keeping it.
   useEffect(() => {
-    if (!user || tournaments.length === 0) return;
-    const fullTournaments = tournaments.filter(
-      (t) => t.max_players && (t.registered_count || 0) >= t.max_players
-    );
-    if (fullTournaments.length === 0) return;
-
-    fullTournaments.forEach(async (t) => {
-      try {
-        const result = await tournamentService.getTournamentWaitlistPosition(t.id, user.id);
-        if (result) {
-          setWaitlistPositions((prev) => ({ ...prev, [t.id]: result.position }));
-        }
-      } catch (e) {
-        reportError(e, 'XMTTPage.setWaitlistPositions');
-        // Non-critical - position just won't show
-      }
-    });
-  }, [user?.id, tournaments.length]);
-
-  const handleJoinWaitlist = async (tournamentId: string) => {
-    if (!user) return;
-    setWaitlistProcessing(tournamentId);
-    try {
-      const { position } = await tournamentService.joinTournamentWaitlist(tournamentId, user.id);
-      setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: position }));
-    } catch (err: any) {
-      setActionError(safeErrorMessage(err));
-      clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
-    } finally {
-      setWaitlistProcessing(null);
+    const ids = tournamentIdKey ? tournamentIdKey.split(',') : [];
+    if (!userId || ids.length === 0) {
+      // Preserve identity when it is already empty; a fresh {} here would be a
+      // new state value on every poll and re-render the whole lobby for it.
+      setWaitlistPositions((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
     }
-  };
+    // A superseded run must not land its answers on top of a newer one.
+    let cancelled = false;
+    // Keep legacy queue exits available while registration stays unlimited.
+    void (async () => {
+      const entries = await Promise.all(
+        ids.map(async (id): Promise<[string, number | null]> => {
+          try {
+            const result = await tournamentService.getTournamentWaitlistPosition(id, userId);
+            return [id, result ? result.position : null];
+          } catch (e) {
+            reportError(e, 'XMTTPage.setWaitlistPositions');
+            // Non-critical - position just won't show
+            return [id, null];
+          }
+        })
+      );
+      if (cancelled || !mountedRef.current) return;
+      setWaitlistPositions(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, tournamentIdKey, mountedRef]);
 
   const handleLeaveWaitlist = async (tournamentId: string) => {
     if (!user) return;
@@ -366,198 +419,255 @@ export default function XMTTPage() {
 
   if (loading) return <PageSkeleton variant="dashboard" />;
 
+  /** The two plates a listed tournament offers. Both, or neither. */
+  const platesFor = (t: Tournament): { secondary: PlateButtonProps; primary: PlateButtonProps } => {
+
+    if (t.status !== 'registering') {
+      return {
+        secondary: {
+          label: 'Details',
+          onClick: (e) => {
+            e.stopPropagation();
+            setSelectedTournament(t.id);
+            loadDetail(t.id);
+          },
+        },
+        primary: { label: statusInk(t.status).label, ink: 'muted', disabled: true },
+      };
+    }
+
+    /* A legacy waitlist position can still be left; nothing new can be joined
+       (the queue was retired with the fixed-format entry contract). */
+    if (waitlistPositions[t.id]) {
+      return {
+        secondary: {
+          label: 'Details',
+          onClick: (e) => {
+            e.stopPropagation();
+            setSelectedTournament(t.id);
+            loadDetail(t.id);
+          },
+        },
+        primary: {
+          label: waitlistProcessing === t.id ? 'Working...' : 'Leave Waitlist',
+          ink: 'red',
+          disabled: waitlistProcessing === t.id,
+          onClick: (e) => {
+            e.stopPropagation();
+            handleLeaveWaitlist(t.id);
+          },
+        },
+      };
+    }
+
+    return {
+      secondary: {
+        label: 'Unregister',
+        ink: 'red',
+        onClick: (e) => {
+          e.stopPropagation();
+          handleUnregister(t.id);
+        },
+      },
+      primary: {
+        label: isTournamentEntryUnavailable(t, t.registered_count ?? 0)
+          ? 'Entry Unavailable'
+          : isRegisteringMtt
+            ? 'Working...'
+            : 'Register',
+        ink: isTournamentEntryUnavailable(t, t.registered_count ?? 0) ? 'muted' : 'white',
+        disabled: isRegisteringMtt || isTournamentEntryUnavailable(t, t.registered_count ?? 0),
+        onClick: (e) => {
+          e.stopPropagation();
+          handleRegister(t.id);
+        },
+      },
+    };
+  };
+
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>XMTT Tournament Lobby</h1>
-        <div className={styles.headerActions}>
-          <Link to="/tournaments" className={styles.btnGhost}>
+      {/* ── The lobby head: title, filters, and the two ways out ─────────── */}
+      <SpadeConsole
+        as="section"
+        className={styles.head}
+        eyebrow="Cross Club"
+        title="XMTT Lobby"
+        subtitle="Multi-Table Tournaments"
+        pill={`${filtered.length}`}
+        pillInk="blue"
+        foot="foot"
+      >
+        <nav className={styles.filters} aria-label="Tournament Filters">
+          {(['all', 'registering', 'running', 'completed'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              className={`${styles.filter} ${filter === f ? styles.filterActive : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f !== 'all' &&
+                ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
+            </button>
+          ))}
+        </nav>
+
+        <p className={styles.links}>
+          <Link to="/tournaments" className={`${styles.link} sc-ink--blue`}>
             All Tournaments
           </Link>
-          <Link to="/" className={styles.btnGhost}>
+          <Link to="/" className={`${styles.link} sc-ink--blue`}>
             Lobby
           </Link>
-        </div>
-      </header>
+        </p>
 
-      {/* Filters */}
-      <nav className={styles.tabNav}>
-        {(['all', 'registering', 'running', 'completed'] as const).map((f) => (
-          <button
-            key={f}
-            className={`${styles.tab} ${filter === f ? styles.tabActive : ''}`}
-            onClick={() => setFilter(f)}
-          >
-            {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-            {f !== 'all' &&
-              ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
-          </button>
-        ))}
-      </nav>
-
-      {actionError && (
-        <div className={styles.actionError}>
-          <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} className={styles.dismissBtn}>
-            ✕
-          </button>
-        </div>
-      )}
-
-      <div className={styles.splitLayout}>
-        {/* Tournament List */}
-        <div className={styles.listPanel}>
-          {filtered.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>★</span>
-              <span className={styles.emptyText}>No MTT Tournaments Found For This Filter.</span>
-              <Link to="/" className={styles.btnPrimary} style={{ marginTop: 12 }}>
-                Go To Lobby
-              </Link>
-            </div>
-          ) : (
-            filtered.map((t) => (
-              <div
-                key={t.id}
-                className={`${styles.tournCard} ${selectedTournament === t.id ? styles.tournCardSelected : ''}`}
-                onClick={() => {
-                  setSelectedTournament(t.id);
-                  loadDetail(t.id);
-                }}
-              >
-                <div className={styles.tournCardHeader}>
-                  <span className={styles.tournName}>{t.name || 'Tournament'}</span>
-                  <StatusBadge status={t.status} />
-                </div>
-                <div className={styles.tournMeta}>
-                  {/* The advertised buy-in is the TOTAL (prize + fee), as whole
-                      chips. buy_in_amount alone understated it by the fee and
-                      could print a decimal on legacy rows. */}
-                  <span> Buy-In: {money(totalBuyIn(t.buy_in, t.buy_in_fee))}</span>
-                  <span>
-                    {t.registered_count || 0} / {t.max_players || '∞'}
-                  </span>
-                  <span> {formatDate(t.start_time || t.created_at)}</span>
-                </div>
-                {t.status === 'registering' && (
-                  <div className={styles.tournActions}>
-                    {/* Register/Unregister - show when not at capacity */}
-                    {(t.registered_count || 0) < (t.max_players || Infinity) && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRegister(t.id);
-                          }}
-                          className={styles.btnRegister}
-                        >
-                          Register
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnregister(t.id);
-                          }}
-                          className={styles.btnUnregister}
-                        >
-                          Unregister
-                        </button>
-                      </>
-                    )}
-                    {/* Waitlist - show when at capacity */}
-                    {(t.registered_count || 0) >= (t.max_players || Infinity) && t.max_players && (
-                      <>
-                        {waitlistPositions[t.id] ? (
-                          <>
-                            <span
-                              style={{ color: '#F5A623', fontSize: '0.75rem', fontWeight: 600 }}
-                            >
-                              Position #{waitlistPositions[t.id]}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleLeaveWaitlist(t.id);
-                              }}
-                              disabled={waitlistProcessing === t.id}
-                              className={styles.btnUnregister}
-                            >
-                              {waitlistProcessing === t.id ? '...' : 'Leave Waitlist'}
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleJoinWaitlist(t.id);
-                            }}
-                            disabled={waitlistProcessing === t.id}
-                            className={styles.btnRegister}
-                          >
-                            {waitlistProcessing === t.id ? 'Joining...' : 'Join Waitlist'}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Detail Panel */}
-        {selectedTournament && (
-          <div className={styles.detailPanel}>
-            {detailLoading ? (
-              <div className={styles.detailLoading}>Loading Details...</div>
-            ) : detail ? (
-              <>
-                <h3 className={styles.detailTitle}>
-                  {detail.tournament?.name || 'Tournament Details'}
-                </h3>
-                <div className={styles.detailGrid}>
-                  <div>
-                    <div className={styles.detailLabel}>Buy-In</div>
-                    <div className={styles.detailValueGold}>
-                      {formatBuyIn(detail.tournament?.buy_in ?? 0, detail.tournament?.buy_in_fee)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className={styles.detailLabel}>Prize Pool</div>
-                    <div className={styles.detailValueGreen}>
-                      {money(detail.tournament?.prize_pool || 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className={styles.detailLabel}>Status</div>
-                    <StatusBadge status={detail.tournament?.status} />
-                  </div>
-                  <div>
-                    <div className={styles.detailLabel}>Players</div>
-                    <div className={styles.detailValue}>{detail.registrations?.length || 0}</div>
-                  </div>
-                </div>
-                <h4 className={styles.playerListTitle}>Registered Players</h4>
-                <div className={styles.playerList}>
-                  {(detail.registrations || []).length === 0 ? (
-                    <div className={styles.noPlayers}>No Registrations Yet</div>
-                  ) : (
-                    (detail.registrations || []).map((r, i) => (
-                      <div key={r.user_id || i} className={styles.playerRow}>
-                        <span>{r.display_name || r.username || 'Player'}</span>
-                        <span className={styles.playerChips}>{fmtChips(r.chips ?? 0)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className={styles.noSelection}>Select A Tournament</div>
-            )}
+        {actionError && (
+          <div className={styles.error} role="alert">
+            <span className={styles.actionError}>{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className={`${styles.link} sc-ink--muted`}
+            >
+              Dismiss
+            </button>
           </div>
         )}
-      </div>
+      </SpadeConsole>
+
+      {/* ── The tournaments ──────────────────────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <SpadeConsole
+          as="div"
+          className={styles.card}
+          eyebrow="Cross Club"
+          title="No Tournaments"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center">No MTT Tournaments Found For This Filter.</p>
+          <p className={styles.links}>
+            <Link to="/" className={`${styles.link} sc-ink--blue`}>
+              Go To Lobby
+            </Link>
+          </p>
+        </SpadeConsole>
+      ) : (
+        filtered.map((t) => {
+          const s = statusInk(t.status);
+          const inLine = waitlistPositions[t.id];
+          return (
+            <SpadeConsole
+              key={t.id}
+              as="div"
+              className={`${styles.card} ${selectedTournament === t.id ? styles.cardSelected : ''}`}
+              eyebrow="Tournament"
+              title={t.name || 'Tournament'}
+              pill={s.label}
+              pillInk={s.ink}
+              onClick={() => {
+                setSelectedTournament(t.id);
+                loadDetail(t.id);
+              }}
+              style={{ cursor: 'pointer' }}
+              plates={platesFor(t)}
+            >
+              <div className={styles.rows}>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Buy-In</span>
+                  {/* The advertised buy-in is the TOTAL (prize + fee), as whole
+                      chips, and EXACT: it is what the server charges.
+                      buy_in_amount alone understated it by the fee and could
+                      print a decimal on legacy rows. */}
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {money(totalBuyIn(t.buy_in, t.buy_in_fee))}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Entries</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {(t.registered_count || 0).toLocaleString()}
+                    {t.max_players ? ` / ${t.max_players.toLocaleString()}` : ' / Open'}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Starts</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {formatDate(t.start_time || t.created_at)}
+                  </span>
+                </div>
+                {inLine ? (
+                  <div className={styles.row}>
+                    <span className="sc-label sc-ink--blue">Waitlist</span>
+                    <span className={`${styles.value} sc-ink--gold`}>Position #{inLine}</span>
+                  </div>
+                ) : null}
+              </div>
+            </SpadeConsole>
+          );
+        })
+      )}
+
+      {/* ── The detail pane ──────────────────────────────────────────────── */}
+      {selectedTournament && (
+        <SpadeConsole
+          as="div"
+          className={styles.card}
+          eyebrow="Tournament"
+          title={detail?.tournament?.name || 'Tournament Details'}
+          pill={detail ? statusInk(detail.tournament?.status).label : undefined}
+          pillInk={detail ? statusInk(detail.tournament?.status).ink : 'muted'}
+          foot="foot"
+        >
+          {detailLoading ? (
+            <p className="sc-copy sc-copy--center">Loading Details...</p>
+          ) : detail ? (
+            <>
+              <div className={styles.rows}>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Buy-In</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {formatBuyIn(detail.tournament?.buy_in ?? 0, detail.tournament?.buy_in_fee)}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Prize Pool</span>
+                  <span className={`${styles.value} sc-ink--gold`}>
+                    {compactChips(detail.tournament?.prize_pool || 0)}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Registered</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {(detail.registrations?.length || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Registered Players</h4>
+              <div className={styles.rows}>
+                {(detail.registrations || []).length === 0 ? (
+                  <p className="sc-copy sc-copy--center">No Registrations Yet</p>
+                ) : (
+                  (detail.registrations || []).map((r, i) => (
+                    <div key={r.user_id || i} className={styles.row}>
+                      <span className={`${styles.player} sc-ink--silver`}>
+                        {r.display_name || r.username || 'Player'}
+                      </span>
+                      <span className={`${styles.value} sc-ink--blue`}>
+                        {fmtChips(r.chips ?? 0)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="sc-copy sc-copy--center">Select A Tournament</p>
+          )}
+        </SpadeConsole>
+      )}
     </div>
   );
 }

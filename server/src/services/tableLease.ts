@@ -41,12 +41,16 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mapLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
+import {
+  mapLeaseHeartbeatBatches,
+  RetainedLeaseHeartbeatBatches,
+} from './leaseHeartbeatBatches.js';
 import { warnThrottled, _resetLeaseWarnThrottleForTests } from './leaseWarningThrottle.js';
 // Straight from the client module, never the `supabase.js` barrel: the barrel
 // re-exports every submodule, so importing it from here would pull the whole
 // data layer into the module graph for one rpc() call.
 import { supabase } from './supabase/client.js';
+import { leaseHeartbeatRpc } from './leaseHeartbeatSession.js';
 /* Counted, not merely returned: every branch below that declines to renew a
    lease used to be silent, and repeated silent declines are exactly how a
    table ends up restarting every twenty seconds with nothing to read. */
@@ -350,7 +354,7 @@ export type TableLeaseHeartbeatOutcome =
     }
   | {
       status: 'uncertain';
-      reason: 'rpc_error' | 'rpc_threw';
+      reason: 'rpc_error' | 'rpc_threw' | 'pending';
     };
 
 /** Counters behind the /health lease block, so the split is visible remotely. */
@@ -368,8 +372,16 @@ let reclaimableHeartbeats = 0;
  * possible. That is deliberately stricter than the pre-deadline behavior,
  * which allowed an UNKNOWN heartbeat to keep a dealer alive forever.
  */
+const retainedTableHeartbeats = new RetainedLeaseHeartbeatBatches<
+  TableLeaseHeartbeatClaim,
+  TableLeaseHeartbeatOutcome
+>();
+
 export async function heartbeatTables(
-  claims: TableLeaseHeartbeatClaim[]
+  claims: TableLeaseHeartbeatClaim[],
+  onBatch?: (outcome: TableLeaseHeartbeatOutcome) => void,
+  ownerIsCurrent: () => boolean = () => true,
+  claimIsCurrent: (claim: TableLeaseHeartbeatClaim) => boolean = () => true
 ): Promise<TableLeaseHeartbeatOutcome> {
   if (claims.length === 0) {
     return { status: 'answered', proofs: [], lostTableIds: [] };
@@ -407,6 +419,27 @@ export async function heartbeatTables(
   }
   const capturedClaims = claims.map((claim) => ({ ...claim }));
   const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
+  if (onBatch) {
+    retainedTableHeartbeats.dispatch(
+      capturedClaims,
+      (claim) => `${claim.tableId.toLowerCase()}/${claim.leaseGeneration.toLowerCase()}`,
+      () => ownerIsCurrent() && tableLeaseMonotonicNow() < proofDeadlineMonotonicMs,
+      (batch) => {
+        const currentClaims = batch.filter(claimIsCurrent);
+        return currentClaims.length
+          ? heartbeatTableBatch(currentClaims, proofDeadlineMonotonicMs)
+          : Promise.resolve({ status: 'answered', proofs: [], lostTableIds: [] });
+      },
+      onBatch,
+      (error) =>
+        warnThrottled(
+          'batch_delivery_failed',
+          `[lease] heartbeat batch delivery failed: ${String(error)}`
+        )
+    );
+    // Dispatch is not a renewal. Only a validated batch callback proves one.
+    return { status: 'uncertain', reason: 'pending' };
+  }
   const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
     heartbeatTableBatch(batch, proofDeadlineMonotonicMs)
   );
@@ -417,8 +450,9 @@ export async function heartbeatTables(
     if (outcome.status !== 'answered') continue;
     answered = true;
     for (const proof of outcome.proofs) {
+      // A proof that outran its own window extends nothing. It is not a loss:
+      // the database answered `kept` for this exact generation to produce it.
       if (tableLeaseMonotonicNow() < proof.proofDeadlineMonotonicMs) proofs.push(proof);
-      else lostTableIds.push(proof.tableId);
     }
     lostTableIds.push(...outcome.lostTableIds);
   }
@@ -429,14 +463,29 @@ export async function heartbeatTables(
 
 async function heartbeatTableBatch(
   claims: TableLeaseHeartbeatClaim[],
-  proofDeadlineMonotonicMs: number
+  passDeadlineMonotonicMs: number
 ): Promise<TableLeaseHeartbeatOutcome> {
   const tableIds = claims.map((claim) => claim.tableId);
-  if (tableLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
-    return { status: 'answered', proofs: [], lostTableIds: tableIds };
+  /* A QUEUED BATCH HAS NO EVIDENCE OF LOSS (2026-09-21). See the matching
+     block in tournamentLease.ts: a batch that waited out the pass window
+     never asked the database anything, so naming its claims as lost turned
+     silence into a verdict and fenced live dealers. UNKNOWN extends nothing
+     and accuses nothing; the ordinary expiry timer still owns the decision. */
+  if (tableLeaseMonotonicNow() >= passDeadlineMonotonicMs) {
+    return { status: 'uncertain', reason: 'pending' };
   }
+  /* A PROOF IS MEASURED FROM THE REQUEST THAT EARNED IT. The window was
+     opened once per PASS, before the first request, then shared by every
+     batch; a batch that queued behind three others spent it waiting and its
+     `kept` answer was discarded for arriving late. `heartbeat_at` is set by
+     THIS statement, so a reading taken immediately before it is a
+     conservative floor for it, well inside the audited stale window. */
+  const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_table_leases_v4', {
+    /* LEASE RENEWAL CANNOT QUEUE BEHIND GAME TRAFFIC (2026-09-24): the
+       dedicated session when configured, the shared client otherwise. Same
+       arguments, same { data, error } answer. See leaseHeartbeatSession.ts. */
+    const { data, error } = await leaseHeartbeatRpc('table', {
       p_instance_id: INSTANCE_ID,
       p_claims: claims.map((claim) => ({
         table_id: claim.tableId,
@@ -524,6 +573,13 @@ async function heartbeatTableBatch(
       // checks the existing monotonic deadline after this response and its
       // ordinary expiry timer remains armed throughout repeated busy replies.
       if (row.state === 'busy' && exactGeneration) continue;
+
+      /* A RENEWAL THAT ARRIVED LATE IS STILL A RENEWAL (2026-09-21). `kept`
+         on the exact generation is the database saying this instance owned
+         the row and advanced `heartbeat_at`. Too late to open a fresh local
+         window grants no proof, but it is the strongest evidence AGAINST
+         loss - and it used to fall through and fence the dealer. */
+      if (row.state === 'kept' && exactGeneration) continue;
 
       lostTableIds.push(claim.tableId);
       if (row.state === 'taken' || (row.state === 'kept' && !exactGeneration)) {

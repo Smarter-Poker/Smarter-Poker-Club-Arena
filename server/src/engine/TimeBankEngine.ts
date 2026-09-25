@@ -490,6 +490,16 @@ export class TimeBankEngine {
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /** Read exact originals, including an initialized bank outside the last roster. */
+  getBanksForTable(tableId: string): ReadonlyArray<Readonly<PlayerTimeBank>> {
+    return [...this.playerBanks.values()].filter((bank) => bank.tableId === tableId);
+  }
+
+  /** Positive stop custody check includes banks outside the last roster. */
+  hasPlayerBanksForTable(tableId: string): boolean {
+    return [...this.playerBanks.values()].some((bank) => bank.tableId === tableId);
+  }
+
   dispose(tableId: string): void {
     for (const [key, bank] of this.playerBanks) {
       if (key.startsWith(`${tableId}:`)) {

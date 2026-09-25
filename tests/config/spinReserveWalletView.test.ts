@@ -87,17 +87,37 @@ describe('the reserve offers no way to move money out', () => {
 
   it('hides the kind selector, the member picker and the send button', () => {
     // Two guards: one over the kind selector, one over the whole outbound flow
-    // (picker + amount + send). If either escapes, an operator can spend the
-    // pool that pays Spin prizes.
+    // (picker + amount). If either escapes, an operator can spend the pool that
+    // pays Spin prizes.
     const guards = modal.match(/\{!readOnly && \(/g) || [];
     expect(guards.length).toBeGreaterThanOrEqual(2);
 
-    // The send button must sit AFTER the first guard - i.e. inside a guarded
-    // region - and never before one.
+    // The picker must sit AFTER the first guard - i.e. inside a guarded region
+    // - and never before one.
     const firstGuard = modal.indexOf('{!readOnly && (');
-    const sendButton = modal.indexOf('Pick A Member');
     expect(firstGuard).toBeGreaterThan(-1);
-    expect(sendButton).toBeGreaterThan(firstGuard);
+    expect(modal.indexOf('Search Clubs Or Members')).toBeGreaterThan(firstGuard);
+
+    /* THE SEND BUTTON IS THE FOOT'S PAINTED PRIMARY PLATE since this modal moved
+       onto the console (#ClubArenaConsole, 2026-09-14). A plate is a prop on
+       <SpadeConsole>, so its label is computed above the JSX and it cannot sit
+       inside a `{!readOnly && (` wrapper the way a nested element could - the
+       guard is a ternary instead. This case used to prove "the string 'Pick A
+       Member' appears after the first guard", which is the same protection
+       written against the old markup; it is pinned here against the new one.
+
+       The riveted master's base always paints both plates, so the reserve does
+       not get a plate-less foot - it gets a DISABLED one that says READ ONLY,
+       and `send` is reachable only through the `showSend` branch. */
+    expect(modal).toMatch(/const showSend = !readOnly && mode !== 'ledger';/);
+    const primaryAt = modal.indexOf('primary: showSend');
+    expect(primaryAt).toBeGreaterThan(-1);
+    // The ONLY call to send() is the one inside that branch.
+    const sends = modal.match(/void send\(\)/g) || [];
+    expect(sends.length).toBe(1);
+    expect(modal.indexOf('void send()')).toBeGreaterThan(primaryAt);
+    expect(modal).toMatch(/Pick A Member Or Club/);
+    expect(modal).toMatch(/label: 'Read Only'/);
   });
 
   it('does not fetch the roster it would never show', () => {
@@ -111,7 +131,7 @@ describe('the reserve offers no way to move money out', () => {
   });
 });
 
-describe('a tournament always resolves a format, so the theme always resolves', () => {
+describe('a tournament theme waits for its authoritative format', () => {
   it('the hook still waits rather than guessing', () => {
     // 2026-08-25: was a text match on the hook's source. The guard became an
     // exported function during the theme-persistence audit — same behaviour,
@@ -122,15 +142,13 @@ describe('a tournament always resolves a format, so the theme always resolves', 
     expect(resolveThemeBucket(undefined, true, 'mtt')).toBe('MTT');
   });
 
-  it('TablePage falls back when the tournament row cannot be read', () => {
-    // Without this the guard above never lifts and the felt stays default.
-    expect(table).toMatch(/setTournamentFormat\(\(prev\) => prev \?\? 'mtt'\)/);
+  it('TablePage clears unresolved format and seat-purchase eligibility on an unreadable row', () => {
+    expect(table).toMatch(/setTournamentFormat\(null\);\s*setSeatFirstBuyIn\(null\)/);
+    expect(table).toContain('getTournamentFormatKind(tournData)');
   });
 
-  it('the fallback cannot overwrite a format that did resolve', () => {
-    // `prev ?? 'mtt'` and not a bare 'mtt': the two branches can interleave
-    // with the spin reveal path, and clobbering a resolved 'spin' would swap
-    // the player's felt mid-sit - the exact fault the guard exists to prevent.
+  it('cannot relabel a missing or resolved format as a guessed MTT', () => {
     expect(table).not.toMatch(/setTournamentFormat\('mtt'\)/);
+    expect(table).not.toMatch(/setTournamentFormat\(\(prev\) => prev \?\? 'mtt'\)/);
   });
 });

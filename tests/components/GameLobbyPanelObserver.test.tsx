@@ -13,6 +13,7 @@ function panel(kind: 'spin' | 'sng', status: string, registered = false) {
   const capacity = kind === 'spin' ? 3 : 2;
   const raw = {
     id: 'test-game',
+    format_contract: kind === 'spin' ? 'spin-v1' : 'sng-v1',
     name: 'Observer Test',
     status,
     variant: kind === 'spin' ? 'spin' : 'nlh',

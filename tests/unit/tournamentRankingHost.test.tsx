@@ -141,9 +141,53 @@ describe('Tournament result card delivery', () => {
     expect(card).toBeTruthy();
     // The place is the largest thing on the card and the whole point of it.
     expect(card.textContent).toContain(label);
-    // Field size reads as "#1(3)" — the place, of how many.
-    expect(card.textContent).toContain(`#${place}(3)`);
+    /* SAME TWO FACTS, NO LONGER CONCATENATED (2026-09-15, #ClubArenaConsole).
+       The card used to print the field size as "#1(3)" - the place, of how
+       many - in one string. On the console the three facts are separated: the
+       event is the engraved title, the place is the word in the painted pill,
+       and the field size joins the date in the subtitle. The pin moved with
+       the render; it still requires BOTH, so a card that forgets either one
+       fails here exactly as it did before. */
+    expect(card.textContent).toContain(`#${place}`);
+    expect(card.textContent).toContain('3 Entrants');
   });
+
+  it.each([
+    ['seat', 'Target Entry:'],
+    ['ticket', 'Entry Ticket:'],
+    ['cash', 'Cash Award:'],
+  ] as const)(
+    'shows a committed %s qualifier without inventing a finishing place',
+    async (deliveryKind, label) => {
+      renderHost();
+      await publishAndSettle({
+        duration: 180,
+        handsPlayed: 21,
+        handsWon: 9,
+        totalRebuys: 0,
+        profitLoss: 0,
+        biggestPot: 0,
+        peakStack: 0,
+        tableName: 'Satellite',
+        tournament: {
+          ...spinResult(1, 50),
+          finishPlace: null,
+          name: 'Satellite',
+          satelliteQualification: {
+            targetId: '20000000-0000-4000-8000-000000000002',
+            deliveryKind,
+            amount: 50,
+          },
+        },
+      });
+      const card = screen.getByRole('dialog', { name: /tournament ranking/i });
+      expect(card.textContent).toContain('Qualified');
+      expect(card.textContent).toContain(label);
+      expect(card.textContent).toContain('50.00');
+      expect(card.textContent).not.toMatch(/#1|1st|2nd|3rd|Finished/);
+      expect(screen.queryByRole('img', { name: /Place Trophy/ })).toBeNull();
+    }
+  );
 
   it('shows the champion their prize', async () => {
     renderHost();

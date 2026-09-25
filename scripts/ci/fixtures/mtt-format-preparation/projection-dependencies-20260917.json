@@ -1,0 +1,329 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "queries": [
+    "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT transaction_timestamp() captured_at,p.proname,p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,md5(p.prosrc) source_md5,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.provolatile,p.proconfig,(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) grants FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname='ca_can_view_club'; COMMIT;",
+    "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT transaction_timestamp() captured_at,p.proname,p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,md5(p.prosrc) source_md5,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.provolatile,p.proconfig,(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) grants FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('fn_batch_club_realtime_member_counts','fn_club_home_in_scope','fn_club_member_count','fn_community_search_score'); COMMIT;",
+    "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT transaction_timestamp() captured_at,p.proname,p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,md5(p.prosrc) source_md5,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.provolatile,p.proconfig,(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) grants FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname='fn_club_scope_ids'; COMMIT;",
+    "BEGIN READ ONLY; SET LOCAL statement_timeout='8s'; SELECT transaction_timestamp() AS captured_at,p.proname,p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,md5(p.prosrc) source_md5,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.provolatile,p.proconfig,(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) grants FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('fn_emit_managed_command_event','fn_guard_managed_game_command_receipt','fn_emit_managed_schedule_event','fn_audit_club_entry_mutation') ORDER BY p.proname,p.oid::regprocedure::text; COMMIT;"
+  ],
+  "rows": [
+    {
+      "captured_at": "2026-09-17 06:24:31.899239+00",
+      "proname": "ca_can_view_club",
+      "signature": "ca_can_view_club(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.ca_can_view_club(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT\n    session_user IN ('postgres', 'supabase_admin')\n    OR coalesce(auth.role(), '') = 'service_role'\n    OR (\n      auth.uid() IS NOT NULL\n      AND (\n        EXISTS (\n          SELECT 1 FROM club_members cm\n          WHERE cm.club_id = p_club_id\n            AND cm.user_id = auth.uid()\n            AND coalesce(cm.status, 'active') NOT IN ('banned', 'suspended')\n        )\n        OR EXISTS (\n          SELECT 1 FROM clubs c WHERE c.id = p_club_id AND c.owner_id = auth.uid()\n        )\n        OR EXISTS (\n          SELECT 1 FROM profiles pr\n          WHERE pr.id = auth.uid() AND coalesce(pr.is_admin, false)\n        )\n      )\n    );\n$function$\n",
+      "source_md5": "9ddbe589c28096058ea2d5e7356bcd22",
+      "definition_md5": "0fa2974fd5b8d2b3b8089a1c172cbd7a",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:26:13.851393+00",
+      "proname": "fn_batch_club_realtime_member_counts",
+      "signature": "fn_batch_club_realtime_member_counts(uuid[])",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_batch_club_realtime_member_counts(p_club_ids uuid[])\n RETURNS TABLE(club_id uuid, member_count bigint)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT requested.club_id, count(cm.user_id)::bigint\n    FROM unnest(p_club_ids) requested(club_id)\n    LEFT JOIN public.club_members cm ON cm.club_id = requested.club_id\n      AND (cm.status IS NULL OR cm.status IN ('active', 'approved'))\n   GROUP BY requested.club_id;\n$function$\n",
+      "source_md5": "13e9bbf910f6f3ace8dc1bd1ae9f2932",
+      "definition_md5": "023ca8a214b9ee9bb3af0bb7403d4b5e",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public, extensions"],
+      "grants": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:26:13.851393+00",
+      "proname": "fn_club_home_in_scope",
+      "signature": "fn_club_home_in_scope(uuid,boolean,uuid,uuid,uuid,uuid[])",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_home_in_scope(p_club_id uuid, p_is_private boolean, p_union_id uuid, p_viewer_union_id uuid, p_viewer_club_id uuid, p_viewer_union_club_ids uuid[])\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE COST 1\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN p_viewer_union_id IS NOT NULL THEN\n      (p_union_id = p_viewer_union_id\n       OR (p_club_id = p_viewer_club_id AND COALESCE(p_is_private, false)))\n    ELSE p_club_id = ANY (p_viewer_union_club_ids)\n  END;\n$function$\n",
+      "source_md5": "0fe48d488784652c6b53f186d33adbee",
+      "definition_md5": "f31785aa1f49ad0f737f6de6158fad18",
+      "owner": "postgres",
+      "prosecdef": false,
+      "provolatile": "i",
+      "proconfig": ["search_path=public, pg_temp"],
+      "grants": [
+        {
+          "grantee": "PUBLIC",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "anon",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:26:13.851393+00",
+      "proname": "fn_club_member_count",
+      "signature": "fn_club_member_count(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_count(p_club_id uuid)\n RETURNS integer\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT count(*)::int\n  FROM public.club_members cm\n  WHERE cm.club_id = p_club_id\n    AND cm.status IN ('active', 'approved');\n$function$\n",
+      "source_md5": "2595d93b9605388872bfbf72dfa042a8",
+      "definition_md5": "5519b04285222ea849420dcee3724748",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:26:13.851393+00",
+      "proname": "fn_community_search_score",
+      "signature": "fn_community_search_score(text,text[],boolean)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_community_search_score(p_hay text, p_tokens text[], p_fuzzy boolean)\n RETURNS real\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  WITH hay AS (\n    SELECT lower(coalesce(p_hay, '')) AS h\n  ),\n  per AS (\n    SELECT\n      CASE\n        WHEN position(t IN h) > 0 THEN\n          CASE\n            WHEN h = t THEN 1.0\n            WHEN h LIKE t || '%' OR h LIKE '% ' || t || '%' THEN 0.95\n            ELSE 0.85\n          END\n        WHEN p_fuzzy AND length(t) >= 3 AND word_similarity(t, h) >= 0.5 THEN\n          0.4 + 0.4 * word_similarity(t, h)\n        ELSE NULL\n      END AS s\n    FROM hay, unnest(coalesce(p_tokens, '{}'::text[])) AS t\n  )\n  SELECT CASE\n           WHEN count(*) = 0 OR bool_or(s IS NULL) THEN NULL\n           ELSE avg(s)::real\n         END\n    FROM per;\n$function$\n",
+      "source_md5": "85bbad22f8b94d7be9d48e09d1942dbb",
+      "definition_md5": "90695cfa6f69ab11dd0954960382acbc",
+      "owner": "postgres",
+      "prosecdef": false,
+      "provolatile": "i",
+      "proconfig": ["search_path=public, extensions"],
+      "grants": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:28:12.999671+00",
+      "proname": "fn_club_scope_ids",
+      "signature": "fn_club_scope_ids(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_scope_ids(p_club_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT CASE\n    WHEN coalesce((SELECT is_union FROM public.clubs WHERE id = p_club_id), false)\n      THEN (\n        SELECT array_agg(DISTINCT x)\n        FROM (\n          SELECT p_club_id AS x\n          UNION SELECT id      FROM public.clubs       WHERE union_id = p_club_id\n          UNION SELECT club_id FROM public.union_clubs WHERE union_id = p_club_id\n        ) s\n        WHERE x IS NOT NULL\n      )\n    ELSE ARRAY[p_club_id]\n  END;\n$function$\n",
+      "source_md5": "9fc3bbf5ebbf941e06141b3a65584ef4",
+      "definition_md5": "be6fa7f8c21cddebf68d4e23099b977f",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:33:47.50773+00",
+      "proname": "fn_audit_club_entry_mutation",
+      "signature": "fn_audit_club_entry_mutation()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_audit_club_entry_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_action text; v_club uuid; v_target uuid; v_actor uuid; v_details jsonb;\nBEGIN\n  IF TG_TABLE_NAME='clubs' THEN\n    v_action:='club_created'; v_club:=NEW.id; v_target:=NEW.id;\n    v_actor:=COALESCE(auth.uid(),NEW.owner_id);\n    v_details:=jsonb_build_object('club_code',NEW.club_id,'requires_approval',NEW.requires_approval);\n  ELSIF TG_TABLE_NAME='club_members' THEN\n    v_club:=NEW.club_id; v_target:=NEW.user_id;\n    v_actor:=COALESCE(auth.uid(),NEW.user_id);\n    v_action:=CASE WHEN TG_OP='INSERT' THEN 'club_join_'||NEW.status ELSE 'club_join_status_changed' END;\n    v_details:=jsonb_build_object('status',NEW.status,'previous_status',CASE WHEN TG_OP='UPDATE' THEN OLD.status ELSE NULL END);\n  ELSE\n    v_action:='player_search_privacy_changed'; v_target:=NEW.user_id;\n    v_actor:=COALESCE(auth.uid(),NEW.user_id);\n    v_details:=jsonb_build_object('discoverable',NEW.discoverable,'show_presence',NEW.show_presence,'show_current_table',NEW.show_current_table);\n  END IF;\n  INSERT INTO public.audit_trail(\n    club_id,actor_id,actor_role,action,target_type,target_id,after_state\n  ) VALUES(\n    v_club,v_actor,'system',v_action,TG_TABLE_NAME,v_target,jsonb_strip_nulls(v_details)\n  );\n  RETURN NEW;\nEND $function$\n",
+      "source_md5": "56d086b92b40598eb2c7c8925ae5ee4e",
+      "definition_md5": "d26149a3b10aa00618a98f5076ebf079",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "present"
+    },
+    {
+      "captured_at": "2026-09-17 06:33:47.50773+00",
+      "proname": "fn_emit_managed_command_event",
+      "signature": "fn_emit_managed_command_event()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_emit_managed_command_event()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_club uuid; v_role text := 'host';\nBEGIN\n  IF OLD.status='processing' AND NEW.status IN ('succeeded','rejected') THEN\n    IF NEW.game_kind='table' THEN\n      SELECT club_id INTO v_club FROM public.tables WHERE id=NEW.game_id;\n    ELSE\n      SELECT club_id INTO v_club FROM public.tournaments WHERE id=NEW.game_id;\n    END IF;\n    PERFORM public.fn_emit_game_management_event(\n      'game_command_'||NEW.status,v_club,NULL,NULL,NEW.game_kind,NEW.game_id,\n      NEW.command_id,jsonb_build_object('action',NEW.command_action,'status',NEW.status)\n    );\n    IF EXISTS (SELECT 1 FROM public.union_clubs WHERE club_id=v_club) THEN\n      v_role := 'union_admin';\n    ELSE\n      SELECT CASE WHEN c.owner_id=NEW.actor_id THEN 'owner'\n                  WHEN m.role='co_owner' THEN 'co_owner' ELSE 'host' END\n        INTO v_role FROM public.clubs c\n        LEFT JOIN public.club_members m ON m.club_id=c.id AND m.user_id=NEW.actor_id\n       WHERE c.id=v_club;\n    END IF;\n    INSERT INTO public.audit_trail(\n      actor_id,actor_role,action,target_type,target_id,club_id,\n      before_state,after_state,reason,request_id\n    ) VALUES (\n      NEW.actor_id,COALESCE(v_role,'host'),'managed_game_'||NEW.command_action||'_'||NEW.status,\n      NEW.game_kind,NEW.game_id,v_club,\n      jsonb_build_object('contract_version',NEW.contract_version_before),\n      jsonb_build_object('contract_version',NEW.contract_version_after,'result',NEW.result),\n      NEW.result->>'reason',NEW.command_id::text\n    );\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "dfc113f2f3d6027acabeda413ca1e85e",
+      "definition_md5": "35fa3fdacbbf3bcbe75360bd7b090dd6",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:33:47.50773+00",
+      "proname": "fn_emit_managed_schedule_event",
+      "signature": "fn_emit_managed_schedule_event()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_emit_managed_schedule_event()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_kind text := COALESCE(NEW.game_kind, OLD.game_kind);\n  v_game uuid := COALESCE(NEW.game_id,   OLD.game_id);\n  v_was  boolean := (TG_OP <> 'INSERT' AND OLD.status = 'scheduled');\n  v_is   boolean := (TG_OP <> 'DELETE' AND NEW.status = 'scheduled');\n  v_club uuid;\nBEGIN\n  -- Nothing the board renders moved.\n  IF NOT v_was AND NOT v_is THEN\n    RETURN NULL;\n  END IF;\n  IF TG_OP = 'UPDATE' AND v_was AND v_is\n     AND NEW.execute_at IS NOT DISTINCT FROM OLD.execute_at THEN\n    RETURN NULL;\n  END IF;\n\n  IF v_kind = 'table' THEN\n    SELECT t.club_id INTO v_club FROM public.tables t WHERE t.id = v_game;\n  ELSE\n    SELECT t.club_id INTO v_club FROM public.tournaments t WHERE t.id = v_game;\n  END IF;\n\n  -- The game is gone; its own DELETE already told the board.\n  IF v_club IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  PERFORM public.fn_emit_game_management_event(\n    'game_changed', v_club, NULL, NULL, v_kind, v_game, NULL,\n    jsonb_build_object('operation', lower(TG_OP), 'source', 'schedule'));\n  RETURN NULL;\nEND;\n$function$\n",
+      "source_md5": "d1ef427eec5c254f022f9d61ae95b7fd",
+      "definition_md5": "d18c25e460fa885b9959663f61110681",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    },
+    {
+      "captured_at": "2026-09-17 06:33:47.50773+00",
+      "proname": "fn_guard_managed_game_command_receipt",
+      "signature": "fn_guard_managed_game_command_receipt()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_managed_game_command_receipt()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'Managed game command receipts cannot be deleted'\n      USING ERRCODE = '55000';\n  END IF;\n  IF OLD.status <> 'processing' THEN\n    RAISE EXCEPTION 'Completed managed game command receipts are immutable'\n      USING ERRCODE = '55000';\n  END IF;\n  IF NEW.command_id <> OLD.command_id\n     OR NEW.actor_id <> OLD.actor_id\n     OR NEW.game_kind <> OLD.game_kind\n     OR NEW.game_id <> OLD.game_id\n     OR NEW.command_action <> OLD.command_action\n     OR NEW.expected_version <> OLD.expected_version\n     OR NEW.request_hash <> OLD.request_hash\n     OR NEW.contract_version_before IS DISTINCT FROM OLD.contract_version_before\n     OR NEW.created_at <> OLD.created_at\n     OR NEW.status = 'processing' THEN\n    RAISE EXCEPTION 'Managed game command receipt identity cannot be changed'\n      USING ERRCODE = '55000';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "6110c45e1364d1b1805ea4161b11f5ac",
+      "definition_md5": "c71b75279135ea349f3c0378f1da7b6d",
+      "owner": "postgres",
+      "prosecdef": false,
+      "provolatile": "v",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ],
+      "expected_presence": "absent"
+    }
+  ]
+}

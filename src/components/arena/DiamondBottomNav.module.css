@@ -1,0 +1,113 @@
+/*
+ * THE DIAMOND ARENA FOOTER: the chip footer's chassis, the Diamond doors.
+ *
+ * The frame, the fixed placement, the aspect ratio, the overscan that puts
+ * the chrome on the viewport edge and the hide-on-scroll behaviour are all the
+ * chip footer's own (ClubBottomNav.module.css) and are imported from there,
+ * so the two bars are the same bar on the bottom edge. Nothing in that file
+ * changes for this one.
+ *
+ * What differs is the art and the print. The chip master paints six chip
+ * doors and their words into the leather; a Diamond player is owed six
+ * different doors. The frame here is derived from that master by surgery
+ * (club-arena-console skill, section 5: the quilted well is tiled from a
+ * clean stretch between two painted icons, row for row, brightness matched
+ * to the master's own profile; the chrome rim, corners and gutter are the
+ * master's bytes), and the six labels are live DOM text printed into six
+ * equal cells, in the master's own silver caps. Nothing is drawn: no fill,
+ * no border, no gradient, no icon glyph stuck on top. An emblem is part of
+ * the render or it is not there.
+ */
+
+/* The artwork box is the container every printed size is measured against,
+   so a 320px phone and the 1070px ceiling get the same picture. */
+.frame {
+  container-type: inline-size;
+}
+
+/* Six equal cells. The chip grid is proportioned to its painted icons; the
+   Diamond well is even, so the cells are. */
+.navItems {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.navCell {
+  display: flex;
+  min-width: 0;
+}
+
+/* One full-cell target per door, link or button alike: nothing painted, the
+   same floor the chip footer's cells keep. */
+.navItem {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 28px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* NO BOXES OVER FOOTER CONTROLS (Dan 2026-09-01, binding). Focus stays
+   visible as the same soft glow the chip footer uses. */
+.navItem:focus,
+.navItem:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.navItem:focus-visible {
+  background: radial-gradient(closest-side, rgba(255, 239, 196, 0.22), rgba(255, 239, 196, 0) 78%);
+}
+
+/* The printed label, centred in the cell's face. The ink is the master's
+   silver, solid colour plus a bevel, never a clipped gradient. Uppercase
+   because the master's own labels are. */
+.label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  max-width: 92%;
+  transform: translate(-50%, -50%);
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(2.1cqw * var(--fit, 1));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow:
+    0 -0.06cqw 0 rgb(255 255 255 / 45%),
+    0 0.12cqw 0 #6d747c,
+    0 0.22cqw 0 #050607,
+    0 0.35cqw 0.45cqw rgb(0 0 0 / 90%);
+  pointer-events: none;
+}
+
+/* The page you are on lights its word in the master's lit blue: no box, no
+   ring, no underline. */
+.navItem[aria-current='page'] .label {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+}

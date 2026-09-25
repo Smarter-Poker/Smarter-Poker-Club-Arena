@@ -329,6 +329,7 @@ export interface PlayerAction {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface Tournament {
+  format_contract?: unknown;
   id: string;
   club_id: string;
   name: string;
@@ -385,7 +386,10 @@ export type TournamentStatus =
   | 'COMPLETED'
   | 'CANCELLED'
   | 'ANNOUNCED'
-  | 'LATE_REG';
+  | 'LATE_REG'
+  /* Multi-day, between days: live, entries closed, not finished, not
+     cancelled (src/utils/multiDaySchedule.ts). */
+  | 'BAGGED';
 
 export interface BlindLevel {
   level: number;

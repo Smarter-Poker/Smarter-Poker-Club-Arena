@@ -1,587 +1,304 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * DEPOSIT/WITHDRAW MODAL — Premium Dark Theme CSS
- *
- * (The credit-card emoji that used to sit in this banner is gone. House rule
- * 5.3, no emoji in source files.)
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADD CHIPS / CASH OUT CHIPS - on the spade console (#ClubArenaConsole)
+
+   The console, its inks and its painted plates come from SpadeConsole.css.
+   This sheet places the console on the backdrop, switches off the global popup
+   chassis (metallic-popups.css paints a rounded shell on any class matching
+   `_modal_` with !important, at zero specificity through :where, so one class
+   plus !important is enough), and types the balance, the amount, the limits
+   and the summary on the glass.
+
+   Sizes are cqw against the console, so a 320px phone and a 430px one get the
+   same picture. Nothing is drawn: the only boxes here are the amount field and
+   the Agent ID field, and both are engraved rules rather than filled wells.
+   No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  inset: 0;
   z-index: 1000;
-  padding: 0;
-}
-
-.modal {
-  width: 100%;
-  max-width: 480px;
-  max-height: 92vh;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
-  border: 1px solid rgba(251, 191, 36, 0.2);
-  border-bottom: none;
-  border-radius: 24px 24px 0 0;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  overflow-y: auto;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    0 -8px 40px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Drag Handle */
-.dragHandle {
-  display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 12px 0 4px;
-  cursor: grab;
-  flex-shrink: 0;
+  padding: 12px;
+  /* Black, not grey, and no blur: the console floats on the same black as the
+     page behind it. */
+  background: rgb(0 0 0 / 90%);
+  animation: overlayFadeIn 0.2s ease-out;
 }
 
-.dragHandle::after {
-  content: '';
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.25);
-  transition: background 0.2s;
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
-.dragHandle:active::after {
-  background: rgba(255, 255, 255, 0.5);
+/* The entrance is declared and applied in the SAME module file, which is what
+   makes it resolve. It used to be an inline `animation: 'sheetSlideUp ...'`
+   raw string in the component naming this module's keyframe, and CSS Modules
+   hashes keyframe names, so it never ran. */
+.modal {
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: visible auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  -webkit-overflow-scrolling: touch;
+  animation: sheetSlideUp 0.28s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-/* Bottom-sheet slide-up animation */
 @keyframes sheetSlideUp {
   from {
-    transform: translateY(100%);
-    opacity: 0.5;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-@keyframes sheetSlideDown {
-  from {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateY(100%);
     opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
-/* Header */
-.header {
+/* ── The three stages, printed ────────────────────────────────────────── */
+
+.steps {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.header h2 {
-  margin: 0;
-  font-size: 20px;
-  color: white;
-  flex: 1;
-}
-
-/* The rest of this sheet is on 48px targets; Back and Close were left at 28
-   and 32. They are the two controls a player reaches for when they have made a
-   mistake on a money screen, which is the worst possible time to miss. */
-.backBtn {
-  padding: 6px 12px;
-  min-height: 44px;
-  touch-action: manipulation;
-  background: rgba(255, 255, 255, 0.08);
-  border: none;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.closeBtn {
-  width: 44px;
-  height: 44px;
-  touch-action: manipulation;
-  display: flex;
-  align-items: center;
+  gap: 5cqw;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
-  cursor: pointer;
-}
-
-/* Balance Bar */
-.balanceBar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.03);
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.balanceValue {
-  font-weight: 700;
-  color: white;
-}
-
-/* Error */
-.error {
-  margin: 16px 24px 0;
-  padding: 12px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  color: #ef4444;
-  font-size: 14px;
-  text-align: center;
-  animation: errorSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.15);
-}
-
-@keyframes errorSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Method Grid */
-.methodGrid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  padding: 20px 24px;
-  overflow-y: auto;
-}
-
-.methodCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 12px;
-  min-height: 48px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.methodCard:active {
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.3);
-}
-
-.methodIcon {
-  font-size: 28px;
-}
-
-.methodLabel {
-  font-weight: 600;
-  color: white;
-  font-size: 14px;
-}
-
-.methodDesc {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  text-align: center;
-}
-
-.methodFee {
-  font-size: 11px;
-  color: #10b981;
-  padding: 2px 8px;
-  background: rgba(16, 185, 129, 0.15);
-  border-radius: 10px;
-  margin-top: 4px;
-}
-
-/* Amount Section */
-.amountSection {
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.selectedMethod {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: rgba(251, 191, 36, 0.1);
-  border-radius: 10px;
-  color: #fbbf24;
-  font-weight: 500;
-}
-
-.processingTime {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.amountInput {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  border-radius: 14px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.amountInput:focus-within {
-  border-color: rgba(251, 191, 36, 0.5);
-  background: rgba(251, 191, 36, 0.05);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 20px rgba(251, 191, 36, 0.15);
-}
-
-/* `.currency` and its `:focus-within` companion lived here for a currency
-   symbol the amount step has not rendered in a long time — chips have no
-   symbol. Nothing in the component references `styles.currency`. Removed
-   2026-08-25. */
-
-.amountInput input {
-  flex: 1;
-  background: none;
-  border: none;
-  color: white;
-  font-size: 32px;
-  font-weight: 700;
-  outline: none;
-}
-
-.amountInput input::placeholder {
-  color: rgba(255, 255, 255, 0.3);
-}
-
-.quickAmounts {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.quickAmounts button {
-  padding: 14px 10px;
-  min-height: 48px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.quickAmounts button:active,
-.quickAmounts button.active {
-  background: rgba(251, 191, 36, 0.2);
-  border-color: #fbbf24;
-  color: #fbbf24;
-}
-
-.limits {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.addressInput {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.addressInput label {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.addressInput input {
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  color: white;
-  font-size: 16px; /* was 15px; under 16px makes iOS zoom the page on focus */
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.addressInput input:focus {
-  outline: none;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(251, 191, 36, 0.4);
-  box-shadow: 0 0 16px rgba(251, 191, 36, 0.12);
-}
-
-.continueBtn {
-  padding: 18px;
-  min-height: 56px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  border: none;
-  border-radius: 14px;
-  color: #1a1a2e;
-  font-size: 17px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.25);
-  -webkit-tap-highlight-color: transparent;
-}
-.continueBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Confirm Section */
-.confirmSection {
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.summary {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.summaryRow {
-  display: flex;
-  justify-content: space-between;
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.summaryRow.total {
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-weight: 700;
-  color: white;
-  font-size: 18px;
-}
-
-.methodInfo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 10px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.instructions {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  line-height: 1.6;
-}
-
-.instructions ol {
-  margin: 8px 0 0 20px;
-  padding: 0;
-}
-
-.instructions li {
-  margin-bottom: 6px;
-}
-
-.confirmBtn {
-  padding: 18px;
-  min-height: 56px;
-  background: linear-gradient(135deg, #10b981, #059669);
-  border: none;
-  border-radius: 14px;
-  color: white;
-  font-size: 17px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-  -webkit-tap-highlight-color: transparent;
-}
-.confirmBtn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  animation: depositWithdrawModalLoadingPulse 1.5s ease-in-out infinite;
-}
-
-@keyframes depositWithdrawModalLoadingPulse {
-  0%,
-  100% {
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-  }
-  50% {
-    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.35);
-  }
-}
-
-/* Success Section */
-.successSection {
-  padding: 40px 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 16px;
-  animation: successFadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes successFadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* `.successIcon` and `@keyframes successIconPulse` are gone. The success tick
-   is an inline-styled div in the component and it animates with the GLOBAL
-   `animationsSuccessIconPulse` from src/styles/animations.css — it has to,
-   because CSS Modules hashes keyframe names, so a module-local keyframe of a
-   similar name could never have driven an inline style anyway. Two rules that
-   looked like they were doing the work and were not. Removed 2026-08-25. */
-
-.successSection h3 {
   margin: 0;
-  font-size: 22px;
-  color: white;
+  padding: 1cqw 0 2cqw;
+  list-style: none;
 }
 
-.successSection p {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 15px;
+.step {
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.paymentDetails {
-  padding: 16px 24px;
-  background: rgba(251, 191, 36, 0.1);
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  border-radius: 12px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
+/* ── Rows on the glass ────────────────────────────────────────────────── */
 
-.destination {
-  font-size: 18px;
-  font-weight: 700;
-  color: #fbbf24;
-}
-
-.referenceBox {
+/* An engraved rule between rows: a black line with a light lip, the same cut
+   the master's own chrome rules are made of. Nothing filled. */
+.row {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  gap: 3cqw;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.refLabel {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+.value {
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.total {
+  font-size: 5.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.meta {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 3.3cqw;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+
+.headline {
+  padding: 2cqw 0 0;
+  font-size: 4.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.refValue {
-  font-size: 24px;
-  font-weight: 700;
-  color: white;
-  font-family: monospace;
-  letter-spacing: 2px;
+.error {
+  padding: 1cqw 0 0;
+  font-size: 3.4cqw;
 }
 
-.hint {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+.block {
+  display: grid;
+  gap: 1.6cqw;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.doneBtn {
+.steplist {
+  display: grid;
+  gap: 1.6cqw;
+  margin: 0;
+  padding-left: 4.5cqw;
+}
+
+.steplist li {
+  font-size: 3.3cqw;
+}
+
+/* ── The two things the master does not paint ─────────────────────────── */
+
+.amountInput,
+.textInput {
+  display: block;
   width: 100%;
-  padding: 18px;
-  min-height: 56px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 14px;
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
+  margin: 0;
+  padding: 2.6cqw 1cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e6e9ee !important;
+  outline: none;
+  caret-color: #5bb8ff;
+}
+
+.amountInput {
+  font:
+    800 6.4cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-align: center;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.textInput {
+  font:
+    500 3.6cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.amountInput::placeholder,
+.textInput::placeholder {
+  color: #6b7784;
+}
+
+.amountInput:focus-visible,
+.textInput:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+.field {
+  display: grid;
+  gap: 1.6cqw;
+}
+
+/* ── Quick amounts: lit numerals on the glass, not six drawn pills ─────── */
+
+.quickAmounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 4cqw;
+  justify-content: center;
+  width: 100%;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.quick {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0.5cqw 1cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font:
+    800 4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
   cursor: pointer;
-  margin-top: 8px;
-  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  -webkit-tap-highlight-color: transparent;
+}
+
+.quick:active {
+  filter: brightness(1.3);
+}
+
+.quick:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+/* ── The success step's one action ────────────────────────────────────── */
+
+/* The foot is the flat cap here, because the foot paints BOTH plates and this
+   step has a single action. A lone lit word on the glass is the control the
+   console uses for that (Club Rules does the same with Copy and Retry). */
+.doneBtn {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.4cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #f4f7fb !important;
+  font:
+    800 4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  cursor: pointer;
 }
 
 .doneBtn:active {
-  background: rgba(255, 255, 255, 0.15);
+  filter: brightness(1.25);
 }
 
-/* Safe area spacing for devices with home indicator */
-.bottomSpacer {
-  height: env(safe-area-inset-bottom, 0);
-  flex-shrink: 0;
+.doneBtn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.8cqw;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .modal {
+    animation: none;
+  }
 }

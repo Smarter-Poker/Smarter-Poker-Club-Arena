@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/claude-ca-product/feat/multi-day-client-and-doors. NOT YET APPLIED: migration 20260924063656 (fn_tournament_stage_view and the two operator doors) is a promise until the owner installs it after 20260924043217..043239 and the capability registry 20260924025555. Proved by scripts/ci/test-multi-day-stage-view.py. The client selects no new table or column; it calls these three RPCs.",
+  "tables": [],
+  "functions": [
+    "fn_tournament_stage_view",
+    "fn_operator_seal_stage_plan",
+    "fn_operator_reschedule_stage"
+  ],
+  "columns": {}
+}

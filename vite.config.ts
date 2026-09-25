@@ -33,6 +33,42 @@ if (!Number.isSafeInteger(maxParallelFileOps) || maxParallelFileOps <= 0) {
 }
 const mediaIdentity = viteMediaIdentity();
 
+/**
+ * STANDALONE DIAMOND TEST ENTRY (2026-09-19)
+ *
+ * `CA_HTML_ENTRY=diamond-test` builds diamond-test.html (src/diamond-test.tsx,
+ * the wallet-free Diamond bonus test games) as a SECOND PASS into the dist the
+ * application build just wrote (scripts/build-diamond-test.mjs, from build:ci).
+ *
+ * It is deliberately not a second Rollup input of the application build. Two
+ * inputs make Rollup hoist every module both entries share into a shared
+ * chunk, and Vite then links that chunk's stylesheet AHEAD of the
+ * application's own. That moved ~45kB of global CSS (the popup shell rules,
+ * loading states, animations) from the 72% mark of index.css to before its
+ * first byte, the cascade changed for pages the test entry never touches,
+ * and the Table Studio pixel baselines went red (run 35458870630). A separate
+ * pass leaves the application bundle byte-for-byte what a single-input build
+ * produces, so its CSS order, entry chunk and bundle budget are untouched.
+ *
+ * The pass writes its scripts and styles into dist/assets/ like every other
+ * hashed chunk, under a `diamond-test.` name prefix. assets/ is the origin's
+ * append-only pool (infra/ca-origin/Caddyfile: served immutable, kept across
+ * releases) and the service worker's cache-first directory, so a page a
+ * player already has open keeps its chunks through the next release exactly
+ * as the arena does. The prefix is what scripts/ci/bundle-size.mjs excludes
+ * from the arena's total: no player downloads the test page, so it is not
+ * charged to the budget that guards what players download. Raster media
+ * keeps the shared identity policy, so artwork both entries import is
+ * written once. The native bundle never gets this pass
+ * (scripts/build-diamond-test.mjs).
+ */
+const TEST_ENTRY = process.env.CA_HTML_ENTRY === 'diamond-test';
+const CHUNK_PREFIX = TEST_ENTRY ? 'diamond-test.' : '';
+const testEntryAssetFileNames = (asset: { names?: string[]; name?: string; source: unknown }) =>
+  /\.css$/i.test(asset.names?.[0] || asset.name || '')
+    ? `assets/${CHUNK_PREFIX}[name]-[hash]-v6[extname]`
+    : mediaIdentity.assetFileNames(asset as Parameters<typeof mediaIdentity.assetFileNames>[0]);
+
 function sourceMapAssetIdentity(): Plugin {
   let policy = '';
   return {
@@ -49,12 +85,49 @@ function sourceMapAssetIdentity(): Plugin {
   };
 }
 
+/**
+ * ONE IMMER (2026-09-24).
+ *
+ * recharts 3 declares `immer@^10` and imports exactly one name from it,
+ * `castDraft`, an identity function. Its store is built with
+ * @reduxjs/toolkit, which declares `immer@^11`, so npm installs two copies
+ * and the chart chunk shipped both: immer 11 doing all of the store's work
+ * and a second, complete immer 10 whose module-level instance cannot be
+ * tree-shaken, kept alive for that one identity function (about 3kB gzipped
+ * of the whole-app ceiling in scripts/ci/bundle-size.mjs, which exists to
+ * catch exactly this: one library arriving twice).
+ *
+ * Every bare `immer` import therefore resolves to the copy the toolkit
+ * itself resolves. Nothing else in the app imports immer, `castDraft` is
+ * `(value) => value` in both majors, and the toolkit's own imports are left
+ * to the normal resolver. Build only: dev serving pre-bundles dependencies
+ * separately and the duplicate costs nothing there.
+ */
+function oneImmer(): Plugin {
+  let toolkitImmer: Promise<string | null> | null = null;
+  return {
+    name: 'one-immer',
+    apply: 'build',
+    enforce: 'pre',
+    async resolveId(source, importer) {
+      if (source !== 'immer' || !importer || importer.includes('/@reduxjs/toolkit/')) return null;
+      toolkitImmer ??= this.resolve('@reduxjs/toolkit', path.resolve(__dirname, 'package.json'), {
+        skipSelf: true,
+      }).then(async (toolkit) =>
+        toolkit ? ((await this.resolve('immer', toolkit.id, { skipSelf: true }))?.id ?? null) : null
+      );
+      return (await toolkitImmer) ?? null;
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: NATIVE ? '/' : WEB_BASE,
   plugins: [
     react(),
     sourceMapAssetIdentity(),
+    oneImmer(),
     mediaIdentity.plugin,
 
     /**
@@ -75,7 +148,8 @@ export default defineConfig({
         const chunk = Object.values(bundle).find(
           (c) =>
             (c as { type?: string; isEntry?: boolean }).type === 'chunk' &&
-            (c as { isEntry?: boolean }).isEntry
+            (c as { isEntry?: boolean }).isEntry &&
+            (c as { facadeModuleId?: string }).facadeModuleId?.endsWith('/index.html')
         ) as { fileName?: string; modules?: Record<string, unknown> } | undefined;
         if (!chunk?.modules) return;
         const modules = Object.keys(chunk.modules)
@@ -141,6 +215,8 @@ export default defineConfig({
   },
   build: {
     outDir: NATIVE ? 'dist-native' : 'dist',
+    // The second pass lands in the dist the application build just wrote.
+    ...(TEST_ENTRY ? { emptyOutDir: false, copyPublicDir: false } : {}),
     // Compress each emitted chunk without moving lazy modules into startup.
     // Keep CI resource usage bounded; Rollup owns the unchanged module graph.
     minify: 'terser',
@@ -152,6 +228,9 @@ export default defineConfig({
     // Neither web nor native publication needs source maps.
     sourcemap: false,
     rollupOptions: {
+      // The application build keeps Vite's single default input, index.html.
+      // The standalone test entry is its own pass; see TEST_ENTRY above.
+      ...(TEST_ENTRY ? { input: path.resolve(__dirname, 'diamond-test.html') } : {}),
       // Rollup defaults to 1000 concurrent file operations. Our intended
       // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.
       // This is a Rollup input option, so it belongs inside rollupOptions.
@@ -163,9 +242,10 @@ export default defineConfig({
         // are bypassed. Vite's default content hash alone can't help here
         // because vendor chunks' content is unchanged — the tag forces a
         // brand-new URL even when content hash would otherwise match.
-        entryFileNames: 'assets/[name]-[hash]-v6.js',
-        chunkFileNames: 'assets/[name]-[hash]-v6.js',
+        entryFileNames: `assets/${CHUNK_PREFIX}[name]-[hash]-v6.js`,
+        chunkFileNames: `assets/${CHUNK_PREFIX}[name]-[hash]-v6.js`,
         assetFileNames: mediaIdentity.assetFileNames,
+        ...(TEST_ENTRY ? { assetFileNames: testEntryAssetFileNames } : {}),
         manualChunks(id: string) {
           // ── Vendor Splits (safe — no circular dependencies) ──
           if (id.includes('node_modules/react-dom')) return 'vendor-react';

@@ -74,7 +74,7 @@ export function inspectHead(html) {
       ldError = e.message;
     }
   }
-  const h1 = /<h1[\s>]/i.test(html);
+  const h1 = headingCount(html) > 0;
   const ogImage = attr(html, /<meta\s+property="og:image"\s+content="([^"]*)"/i);
   return { title, robots, canonical, description, ld, ldError, h1, ogImage };
 }
@@ -90,6 +90,26 @@ export function urlForRoute(route) {
 }
 
 /** Words a reader gets without JavaScript: the body minus scripts, styles and comments. */
+/**
+ * The document with scripts, styles and comments removed. A heading inside
+ * a script string is not a heading: index.html's last-resort boot error UI
+ * is assigned as `root.innerHTML = '<h1 ...>Loading Failed</h1>...'`, so a
+ * raw regex counts three <h1> on every arena page when there is one, and
+ * this gate would accept a page whose only heading was quoted JavaScript.
+ * Same defect #4790 fixed for the prerender verifier.
+ */
+export function markupOnly(html) {
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+}
+
+/** Real <h1> elements, not headings quoted inside scripts. */
+export function headingCount(html) {
+  return (markupOnly(html).match(/<h1[\s>]/gi) || []).length;
+}
+
 export function bodyWords(html) {
   const body = html.split(/<body[^>]*>/i)[1] || '';
   return body

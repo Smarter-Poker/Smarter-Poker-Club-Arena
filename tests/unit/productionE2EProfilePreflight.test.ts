@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +7,7 @@ import { evaluateAcrossDocumentReplacement } from '../e2e/support/evaluateAcross
 import { ensureClubMembership } from '../e2e/support/ensureClubMembership';
 import { ensureAcceptedTerms } from '../e2e/support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
+import { observeSetupFailure } from '../e2e/support/setupFailureObservation';
 
 const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
 
@@ -159,6 +161,174 @@ describe('authenticated production account preflight', () => {
     expect(fixture.agreement.check).not.toHaveBeenCalled();
   });
 
+  it('records the original Terms HTTP failure and script rejection without private inputs', () => {
+    const page = Object.assign(new EventEmitter(), { mainFrame: () => 'main' });
+    const observation = observeSetupFailure(
+      page as unknown as Page,
+      'https://smarter.poker/hub/club-arena/',
+      'https://project.supabase.co'
+    );
+    observation.stage('terms');
+    const request = {
+      url: () =>
+        'https://project.supabase.co/rest/v1/profiles?select=club_arena_tos_accepted_at&id=eq.private-account&token=private-token#private-fragment',
+      resourceType: () => 'fetch',
+      failure: () => ({ errorText: 'net::ERR_HTTP2_PROTOCOL_ERROR private-token' }),
+    };
+    page.emit('request', request);
+    page.emit('response', { request: () => request, status: () => 503 });
+    page.emit('requestfailed', request);
+    page.emit('console', {
+      type: () => 'error',
+      text: () => '[ProfileService.getTOSStatus] TypeError: Failed to fetch private-token',
+    });
+    const script = {
+      url: () =>
+        'https://smarter.poker/hub/club-arena/assets/ProfileService-secret.js?token=private-token',
+      resourceType: () => 'script',
+      failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET' }),
+    };
+    page.emit('requestfailed', script);
+    page.emit('console', {
+      type: () => 'error',
+      text: () =>
+        '[TOSGuard.status_check_failed] Failed to fetch dynamically imported module: https://private-user:private-password@example.com/private-account',
+    });
+    const result = observation.snapshot();
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'response',
+          kind: 'terms-query',
+          status: 503,
+          request: 1,
+        }),
+        expect.objectContaining({
+          event: 'requestfailed',
+          kind: 'terms-query',
+          errorClass: 'ERR_HTTP2_PROTOCOL_ERROR',
+          request: 1,
+        }),
+        expect.objectContaining({
+          event: 'requestfailed',
+          kind: 'script',
+          errorClass: 'ERR_CONNECTION_RESET',
+          request: 2,
+        }),
+        expect.objectContaining({
+          event: 'reported-error',
+          kind: 'terms-query',
+          errorClass: 'FetchError',
+        }),
+        expect.objectContaining({
+          event: 'reported-error',
+          kind: 'terms-status-chain',
+          errorClass: 'ModuleImportError',
+        }),
+      ])
+    );
+    expect(JSON.stringify(result)).not.toMatch(/private-|secret|\?|#|id=|token=/);
+    expect(result.events.every((event) => event.stage === 'terms')).toBe(true);
+    observation.dispose();
+  });
+
+  it('distinguishes navigation failure from a successful Terms response and premature close', () => {
+    const page = Object.assign(new EventEmitter(), { mainFrame: () => 'main' });
+    const observation = observeSetupFailure(
+      page as unknown as Page,
+      'https://smarter.poker/hub/club-arena/',
+      'https://project.supabase.co'
+    );
+    observation.stage('protected-navigation');
+    const navigation = {
+      url: () => 'https://private-account.example.test/private-id?token=secret',
+      resourceType: () => 'document',
+      isNavigationRequest: () => true,
+      frame: () => 'main',
+      failure: () => ({ errorText: 'net::ERR_SECRET_TOKEN' }),
+    };
+    page.emit('requestfailed', navigation);
+    page.emit('framenavigated', 'main');
+    observation.stage('terms');
+    const terms = {
+      url: () => 'https://project.supabase.co/rest/v1/profiles?select=club_arena_tos_accepted_at',
+      resourceType: () => 'fetch',
+    };
+    page.emit('response', { request: () => terms, status: () => 200 });
+    page.emit('close');
+    const result = observation.snapshot();
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'requestfailed',
+          stage: 'protected-navigation',
+          kind: 'navigation',
+          host: '[other-origin]',
+          path: '/[document]',
+          errorClass: 'NetworkError',
+        }),
+        expect.objectContaining({ event: 'response', kind: 'terms-query', status: 200 }),
+        expect.objectContaining({ event: 'page-closed' }),
+      ])
+    );
+    expect(JSON.stringify(result)).not.toMatch(/private|SECRET|secret/);
+    observation.dispose();
+  });
+
+  it('ignores unrelated traffic and console data and bounds the retained failure evidence', () => {
+    const page = Object.assign(new EventEmitter(), { mainFrame: () => 'main' });
+    const observation = observeSetupFailure(
+      page as unknown as Page,
+      'https://smarter.poker/hub/club-arena/',
+      'https://project.supabase.co'
+    );
+    page.emit('console', {
+      type: () => 'error',
+      text: () => 'Authorization: Bearer secret-token user@example.com',
+    });
+    page.emit('requestfailed', {
+      url: () => 'https://project.supabase.co/auth/v1/token?access_token=secret',
+      resourceType: () => 'fetch',
+      isNavigationRequest: () => false,
+      headers: () => {
+        throw new Error('must never read headers');
+      },
+    });
+    page.emit('pageerror', new Error('private-account private-token'));
+    expect(observation.snapshot().events).toEqual([]);
+    for (let index = 0; index < 70; index += 1)
+      page.emit(
+        'pageerror',
+        new Error('Failed to fetch dynamically imported module: private-token')
+      );
+    expect(observation.snapshot().events).toHaveLength(64);
+    expect(observation.snapshot().discarded).toBe(6);
+    expect(JSON.stringify(observation.snapshot())).not.toMatch(/private|secret|Bearer/);
+    observation.dispose();
+    expect(page.eventNames()).toEqual([]);
+    page.emit('close');
+    expect(observation.snapshot().events).toHaveLength(64);
+  });
+
+  it('attaches failure observation before navigation and preserves the original failure exit', () => {
+    const setup = source('tests/e2e/global-setup.ts');
+    expect(setup.indexOf('observation = observeSetupFailure(')).toBeLessThan(
+      setup.indexOf('await page.goto(baseURL')
+    );
+    expect(setup).toContain("observation.stage('terms');\n    await ensureAcceptedTerms(page)");
+    const catchBlock = setup.slice(
+      setup.indexOf('  } catch (err) {', setup.indexOf('export default'))
+    );
+    expect(catchBlock.indexOf('observation?.snapshot()')).toBeLessThan(
+      catchBlock.indexOf('throw err;')
+    );
+    expect(catchBlock).toContain("if (process.env.E2E_REQUIRE_AUTH === '1') {\n      throw err;");
+    expect(catchBlock).toContain('if (authenticated) {');
+    expect(catchBlock.indexOf('observation?.dispose()')).toBeLessThan(
+      catchBlock.indexOf('await browser.close()')
+    );
+  });
+
   it('leaves an already complete account untouched', async () => {
     const fixture = playablePage({ gateOpen: false });
 
@@ -288,12 +458,30 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
     expect(lobby).toContain("locator('.agc-action--primary')");
-    expect(lobby).toContain('test.setTimeout(75_000)');
+    // Every fresh lobby context can take the cold read, including the first
+    // shell case. A timeout inside only one test does not protect its siblings.
+    expect(lobby).toMatch(
+      /test\.describe\('Club lobby', \(\) => \{\s*(?:\/\*[\s\S]*?\*\/\s*)?test\.describe\.configure\(\{ timeout: 75_000 \}\);/
+    );
+    const settle = lobby.slice(
+      lobby.indexOf('async function lobbySettled'),
+      lobby.indexOf("test.describe('Club lobby'")
+    );
+    expect(settle).toContain("waitFor({ state: 'visible', timeout: 45000 });");
+    expect(settle).not.toContain('.catch(');
     expect(lobby).toContain(
       "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
     );
     expect(lobby).toMatch(
       /async function lobbySettled\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);/
+    );
+
+    const liveMobileLobby = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
+    expect(liveMobileLobby).toContain(
+      "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
+    );
+    expect(liveMobileLobby).toMatch(
+      /async function openLobby\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*lobby-wallets-trigger/
     );
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');

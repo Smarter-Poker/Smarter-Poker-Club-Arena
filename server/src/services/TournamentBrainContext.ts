@@ -41,7 +41,14 @@ import {
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
 import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
+import { UNIT_CENTS_ASSET_NOT_READ, normalizeUnitCents } from '../tournament/tournamentUnit.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  HORSE_TOURNAMENT_CONTEXT_STALE_MS,
+  type HorseTournamentContextProvenance,
+  type HorseTournamentContextSource,
+} from '../engine/HorseTournamentContextProvenance.js';
 
 export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
 
@@ -1061,11 +1068,13 @@ export function deriveContext(
 const REFRESH_TIMEOUT_MS = 5000;
 const STUCK_MS = 60_000;
 const TTL_MS = 20_000;
-const STALE_MS = 60_000;
+const STALE_MS = HORSE_TOURNAMENT_CONTEXT_STALE_MS;
 const MAX_CACHED = 500;
 
 interface CacheEntry {
+  cacheId: string;
   ctx: TournamentBrainContext | null;
+  source: HorseTournamentContextSource | null;
   lastSuccessAt: number;
   lastAttemptAt: number;
   lastFailureIssue: string | null;
@@ -1074,6 +1083,17 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+
+/** Cache values contain plain records/arrays only. Detach and freeze once on
+ * publication, off the action clock, so subsequent readers cannot change the
+ * source bytes or the nested stack, payout and per-player maps they describe. */
+function freezeContextValue<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeContextValue(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 
 /**
  * Lifecycle-owned refresh entrypoint. It returns the last known context (or
@@ -1096,7 +1116,9 @@ export function refreshTournamentBrainContext(tournamentId: string): TournamentB
       for (let i = 0; i < Math.ceil(entries.length / 4); i++) cache.delete(entries[i][0]);
     }
     e = {
+      cacheId: randomUUID(),
       ctx: null,
+      source: null,
       lastSuccessAt: 0,
       lastAttemptAt: 0,
       lastFailureIssue: null,
@@ -1115,7 +1137,7 @@ export function refreshTournamentBrainContext(tournamentId: string): TournamentB
     e.inFlight = true;
     e.lastAttemptAt = now;
     e.generation += 1;
-    void refresh(tournamentId, e, e.generation);
+    void refresh(tournamentId, e, e.generation, now);
   }
   return e.ctx;
 }
@@ -1139,6 +1161,7 @@ export interface TournamentBrainContextSnapshot {
   status: TournamentContextStatus;
   issues: string[];
   ageMs: number | null;
+  contextProvenance: HorseTournamentContextProvenance;
 }
 
 /**
@@ -1154,17 +1177,30 @@ export function getTournamentBrainContextSnapshot(
   // owns every Supabase refresh and this path only observes the cache.
   const context = peekTournamentBrainContext(tournamentId);
   const entry = cache.get(tournamentId);
+  const finish = (
+    snapshot: Omit<TournamentBrainContextSnapshot, 'contextProvenance'>
+  ): TournamentBrainContextSnapshot => ({
+    ...snapshot,
+    contextProvenance: {
+      version: 1,
+      readAtMs: nowMs,
+      status: snapshot.status,
+      issues: [...snapshot.issues],
+      ageMs: snapshot.ageMs,
+      source: entry?.source ?? null,
+    },
+  });
   if (!entry) {
-    return {
+    return finish({
       context: null,
       status: 'incomplete',
       issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_refresh_not_started'],
       ageMs: null,
-    };
+    });
   }
   if (!context || entry.lastSuccessAt <= 0) {
     const warming = entry.inFlight && entry.lastAttemptAt > 0;
-    return {
+    return finish({
       context: null,
       status: warming ? 'warming' : 'incomplete',
       issues: [
@@ -1174,11 +1210,11 @@ export function getTournamentBrainContextSnapshot(
           : (entry.lastFailureIssue ?? 'tournament_context_refresh_not_started'),
       ],
       ageMs: null,
-    };
+    });
   }
   const ageMs = Math.max(0, nowMs - entry.lastSuccessAt);
   if (ageMs > STALE_MS) {
-    return {
+    return finish({
       context,
       status: 'stale',
       issues: [
@@ -1187,14 +1223,14 @@ export function getTournamentBrainContextSnapshot(
         ...context.contextIssues.filter((issue) => issue !== TOURNAMENT_CONTEXT_INCOMPLETE),
       ],
       ageMs,
-    };
+    });
   }
-  return {
+  return finish({
     context,
     status: context.contextStatus,
     issues: [...context.contextIssues],
     ageMs,
-  };
+  });
 }
 
 /** Test hook. */
@@ -1282,10 +1318,22 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
      * The cap is floored too: a cap that is not on the grid is not a cap the
      * fee can honour. Mirrors fn_ca_recovery_fee_cents.
      */
+    /**
+     * ONE RULE FOR THE UNIT TOO (2026-09-13). This normalisation was written
+     * out here - `Number.isSafeInteger(...) && ... >= 1 ? ... : 1` - which made
+     * it a FOURTH spelling of the unit rule beside `computePlacePrize`'s,
+     * `unitFloorCents`'s and the SQL's, in exactly the shape this phase spent
+     * two migrations collapsing. It reads `tournamentUnit.ts` now.
+     *
+     * An ABSENT `unit_cents` is not the same thing as a chip tournament, so it
+     * is named rather than folded into the normaliser's fallback: no select
+     * populates the column yet, which the recovery-fee changelog records as
+     * "the one wire left" and leaves to the work that opens the Diamond
+     * tournament door, because reading it means joining clubs into the
+     * tournament read.
+     */
     const unitCents =
-      Number.isSafeInteger(Number(row.unit_cents)) && Number(row.unit_cents) >= 1
-        ? Number(row.unit_cents)
-        : 1;
+      row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
     const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
     const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);
@@ -1436,9 +1484,15 @@ async function readTournamentPlayerContext(tournamentId: string): Promise<{
   return { data: rows, error: null };
 }
 
-async function refresh(tournamentId: string, e: CacheEntry, generation: number): Promise<void> {
+async function refresh(
+  tournamentId: string,
+  e: CacheEntry,
+  generation: number,
+  readStartedAtMs: number
+): Promise<void> {
+  const ownsEntry = (): boolean => cache.get(tournamentId) === e && e.generation === generation;
   const publishFailure = (issue: string): void => {
-    if (e.generation === generation) e.lastFailureIssue = issue;
+    if (ownsEntry()) e.lastFailureIssue = issue;
   };
 
   try {
@@ -1630,9 +1684,28 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
         pendingRecoveryPlayers,
       }
     );
-    if (e.generation !== generation) return;
-    e.ctx = nextContext;
-    e.lastSuccessAt = Date.now();
+    if (!ownsEntry()) return;
+    const publishedContext = freezeContextValue(structuredClone(nextContext));
+    const contextDigest = createHash('sha256')
+      .update(JSON.stringify(publishedContext))
+      .digest('hex');
+    const readCompletedAtMs = Date.now();
+    // This interval encloses multiple independent source reads and projections;
+    // it is not a PostgreSQL snapshot timestamp or a source-authority receipt.
+    const source: HorseTournamentContextSource = freezeContextValue({
+      version: 1,
+      tournamentId,
+      cacheId: e.cacheId,
+      generation,
+      readStartedAtMs,
+      readCompletedAtMs,
+      contextDigest,
+      contextStatus: publishedContext.contextStatus,
+      contextIssues: [...publishedContext.contextIssues],
+    });
+    e.ctx = publishedContext;
+    e.source = source;
+    e.lastSuccessAt = readCompletedAtMs;
     e.lastFailureIssue = null;
   } catch (error) {
     reportError(error, 'TournamentBrainContext.refresh');
@@ -1644,7 +1717,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
     // Keep the last known context. The snapshot labels it stale once its
     // freshness boundary is crossed; a failed first read remains incomplete.
   } finally {
-    if (e.generation === generation) {
+    if (ownsEntry()) {
       e.inFlight = false;
     }
   }

@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: () => () => {} }));
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const backend = vi.hoisted(() => ({
   state: vi.fn(),
@@ -6,7 +7,9 @@ const backend = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   refresh: vi.fn(),
 }));
-vi.mock('../../src/services/DiamondWheelService', () => ({
+vi.mock('../../src/services/DiamondWheelService', async (importOriginal) => ({
+  // The page reads the service's named exports (the unverified-receipt error).
+  ...(await importOriginal<typeof import('../../src/services/DiamondWheelService')>()),
   default: {
     getStateV2: backend.state,
     welcomeState: async () => ({ available: false, enabled: false }),
@@ -34,7 +37,13 @@ vi.mock('../../src/components/wheel/WheelExperience', () => ({
   wheelPrizeTitle: () => '',
   WheelExperience: ({ size }: { size: number }) => <output aria-label="Wheel Width">{size}</output>,
 }));
-vi.mock('../../src/components/console/SpadeConsole', () => ({
+vi.mock('../../src/components/console/SpadeConsole', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/components/console/SpadeConsole')>()),
+  PlateButton: ({ label, disabled, onClick }: any) => (
+    <button disabled={disabled} onClick={onClick}>
+      {label}
+    </button>
+  ),
   SpadeConsole: ({ children, plates }: any) => (
     <section>
       {children}
@@ -77,7 +86,7 @@ const state = {
 };
 describe('the selected wheel stake owns its availability quote', () => {
   it('measures the stage when loading finishes and follows later viewport changes', async () => {
-    let width = 878;
+    let width = 1248;
     let resize!: () => void;
     const disconnect = vi.fn();
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
@@ -97,7 +106,10 @@ describe('the selected wheel stake owns its availability quote', () => {
     await waitFor(() => expect(backend.state).toHaveBeenCalled());
     expect(screen.queryByLabelText('Wheel Width')).not.toBeInTheDocument();
     await act(async () => finish(state));
-    expect(await screen.findByLabelText('Wheel Width')).toHaveTextContent('878');
+    expect(await screen.findByLabelText('Wheel Width')).toHaveTextContent('1248');
+    const controls = screen.getByRole('complementary', { name: 'Diamond Spins Controls' });
+    expect(within(controls).getByRole('navigation', { name: 'Spin Entry' })).toBeInTheDocument();
+    expect(within(controls).getByLabelText('Diamonds To Spin')).toBeInTheDocument();
     act(() => {
       width = 288;
       resize();
@@ -107,19 +119,36 @@ describe('the selected wheel stake owns its availability quote', () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
+  /* Owner ruling 2026-09-21, R1: an unfinished award used to open its game page
+     by itself on load. It now waits in a visible card until Play Game is tapped,
+     and the tap opens the declared game route without a new spin. */
   it.each(['plinko', 'crash', 'crossing', 'mines'])(
-    'opens an existing %s award on its declared game route without a new spin',
+    'holds an existing %s award in a Play Game card and opens its declared route only on the tap',
     async (game) => {
       backend.state.mockResolvedValue({
         ...state,
-        pending_awards: [{ id: 'earned/award?1', game, base_diamonds: 100 }],
+        pending_awards: [
+          {
+            id: 'earned/award?1',
+            game,
+            base_diamonds: 100,
+            boost_multiplier: 1,
+            entry_diamonds: 100,
+          },
+        ],
       });
       render(<DiamondWheelPage />);
-      const open = await screen.findByRole('button', { name: 'Open', exact: true });
-      fireEvent.click(open);
+      const play = await screen.findByRole('button', { name: 'Play Game' });
+      expect(screen.getByText('You Have A Bonus Game To Play')).toBeInTheDocument();
+      expect(screen.getByText('Play Your Bonus Game Before Another Spin')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Spin 100', exact: true })).toBeDisabled();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(backend.navigate).not.toHaveBeenCalled();
+      fireEvent.click(play);
       expect(backend.navigate).toHaveBeenCalledWith(
         `/clubs/club-a/${game}?wheelAward=earned%2Faward%3F1`
       );
+      expect(screen.queryByText('Your Ready Bonus Games')).not.toBeInTheDocument();
     }
   );
 

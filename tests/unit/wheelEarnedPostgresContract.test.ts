@@ -48,11 +48,24 @@ function request(receipt: Receipt): BonusStart {
   return {
     clubId: raw.club_id as string,
     game: receipt.game,
-    budget: awardBudget(state.value.award as EarnedGameAward, {
-      base: 100,
-      doubled: receipt.double,
-      denomination: (raw.diamonds_per_drop as number) ?? 1,
-    }),
+    // The player's answers are bound to the award they were given for (R9/R6):
+    // a preference for another award is not carried over. The recorded drop
+    // value is sent exactly as the receipt was dealt: a fixture sealed under an
+    // older drop rule (750 a drop on a 7,500 stake) replays through the saved
+    // request, which never re-derives or clears the value it was sent with.
+    budget: {
+      ...awardBudget(state.value.award as EarnedGameAward, {
+        base: 100,
+        doubled: receipt.double,
+        denomination: null,
+        award: {
+          id: (state.value.award as EarnedGameAward).id,
+          entryDiamonds: (state.value.award as EarnedGameAward).entry_diamonds,
+          boostMultiplier: (state.value.award as EarnedGameAward).boost_multiplier as 1 | 2,
+        },
+      }),
+      denomination: (raw.diamonds_per_drop as number | undefined) ?? null,
+    },
     commitId: fairness.commit_id as string,
     serverSeedHash: fairness.server_seed_hash as string,
     seed: fairness.client_seed as string,
@@ -72,11 +85,11 @@ beforeEach(() => {
 describe('actual isolated PostgreSQL earned-game contract', () => {
   it.each(versions)(
     'retains normal, doubled, and maximum upgraded examples from wheel v$version',
-    ({ records: rows }) => {
+    ({ version, records: rows }) => {
       for (const game of ['plinko', 'crash', 'crossing', 'mines']) {
         expect(
           rows.filter((r) => r.kind === 'start' && r.game === game).map((r) => r.value.bet_diamonds)
-        ).toEqual([100, 200, 7500]);
+        ).toEqual(version === 3 && game !== 'plinko' ? [2500, 5000, 7500] : [100, 200, 7500]);
       }
       expect(rows).toHaveLength(48);
     }

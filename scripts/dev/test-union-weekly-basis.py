@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Private native qualification of original weekly P&L and existing payer wiring."""
-import hashlib,importlib.util,json,os,re,subprocess,tempfile
+import hashlib,importlib.util,json,os,re,subprocess,sys,tempfile
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
 pg=Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin'))
@@ -13,8 +13,14 @@ base=Path(tempfile.mkdtemp(prefix='uw.',dir=os.environ.get('ACCOUNTING_FIXTURE_P
 socket=base/'s';socket.mkdir();port='55531'
 started=False
 try:
- subprocess.run([str(pg/'initdb'),'-D',str(base/'data'),'-U','postgres','-A','trust','--no-locale','-E','UTF8'],check=True,capture_output=True)
- subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-l',str(base/'server.log'),'-o',f"-k {socket} -p {port} -h ''",'-w','start'],check=True,capture_output=True);started=True
+ # A UTF-8 locale inherited from the shell makes Apple's libc resolve it on a
+ # helper thread, and the postmaster refuses to start ('postmaster became
+ # multithreaded during startup'). The cluster is already --no-locale/UTF8, so
+ # declare the C locale for its own lifecycle commands rather than depending on
+ # whatever the caller exported.
+ native=dict(os.environ,LC_ALL='C',LANG='C')
+ subprocess.run([str(pg/'initdb'),'-D',str(base/'data'),'-U','postgres','-A','trust','--no-locale','-E','UTF8'],check=True,capture_output=True,env=native)
+ subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-l',str(base/'server.log'),'-o',f"-k {socket} -p {port} -h ''",'-w','start'],check=True,capture_output=True,env=native);started=True
  def run(sql,label):
   path=base/(label+'.sql');path.write_text(sql)
   result=subprocess.run([str(pg/'psql'),'-X','-q','-v','ON_ERROR_STOP=1','-U','postgres','-h',str(socket),'-p',port,'-d','postgres','-f',str(path)],capture_output=True,text=True)
@@ -80,6 +86,15 @@ try:
   sql+='ALTER FUNCTION '+signature+' OWNER TO '+row['owner']+';\n'
  run(sql,'exact-installed-weekly-predecessors')
  run(next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text(),'weekly-qualified-source')
+ # The club settlement floor bounds standalone discovery. Its own preimage
+ # assertions name this exact installed base, so it is applied here, while the
+ # predecessors are still pristine. Its fixture runs last, below.
+ run(next((root/'supabase/migrations').glob('20260920232503*.sql')).read_text(),'club-settlement-floor-source')
+ # A rakeback payout leg cannot be written without its source-linked document
+ # and its settlement/run identity. Installed here, with the predecessors still
+ # pristine, so every regression below - including the real raked weekly close -
+ # runs with the constraint armed.
+ run(next((root/'supabase/migrations').glob('20260921022924*.sql')).read_text(),'rakeback-payout-document-source')
  # Export the exact installed candidate before any disposable test calendar or
  # fault injection. These are installation/readback contracts, not live proof.
  migration=next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text()
@@ -93,6 +108,16 @@ try:
  subprocess.run([str(pg/'pg_dump'),'-U','postgres','-h',str(socket),'-p',port,'-d','postgres','--schema-only','-f',str(base/'candidate-schema.sql')],check=True,capture_output=True)
  (base/'tested-source-binding.json').write_text(json.dumps(binding,indent=2)+'\n')
  print('PASS candidate-catalog-export',flush=True)
+ def qualify_moves():
+  result=subprocess.run(['python3',str(root/'scripts/dev/qualify-cash-move-funding.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
+  (base/'cash-move-qualification.log').write_text(result.stdout+result.stderr)
+  if result.returncode:raise AssertionError(result.stdout+result.stderr)
+  print(result.stdout,flush=True)
+ # Clone the pristine installed candidate before calendar and fault scenarios
+ # mutate functions/defaults. Full and focused modes use the identical input.
+ qualify_moves()
+ if '--cash-move-only' in sys.argv:
+  sys.exit(0)
  run((root/'tests/fixtures/union-weekly-basis/regression.sql').read_text(),'weekly-regression')
  run((root/'tests/fixtures/union-weekly-basis/negative-regression.sql').read_text(),'negative-regression')
  run((root/'tests/fixtures/union-weekly-basis/payment-regression.sql').read_text(),'payment-regression')
@@ -103,6 +128,10 @@ try:
  print(result.stdout,flush=True)
  run((root/'tests/fixtures/union-weekly-basis/tournament-regression.sql').read_text(),'tournament-regression')
  run((root/'tests/fixtures/union-weekly-basis/raked-regression.sql').read_text(),'raked-regression')
+ # The refusals, and the proof that the accepted weekly payout above passed the
+ # same guard. Every probe rolls itself back; the money book is fingerprinted
+ # before and after.
+ run((root/'tests/fixtures/rakeback-payout-document/regression.sql').read_text(),'rakeback-payout-document-regression')
  result=subprocess.run(['python3',str(root/'scripts/dev/qualify-final-atomic-receipt.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
  (base/'final-atomic-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
@@ -111,6 +140,23 @@ try:
  (base/'guard-declaration-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
  print(result.stdout,flush=True)
+ # Last on this cluster: the club settlement floor. The declared clock seam and
+ # the synthetic clubs are introduced only after every preceding assertion has
+ # been made, so nothing above can be disturbed by them.
+ run((root/'tests/fixtures/club-settlement-floor/load.sql').read_text(),'club-floor-clock-seam')
+ run((root/'tests/fixtures/club-settlement-floor/seed.sql').read_text(),'club-floor-seed')
+ run((root/'tests/fixtures/club-settlement-floor/regression.sql').read_text(),'club-floor-regression')
+ # The club scope's discovery BEHAVIOUR, on this same cluster. The 2026-09-14
+ # catalog capture above is union-only, so union_accounting_runs is first brought
+ # to the exact installed union/standalone shape from its own reviewed source;
+ # no coordinator, floor, payer or document definition is touched by that step.
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql').read_text(),'club-floor-run-journal')
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/seed.sql').read_text(),'club-floor-behaviour-seed')
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/regression.sql').read_text(),'club-floor-behaviour-regression')
+ # Last of all, on this same cluster: a week whose payees straddle the rakeback
+ # settler's drain page. It adds a hand to the raked table and closes a later
+ # week, so it runs after every fixture that reads that table's own seals.
+ run((root/'tests/fixtures/union-weekly-basis/period-coverage-regression.sql').read_text(),'period-coverage-regression')
 finally:
- if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
+ if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

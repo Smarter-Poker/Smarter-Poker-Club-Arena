@@ -1,187 +1,234 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   CLUB ADVERTISE PAGE - metal UI, mobile first (375px), one column that earns
-   a second on desktop. Every picture box carries the surface's own
-   aspect-ratio and `object-fit: contain`, so the buyer sees exactly the
-   shape players will.
+   CLUB ADVERTISE PAGE - on the console (#ClubArenaConsole, 2026-09-22)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The frames, the crests, the
+   rails and the action plates are Dan's approved masters, cut into a chassis
+   by components/console/SpadeConsole.css. This sheet only lays the rate card,
+   the two picture wells, the flight form and the ledger onto the black glass
+   between the rails: every figure a row closed by an engraved rule, labels in
+   the master's lit blue, values in engraved silver, secondary actions as lit
+   words. Nothing here draws a card, a pill, a field face or a button face.
+
+   Every well and groove on this page is cut INTO the glass with the kit's own
+   technique - a black top rule with an 8% inner light, the same cut the
+   master's chrome rules are made of, and the same one `.sc-check__box` uses.
+   Sizes are cqw against the console, so a 320px phone and a 430px one get the
+   same picture. No hover state anywhere, and no colour that is not a token
+   the schema already owns.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .club-advertise {
+  --ca-rule: 1px solid #000;
+  --ca-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  --ca-well:
+    inset 0 1px 0 rgb(255 255 255 / 8%), inset 0 0 0 1px rgb(0 0 0 / 88%),
+    inset 0 -1px 0 rgb(255 255 255 / 4%);
   min-height: 100dvh;
   width: 100%;
   max-width: 100vw;
-  overflow-x: clip;
-  padding: 12px 12px var(--bottom-nav-clearance, 74px);
+  padding: 12px 8px var(--bottom-nav-clearance, 74px);
   box-sizing: border-box;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  color: #e6edf3;
-  font-family: var(--font-sans, inherit);
+  overflow-x: clip;
+  background: #000;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
 }
 
-.club-advertise__head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
-  align-items: start;
-  margin: 0 0 12px;
+/* One console per section, each capped well under the master's own width so
+   the art is never asked for more pixels than it has. The two-class selector
+   is deliberate: it has to outrank the family's own --sc-max. */
+.club-advertise .club-advertise__console {
+  --sc-max: 560px;
+  margin: 0 auto 14px;
+  filter: drop-shadow(0 16px 30px rgb(0 0 0 / 85%));
 }
 
-.club-advertise__back {
-  width: 36px;
-  height: 36px;
-  border: 1px solid #2a3a4a;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #e6edf3;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
+/* ── Rows on the glass ──────────────────────────────────────────────────── */
+
+.club-advertise__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 44px;
+  padding-top: 2cqw;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
 }
 
-.club-advertise__title {
-  margin: 4px 0 4px;
-  font-size: 20px;
+.club-advertise__row-label {
+  font-size: 2.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.club-advertise__row-value {
+  font-size: 5.2cqw;
   font-weight: 800;
-  letter-spacing: 0.01em;
-  text-wrap: balance;
+  font-variant-numeric: tabular-nums;
 }
 
-.club-advertise__sub {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: rgba(226, 232, 240, 0.72);
-  max-width: 60ch;
+/* ── Lit words: a control cut into the panel, never a drawn button ──────── */
+
+.club-advertise__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2cqw 6cqw;
 }
 
-.club-advertise__balance {
+.club-advertise__actions--center {
+  justify-content: center;
+}
+
+.club-advertise__word {
+  appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border: 1px solid #2a3a4a;
-  border-radius: 999px;
-  background: rgba(0, 212, 255, 0.06);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.club-advertise .diamond-icon::before {
-  content: '◆';
-  color: #65c4ff;
-  margin-right: 3px;
-  font-size: 0.9em;
-}
-
-.club-advertise__card {
-  padding: 14px;
-  margin: 0 0 12px;
-  border: 1px solid #2a3a4a;
-  border-radius: 12px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.03) 100%);
-}
-
-.club-advertise__h2 {
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.2cqw 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #9fb3c8;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.club-advertise__hint,
-.club-advertise__blurb {
-  margin: 0 0 10px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: rgba(226, 232, 240, 0.72);
+.club-advertise__word:active {
+  filter: brightness(1.3);
 }
 
-.club-advertise__error {
-  display: grid;
-  gap: 12px;
-  justify-items: start;
-  padding: 16px;
-  border: 1px solid #5a2a2a;
-  border-radius: 12px;
-  background: rgba(176, 58, 50, 0.12);
+.club-advertise__word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
-.club-advertise__field-error {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(176, 58, 50, 0.16);
-  border: 1px solid rgba(224, 122, 112, 0.4);
-  color: #ffb4ab;
-  font-size: 12.5px;
+.club-advertise__word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
 }
 
-/* ── Surfaces ── */
+/* ── The rate card: one engraved row per surface ────────────────────────── */
+
 .club-advertise__surfaces {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
 }
 
 .club-advertise__surface {
+  appearance: none;
   display: grid;
-  gap: 6px;
-  padding: 10px;
-  text-align: left;
-  border: 1px solid #2a3a4a;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  gap: 2cqw;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 3cqw 0;
+  border: 0;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
+  background: transparent;
   color: inherit;
   font: inherit;
+  text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
-.club-advertise__surface--on {
-  border-color: #00d4ff;
-  box-shadow:
-    0 0 0 1px rgba(0, 212, 255, 0.35),
-    0 0 16px rgba(0, 212, 255, 0.18);
+.club-advertise__surface:first-child {
+  padding-top: 1.6cqw;
+  border-top: 0;
+  box-shadow: none;
 }
 
+.club-advertise__surface:active {
+  filter: brightness(1.25);
+}
+
+.club-advertise__surface:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.4cqw;
+}
+
+/* The surface's TRUE shape, cut into the glass. The inline max-width bounds
+   its height to one band without touching the ratio (see shapeStyle). */
 .club-advertise__surface-shape {
   display: block;
   width: 100%;
-  border-radius: 6px;
-  background: repeating-linear-gradient(
-    135deg,
-    rgba(101, 196, 255, 0.18) 0 6px,
-    rgba(101, 196, 255, 0.06) 6px 12px
-  );
-  border: 1px dashed rgba(101, 196, 255, 0.45);
+  margin-inline: auto;
+  background: #05070b;
+  box-shadow: var(--ca-well);
+}
+
+.club-advertise__surface-text {
+  display: grid;
+  gap: 0.6cqw;
+  min-width: 0;
 }
 
 .club-advertise__surface-label {
+  font-size: 4.4cqw;
   font-weight: 800;
+  letter-spacing: 0.03em;
+  overflow-wrap: anywhere;
 }
 
 .club-advertise__surface-price {
-  font-size: 13px;
+  font-size: 3.2cqw;
   font-weight: 700;
-  color: #cfe8ff;
+  letter-spacing: 0.06em;
 }
 
 .club-advertise__surface-size {
-  font-size: 11.5px;
-  color: rgba(226, 232, 240, 0.6);
+  font-size: 2.8cqw;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Creative ── */
+.club-advertise__surface-state {
+  font-size: 2.7cqw;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.club-advertise__blurb {
+  padding-top: 2.4cqw;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
+}
+
+/* ── The two pictures ───────────────────────────────────────────────────── */
+
+.club-advertise__picture {
+  display: grid;
+  gap: 2cqw;
+  padding-top: 2.4cqw;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
+}
+
+.club-advertise__picture:first-child {
+  padding-top: 1.6cqw;
+  border-top: 0;
+  box-shadow: none;
+}
+
 .club-advertise__preview {
-  width: 100%;
-  overflow: hidden;
-  border-radius: 8px;
-  background: #06080b;
-  border: 1px solid #2a3a4a;
   display: grid;
   place-items: center;
+  width: 100%;
+  overflow: hidden;
+  background: #05070b;
+  box-shadow: var(--ca-well);
 }
 
 .club-advertise__preview img {
@@ -192,18 +239,25 @@
 }
 
 .club-advertise__preview-empty {
-  font-size: 12px;
-  color: rgba(226, 232, 240, 0.45);
-  letter-spacing: 0.06em;
+  font-size: 2.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
+}
+
+/* The poster is 3:4. Full body width would be a screen and a half of well;
+   it is capped and centred, the way the empty-state rotator caps its own. */
+.club-advertise__preview--poster {
+  max-width: 52cqw;
+  margin-inline: auto;
 }
 
 .club-advertise__file {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 1cqw 5cqw;
+  min-width: 0;
 }
 
 .club-advertise__file input[type='file'] {
@@ -215,149 +269,161 @@
 }
 
 .club-advertise__file-name {
-  font-size: 12px;
-  color: rgba(226, 232, 240, 0.7);
+  min-width: 0;
+  font:
+    500 2.9cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
   overflow-wrap: anywhere;
 }
 
-/* ── Form ── */
-.club-advertise__grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
+/* ── The flight form: grooves in the glass, the caret lit blue ──────────── */
 
 .club-advertise__field {
   display: grid;
-  gap: 5px;
+  gap: 1cqw;
+  padding-top: 2.4cqw;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
 }
 
-.club-advertise__field > span {
-  font-size: 12px;
+.club-advertise__field:first-child {
+  padding-top: 1.6cqw;
+  border-top: 0;
+  box-shadow: none;
+}
+
+.club-advertise__field-label {
+  font-size: 2.9cqw;
   font-weight: 700;
-  color: #9fb3c8;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-.club-advertise__field small {
-  font-size: 11px;
-  color: rgba(226, 232, 240, 0.55);
+.club-advertise__field-hint {
+  font:
+    500 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
 }
 
-.club-advertise__field input,
-.club-advertise__field select {
+.club-advertise__input,
+.club-advertise__select {
   width: 100%;
+  min-width: 0;
   min-height: 44px;
-  padding: 8px 10px;
-  box-sizing: border-box;
-  border: 1px solid #2a3a4a;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.35);
-  color: #e6edf3;
-  font: inherit;
-  font-size: 15px;
+  margin: 0;
+  padding: 1.4cqw 0;
+  border: 0;
+  border-bottom: var(--ca-rule);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  background: transparent;
+  color: #e4e7ec;
+  /* 16px on purpose: anything under it makes iOS zoom the page on focus. */
+  font:
+    800 16px/1.4 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  caret-color: #5bb8ff;
 }
 
-.club-advertise__field input:focus-visible,
-.club-advertise__field select:focus-visible,
-.club-advertise__btn:focus-visible,
-.club-advertise__surface:focus-visible {
-  outline: 2px solid #65c4ff;
-  outline-offset: 2px;
+.club-advertise__select {
+  appearance: none;
+  cursor: pointer;
 }
+
+.club-advertise__select option {
+  background: #020305;
+  color: #f4f7fb;
+}
+
+.club-advertise__input::placeholder {
+  color: #6b7784;
+  font-weight: 600;
+}
+
+.club-advertise__input:focus,
+.club-advertise__select:focus {
+  outline: 0;
+  border-bottom-color: #45adff;
+  box-shadow: 0 1px 0 rgb(69 173 255 / 45%);
+}
+
+.club-advertise__input:disabled,
+.club-advertise__select:disabled {
+  opacity: 0.55;
+}
+
+/* ── What it costs ──────────────────────────────────────────────────────── */
 
 .club-advertise__total {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid #2a3a4a;
+  display: grid;
+  gap: 0.6cqw;
+  padding-top: 2.6cqw;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
 }
 
 .club-advertise__total-label {
-  display: block;
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: 2.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #9fb3c8;
 }
 
 .club-advertise__total-value {
-  display: block;
-  font-size: 22px;
+  font-size: 6.4cqw;
   font-weight: 800;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .club-advertise__total-math {
-  display: block;
-  font-size: 11.5px;
-  color: rgba(226, 232, 240, 0.6);
+  font:
+    500 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
 }
 
-/* ── Buttons ── */
-.club-advertise__btn {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 10px;
-  border: 1px solid #2a3a4a;
-  background: rgba(255, 255, 255, 0.05);
-  color: #e6edf3;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
+.club-advertise__field-error {
+  margin: 0;
+  font:
+    600 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
 }
 
-.club-advertise__btn--primary {
-  border: 0;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  color: #04121a;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.35);
-}
+/* ── The ledger ─────────────────────────────────────────────────────────── */
 
-.club-advertise__btn--ghost {
-  display: inline-flex;
-  align-items: center;
-}
-
-.club-advertise__btn--sm {
-  min-height: 36px;
-  padding: 0 12px;
-  font-size: 12.5px;
-  margin-top: 8px;
-}
-
-.club-advertise__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* ── Campaign list ── */
 .club-advertise__list {
-  list-style: none;
+  display: grid;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 12px;
+  list-style: none;
 }
 
 .club-advertise__item {
   display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid #2a3a4a;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.25);
+  gap: 2cqw;
+  padding: 3.4cqw 0;
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
+}
+
+.club-advertise__item:first-child {
+  padding-top: 1.6cqw;
+  border-top: 0;
+  box-shadow: none;
 }
 
 .club-advertise__item-picture {
   width: 100%;
   overflow: hidden;
-  border-radius: 6px;
-  background: #06080b;
+  background: #05070b;
+  box-shadow: var(--ca-well);
 }
 
 .club-advertise__item-picture img {
@@ -367,123 +433,86 @@
   object-fit: contain;
 }
 
-/* The text half of a campaign row. `min-width: 0` is the load-bearing
-   declaration, not the gap: on desktop this is the second track of a grid
-   whose first track is the picture, and a grid item defaults to
-   `min-width: auto`, so one long headline or a long destination path would
-   push the track wider than its share and take the picture with it. */
 .club-advertise__item-body {
   display: grid;
-  gap: 6px;
+  gap: 1.4cqw;
   align-content: start;
   min-width: 0;
 }
 
 .club-advertise__item-top {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 3cqw;
 }
 
-.club-advertise__item-meta,
-.club-advertise__item-note {
-  font-size: 12px;
-  color: rgba(226, 232, 240, 0.7);
-  line-height: 1.4;
+.club-advertise__item-title {
+  min-width: 0;
+  font-size: 4.2cqw;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.club-advertise__status {
+  flex: 0 0 auto;
+  font-size: 2.7cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.club-advertise__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6cqw 4cqw;
+}
+
+.club-advertise__item-fact {
+  font-size: 2.9cqw;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
 }
 
 .club-advertise__item-note {
-  color: #ffd79a;
+  font:
+    500 3cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
 }
 
 .club-advertise__item-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  font-size: 12.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  gap: 1cqw 5cqw;
 }
 
-.club-advertise__status {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
+.club-advertise__item-stat {
+  font-size: 3.2cqw;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  background: rgba(148, 163, 184, 0.16);
-  color: #cbd5e1;
 }
 
-.club-advertise__status--submitted {
-  background: rgba(184, 137, 43, 0.2);
-  color: #ffd79a;
-}
+/* ── Day by day, one flight at a time ───────────────────────────────────── */
 
-.club-advertise__status--live {
-  background: rgba(43, 122, 75, 0.25);
-  color: #8ee0b0;
-}
-
-.club-advertise__status--scheduled,
-.club-advertise__status--approved {
-  background: rgba(0, 212, 255, 0.14);
-  color: #9fe3ff;
-}
-
-.club-advertise__status--rejected,
-.club-advertise__status--cancelled {
-  background: rgba(176, 58, 50, 0.2);
-  color: #ffb4ab;
-}
-
-@media (min-width: 768px) {
-  .club-advertise {
-    max-width: 920px;
-    margin: 0 auto;
-    padding: 20px 20px var(--bottom-nav-clearance, 74px);
-  }
-
-  .club-advertise__surfaces {
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  }
-
-  .club-advertise__grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .club-advertise__item {
-    grid-template-columns: minmax(200px, 40%) 1fr;
-    align-items: start;
-  }
-}
-
-/* ── The poster (2026-09-13): 3:4, what a tap opens full screen ─────────────
-   Full width on a phone would be a 500px-tall preview; cap it and centre it,
-   the way the empty-state rotator caps its poster. */
-.club-advertise__preview--poster {
-  max-width: 240px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-/* ── Day by day, one flight at a time ─────────────────────────────────────── */
 .club-advertise__days {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 2.9cqw;
   font-variant-numeric: tabular-nums;
 }
 
 .club-advertise__days th,
 .club-advertise__days td {
-  padding: 5px 6px;
+  padding: 1.3cqw 1cqw;
   text-align: right;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  border-top: var(--ca-rule);
+  box-shadow: var(--ca-rule-lit);
 }
 
 .club-advertise__days th:first-child,
@@ -492,9 +521,14 @@
 }
 
 .club-advertise__days th {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 2.5cqw;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #9fb3c8;
+  color: #45adff;
+}
+
+.club-advertise__days td {
+  font-weight: 700;
+  color: #e4e7ec;
 }

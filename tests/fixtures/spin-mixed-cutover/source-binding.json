@@ -1,0 +1,45 @@
+{
+  "repository_files": {
+    "tests/fixtures/spin-mixed-cutover/after.sql": "974ed60679be90e1de843e4fe1ab0ce63497aac9774081a8b48f2785d6c30f52",
+    "tests/fixtures/spin-mixed-cutover/build-candidate.py": "464fd067a55084049a1e87992fad3437a9ca585d0ebb0243e4f8414a4aa2f200",
+    "tests/fixtures/spin-mixed-cutover/captured-preimages.json": "5f45190f58aabfe2c8d873a2fb203403001a16dde111681151d564804e34cef6",
+    "tests/fixtures/spin-mixed-cutover/captured-scope-authority.json": "6b48e52bbd561ad73b974ce043a1919e33a52ff6610b9703a698643b9221818d",
+    "tests/fixtures/spin-mixed-cutover/concurrency.sql": "bf39ec7606f799b4542d5bcd45cce6f641a0b022c6b8b839d6a458cd8de4fcee",
+    "tests/fixtures/spin-mixed-cutover/proof-authority.sql": "56d0f2337776aec187ed5f4833f81652a500b0896277d636c3c3150580cea66a",
+    "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
+    "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+    "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6"
+  },
+  "expected_assertion_executions": 33,
+  "runner_integration_binding_20260918": {
+    "prior_binding_sha256": "e63212a2d01cc2a98c57e72ad9a6f0081ac15335b51529214039776ba4424739",
+    "reviewed_predecessor_commit": "07c420dcb55911adc0eed5224375b4c517add610",
+    "previous_runner_sha256": "cf6634d4db376606908c34b4084f812bac2f9fdc934e6f52d379db87345fc9c4",
+    "runner_sha256": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
+    "reason": "The runner adds the separately qualified September8 Spin custody phase and its focused invocation. The original mixed-cutover phase, all nine other bound inputs and33 expected assertions are unchanged. The exact native invocation rejected this stale runner binding after full acceptance; this explicit successor keeps the guard enforced."
+  },
+  "runner_integration_binding_20260919": {
+    "prior_binding_sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
+    "reviewed_runner_commit": "1580c41f7c22f454caeb46c111306aebb92fd830",
+    "previous_runner_sha256": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
+    "runner_sha256": "40197721a91930668687751146dacd9ea59f68765633b402fb6ef08498e2852b",
+    "reason": "The shared runner adds the separately qualified Early Bird fee custody phase and exits focused invocations after their own cleanup. The original mixed-cutover phase, all nine other bound inputs and33 expected assertions remain unchanged. PR4913 accounting CI refused this omitted pin before the mixed-cutover phase executed."
+  },
+  "restamp_audit": [
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
+      "to": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21 by migration 20260921052548 (installed 20260921060422). The only change to this runner is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list. No existing phase, fixture, candidate or assertion in this file was altered."
+    },
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694",
+      "to": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21: the native accounting cluster now declares LC_ALL=C/LANG=C for its own initdb and pg_ctl lifecycle commands, because an inherited UTF-8 locale made the macOS postmaster refuse to start ('postmaster became multithreaded during startup') and the runner died before its first assertion. No financial function, fixture body, assertion or captured definition changed."
+    }
+  ]
+}

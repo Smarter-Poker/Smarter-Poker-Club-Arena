@@ -12,7 +12,7 @@ export default function HelpPage() {
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
   useEffect(() => {
-    document.title = 'Help Center | Smarter.Poker';
+    document.title = 'Poker Arena Help Center | Smarter.Poker';
   }, []);
 
   const closeFeedbackForm = useCallback(() => setShowFeedbackForm(false), []);

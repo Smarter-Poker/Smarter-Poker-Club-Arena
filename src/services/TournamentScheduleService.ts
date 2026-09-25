@@ -20,6 +20,12 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
+import {
+  TOURNAMENT_CREATE_ERRORS,
+  assertTournamentRpcConfig,
+  tournamentCreateErrorMessage,
+} from '../lib/tournamentCreationRules';
 
 export interface TournamentScheduleRow {
   id: string;
@@ -28,12 +34,14 @@ export interface TournamentScheduleRow {
   name: string;
   description: string | null;
   active: boolean;
-  /** 0=Sunday .. 6=Saturday, UTC. */
+  /** 0=Sunday .. 6=Saturday, in time_zone (UTC when it is null). */
   days_of_week: number[];
-  /** 'HH:MM' 24h, UTC. */
+  /** 'HH:MM' 24h, in time_zone (UTC when it is null). */
   start_times_utc: string[];
   interval_minutes: number | null;
   config: Record<string, unknown>;
+  /** IANA zone of the days and times; null = UTC (every pre-2026-09-24 row). */
+  time_zone: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,7 +55,14 @@ export interface TournamentScheduleDraft {
   description?: string;
   active?: boolean;
   daysOfWeek: number[];
+  /** 'HH:MM' wall-clock times in timeZone (UTC when timeZone is null). */
   startTimesUtc: string[];
+  /**
+   * IANA zone the days and times are in (the creator's device zone). Omit on
+   * an update to keep the stored zone; null means UTC. Editing a schedule
+   * changes only instances the engine has not spawned yet.
+   */
+  timeZone?: string | null;
   intervalMinutes?: number | null;
   /** fn_create_tournament p_config shape, WITHOUT startTime. */
   config: Record<string, unknown>;
@@ -65,18 +80,40 @@ const SCHEDULE_ERRORS: Record<string, string> = {
     'Custom Level Breaks Are Not Supported. Remove Break Rows And Use The Synchronized Break Setting.',
   days_of_week_required: 'Pick at least one day of the week.',
   days_of_week_out_of_range: 'Days of week must be Sunday through Saturday.',
-  start_time_format_invalid: 'Start times must be HH:MM, 24-hour, UTC.',
+  start_time_format_invalid: 'Start times must be HH:MM, 24-hour.',
+  time_zone_unknown: 'Your time zone is not recognized. Set your device to a named time zone.',
   start_times_or_interval_required: 'Add at least one start time, or a repeat interval.',
   interval_minutes_out_of_range: 'The repeat interval must be 5 to 1440 minutes.',
+  // 20260924102056: an enforced commerce admission refuses a NEW recurring
+  // schedule. The server's own `message` is shown (scheduleErrorText); this
+  // is the same sentence for an answer that carries none.
+  operating_access_required:
+    'This Club Needs Active Operating Access To Create A New Tournament. Scheduled And Running Tournaments Are Not Affected.',
 };
 
-function scheduleErrorText(code: string | undefined): string {
-  return SCHEDULE_ERRORS[code ?? ''] ?? 'Could not save the schedule.';
+/**
+ * A schedule's configuration is refused with the same codes, and the same
+ * sentences, as a hand-created tournament (fn_tournament_config_refusal,
+ * 20260924033701), so an unmapped schedule code falls through to that map.
+ */
+function scheduleErrorText(code: string | undefined, serverMessage?: string | null): string {
+  if (code === 'operating_access_required') {
+    return tournamentCreateErrorMessage(code, serverMessage);
+  }
+  return (
+    SCHEDULE_ERRORS[code ?? ''] ??
+    TOURNAMENT_CREATE_ERRORS[code ?? ''] ??
+    'Could not save the schedule.'
+  );
 }
 
 class TournamentScheduleService {
   /** Create or update a schedule. Returns the schedule id. Throws on refusal. */
   async upsert(draft: TournamentScheduleDraft): Promise<string> {
+    // The shared creation rules, schedule surface: refused here with the
+    // owner-facing reason before the round trip, and again by
+    // fn_upsert_tournament_schedule for any caller that skips this.
+    assertTournamentRpcConfig(draft.config, { surface: 'schedule' });
     const { data, error } = await supabase.rpc('fn_upsert_tournament_schedule', {
       p_schedule: {
         id: draft.id ?? null,
@@ -87,17 +124,25 @@ class TournamentScheduleService {
         active: draft.active ?? true,
         daysOfWeek: draft.daysOfWeek,
         startTimesUtc: draft.startTimesUtc,
+        ...(draft.timeZone !== undefined ? { timeZone: draft.timeZone } : {}),
         intervalMinutes: draft.intervalMinutes ?? null,
-        config: draft.config,
+        config: isUnlimitedMtt({ ...draft.config, type: draft.config.type ?? 'mtt' })
+          ? { ...draft.config, maxPlayers: null, max_players: null }
+          : draft.config,
       },
     });
     if (error) {
       reportError(error, 'TournamentScheduleService.upsert');
       throw new Error('Could not save the schedule.');
     }
-    const res = data as { ok?: boolean; schedule_id?: string; error?: string } | null;
+    const res = data as {
+      ok?: boolean;
+      schedule_id?: string;
+      error?: string;
+      message?: string;
+    } | null;
     if (!res?.ok || !res.schedule_id) {
-      throw new Error(scheduleErrorText(res?.error));
+      throw new Error(scheduleErrorText(res?.error, res?.message));
     }
     return res.schedule_id;
   }
@@ -137,7 +182,7 @@ class TournamentScheduleService {
     const { data, error } = await supabase
       .from('tournament_schedules')
       .select(
-        'id, union_id, club_id, name, description, active, days_of_week, start_times_utc, interval_minutes, config, created_at, updated_at'
+        'id, union_id, club_id, name, description, active, days_of_week, start_times_utc, interval_minutes, config, time_zone, created_at, updated_at'
       )
       .eq('union_id', unionId)
       .order('created_at', { ascending: false });

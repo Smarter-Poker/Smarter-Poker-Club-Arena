@@ -9,6 +9,8 @@ export interface ArenaAccessContext {
   member: boolean;
   automaticMembership: boolean;
   cashGamesEnabled?: boolean;
+  /** Diamond Phase 8: the tournament switch, read beside the cash one. */
+  tournamentsEnabled?: boolean;
   role: string | null;
   capabilities: {
     join: boolean;

@@ -1,0 +1,9 @@
+# Unlimited MTT entry in the client
+
+MTT and new satellite creators now send a real NULL entry capacity. The table-config and club creators omit a maximum-field control, preserve physical table sizes, and leave paid-place selection provisional until the database has the actual funded field. Saved numeric drafts cannot restore an MTT cap. SNG, Spin and funded legacy heads-up satellites retain their recorded fixed fields and purchased terms.
+
+Lobby, detail, search, management and table projections consume the database's canonical `format_contract`. MTT counts no longer display an obsolete denominator. Missing or unknown formats remain viewable but cannot authorize entry or a seat-first purchase. Results, observer access, existing ticket registration and pending purchase protocols are preserved. The client final-table observer reads the engine's durable consolidation flag instead of writing it from a capacity guess.
+
+This change integrates the preserved R46 client with current creation presets, playing-only new ladders, Mystery Bounty and Free Buy controls, blind-state presentation, synchronized breaks and hand-for-hand disclosure. The shared capacity reader and pricing mirror are exact PR4808 dependencies. It requires that compatible engine and the guarded database ABI activation before client merge/publication; a local test of either format marker does not establish activation.
+
+Validation retains strict unknown-format refusals, unlimited payloads without a large-number sentinel, fixed capacity and fees, stale drafts, entry tickets, observer routing, error/reconnect behavior and current creator controls. Existing source-reading contracts were updated from legacy name/seat guesses to the recorded-format owner, and the discarded-error baseline was tightened after both final-table reads gained error handling. Native financial transition and live publication evidence remain separate from these client checks.

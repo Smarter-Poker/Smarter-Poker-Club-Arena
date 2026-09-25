@@ -1,4 +1,10 @@
 import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
+import {
+  getTournamentEntryCapacity,
+  isTournamentEntryUnavailable,
+  getTournamentFormatKind,
+  readTournamentFormat,
+} from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB HOME PAGE — Premium-Style Club Dashboard
@@ -59,6 +65,7 @@ import {
   isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
+  isSeatFirstTournament,
   type LobbyEntry,
   type LobbyTableRow,
   type LobbyTournamentRow,
@@ -98,8 +105,8 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
-import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
-import { matchesVariant } from '../utils/tournamentFilters';
+import { DIAMOND_ARENA_CLUB_ID, SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
+import { matchesAllTabTournamentStatus, matchesVariant } from '../utils/tournamentFilters';
 import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentScheduleWindow';
 import {
   loadViewPrefs,
@@ -116,6 +123,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { COUNT_UNKNOWN, type CountFigure } from '../lib/countFigure';
 import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
@@ -326,6 +334,7 @@ interface TableData {
 }
 
 interface TournamentData {
+  format_contract?: unknown;
   id: string;
   name: string;
   game_type: string;
@@ -335,7 +344,9 @@ interface TournamentData {
   start_time: string;
   status: string;
   current_players: number;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
   starting_chips: number;
   /**
    * Dan 2026-08-19: late-registration state is derived from these, not from a
@@ -406,7 +417,7 @@ const ALL_TAB_MTT_CAP = 10;
  *
  * One array, both consumers. Adding a status here can no longer half-land.
  */
-const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'];
+const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON', 'BAGGED'];
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
@@ -619,7 +630,8 @@ function tournamentOpenFirst(
       ['REGISTERING', 'OPEN', 'PENDING', 'ANNOUNCED', 'LATE_REG', 'LATE_REGISTRATION'].includes(u)
     )
       return 0;
-    if (u === 'RUNNING' || u === 'IN_PROGRESS') return 1;
+    // A multi-day event between days sorts with the events under way.
+    if (u === 'RUNNING' || u === 'IN_PROGRESS' || u === 'BAGGED') return 1;
     return 2;
   };
   const r = rank(a.status) - rank(b.status);
@@ -677,9 +689,50 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      The countdown reads nothing at all on a chip club: `null` is the "already
      know the time" seam, so the hook issues no query there. */
   const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+
+  /* THE ARENA HAS TO BE ASKED SEPARATELY (2026-09-20).
+     get_club_home returns early for a diamonds arena with
+     {found, access_only, arena_context} and carries no `players_playing` at
+     all, so the lobby's only writer of that figure never ran here and the rail
+     printed a confident 0 for ever. get_club_players_playing counts DISTINCT
+     live seats at the tables this lobby can see - no club_members join, so an
+     entitlement arena is not invisible to it - and it is the same RPC the
+     realtime refresh below already uses, so this is the missing FIRST read
+     rather than a new mechanism. A read that fails says COUNT_UNKNOWN; it
+     never falls back to zero. */
+  useEffect(() => {
+    if (!isAutomaticArena) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_club_players_playing', {
+          p_club_key: DIAMOND_ARENA_CLUB_ID,
+        });
+        if (!alive) return;
+        if (error) {
+          reportError(error, 'ClubHomePage.arena_players_playing_failed');
+          setPlayersPlaying(COUNT_UNKNOWN);
+          return;
+        }
+        const next = Number(data);
+        setPlayersPlaying(Number.isFinite(next) ? next : COUNT_UNKNOWN);
+      } catch (err) {
+        if (!alive) return;
+        reportError(err, 'ClubHomePage.arena_players_playing_threw');
+        setPlayersPlaying(COUNT_UNKNOWN);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isAutomaticArena]);
   /* Undefined for every chip club, so their cards are untouched. */
   const arenaSeatsClosedLabel =
     isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
+  /* Diamond Phase 8: the arena's tournaments have their own switch, read from
+     the same server entitlement, and the same label while it is off. */
+  const arenaRegistrationClosedLabel =
+    isAutomaticArena && arenaAccess?.tournamentsEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -846,8 +899,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [, setIsInUnion] = useState(false);
   const [, setUnionName] = useState<string | null>(null);
   /** Live seat count from get_club_home. Null until it answers; see the note
-      where it is set - the stale clubs.online_count is never used. */
-  const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
+      where it is set - the stale clubs.online_count is never used.
+      `COUNT_UNKNOWN` when a read came back and could not tell, which the rail
+      prints as a word instead of inventing a zero (2026-09-20). */
+  const [playersPlaying, setPlayersPlaying] = useState<CountFigure>(null);
   /* undefined = unresolved; null = positively verified standalone; string =
      union-managed. Keeping all three states prevents a union_clubs-only club
      from flashing standalone-only onboarding while its scope is loading. */
@@ -1691,7 +1746,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            guess — we fall through to the honest "no longer open" message. */
         const { data: originRow, error: originErr } = await supabase
           .from('tournaments')
-          .select('club_id, buy_in_amount')
+          .select(
+            'format_contract, club_id, buy_in_amount, max_players, satellite_target_id, satellite_target'
+          )
           .eq('id', t.id)
           .maybeSingle();
         if (originErr) {
@@ -1702,23 +1759,31 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         const originClubId = (originRow as { club_id?: string } | null)?.club_id;
         const originBuyIn = Number((originRow as { buy_in_amount?: number } | null)?.buy_in_amount);
 
-        const { data: sibs, error: sibErr } = originClubId
-          ? await supabase
-              .from('tournaments')
-              .select('id')
-              .eq('status', 'REGISTERING')
-              .eq('variant', variant === 'sng' ? 'sng' : 'spin')
-              .eq('club_id', originClubId)
-              .eq('name', t.name)
-              .eq('buy_in_amount', Number.isFinite(originBuyIn) ? originBuyIn : t.buy_in_amount)
-              .neq('id', t.id)
-              .order('created_at', { ascending: false })
-              .limit(1)
-          : { data: null, error: null };
+        const { data: sibs, error: sibErr } =
+          originClubId && readTournamentFormat(originRow)
+            ? await supabase
+                .from('tournaments')
+                .select(
+                  'format_contract, id, max_players, current_players, satellite_target_id, satellite_target'
+                )
+                .eq('status', 'REGISTERING')
+                .eq('format_contract', readTournamentFormat(originRow))
+                .eq('club_id', originClubId)
+                .eq('name', t.name)
+                .eq('buy_in_amount', Number.isFinite(originBuyIn) ? originBuyIn : t.buy_in_amount)
+                .neq('id', t.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+            : { data: null, error: null };
         if (sibErr) {
           reportError?.(sibErr, 'ClubHomePage.spinQuickJoin_sibling_lookup');
         }
-        const sibId = (sibs || [])[0]?.id as string | undefined;
+        const targetId = originRow?.satellite_target_id ?? originRow?.satellite_target;
+        const sibId = (sibs || []).find(
+          (row) =>
+            !isTournamentEntryUnavailable(row, row.current_players) &&
+            (row.satellite_target_id ?? row.satellite_target ?? null) === (targetId ?? null)
+        )?.id as string | undefined;
         if (sibId && !spinJoinCancelRef.current) {
           const sibTableId = await tableService.resolveTournamentLiveTable(sibId);
           if (spinJoinCancelRef.current) return;
@@ -2740,10 +2805,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
       // ── Batch: tables + tournaments + BBJ in parallel ──
       // Build table query: use union_id for union clubs, club_id for standalone
+      // KILL POTS (kill-v1): kill_mode and kill_threshold_bb feed the Kill /
+      // Half Kill medallion and the LIMIT tab's Kill Pot chip. get_club_home's
+      // first paint does not carry them, and the chip reads that as "cannot
+      // tell", never as "no".
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2788,10 +2857,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // returns ONLY the club's own PRIVATE tournaments; every union-visible
       // tournament comes from the union-scoped query below. Standalone clubs
       // keep the original club_id scoping.
+      //
+      // The tail from is_rebuy on (2026-09-22) feeds the tournament trait chips
+      // and medallions (the trait predicates in utils/tournamentFilters): the
+      // chip-purchase RPC gates on is_rebuy, is_reentry and add_on_available.
+      // rebuy_cost and addon_cost are deliberately not here: they are prices,
+      // not evidence of either trait, and nothing on the board reads them. This
+      // read REPLACES the fast path's rows, so is_xmtt and union_id, which only
+      // get_club_home carried, vanished from the board here until now.
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
+          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -2967,7 +3044,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           setTournaments(allTournaments);
         }
       }
-      setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);
+      /* Each list against ITS OWN cap: the tournament query stops at
+         MODERATE (500), not LIST (200), so comparing it to LIST printed "+"
+         beside counts that had not been cut short at all. */
+      setCountsCapped(
+        tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.MODERATE
+      );
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
@@ -3307,6 +3389,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         'STARTING_SOON',
         'RUNNING',
         'IN_PROGRESS',
+        // Multi-day, between days: listed (a player looks for tomorrow's Day 2
+        // here) but never enterable; stillEnterable() above says no.
+        'BAGGED',
       ].includes(status);
     };
 
@@ -3321,14 +3406,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
 
-      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
-        const status = String(t.status).toUpperCase();
-        const matchesAllStatus =
-          (allStatusFilter === 'RUNNING' && ['RUNNING', 'IN_PROGRESS'].includes(status)) ||
-          (allStatusFilter === 'OPEN_REGISTRATION' && status === 'REGISTERING') ||
-          (allStatusFilter === 'LATE_REG' && ['LATE_REG', 'LATE_REGISTRATION'].includes(status)) ||
-          (allStatusFilter === 'STARTING_SOON' && status === 'STARTING_SOON');
-        if (!matchesAllStatus) return false;
+      /* Late Reg and Starting Soon used to compare the status to 'LATE_REG'
+         and 'STARTING_SOON', which nothing writes, so both chips listed no
+         tournament. matchesTournamentSubFilter derives them from the
+         late-registration window and the start time. */
+      if (gameType === 'ALL' && !matchesAllTabTournamentStatus(t, allStatusFilter, windowNow)) {
+        return false;
       }
 
       if (advSpec && advValue) {
@@ -3338,7 +3421,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           !rowPassesFilter(advSpec, advValue, {
             variant: t.game_type,
             price: total,
-            seats: Number(t.max_players) || 0,
+            seats: getTournamentEntryCapacity(t) ?? 0,
             // The "Table Size" slider filters on seats at a TABLE, not on the
             // size of the field. Null when the row does not carry it, which
             // skips the range rather than measuring an MTT against 2-9.
@@ -3866,6 +3949,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const handleRegister = useCallback(
     (t: LobbyTournamentRow) => {
+      if (isTournamentEntryUnavailable(t, t.current_players)) {
+        toast.error('Tournament entry is unavailable');
+        return;
+      }
       /* THE LAST DOOR A SEAT-FIRST GAME COULD SNEAK THROUGH (Dan 2026-08-28).
          A Spin or Heads-Up must never reach the Sign Up dialog: it charges
          the buy-in with no seat attached, and Dan's binding rule is the seat
@@ -3875,10 +3962,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          gate makes the wrong wiring land on the right flow instead of on a
          charge. Same definition as fn_take_seat_and_buy_in: variant spin,
          or a 2-seat sng. */
-      const variantWord = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
-      const seatFirst =
-        variantWord === 'spin' ||
-        (variantWord === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2);
+      const variantWord = getTournamentFormatKind(t);
+      const seatFirst = isSeatFirstTournament(t);
       if (seatFirst) {
         spinQuickJoin(
           { id: t.id, name: t.name, buy_in_amount: Number(t.buy_in_amount) || 0 },
@@ -4205,6 +4290,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          buy-in door refuses every seat until it opens. Say so on the card
          rather than offering a Join that the server will reject. */
       seatsClosedLabel: arenaSeatsClosedLabel,
+      registrationClosedLabel: arenaRegistrationClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -4702,6 +4788,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     freerollText: arenaFreeroll.text,
                     freerollTitle: arenaFreeroll.title,
                     freerollImminent: arenaFreeroll.imminent,
+                    /* "None Scheduled" and "Unavailable" are words, not clocks
+                       (2026-09-19); the rail sizes them to fit. Loading prints
+                       zeros like every other figure on the card. */
+                    freerollIsWord:
+                      arenaFreeroll.state === 'none' || arenaFreeroll.state === 'error',
                   }
                 : null
             }
@@ -5315,8 +5406,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         />
 
         {/* The footer is the permanent Diamond Spins entry. Keep the
-            eligible zero-chip invitation without an extra box under ads. */}
-        <DiamondBustPrompt clubId={resolvedClubId || club.id} />
+            eligible zero-chip invitation without an extra box under ads.
+
+            NOT IN THE DIAMOND ARENA (2026-09-19). "Out Of Chips? ... Chip
+            Prizes Paid Into Your Club Wallet" invites the player to a wheel
+            that credits the host club's chip balance, and the arena club must
+            never acquire one (programme rule). The arena has no chip wallet to
+            run out of; the prompt is a chip club feature and stays on chip
+            clubs, where nothing changes. */}
+        {!isAutomaticArena && <DiamondBustPrompt clubId={resolvedClubId || club.id} />}
 
         {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always
@@ -5605,6 +5703,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           seatsClosedLabel={arenaSeatsClosedLabel}
+          registrationClosedLabel={arenaRegistrationClosedLabel}
           onWaitlistToggle={handleLobbyWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

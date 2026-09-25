@@ -65,7 +65,14 @@ describe('A Diamond seat tops up from the custody it sat with', () => {
     /* Every surface that opens the cashier reads the one decision, so none of
        them can drift from the others the way the lobby's three join controls
        did on 2026-09-11. */
-    expect(TABLE_PAGE.match(/canTopUpSeat/g) ?? []).toHaveLength(4);
+    /* THREE SINCE 2026-09-15, NOT FOUR. The fourth was the old side menu's
+       own Cashier row, and that menu could not be opened - the only reference
+       to its toggle was the overlay's own close handler - so the row was
+       deleted with the rest of it. The rule this pins is unchanged: every
+       surface that can open the cashier reads the one decision, and every
+       remaining `setShowCashier(true)` sits behind `canTopUpSeat` or calls
+       `seatCanAddFunds` itself. */
+    expect(TABLE_PAGE.match(/canTopUpSeat/g) ?? []).toHaveLength(3);
     /* And every surface that ASKS the question reads the same function. This
        is a census of a NAMED set rather than a ceiling on an unrelated one:
        six surfaces decide whether this seat can be funded, and each is listed,
@@ -81,8 +88,13 @@ describe('A Diamond seat tops up from the custody it sat with', () => {
        Five and six are the bust rebuy, which was chip-only until 2026-09-12
        on a note saying Diamond re-entry needed a new custody occupancy. It
        does not: `fn_poker_diamond_top_up` accepts an expected stack of zero
-       and reserves into the custody the seat already holds. */
-    expect(TABLE_PAGE.match(/seatCanAddFunds\(/g) ?? []).toHaveLength(6);
+       and reserves into the custody the seat already holds.
+
+         7. the report to the multi-table tab bar (2026-09-19, B12): the bar
+            cannot see the arena, so the page tells it the rule's answer and
+            the bar drops its Top Up items where the answer is no
+            (tests/unit/tabBarTopUpFollowsSeatCanAddFunds.test.tsx). */
+    expect(TABLE_PAGE.match(/seatCanAddFunds\(/g) ?? []).toHaveLength(7);
   });
 
   it('opens the cashier for Diamonds in whole units and names them', () => {

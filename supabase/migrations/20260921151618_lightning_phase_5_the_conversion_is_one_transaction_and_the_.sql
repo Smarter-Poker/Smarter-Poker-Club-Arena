@@ -503,8 +503,20 @@ BEGIN
   END IF;
 
   IF g.cluster_mode <> 'must_move' THEN
-    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'wrong_state',
-      'cluster_mode', g.cluster_mode);
+    -- 'pending' IS READ OFF THE CLUSTER HERE, NOT OFF A RECORD THIS CALLER HAS
+    -- NONE OF. A second caller arriving with a FRESH request id while a
+    -- conversion is already in flight is refused - correctly, the lock and the
+    -- partial unique index both say so - but it was being told pending: false
+    -- about a Cluster sitting in pending_on with every table halted. That is
+    -- the same record-versus-Cluster confusion commit_lightning's 'converted'
+    -- was re-cut to avoid, and it contradicted this function's own comment
+    -- four lines down, which says a Cluster already in pending_on "is the
+    -- answer to 'is a conversion in progress'". ok stays false, because this
+    -- caller's request did not open anything; pending says what is true of the
+    -- Cluster.
+    RETURN jsonb_build_object('ok', false,
+      'pending', g.cluster_mode IN ('pending_on', 'pending_off'),
+      'reason', 'wrong_state', 'cluster_mode', g.cluster_mode);
   END IF;
 
   -- Steps 3 and 4. The verdict is the one reader the lobby already embeds, so

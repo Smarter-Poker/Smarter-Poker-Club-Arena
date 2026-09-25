@@ -42,6 +42,8 @@ NEXT_FRESHNESS_CHECK=0
 BREAK_END_EPOCH=0
 MIN_BREAK_REMAINING_MS=285000
 LEGACY_MIN_BREAK_REMAINING_MS=245000
+BREAK_ADMISSION_MIN_BREAK_MS=260000
+BREAK_LOCKED_MIN_BREAK_MS=245000
 LEGACY_CHECKPOINT_BUDGET_SECONDS=40
 LEGACY_ENTRY_ALLOWANCE_MS=15000
 BREAK_WINDOW_MS=300000
@@ -129,7 +131,7 @@ maintenance_certificate() {{
 {QUEUE}
   [ "$LOCK_HELD" = 1 ] || exit 95
   [ "$BREAK_REMAINING_MS" -ge "$CERTIFICATE_MIN_BREAK_MS" ] || exit 94
-  [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] || [ "$CERTIFICATE_MIN_BREAK_MS" = "$MIN_BREAK_REMAINING_MS" ] || exit 93
+  [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] || [ "$CERTIFICATE_MIN_BREAK_MS" = "$BREAK_LOCKED_MIN_BREAK_MS" ] || exit 93
   event "PREPARE_ALLOWED:$DEADLINE:$CERTIFICATE_DEADLINE:$BREAK_END_EPOCH"
   break
 done
@@ -216,7 +218,7 @@ class WindowQueueTests(unittest.TestCase):
         result, events = run_queue([(0, 299999), (0, 299000)])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
-                         ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:285000'])
+                         ['CERTIFICATE:1:0:260000', 'CERTIFICATE:2:1:245000'])
         self.assertNotIn('LEGACY_CHECKPOINT:1:1', events)
 
     def test_legacy_checkpoint_is_read_against_the_legacy_reserve_after_it_ran(self):

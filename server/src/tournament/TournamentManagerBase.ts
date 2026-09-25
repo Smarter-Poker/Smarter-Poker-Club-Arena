@@ -600,7 +600,33 @@ export abstract class TournamentManagerBase {
     context: Record<string, unknown> = {}
   ): Promise<void> {
     if (isNew) {
-      await raiseFinancialAlert(severity, source, message, context);
+      // THE SUBJECT KEY, AND THE REASON, BOTH GO WITH IT (2026-09-25).
+      //
+      // `isNew` above is in-memory state on THIS manager: one slot holding the
+      // last reason. It cannot survive a process restart, and two reasons that
+      // alternate are each "new" every time they come round, so it throttles a
+      // tight loop and nothing slower. That left 15,426 unresolved criticals on
+      // 1,003 tournaments that had all since completed and paid in full.
+      //
+      // The durable guard is in the database and keys on the subject, so the
+      // key names the tournament AND the reason: a genuinely different refusal
+      // still gets its own open alert, and the same one stops re-reporting
+      // whatever this process happens to remember.
+      //
+      // The reason also goes into the context. 14,388 of those 15,426 rows
+      // carried no error and no error_name at all - a critical money alert
+      // asserting `proven_refusal: true` while recording nothing about what
+      // was refused. See CLAUDE.md 10.86 rule 1.
+      const reasonForKey = this.lastFinishRefusalReason;
+      const subject = context.tournament_id ?? this.tournamentId;
+      await raiseFinancialAlert(
+        severity,
+        source,
+        message,
+        reasonForKey ? { ...context, refusal_reason: reasonForKey } : context,
+        `${String(subject)}:${reasonForKey ?? 'unknown'}`,
+        String(subject)
+      );
       return;
     }
     const reason = this.lastFinishRefusalReason;

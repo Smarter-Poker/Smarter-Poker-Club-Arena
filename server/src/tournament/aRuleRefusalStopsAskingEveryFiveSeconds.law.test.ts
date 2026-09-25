@@ -193,12 +193,28 @@ describe('the manager asks with that delay and alerts once', () => {
   it('the helper is the only thing that awaits the alert for a refusal', () => {
     // One place decides whether an operator is told, so a new refusal branch
     // cannot reintroduce the flood by calling raiseFinancialAlert directly.
-    const helper = MANAGER.slice(
-      MANAGER.indexOf('protected async alertFinishRefusalOnce('),
-      MANAGER.indexOf('protected async alertFinishRefusalOnce(') + 700
-    );
-    expect(helper).toContain('await raiseFinancialAlert(severity, source, message, context)');
+    //
+    // PIN MOVED 2026-09-25, same commit as the mechanism it follows. This used
+    // to assert the exact four-argument call
+    // `raiseFinancialAlert(severity, source, message, context)`. The helper now
+    // also passes a DURABLE subject key, because the in-memory `isNew` slot
+    // this law pins is a per-process throttle and cannot be more than that:
+    // 15,426 unresolved criticals accumulated on 1,003 already-settled
+    // tournaments while every assertion in this file still passed. The law's
+    // intent is unchanged and still enforced - one decision point, and it only
+    // fires when isNew. See aSubjectKeyReachesTheDedupeDoor.law.test.ts.
+    //
+    // The window is bounded by the next member rather than a byte count: the
+    // previous +700 was already smaller than the comment that documents this
+    // branch, which is how a pin starts failing for prose (10.86 rule 4).
+    const start = MANAGER.indexOf('protected async alertFinishRefusalOnce(');
+    expect(start).toBeGreaterThan(-1);
+    const after = MANAGER.indexOf('BUST_REFUSAL_SKIP_AFTER', start);
+    const helper = MANAGER.slice(start, after > start ? after : start + 4000);
+    expect(helper).toContain('await raiseFinancialAlert(');
     expect(helper).toContain('if (isNew)');
+    // and it is still the ONLY awaited alert inside the helper
+    expect(helper.match(/await raiseFinancialAlert\(/g) ?? []).toHaveLength(1);
   });
 
   it('an unproven outcome is always news, because it is never repeated on a clock', () => {

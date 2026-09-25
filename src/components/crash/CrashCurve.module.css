@@ -240,14 +240,13 @@
 .ticker::before {
   content: '';
   position: absolute;
-  /* Inside the hero's own box, then stretched with a transform: a negative
-     inset would grow the element's scroll height and read as cut-off content
-     on a 375px phone (tests/e2e/css/diamond-games-playfield.spec.ts). */
+  /* Kept inside the hero's own box: a negative inset, or a transform that
+     grows past it, extends the element's scrollable overflow and reads as
+     cut-off content on a 375px phone (tests/e2e/css/diamond-games-playfield.spec.ts).
+     The glow beyond the box is the text-shadow's job. */
   inset: 0 18%;
   z-index: -1;
-  transform: scaleY(1.36);
-  transform-origin: center;
-  background: radial-gradient(ellipse at center, rgb(5 6 7 / 55%), transparent 68%);
+  background: radial-gradient(ellipse at center, rgb(5 6 7 / 60%), transparent 70%);
 }
 
 .ticker[data-heat='warm'] {

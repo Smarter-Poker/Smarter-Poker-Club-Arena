@@ -234,6 +234,13 @@ interface TournamentLaunchCompleteResult {
   lease_generation?: string;
 }
 
+/**
+ * The clause `captureDrainedF06Originals` last refused on, per manager; absent
+ * after a capture that returned the originals. Kept beside the class, not on
+ * it, so the capture's body reads exactly the terms the release guard walks.
+ */
+const drainedF06OriginalsRefusals = new WeakMap<TournamentManagerBase, string>();
+
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
   protected gameServer: GameServer;
@@ -295,32 +302,53 @@ export abstract class TournamentManagerBase {
     this.f06RecoveryOwnership = false;
   }
 
-  /** Positive completion of every exact stop, not merely loss of a registry slot. */
+  /**
+   * WHY THE STOPPED ORIGINALS CANNOT BE OFFERED FOR CUSTODY, or null when they
+   * can. Every condition is the one `captureDrainedF06Originals` always
+   * applied, in the same order, named on the way out (2026-09-25, see
+   * drainedF06Custody.ts F06CustodyRefusal). The walk lives in the capture
+   * and this reads its verdict, so the packet a capture returns and the reason
+   * an operator reads can never disagree.
+   */
+  protected drainedF06OriginalsRefusal(): string | null {
+    this.captureDrainedF06Originals();
+    return drainedF06OriginalsRefusals.get(this) ?? null;
+  }
+
+  /**
+   * Positive completion of every exact stop, not merely loss of a registry slot.
+   *
+   * Every term this reads is walked by name in the release guard's
+   * `drainWitness` (tests/a-race-that-touched-nothing-names-it-and-waits.law),
+   * which is why the refusal is recorded beside the class rather than on it:
+   * the body must read exactly the terms the guard diagnoses, no more.
+   */
   protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
-    const originals = this.drainedF06Originals;
-    if (
-      !originals ||
-      !this.stopFenceApplied ||
-      !this.tournamentLeaseAuthorityExpired ||
-      this.running ||
-      this.teardownPromise ||
-      this.lifecycleOperation ||
-      this.lifecycleJobs.size ||
-      this.tableEngineStartJobs.size ||
-      this.tableEngineRunJobs.size ||
-      this.eliminationSchedulerJobs.size ||
-      this.lifecycleTimeouts.size ||
-      this.lifecycleIntervals.size ||
-      this.tableEngines.size !== originals.length ||
-      originals.some(
-        ([id, engine]) =>
-          this.tableEngines.get(id) !== engine ||
-          engine.isRunning() ||
-          !engine.hasReleasedProcessOwnership() ||
-          engine.hasSettlementInFlight()
-      )
-    )
+    const refuse = (reason: string): null => {
+      drainedF06OriginalsRefusals.set(this, reason);
       return null;
+    };
+    const originals = this.drainedF06Originals;
+    if (!originals) return refuse('engine_stops_not_all_fulfilled');
+    if (!this.stopFenceApplied) return refuse('stop_fence_not_applied');
+    if (!this.tournamentLeaseAuthorityExpired) return refuse('lease_authority_not_expired');
+    if (this.running) return refuse('manager_running');
+    if (this.teardownPromise) return refuse('teardown_in_flight');
+    if (this.lifecycleOperation) return refuse('lifecycle_operation_in_flight');
+    if (this.lifecycleJobs.size) return refuse('lifecycle_jobs_pending');
+    if (this.tableEngineStartJobs.size) return refuse('engine_start_jobs_pending');
+    if (this.tableEngineRunJobs.size) return refuse('engine_run_jobs_pending');
+    if (this.eliminationSchedulerJobs.size) return refuse('elimination_jobs_pending');
+    if (this.lifecycleTimeouts.size) return refuse('lifecycle_timeouts_armed');
+    if (this.lifecycleIntervals.size) return refuse('lifecycle_intervals_armed');
+    if (this.tableEngines.size !== originals.length) return refuse('engine_registry_changed');
+    for (const [id, engine] of originals) {
+      if (this.tableEngines.get(id) !== engine) return refuse('original_not_registered');
+      if (engine.isRunning()) return refuse('engine_running');
+      if (!engine.hasReleasedProcessOwnership()) return refuse('engine_process_ownership_held');
+      if (engine.hasSettlementInFlight()) return refuse('engine_settlement_in_flight');
+    }
+    drainedF06OriginalsRefusals.delete(this);
     return originals;
   }
 

@@ -58,7 +58,7 @@ describe('the drain gate cannot pin production on stale code', () => {
     // not return a successful staged-only outcome.
     const build = TRANSACTION.indexOf('"$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF"');
     const wait = TRANSACTION.indexOf('while :; do', build);
-    const certificate = TRANSACTION.indexOf('maintenance_certificate)', wait);
+    const certificate = TRANSACTION.indexOf('BREAK_REMAINING_MS="$(maintenance_certificate', wait);
     expect(build).toBeGreaterThan(0);
     expect(wait).toBeGreaterThan(build);
     expect(certificate).toBeGreaterThan(wait);

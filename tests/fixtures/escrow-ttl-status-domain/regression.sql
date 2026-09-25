@@ -19,8 +19,12 @@ DECLARE
 BEGIN
   SELECT * INTO f FROM public.zz_escrow_rehearsal_fingerprint;
 
-  DELETE FROM public.ca_incident_events;
-  DELETE FROM public.ca_drift_incidents;
+  -- Scoped to THIS detector only; see red.sql. This whole block rolls back,
+  -- but a fixture that models an unqualified DELETE teaches one.
+  DELETE FROM public.ca_incident_events e
+   USING public.ca_drift_incidents i
+   WHERE i.id = e.incident_id AND i.source = 'fn_ca_escrow_ttl_sweep';
+  DELETE FROM public.ca_drift_incidents WHERE source = 'fn_ca_escrow_ttl_sweep';
 
   -- ── 1. it sees them, and the per-run bound holds ────────────────────────
   v_n1 := public.fn_ca_escrow_ttl_sweep();

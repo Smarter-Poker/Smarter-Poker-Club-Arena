@@ -6,6 +6,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { gpuFrameRenderer } from './gpuFrameRenderer';
 import { isSoftwareRenderer } from './rendererTier';
+import { createQualityGovernor, FLOOR_TIER } from './qualityGovernor';
+import { applyQualityTier } from './sceneKit';
 import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
@@ -754,13 +756,13 @@ function CrossingScene(props: Props) {
     canvas.className = styles.canvas;
     canvas.setAttribute('aria-hidden', 'true');
     node.prepend(canvas);
-    // A CPU rasteriser pays for every pixel and every shadow tap; it draws the
-    // same road at one pixel per CSS pixel with no shadow maps.
+    // A CPU rasteriser starts at the floor tier; everything else starts at the
+    // tier this session has found and steps down if the frames say so
+    // (qualityGovernor.ts). Every element stays; only resolution and shadows move.
     const software = isSoftwareRenderer(
       typeof renderer.getContext === 'function' ? renderer.getContext() : null
     );
-    renderer.setPixelRatio(software ? 1 : Math.min(devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = !software;
+    renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -1312,6 +1314,14 @@ function CrossingScene(props: Props) {
           })
         : null;
     watcher?.observe(node);
+    const governor = createQualityGovernor({
+      intervalMs: 16,
+      start: software ? FLOOR_TIER : undefined,
+      apply: (tier) => {
+        applyQualityTier(renderer, scene, tier, node.clientWidth, node.clientHeight);
+        needsDraw = true;
+      },
+    });
     const resize = () => {
       const w = node.clientWidth,
         h = node.clientHeight;
@@ -1323,7 +1333,15 @@ function CrossingScene(props: Props) {
     const observer = new ResizeObserver(resize);
     observer.observe(node);
     resize();
-    const frames = gpuFrameRenderer(renderer, scene, camera);
+    const gpu = gpuFrameRenderer(renderer, scene, camera);
+    const frames = {
+      render() {
+        const submitted = gpu.render();
+        governor.frame(performance.now(), submitted);
+        return submitted;
+      },
+      dispose: gpu.dispose,
+    };
     /* THE PROGRAMS ARE COMPILED BEFORE THE FIRST FRAME, NOT INSIDE IT
        (2026-09-22). Every material here is a MeshPhysicalMaterial lit by a
        shadow-casting key light, so the first renderer.render() compiles and

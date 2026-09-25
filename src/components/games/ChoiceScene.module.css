@@ -5,6 +5,15 @@
   min-width: 0;
   overflow: hidden;
   border-radius: 10px;
+  /* Under the canvas before its first frame: the night road's own tones and
+     the house hairline, so a slow phone shows a frame, not a black hole. The
+     canvas is transparent until it is drawn on. */
+  background:
+    radial-gradient(90% 55% at 50% 60%, rgb(255 231 194 / 7%), transparent 70%),
+    linear-gradient(180deg, #06101f 0%, #0b0f14 40%, #050607 100%);
+  box-shadow:
+    0 0 0 1px rgb(154 165 179 / 30%) inset,
+    0 1px 0 rgb(255 255 255 / 6%) inset;
 }
 .canvas {
   display: block;

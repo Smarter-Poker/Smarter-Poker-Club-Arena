@@ -27,7 +27,12 @@
   max-width: 100%;
   border-radius: 12px;
   overflow: hidden;
-  background: #050607;
+  /* Under the canvas before its first frame: the same sky the scene will draw,
+     so a slow phone shows the house frame, not a black hole (Phase 1, the
+     first-load placeholder). The canvas is transparent until it is drawn on. */
+  background:
+    radial-gradient(120% 80% at 50% 100%, rgb(24 119 242 / 14%), transparent 60%),
+    linear-gradient(180deg, #050607 0%, #06101f 55%, #0a1424 100%);
   isolation: isolate;
   box-shadow:
     0 0 0 1px rgb(154 165 179 / 34%),

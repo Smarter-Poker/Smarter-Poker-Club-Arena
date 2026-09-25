@@ -2136,6 +2136,22 @@ describe('exact 8825 retained original custody retirement', () => {
       'rpc.transport',
       'sqlstate=40001,refusal=F06_RETRY_MAINTENANCE_LANE',
     ],
+    /* Run 36095932476 refused here carrying `refusal=string(44)`. The message
+       was a token, a colon and the name of one of the eight canonical keys
+       `f06_retired_origin_transfer` compares, and that name is the whole
+       diagnosis: it says WHICH key moved. Forty-four says nothing. */
+    [
+      'a refusal whose token names the key that moved',
+      raised('P0001', 'F06_RETIRED_CANONICAL_CHANGED: registrations'),
+      'rpc.transport',
+      'sqlstate=P0001,refusal=F06_RETIRED_CANONICAL_CHANGED: registrations',
+    ],
+    [
+      'a refusal whose token carries a sentence of fixed words',
+      raised('55000', 'PLATFORM_FROZEN: interrupted-hand abort refused'),
+      'rpc.transport',
+      'sqlstate=55000,refusal=PLATFORM_FROZEN: interrupted-hand abort refused',
+    ],
     ['a body that is not a record', () => ({ data: [], error: null }), 'rpc.body', 'body=Array(0)'],
     [
       'a body that says no',
@@ -2180,6 +2196,43 @@ describe('exact 8825 retained original custody retirement', () => {
     expect(result.observedDetail).not.toContain('Kd');
     expect(result.observedDetail).not.toContain('046718c5');
   });
+  /* The DETAIL after the colon is judged on its own, and the token in front of
+     it is not held hostage to that judgement. Each message below carries
+     something a receipt may never export, and each still names which refusal
+     fired - which is the fact a refused release is spent to learn. */
+  it.each([
+    ['a card', 'F06_MIXED_CANONICAL_CHANGED: As Kd', 'string(5)', ['As Kd', ' Kd']],
+    [
+      'a uuid',
+      'F06_MIXED_CANONICAL_CHANGED: f6bd2252-5c11-40df-b842-cdf99a1e8323',
+      'uuid',
+      ['f6bd2252-5c11', 'cdf99a1e8323'],
+    ],
+    [
+      'an address',
+      'F06_MIXED_CANONICAL_CHANGED: player@example.com',
+      'string(18)',
+      ['player@example.com', 'example'],
+    ],
+    [
+      'a detail one character past the carried length',
+      `F06_MIXED_CANONICAL_CHANGED: ${'seat'.repeat(11)}`,
+      'string(44)',
+      ['seatseat'],
+    ],
+  ])(
+    'names the refusal and reduces %s that followed it',
+    async (_label, message, reduced, secrets) => {
+      const f = mixedFixture();
+      f.onRpcResponse((name: string) =>
+        name === 'fn_f06_prepare_mixed_manager_custody' ? raised('P0001', message)() : undefined
+      );
+      const result: any = await f.run();
+      expect(result.reason).toBe('mixed_custody_rpc_unknown');
+      expect(result.observedDetail).toContain(`refusal=F06_MIXED_CANONICAL_CHANGED:${reduced}`);
+      for (const secret of secrets) expect(result.observedDetail).not.toContain(secret);
+    }
+  );
   // A preflight refusal used to name only its code. These conjunctions are wide
   // and run against live state, so the code alone cost a deploy to interpret.
   // Each sub-condition now reports itself, and the fixture proves it. What is

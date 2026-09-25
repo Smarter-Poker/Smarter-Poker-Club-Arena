@@ -43,12 +43,80 @@ CERTIFICATE_RESERVE_SECONDS=720
 BREAK_CUTOVER_PROOF_SECONDS=150
 BREAK_ROLLBACK_RESERVE_SECONDS=135
 BREAK_DEADLINE_SLACK_SECONDS=0
+# THE LEGACY CHECKPOINT GETS THE SECONDS IT NEEDS (2026-09-21)
+# ───────────────────────────────────────────────────────────
+# The engine's countdown is BREAK_DURATION_MS, 300000ms, every break. The
+# strict 285000ms certificate above leaves 15 seconds of entry slack, and the
+# legacy 8825 checkpoint has to fit inside it: countdown detection, the
+# rollback proof, the helper preamble AND the publisher's bounded work. In run
+# 35615604946 the sequence reached the guard's first check 15.2 seconds into
+# the countdown and it refused with insufficient_reserve, as the arithmetic
+# says it always must. So the checkpoint's whole budget is written down here
+# and taken out of the CANDIDATE PROOF budget, never the rollback reserve.
+# The budget is what the transaction ACTUALLY PAYS between the admission and
+# the guard's last check, all of it measured:
+#   entry     ~15000ms  countdown detection (~4.7s, one 5s poll), the
+#                       rollback proof (~5.3s) and the helper preamble
+#                       (~5.2s) on run 35615604946, then the intent write
+#                       and the guard's own node boot
+#   work       20000ms  legacy-engine-checkpoint.mjs workBudgetMs
+#   cleanup     5000ms  legacy-engine-checkpoint.mjs cleanupBudgetMs
+#   budget     40000ms  LEGACY_CHECKPOINT_BUDGET_SECONDS
+# The guard holds reserveMs = 285 - 40 = 245 seconds at EVERY check, and the
+# certificate read after the checkpoint accepts the same 245000ms, which still
+# holds the full 135-second rollback reserve and leaves 110 seconds of
+# candidate proof against the 51-112 seconds sealed runs have measured: a
+# proof at the top of that range now rolls back inside the untouched reserve
+# instead of sealing, and the changelog says so. The checkpoint may only START
+# inside the 285000ms entry slack; that entry check, and the ordinary
+# certificate for every non-legacy release, do not move. The first cut of this
+# (25 seconds, 260000ms) budgeted the publisher's work and left the ~15s entry
+# to fit inside the 15s the break has above 285000, which is the same
+# impossibility one gate later.
+LEGACY_CHECKPOINT_BUDGET_SECONDS=40
+# The publisher's bounded work inside that budget, from the .mjs figures
+# above; what is left of the budget is the allowance for the entry.
+LEGACY_CHECKPOINT_WORK_MS=25000
 NON_BREAK_RECOVERY_MAX_SECONDS=300
 # CLAUDE.md 13: the engine restarts inside the announced break that opens at
 # :55 of every hour. This is the same minute every other surface reads, and
 # tests/the-break-clocks-agree.law.test.ts pins them together.
 BREAK_START_MINUTE=55
 MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))
+LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))
+# The engine's break is BREAK_DURATION_MS = 5 * 60 * 1000 in
+# server/src/maintenance/MaintenanceBreak.ts, pinned across every surface by
+# tests/the-break-clocks-agree.law.test.ts. The strict reserve above takes
+# 285000 of it, so 15000ms is all the break has above the entry threshold.
+BREAK_WINDOW_MS=300000
+# THE ENTRY IS INSIDE THE BUDGET, NOT ABOVE THE THRESHOLD (2026-09-21).
+# Four separate gates used to demand the SAME 285000ms against the same
+# break: maintenance_certificate, legacy_checkpoint_countdown below, the
+# physical probe in legacy-engine-checkpoint.sh, and finally the guard's own
+# reserveMs. Between them sit the engine lock, a sealed-SHA read,
+# prove_rollback_readiness (about twenty bounded host round trips, a loopback
+# probe, a public HTTPS probe and a database leader proof) and a cold node
+# boot. BREAK_DEADLINE_SLACK_SECONDS is 0, so none of that was budgeted: an
+# admission at 285001ms remaining handed the LAST gate a guaranteed deficit,
+# and the refusal was terminal. Run 35615604946 is the measurement - admitted
+# with at least 285000ms, the guard read about 272500ms.
+# PR #5026 answered by adding a measured entry budget to the ADMISSION
+# threshold (285000 + up to 15000). That cannot close either: the countdown
+# is 300000ms, the entry costs ~15000ms of it before the guard's first read,
+# so after one miss the admission demanded a countdown the engine only offers
+# at t=0, and every break deferred. The reconciliation keeps the entry cost
+# INSIDE LEGACY_CHECKPOINT_BUDGET_SECONDS (its 15000ms allowance) and moves
+# the guard's reserve down to 245000 instead; the admission stays at 285000.
+# The allowance is derived, not chosen, and the ceiling on the admission
+# headroom is what the break offers above 285000 minus what the budget
+# already reserves for the entry: 15000 - 15000 = 0. legacy_checkpoint_
+# countdown still takes the headroom argument and the measurement below is
+# still taken and logged, so if the budget's arithmetic ever changes the
+# ceiling moves with it; today it is 0 and an admission can never be more
+# permissive than the strict 285000ms.
+LEGACY_ENTRY_ALLOWANCE_MS=$((LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000 - LEGACY_CHECKPOINT_WORK_MS))
+BREAK_ENTRY_BUDGET_CEILING_MS=$((BREAK_WINDOW_MS - MIN_BREAK_REMAINING_MS - LEGACY_ENTRY_ALLOWANCE_MS))
+BREAK_ENTRY_BUDGET_MS=0
 
 die() {
   echo "[engine-release-transaction] FATAL: $*" >&2
@@ -425,6 +493,10 @@ health_instance() {
 # adds two independent witnesses to it - and weaker only for a preparation
 # that is provably not a hand. Unreadable is a refusal at every step.
 maintenance_certificate() {
+  # The minimum break remaining is the strict MIN_BREAK_REMAINING_MS unless the
+  # caller names another; the only caller that does is the read straight after
+  # a legacy checkpoint, which passes LEGACY_MIN_BREAK_REMAINING_MS.
+  local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"
   local response http_code body verdict status
   # A degraded optional subsystem can correctly make /health return 503 while
   # the engine is still running and has durably parked every table for this
@@ -439,7 +511,7 @@ maintenance_certificate() {
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -461,8 +533,9 @@ if ok:
 # reason not to restart. See the block comment above this function.
 #
 # The window, durability and time-remaining predicates above have all already
-# passed, and this script demands 285000ms where the engine demands 180000ms,
-# so at this exact point the ONLY thing keeping readyForRestart shut is the
+# passed, and this script demands 285000ms (245000ms straight after a legacy
+# checkpoint) where the engine demands 180000ms, so at this exact point the
+# ONLY thing keeping readyForRestart shut is the
 # unparked count. Nothing else is being relaxed.
 PREPARATION_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
 unparked=m.get("unparkedTables")
@@ -534,13 +607,17 @@ raise SystemExit(4)
 # The helper independently checks every physical table before writing. Only
 # the unchanged maintenance_certificate below can admit a replacement.
 legacy_checkpoint_countdown() {
-  local response http_code body
+  local response http_code body headroom
+  # Required headroom for the entry work that still has to happen AFTER this
+  # admission and BEFORE the guard reads the same reserve. Defaulting to 0
+  # keeps the historical contract for callers that have nothing left to do.
+  headroom="${1:-0}"
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 1 ;; esac
-  printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -1095,7 +1172,7 @@ while :; do
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
     # Counting down follows the final announcement. Run even when the old
     # certificate says ready: that predecessor can retain a stale saved bit.
-    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
       # These exact successors already implement the original bounded recovery
       # event. Retain that opportunity; the helper still needs its real durable
       # countdown, and an unknown request can never create another announcement.
@@ -1143,7 +1220,7 @@ while :; do
     fi
   fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
-    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
       release_engine_lock
       bounded_sleep 5
       continue
@@ -1151,26 +1228,73 @@ while :; do
     [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] \
       || die 'legacy checkpoint was already attempted; refusing a retry'
     # This provisional deadline bounds predecessor proof only. It is not
-    # persisted as a cutover certificate. Checkpoint cleanup may consume entry
-    # slack; it must complete before the strict 285000ms certificate is read.
+    # persisted as a cutover certificate. The checkpoint and its cleanup
+    # consume up to LEGACY_CHECKPOINT_BUDGET_SECONDS of the candidate-proof
+    # budget; the certificate read after them demands LEGACY_MIN_BREAK_REMAINING_MS.
     BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
+    ENTRY_STARTED_MS="$(date +%s%3N)"
     prove_rollback_readiness
+    # Measure the real cost of this host's rollback proof, the dominant entry
+    # term, and log it against the entry allowance inside the legacy budget.
+    # The admission headroom it feeds forward is doubled for margin and then
+    # clamped to BREAK_ENTRY_BUDGET_CEILING_MS, which is 0 while the budget
+    # already contains the entry: a threshold above 285000 can never be met
+    # by a 300000ms countdown that has paid ~15000ms of entry, so demanding
+    # it would defer every break for ever instead of refusing this one.
+    ROLLBACK_PROOF_MS=$(( $(date +%s%3N) - ENTRY_STARTED_MS ))
+    echo "[engine-release-transaction] prove_rollback_readiness took ${ROLLBACK_PROOF_MS}ms of the ${LEGACY_ENTRY_ALLOWANCE_MS}ms entry allowance inside the ${LEGACY_CHECKPOINT_BUDGET_SECONDS}s legacy checkpoint budget"
+    BREAK_ENTRY_BUDGET_MS=$(( ROLLBACK_PROOF_MS * 2 ))
+    [ "$BREAK_ENTRY_BUDGET_MS" -ge 0 ] || BREAK_ENTRY_BUDGET_MS=0
+    [ "$BREAK_ENTRY_BUDGET_MS" -le "$BREAK_ENTRY_BUDGET_CEILING_MS" ] \
+      || BREAK_ENTRY_BUDGET_MS="$BREAK_ENTRY_BUDGET_CEILING_MS"
     LEGACY_CHECKPOINT_ATTEMPTED=1
-    "$LEGACY_CHECKPOINT" "$RUN_ID" \
+    set +e
+    "$LEGACY_CHECKPOINT" "$RUN_ID"
+    LEGACY_CHECKPOINT_RC=$?
+    set -e
+    if [ "$LEGACY_CHECKPOINT_RC" = 75 ]; then
+      # The helper refused ABOVE its durable one-shot intent: this attempt
+      # arrived too late in the break, and nothing was attempted. That is a
+      # different fact from "the checkpoint is unsafe", and until 2026-09-21
+      # both ended the release for good - so a run that merely mistimed its
+      # arrival burned the whole window, roughly fifteen times in one day.
+      # Prove the non-action from the filesystem rather than trusting the exit
+      # code: an intent file here would mean the operation really did start,
+      # and then a retry stays forbidden however the helper exited. Anything
+      # other than a clean, absent intent is a die, so this fails closed.
+      [ ! -e "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" ] \
+        || die 'legacy checkpoint deferred but its durable intent exists; refusing a retry'
+      LEGACY_CHECKPOINT_ATTEMPTED=0
+      BREAK_END_EPOCH=0
+      release_engine_lock
+      RECOVERY_ADMISSION_MISSED=1
+      echo "[engine-release-transaction] the legacy checkpoint entry did not fit inside this break and nothing was attempted; waiting for a later certificate"
+      bounded_sleep 15
+      continue
+    fi
+    [ "$LEGACY_CHECKPOINT_RC" = 0 ] \
       || die 'legacy checkpoint or cleanup refused; release cannot continue'
     BREAK_END_EPOCH=0
   fi
   set +e
-  BREAK_REMAINING_MS="$(maintenance_certificate)"
+  if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
+    # Only a legacy checkpoint that actually ran is read against the smaller
+    # post-checkpoint minimum; every other locked read keeps the strict one.
+    CERTIFICATE_MIN_BREAK_MS="$LEGACY_MIN_BREAK_REMAINING_MS"
+    BREAK_REMAINING_MS="$(maintenance_certificate "$LEGACY_MIN_BREAK_REMAINING_MS")"
+  else
+    CERTIFICATE_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"
+    BREAK_REMAINING_MS="$(maintenance_certificate)"
+  fi
   CERTIFICATE_RC=$?
   set -e
   if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
-    die 'legacy checkpoint did not retain the full restart certificate and 285000ms reserve'
+    die "legacy checkpoint did not retain the full restart certificate and ${LEGACY_MIN_BREAK_REMAINING_MS}ms legacy reserve (${BREAK_REMAINING_MS:-0}ms remaining, certificate rc $CERTIFICATE_RC)"
   fi
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
     RECOVERY_ADMISSION_MISSED=1
     release_engine_lock
-    echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; waiting for a later certificate"
+    echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${CERTIFICATE_MIN_BREAK_MS}ms candidate-and-recovery budget; waiting for a later certificate"
     bounded_sleep 15
     continue
   fi

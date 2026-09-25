@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "e16cec72506734cae671e381695eec42fe440f10ad263cf3e25c2fb412e2ce36",
+    "scripts/dev/test-union-weekly-basis.py": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -52,6 +52,7 @@
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/payment-regression.sql": "2270f4bd2e60c1601783173fa24a351b52bdb1ea489fed92c059fd83da90ee96",
+    "tests/fixtures/union-weekly-basis/period-coverage-regression.sql": "ad96b436611bf98f2a61997e4e1f88c1714bf4d3c0c1a85c38769bf02e74ca00",
     "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
     "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",

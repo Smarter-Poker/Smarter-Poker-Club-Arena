@@ -146,9 +146,22 @@ groups:
   # at each break. The felt was healthy. Only the deploy route was dead, and
   # the build that fixes the permit was on the far side of it.
   #
-  # poker_maintenance_breaks_since_restart_certified has been published by the
-  # engine since #4909 and, until this rule, NOTHING READ IT (CLAUDE.md 10.83).
-  # The reader is this rule; the path is Alertmanager, same as its neighbours.
+  # poker_maintenance_breaks_since_restart_certified is emitted by the engine
+  # code merged in #4909 and, until this rule, NOTHING READ IT (CLAUDE.md
+  # 10.83). The reader is this rule; the path is Alertmanager, same as its
+  # neighbours.
+  #
+  # CORRECTED 2026-09-21, and the correction is the point of CLAUDE.md 10.86's
+  # last paragraph. The line above used to read "has been published by the
+  # engine since #4909" - a claim about the environment, written from the repo,
+  # with no expiry and never checked. Production was running 8825af51, built
+  # 2026-09-18 and 125 commits behind main, and that build contains no such
+  # metric: /metrics carried 771 poker_ series and none of them this one. So
+  # this rule and PokerEngineCannotBeReplaced both loaded, both read
+  # health=ok/state=inactive, and both were structurally unable to fire
+  # THROUGHOUT the outage they were written for. A rule is live when the half
+  # that reads the metric and the half that publishes it are the same
+  # generation; check-alert-rules-match.mjs now compares them and refuses.
   - name: engine-release-route
     rules:
       - alert: EngineCannotBeReplaced
@@ -195,6 +208,61 @@ groups:
             This is NOT repaired by a job, a sweep or a retry (CLAUDE.md 10.12).
             Find the live path that wedged and fix that.
 
+      # THE DEPLOY-ROUTE WATCHDOG CAN BE BLIND, AND ON 2026-09-21 IT WAS.
+      #
+      # EngineCannotBeReplaced above reads
+      # poker_maintenance_breaks_since_restart_certified, which GameServer.ts has
+      # published since #4909. The engine that needed watching - 8825af51, live
+      # since 2026-09-18 - PREDATES that commit and does not emit the series at
+      # all, so the alarm written for this exact outage could not fire during
+      # this exact outage. Sixty-five hours passed, roughly fifteen releases
+      # failed, and nothing said a word.
+      #
+      # MEASURED, not inferred. https://engine.smarter.poker/metrics on
+      # 2026-09-21 carried 1185 series, among them
+      # poker_maintenance_break_active, poker_maintenance_break_ready_for_restart,
+      # poker_uptime_seconds and poker_engine_info{version="8825af51"} - and NOT
+      # ONE series matching `certif` or `since_restart`.
+      #
+      # A rule whose expression evaluates over a series that does not exist is
+      # not quiet because things are well; it is quiet because it cannot see.
+      # That is CLAUDE.md 10.86 rule 2 exactly - an unreadable answer coerced
+      # into an empty one, which reads as good news. absent() is how Prometheus
+      # says "I could not tell", so this rule is that sentence, out loud.
+      #
+      # There is no threshold to derive here and none has been invented: the
+      # condition is precisely "the engine is reporting, and the one series its
+      # deploy-route watchdog needs is missing". `count(...) > 0` is what keeps
+      # a plain scrape failure - where EVERY series is absent - from firing it.
+      # `for: 30m` clears a restart's own scrape gap, which is seconds. It
+      # resolves itself the moment a newer engine lands, which is the same
+      # moment EngineCannotBeReplaced gets its sight back.
+      - alert: EngineReplacementWatchdogBlind
+        expr: |
+          absent(poker_maintenance_breaks_since_restart_certified)
+          and on() (count(poker_maintenance_break_active) > 0)
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'Engine replacement watchdog is blind: the serving engine does not publish the series EngineCannotBeReplaced reads'
+          description: |
+            The engine is up and scraping fine, but it does not emit
+            poker_maintenance_breaks_since_restart_certified, so
+            EngineCannotBeReplaced cannot evaluate and will stay silent however
+            long the deploy route is dead. The serving build predates the commit
+            that added the series.
+
+            Read poker_engine_info for the version actually serving. The fix is
+            to land a newer engine, which is also the thing this blindness is
+            hiding the failure of - so treat a release failure right now as
+            unreported by default and read the auto-deploy-hetzner runs directly.
+
+            This is not repaired by a job or a retry (CLAUDE.md 10.12). It is a
+            monitoring gap, and it closes when the engine is replaced.
+
   - name: cron-health
     interval: 30s
     rules:
@@ -240,7 +308,7 @@ groups:
           component: cron
         annotations:
           summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
-          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
+          description: "SELECT job_name, result FROM cron_execution_log WHERE status = 'success' AND result ? 'skipped' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering."
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: OpenClawFleetLongSilence

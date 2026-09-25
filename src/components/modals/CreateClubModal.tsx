@@ -2,21 +2,47 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CreateClubModal — Full-Page Club Creation Console
  * ═══════════════════════════════════════════════════════════════════════════════
- * Uses the sci-fi themed modal frame with:
  * - Club name input
  * - Ten curated placeholder crests or a custom upload
- * - Terms acceptance checkbox
+ * - Terms acceptance
  * - CREATE button
+ *
+ * ── ON THE SPADE CONSOLE (#ClubArenaConsole) ────────────────────────────────
+ * This was a two-panel sheet: a bevelled art bay on the left carrying the
+ * vault emblem and the words OWNER CONSOLE, and on the right a Rajdhani title,
+ * rounded input wells, a bordered "crest vault" fieldset holding a GRID of ten
+ * rounded tiles with a cyan selected ring, two native tick boxes, a hand-drawn
+ * checkbox square and a blue gradient CREATE button locked to the bottom.
+ *
+ * It is now Dan's approved spade master, cut into head / rails / foot by
+ * SpadeConsole. Dan 2026-09-09, on exactly this shape: "I'M NOT A BIG FAN OF
+ * THESE CARDS. I DON'T LIKE THE 4 BOXES, AND THE WAY IT STICKS OUT ON THE
+ * SIDES" - so the crests are ROWS on the black glass, each one the crest
+ * itself with its name in engraved silver beside it and no tile drawn around
+ * it; the two launch settings and the terms are rows that read On or Off; the
+ * fields are grooves cut into the glass; and the two doors are the plates
+ * painted into the foot - CLOSE on steel, CREATE CLUB on the blue glass.
+ *
+ * The full-page shape is unchanged and is a contract
+ * (tests/club-entry-redesign-regression.test.ts): 100dvh, a body that scrolls
+ * on its own, and a footer locked above the home indicator - which now carries
+ * the allowance and the name check, so neither can scroll out of sight.
+ *
+ * Nothing about the flow changed. The draft restore and its request id, the
+ * name-availability debounce, the eligibility sequence guard, the logo
+ * optimiser, the close confirmation, the focus trap, the Escape owner and
+ * every track() call below are the ones that were here.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { mediaUrl } from '../../utils/mediaBase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { ClubsService } from '../../services/ClubsService';
+import { ClubsService, type ClubCreationEligibility } from '../../services/ClubsService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
+import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './CreateClubModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -44,6 +70,68 @@ export const DEFAULT_CLUB_LOGOS = [
 const DEFAULT_LOGO = DEFAULT_CLUB_LOGOS[8];
 const defaultLogoUrl = (file: string) => mediaUrl(file);
 
+/** The name check, said as a word in the master's own ink. */
+const NAME_STATUS_TEXT = {
+  idle: '',
+  checking: 'Checking Availability',
+  available: 'Name Available',
+  taken: 'Name Already In Use',
+  error: 'Availability Check Unavailable',
+} as const;
+
+const NAME_STATUS_INK = {
+  idle: 'sc-ink--muted',
+  checking: 'sc-ink--blue',
+  available: 'sc-ink--green',
+  taken: 'sc-ink--red',
+  error: 'sc-ink--gold',
+} as const;
+
+/**
+ * What the allowance line says, derived entirely from the server preflight
+ * (fn_get_club_creation_eligibility): its cap, its count and its reason. The
+ * modal holds no number of its own, so it cannot disagree with the create.
+ */
+function allowanceLine(allowance: ClubCreationEligibility): {
+  text: string;
+  ink: string;
+  /** The popup for a refused Create press, or null when creation is allowed. */
+  refusal: string | null;
+} {
+  if (allowance.reason === 'creation_unavailable' || allowance.creationOpen === false) {
+    return {
+      text: 'Club Creation Is Temporarily Unavailable',
+      ink: 'sc-ink--gold',
+      refusal: 'Club Creation Is Temporarily Unavailable. Please Try Again Soon.',
+    };
+  }
+  const atCap =
+    allowance.reason === 'membership_cap' ||
+    (!allowance.canCreate &&
+      allowance.maxClubs !== null &&
+      allowance.membershipCount >= allowance.maxClubs);
+  if (atCap && allowance.maxClubs !== null) {
+    const text = `Membership Limit Reached: You Belong To ${allowance.membershipCount.toLocaleString()} Of ${allowance.maxClubs.toLocaleString()} Clubs`;
+    return {
+      text,
+      ink: 'sc-ink--red',
+      refusal: `${text}. Leave A Club Before Creating Another.`,
+    };
+  }
+  if (!allowance.canCreate) {
+    const text = 'Club Creation Is Not Available Right Now';
+    return { text, ink: 'sc-ink--gold', refusal: `${text}.` };
+  }
+  if (allowance.remaining === null) {
+    return { text: 'Unlimited Club Slots Remaining', ink: 'sc-ink--blue', refusal: null };
+  }
+  return {
+    text: `${allowance.remaining.toLocaleString()} ${allowance.remaining === 1 ? 'Club Slot' : 'Club Slots'} Remaining`,
+    ink: 'sc-ink--blue',
+    refusal: null,
+  };
+}
+
 interface CreateClubModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -70,12 +158,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const [nameStatus, setNameStatus] = useState<
     'idle' | 'checking' | 'available' | 'taken' | 'error'
   >('idle');
-  const [allowance, setAllowance] = useState<{
-    canCreate: boolean;
-    membershipCount: number;
-    maxClubs: number | null;
-    remaining: number | null;
-  } | null>(null);
+  const [allowance, setAllowance] = useState<ClubCreationEligibility | null>(null);
   const [allowanceError, setAllowanceError] = useState(false);
   const [allowanceRetry, setAllowanceRetry] = useState(0);
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
@@ -246,7 +329,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       return;
     }
     if (!allowance?.canCreate) {
-      toast.error('Your four-club allowance is full. Leave a club before creating another.');
+      toast.error(
+        (allowance && allowanceLine(allowance).refusal) ||
+          'Your Club Allowance Is Not Verified Yet. Please Try Again.'
+      );
       return;
     }
     setIsCreating(true);
@@ -317,6 +403,22 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
   if (!isOpen) return null;
 
+  /** The stagger that walks each block on. Unchanged; the animation law keeps it. */
+  const revealStyle = (index: number) => ({
+    opacity: visibleFormElements[index] ? 1 : 0,
+    transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+  });
+
+  const canCreate =
+    !isCreating &&
+    !isOptimizingLogo &&
+    hasAgreed &&
+    !!clubName.trim() &&
+    !!logoPreview &&
+    nameStatus === 'available' &&
+    allowance?.canCreate === true;
+  const allowanceStatus = allowance ? allowanceLine(allowance) : null;
+
   return (
     <div className={styles.overlay} onClick={requestClose}>
       <div
@@ -327,118 +429,82 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         aria-labelledby="create-club-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={styles.artPanel} aria-hidden="true">
-          <img
-            src={mediaUrl('images/club-arena/vault-iris-emblem-v1-320.webp')}
-            alt=""
-            width="320"
-            height="296"
-          />
-          <span>OWNER CONSOLE</span>
-        </div>
-        <div className={styles.contentPanel}>
-          <button
-            className={styles.closeButton}
-            onClick={() => {
-              haptic.light();
-              requestClose();
+        <div className={styles.scrollBody}>
+          <SpadeConsole
+            onClose={requestClose}
+            as="div"
+            className={styles.console}
+            eyebrow="Club Arena"
+            title="Create A Club"
+            titleId="create-club-title"
+            pill={draftRestored ? 'Draft Restored' : 'New Club'}
+            pillInk={draftRestored ? 'gold' : 'blue'}
+            plates={{
+              secondary: {
+                label: 'Close',
+                onClick: () => {
+                  haptic.light();
+                  requestClose();
+                },
+              },
+              primary: {
+                label: isCreating ? 'Creating Club' : 'Create Club',
+                ink: 'white',
+                'aria-label': 'Create Club',
+                disabled: !canCreate,
+                onClick: () => {
+                  haptic.medium();
+                  handleCreate();
+                },
+              },
             }}
-            aria-label="Close"
-          />
-
-          <div className={styles.scrollBody}>
-            <span className={styles.eyebrow}>Club Arena / New Organization</span>
-            <h2 id="create-club-title" className={styles.title}>
-              Create A Club
-            </h2>
-            <p className={styles.subtitle}>
+          >
+            <p className={`sc-copy sc-copy--center ${styles.copy}`}>
               Name Your Room, Establish Its Identity, And Open The Doors.
             </p>
 
-            <div className={styles.creationMeta} aria-live="polite">
-              {allowance ? (
-                <span>{`${allowance.remaining ?? 'Unlimited'} Club Slots Remaining`}</span>
-              ) : allowanceError ? (
-                <button
-                  type="button"
-                  className={styles.metaRetryButton}
-                  onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
-                >
-                  Allowance Check Failed · Retry
-                </button>
-              ) : (
-                <span>Verifying Club Allowance…</span>
-              )}
-              {draftRestored && <span>Draft Restored</span>}
+            {/* ── The name, in a groove cut into the glass ─────────────── */}
+            <div className={styles.field} style={revealStyle(0)}>
+              <label className="sc-label sc-ink--blue" htmlFor="new-club-name">
+                Club Name
+              </label>
+              <input
+                id="new-club-name"
+                type="text"
+                className={styles.input}
+                placeholder="E.G. River Room"
+                value={clubName}
+                onChange={(e) => setClubName(e.target.value)}
+                maxLength={30}
+                autoComplete="off"
+              />
             </div>
 
-            <label className={styles.fieldLabel} htmlFor="new-club-name">
-              Club Name
-            </label>
-            <input
-              id="new-club-name"
-              type="text"
-              className={styles.clubNameInput}
-              placeholder="E.G. River Room"
-              value={clubName}
-              onChange={(e) => setClubName(e.target.value)}
-              maxLength={30}
-              autoComplete="off"
-              style={{
-                opacity: visibleFormElements[0] ? 1 : 0,
-                transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            />
-            <div className={`${styles.nameStatus} ${styles[nameStatus]}`} aria-live="polite">
-              {nameStatus === 'checking' && 'Checking Availability…'}
-              {nameStatus === 'available' && 'Name Available'}
-              {nameStatus === 'taken' && 'Name Already In Use'}
-              {nameStatus === 'error' && 'Availability Check Unavailable'}
+            <div className={styles.field} style={revealStyle(1)}>
+              <label className="sc-label sc-ink--blue" htmlFor="new-club-description">
+                Description (Optional)
+              </label>
+              <textarea
+                id="new-club-description"
+                className={styles.textarea}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={180}
+                placeholder="What Kind Of Room Are You Building?"
+              />
             </div>
 
-            <label className={styles.fieldLabel} htmlFor="new-club-description">
-              Description <span>Optional</span>
-            </label>
-            <textarea
-              id="new-club-description"
-              className={styles.descriptionInput}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              maxLength={180}
-              placeholder="What Kind Of Room Are You Building?"
-            />
+            {/* ── The crest vault: rows on the glass, never a grid of tiles ── */}
+            <div className={styles.section} style={revealStyle(2)}>
+              <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
+                Club Crest Vault
+              </span>
+              <p className={`sc-copy ${styles.copy}`}>
+                Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A Custom
+                Logo At Any Time.
+              </p>
 
-            <fieldset className={styles.crestVault}>
-              <legend>Club Crest Vault</legend>
-              <div className={styles.crestVaultHeader}>
-                <div className={styles.logoPreview}>
-                  <img src={logoPreview} alt="Selected Club Logo" className={styles.logoThumb} />
-                  <span className={styles.previewStatus}>
-                    {selectedPresetId ? 'Placeholder Crest Selected' : 'Custom Logo Selected'}
-                  </span>
-                </div>
-                <div className={styles.identityCopy}>
-                  <strong>Choose A Starting Identity</strong>
-                  <p>
-                    Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A
-                    Custom Logo At Any Time.
-                  </p>
-                  <button
-                    type="button"
-                    className={styles.uploadLogoBtn}
-                    disabled={isOptimizingLogo}
-                    onClick={() => {
-                      haptic.medium();
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <span>{isOptimizingLogo ? 'Optimizing Logo…' : 'Upload A Custom Logo'}</span>
-                    <small>PNG, JPG Or WEBP · 5MB Maximum</small>
-                  </button>
-                </div>
-              </div>
-
-              <div className={styles.crestGrid} role="radiogroup" aria-label="Default Club Logos">
+              <div className={styles.crestList} role="radiogroup" aria-label="Default Club Logos">
                 {DEFAULT_CLUB_LOGOS.map((logo) => {
                   const selected = selectedPresetId === logo.id;
                   return (
@@ -448,98 +514,153 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                       role="radio"
                       aria-checked={selected}
                       aria-label={logo.name}
-                      className={`${styles.crestOption} ${selected ? styles.crestOptionSelected : ''}`}
+                      className={styles.crestRow}
                       onClick={() => handlePresetSelect(logo)}
                     >
-                      <img src={defaultLogoUrl(logo.file)} alt="" loading="lazy" decoding="async" />
-                      <span>{logo.name}</span>
-                      {selected && <small>Selected</small>}
+                      <img
+                        src={defaultLogoUrl(logo.file)}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className={styles.crestArt}
+                      />
+                      <span
+                        className={`${styles.crestName} ${
+                          selected ? 'sc-ink--silver' : 'sc-ink--muted'
+                        }`}
+                      >
+                        {logo.name}
+                      </span>
+                      <span
+                        className={`sc-label ${styles.crestState} ${
+                          selected ? 'sc-ink--green' : 'sc-ink--muted'
+                        }`}
+                      >
+                        {selected ? 'Selected' : 'Choose'}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-            </fieldset>
 
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className={styles.hiddenInput}
-              onChange={handleFileSelect}
-            />
-
-            <fieldset className={styles.accessSettings}>
-              <legend>Launch Settings</legend>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={isPublic}
-                  onChange={(event) => setIsPublic(event.target.checked)}
-                />{' '}
-                Discoverable In Club Arena
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={requiresApproval}
-                  onChange={(event) => setRequiresApproval(event.target.checked)}
-                />{' '}
-                Review Join Requests
-              </label>
-            </fieldset>
-
-            <label
-              className={styles.termsLabel}
-              style={{
-                opacity: visibleFormElements[3] ? 1 : 0,
-                transform: visibleFormElements[3] ? 'scale(1)' : 'scale(0.9)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={hasAgreed}
-                onChange={(e) => {
-                  haptic.selection();
-                  setHasAgreed(e.target.checked);
+              <button
+                type="button"
+                className={`${styles.word} ${isOptimizingLogo ? 'sc-ink--muted' : 'sc-ink--blue'}`}
+                disabled={isOptimizingLogo}
+                onClick={() => {
+                  haptic.medium();
+                  fileInputRef.current?.click();
                 }}
-                className={styles.termsCheckbox}
-              />
-              <span className={styles.checkboxVisual} aria-hidden="true" />
-              <span>I Confirm I Can Manage This Club And Accept The Club Arena Terms.</span>
-            </label>
-          </div>
+              >
+                {isOptimizingLogo ? 'Optimizing Logo' : 'Upload A Custom Logo'}
+              </button>
+              <span className={`sc-label sc-ink--muted ${styles.hint}`}>
+                {selectedPresetId
+                  ? 'PNG, JPG Or WEBP, 5MB Maximum'
+                  : 'Custom Logo Selected, PNG, JPG Or WEBP, 5MB Maximum'}
+              </span>
 
-          <footer className={styles.pageFooter}>
-            {/* CREATE button zone */}
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className={styles.hiddenInput}
+                onChange={handleFileSelect}
+              />
+            </div>
+
+            {/* ── Launch Settings: rows that read On or Off ─────────────── */}
+            <div className={styles.section} style={revealStyle(3)}>
+              <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
+                Launch Settings
+              </span>
+              <div className={styles.toggleList}>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isPublic}
+                  className={styles.toggleRow}
+                  onClick={() => {
+                    haptic.selection();
+                    setIsPublic((on) => !on);
+                  }}
+                >
+                  <span className={`${styles.toggleName} sc-ink--silver`}>
+                    Discoverable In Club Arena
+                  </span>
+                  <span
+                    className={`sc-label ${styles.toggleState} ${
+                      isPublic ? 'sc-ink--green' : 'sc-ink--muted'
+                    }`}
+                  >
+                    {isPublic ? 'On' : 'Off'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={requiresApproval}
+                  className={styles.toggleRow}
+                  onClick={() => {
+                    haptic.selection();
+                    setRequiresApproval((on) => !on);
+                  }}
+                >
+                  <span className={`${styles.toggleName} sc-ink--silver`}>
+                    Review Join Requests
+                  </span>
+                  <span
+                    className={`sc-label ${styles.toggleState} ${
+                      requiresApproval ? 'sc-ink--green' : 'sc-ink--muted'
+                    }`}
+                  >
+                    {requiresApproval ? 'On' : 'Off'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* ── The terms: a checkbox to assistive technology, a lit word
+                   to everybody else. The art paints no tick box. ────────── */}
             <button
-              className={styles.createButton}
+              type="button"
+              role="checkbox"
+              aria-checked={hasAgreed}
+              className={`${styles.terms} ${hasAgreed ? 'sc-ink--green' : 'sc-ink--muted'}`}
+              style={revealStyle(4)}
               onClick={() => {
-                haptic.medium();
-                handleCreate();
-              }}
-              disabled={
-                isCreating ||
-                isOptimizingLogo ||
-                !hasAgreed ||
-                !clubName.trim() ||
-                !logoPreview ||
-                nameStatus !== 'available' ||
-                allowance?.canCreate !== true
-              }
-              aria-label="Create Club"
-              style={{
-                opacity: visibleFormElements[4] ? 1 : 0,
-                transform: visibleFormElements[4] ? 'scale(1)' : 'scale(0.9)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                haptic.selection();
+                setHasAgreed((agreed) => !agreed);
               }}
             >
-              {isCreating && <span className={styles.spinner} aria-hidden="true" />}
-              {isCreating ? 'Creating Club…' : 'Create Club'}
+              I Confirm I Can Manage This Club And Accept The Club Arena Terms.
             </button>
-          </footer>
+          </SpadeConsole>
         </div>
+
+        {/* Locked above the home indicator: the allowance and the name check
+            can never scroll out of sight while the name is being typed. */}
+        <footer className={styles.pageFooter}>
+          <p className={`sc-label ${styles.status}`} aria-live="polite">
+            {allowanceStatus ? (
+              <span className={allowanceStatus.ink}>{allowanceStatus.text}</span>
+            ) : allowanceError ? (
+              <button
+                type="button"
+                className={`${styles.word} sc-ink--gold`}
+                onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
+              >
+                Allowance Check Failed, Retry
+              </button>
+            ) : (
+              <span className="sc-ink--muted">Verifying Club Allowance</span>
+            )}
+            {nameStatus !== 'idle' && (
+              <span className={NAME_STATUS_INK[nameStatus]}>{NAME_STATUS_TEXT[nameStatus]}</span>
+            )}
+          </p>
+        </footer>
       </div>
     </div>
   );

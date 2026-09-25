@@ -63,6 +63,13 @@
 .lb-settlement-rule {
   font-size: 0.8em;
 }
+.lb-settlement-countdown {
+  color: #ffd700;
+  font:
+    600 0.9em 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+}
 .lb-settlement-ledger {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

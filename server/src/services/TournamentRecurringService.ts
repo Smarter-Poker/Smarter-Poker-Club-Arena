@@ -2657,6 +2657,10 @@ export class TournamentRecurringService {
    * number of such rows a process ever meets (40 measured, see topUpWithHorses).
    */
   private finalizedPoolTopUpsRefused = new Set<string>();
+  /* Last counter/roster disagreement said per event, so a top-up that finds
+     nothing to add because the field is already there says so once per
+     distinct disagreement rather than every backoff. */
+  private rosterMeetsTargetReported = new Map<string, string>();
   private static readonly HELD_REPORT_EVERY_MS = 10 * 60_000;
 
   private noteSeatFirstHeld(tournamentId: string): void {
@@ -3188,7 +3192,9 @@ export class TournamentRecurringService {
         .from('tournaments')
         .select('id', { count: 'exact', head: true })
         .eq('tournament_type', 'MTT')
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG']);
+        // BAGGED (multi-day, between two days) is a live MTT, not a gap in
+        // the board: counting it out would launch a replacement overnight.
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG', 'BAGGED']);
       if (!mttCountErr && (liveMtts ?? 0) < 2) {
         let need = 2 - (liveMtts ?? 0);
         const allConfigs = HOURLY_SCHEDULE.flatMap((b) => b.tournaments);
@@ -3854,7 +3860,7 @@ export class TournamentRecurringService {
             .eq('union_id', union.id)
             .eq('is_xmtt', true)
             .ilike('name', config.name)
-            .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING']);
+            .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED']);
 
           if ((count || 0) > 0) continue;
 
@@ -4079,7 +4085,8 @@ export class TournamentRecurringService {
       let query = supabase
         .from('tournaments')
         .select('id', { count: 'exact', head: true })
-        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING']);
+        // A BAGGED multi-day instance is still the active instance.
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED']);
 
       // Filter by variant type — type parameter should match the tournament variant
       if (type === 'mtt') {
@@ -4813,7 +4820,14 @@ export class TournamentRecurringService {
         .from('tournament_players')
         .select('user_id, tournament_id, tournaments!inner(status, start_time)')
         .in('status', ['registered', 'playing'])
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        /* BAGGED (multi-day, 2026-09-24) OCCUPIES ITS FIELD. Between two days
+           the event holds no seat - the bag vacated every chair - so the
+           seat read above counts nothing for it, yet every surviving horse
+           owes the next day a seat exactly as a surviving human does. Its
+           'playing' registration is that game, and a bagged event's
+           start_time is in the past, so the horizon below always counts it.
+           No double count: a BAGGED event has no live seat. */
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])
         .or(`start_time.is.null,start_time.lte.${horizonIso}`, { referencedTable: 'tournaments' })
         // Same unstable-pagination hazard as the seat read above: a horse is
         // registered for several events at once, so user_id alone does not
@@ -5517,7 +5531,7 @@ export class TournamentRecurringService {
         const { data: tRow, error: tErr } = await supabase
           .from('tournaments')
           .select(
-            'variant, max_players, format_contract, club_id, start_time, prize_pool_finalized'
+            'variant, max_players, format_contract, club_id, start_time, prize_pool_finalized, current_players'
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -5727,6 +5741,24 @@ export class TournamentRecurringService {
           return 0;
         const shortfall = Math.max(0, targetPlayers - liveCount);
         if (shortfall === 0 && (seatFirst || opts.redeemTickets !== true)) {
+          /* NOTHING TO ADD IS NOT SILENT WHEN THE COUNTER DISAGREED (2026-09-24).
+             Two mtt-v2 events were sent here every backoff for days because
+             the start gate read tournaments.current_players = 1 while 24
+             entrants stood on the roster; this returned 0 and nothing said
+             why. The gate now reads the roster, so this should not happen;
+             if it does, name the event and both numbers. */
+          const counter = Number(
+            (tRow as { current_players?: number | null }).current_players ?? NaN
+          );
+          if (!seatFirst && Number.isFinite(counter) && counter !== liveCount) {
+            const signature = `${counter}/${liveCount}/${targetPlayers}`;
+            if (this.rosterMeetsTargetReported?.get(tournamentId) !== signature) {
+              this.rosterMeetsTargetReported?.set(tournamentId, signature);
+              console.warn(
+                `[TournamentRecurring] top-up for tournament ${tournamentId} added 0: its roster already holds ${liveCount} entrant(s) against a target of ${targetPlayers}, while tournaments.current_players reads ${counter}`
+              );
+            }
+          }
           // No seat changed. Canonical seat transactions already commit the
           // exact count, so an idle sweep has no write authority here.
           return 0;

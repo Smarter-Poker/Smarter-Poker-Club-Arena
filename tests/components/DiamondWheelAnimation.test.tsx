@@ -14,12 +14,17 @@ const sounds = vi.hoisted(() => ({
   playSpinResult: vi.fn(),
 }));
 vi.mock('../../src/services/SoundService', () => ({ soundService: sounds }));
-vi.mock('../../src/utils/animationSpeed', () => ({ getAnimationSpeed: () => 1 }));
+vi.mock('../../src/utils/animationSpeed', () => ({
+  getAnimationSpeed: () => 1,
+  prefersReducedMotion: () => false,
+}));
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.clearAllMocks();
 });
+const rotorDegrees = (rotor: HTMLElement) =>
+  Number(rotor.style.transform.match(/rotate\(([-\d.e]+)deg\)/)![1]);
 describe('the wheel owes its complete visible reveal', () => {
   it('keeps both idle wheels moving slowly in opposite directions', () => {
     let callbacks: FrameRequestCallback[] = [];
@@ -48,13 +53,9 @@ describe('the wheel owes its complete visible reveal', () => {
       callbacks = [];
       pending.forEach((fn) => fn(50));
     });
-    const rotors = container.querySelectorAll('[data-wheel-rotor]');
-    expect(Number(rotors[0].getAttribute('transform')!.match(/rotate\(([^ ]+)/)![1])).toBeCloseTo(
-      0.15
-    );
-    expect(Number(rotors[1].getAttribute('transform')!.match(/rotate\(([^ ]+)/)![1])).toBeCloseTo(
-      -0.15
-    );
+    const rotors = container.querySelectorAll<HTMLElement>('[data-wheel-rotor]');
+    expect(rotorDegrees(rotors[0])).toBeCloseTo(0.15);
+    expect(rotorDegrees(rotors[1])).toBeCloseTo(-0.15);
     expect(sounds.playSpinStart).not.toHaveBeenCalled();
     expect(sounds.playSpinPeg).not.toHaveBeenCalled();
   });
@@ -89,9 +90,10 @@ describe('the wheel owes its complete visible reveal', () => {
     expect(landed).not.toHaveBeenCalled();
     advance(WHEEL_SPIN_MS - now);
     expect(landed).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[data-wheel-rotor]')).toHaveAttribute(
-      'transform',
-      `rotate(${wheelLandingRotation(0, 2, 12)} 500 500)`
+    // The rotor is a compositor layer: rotation is a CSS transform on the
+    // HTML rotor, never an SVG attribute repainted on the main thread.
+    expect(container.querySelector<HTMLElement>('[data-wheel-rotor]')!.style.transform).toBe(
+      `rotate(${wheelLandingRotation(0, 2, 12)}deg)`
     );
     expect(sounds.playSpinResult).toHaveBeenCalledTimes(1);
     advance(500);

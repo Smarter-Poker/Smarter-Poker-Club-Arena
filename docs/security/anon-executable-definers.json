@@ -48,8 +48,18 @@
       "reason": "public-read"
     },
     {
+      "fn": "fn_platform_capabilities()",
+      "reason": "public-read",
+      "note": "The platform capability registry clients read before offering a product surface, including before login. A logged-out caller learns each capability's id, rule version, title, scope, variants, compatibility, readiness and available flag, which the product shows to anyone. No readiness evidence, actor, club, player or wallet data; read-only (migration 20260924025555)."
+    },
+    {
       "fn": "fn_resolve_ads(p_slot text, p_club_id uuid, p_limit integer, p_country text)",
       "reason": "public-read"
+    },
+    {
+      "fn": "fn_shared_bonus_replay(p_share_id uuid)",
+      "reason": "public-read",
+      "note": "A share link. The id is a random UUID minted only by the authenticated owner of a settled game, and the function returns that one immutable, explicitly shared prize snapshot. A logged-out caller learns nothing else: no identity, wallet, club detail, seed, unshared game, enumeration or write capability. The grant is deliberate and load-bearing - migration 20260919153418 makes it, asserts it, and raises if it is absent - and it is the same written decision already held in public.ca_browser_definer_allowlist and in the anonPublicSurface list of scripts/ci/definer-authorization.allowlist.json."
     },
     { "fn": "fn_tournament_fee_names_its_player()", "reason": "public-read" },
     { "fn": "get_daily_challenge()", "reason": "public-read" },

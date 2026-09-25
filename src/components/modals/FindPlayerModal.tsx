@@ -1,3 +1,35 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  FIND A PLAYER - the network locator, on the spade console (#ClubArenaConsole)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This was a full-surface sheet with the vault emblem bolted into its header,
+ * a Rajdhani title, a rounded search well, a floating suggestion card with
+ * 44px avatar discs, three native selects, and results built out of nested
+ * rounded cards: a player card holding an affiliation chip rail, a grid of
+ * bordered wallet cards and a stack of rounded table cards, each with its own
+ * pill-shaped watch button. Frames on frames on frames.
+ *
+ * It is now Dan's approved spade master, cut into head / rails / foot by
+ * SpadeConsole. Dan 2026-09-09: "I'M NOT A BIG FAN OF THESE CARDS. I DON'T
+ * LIKE THE 4 BOXES, AND THE WAY IT STICKS OUT ON THE SIDES" - so every list
+ * here prints as ROWS on the black glass: a suggestion is a row, a player is a
+ * row, a club is a row, a wallet figure is a label in lit blue against a value
+ * in silver, and an engraved rule separates them. The three selects are lit
+ * words. The two doors are the plates painted into the foot - ACCESS RULES on
+ * steel, SEARCH on the blue glass.
+ *
+ * THE WAY OUT IS UNCHANGED AND IT IS PINNED. The backdrop stays inert, there
+ * is no corner dismiss, and the quiet exit at the bottom keeps its accessible
+ * name "Close The Player Locator" (tests/components/FindPlayerLocator.test.tsx
+ * asserts all three). Escape still unwinds one layer at a time.
+ *
+ * Nothing about the search changed. The two abort controllers, the 180ms
+ * suggestion debounce, the three-character fuzzy floor, the access
+ * revalidation at click time, the pagination and every track() call below are
+ * the ones that were here.
+ */
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import haptic from '../../services/HapticService';
@@ -12,14 +44,14 @@ import {
   type PlayerSearchSort,
   type PlayerSearchTable,
 } from '../../services/PlayerSearchService';
-import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
 import styles from './FindPlayerModal.module.css';
-import { mediaUrl } from '../../utils/mediaBase';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
@@ -37,6 +69,26 @@ const PAGE_SIZE = 20;
  * on every keystroke of a fast typist.
  */
 const SUGGEST_DEBOUNCE_MS = 180;
+
+/** The three filters, as lit words rather than three drawn selects. */
+const SCOPE_OPTIONS: ReadonlyArray<{ value: PlayerSearchScope; label: string }> = [
+  { value: 'all', label: 'All Players' },
+  { value: 'friends', label: 'Friends' },
+  { value: 'clubs', label: 'My Clubs' },
+  { value: 'union', label: 'My Unions' },
+  { value: 'managed', label: 'My Managed Accounts' },
+];
+
+const PRESENCE_OPTIONS: ReadonlyArray<{ value: PlayerPresenceFilter; label: string }> = [
+  { value: 'all', label: 'Any Status' },
+  { value: 'online', label: 'Online' },
+  { value: 'playing', label: 'Playing Now' },
+];
+
+const SORT_OPTIONS: ReadonlyArray<{ value: PlayerSearchSort; label: string }> = [
+  { value: 'relevance', label: 'Best Match' },
+  { value: 'name', label: 'Name' },
+];
 
 export default function FindPlayerModal({
   isOpen,
@@ -298,195 +350,197 @@ export default function FindPlayerModal({
         aria-modal="true"
         aria-labelledby="find-player-title"
       >
-        <div className={styles.modalContent}>
-          <div className={styles.scrollBody}>
-            <header className={styles.machineHeader}>
-              <img
-                src={mediaUrl('images/club-arena/vault-iris-emblem-v1-320.webp')}
-                alt=""
-                width="320"
-                height="296"
-              />
-              <div>
-                <span className={styles.eyebrow}>Network Locator / Live Presence</span>
-                <h2 id="find-player-title" className={styles.title}>
-                  Find A Player
-                </h2>
-                <p>Find Any Player, See Who Is Playing, And Open Their Live Game.</p>
-              </div>
-              <button
-                className={styles.privacyButton}
-                onClick={() => setShowAccessRules((value) => !value)}
-                aria-expanded={showAccessRules}
-              >
-                Access Rules
-              </button>
-            </header>
+        <div className={styles.scrollBody}>
+          <SpadeConsole
+            onClose={handleClose}
+            as="div"
+            className={styles.console}
+            eyebrow="Network Locator"
+            title="Find A Player"
+            titleId="find-player-title"
+            pill={total ? `${total} Found` : 'Live'}
+            pillInk={total ? 'blue' : 'muted'}
+            plates={{
+              secondary: {
+                label: 'Access Rules',
+                onClick: () => setShowAccessRules((value) => !value),
+                'aria-expanded': showAccessRules,
+              },
+              primary: {
+                label: isSearching ? 'Scanning' : 'Search',
+                ink: 'white',
+                onClick: () => runSearch(searchQuery),
+                disabled: isSearching || searchQuery.trim().length < 2,
+              },
+            }}
+          >
+            <p className={`sc-copy sc-copy--center ${styles.copy}`}>
+              Find Any Player, See Who Is Playing, And Open Their Live Game.
+            </p>
 
             {showAccessRules && (
-              <section className={styles.privacyPanel} aria-label="Player Search Access Rules">
-                <p>
+              <section className={styles.rules} aria-label="Player Search Access Rules">
+                <p className={`sc-copy ${styles.copy}`}>
                   Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
                   Requires An Active Membership In The Game&apos;S Club.
                 </p>
-                <p>
+                <p className={`sc-copy ${styles.copy}`}>
                   Wallets, Balances, Statistics, Notes, And Hierarchy Data Are Returned Only For
                   Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
                 </p>
               </section>
             )}
 
-            <div className={styles.searchSection}>
-              <div className={styles.searchInputWrapper}>
-                <input
-                  type="search"
-                  className={styles.searchInput}
-                  placeholder="Name, Alias, Or Player Number…"
-                  value={searchQuery}
-                  onChange={(event) => handleInputChange(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'ArrowDown' && suggestions.length) {
-                      event.preventDefault();
-                      setHighlightedIndex((value) => (value + 1) % suggestions.length);
-                    } else if (event.key === 'ArrowUp' && suggestions.length) {
-                      event.preventDefault();
-                      setHighlightedIndex(
-                        (value) => (value - 1 + suggestions.length) % suggestions.length
-                      );
-                    } else if (event.key === 'Enter') {
-                      if (showSuggestions && highlightedIndex >= 0)
-                        chooseSuggestion(suggestions[highlightedIndex]);
-                      else runSearch(searchQuery);
-                    }
-                    // Escape is handled once, by useDialogEscape, so the dropdown
-                    // and the dialog cannot both react to the same keypress.
-                  }}
-                  onFocus={() => suggestions.length && setShowSuggestions(true)}
-                  aria-label="Player Name, Poker Alias, Or Number"
-                  aria-autocomplete="list"
-                  aria-expanded={showSuggestions}
-                  autoFocus
-                />
-                {showSuggestions && (
-                  <div className={styles.suggestDropdown} role="listbox">
-                    {suggestions.map((player, index) => (
-                      <button
-                        key={player.id}
-                        role="option"
-                        aria-selected={index === highlightedIndex}
-                        className={styles.suggestItem}
-                        onPointerMove={() => setHighlightedIndex(index)}
-                        onClick={() => chooseSuggestion(player)}
-                      >
-                        <PlayerAvatar player={player} className={styles.suggestAvatar} />
-                        <span className={styles.suggestInfo}>
-                          <span className={styles.suggestName}>
-                            {player.display_name || player.username}
-                          </span>
-                          {player.display_name && (
-                            <span className={styles.suggestAlias}>@{player.username}</span>
-                          )}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {isSuggesting && (
-                  <span className={styles.suggestLoading} aria-label="Loading Suggestions">
-                    <span className={styles.suggestSpinner} aria-hidden="true" />
-                  </span>
-                )}
+            {/* A groove cut into the glass, not a bordered well. */}
+            <div className={styles.field}>
+              <label className="sc-label sc-ink--blue" htmlFor="find-player-query">
+                Player Name, Poker Alias, Or Number
+              </label>
+              <input
+                id="find-player-query"
+                type="search"
+                className={styles.input}
+                placeholder="Name, Alias, Or Player Number"
+                value={searchQuery}
+                onChange={(event) => handleInputChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowDown' && suggestions.length) {
+                    event.preventDefault();
+                    setHighlightedIndex((value) => (value + 1) % suggestions.length);
+                  } else if (event.key === 'ArrowUp' && suggestions.length) {
+                    event.preventDefault();
+                    setHighlightedIndex(
+                      (value) => (value - 1 + suggestions.length) % suggestions.length
+                    );
+                  } else if (event.key === 'Enter') {
+                    if (showSuggestions && highlightedIndex >= 0)
+                      chooseSuggestion(suggestions[highlightedIndex]);
+                    else runSearch(searchQuery);
+                  }
+                  // Escape is handled once, by useDialogEscape, so the dropdown
+                  // and the dialog cannot both react to the same keypress.
+                }}
+                onFocus={() => suggestions.length && setShowSuggestions(true)}
+                aria-label="Player Name, Poker Alias, Or Number"
+                aria-autocomplete="list"
+                aria-expanded={showSuggestions}
+                autoFocus
+              />
+              {isSuggesting && (
+                <span className={`sc-label sc-ink--blue ${styles.fieldState}`}>
+                  Loading Suggestions
+                </span>
+              )}
+            </div>
+
+            {/* Suggestions print as rows under the groove. A floating card over
+                the glass would be a frame on a frame. */}
+            {showSuggestions && (
+              <div className={styles.suggestList} role="listbox">
+                {suggestions.map((player, index) => (
+                  <button
+                    key={player.id}
+                    role="option"
+                    aria-selected={index === highlightedIndex}
+                    className={styles.suggestRow}
+                    onPointerMove={() => setHighlightedIndex(index)}
+                    onClick={() => chooseSuggestion(player)}
+                  >
+                    <span
+                      className={`${styles.rowName} ${
+                        index === highlightedIndex ? 'sc-ink--white' : 'sc-ink--silver'
+                      }`}
+                    >
+                      {player.display_name || player.username}
+                    </span>
+                    {player.display_name && (
+                      <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
+                        @{player.username}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
-              <button
-                className={styles.searchButton}
-                onClick={() => runSearch(searchQuery)}
-                disabled={isSearching || searchQuery.trim().length < 2}
-              >
-                {isSearching ? 'Scanning…' : 'Search'}
-              </button>
+            )}
+
+            {/* The three filters: lit words, never a drawn select. */}
+            <div className={styles.filters}>
+              <WordFilter
+                label="Network"
+                groupLabel="Player Search Network"
+                options={SCOPE_OPTIONS}
+                value={scope}
+                onChange={setScope}
+              />
+              <WordFilter
+                label="Status"
+                groupLabel="Player Search Status"
+                options={PRESENCE_OPTIONS}
+                value={presence}
+                onChange={setPresence}
+              />
+              <WordFilter
+                label="Sort"
+                groupLabel="Player Search Sort"
+                options={SORT_OPTIONS}
+                value={sort}
+                onChange={setSort}
+              />
+              <div className={styles.fact}>
+                <span className="sc-label sc-ink--blue">Directory</span>
+                <span className={`${styles.factValue} sc-ink--silver`}>
+                  {total
+                    ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
+                    : 'Global Player Directory'}
+                </span>
+              </div>
             </div>
 
-            <div className={styles.filterControls} aria-label="Player Search Filters">
-              <label>
-                Network
-                <select
-                  value={scope}
-                  onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
-                >
-                  <option value="all">All Players</option>
-                  <option value="friends">Friends</option>
-                  <option value="clubs">My Clubs</option>
-                  <option value="union">My Unions</option>
-                  <option value="managed">My Managed Accounts</option>
-                </select>
-              </label>
-              <label>
-                Status
-                <select
-                  value={presence}
-                  onChange={(event) => setPresence(event.target.value as PlayerPresenceFilter)}
-                >
-                  <option value="all">Any Status</option>
-                  <option value="online">Online</option>
-                  <option value="playing">Playing Now</option>
-                </select>
-              </label>
-              <label>
-                Sort
-                <select
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value as PlayerSearchSort)}
-                >
-                  <option value="relevance">Best Match</option>
-                  <option value="name">Name</option>
-                </select>
-              </label>
-              <span className={styles.scopeLabel}>
-                {total
-                  ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
-                  : 'Global Player Directory'}
-              </span>
-            </div>
-
-            <div className={styles.resultsArea} aria-live="polite" aria-busy={isSearching}>
-              {error && <div className={styles.errorMessage}>{titleCase(error)}</div>}
+            <div className={styles.results} aria-live="polite" aria-busy={isSearching}>
+              {error && <p className={`sc-copy sc-ink--red ${styles.copy}`}>{titleCase(error)}</p>}
               {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
-                <div className={styles.notFoundMessage}>
-                  <p>No Matching Players Were Found.</p>
-                </div>
+                <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
+                  No Matching Players Were Found.
+                </p>
               )}
               {results.length > 0 && (
-                <div className={styles.resultsList}>
+                <div className={styles.resultList}>
                   {results.map((player) => (
-                    <article key={player.id} className={styles.playerResult}>
+                    <article key={player.id} className={styles.player}>
                       <button
                         className={styles.playerHeader}
                         onClick={() => handleProfileClick(player.id)}
                       >
-                        <PlayerAvatar player={player} className={styles.playerAvatar} />
-                        <span className={styles.playerInfo}>
-                          <span className={styles.playerName}>
-                            {player.display_name || player.username}
-                          </span>
-                          {player.display_name && (
-                            <span className={styles.playerAlias}>@{player.username}</span>
-                          )}
-                          <span
-                            className={styles.playerStatus}
-                            data-status={player.presence_status}
-                          >
-                            {presenceCopy(player)}
-                          </span>
+                        <span className={`${styles.rowName} sc-ink--silver`}>
+                          {player.display_name || player.username}
                         </span>
-                        <span className={styles.relationshipBadge}>{player.relationship}</span>
+                        {player.display_name && (
+                          <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
+                            @{player.username}
+                          </span>
+                        )}
+                        <span
+                          className={`sc-label ${styles.rowAside} ${
+                            player.presence_status === 'playing'
+                              ? 'sc-ink--green'
+                              : player.presence_status === 'online'
+                                ? 'sc-ink--blue'
+                                : 'sc-ink--muted'
+                          }`}
+                        >
+                          {presenceCopy(player)}
+                        </span>
+                        <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
+                          {player.relationship}
+                        </span>
                       </button>
 
                       <PlayerAffiliations player={player} onJoinClub={handleClubJoin} />
 
                       {player.sensitive_accounts.length > 0 && (
-                        <section className={styles.accountAccess}>
+                        <section className={styles.accounts}>
                           <button
-                            className={styles.accountAccessToggle}
+                            className={`${styles.word} sc-ink--blue`}
                             aria-expanded={expandedAccounts.has(player.id)}
                             onClick={() =>
                               setExpandedAccounts((current) => {
@@ -499,81 +553,87 @@ export default function FindPlayerModal({
                           >
                             Authorized Account Data ({player.sensitive_accounts.length})
                           </button>
-                          {expandedAccounts.has(player.id) && (
-                            <div className={styles.accountGrid}>
-                              {player.sensitive_accounts.map((account) => (
-                                <article key={account.club_uuid} className={styles.accountCard}>
-                                  <header>
-                                    <strong>{account.club_name}</strong>
-                                    <span>
-                                      {account.access} / {account.role}
-                                    </span>
-                                  </header>
-                                  <dl>
-                                    <div>
-                                      <dt>Player</dt>
-                                      <dd>{chips(account.wallets.player_wallet)}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Agent</dt>
-                                      <dd>{chips(account.wallets.agent_wallet)}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Promo</dt>
-                                      <dd>{chips(account.wallets.promo_wallet)}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Club Chips</dt>
-                                      <dd>{chips(account.wallets.chip_balance)}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Direct</dt>
-                                      <dd>{account.downline?.downline_direct ?? 0}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Downline</dt>
-                                      <dd>{account.downline?.downline_total ?? 0}</dd>
-                                    </div>
-                                  </dl>
-                                </article>
-                              ))}
-                            </div>
-                          )}
+                          {expandedAccounts.has(player.id) &&
+                            player.sensitive_accounts.map((account) => (
+                              <div key={account.club_uuid} className={styles.account}>
+                                <div className={styles.accountHead}>
+                                  <span className={`${styles.rowName} sc-ink--silver`}>
+                                    {account.club_name}
+                                  </span>
+                                  <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
+                                    {account.access} / {account.role}
+                                  </span>
+                                </div>
+                                <dl className={styles.facts}>
+                                  <Fact
+                                    label="Player"
+                                    value={compactChips(account.wallets.player_wallet)}
+                                  />
+                                  <Fact
+                                    label="Agent"
+                                    value={compactChips(account.wallets.agent_wallet)}
+                                  />
+                                  <Fact
+                                    label="Promo"
+                                    value={compactChips(account.wallets.promo_wallet)}
+                                  />
+                                  <Fact
+                                    label="Club Chips"
+                                    value={compactChips(account.wallets.chip_balance)}
+                                  />
+                                  <Fact
+                                    label="Direct"
+                                    value={compactChips(account.downline?.downline_direct ?? 0)}
+                                  />
+                                  <Fact
+                                    label="Downline"
+                                    value={compactChips(account.downline?.downline_total ?? 0)}
+                                  />
+                                </dl>
+                              </div>
+                            ))}
                         </section>
                       )}
+
                       {player.tables.length > 0 && (
-                        <div className={styles.tablesList}>
-                          <span className={styles.tablesHeading}>
+                        <div className={styles.tables}>
+                          <span className={`sc-label sc-ink--blue ${styles.tablesHeading}`}>
                             Playing Now - {player.tables.length} Live Game
                             {player.tables.length === 1 ? '' : 's'}
                           </span>
                           {player.tables.map((table) => (
                             <button
                               key={table.id}
-                              className={styles.tableCard}
-                              data-locked={!table.can_watch || undefined}
+                              className={styles.tableRow}
                               onClick={() => void handleTableClick(table)}
                               disabled={verifyingTableId !== null}
                             >
-                              <span className={styles.tableInfo}>
-                                <span className={styles.tableKind} data-kind={gameKind(table)}>
-                                  {table.is_tournament ? 'Tournament' : 'Cash Game'}
-                                </span>
-                                <span className={styles.tableName}>{table.name}</span>
-                                <span className={styles.tableDetails}>
-                                  {table.game_variant} • {table.stakes}
-                                  {table.club_name && ` • ${table.club_name}`}
-                                </span>
-                                {!table.can_watch && (
-                                  <span className={styles.tableGateNote}>{gateCopy(table)}</span>
-                                )}
-                              </span>
                               <span
-                                className={styles.watchButton}
-                                data-action={table.can_watch ? 'open' : table.access_action}
+                                className={`sc-label ${styles.rowAside} ${
+                                  gameKind(table) === 'tournament' ? 'sc-ink--gold' : 'sc-ink--blue'
+                                }`}
+                              >
+                                {table.is_tournament ? 'Tournament' : 'Cash Game'}
+                              </span>
+                              <span className={`${styles.rowName} sc-ink--silver`}>
+                                {table.name}
+                              </span>
+                              <span className={`sc-copy ${styles.tableDetails}`}>
+                                {table.game_variant} / {table.stakes}
+                                {table.club_name && ` / ${table.club_name}`}
+                              </span>
+                              {!table.can_watch && (
+                                <span className={`sc-copy sc-ink--muted ${styles.tableDetails}`}>
+                                  {gateCopy(table)}
+                                </span>
+                              )}
+                              <span
+                                className={`sc-label ${styles.tableAction} ${
+                                  table.can_watch ? 'sc-ink--green' : 'sc-ink--gold'
+                                }`}
                               >
                                 {verifyingTableId === table.table_id
-                                  ? 'Verifying Access…'
+                                  ? 'Verifying Access'
                                   : watchLabel(table)}
                               </span>
                             </button>
@@ -584,36 +644,83 @@ export default function FindPlayerModal({
                   ))}
                   {hasMore && (
                     <button
-                      className={styles.loadMoreButton}
+                      className={`${styles.word} ${isLoadingMore ? 'sc-ink--muted' : 'sc-ink--blue'}`}
                       disabled={isLoadingMore}
                       onClick={() => runSearch(lastCompletedQueryRef.current, results.length, true)}
                     >
-                      {isLoadingMore ? 'Loading…' : 'Load More Players'}
+                      {isLoadingMore ? 'Loading' : 'Load More Players'}
                     </button>
                   )}
                 </div>
               )}
               {!error && !isSearching && !lastCompletedQueryRef.current && (
-                <div className={styles.hintMessage}>
-                  <p>
-                    Search By Alias, Display Name, Or Player Number. Close Matches Appear After{' '}
-                    {FUZZY_MIN_CHARS} Letters - Spelling Does Not Have To Be Exact.
-                  </p>
-                </div>
+                <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
+                  Search By Alias, Display Name, Or Player Number. Close Matches Appear After{' '}
+                  {FUZZY_MIN_CHARS} Letters - Spelling Does Not Have To Be Exact.
+                </p>
               )}
             </div>
-          </div>
-
-          <footer className={styles.pageFooter}>
-            <button
-              className={styles.closeButton}
-              onClick={handleClose}
-              aria-label="Close The Player Locator"
-            >
-              Exit Locator
-            </button>
-          </footer>
+          </SpadeConsole>
         </div>
+
+        {/* The quiet exit, locked above the home indicator. There is no corner
+            dismiss and the backdrop is inert, so this is the mouse route out. */}
+        <footer className={styles.pageFooter}>
+          <button
+            className={`${styles.exit} sc-ink--muted`}
+            onClick={handleClose}
+            aria-label="Close The Player Locator"
+          >
+            Exit Locator
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+/** One label/value pair on the glass: lit blue on the left, silver on the right. */
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className={styles.fact}>
+      <dt className="sc-label sc-ink--blue">{label}</dt>
+      <dd className={`${styles.factValue} sc-ink--silver`}>{value}</dd>
+    </div>
+  );
+}
+
+/** A filter as a rail of lit words. A select is a control the master never paints. */
+function WordFilter<T extends string>({
+  label,
+  groupLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  groupLabel: string;
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div className={styles.filter}>
+      <span className="sc-label sc-ink--blue">{label}</span>
+      <div className={styles.filterRail} role="radiogroup" aria-label={groupLabel}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={option.value === value}
+            className={`${styles.filterWord} ${
+              option.value === value ? 'sc-ink--silver' : 'sc-ink--muted'
+            }`}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -703,34 +810,28 @@ function PlayerAffiliations({
     >
       {clubs.length > 0 && (
         <div className={styles.affiliationGroup}>
-          <span className={styles.affiliationLabel}>Clubs</span>
+          <span className="sc-label sc-ink--blue">Clubs</span>
           <ul className={styles.affiliationList}>
             {clubs.map((club) => {
               const joinable =
                 club.viewer_action === 'join' || club.viewer_action === 'request_join';
               return (
-                <li key={club.club_uuid}>
+                <li key={club.club_uuid} className={styles.affiliationItem}>
                   {joinable ? (
                     <button
                       type="button"
-                      className={styles.affiliationChip}
-                      data-action={club.viewer_action}
+                      className={styles.affiliationRow}
                       onClick={() => onJoinClub(club)}
-                      title={
-                        club.viewer_action === 'request_join'
-                          ? `${club.club_name} Is Gated - Apply And Wait For Approval`
-                          : `Join ${club.club_name}`
-                      }
                     >
-                      <span className={styles.affiliationName}>{club.club_name}</span>
-                      <span className={styles.affiliationAction}>
+                      <span className={`${styles.rowName} sc-ink--silver`}>{club.club_name}</span>
+                      <span className={`sc-label sc-ink--gold ${styles.rowAside}`}>
                         {clubActionLabel(club.viewer_action)}
                       </span>
                     </button>
                   ) : (
-                    <span className={styles.affiliationChip} data-action={club.viewer_action}>
-                      <span className={styles.affiliationName}>{club.club_name}</span>
-                      <span className={styles.affiliationAction}>
+                    <span className={styles.affiliationRow}>
+                      <span className={`${styles.rowName} sc-ink--silver`}>{club.club_name}</span>
+                      <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
                         {clubActionLabel(club.viewer_action)}
                       </span>
                     </span>
@@ -744,14 +845,16 @@ function PlayerAffiliations({
 
       {unions.length > 0 && (
         <div className={styles.affiliationGroup}>
-          <span className={styles.affiliationLabel}>Unions</span>
+          <span className="sc-label sc-ink--blue">Unions</span>
           <ul className={styles.affiliationList}>
             {unions.map((union) => (
-              <li key={union.union_id}>
-                <span className={styles.affiliationChip} data-action="union">
-                  <span className={styles.affiliationName}>{union.union_name}</span>
+              <li key={union.union_id} className={styles.affiliationItem}>
+                <span className={styles.affiliationRow}>
+                  <span className={`${styles.rowName} sc-ink--silver`}>{union.union_name}</span>
                   {union.union_code && (
-                    <span className={styles.affiliationAction}>#{union.union_code}</span>
+                    <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
+                      #{union.union_code}
+                    </span>
                   )}
                 </span>
               </li>
@@ -761,34 +864,10 @@ function PlayerAffiliations({
       )}
 
       {hiddenCount > 0 && (
-        <p className={styles.affiliationHidden}>
+        <p className={`sc-copy sc-ink--muted ${styles.copy}`}>
           {hiddenCount} Private Club{hiddenCount === 1 ? '' : 's'} Not Shown.
         </p>
       )}
     </section>
-  );
-}
-
-function chips(value: number): string {
-  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function PlayerAvatar({ player, className }: { player: PlayerSearchResult; className: string }) {
-  return (
-    <span className={className}>
-      {player.avatar_url ? (
-        <img
-          loading="lazy"
-          decoding="async"
-          src={sizedStorageUrl(player.avatar_url, 44)}
-          alt=""
-          onError={(event) => {
-            event.currentTarget.src = generateDefaultAvatar();
-          }}
-        />
-      ) : (
-        <span aria-hidden="true">?</span>
-      )}
-    </span>
   );
 }

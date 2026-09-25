@@ -49,6 +49,47 @@ BBJ repair entries remain because those database repair functions and schedules
 were not safely retired in this pass; removing only their CI names would hide
 debt rather than remove it.
 
+## 2026-09-22 engine fee repair loops retired
+
+The precondition named above is met. Re-measured on production through the
+Supabase MCP on 2026-09-24, each figure at the time given: 57,377 raked cash
+hands in the preceding 24 hours, every one with an atomic commit and none with
+a null envelope (03:46 UTC); 173,098 cash rake records in the preceding 3 days,
+none banked more than five minutes after its hand, worst lag 2m04s, and no
+raked cash hand without one (03:46 and 03:21 UTC); no rake claim queued since
+2026-09-08 17:30 UTC and no `pending_fee_distributions` row open of any kind
+(03:17 UTC). Every candidate set below was read the same morning and was empty.
+So the engine no longer runs:
+
+- the hourly `requeueUnbankedCashRake(6, 10, 200)` (`fn_requeue_unbanked_cash_rake`).
+  It filed an equal-split claim after ten minutes without looking at the
+  envelope, so against a merely late envelope it won `atomic_distribute_rake`'s
+  first write and replaced the hand's weighted attribution for good;
+- the 30-minute `fn_requeue_unbanked_fees` pass in `discoverTournaments`;
+- the five-minute drain's rake and BBJ-drop re-drive. The drain now reads
+  `bbj_payout` claims only and leaves any other row untouched;
+- the hourly BBJ self-heal (`fn_bbj_repair_unbanked`), whose candidate set
+  excludes every enveloped hand and was empty;
+- the hourly bomb-pot award-unit backfill (`fn_backfill_bomb_pot_award_units`).
+  The `zz_ca_bomb_hand_keeps_its_award_units` constraint trigger closed that gap
+  at the source, and no bomb hand in retention lacks its units.
+
+`server/src/services/noEngineTimerReDrivesAFeeTheHandOwes.law.test.ts` pins the
+two source guarantees and refuses a repair-shaped RPC anywhere in engine runtime
+code. The database functions and their pg_cron jobs belong to the database
+workstream and are not changed here. This is engine source only: it takes
+effect with the next certified engine release, not before.
+
+**Still open, and why.** The five-minute jackpot claim drain
+(`reconcilePendingFees`, `bbj_payout` only). A jackpot payout is claimed on disk
+before it is attempted, and the claim stays open when the maintenance freeze
+defers the payout or the process dies before paying; this drain is the only
+thing that completes it. The split above still applies: complete the claim from
+`onMaintenanceThaw` (an event since 2026-09-21) and from one bounded boot drain,
+then delete the interval. The drain completed nothing in the 14 days before this
+change: all 41 claims written in that window were settled by their own payout
+within 12 seconds.
+
 ---
 
 ## What this costs today, measured
@@ -220,6 +261,16 @@ makes no compensating wallet write and performs no clawback.
 list until that production observation is true; keeping a dormant legacy
 function during its stated deletion proof is not permission to call it.
 
+**2026-09-22: the hourly applying sweep is unscheduled.**
+`ca-payout-sweep-hourly` ran `fn_tournament_payout_sweep(7, true, 150000)` and
+was still active until `20260922155223` retired it: `tournament_payouts` with
+`source = 'reconcile'` in 7 days = 0, last real work 2026-09-06, because
+completion pays every place in its own transaction and raises unless the cash
+paid equals the pool, behind the deferred trigger
+`non_satellite_completed_requires_terminal_receipt`. `fn_tournament_payout_sweep`
+stays: `tourney_payout_sweep_detect_daily` runs it nightly with
+`p_apply = false`, as an observer.
+
 ---
 
 ### 2. `fn_pay_backed_payout_shortfalls` + `ca-pay-backed-payout-shortfalls-hourly`
@@ -243,7 +294,7 @@ indexed column, not a function call.
 
 ---
 
-### 3. `fn_backpay_unfinalised_bounty_pools` + `ca-bounty-backpay-hourly`
+### 3. `fn_backpay_unfinalised_bounty_pools` + `ca-bounty-backpay-hourly` - **SCHEDULE RETIRED 2026-09-22**
 
 **What it is.** Pays out bounty pools that were funded and never distributed.
 **9 of 138 runs failed in 7 days**, one with
@@ -261,6 +312,20 @@ not by a job.
 
 **Delete when:** no completed bounty event holds an undistributed bounty pool
 for 30 days.
+
+**2026-09-22: `ca-bounty-backpay-hourly` is retired** by `20260922155223`.
+The hard fix above shipped: `fn_complete_tournament_terminal_pre_seat_guard`
+pays the bounty pool in the completion transaction and raises unless what it
+paid equals the pool, and the deferred trigger
+`non_satellite_completed_requires_terminal_receipt` refuses COMPLETED without
+that receipt. Backpay effects in 7 days = 0, last real work 2026-09-03, 0 unpaid
+bounty events since 2026-09-09 22:01:30 UTC. The two leftover PKO events,
+`a21c0cb6` and `3f19bd70` (ended 2026-09-07), are `escrow_short`: this job
+could never pay them, and they wait on the owner's funding decision.
+`fn_backpay_unfinalised_bounty_pools` stays defined and nothing calls it.
+`fn_ca_settlement_lane_doctrine` still lists it among the functions allowed the
+global lane, and one alert detail in `fn_payout_guarantee_check` still says it
+re-drives a bounty residual, which is no longer true.
 
 ---
 
@@ -283,7 +348,7 @@ start.
 
 ---
 
-### 5. `fn_rake_repair_unbanked` + `fn_redrive_unbanked_rake` (two jobs, 15-minutely and quarter-hourly)
+### 5. `fn_rake_repair_unbanked` + `fn_redrive_unbanked_rake` (two jobs, 15-minutely and quarter-hourly) - **BOTH SCHEDULES RETIRED 2026-09-22**
 
 **What it is.** Rake taken from a pot that never reached a bank. The alert says
 it plainly: _"Recovered N unbanked rake hand(s) ... (engine did not survive to
@@ -333,6 +398,24 @@ two steps is repaired by the next call rather than by a job.
 **Delete when:** `I7_raked_hand_never_banked` returns zero for 30 days with the
 repair job **off**. Both jobs are now expected to find nothing; a fire is a P0
 that says the mint regressed.
+
+**2026-09-22: both schedules are retired** by `20260922155223`.
+`rake-repair-unbanked-hourly`: 0 `fn_rake_repair_unbanked` alerts in 7 days.
+Its last real work (2026-09-14, 3 hands during an engine incident) found hands
+that already had an envelope, and the NULL `player_contributions` it wrote
+could win the first claim over a merely late envelope and erase that hand's
+per-player attribution. `ca-redrive-unbanked-rake-15m`:
+`pending_fee_distributions` rows with `kind = 'rake'` unresolved = 0, the last
+one queued 2026-09-08 17:30 UTC. Since 2026-09-09 21:56 UTC
+`fn_ca_commit_hand_settlement` is the only accepted-hand door and refuses a
+hand whose rake is not in its post-commit envelope, and
+`fn_ca_process_hand_post_commit_obligations` banks that envelope atomically.
+The rake alarm stopped timing its checks by the repair job in `20260922142525`
+(I7 and I9 both 0 live). What remains: `fn_redrive_unbanked_rake` is still
+reachable through `fn_ca_auto_reconcile_tick` when a drift incident is open,
+and that job is in its own observation window; `fn_rake_repair_unbanked` is
+defined and uncalled. The 30 days in the criterion above now run with both
+jobs off.
 
 ---
 
@@ -395,7 +478,7 @@ is the actual deletion gate.
 
 ---
 
-### 9. Spin booking, multiplier and winner-backpay fleet — **ROOT FIX BUILT; RETIREMENT STAGED**
+### 9. Spin booking, multiplier and winner-backpay fleet - **ROOT FIX BUILT; SCHEDULES RETIRED 2026-09-22**
 
 **What it was.** `fn_spin_sweep_unbooked` repaired entries never booked into
 the reserve, `fn_spin_repair_missing_multiplier` reconstructed multiplier
@@ -427,6 +510,19 @@ reconstruction, winner-backpay and old draw functions, and revoke service-role
 access to the raw settle/book primitives. Until that receipt exists, the
 database functions remain rolling-cutover compatibility doors, not live server
 callers.
+
+**2026-09-22: the three Spin schedules are retired** by `20260922155223`:
+`spin_repair_missing_multiplier` (candidates at any age 0, last real work
+2026-09-06, 37,116 Spins since 2026-09-10 all correct), `spin_sweep_unbooked`
+(unbooked at any age 0, last real work 2026-09-01, 0 of 37,391 draws since
+2026-09-10 lack a receipt) and `ca-spin-return-unawarded-draws-15m` (0 changes
+in 1,269 scheduled runs; both historical returns came from migrations). The
+functions stay. **Named blocker, not closed:** the World Hub route
+`pages/api/cron/spin-sweep.js` still calls `fn_spin_sweep_unbooked`, and
+through it `fn_spin_repair_missing_multiplier`, from Open Claw at 7,22,37,52.
+Retiring the pg_cron schedules does not remove that caller; removing it is a
+World Hub change, and `fn_spin_repair_missing_multiplier` keeps its entry in
+`scripts/ci/band-aid.allowlist.json` while anything still calls it.
 
 **Related and already fixed today:** the escrow could not see a Spin's reserve
 draw because the derived `chip_ledger` leg went missing (1 of 18,318). It now
@@ -505,26 +601,75 @@ amount, single stone-Bubble identity, no house funding, and exact replay.
 These do not move money directly, so they hide behind the money ones. Every one
 still means a live write is wrong.
 
-| job                                                 | function                                | cadence   | what it repairs                                 | the hard fix                                                       |
-| --------------------------------------------------- | --------------------------------------- | --------- | ----------------------------------------------- | ------------------------------------------------------------------ |
-| `reconcile-tournament-denormals`                    | `fn_reconcile_tournament_denormals`     | **1 min** | denormalised tournament counters                | derive them, or write them in the same transaction as their source |
-| `ca-auto-reconcile-tick`                            | `fn_ca_auto_reconcile_tick`             | **1 min** | ledger drift                                    | the writes that drift are the defect                               |
-| `union-seat-provenance-heal`                        | `fn_heal_seat_provenance`               | 5 min     | seat rows with no provenance                    | provenance written with the seat, `NOT NULL`                       |
-| `ca-quick-reconcile-5m`                             | `fn_ca_quick_reconcile`                 | 5 min     | ledger imbalance (55 write-failure drifts/7d)   | fix the failing ledger write                                       |
-| `ca-escrow-ttl-sweep-10m`                           | `fn_ca_escrow_ttl_sweep`                | 10 min    | escrow rows left open                           | close the escrow in the settle transaction                         |
-| `ca-promo-accrual-retry-10m`                        | `fn_ca_retry_promo_accruals`            | 10 min    | promo accruals that failed                      | accrue in the transaction that earned it                           |
-| `ca-bbj-repair-unbanked-15m`                        | `fn_bbj_repair_unbanked`                | 15 min    | BBJ drops taken and not banked                  | same one-write fix as #5                                           |
-| `spin_repair_missing_multiplier`                    | `fn_spin_repair_missing_multiplier`     | 15 min    | spins whose multiplier was never written        | write it in the transaction that draws the prize                   |
-| `bbj-rollup-catchup`                                | `fn_bbj_rollup_catchup`                 | hourly    | rollups that missed rows                        | roll up from an outbox that cannot lose a row                      |
-| `club-rake-rollup-catchup`                          | `fn_club_rake_rollup_catchup`           | hourly    | rollups that missed rows                        | same                                                               |
-| `ca-ledger-day-manifest`                            | `fn_ca_ledger_day_manifest_backfill`    | daily     | manifest days never written                     | write the manifest for a day when the day closes                   |
-| `sp_resolve_settled_prize_alerts_15m`               | —                                       | 15 min    | alerts about money that has since settled       | a check that resolves its own alerts (done today for two of them)  |
-| `reconcile-club-table-counts-nightly`               | `fn_reconcile_club_table_counts`        | nightly   | club table counts                               | count from the source, do not store a second copy                  |
-| `reconcile-club-member-daily-profit`                | `fn_reconcile_club_member_daily_profit` | nightly   | member profit                                   | same                                                               |
-| `reconcile-ledger-integrity-6h`                     | `reconcile_ledger_nightly`              | 6 h       | ledger vs stored balances                       | the writes that drift are the defect                               |
-| `ca-escalate-reconcile-criticals-hourly`            | `fn_ca_escalate_reconcile_criticals`    | hourly    | criticals nobody actioned                       | Tier 3: a check that clears itself needs no escalator              |
-| `flag-garbage-tournaments`                          | `fn_flag_garbage_tournaments`           | nightly   | tournaments that should never have been created | refuse to create them                                              |
-| `ca-pgrst-reload-if-stale`, `pgrst-reload-watchdog` | —                                       | 5/15 min  | PostgREST schema cache not reloading            | the DDL policy in CLAUDE.md §2 — one transaction per change        |
+| job                                                      | function                                | cadence   | what it repairs                                 | the hard fix                                                                       |
+| -------------------------------------------------------- | --------------------------------------- | --------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `reconcile-tournament-denormals`                         | `fn_reconcile_tournament_denormals`     | **1 min** | denormalised tournament counters                | derive them, or write them in the same transaction as their source                 |
+| `ca-auto-reconcile-tick` **SCHEDULE RETIRED 2026-09-24** | `fn_ca_auto_reconcile_tick`             | **1 min** | ledger drift                                    | retired: an incident is born `manual_needed`, so there was nothing left to rewrite |
+| `ca-quick-reconcile-5m`                                  | `fn_ca_quick_reconcile`                 | 5 min     | ledger imbalance (55 write-failure drifts/7d)   | fix the failing ledger write                                                       |
+| `ca-escrow-ttl-sweep-10m`                                | `fn_ca_escrow_ttl_sweep`                | 10 min    | escrow rows left open                           | close the escrow in the settle transaction                                         |
+| `bbj-rollup-catchup`                                     | `fn_bbj_rollup_catchup`                 | hourly    | rollups that missed rows                        | roll up from an outbox that cannot lose a row                                      |
+| `club-rake-rollup-catchup`                               | `fn_club_rake_rollup_catchup`           | hourly    | rollups that missed rows                        | same                                                                               |
+| `ca-ledger-day-manifest`                                 | `fn_ca_ledger_day_manifest_backfill`    | daily     | manifest days never written                     | write the manifest for a day when the day closes                                   |
+| `sp_resolve_settled_prize_alerts_15m`                    | (none)                                  | 15 min    | alerts about money that has since settled       | a check that resolves its own alerts (done today for two of them)                  |
+| `reconcile-club-member-daily-profit`                     | `fn_reconcile_club_member_daily_profit` | nightly   | member profit                                   | same                                                                               |
+| `reconcile-ledger-integrity-6h`                          | `reconcile_ledger_nightly`              | 6 h       | ledger vs stored balances                       | the writes that drift are the defect                                               |
+| `ca-escalate-reconcile-criticals-hourly`                 | `fn_ca_escalate_reconcile_criticals`    | hourly    | criticals nobody actioned                       | Tier 3: a check that clears itself needs no escalator                              |
+| `flag-garbage-tournaments`                               | `fn_flag_garbage_tournaments`           | nightly   | tournaments that should never have been created | refuse to create them                                                              |
+
+Retired 2026-09-22 by
+`20260922155223_eleven_compensation_jobs_whose_writers_are_correct_stop_running`,
+from this table: `ca-promo-accrual-retry-10m` (`ca_pending_promo_accruals` has
+never held a row and nothing writes it; playthrough is applied inside the atomic
+settlement envelope), `spin_repair_missing_multiplier` (TIER 1 #9) and
+`ca-pgrst-reload-if-stale` (276 forced reloads in 7 days and none fixed
+anything; 0 PGRST002 errors on every day from 2026-09-11 to 2026-09-22; the root
+fix is the 5min authenticator timeout of `20260831142242` and the
+`pgrst_ddl_watch` / `pgrst_drop_watch` event triggers, and
+`tests/postgrest-is-never-reloaded-on-a-timer.law.test.ts` keeps the timer
+out). `pgrst-reload-watchdog`, which shared that row, is an observer and is
+kept: it reads the reload rate and the live authenticator timeout, and reloads
+nothing. The same migration retired `ca-bounty-backpay-hourly` (TIER 1 #3),
+`rake-repair-unbanked-hourly` and `ca-redrive-unbanked-rake-15m` (TIER 1 #5),
+`ca-payout-sweep-hourly` (TIER 1 #1), `spin_sweep_unbooked` and
+`ca-spin-return-unawarded-draws-15m` (TIER 1 #9), and two jobs this page had no
+row for: `ca-union-rake-attribution-hourly` (`atomic_distribute_rake` records
+`rake_attributions.club_id` at bank time, and nothing reads
+`ca_union_rake_attribution`) and `ca-post-commit-orphan-drain-10m` (the hand
+commit writes its outbox row and its envelope in one transaction, and
+`a0_finish_hand_post_commit_obligations` refuses to delete the outbox row
+before the envelope is applied; 0 of about 2.5M commits ever completed more
+than ten minutes late). Every function stays defined; the migration's header
+says which are still called and by what.
+`tests/a-retired-compensation-job-is-never-scheduled-again.law.test.ts` refuses
+any later migration that schedules one of these names again.
+
+Retired 2026-09-20 by
+`20260920070402_three_watchers_whose_defects_were_fixed_stop_running`,
+restored to this repository on 2026-09-22 byte for byte from production's
+`schema_migrations`: `union-seat-provenance-heal` (`trg_table_seats_stamp_club`
+stamps every insert and update, with no `WHEN`), `ca-bbj-repair-unbanked-15m`
+(every BBJ-contributing rake record carries a post-commit envelope, so its
+candidate set is empty by construction) and
+`reconcile-club-table-counts-nightly` (triggers recompute the count from
+`fn_live_table_count`, and the two blind +1 / -1 writers were dropped in the
+same migration). `fn_bbj_repair_unbanked` stays defined, but nothing on a timer reaches it:
+`fn_ca_auto_reconcile_tick` was its last scheduled caller and that job was
+itself retired on 2026-09-24 (see below). `fn_heal_seat_provenance` and
+`fn_reconcile_club_table_counts` stay defined, and nothing calls them. The
+same law refuses these three names too.
+
+**2026-09-24: `ca-auto-reconcile-tick` is unscheduled.** Migration
+`20260924025037_the_incident_tick_that_repairs_nothing_stops_running`. Over
+the 7 days to 2026-09-22 it rewrote `auto_repair_status` from `pending` to
+`manual_needed` 139 times, re-drove rake and BBJ 7,774 times moving nothing
+(no unresolved rake outbox row since 2026-09-08 17:30, no BBJ marker row
+since 2026-09-08 17:17), and closed 0 incidents as re-verified clean. The
+rewriting was the whole job, and it was a column default in the wrong place:
+`an_incident_is_born_with_the_repair_status_it_will_get` (recorded 20260922141732) made `manual_needed` the default. In the 36 hours after that
+fix the tick took 0 actions and 0 incidents were born with any other status.
+`fn_redrive_unbanked_rake`, `fn_bbj_repair_unbanked` and
+`fn_ca_auto_reconcile_tick` all stay defined; the migration asserts that no
+scheduled job reaches any of them.
 
 Retired 2026-09-10: `ca-eliminate-absent-players` and
 `ca-release-broke-seats`. Both wrote `tournament_players.status = 'eliminated'`

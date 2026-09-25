@@ -1,0 +1,142 @@
+.missionBoard {
+  padding: clamp(18px, 3vw, 34px);
+}
+
+.boardHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(174, 190, 201, 0.17);
+}
+
+.boardHeader h2,
+.footer h2 {
+  margin: 8px 0 0;
+  color: var(--mission-white);
+  font-size: clamp(1.65rem, 3.5vw, 2.45rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.resetReadout {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+
+.resetReadout strong {
+  color: var(--mission-blue);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.resetReadout small {
+  color: #8997a1;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.64rem;
+}
+
+.resetReadout em {
+  max-width: 280px;
+  color: #ff5b6e;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.resetUrgent {
+  padding: 9px 12px;
+  border: 1px solid rgb(240 40 73 / 40%);
+  background: rgb(240 40 73 / 13%);
+  box-shadow: inset 3px 0 #f02849;
+}
+
+.resetUrgent strong {
+  color: #ff5b6e;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 22px 0;
+  border: 1px solid #303941;
+  background: #030506;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  min-height: 62px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-right: 1px solid #303941;
+  background: #070a0d;
+  color: #8a959d;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.tab:last-child {
+  border-right: 0;
+}
+
+.tab::after {
+  position: absolute;
+  right: 22%;
+  bottom: -1px;
+  left: 22%;
+  height: 2px;
+  background: transparent;
+  content: '';
+}
+
+.tabActive {
+  background: linear-gradient(180deg, #11171c, #080b0e);
+  color: #f3f7f9;
+}
+
+.tabActive::after {
+  background: var(--tier-color);
+  box-shadow: 0 0 13px var(--tier-color);
+}
+
+.tabLabel {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.tabCount {
+  color: #7d8992;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.65rem;
+}
+
+.tabActive .tabCount {
+  color: #a9b4bc;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.list > div {
+  min-width: 0;
+}

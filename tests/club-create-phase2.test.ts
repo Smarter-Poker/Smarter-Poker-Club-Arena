@@ -9,6 +9,10 @@ const migration = read('supabase/migrations/20260831150100_club_creation_atomic_
 const auditMigration = read(
   'supabase/migrations/20260831140909_club_entry_four_phase_audit_fixes.sql'
 );
+/** The current authority for the cap: one number, one count, one lock. */
+const capMigration = read(
+  'supabase/migrations/20260922153234_one_club_membership_cap_one_count_one_lock.sql'
+);
 const service = read('src/services/ClubsService.ts');
 const modal = read('src/components/modals/CreateClubModal.tsx');
 const deadJoinRequestRepair = read(
@@ -33,6 +37,23 @@ describe('Phase 2 atomic club creation', () => {
     expect(auditMigration).toContain("status IN ('active', 'approved')");
     expect(auditMigration).toContain('v_memberships >= 4');
     expect(auditMigration).not.toContain('is_horse');
+  });
+
+  it('the current create path counts and locks through the one cap authority', () => {
+    // The two files above are history: they installed a literal 4, which
+    // 20260908125235 raised to 10 in place. The create path now takes the
+    // player lock, the count and the cap from the shared helpers.
+    expect(capMigration).toContain('SELECT 10');
+    expect(capMigration).toContain(
+      '$create_count_new$  v_memberships := public.fn_club_membership_count(v_uid);\n  IF v_memberships >= public.fn_club_membership_cap() THEN'
+    );
+    expect(capMigration).toContain(
+      '$create_lock_new$  PERFORM public.fn_club_membership_lock(v_uid);'
+    );
+    expect(capMigration).toContain(
+      '$create_flag_new$  IF NOT public.fn_club_creation_open(v_uid) THEN'
+    );
+    expect(capMigration).toContain("USING ERRCODE = '23514'");
   });
 
   it('uses the atomic RPC and cleans the pre-transaction logo on failure', () => {
@@ -67,6 +88,10 @@ describe('Phase 2 create experience', () => {
     expect(modal).toContain('Draft Restored');
     expect(modal).toContain('ClubsService.checkNameAvailability');
     expect(modal).toContain('ClubsService.getCreationEligibility');
+    // The allowance line is the server's cap and reason, never a number here.
+    expect(modal).toContain('allowance.maxClubs.toLocaleString()');
+    expect(modal).toContain("allowance.reason === 'creation_unavailable'");
+    expect(modal).not.toMatch(/four-club/i);
   });
 
   it('exposes launch settings and a reviewable description', () => {

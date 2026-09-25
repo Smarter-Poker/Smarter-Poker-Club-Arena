@@ -16,6 +16,7 @@ import {
   requireCustomizationCertificationEnvironment,
   type CustomizationCertificationEnvironment,
   type TemporaryCustomizationAccount,
+  withCauses,
 } from './support/temporaryCustomizationAccount';
 
 type Appearance = {
@@ -526,17 +527,24 @@ test.describe('production Table Studio realtime contract', () => {
     }
 
     if (journeyFailure && teardownFailures.length) {
-      const failureSummary = [journeyFailure, ...teardownFailures]
-        .map((failure) => (failure instanceof Error ? failure.message : String(failure)))
-        .join(' | ');
       throw new AggregateError(
         [journeyFailure, ...teardownFailures],
-        `Customization certification journey and cleanup both failed: ${failureSummary}`
+        withCauses('Customization certification journey and cleanup both failed:', [
+          journeyFailure,
+          ...teardownFailures,
+        ])
       );
     }
     if (journeyFailure) throw journeyFailure;
     if (teardownFailures.length) {
-      throw new AggregateError(teardownFailures, 'Customization certification cleanup failed.');
+      /* The combined branch above already folded its causes into the title.
+         This one did not, so a teardown that failed ALONE still printed a bare
+         name - the same trap one level up (10.86 rule 4). Both branches now
+         go through the one helper. */
+      throw new AggregateError(
+        teardownFailures,
+        withCauses('Customization certification cleanup failed.', teardownFailures)
+      );
     }
   });
 });

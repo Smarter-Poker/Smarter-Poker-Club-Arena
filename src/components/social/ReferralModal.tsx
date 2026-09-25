@@ -10,6 +10,8 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
 import './ReferralModal.css';
 
 export interface ReferralModalProps {
@@ -55,46 +57,76 @@ export function ReferralModal({
     }, 2000);
   };
 
+  /* ONE CONSOLE (#ClubArenaConsole): the spade master. The offer, the
+     count, the link and the code are printed on the black glass between the
+     rails with an engraved rule between rows; COPY and CLOSE are lit words.
+     A page of content with one way out, so the foot is the flat cap. */
   return (
-    <div className="referral-overlay" onClick={onClose}>
-      <div className="referral-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="referral-header">
-          <h2>Invite & Earn</h2>
-          <button onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-
-        <div className="referral-body">
-          <div className="referral-illustration"></div>
-          <p className="referral-text">
-            Invite Your Friends To The Club And Earn <strong>5% Of Their Rake Forever!</strong>
+    <div className="referral-overlay" onClick={onClose} role="presentation">
+      <div
+        className="rfc"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="referral-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SpadeConsole
+          onClose={onClose}
+          eyebrow="Club Referrals"
+          title="Invite & Earn"
+          titleId="referral-title"
+          pill="5% Rake"
+          pillInk="gold"
+          foot="foot"
+          className="rfc__console"
+        >
+          <p className="sc-copy sc-copy--center">
+            Invite Your Friends To The Club And Earn{' '}
+            <strong className="sc-ink--gold">5% Of Their Rake Forever!</strong>
           </p>
 
-          <div className="referral-stat-box">
-            <span className="stat-label">Your Total Referrals</span>
-            <span className="stat-val">{totalReferrals}</span>
+          <div className="rfc__row">
+            <span className="sc-label sc-ink--blue">Your Total Referrals</span>
+            <span className="rfc__figure sc-ink--silver">{compactChips(totalReferrals)}</span>
           </div>
 
-          <div className="referral-link-box">
-            <span className="link-label">Your Referral Link</span>
-            <div className="link-input-group">
-              <input readOnly value={referralLink} placeholder="Preparing Your Link..." />
+          <div className="rfc__link">
+            <span className="sc-label sc-ink--blue">Your Referral Link</span>
+            <div className="rfc__link-row">
+              <input
+                readOnly
+                value={referralLink}
+                placeholder="Preparing Your Link..."
+                aria-label="Your Referral Link"
+                className="rfc__input"
+              />
               <button
+                type="button"
                 onClick={handleCopy}
                 disabled={!referralLink}
-                className={copied ? 'copied' : ''}
+                className={`rfc-word ${copied ? 'sc-ink--green' : 'sc-ink--white'}`}
               >
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
           </div>
 
-          <div className="referral-code-box">
-            <span>Or Share Code:</span>
-            <strong className="code-display">{referralCode}</strong>
+          <div className="rfc__row">
+            <span className="sc-label sc-ink--blue">Or Share Code</span>
+            <strong className="rfc__code sc-ink--silver">{referralCode}</strong>
           </div>
-        </div>
+
+          <div className="rfc__actions">
+            <button
+              type="button"
+              className="rfc-word sc-ink--white"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              Close
+            </button>
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

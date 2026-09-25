@@ -1,406 +1,478 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  GAME RULES MODAL — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   GAME RULES - on the spade console (2026-09-08)
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   OVERLAY
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   The console, its inks and its painted plates come from SpadeConsole.css.
+   This sheet places the console on the backdrop, switches off the global
+   popup chassis (metallic-popups.css paints a rounded shell on
+   `.rules-modal` with !important), and types the four tabs and every row on
+   the black glass between the rails.
+
+   Rows are separated by an engraved rule - a black line with a light lip,
+   the same cut the master's own chrome rules are made of. There is no
+   border-radius, no gradient and no fill anywhere in this file, because the
+   frame is painted in the art. Sizes are cqw against the console; no :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .rules-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 800;
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   MODAL
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.rules-modal {
-  width: 95%;
-  max-width: 500px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(180deg, #1c2128 0%, #161b22 100%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
-  animation: gameRulesSlideUp 0.3s ease;
-}
-
-@keyframes gameRulesSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   HEADER
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.rules-modal__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.3);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.rules-modal__title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.rules-modal__icon {
-  font-size: 1.75rem;
-}
-
-.rules-modal__title-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.rules-modal__title {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #e4e6eb;
-  margin: 0;
-}
-
-.rules-modal__subtitle {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
-  color: #1877f2;
-}
-
-.rules-modal__close {
-  width: 32px;
-  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 8px;
-  color: #8b949e;
-  font-size: 1.5rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  padding: 12px;
+  /* Black, not grey, and no blur: the console floats on the same black as
+     the felt behind it. */
+  background: rgb(0 0 0 / 90%);
+  animation: rulesFadeIn 0.2s ease-out;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TABS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+@keyframes rulesFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.rules-modal.ac-popup {
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: visible auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ── The four tabs: engraved words on the glass, not a pill bar ───────── */
 
 .rules-modal__tabs {
-  display: flex;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .rules-modal__tab {
-  flex: 1;
-  background: transparent;
-  border: none;
-  padding: 14px 10px;
-  color: #8b949e;
-  font-size: 0.75rem;
-  font-weight: 600;
+  appearance: none;
+  /* A tab on a phone still has to be hittable. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 0.5cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-family: inherit;
+  font-size: 2.5cqw;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.25;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
+  touch-action: manipulation;
 }
 
 .rules-modal__tab--active {
-  color: #1877f2;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0 2cqw rgb(49 168 255 / 30%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-.rules-modal__tab--active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: #1877f2;
+.rules-modal__tab:active {
+  filter: brightness(1.25);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   CONTENT AREA
-   ═══════════════════════════════════════════════════════════════════════════════ */
+.rules-modal__tab:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── The page: scrolls inside the rails, so the plates never leave ────── */
 
 .rules-modal__content-area {
-  flex: 1;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .rules-modal__content {
-  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 3cqw;
+  /* The body scrolls INSIDE the frame, so the painted foot and its two
+     plates stay where the master put them however long the page is. */
+  max-height: 56dvh;
+  padding-right: 1cqw;
   overflow-y: auto;
-  flex: 1;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .rules-modal__content--rankings {
-  padding-right: 12px; /* Extra room for scrollbar */
+  padding-right: 2cqw;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TAB 1: TABLE INFO
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ── Sections ─────────────────────────────────────────────────────────── */
 
-.rules-modal__section-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #6e7681;
-  margin: 0 0 12px;
-}
-
-.rules-modal__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.rules-modal__item {
+.rules-modal__section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
+  gap: 1.6cqw;
+}
+
+.rules-modal__section-title {
+  margin: 0;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+/* ── Figures: a label and its value on one engraved row ───────────────── */
+
+.rules-modal__grid {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The label column never narrows below its longest word (visual acceptance
+   2026-09-24). It was minmax(0, 1fr), so a value longer than the row - the
+   kill rule's Trigger and Killer sentences - took every pixel and printed
+   over its own label ("Trigger" under "One Player Wins..."). The value now
+   wraps inside what the label leaves; a short value sits exactly as before. */
+.rules-modal__item {
+  display: grid;
+  grid-template-columns: minmax(min-content, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .rules-modal__label {
-  font-size: 0.6875rem;
-  color: #8b949e;
+  min-width: 0;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 3.2cqw;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .rules-modal__value {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-  color: #e4e6eb;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-align: right;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607,
+    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
 }
+
+/* ── Features: lit when the table has them, dim when it does not ──────── */
 
 .rules-modal__features {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2cqw 5cqw;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .rules-modal__feature {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  opacity: 0.5;
-}
-
-.rules-modal__feature--active {
-  background: rgba(24, 119, 242, 0.1);
-  border-color: rgba(24, 119, 242, 0.3);
-  opacity: 1;
+  display: inline-flex;
+  align-items: baseline;
 }
 
 .rules-modal__feature-text {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #e4e6eb;
+  color: #4a5462;
+  -webkit-text-fill-color: #4a5462;
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
-.rules-modal__custom-list {
+/* The active ink is the console's own green (sc-ink--green). A table
+   stylesheet never restates a house colour as a hex - the palette law reads
+   these files and it is right to. */
+
+/* ── The two staff controls: lit words on the glass, never pills ──────── */
+
+/* MANUAL_NEXT_HAND (spec 2.1/15.3, 2026-08-28): club-staff-only control that
+   arms one bomb pot for the next valid hand. It is gold because it charges a
+   forced ante to every seated player on the very next deal. */
+.rules-modal__manual-bomb,
+.rules-modal__edit-bomb {
+  appearance: none;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.rules-modal__custom-item {
-  padding: 12px;
-  background: rgba(255, 184, 0, 0.05);
-  border: 1px solid rgba(255, 184, 0, 0.15);
-  border-radius: 10px;
-}
-
-.rules-modal__custom-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 1.6cqw 0 0;
+  padding: 1.6cqw 2cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  font-family: inherit;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.rules-modal__custom-label {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: #e4e6eb;
+.rules-modal__manual-bomb {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0 2cqw rgb(255 215 0 / 30%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.rules-modal__custom-value {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: var(--sp-warn);
+/* Deliberately QUIETER than the manual bomb - that one arms a forced ante on
+   the very next hand and should look like it; this one opens a form. */
+.rules-modal__edit-bomb {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.rules-modal__custom-desc {
-  font-size: 0.75rem;
-  color: #8b949e;
-  margin: 0;
-  line-height: 1.4;
+.rules-modal__manual-bomb:active,
+.rules-modal__edit-bomb:active {
+  filter: brightness(1.25);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TAB 2 & 3: RULES & LIMITS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+.rules-modal__manual-bomb:focus-visible,
+.rules-modal__edit-bomb:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── House rules, variant rules, betting limits ───────────────────────── */
 
 .rules-modal__bullet-list {
-  margin: 0;
-  padding-left: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 2.6cqw;
+  margin: 0;
+  padding: 0 0 0 4.5cqw;
 }
 
 .rules-modal__bullet-list li {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: #c9d1d9;
+  color: #d7dee7;
+  font:
+    500 3.5cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.rules-modal__bullet-list li::marker {
+  color: #45adff;
 }
 
 .rules-modal__bullet-list strong {
-  color: #e4e6eb;
+  color: #e4e7ec;
+  font-weight: 800;
 }
 
 .rules-modal__text {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: #c9d1d9;
   margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.5cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .rules-modal__text strong {
-  color: #e4e6eb;
+  color: #e4e7ec;
+  font-weight: 800;
 }
 
+/* A worked example, set off by the engraved rule and a lit left edge rather
+   than by a filled card. */
 .rules-modal__callout {
-  background: rgba(24, 119, 242, 0.1);
-  border-left: 3px solid #1877f2;
-  padding: 12px 16px;
-  border-radius: 4px;
+  padding: 2.4cqw 0 2.4cqw 3cqw;
+  border-top: 1px solid #000;
+  border-left: 1px solid #2b6fa8;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .rules-modal__callout p {
   margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: #c9d1d9;
+  color: #d7dee7;
+  font:
+    500 3.5cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TAB 4: HAND RANKINGS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+.rules-modal__callout strong {
+  color: #e4e7ec;
+  font-weight: 800;
+}
+
+/* ── Custom house rules ───────────────────────────────────────────────── */
+
+.rules-modal__custom-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.rules-modal__custom-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.rules-modal__custom-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+}
+
+.rules-modal__custom-label {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.rules-modal__custom-value {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  text-align: right;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  white-space: nowrap;
+}
+
+.rules-modal__custom-desc {
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    500 3.2cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+/* ── Hand rankings ────────────────────────────────────────────────────── */
 
 .rules-modal__ranking-notice {
-  background: rgba(248, 81, 73, 0.1);
-  border: 1px solid rgba(248, 81, 73, 0.3);
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  color: #ff7b72;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  font-size: 3.2cqw;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-align: center;
-  margin-bottom: 12px;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .rules-modal__ranking-notice strong {
-  color: #fff;
+  color: #ffe3e6;
+  -webkit-text-fill-color: #ffe3e6;
+  font-weight: 800;
 }
 
 .rules-modal__hand-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 .rules-modal__hand-item {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4cqw;
+  padding: 2.6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .rules-modal__hand-title {
   margin: 0;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.2);
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: #1877f2;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607,
+    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
 }
 
 .rules-modal__hand-row {
   display: flex;
-  gap: 16px;
-  padding: 16px;
+  gap: 3cqw;
   align-items: center;
 }
 
 .rules-modal__hand-cards {
   display: flex;
-  gap: 4px;
   flex-shrink: 0;
+  gap: 1cqw;
 }
 
-/* Size container specifically so CardImage fits well */
+/* Size the wrapper so CardImage fits the row at any width. */
 .rules-modal__hand-card-wrap {
-  width: 32px;
-  height: 46px;
   position: relative;
+  width: 8.4cqw;
+  height: 12cqw;
+  filter: drop-shadow(0 0.3cqw 0.8cqw rgb(0 0 0 / 70%));
 }
 
-/* We override .card-image to ensure it fits the wrapper nicely */
 .rules-modal__hand-card-wrap .card-image {
   width: 100% !important;
   height: 100% !important;
@@ -408,119 +480,16 @@
 
 .rules-modal__hand-desc {
   margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: #c9d1d9;
+  color: #9aa5b3;
+  font:
+    500 3.1cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE — Mobile
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-@media (max-width: 480px) {
-  .rules-modal {
-    width: 96%;
-    border-radius: 16px;
+@media (prefers-reduced-motion: reduce) {
+  .rules-overlay {
+    animation: none;
   }
-
-  .rules-modal__header {
-    padding: 12px 16px;
-  }
-
-  .rules-modal__close {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
-    min-height: 40px;
-  }
-
-  .rules-modal__title {
-    font-size: 1rem;
-  }
-
-  .rules-modal__tabs {
-    flex-wrap: wrap;
-  }
-
-  .rules-modal__tab {
-    padding: 12px 8px;
-    font-size: 0.6875rem;
-  }
-
-  .rules-modal__content {
-    padding: 16px;
-    gap: 16px;
-  }
-
-  .rules-modal__grid {
-    gap: 8px;
-  }
-
-  .rules-modal__item {
-    padding: 8px;
-  }
-
-  .rules-modal__feature {
-    padding: 8px 10px;
-  }
-
-  .rules-modal__hand-row {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 12px;
-    padding: 12px;
-  }
-
-  .rules-modal__hand-cards {
-    gap: 6px;
-  }
-
-  .rules-modal__hand-card-wrap {
-    width: 36px;
-    height: 52px;
-  }
-}
-
-/* MANUAL_NEXT_HAND (spec 2.1/15.3, 2026-08-28): club-staff-only control that
-   arms one bomb pot for the next valid hand. */
-.rules-modal__manual-bomb {
-  margin-top: 12px;
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 158, 44, 0.5);
-  background: linear-gradient(180deg, rgba(60, 32, 8, 0.9), rgba(38, 20, 6, 0.9));
-  color: var(--sp-text-bright);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transition: filter 0.15s ease;
-}
-.rules-modal__manual-bomb:active {
-  filter: brightness(0.92);
-}
-
-/* EDIT BOMB SETTINGS (2026-08-29): the staff control beside the manual bomb.
-   Deliberately QUIETER than .rules-modal__manual-bomb — that one arms a forced
-   ante on the very next hand and should look like it; this one opens a form.
-   Same width and rhythm so the two read as a pair, neutral colour so the
-   dangerous one stays the loud one. */
-.rules-modal__edit-bomb {
-  margin-top: 8px;
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
-  color: #cfd4dc;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  transition: filter 0.15s ease;
-  /* A staff control on a phone still has to be hittable. */
-  min-height: 44px;
-}
-.rules-modal__edit-bomb:active {
-  filter: brightness(0.92);
 }

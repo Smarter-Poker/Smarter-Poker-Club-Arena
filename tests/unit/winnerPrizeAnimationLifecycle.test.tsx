@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TournamentWinnerOverlay from '../../src/components/table/TournamentWinnerOverlay';
+import { CHIP_UNIT_CENTS } from '../../server/src/tournament/tournamentUnit';
 
 let frames: Map<number, FrameRequestCallback>;
 let sequence: number;
@@ -33,7 +34,17 @@ function tick(time: number) {
     callback(time);
   });
 }
-const props = { isWinner: true, prize: 100, tournamentName: 'Test Event', onDismiss: vi.fn() };
+/* A chip event, stated (2026-09-21): the overlay now takes the unit the event
+   paid in, and a chip unit is the contract these assertions were written for.
+   The Diamond and unread halves live in
+   tests/components/TournamentWinnerOverlayUnit.test.tsx. */
+const props = {
+  isWinner: true,
+  prize: 100,
+  unitCents: CHIP_UNIT_CENTS,
+  tournamentName: 'Test Event',
+  onDismiss: vi.fn(),
+};
 
 describe('winner prize animation ownership', () => {
   it('cancels the latest recursive frame on unmount and ignores a stale callback', () => {

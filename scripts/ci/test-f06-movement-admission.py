@@ -13,6 +13,7 @@ sys.dont_write_bytecode = True
 from satellite_qualifier_fixture import module, sha, function_sql
 
 MIGRATION = 'supabase/migrations/20260918095135_parked_tournament_movement_requires_canonical_custody.sql'
+DECIDED = 'supabase/migrations/20260922152219_a_decided_hand_does_not_hold_a_parked_table.sql'
 PROBE = 'scripts/ci/probes/f06-movement-admission.sql'
 SPEC = 'scripts/ci/probes/f06-movement-admission.spec'
 OPENING = 'scripts/ci/probes/f06-movement-opening.sql'
@@ -196,8 +197,8 @@ def validate_race(code, out, err, mode):
 def validate_probe(code, stdout, stderr):
     if code or any(x in stderr for x in ['ERROR:', 'FATAL:', 'PANIC:', 'WARNING:']):
         raise RuntimeError('movement public flow failed; inspect retained SQL output')
-    if stdout.splitlines().count('F06_MOVEMENT_ADMISSION_PASS') != 1 or stderr.count('MOVEMENT PASS:') != 73:
-        raise RuntimeError('exact movement completion and 73 assertions required')
+    if stdout.splitlines().count('F06_MOVEMENT_ADMISSION_PASS') != 1 or stderr.count('MOVEMENT PASS:') != 139:
+        raise RuntimeError('exact movement completion and 139 assertions required')
 
 
 def installer_refusals(e, db, root, fixture):
@@ -220,6 +221,24 @@ def installer_refusals(e, db, root, fixture):
             raise RuntimeError('movement rejected installer changed catalog or private records')
         e.discard(case)
         e.report['migration_refusals'].append({'case':name,'reason':expected,'atomic_rollback':True})
+
+
+def decided_installer_refusal(e, db, root, fixture):
+    """The decided-hand reader replaces exactly the definition it reasons about."""
+    case = e.database(db)
+    e.sql(case, "ALTER FUNCTION smarter_private.f06_movement_permits(uuid,uuid,bigint) SET work_mem='64kB';",
+          label='decided-installer-owner-drift')
+    before = e.catalog_snapshot(case, 'decided-installer-before')
+    private = fixture.private_snapshot(e, case, 'decided-installer-private-before')
+    code, _, err = e.sql(case, file=root / DECIDED, label='decided-installer-refusal', check=False)
+    if code == 0 or 'F06_DECIDED_HAND_OWNER_DRIFT' not in err:
+        raise RuntimeError('decided-hand installer did not refuse a drifted movement permit owner')
+    if (e.catalog_snapshot(case, 'decided-installer-after') != before
+            or fixture.private_snapshot(e, case, 'decided-installer-private-after') != private):
+        raise RuntimeError('refused decided-hand installer changed catalog or private records')
+    e.discard(case)
+    e.report['migration_refusals'].append({'case': 'decided-owner', 'reason': 'F06_DECIDED_HAND_OWNER_DRIFT',
+                                           'atomic_rollback': True})
 
 
 def qualify_races(e, root, native, db):
@@ -255,7 +274,7 @@ def main():
         raise ValueError('executed movement owner differs from source binding')
     fixture = module(root / 'scripts/ci/test-f06-accepted-elimination.py', 'movement_fixture')
     manifest = fixture.prepare(root, out)
-    manifest['source_sha256'].update({p: sha(root / p) for p in [MIGRATION, PROBE, SPEC, OPENING, RECEIPT, AUTHORITIES, PUBLIC_F06, DEPENDENCY_FUNCTIONS, DEPENDENCY_CATALOG, FINAL_RELATIONS, PRIVATE, CONTROL, CONTINUATION, RESULT_TEST, 'scripts/ci/test-f06-movement-admission.py']})
+    manifest['source_sha256'].update({p: sha(root / p) for p in [MIGRATION, DECIDED, PROBE, SPEC, OPENING, RECEIPT, AUTHORITIES, PUBLIC_F06, DEPENDENCY_FUNCTIONS, DEPENDENCY_CATALOG, FINAL_RELATIONS, PRIVATE, CONTROL, CONTINUATION, RESULT_TEST, 'scripts/ci/test-f06-movement-admission.py']})
     if dependency_preflight(root) not in (root / MIGRATION).read_text():
         raise ValueError('movement installer dependencies differ from actual captured graph')
     (out / 'movement-catalog.sql').write_text(movement_catalog(root))
@@ -284,6 +303,8 @@ def main():
         e.sql(db, file=root / fixture.MIGRATION, label='current-accepted-elimination')
         installer_refusals(e, db, root, fixture)
         e.sql(db, file=root / MIGRATION, label='movement-admission-install')
+        decided_installer_refusal(e, db, root, fixture)
+        e.sql(db, file=root / DECIDED, label='decided-hand-movement-install')
         before = e.snapshot(db, 'before-probe-data')
         catalog = e.catalog_snapshot(db, 'before-probe-catalog')
         private = fixture.private_snapshot(e, db, 'before-probe-private')

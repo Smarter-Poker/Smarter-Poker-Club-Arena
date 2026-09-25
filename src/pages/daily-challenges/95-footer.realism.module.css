@@ -1,0 +1,21 @@
+.footer {
+  position: relative;
+  overflow: hidden;
+  border-top-color: rgba(214, 173, 82, 0.55);
+  background:
+    linear-gradient(95deg, rgba(7, 61, 50, 0.39), transparent 58%),
+    linear-gradient(180deg, #0c1110, #050807);
+}
+
+.footer::after {
+  position: absolute;
+  right: -38px;
+  bottom: -72px;
+  width: 210px;
+  height: 210px;
+  border: 1px solid rgba(214, 173, 82, 0.08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 18px rgba(85, 232, 255, 0.016);
+  content: '';
+  pointer-events: none;
+}

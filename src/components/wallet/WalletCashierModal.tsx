@@ -117,6 +117,8 @@ import {
   type PromoSource,
 } from './cashierModes';
 import { cashierRecipientBlock } from '../../lib/cashierRoster';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 import { downloadBlob } from '../../utils/downloadCsv';
@@ -233,25 +235,31 @@ interface WalletCashierModalProps {
   walletType?: CashierWalletType;
 }
 
+/**
+ * A chip figure on the glass. Dan: "NEVER USE DECIMAL POINTS ON ANY FORWARD
+ * FACING PAGE", so a whole balance prints 12,500 and not 12,500.00 (the
+ * render showed ".00" on the Club Bank and on every member row). A cashier
+ * never misstates the ledger, so a figure that really carries cents keeps
+ * them. No test pins two-decimal DISPLAY on this surface: the two-decimal law
+ * is about what is stored and sent, and every amount this cashier sends is a
+ * whole chip already (amountIsWhole).
+ *
+ * Unknown is "...", and a value that is not a number is "Unavailable" - it
+ * used to print a confident 0.00, which is an invented balance.
+ */
 const fmt = (n?: number | null) =>
   n === undefined || n === null
     ? '...'
-    : (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
+    : Number.isFinite(n)
+      ? n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      : 'Unavailable';
 
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** "Club Bank Send" from "club_bank_send". Popup and label casing law. */
-function titleCase(raw: string): string {
-  return raw
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-}
+/* "Club Bank Send" from "club_bank_send" is `enumToTitleCase`, the house
+   transform in src/utils/titleCase.ts. A local copy lived here and lower-cased
+   the tail of every word, so an initialism printed as "Bbj Promo Sweep". Names
+   and notes that come out of a row go through `titleCase` where they print. */
 
 /** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
 function newOpId(): string {
@@ -456,7 +464,8 @@ export default function WalletCashierModal({
        to be `Number(undefined) || 0`, so an RLS refusal or a dropped
        connection printed a confident 0.00 as the Club Bank - and `cap` became
        0, so every send was refused with "The Wallet Only Holds 0 Chips". Left
-       null, the header renders "..." and the note says it could not be read. */
+       null, the header says Unavailable once the read has finished (and "..."
+       only while it is still running), never a number. */
     if (clubReadError) {
       reportError(clubReadError, 'WalletCashierModal.loadClub');
       setBank(null);
@@ -1353,29 +1362,50 @@ export default function WalletCashierModal({
         ? 'AGENT WALLET'
         : 'CLUB BANK';
 
+  /* THE FOOT PAINTS BOTH PLATES, so it is only used where there are genuinely
+     two actions: the send and claim forms, which have a cancel and a confirm.
+     The agent claim list, the two ledgers and the refusal each have exactly
+     one, so they close with the flat cap and print that action as a lit word
+     on the glass. */
+  const formTab = !agentClaimTab && (tab === 'send' || tab === 'claim');
+
   // Belt and braces: this modal is only mounted behind a role check, and the
   // row that opens it only renders for roles that hold the wallet. If it is
   // somehow reached anyway, say so plainly rather than rendering an empty
   // cashier.
   if (!allowed) {
     return (
-      <div className="cbc-overlay" role="dialog" aria-label="Club Bank Cashier" onClick={onClose}>
-        <div className="cbc-panel cbc-panel--denied" onClick={(e) => e.stopPropagation()}>
-          <div className="cbc-title">{cashierTitle}</div>
-          {/* "Co Owners" cannot appear in JSX text here: check-title-case
-              treats a bare `co` as the poker position (cutoff) and rewrites it
-              to "CO". Co-owners are covered by "Owners" in plain speech, and
-              the precise four-role list is in the server's own refusal string,
-              which reaches the screen through an expression rather than page
-              copy and so keeps its casing. */}
-          <p className="cbc-denied">
-            {walletType === 'club_bank'
-              ? 'The Club Bank Is Restricted To Owners, Admins And Super Agents.'
-              : 'This Wallet Belongs To Agents And Club Staff.'}
-          </p>
-          <div className="cbc-actions">
-            <button onClick={onClose}>Close</button>
-          </div>
+      <div
+        className="cbc-overlay wcm-overlay"
+        role="dialog"
+        aria-label="Club Bank Cashier"
+        onClick={onClose}
+      >
+        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+          <SpadeConsole
+            onClose={onClose}
+            as="div"
+            eyebrow={clubName || 'Club Arena'}
+            title={cashierTitle}
+            pill="Locked"
+            pillInk="red"
+            foot="foot"
+          >
+            {/* "Co Owners" cannot appear in JSX text here: check-title-case
+                treats a bare `co` as the poker position (cutoff) and rewrites it
+                to "CO". Co-owners are covered by "Owners" in plain speech, and
+                the precise four-role list is in the server's own refusal string,
+                which reaches the screen through an expression rather than page
+                copy and so keeps its casing. */}
+            <p className="cbc-denied sc-copy sc-copy--center">
+              {walletType === 'club_bank'
+                ? 'The Club Bank Is Restricted To Owners, Admins And Super Agents.'
+                : 'This Wallet Belongs To Agents And Club Staff.'}
+            </p>
+            <div className="cbc-actions">
+              <button onClick={onClose}>Close</button>
+            </div>
+          </SpadeConsole>
         </div>
       </div>
     );
@@ -1384,581 +1414,628 @@ export default function WalletCashierModal({
   return (
     <>
       <div
-        className="cbc-overlay"
+        className="cbc-overlay wcm-overlay"
         role="dialog"
         aria-modal="true"
         aria-label={`${cashierTitle} Cashier`}
         onClick={closeIfIdle}
       >
-        <div className="cbc-panel" onClick={(e) => e.stopPropagation()}>
-          {/* ── Header ───────────────────────────────────────────────────── */}
-          <div className="cbc-head">
-            <div>
-              <div className="cbc-title">{cashierTitle}</div>
+        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+          <SpadeConsole
+            onClose={onClose}
+            as="div"
+            /* The club in the header well's eyebrow, the account engraved
+               beneath it, and the viewer's own standing in the well's painted
+               pill slot. The corner X is gone: the foot and the flat cap carry
+               Close now, at 44px in the thumb zone, exactly as every other
+               surface on this master does. `closeIfIdle` is unchanged and is
+               still what the overlay, the Escape key and every Close calls. */
+            eyebrow={clubName || 'Club Arena'}
+            title={cashierTitle}
+            pill={roleLabel(viewerRole)}
+            pillInk="blue"
+            foot={formTab ? 'plates' : 'foot'}
+            plates={
+              formTab
+                ? {
+                    secondary: {
+                      label: confirming ? 'Go Back' : 'Cancel',
+                      disabled: inFlight,
+                      onClick: () => (confirming ? setConfirming(false) : closeIfIdle()),
+                      'aria-label': confirming ? 'Go Back' : 'Close The Cashier',
+                    },
+                    primary: {
+                      label: sending
+                        ? tab === 'claim'
+                          ? 'Claiming'
+                          : 'Sending'
+                        : confirming
+                          ? tab === 'claim'
+                            ? 'Yes, Claim It'
+                            : 'Yes, Send It'
+                          : tab === 'claim'
+                            ? 'Claim Chips'
+                            : 'Send Chips',
+                      ink: canSend ? 'white' : 'muted',
+                      disabled: !canSend,
+                      onClick: onSendPressed,
+                    },
+                  }
+                : undefined
+            }
+          >
+            <div className="cbc-bank">
+              <span>
+                {walletType === 'promo_wallet'
+                  ? promoBalanceLabel(promoSource)
+                  : walletType === 'agent_wallet'
+                    ? 'Agent Wallet Balance'
+                    : 'Club Bank Balance'}
+              </span>
+              <strong aria-live="polite">
+                {bank === null ? (clubLoading ? '...' : 'Unavailable') : fmt(bank)}
+              </strong>
+              {walletType === 'promo_wallet' && clubName && (
+                <em className="cbc-bank-sub">
+                  {promoSource === 'club_pot' ? clubName : `${clubName} Agent Float`}
+                </em>
+              )}
             </div>
-            <button className="cbc-x" onClick={closeIfIdle} disabled={inFlight} aria-label="Close">
-              &times;
-            </button>
-          </div>
 
-          <div className="cbc-bank">
-            <span>
-              {walletType === 'promo_wallet'
-                ? promoBalanceLabel(promoSource)
-                : walletType === 'agent_wallet'
-                  ? 'Agent Wallet Balance'
-                  : 'Club Bank Balance'}
-            </span>
-            <strong aria-live="polite">{bank === null ? '...' : fmt(bank)}</strong>
-            {walletType === 'promo_wallet' && clubName && (
-              <em className="cbc-bank-sub">
-                {promoSource === 'club_pot' ? clubName : `${clubName} Agent Float`}
-              </em>
+            {/* TWO PROMO ACCOUNTS, ONE SWITCH (2026-09-05). Offered only when the
+                viewer can stand at both: a Club Bank role who also holds a
+                personal float. An agent sees their float alone; a bank role with
+                no float sees the pot alone. Both balances are printed on the
+                switch so the one you are NOT looking at is never a mystery. */}
+            {walletType === 'promo_wallet' &&
+              promoSourceFor(viewerRole) === 'club_pot' &&
+              promoFloat !== null && (
+                <div className="cbc-source" role="radiogroup" aria-label="Promo Wallet Source">
+                  <button
+                    role="radio"
+                    aria-checked={promoSource === 'club_pot'}
+                    className={promoSource === 'club_pot' ? 'cbc-source-on' : ''}
+                    onClick={() => {
+                      setPromoSource('club_pot');
+                      setRecipient(null);
+                    }}
+                  >
+                    <span>Club Promo Wallet</span>
+                    <strong>
+                      {promoPot === null ? (clubLoading ? '...' : 'Unavailable') : fmt(promoPot)}
+                    </strong>
+                  </button>
+                  <button
+                    role="radio"
+                    aria-checked={promoSource === 'own_float'}
+                    className={promoSource === 'own_float' ? 'cbc-source-on' : ''}
+                    onClick={() => {
+                      setPromoSource('own_float');
+                      setRecipient(null);
+                    }}
+                  >
+                    <span>My Promo Float</span>
+                    <strong>{fmt(promoFloat)}</strong>
+                  </button>
+                </div>
+              )}
+            {walletType === 'promo_wallet' && (
+              <div className="cbc-note">{promoSourceBlurb(promoSource)}</div>
             )}
-          </div>
 
-          {/* TWO PROMO ACCOUNTS, ONE SWITCH (2026-09-05). Offered only when the
-              viewer can stand at both: a Club Bank role who also holds a
-              personal float. An agent sees their float alone; a bank role with
-              no float sees the pot alone. Both balances are printed on the
-              switch so the one you are NOT looking at is never a mystery. */}
-          {walletType === 'promo_wallet' &&
-            promoSourceFor(viewerRole) === 'club_pot' &&
-            promoFloat !== null && (
-              <div className="cbc-source" role="radiogroup" aria-label="Promo Wallet Source">
-                <button
-                  role="radio"
-                  aria-checked={promoSource === 'club_pot'}
-                  className={promoSource === 'club_pot' ? 'cbc-source-on' : ''}
-                  onClick={() => {
-                    setPromoSource('club_pot');
-                    setRecipient(null);
-                  }}
-                >
-                  <span>Club Promo Wallet</span>
-                  <strong>{promoPot === null ? '...' : fmt(promoPot)}</strong>
-                </button>
-                <button
-                  role="radio"
-                  aria-checked={promoSource === 'own_float'}
-                  className={promoSource === 'own_float' ? 'cbc-source-on' : ''}
-                  onClick={() => {
-                    setPromoSource('own_float');
-                    setRecipient(null);
-                  }}
-                >
-                  <span>My Promo Float</span>
-                  <strong>{fmt(promoFloat)}</strong>
-                </button>
+            {clubUuid === null && !clubLoading && (
+              <div className="cbc-note cbc-note--bad">
+                That Club Could Not Be Resolved, So Nothing Can Be Sent From Here.
               </div>
             )}
-          {walletType === 'promo_wallet' && (
-            <div className="cbc-note">{promoSourceBlurb(promoSource)}</div>
-          )}
 
-          {clubUuid === null && !clubLoading && (
-            <div className="cbc-note cbc-note--bad">
-              That Club Could Not Be Resolved, So Nothing Can Be Sent From Here.
-            </div>
-          )}
-
-          {/* Chip Mint lives HERE and only for a standalone club. A club inside
-              a union has no mint at all - chips flow down from the union. */}
-          {mayMint && (
-            <button className="cbc-mint" onClick={() => setShowMint(true)}>
-              Mint Chips Into The Club Bank
-            </button>
-          )}
-
-          {/* ── Tabs ─────────────────────────────────────────────────────── */}
-          <div className="cbc-tabs" role="tablist">
-            {tabs.map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={tab === t}
-                className={tab === t ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
-                onClick={() => setTab(t)}
-              >
-                {TAB_LABELS[t]}
+            {/* Chip Mint lives HERE and only for a standalone club. A club inside
+                a union has no mint at all - chips flow down from the union. */}
+            {mayMint && (
+              <button className="cbc-mint" onClick={() => setShowMint(true)}>
+                Mint Chips Into The Club Bank
               </button>
-            ))}
-          </div>
+            )}
 
-          <div className="cbc-body">
-            {agentClaimTab ? (
-              /* THE AGENT WALLET'S CLAIM BACK TAB. Not the club bank's kind:
-                 there is no member to pick and no amount to type, because the
-                 only thing an agent may take back is a send they already made,
-                 and only while its ten minute window is open. One row per send,
-                 one tap, and the row disappears when the clock runs out. */
-              <>
-                <div className="cbc-blurb">
-                  {destinationBlurb(walletType, destination, 'claim')}
-                </div>
-                {reversibleLoading && <div className="cbc-empty">Reading Your Recent Sends...</div>}
-                {!reversibleLoading && stillClaimable.length === 0 && (
-                  <div className="cbc-empty">
-                    Nothing To Claim Back. Only Sends Made In The Last Ten Minutes Can Be Undone.
+            {/* ── Tabs ─────────────────────────────────────────────────────── */}
+            <div className="cbc-tabs" role="tablist">
+              {tabs.map((t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={tab === t}
+                  className={tab === t ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
+                  onClick={() => setTab(t)}
+                >
+                  {TAB_LABELS[t]}
+                </button>
+              ))}
+            </div>
+
+            <div className="cbc-body">
+              {agentClaimTab ? (
+                /* THE AGENT WALLET'S CLAIM BACK TAB. Not the club bank's kind:
+                   there is no member to pick and no amount to type, because the
+                   only thing an agent may take back is a send they already made,
+                   and only while its ten minute window is open. One row per send,
+                   one tap, and the row disappears when the clock runs out. */
+                <>
+                  <div className="cbc-blurb">
+                    {destinationBlurb(walletType, destination, 'claim')}
                   </div>
-                )}
-                {stillClaimable.map((row) => {
-                  const left = secondsLeftFor(row);
-                  return (
-                    <div key={row.transaction_id} className="cbc-tx">
-                      <div className="cbc-tx-top">
-                        <span className="cbc-tx-type">{row.to_name}</span>
-                        <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
-                      </div>
-                      <div className="cbc-tx-mid">
-                        <span>Into {titleCase(row.destination)}</span>
-                        <span className="cbc-tx-when">
-                          {Math.floor(left / 60)}m {left % 60}s Left
-                        </span>
-                      </div>
-                      {/* `claimed_back` was fetched and never shown, so a send
-                          already partly reversed elsewhere displayed only its
-                          remainder with no hint that the original was larger -
-                          which reads as the wrong amount having been sent. */}
-                      {Number(row.claimed_back) > 0 && (
-                        <div className="cbc-tx-foot">
-                          <span>
-                            Sent {fmt(row.amount)}, {fmt(row.claimed_back)} Already Claimed Back
+                  {reversibleLoading && (
+                    <div className="cbc-empty">Reading Your Recent Sends...</div>
+                  )}
+                  {!reversibleLoading && stillClaimable.length === 0 && (
+                    <div className="cbc-empty">
+                      Nothing To Claim Back. Only Sends Made In The Last Ten Minutes Can Be Undone.
+                    </div>
+                  )}
+                  {stillClaimable.map((row) => {
+                    const left = secondsLeftFor(row);
+                    return (
+                      <div key={row.transaction_id} className="cbc-tx">
+                        <div className="cbc-tx-top">
+                          <span className="cbc-tx-type">{titleCase(row.to_name)}</span>
+                          <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
+                        </div>
+                        <div className="cbc-tx-mid">
+                          <span>Into {enumToTitleCase(row.destination)}</span>
+                          <span className="cbc-tx-when">
+                            {Math.floor(left / 60)}m {left % 60}s Left
                           </span>
+                        </div>
+                        {/* `claimed_back` was fetched and never shown, so a send
+                            already partly reversed elsewhere displayed only its
+                            remainder with no hint that the original was larger -
+                            which reads as the wrong amount having been sent. */}
+                        {Number(row.claimed_back) > 0 && (
+                          <div className="cbc-tx-foot">
+                            <span>
+                              Sent {fmt(row.amount)}, {fmt(row.claimed_back)} Already Claimed Back
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          className="cbc-undo"
+                          disabled={claimingId !== null}
+                          onClick={() => void claimBack(row)}
+                        >
+                          {claimingId === row.transaction_id
+                            ? 'Claiming...'
+                            : `Claim Back ${fmtWhole(row.remaining)} Chips`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <div className="cbc-actions">
+                    <button disabled={inFlight} onClick={closeIfIdle}>
+                      Close
+                    </button>
+                  </div>
+                </>
+              ) : tab === 'send' || tab === 'claim' ? (
+                <>
+                  {/* Destination (send) or source (claim) */}
+                  <div className="cbc-field">
+                    <label className="cbc-label">
+                      {tab === 'claim' ? 'Claim From' : 'Send Into'}
+                    </label>
+                    <div className="cbc-seg">
+                      {destinations.map((key) => (
+                        <button
+                          key={key}
+                          className={destination === key ? 'cbc-seg-on' : ''}
+                          onClick={() => setDestination(key)}
+                        >
+                          {DESTINATION_LABELS[key]}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="cbc-blurb">
+                      {destinationBlurb(walletType, destination, tab)}
+                    </div>
+                  </div>
+
+                  {/* Recipient (send) or holder (claim) */}
+                  <div className="cbc-field">
+                    <label className="cbc-label" htmlFor="cbc-search">
+                      {tab === 'claim' ? 'Claim From Member' : 'Recipient'}
+                    </label>
+                    <input
+                      id="cbc-search"
+                      className="cbc-input"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder={
+                        AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
+                      }
+                      aria-label="Search Recipients"
+                    />
+                    <div className="cbc-list">
+                      {membersLoading && <div className="cbc-empty">Loading Members...</div>}
+                      {!membersLoading && eligible.length === 0 && (
+                        <div className="cbc-empty">
+                          {members.length === 0
+                            ? 'No Members In This Club Yet.'
+                            : 'No Members Match That Search.'}
                         </div>
                       )}
-                      <button
-                        className="cbc-undo"
-                        disabled={claimingId !== null}
-                        onClick={() => void claimBack(row)}
-                      >
-                        {claimingId === row.transaction_id
-                          ? 'Claiming...'
-                          : `Claim Back ${fmtWhole(row.remaining)} Chips`}
-                      </button>
+                      {eligible.map((m) => {
+                        const block = blockFor(m);
+                        return (
+                          <button
+                            key={m.user_id}
+                            className={
+                              block
+                                ? 'cbc-member cbc-member--blocked'
+                                : recipient?.user_id === m.user_id
+                                  ? 'cbc-member cbc-member--on'
+                                  : 'cbc-member'
+                            }
+                            onClick={() => {
+                              if (!block) setRecipient(m);
+                            }}
+                            aria-pressed={recipient?.user_id === m.user_id}
+                            aria-disabled={block ? true : undefined}
+                            title={block ? block.reason : undefined}
+                          >
+                            {/* A photograph when there is one; no grey placeholder
+                                square when there is not - the name identifies
+                                the member. */}
+                            {m.avatar_url && (
+                              <img
+                                className="cbc-member-avatar"
+                                src={m.avatar_url}
+                                alt=""
+                                loading="lazy"
+                              />
+                            )}
+                            <div className="cbc-member-info">
+                              <span className="cbc-member-name">
+                                {titleCase(m.name)}
+                                {m.user_id === user?.id && ' (You)'}
+                              </span>
+                              <span className="cbc-member-id">#{m.short_id}</span>
+                            </div>
+                            <span className="cbc-member-role">{roleLabel(m.role)}</span>
+                            {block ? (
+                              <span className="cbc-member-block">{block.label}</span>
+                            ) : (
+                              <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-                <div className="cbc-actions">
-                  <button disabled={inFlight} onClick={closeIfIdle}>
-                    Close
-                  </button>
-                </div>
-              </>
-            ) : tab === 'send' || tab === 'claim' ? (
-              <>
-                {/* Destination (send) or source (claim) */}
-                <div className="cbc-field">
-                  <label className="cbc-label">
-                    {tab === 'claim' ? 'Claim From' : 'Send Into'}
-                  </label>
-                  <div className="cbc-seg">
-                    {destinations.map((key) => (
-                      <button
-                        key={key}
-                        className={destination === key ? 'cbc-seg-on' : ''}
-                        onClick={() => setDestination(key)}
-                      >
-                        {DESTINATION_LABELS[key]}
-                      </button>
-                    ))}
                   </div>
-                  <div className="cbc-blurb">{destinationBlurb(walletType, destination, tab)}</div>
-                </div>
 
-                {/* Recipient (send) or holder (claim) */}
-                <div className="cbc-field">
-                  <label className="cbc-label" htmlFor="cbc-search">
-                    {tab === 'claim' ? 'Claim From Member' : 'Recipient'}
-                  </label>
-                  <input
-                    id="cbc-search"
-                    className="cbc-input"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder={
-                      AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
-                    }
-                    aria-label="Search Recipients"
-                  />
-                  <div className="cbc-list">
-                    {membersLoading && <div className="cbc-empty">Loading Members...</div>}
-                    {!membersLoading && eligible.length === 0 && (
-                      <div className="cbc-empty">
-                        {members.length === 0
-                          ? 'No Members In This Club Yet.'
-                          : 'No Members Match That Search.'}
+                  {/* Amount */}
+                  <div className="cbc-field">
+                    <label className="cbc-label" htmlFor="cbc-amount">
+                      Amount
+                    </label>
+                    <input
+                      id="cbc-amount"
+                      className="cbc-input"
+                      type="number"
+                      /* Whole chips only (see amountIsWhole), so the keypad that
+                         comes up is the numeric one rather than the decimal one
+                         offering a point the field will then reject. */
+                      inputMode="numeric"
+                      min={1}
+                      step={1}
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="Whole Chips"
+                      /* aria-label was the EMPTY STRING, which is worse than
+                         absent: it overrides the visible <label> and announces an
+                         unnamed spin button to a screen reader on the one field
+                         that decides how much money moves. */
+                      aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
+                    />
+
+                    {tab === 'claim' && recipient && (
+                      <div className="cbc-blurb">
+                        {holderHeld === null
+                          ? 'Reading That Wallet...'
+                          : `${titleCase(recipient.name)} Holds ${fmt(holderHeld)} In That Wallet.`}
                       </div>
                     )}
-                    {eligible.map((m) => {
-                      const block = blockFor(m);
+                    {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
+                        FIGURE. `bank ?? 0` turned an unread treasury into a
+                        confident "The Wallet Would Hold -500.00 Afterwards" -
+                        directly beneath a header already showing "..." for the
+                        same number. The send is refused anyway (canSend requires
+                        cap !== null); the sentence just has to stop lying. */}
+                    {amt > 0 && !overCap && bank !== null && (
+                      <div className="cbc-blurb">
+                        {tab === 'claim'
+                          ? `Claiming ${fmt(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
+                          : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
+                      </div>
+                    )}
+                    {overCap && (
+                      <div className="cbc-warn">
+                        {tab === 'claim'
+                          ? `That Wallet Only Holds ${fmt(cap ?? 0)} Chips.`
+                          : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reason — lands in the ledger row, so it is worth typing. */}
+                  <div className="cbc-field">
+                    <label className="cbc-label" htmlFor="cbc-reason">
+                      Reason (Optional)
+                    </label>
+                    <input
+                      id="cbc-reason"
+                      className="cbc-input"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="Shows On The Ledger Entry"
+                      maxLength={140}
+                      aria-label="Reason"
+                    />
+                  </div>
+
+                  {confirming && recipient && (
+                    <div className="cbc-confirmbox" role="alert">
+                      {tab === 'claim'
+                        ? `Claim ${fmt(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
+                        : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${titleCase(recipient.name)}?`}
+                    </div>
+                  )}
+
+                  {/* CANCEL / SEND ARE THE PAINTED PLATES NOW. The pair used to
+                      be two drawn pills at the bottom of the scrolling body,
+                      which put the confirm for a send worth a quarter of the club
+                      bank below the fold on a phone. They are the foot's own art,
+                      always in view, and they carry the same labels, the same
+                      disabled conditions and the same two handlers. */}
+                </>
+              ) : walletType === 'promo_wallet' ? (
+                /* THE PROMO WALLET LEDGER. Every movement on the account the
+                   viewer is standing at, newest first, with the other side of
+                   each one named: the union that funded it, the player it was
+                   handed to, the agent float it topped up. */
+                <>
+                  {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
+
+                  {!ledgerError && promoLedgerTotals && (
+                    <div className="cbc-totals">
+                      <div>
+                        <span>Received</span>
+                        <strong className="cbc-in">{fmt(promoLedgerTotals.in)}</strong>
+                      </div>
+                      <div>
+                        <span>Handed Out</span>
+                        <strong className="cbc-out">{fmt(promoLedgerTotals.out)}</strong>
+                      </div>
+                      <div>
+                        <span>Net</span>
+                        <strong>{fmt(promoLedgerTotals.net)}</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {!ledgerError && (
+                    <div className="cbc-ledger-head">
+                      <span>
+                        {promoLedgerTotal.toLocaleString('en-US')} Entries
+                        {' · '}
+                        {promoSource === 'club_pot' ? 'Club Promo Wallet' : 'Your Promo Float'}
+                      </span>
+                      <button
+                        className="cbc-export"
+                        onClick={exportPromoCsv}
+                        disabled={promoLedger.length === 0}
+                      >
+                        Export CSV
+                      </button>
+                    </div>
+                  )}
+
+                  {!ledgerError &&
+                    promoLedger.map((row) => {
+                      const inbound = row.direction === 'in';
+                      const other =
+                        titleCase(row.counterparty_name) ||
+                        (row.counterparty_type ? enumToTitleCase(row.counterparty_type) : 'Ledger');
+                      const note =
+                        row.notes && !row.notes.startsWith('auto-ledgered') ? row.notes : null;
                       return (
-                        <button
-                          key={m.user_id}
-                          className={
-                            block
-                              ? 'cbc-member cbc-member--blocked'
-                              : recipient?.user_id === m.user_id
-                                ? 'cbc-member cbc-member--on'
-                                : 'cbc-member'
-                          }
-                          onClick={() => {
-                            if (!block) setRecipient(m);
-                          }}
-                          aria-pressed={recipient?.user_id === m.user_id}
-                          aria-disabled={block ? true : undefined}
-                          title={block ? block.reason : undefined}
-                        >
-                          <div
-                            className="cbc-member-avatar"
-                            style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
-                          />
-                          <div className="cbc-member-info">
-                            <span className="cbc-member-name">
-                              {m.name}
-                              {m.user_id === user?.id && ' (You)'}
+                        <div key={row.id} className="cbc-tx">
+                          <div className="cbc-tx-top">
+                            <span className="cbc-tx-type">{enumToTitleCase(row.category)}</span>
+                            <span
+                              className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
+                            >
+                              {inbound ? '+' : '-'}
+                              {fmt(row.amount)}
                             </span>
-                            <span className="cbc-member-id">#{m.short_id}</span>
                           </div>
-                          <span className="cbc-member-role">{roleLabel(m.role)}</span>
-                          {block ? (
-                            <span className="cbc-member-block">{block.label}</span>
-                          ) : (
-                            <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
-                          )}
-                        </button>
+                          <div className="cbc-tx-mid">
+                            <span>{inbound ? `From ${other}` : `To ${other}`}</span>
+                            <span className="cbc-tx-when">
+                              {new Date(row.created_at).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <div className="cbc-tx-foot">
+                            {note && <span>{titleCase(note)}</span>}
+                            {row.actor_name && <span>By {titleCase(row.actor_name)}</span>}
+                            {row.balance_after !== null && row.balance_after !== undefined && (
+                              <span>Wallet After {fmt(Number(row.balance_after))}</span>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
-                  </div>
-                </div>
 
-                {/* Amount */}
-                <div className="cbc-field">
-                  <label className="cbc-label" htmlFor="cbc-amount">
-                    Amount
-                  </label>
-                  <input
-                    id="cbc-amount"
-                    className="cbc-input"
-                    type="number"
-                    /* Whole chips only (see amountIsWhole), so the keypad that
-                       comes up is the numeric one rather than the decimal one
-                       offering a point the field will then reject. */
-                    inputMode="numeric"
-                    min={1}
-                    step={1}
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="Whole Chips"
-                    /* aria-label was the EMPTY STRING, which is worse than
-                       absent: it overrides the visible <label> and announces an
-                       unnamed spin button to a screen reader on the one field
-                       that decides how much money moves. */
-                    aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
-                  />
-
-                  {tab === 'claim' && recipient && (
-                    <div className="cbc-blurb">
-                      {holderHeld === null
-                        ? 'Reading That Wallet...'
-                        : `${recipient.name} Holds ${fmt(holderHeld)} In That Wallet.`}
+                  {!ledgerError && !ledgerLoading && promoLedger.length === 0 && (
+                    <div className="cbc-empty">
+                      Nothing Has Moved Through This Promo Wallet Yet. A Union Promo Send, A Jackpot
+                      Promo Sweep Or A Hand Out Writes A Row Here.
                     </div>
                   )}
-                  {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
-                      FIGURE. `bank ?? 0` turned an unread treasury into a
-                      confident "The Wallet Would Hold -500.00 Afterwards" -
-                      directly beneath a header already showing "..." for the
-                      same number. The send is refused anyway (canSend requires
-                      cap !== null); the sentence just has to stop lying. */}
-                  {amt > 0 && !overCap && bank !== null && (
-                    <div className="cbc-blurb">
-                      {tab === 'claim'
-                        ? `Claiming ${fmt(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
-                        : `Sending ${fmt(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
-                    </div>
-                  )}
-                  {overCap && (
-                    <div className="cbc-warn">
-                      {tab === 'claim'
-                        ? `That Wallet Only Holds ${fmt(cap ?? 0)} Chips.`
-                        : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
-                    </div>
-                  )}
-                </div>
-
-                {/* Reason — lands in the ledger row, so it is worth typing. */}
-                <div className="cbc-field">
-                  <label className="cbc-label" htmlFor="cbc-reason">
-                    Reason (Optional)
-                  </label>
-                  <input
-                    id="cbc-reason"
-                    className="cbc-input"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Shows On The Ledger Entry"
-                    maxLength={140}
-                    aria-label="Reason"
-                  />
-                </div>
-
-                {confirming && recipient && (
-                  <div className="cbc-confirmbox" role="alert">
-                    {tab === 'claim'
-                      ? `Claim ${fmt(amt)} Chips From ${recipient.name} Back Into The Club Bank?`
-                      : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${recipient.name}?`}
-                  </div>
-                )}
-
-                <div className="cbc-actions">
-                  <button
-                    disabled={inFlight}
-                    onClick={() => (confirming ? setConfirming(false) : closeIfIdle())}
-                  >
-                    {confirming ? 'Go Back' : 'Cancel'}
-                  </button>
-                  <button className="cbc-confirm" disabled={!canSend} onClick={onSendPressed}>
-                    {sending
-                      ? tab === 'claim'
-                        ? 'Claiming...'
-                        : 'Sending...'
-                      : confirming
-                        ? tab === 'claim'
-                          ? 'Yes, Claim It'
-                          : 'Yes, Send It'
-                        : tab === 'claim'
-                          ? 'Claim Chips'
-                          : 'Send Chips'}
-                  </button>
-                </div>
-              </>
-            ) : walletType === 'promo_wallet' ? (
-              /* THE PROMO WALLET LEDGER. Every movement on the account the
-                 viewer is standing at, newest first, with the other side of
-                 each one named: the union that funded it, the player it was
-                 handed to, the agent float it topped up. */
-              <>
-                {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
-
-                {!ledgerError && promoLedgerTotals && (
-                  <div className="cbc-totals">
-                    <div>
-                      <span>Received</span>
-                      <strong className="cbc-in">{fmt(promoLedgerTotals.in)}</strong>
-                    </div>
-                    <div>
-                      <span>Handed Out</span>
-                      <strong className="cbc-out">{fmt(promoLedgerTotals.out)}</strong>
-                    </div>
-                    <div>
-                      <span>Net</span>
-                      <strong>{fmt(promoLedgerTotals.net)}</strong>
-                    </div>
-                  </div>
-                )}
-
-                {!ledgerError && (
-                  <div className="cbc-ledger-head">
-                    <span>
-                      {promoLedgerTotal.toLocaleString('en-US')} Entries
-                      {' · '}
-                      {promoSource === 'club_pot' ? 'Club Promo Wallet' : 'Your Promo Float'}
-                    </span>
+                  {ledgerLoading && <div className="cbc-empty">Loading Ledger...</div>}
+                  {!ledgerError && !ledgerLoading && promoLedger.length < promoLedgerTotal && (
                     <button
-                      className="cbc-export"
-                      onClick={exportPromoCsv}
-                      disabled={promoLedger.length === 0}
+                      className="cbc-more"
+                      onClick={() =>
+                        clubUuid && loadPromoLedger(clubUuid, promoLedger.length, promoSource)
+                      }
                     >
-                      Export CSV
+                      Load More
+                    </button>
+                  )}
+                  <div className="cbc-actions">
+                    <button disabled={inFlight} onClick={closeIfIdle}>
+                      Close
                     </button>
                   </div>
-                )}
+                </>
+              ) : (
+                <>
+                  {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
 
-                {!ledgerError &&
-                  promoLedger.map((row) => {
-                    const inbound = row.direction === 'in';
-                    const other =
-                      row.counterparty_name ||
-                      (row.counterparty_type ? titleCase(row.counterparty_type) : 'Ledger');
-                    const note =
-                      row.notes && !row.notes.startsWith('auto-ledgered') ? row.notes : null;
-                    return (
-                      <div key={row.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
-                        <div className="cbc-tx-top">
-                          <span className="cbc-tx-type">{titleCase(row.category)}</span>
-                          <span
-                            className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
-                          >
-                            {inbound ? '+' : '-'}
-                            {fmt(row.amount)}
-                          </span>
-                        </div>
-                        <div className="cbc-tx-mid">
-                          <span>{inbound ? `From ${other}` : `To ${other}`}</span>
-                          <span className="cbc-tx-when">
-                            {new Date(row.created_at).toLocaleString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-                        <div className="cbc-tx-foot">
-                          {note && <span>{note}</span>}
-                          {row.actor_name && <span>By {row.actor_name}</span>}
-                          {row.balance_after !== null && row.balance_after !== undefined && (
-                            <span>Wallet After {fmt(Number(row.balance_after))}</span>
-                          )}
-                        </div>
+                  {!ledgerError && ledgerTotals && (
+                    <div className="cbc-totals">
+                      <div>
+                        <span>Into The Bank</span>
+                        <strong className="cbc-in">{fmt(ledgerTotals.into_bank)}</strong>
                       </div>
-                    );
-                  })}
-
-                {!ledgerError && !ledgerLoading && promoLedger.length === 0 && (
-                  <div className="cbc-empty">
-                    Nothing Has Moved Through This Promo Wallet Yet. A Union Promo Send, A Jackpot
-                    Promo Sweep Or A Hand Out Writes A Row Here.
-                  </div>
-                )}
-                {ledgerLoading && <div className="cbc-empty">Loading Ledger...</div>}
-                {!ledgerError && !ledgerLoading && promoLedger.length < promoLedgerTotal && (
-                  <button
-                    className="cbc-more"
-                    onClick={() =>
-                      clubUuid && loadPromoLedger(clubUuid, promoLedger.length, promoSource)
-                    }
-                  >
-                    Load More
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
-
-                {!ledgerError && ledgerTotals && (
-                  <div className="cbc-totals">
-                    <div>
-                      <span>Into The Bank</span>
-                      <strong className="cbc-in">{fmt(ledgerTotals.into_bank)}</strong>
+                      <div>
+                        <span>Out Of The Bank</span>
+                        <strong className="cbc-out">{fmt(ledgerTotals.out_of_bank)}</strong>
+                      </div>
+                      <div>
+                        <span>Net</span>
+                        <strong>{fmt(ledgerTotals.net)}</strong>
+                      </div>
                     </div>
-                    <div>
-                      <span>Out Of The Bank</span>
-                      <strong className="cbc-out">{fmt(ledgerTotals.out_of_bank)}</strong>
-                    </div>
-                    <div>
-                      <span>Net</span>
-                      <strong>{fmt(ledgerTotals.net)}</strong>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {!ledgerError && (
-                  <div className="cbc-ledger-head">
-                    <span>
-                      {ledgerTotal.toLocaleString('en-US')}{' '}
-                      {typeFilter ? `${titleCase(typeFilter)} Entries` : 'Entries'}
-                    </span>
-                    <button
-                      className="cbc-export"
-                      onClick={exportCsv}
-                      disabled={ledger.length === 0}
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-                )}
-
-                {!ledgerError && ledgerTypes.length > 0 && (
-                  <div className="cbc-chips">
-                    <button
-                      className={typeFilter === null ? 'cbc-chip cbc-chip--on' : 'cbc-chip'}
-                      onClick={() => setTypeFilter(null)}
-                    >
-                      Everything
-                    </button>
-                    {ledgerTypes.map((t) => (
+                  {!ledgerError && (
+                    <div className="cbc-ledger-head">
+                      <span>
+                        {ledgerTotal.toLocaleString('en-US')}{' '}
+                        {typeFilter ? `${enumToTitleCase(typeFilter)} Entries` : 'Entries'}
+                      </span>
                       <button
-                        key={t}
-                        className={typeFilter === t ? 'cbc-chip cbc-chip--on' : 'cbc-chip'}
-                        onClick={() => setTypeFilter(t)}
+                        className="cbc-export"
+                        onClick={exportCsv}
+                        disabled={ledger.length === 0}
                       >
-                        {titleCase(t)}
+                        Export CSV
                       </button>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  )}
 
-                {!ledgerError &&
-                  ledger.map((row) => {
-                    const dest = row.metadata?.destination as string | undefined;
-                    const src = row.metadata?.source as string | undefined;
-                    return (
-                      <div
-                        key={row.id}
-                        className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}
+                  {!ledgerError && ledgerTypes.length > 0 && (
+                    <div className="cbc-chips">
+                      <button
+                        className={typeFilter === null ? 'cbc-chip cbc-chip--on' : 'cbc-chip'}
+                        onClick={() => setTypeFilter(null)}
                       >
-                        <div className="cbc-tx-top">
-                          <span className="cbc-tx-type">{titleCase(row.transaction_type)}</span>
-                          <span className="cbc-tx-amount">{fmt(row.amount)}</span>
-                        </div>
-                        <div className="cbc-tx-mid">
-                          <span>
-                            {row.from_name || 'Club Bank'}
-                            {' → '}
-                            {row.transaction_type === 'club_bank_claim'
-                              ? 'Club Bank'
-                              : row.to_name || (dest ? titleCase(dest) : 'Club Bank')}
-                          </span>
-                          <span className="cbc-tx-when">
-                            {new Date(row.created_at).toLocaleString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-                        <div className="cbc-tx-foot">
-                          {row.notes && <span>{row.notes}</span>}
-                          {dest && <span>Into {titleCase(dest)}</span>}
-                          {src && row.transaction_type === 'club_bank_claim' && (
-                            <span>From {titleCase(src)}</span>
-                          )}
-                          {row.balance_after !== null && (
-                            <span>Bank After {fmt(Number(row.balance_after))}</span>
-                          )}
-                          {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
-                        </div>
-                        {row.reversible && (
-                          <button
-                            className="cbc-undo"
-                            disabled={reversingId !== null}
-                            onClick={() => void reverse(row)}
-                          >
-                            {reversingId === row.id ? 'Reversing...' : 'Reverse This Send'}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                        Everything
+                      </button>
+                      {ledgerTypes.map((t) => (
+                        <button
+                          key={t}
+                          className={typeFilter === t ? 'cbc-chip cbc-chip--on' : 'cbc-chip'}
+                          onClick={() => setTypeFilter(t)}
+                        >
+                          {enumToTitleCase(t)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                {!ledgerError && !ledgerLoading && ledger.length === 0 && (
-                  <div className="cbc-empty">No Chip Movements Recorded Yet.</div>
-                )}
-                {ledgerLoading && <div className="cbc-empty">Loading Ledger...</div>}
-                {!ledgerError && !ledgerLoading && ledger.length < ledgerTotal && (
-                  <button
-                    className="cbc-more"
-                    onClick={() => clubUuid && loadLedger(clubUuid, ledger.length, typeFilter)}
-                  >
-                    Load More
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+                  {!ledgerError &&
+                    ledger.map((row) => {
+                      const dest = row.metadata?.destination as string | undefined;
+                      const src = row.metadata?.source as string | undefined;
+                      return (
+                        <div
+                          key={row.id}
+                          className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}
+                        >
+                          <div className="cbc-tx-top">
+                            <span className="cbc-tx-type">
+                              {enumToTitleCase(row.transaction_type)}
+                            </span>
+                            <span className="cbc-tx-amount">{fmt(row.amount)}</span>
+                          </div>
+                          <div className="cbc-tx-mid">
+                            <span>
+                              {titleCase(row.from_name) || 'Club Bank'}
+                              {' → '}
+                              {row.transaction_type === 'club_bank_claim'
+                                ? 'Club Bank'
+                                : titleCase(row.to_name) ||
+                                  (dest ? enumToTitleCase(dest) : 'Club Bank')}
+                            </span>
+                            <span className="cbc-tx-when">
+                              {new Date(row.created_at).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <div className="cbc-tx-foot">
+                            {row.notes && <span>{titleCase(row.notes)}</span>}
+                            {dest && <span>Into {enumToTitleCase(dest)}</span>}
+                            {src && row.transaction_type === 'club_bank_claim' && (
+                              <span>From {enumToTitleCase(src)}</span>
+                            )}
+                            {row.balance_after !== null && (
+                              <span>Bank After {fmt(Number(row.balance_after))}</span>
+                            )}
+                            {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
+                          </div>
+                          {row.reversible && (
+                            <button
+                              className="cbc-undo"
+                              disabled={reversingId !== null}
+                              onClick={() => void reverse(row)}
+                            >
+                              {reversingId === row.id ? 'Reversing...' : 'Reverse This Send'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                  {!ledgerError && !ledgerLoading && ledger.length === 0 && (
+                    <div className="cbc-empty">No Chip Movements Recorded Yet.</div>
+                  )}
+                  {ledgerLoading && <div className="cbc-empty">Loading Ledger...</div>}
+                  {!ledgerError && !ledgerLoading && ledger.length < ledgerTotal && (
+                    <button
+                      className="cbc-more"
+                      onClick={() => clubUuid && loadLedger(clubUuid, ledger.length, typeFilter)}
+                    >
+                      Load More
+                    </button>
+                  )}
+                  <div className="cbc-actions">
+                    <button disabled={inFlight} onClick={closeIfIdle}>
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </SpadeConsole>
         </div>
       </div>
 

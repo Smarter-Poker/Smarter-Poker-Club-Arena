@@ -6,8 +6,8 @@ import {
   CASINO_CONTROL_ICON_STATES,
   CASINO_CONTROL_ICON_VARIANTS,
   CasinoControlIcon,
-  MissionInstrumentGlyph,
-} from '../../src/components/challenges';
+} from '../../src/components/challenges/CasinoControlIcon';
+import { MissionInstrumentGlyph } from '../../src/components/challenges/MissionInstrumentGlyph';
 import { CHALLENGE_TYPES } from '../../src/services/DailyChallengeService';
 
 const root = process.cwd();
@@ -45,7 +45,9 @@ describe('CasinoControlIcon', () => {
       view.unmount();
     }
 
-    expect(CASINO_CONTROL_ICON_VARIANTS).toHaveLength(19);
+    // 'sign-in' retired with the page's signed-out panel (AuthGuard owns it).
+    expect(CASINO_CONTROL_ICON_VARIANTS).toHaveLength(18);
+    expect(CASINO_CONTROL_ICON_VARIANTS).not.toContain('sign-in');
     expect(signatures.size).toBe(CASINO_CONTROL_ICON_VARIANTS.length);
   });
 

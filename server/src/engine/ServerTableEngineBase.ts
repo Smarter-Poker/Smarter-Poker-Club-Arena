@@ -128,6 +128,7 @@ import {
   type TurnFSMState,
 } from './StateMachine.js';
 import { headsUpButtonSeat } from './headsUpButton.js';
+import { deadButtonPositions, type BlindSeats } from './deadButton.js';
 import { isFixedLimitVariant } from './BettingStructure.js';
 import {
   KILL_OFF,
@@ -462,6 +463,14 @@ export abstract class ServerTableEngineBase {
    * hand_history on restart alongside the button, for the same reason.
    */
   protected lastBigBlindSeat: number = 0;
+  /**
+   * The small blind SEAT of the last hand dealt here: the seat that posted it,
+   * or the seat it was dead at, or the button itself heads-up. On a tournament
+   * table of three or more the next button is THIS seat (TDA Rule 30, the dead
+   * button, see deadButton.ts), so it is carried the same way lastBigBlindSeat
+   * is and restored from hand_history beside it.
+   */
+  protected lastSmallBlindSeat: number = 0;
   protected consecutiveErrors: number = 0;
 
   // Bankroll Management: Track how many times a horse has re-bought at this table.
@@ -7164,8 +7173,59 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const nextButton = this.predictButtonSeat(roster);
-    return roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+    return this.predictBlindSeats(roster)?.smallBlindSeat ?? -1;
+  }
+
+  /**
+   * THE DEAD BUTTON, AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30).
+   *
+   * On a tournament table of three or more the blinds advance and the button
+   * follows: the big blind moves one live seat, the small blind is the seat
+   * that posted the big blind last hand (dead if it has emptied) and the
+   * button is the seat that held the small blind last hand (dead if it has
+   * emptied). See deadButton.ts for the worked examples. Returns null when the
+   * rule does not apply and the caller keeps the moving-button rotation:
+   *
+   *   - a CASH table. GameRulesModal publishes the moving-button convention
+   *     for cash ("The Button Moves Clockwise Among Eligible Players, Skipping
+   *     Empty Seats") and its entry rules (wait for the big blind or post,
+   *     never enter on the button or the small blind) are built on it;
+   *   - heads-up, which headsUpButtonSeat already handles;
+   *   - a table with no previous blinds to advance from (its first hand, or a
+   *     restart whose history could not be read).
+   */
+  protected tournamentDeadButtonSeats(roster: SeatedPlayer[]): BlindSeats | null {
+    if (!this.isTournamentTable() || roster.length < 3) return null;
+    return deadButtonPositions(
+      roster.map((p) => p.seat_number),
+      { smallBlind: this.lastSmallBlindSeat, bigBlind: this.lastBigBlindSeat }
+    );
+  }
+
+  /**
+   * The button and both blind seats for the hand about to be dealt, over the
+   * roster it will be dealt to. ONE definition: the wait-for-BB gate, the
+   * cash hold-outs, the tournament arrival rule and the deal itself all read
+   * this, so no two of them can disagree about who is about to post.
+   *
+   * `smallBlindSeat` is the SEAT the small blind position is at, occupied or
+   * not; `smallBlind` is the seat that actually posts it, null when it is
+   * dead. Outside the tournament dead-button rule the two are always the same
+   * occupied seat.
+   */
+  protected predictBlindSeats(roster: SeatedPlayer[]): BlindSeats | null {
+    if (roster.length < 2) return null;
+    const dead = this.tournamentDeadButtonSeats(roster);
+    if (dead) return dead;
+    const button = this.predictButtonSeat(roster);
+    if (button <= 0) return null;
+    const smallBlind = roster.length === 2 ? button : this.getNextSeat(button, roster);
+    return {
+      button,
+      smallBlindSeat: smallBlind,
+      smallBlind,
+      bigBlind: this.getNextSeat(smallBlind, roster),
+    };
   }
 
   /**
@@ -7199,6 +7259,10 @@ export abstract class ServerTableEngineBase {
    * computation in the dealing loop was introduced to kill.
    */
   protected predictButtonSeat(roster: SeatedPlayer[]): number {
+    // Tournament, three or more: the button follows the blinds (TDA Rule 30,
+    // tournamentDeadButtonSeats). Everything below is the moving button.
+    const dead = this.tournamentDeadButtonSeats(roster);
+    if (dead) return dead.button;
     const eligible = this.buttonEligible(roster);
     const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
     if (sortedSeats.length === 0) return -1;
@@ -7254,9 +7318,7 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const nextButton = this.predictButtonSeat(roster);
-    const sbSeat = roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
-    return this.getNextSeat(sbSeat, roster);
+    return this.predictBlindSeats(roster)?.bigBlind ?? -1;
   }
 
   protected getNextSeat(fromSeat: number, players: SeatedPlayer[]): number {
@@ -8857,13 +8919,20 @@ export abstract class ServerTableEngineBase {
   private async restoreButtonFromHistory(): Promise<void> {
     try {
       // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
+      /**
+       * TWO ROWS, NOT ONE (2026-09-25, the dead button at every table size).
+       * The last hand's small blind can be DEAD - nobody posted it because the
+       * seat had just emptied - and then the only record of WHICH seat it was
+       * at is the big blind post of the hand before. One extra row on the same
+       * index is what keeps the next button honest across a restart in that
+       * window.
+       */
       const { data, error } = await supabase
         .from('hand_history')
-        .select('button_seat, players')
+        .select('button_seat, players, actions')
         .eq('table_id', this.tableId)
         .order('hand_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(2);
 
       if (error) {
         console.warn(
@@ -8873,7 +8942,13 @@ export abstract class ServerTableEngineBase {
         return;
       }
 
-      const row = data as { button_seat?: number; players?: Array<{ seat?: number }> } | null;
+      type HistoryRow = {
+        button_seat?: number;
+        players?: Array<{ seat?: number }>;
+        actions?: Array<{ seat?: number; action?: string; origin?: string }>;
+      };
+      const rows = (Array.isArray(data) ? data : data ? [data] : []) as HistoryRow[];
+      const row = rows[0] ?? null;
       const seat = Number(row?.button_seat ?? 0);
       /**
        * The big blind seat comes back with the button, derived from the same
@@ -8889,10 +8964,33 @@ export abstract class ServerTableEngineBase {
             .filter((s) => Number.isFinite(s) && s > 0)
             .sort((a, b) => a - b)
         : [];
+      /**
+       * The blind POSTS are the exact witness. `actions` carries every forced
+       * post as {seat, action: 'sb' | 'bb', origin: 'forced'} (HandEvents,
+       * FORCED_BETS_POSTED), so the seat that posted each blind is read
+       * rather than re-walked, and a dead small blind shows up as a hand with
+       * a big blind post and no small blind post. The walk stays as the
+       * fallback for a row written before the posts were recorded.
+       */
+      const postedSeat = (r: HistoryRow | null | undefined, kind: 'sb' | 'bb'): number => {
+        if (!Array.isArray(r?.actions)) return 0;
+        for (const a of r.actions) {
+          if (a && a.origin === 'forced' && a.action === kind) {
+            const s = Number(a.seat);
+            if (Number.isFinite(s) && s > 0) return s;
+          }
+        }
+        return 0;
+      };
       if (seats.length >= 2 && Number.isFinite(seat) && seat > 0) {
         const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
-        const sb = seats.length === 2 ? seat : nextOf(seat);
-        this.lastBigBlindSeat = nextOf(sb);
+        const walkedSb = seats.length === 2 ? seat : nextOf(seat);
+        const bbPosted = postedSeat(row, 'bb');
+        const sbPosted = postedSeat(row, 'sb');
+        this.lastBigBlindSeat = bbPosted > 0 ? bbPosted : nextOf(walkedSb);
+        // A dead small blind sat where the hand before posted its big blind.
+        const deadSbSeat = bbPosted > 0 && sbPosted === 0 ? postedSeat(rows[1], 'bb') : 0;
+        this.lastSmallBlindSeat = sbPosted > 0 ? sbPosted : deadSbSeat > 0 ? deadSbSeat : walkedSb;
       }
       if (Number.isFinite(seat) && seat > 0) {
         this.lastButtonSeat = seat;

@@ -83,11 +83,17 @@ describe('the button comes back to where it was', () => {
     // hand and somebody posts the big blind twice. Same row, same query, no
     // extra round trip; the pin stays exact so a silent widening is still a
     // visible change here.
+    // 2026-09-25 (the dead button at every table size): `actions` joins the
+    // read so the seats that POSTED each blind come back exactly, and the
+    // last TWO hands are read so a dead small blind (a big blind post with no
+    // small blind post) can be placed at the seat the hand before posted its
+    // big blind from. Still one query on the same index.
     const at = BASE.indexOf('private async restoreButtonFromHistory');
     const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
     expect(body).toMatch(/from\('hand_history'\)/);
-    expect(body).toMatch(/select\('button_seat, players'\)/);
+    expect(body).toMatch(/select\('button_seat, players, actions'\)/);
     expect(body).toMatch(/order\('hand_number', \{ ascending: false \}\)/);
+    expect(body).toMatch(/\.limit\(2\)/);
   });
 
   it('a table that cannot read its history still deals', () => {

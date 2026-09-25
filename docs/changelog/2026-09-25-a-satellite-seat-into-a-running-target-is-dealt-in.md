@@ -138,3 +138,42 @@ consults the clock, so this tournament - stalled at level 3 with no hand dealt
 since 2026-09-22 13:46 - still reports late registration OPEN four days after
 its start, and another satellite could deliver another entry into it today.
 That is a second defect at a different owner and wants its own change.
+
+## The first install was refused, correctly, and what changed
+
+Dispatched at 2026-09-25 22:29:52Z from the merged bytes
+(`apply-merged-migration`, run 36196987863). The database refused it and rolled
+the whole transaction back:
+
+```
+[apply] not present in schema_migrations; applying as ONE transaction
+[apply] the migration did not commit after 61ms
+[apply] ERROR P0001: SATELLITE_SEAT_PREIMAGE_CHANGED:
+        fn_seat_late_registrant is not the canonical seat authority this migration calls
+```
+
+Nothing committed and the version stayed absent. The cause was the assertion,
+not the change: a concurrent delivery had re-declared `fn_seat_late_registrant`
+between 21:00 and 22:30 with an added `SET statement_timeout` and an unchanged
+body, which moved `md5(prosrc)` from `51a32547...` to `28b68b7f...`.
+
+`fn_seat_late_registrant` is CALLED here, not replaced, so what has to hold is
+its contract. The preimage now pins exactly what this change depends on - a
+`SECURITY DEFINER` `(uuid, uuid) -> jsonb` owned by `postgres` whose body takes
+`fn_ca_lock_tournament_seat_acquisition` and reaches
+`fn_seat_late_registrant_before_terminal_seat_gate` - so a
+`fn_seat_late_registrant` that stopped taking the lane still refuses this
+migration, while a re-declaration that changes nothing this depends on does not.
+The byte-for-byte preimage on `fn_ca_settle_satellite_cohort`, the function this
+migration actually replaces, is unchanged.
+
+## During a maintenance freeze
+
+`fn_ca_settle_satellite_cohort` has no freeze check of its own, and
+`fn_ca_lock_tournament_seat_acquisition` answers
+`{"ok": false, "reason": "platform_frozen"}` during the hourly break - observed
+in the 22:31Z re-probe, which returned exactly that and left the felt at
+120,000.00. The seat delivery therefore raises and the settlement rolls back, so
+a satellite that finishes inside a break settles after the thaw rather than
+admitting a winner the frozen platform cannot seat. The settlement is idempotent
+on its own receipt, so that is a retry, not a loss.

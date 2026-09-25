@@ -127,9 +127,19 @@ describe('a satellite seat into a running target is dealt in', () => {
   });
 
   it('the migration replaces exactly the definition it was written against', () => {
+    // The function it REPLACES is pinned byte-for-byte.
     expect(SQL).toContain("md5(p.prosrc) = '86709c353867d59865ba23c5bdbcd7a8'");
-    expect(SQL).toContain("md5(p.prosrc) = '51a3254789bfdc2c1f80994d0c26ad6a'");
     expect(SQL).toContain('SATELLITE_SEAT_PREIMAGE_CHANGED');
+    // The function it CALLS is pinned by its contract, which is what this
+    // change depends on: a SECURITY DEFINER authority owned by postgres that
+    // takes the canonical lane and reaches the terminal seat gate. A byte hash
+    // there refused the first install for an unrelated re-declaration.
+    expect(SQL).toContain("p.proname = 'fn_seat_late_registrant'");
+    expect(SQL).toContain("pg_get_function_identity_arguments(p.oid) = 'uuid, uuid'");
+    expect(SQL).toContain('p.prosecdef');
+    expect(SQL).toContain("pg_get_userbyid(p.proowner) = 'postgres'");
+    expect(SQL).toContain("p.prosrc LIKE '%fn_ca_lock_tournament_seat_acquisition(%'");
+    expect(SQL).toContain("p.prosrc LIKE '%fn_seat_late_registrant_before_terminal_seat_gate(%'");
   });
 
   it('the settlement lane doctrine is re-proved with the new call edge', () => {

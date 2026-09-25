@@ -14,12 +14,11 @@ import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 
-export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
-
 /* A union-scoped call names its union. Every method below used to default to
-   MIDWAY_UNION_ID, so a surface that had not resolved its union read, swept or
-   settled one hardcoded union's books instead of saying it had none. A missing
-   id is refused before anything is asked of the database. */
+   one hardcoded union (Midway), and so did UnionOpsPanel, so a surface that
+   had not resolved its union read, swept or settled that union's books instead
+   of saying it had none. The constant is gone from the client; a missing id is
+   refused before anything is asked of the database. */
 function requireUnionId(unionId: string | null | undefined): void {
   if (typeof unionId !== 'string' || unionId.trim() === '') {
     throw new Error('No Union Selected');
@@ -409,6 +408,7 @@ export const UnionOpsService = {
 
   // GOVERNANCE
   async getClubExitBlockers(unionId: string, clubId: string): Promise<ExitBlockers | null> {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_club_exit_blockers', {
       p_union_id: unionId,
       p_club_id: clubId,
@@ -421,6 +421,7 @@ export const UnionOpsService = {
   },
 
   async expelClub(unionId: string, clubId: string, reason?: string, force = false) {
+    requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_expel_club', {
       p_union_id: unionId,
       p_club_id: clubId,

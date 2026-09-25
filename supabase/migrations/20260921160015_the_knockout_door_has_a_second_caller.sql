@@ -78,6 +78,15 @@
 -- policy). This migration carries no DDL at all; it is one transaction because
 -- a half-applied settlement is worse than none.
 
+-- THIS FILE CREATES NO PERSISTENT OBJECT - it drives five busts through
+-- fn_eliminate_tournament_player_atomic and records what it did - so it states
+-- its own proof, the convention
+-- tests/a-merged-migration-must-be-live.law.test.ts binds from 20260920. The
+-- resolved financial_alerts row it writes names this migration, and the five
+-- candidates it settled are no longer pending. Both were run read-only against
+-- production on 2026-09-25 and both returned true.
+-- @live-proof: EXISTS (SELECT 1 FROM public.financial_alerts WHERE source = 'the_knockout_door_has_a_second_caller' AND context->>'migration' = '20260921160015')
+-- @live-proof: (SELECT (context->>'recorded')::int = 5 AND (context->>'prize_paid')::numeric = 0 FROM public.financial_alerts WHERE source = 'the_knockout_door_has_a_second_caller' AND context->>'migration' = '20260921160015')
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 

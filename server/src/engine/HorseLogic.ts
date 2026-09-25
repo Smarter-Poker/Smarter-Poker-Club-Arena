@@ -1680,6 +1680,19 @@ export interface HorseDecideOpts {
   /** disable V16 PLO 3-bet polarity: AAxx 3-bets below the generic bar,
    *  speculative rundowns without AA flat at the margin (default: on) */
   v16PloPolar?: boolean;
+  /** ABLATION ONLY (2026-09-21): v16PloPolar gates two distinct behaviors and
+   *  plo4_v16_polarity pools negative over eight nights, so each one switches
+   *  off alone. This one is the AAxx 3-bet bar 0.04 under the generic bar
+   *  (HorsePreflop, omahaAA === true). Default on; v16PloPolar:false still
+   *  turns it off. Both components reach every Omaha variant (vi.isOmaha);
+   *  the league measures them in plo4. This one has no matchup of its own:
+   *  1 and 0 divergent pairs at 1,000 pairs. See ploPolarityRead. */
+  v16PloPolarAA3Bet?: boolean;
+  /** ABLATION ONLY (2026-09-21): the other v16PloPolar behavior - a hand
+   *  WITHOUT AA inside 0.05 over the 3-bet bar flats instead (HorsePreflop,
+   *  omahaAA === false). Default on; v16PloPolar:false still turns it off.
+   *  Measured by plo4_v16_polarity_flat. See ploPolarityRead. */
+  v16PloPolarFlat?: boolean;
   /** disable the V18 straddle fix: a straddled pot reads as UNOPENED and
    *  opens size off the straddle, instead of folding to dead money the
    *  brain mistook for an open raise (default: enabled) */
@@ -1768,6 +1781,20 @@ export interface HorseDecideOpts {
   /** disable the V23 variant polish: short-deck draw/thin-value recalibration
    *  and plo8 low-only draw discipline (default: enabled) */
   v23Variants?: boolean;
+  /** ABLATION ONLY (2026-09-21): v23Variants gates three behaviors and
+   *  shortdeck_v23 pools negative, so the two a short-deck deal can reach
+   *  switch off alone. This one is the one-pair thin-value bar, 0.03 higher
+   *  in short deck. Default on; v23Variants:false still turns it off.
+   *  Measured by shortdeck_v23_thin_value. The third behavior, the low-only
+   *  draw rule (no implied credit, +0.03 sizing penalty, -0.03 call
+   *  equity), needs a hi-lo deal and no short-deck deal is one, so it needs
+   *  no sub-flag: plo8_v23_lowdraw already measures it alone. */
+  v23SdThinValue?: boolean;
+  /** ABLATION ONLY (2026-09-21): the other short-deck v23Variants behavior -
+   *  a live draw's implied-odds allowance, 0.02 larger in short deck. Default
+   *  on; v23Variants:false still turns it off. Measured by
+   *  shortdeck_v23_draw_credit. */
+  v23SdDrawCredit?: boolean;
   /** disable the V23 spin overlay: 3-max hypers reward aggression — bluff
    *  volume up, value thresholds down a notch (default: enabled). The overlay
    *  is about the STRUCTURE (three-handed, shallow, 3-minute levels), not the
@@ -2392,6 +2419,30 @@ function enforceAuthoritativeDecision(
         : minTo;
   const amount = cents(Math.max(minTo, Math.min(maxTo, requested)));
   return { action: wagerAction, amount, thinkTime: 0 };
+}
+
+/**
+ * ═══ V16 PLO POLARITY, THE READ THE PREFLOP ENGINE CONSUMES (2026-09-21) ═══
+ *
+ * decidePreflopV7 keys its two polarity behaviors to the two values of this
+ * read: `true` (hero holds AA) lowers the 3-bet bar by 0.04, and `false` (no
+ * AA) flats a hand that sits within 0.05 over the bar. `undefined` reaches
+ * neither. That is what lets each behavior switch off alone for ablation:
+ * mapping its own value to `undefined` removes that behavior and nothing
+ * else, and HorsePreflop does not change.
+ *
+ * With every flag at its default this is exactly the expression it replaced:
+ * `v16PloPolar && isOmaha ? holdsAA : undefined`.
+ */
+export function ploPolarityRead(
+  cards: readonly Card[],
+  isOmaha: boolean,
+  opts: Pick<HorseDecideOpts, 'v16PloPolar' | 'v16PloPolarAA3Bet' | 'v16PloPolarFlat'>
+): boolean | undefined {
+  if ((opts.v16PloPolar ?? true) === false || !isOmaha) return undefined;
+  const holdsAA = cards.filter((hc) => hc.rank === 'A').length >= 2;
+  if (holdsAA) return (opts.v16PloPolarAA3Bet ?? true) !== false ? true : undefined;
+  return (opts.v16PloPolarFlat ?? true) !== false ? false : undefined;
 }
 
 export class HorseLogic {
@@ -3966,10 +4017,7 @@ export class HorseLogic {
       phase6,
       // V16 PLO POLARITY: AAxx is the premium the generic percentile cannot
       // see past double-counted side cards; rundowns without it flat more.
-      omahaAA:
-        (opts.v16PloPolar ?? true) !== false && vi.isOmaha
-          ? player.cards.filter((hc) => hc.rank === 'A').length >= 2
-          : undefined,
+      omahaAA: ploPolarityRead(player.cards, vi.isOmaha, opts),
       v13: opts.v13 !== false,
       // V34: the button is not a second cutoff. classifyPosition merges the
       // two into 'late'; the dealer seat tells them apart exactly.
@@ -5123,7 +5171,11 @@ export class HorseLogic {
     // draws complete more — draws earn a touch more implied credit, while
     // one-pair thin value shrinks (everyone has more).
     const useV23Var = (opts.v23Variants ?? true) !== false;
-    if (useV23Var && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
+    // 2026-09-21: the two short-deck behaviors switch off alone for ablation
+    // (shortdeck_v23_thin_value, shortdeck_v23_draw_credit). Both default on.
+    const v23SdThin = useV23Var && (opts.v23SdThinValue ?? true) !== false;
+    const v23SdDraw = useV23Var && (opts.v23SdDrawCredit ?? true) !== false;
+    if (v23SdThin && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
     // ═══ V18 SELF-IMAGE ═══ the table watched hero's recent line too. A
     // horse coming off a bluff-heavy stretch gets called down - throttle the
     // bluffs until the image cools; a rock's rare bets get instant credit -
@@ -6953,7 +7005,7 @@ export class HorseLogic {
       useV23Var && useHiLo && !!hiLoSplit && hiLoSplit.hi < 0.15 && hiLoSplit.lo > 0.3;
     const impliedBonus =
       drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
-        ? 0.04 + (useV23Var && vi.isShortDeck ? 0.02 : 0)
+        ? 0.04 + (v23SdDraw && vi.isShortDeck ? 0.02 : 0)
         : 0;
     // V35: fixed limit calls lighter — the pot always lays the price.
     let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15

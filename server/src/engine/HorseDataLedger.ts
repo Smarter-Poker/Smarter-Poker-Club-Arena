@@ -441,6 +441,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v16SizeCond', 'big-bet-conditioned sampling', 'V16'),
   flag('v16PloPolar', 'PLO polarity read', 'V16'),
   flag(
+    'v16PloPolarAA3Bet',
+    'ablation only: the v16PloPolar AAxx 3-bet bar discount alone; no matchup, inert at 1,000 pairs (1 and 0 divergent pairs, 2026-09-21)',
+    'V16'
+  ),
+  flag(
+    'v16PloPolarFlat',
+    'ablation only: the v16PloPolar non-AA margin flat alone (plo4_v16_polarity_flat)',
+    'V16'
+  ),
+  flag(
     'v16Ratio',
     'DEFAULT OFF and DEAD BY PRECEDENCE since V38 (2026-09-03): both gates it rescales sit below the V38 call/fold return; league matchup retired 2026-09-05 after 0.00 +/- 0.00 over 12,000 hands',
     'V16'
@@ -466,7 +476,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v23Endgame', 'tournament endgame adjust (bounties, prizes)', 'V23'),
   flag('v23Plan', 'raise-response plans decided at bet time', 'V23'),
   flag('v23Reads', 'river reads', 'V23'),
-  flag('v23Variants', 'plo8 low-only draws, short deck draw credit', 'V23'),
+  flag('v23Variants', 'plo8 low-only draws, short deck draw credit and one-pair thin value', 'V23'),
+  flag(
+    'v23SdThinValue',
+    'ablation only: the v23Variants short-deck one-pair thin-value bar alone (shortdeck_v23_thin_value)',
+    'V23'
+  ),
+  flag(
+    'v23SdDrawCredit',
+    'ablation only: the v23Variants short-deck draw implied credit alone (shortdeck_v23_draw_credit)',
+    'V23'
+  ),
   flag('v23Spin', 'spin format overlay', 'V23'),
   flag('v24Bounty', 'PKO bounty pull', 'V24'),
   flag(

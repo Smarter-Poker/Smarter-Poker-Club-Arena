@@ -780,6 +780,31 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
   { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
+  /*
+   * 2026-09-21: plo4_v16_polarity pools to -0.71 bb/100 over the eight nights
+   * to 09-21 (inverse-variance, stderr 0.35) with no single night significant
+   * either way. v16PloPolar gates two behaviors, and each now switches off
+   * alone. Measured with runMatchup at 1,000 pairs, seeds 4242 and 20260921:
+   *
+   *   b: { v16PloPolarFlat: false }    12 and 12 divergent pairs. On the card.
+   *   b: { v16PloPolarAA3Bet: false }  1 and 0 divergent pairs. INERT at the
+   *     size that decides the card, so it is NOT on it: the AAxx discount
+   *     changed the result of 1 of those 2,000 pairs, and a matchup that
+   *     reads 0.00 +/- 0.00 on one seed measures nothing.
+   *
+   * The flat's matchup is close to this one because the discount almost never
+   * fires (12 vs 13 divergent pairs at 4242; 12 and an identical result at
+   * 20260921), so the two should read alike night to night. It is there so
+   * the flat has a history under its own name before anything about it is
+   * tuned.
+   */
+  {
+    name: 'plo4_v16_polarity_flat',
+    variant: 'plo4',
+    pairs: 6000,
+    a: {},
+    b: { v16PloPolarFlat: false },
+  },
   // Measurable because playHand's sandbox settlement now feeds
   // observeHandComplete — the reads accumulate inside each pass's sandbox.
   { name: 'v16_deep_reads', pairs: 6000, a: {}, b: { v16Reads: false } },
@@ -875,6 +900,27 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
   { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
   { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  // 2026-09-21: shortdeck_v23 pools to -0.79 bb/100 over the eight nights to
+  // 09-21 (inverse-variance, stderr 0.32) and was significant-negative on 09-04
+  // and 09-16. A short-deck deal reaches two of the three v23Variants
+  // behaviors; each is ablated alone before either is tuned. At 1,000 pairs,
+  // seeds 4242 and 20260921: thin value 15 and 10 divergent pairs, draw
+  // credit 21 and 30. (The third behavior, the low-only draw rule, needs a
+  // hi-lo deal, so plo8_v23_lowdraw below already measures it alone.)
+  {
+    name: 'shortdeck_v23_thin_value',
+    variant: 'short_deck',
+    pairs: 6000,
+    a: {},
+    b: { v23SdThinValue: false },
+  },
+  {
+    name: 'shortdeck_v23_draw_credit',
+    variant: 'short_deck',
+    pairs: 6000,
+    a: {},
+    b: { v23SdDrawCredit: false },
+  },
   { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
   // ── V24 (2026-08-28) ── Dan full-potted 8 PLO hands in a PKO and was never
   // called once. The price defense is measurable on a PLO card; the bounty

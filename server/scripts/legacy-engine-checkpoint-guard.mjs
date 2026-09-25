@@ -1534,14 +1534,23 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                   ),
               ],
             ]
-              .filter(([, test]) => {
+              .map(([name, test]) => {
+                // Three outcomes, never one (CLAUDE.md 10.86 rule 1). A term
+                // that MOVED names itself. A term that could not be READ is a
+                // different fact - still reported, because an unreadable term
+                // is still suspicious, but it never wears the name of one that
+                // moved, or the next release acts on a finding nobody made.
                 try {
-                  return test();
+                  return test() ? name : null;
                 } catch {
-                  return true;
+                  return `${name}:unreadable`;
                 }
               })
-              .map(([name]) => name);
+              .filter((name) => name !== null);
+            // And the fourth, which matters most: the identity compare said the
+            // capture flipped and every term below still holds, so the cause is
+            // OUTSIDE this list. `none` says that out loud instead of returning
+            // an empty string that reads as "nothing was wrong".
             return flipped.length === 0 ? 'none' : flipped.join(',');
           };
           const failedEngine = () => {
@@ -3298,10 +3307,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // A player holds at most a handful of seats, so a hundred players stay
       // far inside the 900-row ceiling, and a page that fills refuses.
       const open = [];
+      const atResidueTable = [];
       for (const answer of await readAll(chunks(residueUsers, 100).map((users) => () =>
         modules.client.supabase
           .from('table_seats')
-          .select('table_id,user_id,occupancy_id')
+          .select('table_id,user_id,occupancy_id,joined_at')
           .in('user_id', users)
           .is('left_at', null)
           .limit(901)))) {
@@ -3311,10 +3321,106 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             uuid(row.table_id) &&
             uuid(row.user_id) &&
             uuid(row.occupancy_id), 'bank_residue_unproven');
-          if (held.has(`${lower(row.table_id)}:${lower(row.user_id)}`))
-            refuseAt('proveBanksHeldNothing.openSeatAtResidueTable', row.table_id, 'bank_residue_unproven');
+          if (held.has(`${lower(row.table_id)}:${lower(row.user_id)}`)) atResidueTable.push(row);
           open.push(row);
         }
+      }
+      /* ═══ A SEAT THIS ENGINE NEVER DEALT HOLDS NONE OF ITS BANKS (2026-09-25) ═══
+
+         Run 36098984451 (2026-09-25 05:39 UTC) refused here on
+         a86077f2-80bc-4cb5-8f75-1220dab2615d - one open seat, out of the 2178
+         this proof read, that happened to be at a table whose engine also held
+         residue for that player. The two runs either side of it, minutes away
+         on the same fleet, read the same 861 residue players and found no
+         collision at all. The refusal is a race, and the race is ordinary
+         operation.
+
+         WHICH OCCUPANCY IS THE QUESTION, AND THE PLAYER IS NOT IT. `held` is
+         keyed `table:player`, so ANY open row for that player at that table
+         refuses - including one this engine has never adopted. That is not the
+         shape the note above set out to catch. The shape it catches is a
+         ROSTER THAT IS MERELY STALE: a LIVE OCCUPANCY the engine forgot, whose
+         bank would then be dropped by a checkpoint that walks the roster.
+
+         THE ROSTER CANNOT FORGET AN OCCUPANCY THE DATABASE STILL HOLDS OPEN.
+         `seatedPlayers` is replaced wholesale, and only from
+         `loadSeatedPlayers` (tables.ts:194), which reads exactly the rows with
+         `left_at IS NULL`; `left_at` is stamped once and never cleared. Every
+         engine-side removal closes the row in its own transaction FIRST and
+         filters the roster after - the held leave (ServerTableEngineBase.ts
+         :3969, on `res.ok`), the sit-out eviction (:8523, after
+         `atomicCashout`), the executed seat move (:4410, confirmed moves
+         only), leave-pending (ServerTableEngineDealing.ts:748, cashed-out ids)
+         and the departure sweep (:1597). For a tournament seat the database is
+         the sole authority and the engine "simply sees it absent from the next
+         loadSeatedPlayers" (:446). So an OPEN row for a player the roster does
+         not hold is a row the roster never held: a LATER occupancy, opened
+         after the last sweep - and during this break the sweep does not run at
+         all, because it meets the pause gate at the top of its loop before it
+         reads seats (:3448, pinned by
+         a-seat-does-not-move-under-a-release-walk.law.test.ts).
+
+         AND A LATER OCCUPANCY OWNS NONE OF THIS ENGINE'S BANKS. A bank is
+         bound to an occupancy in exactly three places: a DEAL
+         (ServerTableEngineDealing.ts:3096, `if (!getPlayerBank(...))`),
+         `applyParkedTimeBanks` (ServerTableEngineBase.ts:4598, only where
+         `bank.occupancyId === seat.occupancy_id`) and a cash seat move's
+         arrival claim (:4529). The last two require the player to BE in the
+         roster, which a residue player is not, and a parked bank that matches
+         no seat was already refused as `parked_bank_invalid` unless the whole
+         table qualified as `deadParkedBanksDeferred`, which holds no seat, no
+         bank and no metadata to be residue with. So the only way this engine
+         holds a bank for THIS occupancy is that it dealt it a hand.
+
+         SO THE SAME QUESTION IS ASKED FROM ROWS, ONCE PER COLLIDING SEAT: has
+         `hand_history` recorded a hand at that table, at or after that seat
+         opened, with that player in it? One row is enough and it refuses
+         exactly as before. No row proves this engine never dealt that
+         occupancy, so nothing it holds is that seat's custody, and the
+         successor seeds the ordinary allowance at that seat's first deal -
+         which is what `applyParkedTimeBanks` says a later seat occupant gets
+         anyway ("later seat occupants keep ordinary allowance seeding").
+
+         NOTHING ELSE MOVES. A collision whose seat WAS dealt - a roster that
+         really is stale, a departure whose row-close was rolled back, a seat
+         `loadSeatedPlayers` dropped because its profile would not resolve -
+         still refuses, and still names this check and this table. An error, a
+         body that is not a list, a page that fills and a row with no readable
+         `joined_at` are all COULD NOT TELL and keep the refusal. And the
+         question is only asked at all when a collision exists: on the runs
+         either side of 36098984451 it cost no read. More than `readPageSize`
+         of them at once is not a race and is refused without asking, because a
+         fleet whose rosters have all gone stale is the condition this proof
+         exists for. The read is the one at `dealtSinceRead` below, including
+         its lesson: the containment value is sent as a JSON STRING, or
+         PostgREST answers 22P02. */
+      if (atResidueTable.length > readPageSize)
+        refuseAt(
+          'proveBanksHeldNothing.openSeatAtResidueTable',
+          atResidueTable[0].table_id,
+          'bank_residue_unproven'
+        );
+      let residueSeatsNeverDealt = 0;
+      for (const [index, answer] of (await readAll(atResidueTable.map((row) => () =>
+        typeof row.joined_at === 'string'
+          ? modules.client.supabase
+              .from('hand_history')
+              .select('id')
+              .eq('table_id', row.table_id)
+              .gte('created_at', row.joined_at)
+              .contains('players', JSON.stringify([{ userId: row.user_id }]))
+              .limit(1)
+          : Promise.resolve({ data: null, error: { code: 'seat_unjoined' } })))).entries()) {
+        answered(answer, 1, 'bank_residue_unproven', 'residueSeatDealtRead');
+        if (answer.data.length === 0) {
+          residueSeatsNeverDealt++;
+          continue;
+        }
+        refuseAt(
+          'proveBanksHeldNothing.openSeatAtResidueTable',
+          atResidueTable[index].table_id,
+          'bank_residue_unproven'
+        );
       }
       // 2. A residue player who left a residue table by a CASH SEAT MOVE and
       // still sits at that move's destination. The source deposited the carried
@@ -3510,6 +3616,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         `residueTables=${residueTables.length}`,
         `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
         `residueOpenSeatsElsewhere=${open.length}`,
+        `residueSeatsHere=${atResidueTable.length}`,
+        `residueSeatsNeverDealt=${residueSeatsNeverDealt}`,
         `arrivalTablesAsked=${asked.length}`,
         `arrivalQuestion=${batchMissing ? 'perTable' : 'perPlayer'}`,
         `arrivalPlayersAsked=${askedPlayers.length}`,

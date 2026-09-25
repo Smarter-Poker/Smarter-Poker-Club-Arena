@@ -75,8 +75,12 @@ function fixture(count = 1, predecessor = release) {
   let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
   const moveReads: { ids: string[] }[] = [];
   let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
-  const dealtReads: { table: string; since: string; player: string }[] = [];
+  const dealtReads: { table: string; since: string; player: string; op: string }[] = [];
   let onDealt:
+    | ((table: string, since: string, player: string) => { data: any; error: any })
+    | undefined;
+  // Has this engine ever dealt the open seat that collided with its residue?
+  let onResidueSeatDealt:
     | ((table: string, since: string, player: string) => { data: any; error: any })
     | undefined;
   // Opt-in: model a predecessor whose `unparkedTables()` has no bound, so one
@@ -374,7 +378,7 @@ function fixture(count = 1, predecessor = release) {
             };
             return {
               select: (columns: string) => {
-                expect(columns).toBe('table_id,user_id,occupancy_id');
+                expect(columns).toBe('table_id,user_id,occupancy_id,joined_at');
                 return filter;
               },
             };
@@ -407,6 +411,9 @@ function fixture(count = 1, predecessor = release) {
               table: '',
               since: '',
               player: '',
+              // `gt` is the arrival's "dealt since the move executed"; `gte` is
+              // the residue seat's "dealt since this occupancy opened".
+              op: '',
               eq: (key: string, value: string) => {
                 expect(key).toBe('table_id');
                 filter.table = value;
@@ -415,6 +422,13 @@ function fixture(count = 1, predecessor = release) {
               gt: (key: string, value: string) => {
                 expect(key).toBe('created_at');
                 filter.since = value;
+                filter.op = 'gt';
+                return filter;
+              },
+              gte: (key: string, value: string) => {
+                expect(key).toBe('created_at');
+                filter.since = value;
+                filter.op = 'gte';
                 return filter;
               },
               contains: (key: string, value: any) => {
@@ -435,10 +449,15 @@ function fixture(count = 1, predecessor = release) {
                   table: filter.table,
                   since: filter.since,
                   player: filter.player,
+                  op: filter.op,
                 });
-                return onDealt
-                  ? onDealt(filter.table, filter.since, filter.player)
-                  : { data: [], error: null };
+                return filter.op === 'gte'
+                  ? onResidueSeatDealt
+                    ? onResidueSeatDealt(filter.table, filter.since, filter.player)
+                    : { data: [], error: null }
+                  : onDealt
+                    ? onDealt(filter.table, filter.since, filter.player)
+                    : { data: [], error: null };
               },
             };
             return {
@@ -497,6 +516,9 @@ function fixture(count = 1, predecessor = release) {
       onSeats = hook;
     },
     dealtReads,
+    onResidueSeatDealt: (hook: typeof onResidueSeatDealt) => {
+      onResidueSeatDealt = hook;
+    },
     onDealt: (hook: typeof onDealt) => {
       onDealt = hook;
     },
@@ -2934,13 +2956,36 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect([...e.timeBankMeta.keys()]).toEqual([departed]);
   });
 
-  it('refuses a residue player the database still seats at that table, names it, and writes nothing', async () => {
-    const f: any = mixedFixture();
-    const { e, departed } = cashedOut(f, 600);
+  /* A SEAT THIS ENGINE NEVER DEALT HOLDS NONE OF ITS BANKS (2026-09-25).
+     Run 36098984451 refused on a86077f2 for one open seat, out of 2178, that
+     sat at a table whose engine also held residue for that player; the runs
+     either side of it found no collision at all. The roster cannot forget an
+     occupancy the database still holds open, so an open row the roster does
+     not hold is a LATER occupancy - and a later occupancy owns a bank of this
+     engine's only if this engine dealt it a hand. That is the question now,
+     and it is asked from rows. */
+  const seatedHere = (f: any, table: string, user: string, joinedAt?: string) =>
     f.onSeats(() => ({
-      data: [{ table_id: e.tableId, user_id: departed, occupancy_id: uuid(65000) }],
+      data: [
+        {
+          table_id: table,
+          user_id: user,
+          occupancy_id: uuid(65000),
+          ...(joinedAt === undefined ? {} : { joined_at: joinedAt }),
+        },
+      ],
       error: null,
     }));
+  const seatOpened = new Date(Date.now() - 4 * 60000).toISOString();
+
+  it('refuses a residue player whose open seat at that table this engine has dealt, names it, and writes nothing', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = cashedOut(f, 600);
+    seatedHere(f, e.tableId, departed, seatOpened);
+    f.onResidueSeatDealt((table: string, since: string, player: string) => {
+      expect([table, since, player]).toEqual([e.tableId, seatOpened, departed]);
+      return { data: [{ id: uuid(71000) }], error: null };
+    });
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: false,
@@ -2953,6 +2998,93 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.calls).toEqual([]);
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it('refuses a tournament bust whose bank and metadata both outlived a seat this engine dealt', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 600);
+    seatedHere(f, e.tableId, departed, seatOpened);
+    f.onResidueSeatDealt(() => ({ data: [{ id: uuid(71000) }], error: null }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.openSeatAtResidueTable',
+      failedTable: e.tableId,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('admits an open seat at a residue table that this engine has never dealt', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 600);
+    seatedHere(f, e.tableId, departed, seatOpened);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // Exactly one question, at or after the seat opened, about that player.
+    expect(f.dealtReads.filter((r: any) => r.op === 'gte')).toEqual([
+      { table: e.tableId, since: seatOpened, player: departed, op: 'gte' },
+    ]);
+    expect(result.bankDisposition).toContain('residueSeatsHere=1');
+    expect(result.bankDisposition).toContain('residueSeatsNeverDealt=1');
+    // Nothing is written for the residue, and the metadata is left as found.
+    expect(e.timeBankMeta.has(departed)).toBe(true);
+  });
+
+  it.each([
+    ['no readable joined_at', undefined, () => ({ data: [], error: null })],
+    ['an unreadable answer', seatOpened, () => ({ data: null, error: { code: '57014' } })],
+    ['a body that is not a list', seatOpened, () => ({ data: { id: 'x' }, error: null })],
+    ['a page that filled', seatOpened, () => ({ data: [{ id: 'a' }, { id: 'b' }], error: null })],
+  ])(
+    'keeps the refusal when the seat it collided with answers %s',
+    async (_label, joinedAt: any, answer: any) => {
+      const f: any = mixedFixture();
+      const { e, departed } = busted(f, 600);
+      seatedHere(f, e.tableId, departed, joinedAt);
+      f.onResidueSeatDealt(answer);
+      const result: any = await f.run();
+      expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
+      expect(f.calls).toEqual([]);
+      expect(f.rpcCalls).toEqual([]);
+    }
+  );
+
+  it('asks nothing at all when no open seat is at a residue table', async () => {
+    const f: any = mixedFixture();
+    const { departed } = busted(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(66000), user_id: departed, occupancy_id: uuid(66001) }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.dealtReads.filter((r: any) => r.op === 'gte')).toEqual([]);
+    expect(result.bankDisposition).toContain('residueSeatsHere=0');
+    expect(result.bankDisposition).toContain('residueSeatsNeverDealt=0');
+  });
+
+  it('refuses without asking when more than a page of open seats sit at residue tables', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 600);
+    f.onSeats(() => ({
+      data: Array.from({ length: 101 }, (_, i) => ({
+        table_id: e.tableId,
+        user_id: departed,
+        occupancy_id: uuid(65000 + i),
+        joined_at: seatOpened,
+      })),
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.openSeatAtResidueTable',
+      failedTable: e.tableId,
+    });
+    expect(f.dealtReads.filter((r: any) => r.op === 'gte')).toEqual([]);
+    expect(f.calls).toEqual([]);
   });
 
   it.each([

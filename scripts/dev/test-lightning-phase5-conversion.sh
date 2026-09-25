@@ -165,6 +165,22 @@
 #      CREATE OR REPLACE, so this is the only thing standing between the file
 #      and idempotence. Section 16 catches it.
 #
+# SECTIONS 20 TO 27 ARE ABOUT 20260925204249, THE REMEDIATION, and they run on
+# top of everything above: the migration under test applied, its assertions made,
+# its own @live-proofs evaluated, the estate torn back down and the migration
+# re-applied, and THEN the remediation applied twice over the standing estate.
+# Section 20 is the one this file grew for. The halt 20260921151618 placed was a
+# ONE-SHOT CANCEL: it cancelled the pending cash_seat_moves that existed at that
+# instant and gated nothing afterwards, so fn_cash_seat_change_request - SECURITY
+# DEFINER, granted to `authenticated`, gating only on the must_move CAPABILITY
+# which stays true through a conversion - would plan another one a second later,
+# on a Cluster whose tick and balancer were both standing down and would never
+# reconcile it, for the engine's start-up wait loop to execute into table_seats
+# mid-conversion. Sections 21 to 26 take the reaper, the one membership
+# predicate, the four wrong answers, the restored seat moves, the nine
+# specification fields and the two counts in the state object; section 27 does
+# for the remediation's @live-proofs what section 15 does for the migration's.
+#
 # LIGHTNING_PHASE5_MIGRATION overrides the file under test, so that mutation
 # testing - copying the migration to a scratch directory, deleting one clause
 # from the copy and watching this harness go red - never has to touch the
@@ -184,7 +200,12 @@ phase3r=$root/supabase/migrations/20260921044045_lightning_phase_3_remediation_t
 phase4=$root/supabase/migrations/20260921064717_lightning_phase_4_one_live_eligible_population_and_the_thres.sql
 phase4r=$root/supabase/migrations/20260921142954_lightning_phase_4_remediation_a_threshold_reader_that_never_.sql
 migration=${LIGHTNING_PHASE5_MIGRATION:-$root/supabase/migrations/20260921151618_lightning_phase_5_the_conversion_is_one_transaction_and_the_.sql}
-for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" "$migration"; do
+# THE REMEDIATION, applied on top of everything above. LIGHTNING_PHASE5_REMEDIATION
+# overrides it, so that mutation testing - copying it to a scratch directory,
+# deleting one clause from the copy and watching this harness go red - never has
+# to touch the file in the repository.
+mine=${LIGHTNING_PHASE5_REMEDIATION:-$root/supabase/migrations/20260925204249_lightning_phase_5_remediation_the_halt_is_a_standing_bar.sql}
+for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" "$migration" "$mine"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-phase5-test.XXXXXX")
@@ -3290,6 +3311,877 @@ fi
   printf '%s%s%s\n' "\\echo '  ok  15 EVERY LIVE PROOF    all " "$proof_n" " @live-proof expressions the migration carries in its own header were extracted from the file under test, inlined as code so that one which no longer PARSES is a failure too, and evaluated against the throwaway catalogue and the estate the first application left behind, every board still standing - and every single one of them is true, with no quarantine and no exception list'"
 } >> "$fixture/live-proofs.sql"
 
+
+# THE REMEDIATION UNDER TEST ---------------------------------------------------
+# Everything from here on is about 20260925204249, which is applied on top of the
+# estate section 16 left standing - every Cluster back in must_move at epoch 0
+# with no halt, no pool session and no conversion record - and which is the state
+# the remediation's own closing assertions are written against.
+#
+# The sections below are shaped by the same four rules as the ones above, and
+# section 20 in particular is the one this whole file exists for now: the halt
+# 20260921151618 placed was a ONE-SHOT CANCEL. It cancelled the pending seat
+# moves that existed at that instant and gated nothing afterwards, and
+# fn_cash_seat_change_request - SECURITY DEFINER, granted to `authenticated` -
+# would happily create another one second later, on a Cluster whose tick and
+# balancer were both standing down and would therefore never reconcile it.
+# Section 20 proves the bar through the REAL door and the REAL planner, with the
+# non-vacuity half on the same shape one column different.
+mine_assertions=$fixture/mine-assertions.sql
+cat > "$mine_assertions" <<'MINE'
+-- THE HARNESS'S OWN READERS FOR THE REMEDIATION. The old membership predicate
+-- is written out once here so that "the census now sees three boards" can be
+-- said against what the census used to see rather than against a constant.
+CREATE FUNCTION public.fx_boards_bare(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT count(*)::integer FROM public.tables tb
+   WHERE tb.cluster_id = p_game AND coalesce(tb.is_deleted, false) = false
+     AND tb.status IN ('waiting', 'running', 'active') AND tb.lifecycle <> 'closed';
+$fx$;
+CREATE FUNCTION public.fx_boards_coalesced(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT count(*)::integer FROM public.tables tb
+   WHERE tb.cluster_id = p_game AND coalesce(tb.is_deleted, false) = false
+     AND coalesce(tb.lifecycle, '') <> 'closed';
+$fx$;
+CREATE FUNCTION public.fx_census_boards(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT coalesce(array_length(public.fn_cash_cluster_census(p_game, clock_timestamp()), 1), 0);
+$fx$;
+CREATE FUNCTION public.fx_lobby_boards(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT coalesce(jsonb_array_length(public.fn_cash_game_lobby(p_game) -> 'tables'), 0);
+$fx$;
+CREATE FUNCTION public.fx_pending_moves(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT count(*)::integer FROM public.cash_seat_moves m
+   WHERE m.game_id = p_game AND m.state = 'pending';
+$fx$;
+CREATE FUNCTION public.fx_requests(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT count(*)::integer FROM public.cash_seat_change_requests q WHERE q.game_id = p_game;
+$fx$;
+CREATE FUNCTION public.fx_halted(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  SELECT count(*)::integer FROM public.tables tb
+   WHERE tb.cluster_id = p_game AND tb.dealing_halted_at IS NOT NULL;
+$fx$;
+-- THE DOOR, CALLED FOR REAL AND ITS ANSWER OR ITS REFUSAL RETURNED AS TEXT,
+-- FOLLOWED BY THE PLANNER THE LIVE DOOR CALLS ITSELF.
+--
+-- The fixture's door takes (game, user, to_table); the live one takes
+-- (game, to_table, user) and resolves the user through auth.uid() unless
+-- fn_caller_is_engine(). Both are (uuid, uuid, uuid), which is why ONE
+-- asserted substitution in the migration bites both, and it is the fixture's
+-- door - the one this harness can call without an auth session - that is
+-- exercised here.
+--
+-- THE PERFORM IS NOT A CONVENIENCE. 20260905064237's door ends with
+-- `PERFORM public.fn_cash_seat_change_plan(g.id, clock_timestamp());` - the
+-- step that turns a request row into a PENDING cash_seat_moves row, and the
+-- step that makes the defect this file is about a seat write rather than a
+-- piece of paperwork. The Phase 3 fixture's reduced door stops one line short
+-- of it, and that fixture is shared with three other harnesses whose own
+-- assertions depend on it stopping there (test-lightning-phase3-remediation.sh
+-- D08e reads the request back as still 'requested'), so the missing line is
+-- restored HERE, outside the shared file, where only this harness sees it. A
+-- door that RAISED never reaches it, which is exactly the live behaviour.
+CREATE FUNCTION public.fx_try_door(p_game uuid, p_user uuid) RETURNS text LANGUAGE plpgsql AS $fx$
+DECLARE v jsonb;
+BEGIN
+  v := public.fn_cash_seat_change_request(p_game, p_user, NULL);
+  PERFORM public.fn_cash_seat_change_plan(p_game, clock_timestamp());
+  RETURN 'answered ' || coalesce(v ->> 'ok', 'null');
+EXCEPTION WHEN others THEN
+  RETURN 'raised ' || SQLERRM;
+END $fx$;
+-- A CLUSTER SHAPED FOR THE SEAT CHANGE: a main game nobody may change FROM,
+-- a feeder the asker sits on, and a second feeder with chairs to be planned
+-- into. p_main players go on Main 1 so that the ON threshold is reachable.
+CREATE FUNCTION public.fx_change_cluster(p_key text, p_main integer DEFAULT 18)
+RETURNS uuid LANGUAGE plpgsql AS $fx$
+DECLARE v_g uuid; v_a uuid; v_b uuid;
+BEGIN
+  v_g := public.fx_cluster(p_key, 6, 40);
+  PERFORM public.fx_seat(v_g, p_main);
+  v_a := public.fx_table(v_g, p_key || ' fa', 'feeder', NULL, 9);
+  v_b := public.fx_table(v_g, p_key || ' fb', 'feeder', NULL, 9);
+  PERFORM public.fx_seat_at(v_g, v_a, 1, true, 1);
+  INSERT INTO board (k, game_id, note) VALUES (p_key || ':fa', v_a, 'feeder a');
+  INSERT INTO board (k, game_id, note) VALUES (p_key || ':fb', v_b, 'feeder b');
+  RETURN v_g;
+END $fx$;
+CREATE FUNCTION public.fx_asker(p_game uuid) RETURNS uuid LANGUAGE sql STABLE AS $fx$
+  SELECT ts.user_id FROM public.table_seats ts
+    JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = p_game AND tb.role = 'feeder' AND ts.left_at IS NULL
+   ORDER BY tb.created_at, ts.seat_number LIMIT 1;
+$fx$;
+
+-- 20 THE STANDING BAR ----------------------------------------------------------
+DO $$
+DECLARE
+  v_ctl uuid; v_bar uuid; v_lit uuid; v_req uuid;
+  v_a uuid; v_r jsonb; v_t text; v_n integer;
+  v_seats text; v_moves text;
+BEGIN
+  -- THE CONTROL, FIRST AND ON PURPOSE. Everything below is a negative, and a
+  -- negative proved against a door that could not have opened proves nothing.
+  v_ctl := public.fx_change_cluster('bar-control');
+  v_a   := public.fx_asker(v_ctl);
+  v_t   := public.fx_try_door(v_ctl, v_a);
+  IF v_t IS DISTINCT FROM 'answered true' THEN
+    RAISE EXCEPTION 'FAIL 20: the door on a must_move Cluster answered %, so every refusal below would be vacuous', v_t;
+  END IF;
+  IF public.fx_requests(v_ctl) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 20: the control door created % seat-change request(s) rather than one', public.fx_requests(v_ctl);
+  END IF;
+  IF public.fx_pending_moves(v_ctl) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 20: the control door created % pending cash_seat_moves row(s) rather than the one that is the whole point - the live door ends by calling fn_cash_seat_change_plan and the planner is what writes it', public.fx_pending_moves(v_ctl);
+  END IF;
+
+  -- THE BAR, THROUGH PENDING_ON. Same shape, same call, one column different.
+  v_bar := public.fx_change_cluster('bar-pending');
+  v_a   := public.fx_asker(v_bar);
+  v_req := gen_random_uuid();
+  v_r   := public.fn_cash_cluster_begin_pending_on(v_bar, v_req);
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 20: the Cluster would not enter pending_on: %', v_r;
+  END IF;
+  v_seats := public.fx_seats_md5(v_bar);
+  v_moves := public.fx_moves_md5(v_bar);
+  v_t := public.fx_try_door(v_bar, v_a);
+  IF v_t !~ 'SEAT_CHANGE_CLUSTER_CONVERTING' THEN
+    RAISE EXCEPTION 'FAIL 20: the door on a pending_on Cluster answered % rather than refusing with SEAT_CHANGE_CLUSTER_CONVERTING', v_t;
+  END IF;
+  IF public.fx_requests(v_bar) IS DISTINCT FROM 0 OR public.fx_pending_moves(v_bar) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 20: the refused door still left % request(s) and % pending move(s) behind',
+      public.fx_requests(v_bar), public.fx_pending_moves(v_bar);
+  END IF;
+  IF public.fx_seats_md5(v_bar) IS DISTINCT FROM v_seats
+     OR public.fx_moves_md5(v_bar) IS DISTINCT FROM v_moves THEN
+    RAISE EXCEPTION 'FAIL 20: the refused door changed a table_seats or a cash_seat_moves row';
+  END IF;
+
+  -- AND THROUGH LIGHTNING, because a Cluster that has finished converting has
+  -- no physical seat to change to either.
+  v_lit := public.fx_change_cluster('bar-lightning');
+  v_a   := public.fx_asker(v_lit);
+  v_r   := public.fn_cash_cluster_begin_pending_on(v_lit, '11111111-0000-0000-0000-000000000020'::uuid);
+  v_r   := public.fn_cash_cluster_commit_lightning(v_lit, '11111111-0000-0000-0000-000000000020'::uuid);
+  IF coalesce((v_r ->> 'converted')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 20: the Cluster would not convert, so the lightning half of the bar is untested: %', v_r;
+  END IF;
+  v_t := public.fx_try_door(v_lit, v_a);
+  IF v_t !~ 'SEAT_CHANGE_CLUSTER_CONVERTING' THEN
+    RAISE EXCEPTION 'FAIL 20: the door on a lightning Cluster answered %', v_t;
+  END IF;
+  IF public.fx_requests(v_lit) IS DISTINCT FROM 0 OR public.fx_pending_moves(v_lit) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 20: the door refused on a lightning Cluster and still wrote something';
+  END IF;
+
+  -- THE WRITER, ASKED DIRECTLY. The door is the only end a browser reaches, but
+  -- fn_cash_seat_change_plan is what INSERTs the row, and the tick's reconcile
+  -- step calls it too. A request row is planted by hand - which is exactly the
+  -- residue a request made one second before PENDING_ON leaves behind - and the
+  -- planner is asked for it in both modes.
+  INSERT INTO public.cash_seat_change_requests (game_id, user_id, from_table_id, to_table_id)
+  SELECT v_bar, public.fx_asker(v_bar), ts.table_id, NULL
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = v_bar AND ts.user_id = public.fx_asker(v_bar) AND ts.left_at IS NULL;
+  v_moves := public.fx_moves_md5(v_bar);
+  v_n := public.fn_cash_seat_change_plan(v_bar, clock_timestamp());
+  IF v_n IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 20: the planner planned % move(s) on a pending_on Cluster', v_n;
+  END IF;
+  IF public.fx_pending_moves(v_bar) IS DISTINCT FROM 0
+     OR public.fx_moves_md5(v_bar) IS DISTINCT FROM v_moves THEN
+    RAISE EXCEPTION 'FAIL 20: the stood-down planner still wrote a cash_seat_moves row';
+  END IF;
+  IF (SELECT status FROM public.cash_seat_change_requests WHERE game_id = v_bar) IS DISTINCT FROM 'requested' THEN
+    RAISE EXCEPTION 'FAIL 20: the stood-down planner resolved the request instead of leaving it standing';
+  END IF;
+  -- ONE COLUMN BACK, AND THE SAME CALL PLANS THE SAME MOVE. This is the whole
+  -- non-vacuity of the paragraph above: same Cluster, same request, same
+  -- planner, different cluster_mode.
+  UPDATE public.cash_games SET cluster_mode = 'must_move' WHERE id = v_bar;
+  v_n := public.fn_cash_seat_change_plan(v_bar, clock_timestamp());
+  IF v_n IS DISTINCT FROM 1 OR public.fx_pending_moves(v_bar) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 20: with the Cluster back in must_move the planner planned % move(s) and left % pending, so the stand-down above was about a planner that could not have planned anything',
+      v_n, public.fx_pending_moves(v_bar);
+  END IF;
+  -- THIS SECTION TIDIES UP AFTER ITSELF. The line above put cluster_mode back
+  -- by hand, which is the one thing a harness may do and a caller may not; the
+  -- conversion it opened is closed the ordinary way, so the estate this file
+  -- hands to the sections below carries no conversion open on a Cluster that is
+  -- not converting.
+  UPDATE public.cash_games SET cluster_mode = 'pending_on' WHERE id = v_bar;
+  PERFORM public.fn_cash_cluster_abort_pending_on(v_bar, v_req, 'harness: section 20 closing its own conversion');
+  IF EXISTS (SELECT 1 FROM public.cash_cluster_conversion WHERE cluster_id = v_bar AND status = 'pending') THEN
+    RAISE EXCEPTION 'FAIL 20: section 20 left a conversion open';
+  END IF;
+END $$;
+\echo '  ok  20 THE STANDING BAR     the halt is a standing bar rather than a one-shot cancel, proved through the REAL fn_cash_seat_change_request and the REAL fn_cash_seat_change_plan: on a must_move Cluster the door answers ok and leaves one cash_seat_change_requests row AND one PENDING cash_seat_moves row behind, because the live door ends by calling the planner and the planner is what writes it - so every refusal that follows is a statement about the bar and not about a door that could never have opened; the identical call on the identical shape in PENDING_ON raises SEAT_CHANGE_CLUSTER_CONVERTING and leaves zero requests, zero pending moves and a byte-identical row-level md5 of every table_seats and every cash_seat_moves row of the Cluster, and the same again on a Cluster that has finished converting to lightning; and the WRITER is barred as well as the door - a requested row planted by hand, which is exactly the residue a request made one second before PENDING_ON leaves, makes fn_cash_seat_change_plan return 0 and write nothing and leave the request standing, while the same planter on the same Cluster with cluster_mode put back to must_move plans exactly one move and leaves exactly one pending'
+MINE
+
+cat >> "$mine_assertions" <<'MINE'
+
+-- 21 THE REAPER ----------------------------------------------------------------
+DO $$
+DECLARE
+  v_g uuid; v_skip uuid; v_req uuid := gen_random_uuid();
+  v_r jsonb; v_pass jsonb; v_n integer; v_ev jsonb;
+BEGIN
+  v_g := public.fx_change_cluster('reap');
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, v_req);
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 21: the Cluster would not enter pending_on: %', v_r;
+  END IF;
+  IF public.fx_halted(v_g) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 21: % of the three boards were halted', public.fx_halted(v_g);
+  END IF;
+
+  -- NON-VACUITY FIRST: A FRESH CONVERSION IS NOT REAPED. The reaper that
+  -- aborted everything it found would pass every assertion below.
+  v_pass := public.fn_cash_clusters_tick_all();
+  IF (v_pass -> 'reaped' ->> 'reaped')::integer IS DISTINCT FROM 0
+     OR (v_pass -> 'reaped' ->> 'examined')::integer IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 21: a pass reaped a conversion that is seconds old: %', v_pass -> 'reaped';
+  END IF;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'pending_on'
+     OR public.fx_halted(v_g) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 21: the fresh conversion was disturbed by the pass';
+  END IF;
+
+  -- AGE IT. opened_at is the only thing that changes.
+  UPDATE public.cash_cluster_conversion SET opened_at = clock_timestamp() - interval '31 minutes'
+   WHERE cluster_id = v_g AND conversion_request_id = v_req;
+
+  -- AND A FROZEN PASS STILL DOES NOT REAP IT, which is the placement decision
+  -- the migration's header argues for rather than a thing that merely happens.
+  PERFORM public.fx_freeze(true);
+  v_pass := public.fn_cash_clusters_tick_all();
+  IF v_pass ->> 'skipped' IS DISTINCT FROM 'frozen' THEN
+    RAISE EXCEPTION 'FAIL 21: the pass did not short-circuit on the freeze, so the reap placement is untested: %', v_pass;
+  END IF;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 21: something reaped during the maintenance break';
+  END IF;
+  PERFORM public.fx_freeze(false);
+
+  -- NOW THE PASS REAPS IT.
+  v_pass := public.fn_cash_clusters_tick_all();
+  IF (v_pass -> 'reaped' ->> 'reaped')::integer IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the pass reaped % stuck conversion(s): %',
+      (v_pass -> 'reaped' ->> 'reaped'), v_pass -> 'reaped';
+  END IF;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'must_move' THEN
+    RAISE EXCEPTION 'FAIL 21: the reaped Cluster is in % rather than must_move',
+      (SELECT cluster_mode FROM public.cash_games WHERE id = v_g);
+  END IF;
+  IF public.fx_halted(v_g) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 21: % board(s) of the reaped Cluster are still halted', public.fx_halted(v_g);
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.cash_cluster_conversion
+   WHERE cluster_id = v_g AND conversion_request_id = v_req AND status = 'aborted'
+     AND abort_reason LIKE 'reaped:%' AND closed_at IS NOT NULL;
+  IF v_n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the conversion record does not say it was reaped and why';
+  END IF;
+  SELECT payload INTO v_ev FROM public.cash_cluster_events
+   WHERE game_id = v_g AND kind = 'lightning_pending_on_reaped'
+   ORDER BY id DESC LIMIT 1;
+  IF v_ev IS NULL THEN RAISE EXCEPTION 'FAIL 21: no lightning_pending_on_reaped event was emitted'; END IF;
+  IF v_ev -> 'pool_health' IS NULL OR (v_ev -> 'pool_health' ->> 'ok') IS DISTINCT FROM 'true'
+     OR v_ev -> 'pool_health' -> 'thresholds' IS NULL THEN
+    RAISE EXCEPTION 'FAIL 21: the reap event carries no usable pool health, so fn_cash_cluster_pool_health is dead code again: %', v_ev -> 'pool_health';
+  END IF;
+  IF v_ev ->> 'stuck_for' IS NULL OR v_ev ->> 'max_age' IS NULL THEN
+    RAISE EXCEPTION 'FAIL 21: the reap event does not say how long it was stuck or what the bound was';
+  END IF;
+
+  -- AND THE CLUSTER IS STILL GENUINELY CONVERTIBLE, which is the property a
+  -- reaper would destroy if it left anything behind.
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, gen_random_uuid());
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 21: a reaped Cluster could not open a fresh conversion: %', v_r;
+  END IF;
+  PERFORM public.fn_cash_cluster_abort_pending_on(v_g, (v_r ->> 'conversion_request_id')::uuid, 'harness');
+
+  -- WHAT IT DECLINES TO REAP. A pending conversion that is not a lightning
+  -- conversion of a pending_on Cluster is Phase 10's business, and a reaper
+  -- that called the pending_on abort on one would be told wrong_state and
+  -- would come back to it every pass for ever.
+  v_skip := public.fx_cluster('reap-skip');
+  INSERT INTO public.cash_cluster_conversion
+    (cluster_id, conversion_request_id, from_mode, to_mode, trigger_population,
+     on_threshold, off_threshold, epoch_before, opened_at)
+  VALUES (v_skip, gen_random_uuid(), 'lightning', 'must_move', 4, 18, 12, 0,
+          clock_timestamp() - interval '2 hours');
+  v_r := public.fn_cash_cluster_reap_stuck_conversions(interval '1 minute');
+  IF (v_r ->> 'reaped')::integer IS DISTINCT FROM 0 OR (v_r ->> 'skipped')::integer IS DISTINCT FROM 1
+     OR (v_r ->> 'examined')::integer IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the reaper did not examine-and-skip the non-lightning conversion: %', v_r;
+  END IF;
+  IF (SELECT status FROM public.cash_cluster_conversion WHERE cluster_id = v_skip) IS DISTINCT FROM 'pending' THEN
+    RAISE EXCEPTION 'FAIL 21: the reaper closed a conversion it does not understand';
+  END IF;
+  DELETE FROM public.cash_cluster_conversion WHERE cluster_id = v_skip;
+
+  -- THE FLOOR. A caller asking for a one-second reaper is asking to abort
+  -- conversions that are working, and the floor is one minute.
+  IF (public.fn_cash_cluster_reap_stuck_conversions(interval '1 second') ->> 'max_age') NOT LIKE '%00:01:00%' THEN
+    RAISE EXCEPTION 'FAIL 21: the reaper honoured an age below its own floor';
+  END IF;
+
+  -- THE GRANTS, IN BOTH DIRECTIONS.
+  IF has_function_privilege('authenticated', 'public.fn_cash_cluster_reap_stuck_conversions(interval,timestamp with time zone,integer)'::regprocedure, 'EXECUTE')
+     OR has_function_privilege('anon', 'public.fn_cash_cluster_reap_stuck_conversions(interval,timestamp with time zone,integer)'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL 21: a browser can execute the reaper';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.fn_cash_cluster_reap_stuck_conversions(interval,timestamp with time zone,integer)'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL 21: service_role cannot execute the reaper';
+  END IF;
+  IF NOT (SELECT p.prosecdef FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+           WHERE n.nspname = 'public' AND p.proname = 'fn_cash_cluster_reap_stuck_conversions') THEN
+    RAISE EXCEPTION 'FAIL 21: the reaper is not SECURITY DEFINER';
+  END IF;
+END $$;
+\echo '  ok  21 THE REAPER           a Cluster wedged in PENDING_ON is recovered by something that is still running, which the per-Cluster tick is not: a conversion seconds old is examined-and-not-reaped by a full fn_cash_clusters_tick_all pass and the Cluster is left in pending_on with all three boards halted, so the reap below is a statement about the age rather than about a reaper that aborts whatever it finds; the same conversion back-dated past the bound is STILL not reaped by a pass taken during a maintenance break - which is the placement the migration argues for, after tick_all''s freeze short-circuit, because nothing is dealing during a break anyway - and IS reaped by the first pass after it, leaving the Cluster in must_move with zero boards halted, the conversion record aborted with a reason beginning "reaped:" and a closed_at, and a lightning_pending_on_reaped event carrying how long it was stuck, what the bound was, and the whole of fn_cash_cluster_pool_health for the Cluster, which is the one caller that reader has ever had; the reaped Cluster then opens a fresh conversion, because a recovery that left the Cluster unconvertible would be no recovery; a pending conversion that is NOT a lightning conversion of a pending_on Cluster is examined and SKIPPED rather than touched, so Phase 10''s drain is safe from it; an age below the one-minute floor is refused; and anon and authenticated hold no EXECUTE on it while service_role does, asserted in both directions'
+MINE
+
+cat >> "$mine_assertions" <<'MINE'
+
+-- 22 ONE MEMBERSHIP PREDICATE ---------------------------------------------------
+DO $$
+DECLARE
+  v_g uuid; v_nb uuid; v_ns uuid; v_cl uuid; v_del uuid;
+  v_bare integer; v_coal integer;
+BEGIN
+  v_g  := public.fx_cluster('member');
+  PERFORM public.fx_seat(v_g, 4);
+  v_nb := public.fx_board_without_lifecycle(v_g, 'member nl', 'feeder');
+  v_ns := public.fx_board_with_status(v_g, 'member ns', 'feeder', NULL);
+  PERFORM public.fx_seat_at(v_g, v_nb, 2, true, 1);
+  PERFORM public.fx_seat_at(v_g, v_ns, 2, true, 1);
+  v_cl  := public.fx_board_excluded(v_g, 'member closed', 'closed');
+  v_del := public.fx_board_excluded(v_g, 'member deleted', 'deleted');
+
+  v_bare := public.fx_boards_bare(v_g);
+  v_coal := public.fx_boards_coalesced(v_g);
+  IF v_bare IS DISTINCT FROM 1 OR v_coal IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 22: the board was not built - the discarded predicate sees % and the coalesced one sees %, rather than 1 and 3', v_bare, v_coal;
+  END IF;
+
+  -- THE CENSUS. This is the one that matters: the tick, the balancer and the
+  -- seat-change planner all read it.
+  IF public.fx_census_boards(v_g) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 22: fn_cash_cluster_census sees % board(s) of a Cluster that has three, so the tick cannot see the other two either',
+      public.fx_census_boards(v_g);
+  END IF;
+  -- AND IT IS STILL FILTERED, which is the half a widening would destroy: the
+  -- closed board and the soft-deleted one both carry the 'waiting' status the
+  -- discarded predicate ADMITTED, so their exclusion is attributable to
+  -- lifecycle and is_deleted and to nothing else.
+  IF EXISTS (SELECT 1 FROM unnest(public.fn_cash_cluster_census(v_g, clock_timestamp())) c
+              WHERE c.id IN (v_cl, v_del)) THEN
+    RAISE EXCEPTION 'FAIL 22: the census now admits a closed or a soft-deleted board, so membership stopped being filtered rather than stopping being decided by status';
+  END IF;
+
+  -- THE LOBBY, which says in its own body that it uses the same predicate as
+  -- the census. The two agree or neither is right.
+  IF public.fx_lobby_boards(v_g) IS DISTINCT FROM public.fx_census_boards(v_g) THEN
+    RAISE EXCEPTION 'FAIL 22: the lobby lists % board(s) and the census counts %, and the lobby''s own comment says they use the same predicate',
+      public.fx_lobby_boards(v_g), public.fx_census_boards(v_g);
+  END IF;
+  IF public.fx_lobby_boards(v_g) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 22: the lobby lists % boards rather than three', public.fx_lobby_boards(v_g);
+  END IF;
+
+  -- AND THE AUTHORISING NUMBER AGREES WITH BOTH. fn_cash_cluster_live_eligible
+  -- counted all eight players before this file existed; what changes here is
+  -- that the census and the lobby stopped disagreeing with it.
+  IF public.fn_cash_cluster_live_eligible(v_g) IS DISTINCT FROM 8 THEN
+    RAISE EXCEPTION 'FAIL 22: the eligible count is % rather than the eight seated across the three member boards',
+      public.fn_cash_cluster_live_eligible(v_g);
+  END IF;
+
+  -- NO CLUSTER-MEMBERSHIP READER IN THE SCHEMA STILL DECIDES BY status.
+  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.prokind = 'f'
+                AND p.proname IN ('fn_cash_cluster_census', 'fn_cash_game_lobby',
+                                  'fn_cash_cluster_live_eligible', 'fn_cash_cluster_population')
+                AND pg_get_functiondef(p.oid) ~ 'status IN \(''waiting'', ''running'', ''active''\)') THEN
+    RAISE EXCEPTION 'FAIL 22: a cluster-membership reader still decides by a nullable status column';
+  END IF;
+  -- AND THE THREE THAT LEGITIMATELY KEEP IT STILL HAVE IT, so what is proved
+  -- above is that two readers moved and not that a blanket substitution ran.
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname = 'fn_cash_cluster_tick'
+                    AND pg_get_functiondef(p.oid) ~ 'status IN \(''waiting'', ''running'', ''active''\)') THEN
+    RAISE EXCEPTION 'FAIL 22: the tick lost its own lifecycle-and-status test, which is a seating decision this file deliberately left alone';
+  END IF;
+END $$;
+\echo '  ok  22 ONE MEMBERSHIP       a Cluster of three member boards - one ordinary, one whose tables.lifecycle is NULL and one whose tables.status is NULL, both of which the columns permit because a CHECK that evaluates to NULL PASSES - plus a closed board and a soft-deleted one that both carry the ''waiting'' status the discarded predicate admitted: the discarded predicate sees ONE board of the three and the coalesced one sees three, and fn_cash_cluster_census - which the tick, the balancer and the seat-change planner all read - now sees three as well, while still excluding the closed and the deleted ones, so what is proved is that status stopped deciding membership and not that membership stopped being filtered; fn_cash_game_lobby, whose own body says it uses "the same predicate as fn_cash_cluster_census", lists exactly what the census counts in both directions; fn_cash_cluster_live_eligible answers 8 over the same three boards, so the authorising number and the two readers finally agree; no cluster-membership reader in the schema still carries status IN (waiting, running, active); and fn_cash_cluster_tick still does, because its occurrence is an inclusion list on lifecycle AND status inside its open-another-feeder test and is a seating decision this file deliberately did not re-time'
+
+-- 23 THE ANSWERS THAT WERE WRONG ------------------------------------------------
+DO $$
+DECLARE
+  v_g uuid; v_h uuid; v_s uuid; v_f uuid; v_req uuid; v_r jsonb; v_ev jsonb;
+  v_n integer; v_frozen text; v_seats text;
+BEGIN
+  -- (1) A SELF-ABORT ANSWERED ok:true. The population falls away between the
+  -- begin and the commit and the commit aborts by itself - correctly - and used
+  -- to answer ok:true, which a caller branching on ok alone reads as a
+  -- conversion.
+  v_g := public.fx_cluster('answers-abort');
+  PERFORM public.fx_seat(v_g, 18);
+  v_req := gen_random_uuid();
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, v_req);
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN RAISE EXCEPTION 'FAIL 23: no pending_on: %', v_r; END IF;
+  UPDATE public.table_seats ts SET left_at = clock_timestamp()
+    FROM public.tables tb WHERE tb.id = ts.table_id AND tb.cluster_id = v_g AND ts.seat_number = 18;
+  v_r := public.fn_cash_cluster_commit_lightning(v_g, v_req);
+  IF coalesce((v_r ->> 'ok')::boolean, true) IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 23: a commit that converted nothing answered ok:%, and every other early return in that function pairs ok:false with converted:false', v_r ->> 'ok';
+  END IF;
+  IF coalesce((v_r ->> 'converted')::boolean, true) IS DISTINCT FROM false
+     OR v_r ->> 'abort_reason' IS NULL
+     OR v_r ->> 'abort_reason' NOT LIKE '%below_on_threshold%' THEN
+    RAISE EXCEPTION 'FAIL 23: the self-abort lost its converted:false or its reason: %', v_r;
+  END IF;
+  -- NON-VACUITY: THE SAME FUNCTION STILL ANSWERS ok:true WHEN IT DOES CONVERT.
+  v_s := public.fx_cluster('answers-ok');
+  PERFORM public.fx_seat(v_s, 18);
+  v_req := gen_random_uuid();
+  PERFORM public.fn_cash_cluster_begin_pending_on(v_s, v_req);
+  v_r := public.fn_cash_cluster_commit_lightning(v_s, v_req);
+  IF coalesce((v_r ->> 'ok')::boolean, false) IS DISTINCT FROM true
+     OR coalesce((v_r ->> 'converted')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 23: a real conversion no longer answers ok:true converted:true, so the ok:false above is about a function that always says no: %', v_r;
+  END IF;
+
+  -- (2) tables_halted COUNTED THE WRONG TABLES. One board of this Cluster is
+  -- already stopped for a reason this conversion did not place and will not
+  -- lift, so newly-halted and halted are different numbers.
+  v_h := public.fx_cluster('answers-halt');
+  PERFORM public.fx_seat(v_h, 18);
+  PERFORM public.fx_table(v_h, 'answers-halt f1', 'feeder', NULL, 9);
+  PERFORM public.fx_table(v_h, 'answers-halt f2', 'feeder', NULL, 9);
+  UPDATE public.tables SET dealing_halted_at = clock_timestamp(), dealing_halted_reason = 'lightning'
+   WHERE cluster_id = v_h AND role = 'feeder'
+     AND id = (SELECT id FROM public.tables WHERE cluster_id = v_h AND role = 'feeder' ORDER BY created_at LIMIT 1);
+  v_req := gen_random_uuid();
+  v_r := public.fn_cash_cluster_begin_pending_on(v_h, v_req);
+  IF (v_r ->> 'tables_newly_halted')::integer IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'FAIL 23: tables_newly_halted says % rather than the two boards this call actually stopped', v_r ->> 'tables_newly_halted';
+  END IF;
+  IF (v_r ->> 'tables_halted')::integer IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 23: tables_halted says % rather than the three boards of this Cluster that are not dealing', v_r ->> 'tables_halted';
+  END IF;
+  IF public.fx_halted(v_h) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 23: the estate disagrees with the answer: % boards are halted', public.fx_halted(v_h);
+  END IF;
+  SELECT payload INTO v_ev FROM public.cash_cluster_events
+   WHERE game_id = v_h AND kind = 'lightning_pending_on' ORDER BY id DESC LIMIT 1;
+  IF (v_ev ->> 'tables_halted')::integer IS DISTINCT FROM 3
+     OR (v_ev ->> 'tables_newly_halted')::integer IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'FAIL 23: the event carries % halted and % newly halted', v_ev ->> 'tables_halted', v_ev ->> 'tables_newly_halted';
+  END IF;
+  PERFORM public.fn_cash_cluster_abort_pending_on(v_h, v_req, 'harness');
+
+  -- (3) THE STRANDING SCAN TURNED A SOFT-DELETED BOARD INTO A HARD RAISE.
+  -- A deleted board carrying a stale halt with eligible players still on its
+  -- rows made v_stranded count them, and commit_lightning RAISEd - rolling
+  -- back and leaving the Cluster in PENDING_ON, which is the wedge the reaper
+  -- in section 21 exists to clean up after.
+  v_s := public.fx_cluster('answers-stranded');
+  PERFORM public.fx_seat(v_s, 18);
+  v_f := public.fx_table(v_s, 'answers-stranded ghost', 'feeder', NULL, 9);
+  PERFORM public.fx_seat_at(v_s, v_f, 3, true, 1);
+  UPDATE public.tables SET is_deleted = true,
+         dealing_halted_at = clock_timestamp() - interval '2 days', dealing_halted_reason = 'lightning'
+   WHERE id = v_f;
+  -- NON-VACUITY: the ghost board really is halted and really has eligible
+  -- players sitting on its rows, which is the only thing that made the old
+  -- scan count them.
+  SELECT count(DISTINCT ts.user_id)::integer INTO v_n FROM public.table_seats ts
+    JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.id = v_f AND tb.dealing_halted_at IS NOT NULL AND ts.left_at IS NULL
+     AND coalesce(ts.stack, 0) > 0;
+  IF v_n IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'FAIL 23: the ghost board carries % eligible seated player(s) rather than three, so the scan has nothing to miscount', v_n;
+  END IF;
+  v_req := gen_random_uuid();
+  PERFORM public.fn_cash_cluster_begin_pending_on(v_s, v_req);
+  v_r := public.fn_cash_cluster_commit_lightning(v_s, v_req);
+  IF coalesce((v_r ->> 'converted')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 23: a Cluster with a soft-deleted board carrying a stale halt could not convert: %', v_r;
+  END IF;
+  IF (v_r ->> 'pool_sessions')::integer IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 23: % pool sessions rather than the eighteen on the member board - the ghost board''s three must not be pooled either', v_r ->> 'pool_sessions';
+  END IF;
+
+  -- (4) THE FREEZE COULD LAND BETWEEN THE CHECK AND THE LOCK. Proved by
+  -- BEHAVIOUR rather than by reading the body: fn_platform_frozen is replaced
+  -- with one that answers false the first time it is asked and true the second,
+  -- which is exactly a break beginning while this call waits on the tick's
+  -- lock. A begin with only the pre-lock check would sail through it.
+  v_frozen := pg_get_functiondef('public.fn_platform_frozen()'::regprocedure);
+  CREATE TEMP TABLE fx_frozen_calls (n integer);
+  INSERT INTO fx_frozen_calls VALUES (0);
+  EXECUTE $q$
+    CREATE OR REPLACE FUNCTION public.fn_platform_frozen() RETURNS boolean
+    LANGUAGE plpgsql VOLATILE AS $body$
+    DECLARE v integer;
+    BEGIN
+      UPDATE fx_frozen_calls SET n = n + 1 RETURNING n INTO v;
+      RETURN v >= 2;
+    END $body$;
+  $q$;
+  v_g := public.fx_cluster('answers-freeze');
+  PERFORM public.fx_seat(v_g, 18);
+  v_seats := public.fx_tables_md5(v_g);
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, gen_random_uuid());
+  IF v_r ->> 'reason' IS DISTINCT FROM 'platform_frozen' THEN
+    RAISE EXCEPTION 'FAIL 23: a freeze that began between the pre-lock check and the lock was missed - the begin answered % and halted the Cluster during the break', v_r;
+  END IF;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'must_move'
+     OR public.fx_halted(v_g) IS DISTINCT FROM 0
+     OR public.fx_tables_md5(v_g) IS DISTINCT FROM v_seats
+     OR EXISTS (SELECT 1 FROM public.cash_cluster_conversion WHERE cluster_id = v_g) THEN
+    RAISE EXCEPTION 'FAIL 23: the post-lock freeze refusal still changed something';
+  END IF;
+  -- NON-VACUITY: with the counter reset so that BOTH asks answer false, the
+  -- identical call succeeds.
+  UPDATE fx_frozen_calls SET n = -10;
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, gen_random_uuid());
+  IF v_r ->> 'reason' IS DISTINCT FROM 'pending_on' THEN
+    RAISE EXCEPTION 'FAIL 23: the identical call with nothing frozen answered %, so the refusal above was not about the freeze', v_r;
+  END IF;
+  EXECUTE v_frozen;
+  DROP TABLE fx_frozen_calls;
+  IF public.fn_platform_frozen() THEN
+    RAISE EXCEPTION 'FAIL 23: the real fn_platform_frozen was not restored';
+  END IF;
+  PERFORM public.fn_cash_cluster_abort_pending_on(v_g, (v_r ->> 'conversion_request_id')::uuid, 'harness');
+END $$;
+\echo '  ok  23 THE ANSWERS          four answers that were wrong, each proved live and each with its non-vacuity half: a commit whose population falls away at the boundary self-aborts and now answers ok FALSE with converted false and the abort reason carried, while the identical pair of calls on a Cluster that keeps its eighteen still answers ok true converted true, so ok:false is about the abort rather than about a function that always says no; a Cluster with one board already stopped for a reason this conversion did not place answers tables_newly_halted 2 and tables_halted 3 - in the reply AND in the event - and the estate agrees at three, where the single number used to say two and a caller was told fewer boards were stopped than were stopped; a soft-deleted board carrying a two-day-old stale halt with THREE eligible players proved to be sitting on its rows no longer makes the stranding scan RAISE and roll the whole conversion back into PENDING_ON - the Cluster converts, and pools the eighteen on the member board and not the ghost board''s three; and a freeze that begins in the window between the pre-lock check and the lock is now caught, proved by BEHAVIOUR rather than by reading the body - fn_platform_frozen is replaced by one that answers false the first time it is asked and true the second, which is exactly a break beginning while the call waits on the tick''s lock, and begin_pending_on refuses platform_frozen, opens no conversion, halts nothing and leaves the tables md5 byte-identical, while the same call with both asks answering false converts as usual'
+MINE
+
+cat >> "$mine_assertions" <<'MINE'
+
+-- 24 THE ABORT GIVES THE MOVES BACK ---------------------------------------------
+DO $$
+DECLARE
+  v_g uuid; v_g2 uuid; v_a uuid; v_req uuid; v_r jsonb;
+  v_move uuid; v_other uuid; v_n integer; v_note text;
+BEGIN
+  v_g := public.fx_change_cluster('restore');
+  v_a := public.fx_asker(v_g);
+  IF public.fx_try_door(v_g, v_a) IS DISTINCT FROM 'answered true' THEN
+    RAISE EXCEPTION 'FAIL 24: the door would not plan a move, so there is nothing for the abort to give back';
+  END IF;
+  SELECT id INTO v_move FROM public.cash_seat_moves WHERE game_id = v_g AND state = 'pending';
+  IF v_move IS NULL THEN RAISE EXCEPTION 'FAIL 24: no pending move was planned'; END IF;
+  -- A MOVE CANCELLED BY SOMETHING ELSE, which must stay cancelled. Its note is
+  -- the planner's own, not the conversion's.
+  INSERT INTO public.cash_seat_moves (game_id, player_id, from_table_id, to_table_id, reason, state, resolved_at, note)
+  SELECT v_g, gen_random_uuid(), m.from_table_id, m.to_table_id, 'must_move', 'cancelled', clock_timestamp(), 'left_table'
+    FROM public.cash_seat_moves m WHERE m.id = v_move
+  RETURNING id INTO v_other;
+
+  v_req := gen_random_uuid();
+  v_r := public.fn_cash_cluster_begin_pending_on(v_g, v_req);
+  IF (v_r ->> 'seat_moves_cancelled')::integer IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 24: the begin cancelled % move(s) rather than the one that was pending', v_r ->> 'seat_moves_cancelled';
+  END IF;
+  IF (SELECT state FROM public.cash_seat_moves WHERE id = v_move) IS DISTINCT FROM 'cancelled'
+     OR (SELECT note FROM public.cash_seat_moves WHERE id = v_move) NOT LIKE '%cancelled by lightning pending_on' THEN
+    RAISE EXCEPTION 'FAIL 24: the begin did not cancel the move with its own note';
+  END IF;
+
+  v_r := public.fn_cash_cluster_abort_pending_on(v_g, v_req, 'harness');
+  IF (v_r ->> 'seat_moves_restored')::integer IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 24: the abort restored % move(s) rather than the one the begin took away', v_r ->> 'seat_moves_restored';
+  END IF;
+  IF (SELECT state FROM public.cash_seat_moves WHERE id = v_move) IS DISTINCT FROM 'pending'
+     OR (SELECT resolved_at FROM public.cash_seat_moves WHERE id = v_move) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 24: the restored move is not pending again with a clear resolved_at';
+  END IF;
+  IF (SELECT note FROM public.cash_seat_moves WHERE id = v_move) LIKE '%cancelled by lightning pending_on' THEN
+    RAISE EXCEPTION 'FAIL 24: the restored move still carries the cancellation marker, so a second conversion would match it twice';
+  END IF;
+  -- AND THE ONE THAT WAS CANCELLED FOR ANOTHER REASON IS STILL CANCELLED.
+  IF (SELECT state FROM public.cash_seat_moves WHERE id = v_other) IS DISTINCT FROM 'cancelled'
+     OR (SELECT note FROM public.cash_seat_moves WHERE id = v_other) IS DISTINCT FROM 'left_table' THEN
+    RAISE EXCEPTION 'FAIL 24: the abort resurrected a move this conversion never cancelled';
+  END IF;
+  -- AND THE PLAYER''S SEAT CHANGE IS WHOLE AGAIN: the request still points at
+  -- the move, and the move is pending, which is the pair that was broken.
+  IF NOT EXISTS (SELECT 1 FROM public.cash_seat_change_requests q
+                  WHERE q.game_id = v_g AND q.status = 'moved' AND q.move_id = v_move) THEN
+    RAISE EXCEPTION 'FAIL 24: the seat-change request no longer names the restored move';
+  END IF;
+
+  -- THE UNIQUE INDEX IS RESPECTED RATHER THAN CRASHED INTO. Same shape; the
+  -- player picks up another pending move while the conversion is open, so the
+  -- restore would violate cash_seat_moves_one_pending_per_player, and an abort
+  -- that raises is an abort that cannot recover anything.
+  v_g2 := public.fx_change_cluster('restore-clash');
+  v_a  := public.fx_asker(v_g2);
+  IF public.fx_try_door(v_g2, v_a) IS DISTINCT FROM 'answered true' THEN
+    RAISE EXCEPTION 'FAIL 24: the clash fixture would not plan a move';
+  END IF;
+  SELECT id INTO v_move FROM public.cash_seat_moves WHERE game_id = v_g2 AND state = 'pending';
+  v_req := gen_random_uuid();
+  PERFORM public.fn_cash_cluster_begin_pending_on(v_g2, v_req);
+  INSERT INTO public.cash_seat_moves (game_id, player_id, from_table_id, to_table_id, reason, state)
+  SELECT v_g2, m.player_id, m.from_table_id, m.to_table_id, 'must_move', 'pending'
+    FROM public.cash_seat_moves m WHERE m.id = v_move;
+  v_r := public.fn_cash_cluster_abort_pending_on(v_g2, v_req, 'harness');
+  IF coalesce((v_r ->> 'aborted')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 24: the abort raised or refused rather than skipping a restore it could not make: %', v_r;
+  END IF;
+  IF (v_r ->> 'seat_moves_restored')::integer IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 24: the abort restored % move(s) into a unique index that already had one', v_r ->> 'seat_moves_restored';
+  END IF;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g2) IS DISTINCT FROM 'must_move'
+     OR public.fx_halted(v_g2) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 24: the abort did not finish its real work after declining the restore';
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.cash_seat_moves WHERE game_id = v_g2 AND state = 'pending';
+  IF v_n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 24: % pending move(s) survive the clash rather than the one that was already there', v_n;
+  END IF;
+END $$;
+\echo '  ok  24 THE MOVES COME BACK   the abort gives back exactly the seat moves the begin took away and nothing else: a real seat change made through the REAL door leaves a pending cash_seat_moves row, begin_pending_on cancels it and stamps its own note, and abort_pending_on answers seat_moves_restored 1 and puts it back pending with a clear resolved_at and the cancellation marker STRIPPED so a second conversion cannot match it twice - while a move cancelled beside it for another reason, carrying the planner''s own note, is still cancelled afterwards, and the cash_seat_change_requests row still names the restored move, which is the pair that was broken: a player who had spent their one seat change of the stay was left holding a request that said moved against a move that said cancelled; and where the restore CANNOT be made - the same shape, with the player picking up another pending move while the conversion is open, so cash_seat_moves_one_pending_per_player would be violated - the abort SKIPS it, answers seat_moves_restored 0, and still finishes its real work, returning the Cluster to must_move with every halt lifted, because an abort that can raise is an abort that cannot recover anything'
+MINE
+
+cat >> "$mine_assertions" <<'MINE'
+
+-- 25 THE NINE FIELDS AND THE POOL STATE ------------------------------------------
+CREATE FUNCTION public.fx_eligible_active_only(p_game uuid) RETURNS integer LANGUAGE sql STABLE AS $fx$
+  -- THE DISCARDED PREDICATE, WRITTEN OUT ONCE. This is fn_cash_cluster_live_
+  -- eligible as it stood before the remediation: the pool half tested
+  -- s.state = 'active' and nothing else.
+  SELECT GREATEST(0, (SELECT count(DISTINCT u.player_id)::integer FROM (
+           SELECT ts.user_id AS player_id
+             FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+            WHERE tb.cluster_id = g.id AND coalesce(tb.is_deleted, false) = false
+              AND coalesce(tb.lifecycle, '') <> 'closed'
+              AND ts.left_at IS NULL AND ts.user_id IS NOT NULL
+              AND coalesce(ts.is_sitting_out, false) = false
+              AND coalesce(ts.leave_pending, false) = false
+              AND coalesce(ts.stack, 0) > 0
+           UNION
+           SELECT s.player_id FROM public.lightning_pool_session s
+            WHERE s.cluster_id = g.id AND s.cluster_epoch = g.cluster_epoch
+              AND s.exited_at IS NULL AND s.state = 'active') u))
+    FROM public.cash_games g WHERE g.id = p_game;
+$fx$;
+
+DO $$
+DECLARE
+  v_g uuid; v_req uuid; v_r jsonb; v_p uuid; v_u uuid; v_n integer; v_t text;
+BEGIN
+  -- THE NINE COLUMNS EXIST, WITH A ZERO DEFAULT, AND CANNOT GO NEGATIVE.
+  SELECT count(*)::integer INTO v_n FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'lightning_pool_session'
+     AND column_name IN ('hands', 'fast_folds', 'normal_folds', 'fold_and_watch', 'showdowns',
+                         'hands_per_hour', 'average_wait', 'p95_wait', 'p99_wait')
+     AND is_nullable = 'NO' AND column_default IS NOT NULL;
+  IF v_n IS DISTINCT FROM 9 THEN
+    RAISE EXCEPTION 'FAIL 25: % of the nine fields the specification names exist as NOT NULL columns with a default', v_n;
+  END IF;
+
+  v_g := public.fx_cluster('pool');
+  PERFORM public.fx_seat(v_g, 18);
+  v_req := gen_random_uuid();
+  PERFORM public.fn_cash_cluster_begin_pending_on(v_g, v_req);
+  v_r := public.fn_cash_cluster_commit_lightning(v_g, v_req);
+  IF coalesce((v_r ->> 'converted')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 25: the pool Cluster would not convert: %', v_r;
+  END IF;
+  SELECT id, player_id INTO v_p, v_u FROM public.lightning_pool_session
+   WHERE cluster_id = v_g ORDER BY id LIMIT 1;
+  IF (SELECT hands + fast_folds + normal_folds + fold_and_watch + showdowns
+             + hands_per_hour + average_wait + p95_wait + p99_wait
+        FROM public.lightning_pool_session WHERE id = v_p) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 25: a fresh pool session does not read nought across the nine counters';
+  END IF;
+  BEGIN
+    UPDATE public.lightning_pool_session SET hands = -1 WHERE id = v_p;
+    RAISE EXCEPTION 'FAIL 25: a pool session took a negative hand count';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  UPDATE public.lightning_pool_session SET hands = 40, fast_folds = 11, p95_wait = 1200 WHERE id = v_p;
+
+  -- THE POOL HALF OF THE COUNT IS MADE LOAD-BEARING. While everybody is still
+  -- seated the seated half answers on its own, so the player whose state is
+  -- about to change is UNSEATED first: from here their only claim on the
+  -- population is their pool session.
+  UPDATE public.table_seats ts SET left_at = clock_timestamp()
+    FROM public.tables tb WHERE tb.id = ts.table_id AND tb.cluster_id = v_g AND ts.user_id = v_u;
+  IF public.fn_cash_cluster_live_eligible(v_g) IS DISTINCT FROM 18
+     OR public.fx_eligible_active_only(v_g) IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 25: an unseated player with an active pool session is not counted at all, so the state test below decides nothing';
+  END IF;
+  -- A STATE THAT MUST NOT COUNT, STILL DOES NOT.
+  UPDATE public.lightning_pool_session SET state = 'sit_out' WHERE id = v_p;
+  IF public.fn_cash_cluster_live_eligible(v_g) IS DISTINCT FROM 17 THEN
+    RAISE EXCEPTION 'FAIL 25: a sitting-out pool session is being counted toward the live eligible population';
+  END IF;
+
+  -- AND THE TRAP THE 'active' DECISION LEFT IS DISARMED. A state added to the
+  -- vocabulary next year counts by default; under the discarded predicate every
+  -- session in it silently stopped counting, which is how the population of a
+  -- Lightning Cluster falls past its OFF threshold with nobody having left.
+  ALTER TABLE public.lightning_pool_session DROP CONSTRAINT lightning_pool_session_state_check;
+  ALTER TABLE public.lightning_pool_session ADD CONSTRAINT lightning_pool_session_state_check
+    CHECK (state IN ('joining', 'eligibility_check', 'active', 'idle_pool', 'matching',
+                     'sit_out', 'disconnected', 'leaving', 'closed'));
+  UPDATE public.lightning_pool_session SET state = 'idle_pool' WHERE id = v_p;
+  IF public.fx_eligible_active_only(v_g) IS DISTINCT FROM 17 THEN
+    RAISE EXCEPTION 'FAIL 25: the discarded predicate counts an idle_pool session, so there was never a trap to disarm';
+  END IF;
+  IF public.fn_cash_cluster_live_eligible(v_g) IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 25: a pool session in a state added after this file was written stopped being counted, and that is how a Lightning Cluster drains with nobody having left';
+  END IF;
+  UPDATE public.lightning_pool_session SET state = 'matching' WHERE id = v_p;
+  IF public.fn_cash_cluster_live_eligible(v_g) IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 25: a second new state is not counted either';
+  END IF;
+  UPDATE public.lightning_pool_session SET state = 'active' WHERE id = v_p;
+  ALTER TABLE public.lightning_pool_session DROP CONSTRAINT lightning_pool_session_state_check;
+  ALTER TABLE public.lightning_pool_session ADD CONSTRAINT lightning_pool_session_state_check
+    CHECK (state IN ('joining', 'eligibility_check', 'active', 'sit_out',
+                     'disconnected', 'leaving', 'closed'));
+
+  -- AND THE DECISION ITSELF IS PINNED: commit_lightning still writes 'active',
+  -- because IDLE_POOL is a Phase 6 sub-state of it and the vocabulary carries
+  -- none of the matcher's eleven conceptual states.
+  SELECT count(*)::integer INTO v_n FROM public.lightning_pool_session
+   WHERE cluster_id = v_g AND state = 'active';
+  IF v_n IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 25: % of the eighteen pool sessions are active', v_n;
+  END IF;
+  v_t := pg_get_constraintdef((SELECT oid FROM pg_constraint
+                                WHERE conrelid = 'public.lightning_pool_session'::regclass
+                                  AND conname = 'lightning_pool_session_state_check'));
+  IF v_t LIKE '%idle_pool%' OR v_t LIKE '%matching%' THEN
+    RAISE EXCEPTION 'FAIL 25: the harness did not put the state vocabulary back';
+  END IF;
+END $$;
+\echo '  ok  25 THE NINE FIELDS       the nine fields the specification names and the database did not have - hands, fast_folds, normal_folds, fold_and_watch, showdowns, hands_per_hour, average_wait, p95_wait and p99_wait - all exist NOT NULL with a zero default, a freshly converted pool session reads nought across all nine, and a negative hand count is refused with a check violation by one named constraint; and the trap the ''active'' decision leaves is disarmed rather than documented: a player is UNSEATED first, so that their only claim on the population is their pool session and the state test decides something, sit_out is proved still not to count at 17, and then idle_pool and matching are added to the vocabulary and the session put into each - where the DISCARDED predicate, written out in full in this file, answers 17 and fn_cash_cluster_live_eligible answers 18, because it now counts by EXCLUSION and a state nobody has thought about counts by default rather than silently dropping a Lightning Cluster''s population past its own OFF threshold with nobody having left; commit_lightning is pinned to still write ''active'' at step 19, which is the decision the migration records rather than a thing that merely happens, and the vocabulary is put back'
+
+-- 26 THE COUNT THAT IS EPOCH-SCOPED AND THE ONE THAT CANNOT BE ---------------------
+DO $$
+DECLARE
+  v_g uuid; v_req uuid; v_r jsonb; v_st jsonb; v_p uuid;
+BEGIN
+  v_g := public.fx_cluster('epochs');
+  PERFORM public.fx_seat(v_g, 18);
+  v_req := gen_random_uuid();
+  PERFORM public.fn_cash_cluster_begin_pending_on(v_g, v_req);
+  v_r := public.fn_cash_cluster_commit_lightning(v_g, v_req);
+  IF coalesce((v_r ->> 'converted')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 26: the Cluster would not convert: %', v_r;
+  END IF;
+  v_st := public.fn_cash_cluster_lightning_state(v_g);
+  IF (v_st ->> 'open_pool_sessions')::integer IS DISTINCT FROM 18
+     OR (v_st ->> 'open_cluster_sessions')::integer IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 26: the state object opens at % pool and % cash sessions rather than eighteen of each',
+      v_st ->> 'open_pool_sessions', v_st ->> 'open_cluster_sessions';
+  END IF;
+
+  -- ONE OF THEM IS A POOL COUNT. Exiting a pool session moves it and does not
+  -- move the cash count, because the cash session is continuous.
+  SELECT id INTO v_p FROM public.lightning_pool_session WHERE cluster_id = v_g ORDER BY id LIMIT 1;
+  UPDATE public.lightning_pool_session
+     SET exited_at = clock_timestamp(), exit_reason = 'harness' WHERE id = v_p;
+  v_st := public.fn_cash_cluster_lightning_state(v_g);
+  IF (v_st ->> 'open_pool_sessions')::integer IS DISTINCT FROM 17
+     OR (v_st ->> 'open_cluster_sessions')::integer IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 26: after one pool exit the object says % pool and % cash', v_st ->> 'open_pool_sessions', v_st ->> 'open_cluster_sessions';
+  END IF;
+
+  -- AND IT IS EPOCH-SCOPED, WHILE THE CASH COUNT CANNOT BE: cash_player_session
+  -- has no cluster_epoch column at all, because the cash session is subordinate
+  -- to nothing and outlives the conversion by specification.
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'cash_player_session'
+                AND column_name = 'cluster_epoch') THEN
+    RAISE EXCEPTION 'FAIL 26: cash_player_session has grown a cluster_epoch, and the whole reason open_cluster_sessions carries no epoch filter has changed';
+  END IF;
+  ALTER TABLE public.cash_games DISABLE TRIGGER USER;
+  UPDATE public.cash_games SET cluster_epoch = cluster_epoch + 1 WHERE id = v_g;
+  ALTER TABLE public.cash_games ENABLE TRIGGER USER;
+  v_st := public.fn_cash_cluster_lightning_state(v_g);
+  IF (v_st ->> 'open_pool_sessions')::integer IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 26: the pool count is not epoch-scoped - it answers % an epoch past the one the sessions were created in', v_st ->> 'open_pool_sessions';
+  END IF;
+  IF (v_st ->> 'open_cluster_sessions')::integer IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 26: the cash count moved with the epoch, and it is the one count in this object that must not';
+  END IF;
+  ALTER TABLE public.cash_games DISABLE TRIGGER USER;
+  UPDATE public.cash_games SET cluster_epoch = cluster_epoch - 1 WHERE id = v_g;
+  ALTER TABLE public.cash_games ENABLE TRIGGER USER;
+
+  -- THE READER IS STILL CHEAP. Phase 4 asserts this object does not call the
+  -- breakdown, and a pool count is not an excuse to start.
+  IF regexp_replace(pg_get_functiondef('public.fn_cash_cluster_lightning_state(uuid)'::regprocedure),
+                    '--[^' || chr(10) || ']*', '', 'g') ~ 'fn_cash_cluster_population' THEN
+    RAISE EXCEPTION 'FAIL 26: the state object now calls the breakdown, and the lobby embeds this reader on every poll';
+  END IF;
+  -- AND THE LOBBY CARRIES IT, because the lobby embeds this object whole.
+  IF (public.fn_cash_game_lobby(v_g) -> 'lightning' ->> 'open_pool_sessions') IS NULL THEN
+    RAISE EXCEPTION 'FAIL 26: the lobby does not carry the epoch-scoped pool count';
+  END IF;
+END $$;
+\echo '  ok  26 THE TWO COUNTS        fn_cash_cluster_lightning_state reported cluster_epoch, a live_eligible scoped to that epoch, and an open_cluster_sessions with no epoch filter at all, which read like an omission: a converted Cluster now answers open_pool_sessions 18 beside open_cluster_sessions 18, exiting ONE pool session moves the first to 17 and leaves the second at 18, and moving the Cluster one epoch forward moves the first to ZERO and still leaves the second at 18 - so one count is epoch-scoped and the other deliberately is not, and cash_player_session is asserted to have no cluster_epoch column at all, because the cash session is continuous across the conversion by specification and a filter that could be added there would contradict it; the reader stays cheap, still not calling fn_cash_cluster_population, and the lobby - which embeds this object whole - carries the new count'
+MINE
+
+# 27 EVERY @live-proof THE REMEDIATION MAKES, EVALUATED -------------------------
+# Same mechanism as section 15, pointed at 20260925204249 instead: each
+# expression is extracted from the file under test and inlined as CODE, so one
+# that no longer PARSES fails the run too, and there is no quarantine and no
+# exception list. Four of them are the supersessions the remediation's header
+# records as a dated Correction - proofs of 20260921151618 that were true on the
+# day of its apply for reasons that had nothing to do with the code it shipped -
+# and two more are stricter re-cuts of proofs that were narrower than their own
+# sentences: the seat-write scan that grepped UPDATE and DELETE and not INSERT,
+# and the "nothing calls the conversion" scan whose pattern omitted
+# fn_cash_cluster_abort_pending_on.
+: > "$fixture/mine-live-proofs.sql"
+printf '%s\n' 'CREATE TEMP TABLE mlp (n integer, lineno integer, ok boolean);' \
+  >> "$fixture/mine-live-proofs.sql"
+mine_n=0
+while IFS= read -r mine_line; do
+  mine_n=$((mine_n + 1))
+  mine_lineno=${mine_line%%:*}
+  mine_expr=${mine_line#*:}
+  mine_expr=${mine_expr#-- @live-proof: }
+  {
+    printf '%s%s%s%s%s' 'INSERT INTO mlp VALUES (' "$mine_n" ', ' "$mine_lineno" ', coalesce(('
+    printf '%s%s\n' "$mine_expr" ')::boolean, false));'
+  } >> "$fixture/mine-live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$mine")
+
+if [ "$mine_n" -lt 20 ]; then
+  echo "FAIL 27: only $mine_n @live-proof line(s) were found in $mine, so this section would prove almost nothing"
+  exit 1
+fi
+
+{
+  printf '%s\n' 'DO $mlp$'
+  printf '%s\n' 'DECLARE v_bad text; v_n integer;'
+  printf '%s\n' 'BEGIN'
+  printf '%s%s%s\n' '  SELECT count(*)::integer INTO v_n FROM mlp; IF v_n IS DISTINCT FROM ' "$mine_n" ' THEN'
+  printf '%s%s%s\n' "    RAISE EXCEPTION 'FAIL 27: % of the " "$mine_n" " proof expressions were evaluated', v_n;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' "  SELECT string_agg('#' || n || ' (line ' || lineno || ' of the remediation)', ', ' ORDER BY n) INTO v_bad"
+  printf '%s\n' '    FROM mlp WHERE ok IS DISTINCT FROM true;'
+  printf '%s\n' '  IF v_bad IS NOT NULL THEN'
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL 27: the remediation carries @live-proof % that is NOT true of the database it just produced', v_bad;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' 'END $mlp$;'
+  printf '%s%s%s\n' "\\echo '  ok  27 EVERY LIVE PROOF    all " "$mine_n" " @live-proof expressions the remediation carries in its own header were extracted from the file under test, inlined as code so that one which no longer PARSES is a failure too, and evaluated against the catalogue and the estate every section above has built - including the four that SUPERSEDE proofs of 20260921151618 which were true on the day of its apply for reasons that had nothing to do with its code (a halted-table count against a column that file ADD COLUMNed with no default, a committed-conversion epoch check against a table it created empty, an estate count of lightning_enabled Clusters, and a lightning_state IS NULL count selected FROM cash_games which that function can only answer NULL to when the row is not there), each replaced by one that says something about the CODE, and the two stricter re-cuts: the seat-write scan now greps INSERT as well as UPDATE and DELETE, and the nothing-calls-the-conversion scan now names fn_cash_cluster_abort_pending_on as well as the other two - and every single one of them is true, with no quarantine and no exception list'"
+} >> "$fixture/mine-live-proofs.sql"
+
 # ONE psql session, thirteen files: the three fixtures, the six predecessor
 # migrations, the pre-migration measurements of the bodies the substitution will
 # bite, the migration, the assertions and the teardown, the migration's own
@@ -3313,7 +4205,11 @@ set +e
   -f "$fixture/assertions.sql" \
   -f "$fixture/live-proofs.sql" \
   -f "$migration" \
-  -f "$fixture/reapply-assertions.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  -f "$fixture/reapply-assertions.sql" \
+  -f "$mine" \
+  -f "$fixture/mine-assertions.sql" \
+  -f "$mine" \
+  -f "$fixture/mine-live-proofs.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 psql_status=${PIPESTATUS[0]}
 set -e
 if [ "$psql_status" != 0 ]; then
@@ -3321,13 +4217,13 @@ if [ "$psql_status" != 0 ]; then
   exit 1
 fi
 
-# NINETEEN SECTIONS REPORTED, and the count is asserted rather than eyeballed: a
+# TWENTY-SEVEN SECTIONS REPORTED, and the count is asserted rather than eyeballed: a
 # psql that stopped early exits non-zero, but a section deleted from this file
 # during a refactor would not, and the PASS line below would still print.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 19 ]; then
-  echo "FAIL: $oks of the 19 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 27 ]; then
+  echo "FAIL: $oks of the 27 sections reported, so this run proved less than this file claims"
   exit 1
 fi
 
-echo "PASS: Lightning Phase 5, the conversion is one transaction and the tables stop dealing, 19 checks: THE BODIES ARE REAL - the fixture installs the REAL 40,000+ character fn_cash_cluster_tick, assembled by line range from 20260906015029 and five real substitution migrations in version order, carrying the manual_game anchor exactly once and fn_platform_frozen, FOR UPDATE and no is_horse, plus the REAL fn_cash_cluster_balance, and a must_move tick that really rewrites tables and really plans seat moves so that nothing later is vacuous - then, against the migration: a six-max Cluster of eighteen eligible seated players with open cluster sessions goes to PENDING_ON with both tables halted for lightning_pending_on, both pending seat moves cancelled with a reason, a conversion record carrying all nine of the specification's fields, a lightning_pending_on event, and NO epoch move and NO pool session; commit_lightning then bumps the epoch by exactly one, opens a cash_cluster_epoch row with started_by lightning_on, creates one pool session per eligible player at the NEW epoch pointing at the cash session the player ALREADY had, re-stamps the halt to lightning and commits the record; F12 holds byte for byte across a nineteen-player conversion on a row-level md5 of every table_seats and cash_player_session column, through an md5 first proved to move and come back; F04 aborts BY ITSELF when the eighteenth player leaves at the boundary and again through a direct call, clearing only its own halt, and the tick plans moves again afterwards; F13 is answered twice - two different request ids produce one conversion and a wrong_state naming the mode, with the partial unique index proved to bite by being made to fire, and the same request id twice is idempotent through both begin and commit with no second set of pool sessions - and a replayed request id is answered correctly for ALL THREE statuses a prior conversion can be in rather than only the pending one: ok with pending true and already_known against a pending conversion, ok with pending FALSE and already_committed against a committed one, and ok FALSE with pending false and conversion_already_aborted against an ABORTED one, carrying the recorded abort_reason back verbatim, leaving the Cluster in must_move with ZERO tables halted and no conversion row opened, and leaving it STILL CONVERTIBLE under a fresh request id all the way to lightning - which is the property the old unconditional already_known destroyed, because a caller keying on ok alone was told a conversion was in flight and then polled commit_lightning for conversion_already_closed for ever; both idempotency reads are covered and the POST-LOCK one is RACED rather than read, a second backend opened with dblink being observed in pg_stat_activity genuinely blocked on the Cluster row lock before the aborted row for its request id is inserted and the lock released, with the two branches finally compared to EACH OTHER as comment-stripped whitespace-normalised text out of the installed body; F14 converts on the population re-measured AT the boundary with the pool set equal to the eligible set in both directions; F15's one-open index is proved to bite for a player and not for a different one; the tick and the balancer STAND DOWN in pending_on and in lightning and are proved to write nothing while doing it, the substitution is proved surgical by growth and by every sibling guard, and neither function mentions is_horse; the hand boundary refuses on a hand in flight and changes nothing, admits the conversion once the hand ends, and does not wedge on a seven-hour-old abandoned row while a five-hour-old one still blocks; the freeze refuses begin and commit and does NOT refuse abort; an eligible player with no open cash session aborts cleanly with a counted reason instead of a NOT NULL violation; all three functions answer not_found and wrong_state naming the mode in every one of the nine illegal starting states rather than raising; anon, authenticated and PUBLIC execute none of the three and service_role executes all three, cash_cluster_conversion has RLS on and no policy, and the halt vocabulary is closed; all of the migration's own @live-proof expressions are extracted from the file under test and true; and the migration applied a SECOND time leaves five bodies, five acls and five comments byte-identical with the stand-down present exactly once in each, no row moved and every Cluster answering identically; and a board whose tables.lifecycle is NULL - which the column permits - is halted, pooled, counted, orphan-refused and abort-resumed exactly as a live one is, with the harness own stranding query, asked from the halted side and proved non-vacuous at 21, answering ZERO, and the authorising number itself - fn_cash_cluster_live_eligible, re-cut onto the same membership predicate - answers 21 rather than 18 and writes 21 into the conversion record, because a reader that undercounts is the number that decides whether a Cluster may convert at all; and the WORSE sibling of that column, tables.status, which is nullable, may legally say 'paused', and whose CHECK could not forbid a NULL either because a CHECK that evaluates to NULL PASSES: a Cluster of 24 built as 18 on a waiting board plus 3 on a NULL-status board plus 3 on a paused one halts THREE boards, pools all 24 at the new epoch with every one of the six subordinate to the cash session they already held, and leaves the closed board and the deleted board - both carrying the waiting the discarded predicate admitted - unhalted, uncounted and unpooled, so what is proved is that status stopped deciding membership and not that membership stopped being filtered. The same shape is then converted a second time with NOTHING asserted about how many boards were stopped and NO absolute number asserted at all - only that the pool, the distinct players, the conversion record and fn_cash_cluster_live_eligible equal ONE ANOTHER, which they did at 18 under the defect exactly as they do at 24 under the fix - and is then asked the three questions that name no status: is any member board of a lightning Cluster still dealing, is any eligible player of it still being dealt cash, and is anybody on a member board without a pool session. That is the direction the halted-side stranding assertion could not see, and it is the only thing that catches a predicate which narrows the halt and the player-set queries together"
+echo "PASS: Lightning Phase 5, the conversion is one transaction and the tables stop dealing, 27 checks: THE BODIES ARE REAL - the fixture installs the REAL 40,000+ character fn_cash_cluster_tick, assembled by line range from 20260906015029 and five real substitution migrations in version order, carrying the manual_game anchor exactly once and fn_platform_frozen, FOR UPDATE and no is_horse, plus the REAL fn_cash_cluster_balance, and a must_move tick that really rewrites tables and really plans seat moves so that nothing later is vacuous - then, against the migration: a six-max Cluster of eighteen eligible seated players with open cluster sessions goes to PENDING_ON with both tables halted for lightning_pending_on, both pending seat moves cancelled with a reason, a conversion record carrying all nine of the specification's fields, a lightning_pending_on event, and NO epoch move and NO pool session; commit_lightning then bumps the epoch by exactly one, opens a cash_cluster_epoch row with started_by lightning_on, creates one pool session per eligible player at the NEW epoch pointing at the cash session the player ALREADY had, re-stamps the halt to lightning and commits the record; F12 holds byte for byte across a nineteen-player conversion on a row-level md5 of every table_seats and cash_player_session column, through an md5 first proved to move and come back; F04 aborts BY ITSELF when the eighteenth player leaves at the boundary and again through a direct call, clearing only its own halt, and the tick plans moves again afterwards; F13 is answered twice - two different request ids produce one conversion and a wrong_state naming the mode, with the partial unique index proved to bite by being made to fire, and the same request id twice is idempotent through both begin and commit with no second set of pool sessions - and a replayed request id is answered correctly for ALL THREE statuses a prior conversion can be in rather than only the pending one: ok with pending true and already_known against a pending conversion, ok with pending FALSE and already_committed against a committed one, and ok FALSE with pending false and conversion_already_aborted against an ABORTED one, carrying the recorded abort_reason back verbatim, leaving the Cluster in must_move with ZERO tables halted and no conversion row opened, and leaving it STILL CONVERTIBLE under a fresh request id all the way to lightning - which is the property the old unconditional already_known destroyed, because a caller keying on ok alone was told a conversion was in flight and then polled commit_lightning for conversion_already_closed for ever; both idempotency reads are covered and the POST-LOCK one is RACED rather than read, a second backend opened with dblink being observed in pg_stat_activity genuinely blocked on the Cluster row lock before the aborted row for its request id is inserted and the lock released, with the two branches finally compared to EACH OTHER as comment-stripped whitespace-normalised text out of the installed body; F14 converts on the population re-measured AT the boundary with the pool set equal to the eligible set in both directions; F15's one-open index is proved to bite for a player and not for a different one; the tick and the balancer STAND DOWN in pending_on and in lightning and are proved to write nothing while doing it, the substitution is proved surgical by growth and by every sibling guard, and neither function mentions is_horse; the hand boundary refuses on a hand in flight and changes nothing, admits the conversion once the hand ends, and does not wedge on a seven-hour-old abandoned row while a five-hour-old one still blocks; the freeze refuses begin and commit and does NOT refuse abort; an eligible player with no open cash session aborts cleanly with a counted reason instead of a NOT NULL violation; all three functions answer not_found and wrong_state naming the mode in every one of the nine illegal starting states rather than raising; anon, authenticated and PUBLIC execute none of the three and service_role executes all three, cash_cluster_conversion has RLS on and no policy, and the halt vocabulary is closed; all of the migration's own @live-proof expressions are extracted from the file under test and true; and the migration applied a SECOND time leaves five bodies, five acls and five comments byte-identical with the stand-down present exactly once in each, no row moved and every Cluster answering identically; and a board whose tables.lifecycle is NULL - which the column permits - is halted, pooled, counted, orphan-refused and abort-resumed exactly as a live one is, with the harness own stranding query, asked from the halted side and proved non-vacuous at 21, answering ZERO, and the authorising number itself - fn_cash_cluster_live_eligible, re-cut onto the same membership predicate - answers 21 rather than 18 and writes 21 into the conversion record, because a reader that undercounts is the number that decides whether a Cluster may convert at all; and the WORSE sibling of that column, tables.status, which is nullable, may legally say 'paused', and whose CHECK could not forbid a NULL either because a CHECK that evaluates to NULL PASSES: a Cluster of 24 built as 18 on a waiting board plus 3 on a NULL-status board plus 3 on a paused one halts THREE boards, pools all 24 at the new epoch with every one of the six subordinate to the cash session they already held, and leaves the closed board and the deleted board - both carrying the waiting the discarded predicate admitted - unhalted, uncounted and unpooled, so what is proved is that status stopped deciding membership and not that membership stopped being filtered. The same shape is then converted a second time with NOTHING asserted about how many boards were stopped and NO absolute number asserted at all - only that the pool, the distinct players, the conversion record and fn_cash_cluster_live_eligible equal ONE ANOTHER, which they did at 18 under the defect exactly as they do at 24 under the fix - and is then asked the three questions that name no status: is any member board of a lightning Cluster still dealing, is any eligible player of it still being dealt cash, and is anybody on a member board without a pool session. That is the direction the halted-side stranding assertion could not see, and it is the only thing that catches a predicate which narrows the halt and the player-set queries together - and then, against 20260925204249 applied on top of all of it, the remediation: THE HALT IS A STANDING BAR rather than a one-shot cancel, proved through the REAL seat-change door and the REAL planner on a Cluster in pending_on and again on one in lightning, with the non-vacuity half on the same shape one column different; a Cluster WEDGED IN PENDING_ON is reaped by fn_cash_clusters_tick_all - which keeps running precisely because the per-Cluster tick stands down - after a bound this file proves is honoured at both ends and not during a maintenance break, leaving the Cluster in must_move, unhalted, recorded, still convertible, and carrying its whole pool health in the reap event, which is the first caller fn_cash_cluster_pool_health has ever had; ONE MEMBERSHIP PREDICATE at last, with fn_cash_cluster_census - the reader the tick, the balancer and the planner all share - and fn_cash_game_lobby moved onto the coalesced form and proved to see all three member boards of a Cluster the discarded predicate saw one of, while still excluding the closed and the soft-deleted ones; FOUR ANSWERS THAT WERE WRONG, each with its non-vacuity half - a self-abort that answered ok:true, a tables_halted that counted only newly halted tables, a stranding scan that turned a soft-deleted board with a stale halt into a hard RAISE, and a freeze that could land between the pre-lock check and the lock, this last proved by BEHAVIOUR with an fn_platform_frozen that answers false once and true thereafter; THE SEAT MOVES COME BACK, restored by the abort with the cancellation marker stripped and skipped rather than crashed into where the unique index already holds one; THE NINE FIELDS the specification names, NOT NULL at nought and refusing to go negative, with the inclusion-versus-exclusion trap disarmed - idle_pool and matching added to the vocabulary and proved to COUNT, where the discarded predicate silently dropped them; the state object's TWO COUNTS separated, one epoch-scoped and one that cannot be because cash_player_session carries no epoch by specification; and all of the remediation's own @live-proof expressions extracted from the file under test and true, including the four that supersede proofs of 20260921151618 which were true on the day of its apply for reasons that had nothing to do with its code"

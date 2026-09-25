@@ -2167,6 +2167,21 @@ describe('exact 8825 retained original custody retirement', () => {
      safe. Anything that is not a bare upper-case refusal token is reduced to its
      length, so a message that carried a hand, a player or a credential could not
      export it through the receipt. */
+  it('carries a refusal token that names its key (2026-09-25)', async () => {
+    // Run 36095932476, the 04:55 recovery window: the second retained manager
+    // refused `F06_RETIRED_CANONICAL_CHANGED: registrations` and the receipt
+    // said `refusal=string(44)`. The key is the finding.
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? raised('P0001', 'F06_RETIRED_CANONICAL_CHANGED: registrations')()
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_custody_rpc_unknown');
+    expect(result.observedDetail).toContain('refusal=F06_RETIRED_CANONICAL_CHANGED: registrations');
+  });
+
   it('reduces a refusal message that is not a bare token to its length', async () => {
     const f = mixedFixture();
     f.onRpcResponse((name: string) =>

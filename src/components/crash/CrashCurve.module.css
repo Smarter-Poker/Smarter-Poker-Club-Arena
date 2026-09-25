@@ -240,8 +240,13 @@
 .ticker::before {
   content: '';
   position: absolute;
-  inset: -18% 18%;
+  /* Inside the hero's own box, then stretched with a transform: a negative
+     inset would grow the element's scroll height and read as cut-off content
+     on a 375px phone (tests/e2e/css/diamond-games-playfield.spec.ts). */
+  inset: 0 18%;
   z-index: -1;
+  transform: scaleY(1.36);
+  transform-origin: center;
   background: radial-gradient(ellipse at center, rgb(5 6 7 / 55%), transparent 68%);
 }
 

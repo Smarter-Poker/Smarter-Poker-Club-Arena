@@ -92,7 +92,7 @@ function scan(sql: string): { code: string; biz: string } {
       i = j + 1;
       continue;
     }
-    const dollar = /^\$\w*\$/.exec(sql.slice(i, i + 40));
+    const dollar = /^\$\w*\$/.exec(sql.slice(i, i + 40)); // window-ok: not a source pin - a dollar-quote OPENING TAG, $tag$, cannot be longer than this, so this is a bounded lookahead for a token and nothing downstream of it is asserted
     if (dollar) {
       code += dollar[0];
       biz += dollar[0];
@@ -616,13 +616,12 @@ describe('Phase 5: membership is one predicate, coalesced, and status decides no
     ).toBe(deleted.length);
     for (const m of deleted) {
       const stmt = flat(stmtAround(MEMBERSHIP_SCOPE, m.index ?? 0));
+      const head = stmt.slice(0, 160); // window-ok: a failure-message truncation, not a source pin - both assertions below read the whole statement
       expect(
         stmt.includes(MEMBER_QUALIFIED) || stmt.includes(MEMBER_BARE),
-        `a membership site that does not carry both halves together: ${stmt.slice(0, 160)}`
+        `a membership site that does not carry both halves together: ${head}`
       ).toBe(true);
-      expect(stmt, `a membership site still filters on status: ${stmt.slice(0, 160)}`).not.toMatch(
-        /\bstatus\b/
-      );
+      expect(stmt, `a membership site still filters on status: ${head}`).not.toMatch(/\bstatus\b/);
     }
   });
 
@@ -1449,7 +1448,7 @@ describe('Phase 5: it reads itself back from the catalogue, and its scans can ru
       if (allowlisted) continue;
       expect(
         u,
-        `a catalogue-wide pg_get_functiondef scan with no prokind filter: ${flat(u).slice(0, 160)}`
+        `a catalogue-wide pg_get_functiondef scan with no prokind filter: ${flat(u).slice(0, 160)}` // window-ok: not a source pin - a failure-message truncation; the assertion below reads the whole unit
       ).toMatch(/p\.prokind\s*=\s*'f'/);
       guarded++;
     }

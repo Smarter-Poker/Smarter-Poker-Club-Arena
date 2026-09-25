@@ -109,7 +109,26 @@
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
 --
 -- @live-proof: (SELECT to_regclass('public.cash_cluster_epoch') IS NOT NULL)
--- @live-proof: (SELECT count(*) = (SELECT count(*) FROM public.cash_games) FROM public.cash_cluster_epoch WHERE epoch = 0)
+-- CORRECTED 2026-09-25. This line used to read:
+--   (SELECT count(*) = (SELECT count(*) FROM public.cash_games)
+--      FROM public.cash_cluster_epoch WHERE epoch = 0)
+-- and it was FALSE BY CONSTRUCTION from the moment it was written, which is
+-- not the same as having drifted. The genesis backfill below inserts one open
+-- row per Cluster at THAT CLUSTER'S OWN epoch - that is its whole purpose, and
+-- the read-back and the harness both assert it - so a Cluster that has ever
+-- advanced its epoch has no epoch-0 row at all and never did. The old form was
+-- accidentally true of a production estate in which nothing had yet converted,
+-- which is why nothing noticed for four days: it pinned an ESTATE fact dressed
+-- as a fact about the migration. It goes false the first time Phase 5 turns one
+-- Cluster on, and it was already false on any harness board carrying a Cluster
+-- past epoch 0.
+--
+-- Only the comment changed; no applied statement in this file is touched. It is
+-- restated as the invariant the backfill really establishes and that stays true
+-- for ever: every Cluster has exactly one OPEN epoch row. Found by giving this
+-- file's harness the live-proof section it never had. Recorded in
+-- docs/changelog/2026-09-21-lightning-phase-2-domain-extensions.md.
+-- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_games g WHERE (SELECT count(*) FROM public.cash_cluster_epoch e WHERE e.cluster_id = g.id AND e.ended_at IS NULL) <> 1))
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_games g WHERE NOT EXISTS (SELECT 1 FROM public.cash_cluster_epoch e WHERE e.cluster_id = g.id AND e.epoch = g.cluster_epoch AND e.ended_at IS NULL)))
 -- @live-proof: (SELECT to_regclass('public.cash_cluster_epoch_current') IS NOT NULL)
 -- @live-proof: (SELECT count(*) = 3 FROM pg_constraint c WHERE c.contype = 'f' AND c.conname IN ('lightning_pool_slot_belongs_to_its_session','lightning_reservation_belongs_to_its_slot','lightning_hand_player_sits_in_its_own_slot') AND array_length(c.conkey, 1) = 4)

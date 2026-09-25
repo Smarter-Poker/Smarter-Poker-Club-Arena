@@ -48,7 +48,7 @@ function newestDefinition(): { file: string; body: string } {
 describe('the atomic hand insert names only real columns', () => {
   it('is defined last by the migration whose body the live pin matches', () => {
     expect(newestDefinition().file).toBe(
-      '20260906113554_the_atomic_hand_insert_lets_the_defaults_apply_and_proves_it.sql'
+      '20260925032029_a_hand_history_row_cannot_be_written_with_no_table.sql'
     );
   });
 

@@ -45,7 +45,7 @@ finish_fixture() {
         result=1
       fi
     fi
-    if ! "$pgbin/pg_ctl" -D "$fixture/data" -m immediate stop > "$fixture/stop.log" 2>&1; then
+    if ! LC_ALL=C LANG=C "$pgbin/pg_ctl" -D "$fixture/data" -m immediate stop > "$fixture/stop.log" 2>&1; then
       result=1
       shutdown_failed=1
     fi
@@ -120,8 +120,12 @@ fixture_bootstrap=postgres
 # The bootstrap superuser cannot be demoted. Only the acceptance cluster later
 # tests managed postgres permissions, so give it a separate bootstrap identity.
 if [ "$phase" = acceptance ]; then fixture_bootstrap=accounting_fixture_bootstrap; fi
-"$pgbin/initdb" -D "$fixture/data" -U "$fixture_bootstrap" -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
-"$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
+# A UTF-8 locale inherited from the caller makes Apple's libc resolve it on a
+# helper thread and the postmaster refuses to start ("postmaster became
+# multithreaded during startup"). This cluster is already --no-locale/UTF8, so
+# declare the C locale for its own lifecycle commands.
+LC_ALL=C LANG=C "$pgbin/initdb" -D "$fixture/data" -U "$fixture_bootstrap" -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
+LC_ALL=C LANG=C "$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
   -o "-k $fixture/socket -p 55507 -h '' -c shared_preload_libraries=pg_cron -c cron.database_name=$fixture_db -c cron.launch_active_jobs=off" start > "$fixture/start.log" 2>&1
 started=1
 if [ "$phase" = acceptance ]; then

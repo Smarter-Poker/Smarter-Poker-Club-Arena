@@ -27,7 +27,7 @@
 
 import { supabase } from './supabase.js';
 import { cashAccountingBatchSize, resolveClientTimeoutMs } from './cashAccountingBatchBudget.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import {
   readCashSourceBatch,
@@ -350,6 +350,34 @@ export class RakebackSettlerService {
    */
   private catchUpHandle: ReturnType<typeof setTimeout> | null = null;
   /**
+   * A TICK THE FREEZE ATE IS STILL OWED (2026-09-21).
+   *
+   * The interval callback below must not settle during a maintenance freeze -
+   * settlement credits commissions and rakeback, which is chip movement, and
+   * the whole platform is meant to be still. That part was always right. What
+   * was wrong is that it `return`ed and the tick was simply GONE.
+   *
+   * The freeze runs :53 to :00 and the interval is 30 minutes, so on a process
+   * whose ticks land at :26 and :56 exactly half of them were inside the
+   * freeze. Measured live 2026-09-21 on engine-01: settlement runs began at
+   * 09:26, 10:26, 11:27, 12:27, 13:27 and 14:27 - once per hour, never at :56,
+   * for a service configured to run every thirty minutes. At 15:26:06Z the
+   * watermark was 2026-09-21T14:34:09Z, 52 minutes stale, with 985
+   * rake_records above it; `fn_process_weekly_accounting_scope` raises
+   * `weekly_rake_source_not_fully_accrued` and refuses to settle the week on
+   * exactly that state.
+   *
+   * The drain has ample capacity - the 15:26 run cleared all 985 rows in under
+   * a minute - so this was never a throughput problem. It was a lost tick.
+   *
+   * Remembering the debt and paying it on the thaw EVENT keeps both
+   * guarantees: nothing moves during the freeze, and nothing is skipped
+   * because of it. No timer, no poll, no repair loop - one boolean and one
+   * edge-triggered callback.
+   */
+  private tickOwedFromFreeze = false;
+  private thawUnsubscribe: (() => void) | null = null;
+  /**
    * Timer handles only describe future work. Settlement, financial-close and
    * conservation passes which already started keep mutating shared ledgers
    * after clearInterval/clearTimeout. Keep explicit ownership until every
@@ -413,13 +441,41 @@ export class RakebackSettlerService {
     console.log(`[RakebackSettler] Starting (interval: ${SETTLEMENT_INTERVAL_MS / 60000}m)`);
     // Run once immediately on startup, then every 30 min
     this.launchSettlement(generation, 'RakebackSettler.startup_run');
+    this.tickOwedFromFreeze = false;
+    this.thawUnsubscribe = onMaintenanceThaw(() => this.payTickOwedFromFreeze(generation));
     this.intervalHandle = setInterval(() => {
       // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
       // rakeback - chip movement by definition. A 30-minute cadence loses
       // nothing to a 5-minute wait.
-      if (isMaintenanceFrozen()) return;
+      //
+      // ...but it loses a whole THIRTY-MINUTE cadence to a dropped tick. Wait,
+      // do not skip: the debt is recorded here and paid on the thaw edge. See
+      // `tickOwedFromFreeze`.
+      if (isMaintenanceFrozen()) {
+        if (!this.tickOwedFromFreeze) {
+          this.tickOwedFromFreeze = true;
+          console.log(
+            '[RakebackSettler] maintenance freeze is on - holding this tick and running it at the thaw'
+          );
+        }
+        return;
+      }
       this.launchSettlement(generation, 'RakebackSettler.interval_run');
     }, SETTLEMENT_INTERVAL_MS);
+  }
+
+  /**
+   * The freeze just lifted. Run the tick it swallowed, once, and only if this
+   * generation still owns the schedule - `launchSettlement` re-checks that too,
+   * and `runSettlement`'s own `isSettling` guard makes a collision with the
+   * regular interval a no-op rather than a double credit.
+   */
+  private payTickOwedFromFreeze(generation: number): void {
+    if (!this.tickOwedFromFreeze) return;
+    this.tickOwedFromFreeze = false;
+    if (!this.lifecycleIsCurrent(generation)) return;
+    console.log('[RakebackSettler] maintenance freeze lifted - running the tick it held');
+    this.launchSettlement(generation, 'RakebackSettler.freeze_deferred_run');
   }
 
   stop(): Promise<void> {
@@ -438,6 +494,15 @@ export class RakebackSettlerService {
       clearTimeout(this.catchUpHandle);
       this.catchUpHandle = null;
     }
+    // A live thaw listener holding a fenced generation is exactly the
+    // post-stop admission race the lifecycle exists to close. Drop it, and
+    // forget the debt: the next start() opens a new generation and its own
+    // startup run already reads from the durable watermark.
+    if (this.thawUnsubscribe) {
+      this.thawUnsubscribe();
+      this.thawUnsubscribe = null;
+    }
+    this.tickOwedFromFreeze = false;
 
     const drain = (async () => {
       await this.drainLifecycleJobs();

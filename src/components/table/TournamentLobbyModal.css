@@ -9,10 +9,17 @@
    phone, tappable backdrop on the remaining quarter.
 
    The clone is not cosmetic. TournamentDetails measures its own distance from
-   the top of the VIEWPORT and writes `window.innerHeight - that` into
-   `--details-h`, so it only sizes itself correctly inside a container that
-   reaches the bottom of the viewport. Both layouts below do. A centred card
-   would make it compute a height taller than its own box and spill.
+   the top of the box it is embedded in (.tlm-body) and writes the remainder
+   into `--details-h`, so it only sizes itself correctly inside a box whose
+   height is independent of its own. Both layouts below give it one.
+
+   #ClubArenaConsole (2026-09-13). What the sheet HOLDS is the spade console
+   (components/console/SpadeConsole.css): the master's head at the top, the
+   page on the black glass between the rails, the flat cap at the bottom,
+   CLOSE a lit word under the head. The tlm-panel--console rules below make
+   the console fill the sheet and hand its body to the page. The tlm-grab /
+   tlm-header / tlm-title / tlm-close rules are NOT dead: MustMoveLobbyModal
+   borrows this sheet's geometry and still prints its own header with them.
 
    Palette from src/styles/club-engine.css — the only token sheet main.tsx
    actually imports at the table. No gold/amber/orange
@@ -184,5 +191,107 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* ─── THE CONSOLE INSIDE THE SHEET (#ClubArenaConsole) ────────────────────────
+   The sheet is black glass and nothing else: the console paints its own
+   frame, so the panel's gradient, hinge rail and edge are switched off here
+   (metallic-popups.css paints none of them - this class is not in its
+   inventory - but the base .tlm-panel rule above does). */
+.tlm-panel--console {
+  padding: 0;
+  border-left: 0;
+  background: #000;
+  box-shadow: -8px 0 32px rgb(0 0 0 / 50%);
+}
+
+.tlm-console {
+  height: 100%;
+  min-height: 0;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+.tlm-console .sc__title,
+.tlm-console .sc__eyebrow {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* The body hands its whole height to the page: no gap, the rails' own
+   inset only, and it owns nothing the page scrolls. */
+.tlm-console .sc__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0;
+  /* 1px top and bottom is the seam overlap the kit pays back as padding
+     (SpadeConsole.css, "THE SEAMS OVERLAP BY A PIXEL"); a plain `padding: 0`
+     here would leave the negative margins shifting this body up a row. */
+  padding: 1px 9%;
+}
+
+.tlm-console__bar {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding: 0 4%;
+}
+
+/* The lit word: CLOSE. 44px minimum touch target, the same floor
+   MiniStatsCard defends. */
+.tlm-word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tlm-word:active {
+  filter: brightness(1.25);
+}
+
+.tlm-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
+}
+
+/* metallic-popups.css bevels every button inside a dialog with !important
+   at 0,0,1 and paints steel hardware on anything labelled Close. A lit word
+   paints nothing: the longhands are restated at 0,3,0. */
+[role='dialog'] .tlm-word.tlm-word {
+  min-width: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  color: #f4f7fb !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* The embedded page owns its own scrolling inside the console's glass. */
+.tlm-console .tlm-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .tlm-panel--console {
+    border-radius: 0;
+    box-shadow: 0 -8px 32px rgb(0 0 0 / 50%);
   }
 }

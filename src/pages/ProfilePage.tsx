@@ -151,7 +151,14 @@ const VARIANT_LABEL: Record<string, string> = {
   plo5: 'PLO5',
   plo6: 'PLO6',
   pineapple: 'Pineapple',
-  ofc: 'OFC',
+  /* Legacy spellings, never a game on offer: Open-Face Chinese is excluded
+     (owner decision 2026-09-22) and was never dealt. `ofc_pineapple` rows were
+     Crazy Pineapple, so they read as `pineapple` does; a bare `ofc` names no
+     game this platform runs, so it reads as the platform's 'Poker' for a
+     variant it cannot name. Both need a row, because the lookup below
+     upper-cases an unmapped key and would print them back as OFC. */
+  ofc_pineapple: 'Pineapple',
+  ofc: 'Poker',
   short_deck: 'Short Deck',
 };
 const variantLabel = (v: string) => VARIANT_LABEL[v] || v.toUpperCase();

@@ -1,0 +1,133 @@
+.challengeCard {
+  min-height: 326px;
+  padding: 21px;
+  border-color: rgba(184, 196, 201, 0.32);
+  border-left-color: color-mix(in srgb, var(--card-tier-color) 48%, #43504d);
+  background:
+    linear-gradient(133deg, rgba(255, 255, 255, 0.038), transparent 23%),
+    radial-gradient(
+      circle at 90% 6%,
+      color-mix(in srgb, var(--card-tier-color) 6%, transparent),
+      transparent 14rem
+    ),
+    linear-gradient(180deg, rgba(12, 23, 20, 0.96), rgba(5, 8, 7, 0.99)), var(--mission-panel);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.055),
+    inset 4px 0 color-mix(in srgb, var(--card-tier-color) 16%, transparent),
+    0 16px 34px rgba(0, 0, 0, 0.25);
+}
+
+.challengeCard::before {
+  left: 20px;
+  width: 94px;
+  height: 3px;
+}
+
+.challengeCard::after {
+  right: -42px;
+  bottom: -42px;
+  width: 126px;
+  height: 126px;
+  border-color: rgba(214, 173, 82, 0.1);
+  border-radius: 50%;
+  box-shadow: 0 0 0 10px rgba(184, 196, 201, 0.018);
+}
+
+.challengeCard[data-mission-state='complete'] {
+  border-color: color-mix(in srgb, var(--card-tier-color) 64%, var(--mission-chrome));
+  background:
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--card-tier-color) 8%, transparent),
+      transparent 48%
+    ),
+    linear-gradient(180deg, #0c1714, #060908);
+}
+
+.challengeCard[data-mission-state='claimed'] {
+  border-color: #39433f;
+  border-left-color: rgba(184, 196, 201, 0.42);
+  background:
+    linear-gradient(133deg, rgba(255, 255, 255, 0.025), transparent 23%),
+    linear-gradient(180deg, #0a0e0d, #050706);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.04),
+    inset 4px 0 rgba(184, 196, 201, 0.1),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.cardTopline {
+  margin-bottom: 22px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid rgba(184, 196, 201, 0.11);
+}
+
+.iconBox {
+  width: 46px;
+  height: 46px;
+  border-color: color-mix(in srgb, var(--card-tier-color) 62%, var(--mission-chrome));
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--card-tier-color) 10%, #07100e),
+    #030504 70%
+  );
+  box-shadow:
+    inset 0 0 0 3px rgba(0, 0, 0, 0.7),
+    inset 0 0 15px rgba(0, 0, 0, 0.9),
+    0 0 14px color-mix(in srgb, var(--card-tier-color) 18%, transparent);
+}
+
+.cardName {
+  font-size: clamp(1.2rem, 2.1vw, 1.55rem);
+}
+
+.cardDesc {
+  color: #a0aaa7;
+}
+
+.rewardReadout {
+  display: flex;
+  min-width: 132px;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0 8px 14px;
+  border-left-color: rgba(214, 173, 82, 0.22);
+}
+
+.rewardGem {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(85, 232, 255, 0.36));
+}
+
+.rewardReadout > div {
+  display: grid;
+  gap: 3px;
+}
+
+.rewardReadout .diamondReward {
+  display: block;
+  color: #d9f9ff;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.progressBlock {
+  margin-top: 30px;
+}
+
+.progressFill {
+  background: linear-gradient(90deg, #075c65, var(--card-tier-color), #dcfbff);
+}
+
+.cardFooter {
+  border-top-color: rgba(184, 196, 201, 0.15);
+}
+
+.claimedBadge {
+  border-color: rgba(214, 173, 82, 0.38);
+  background: rgba(214, 173, 82, 0.04);
+}

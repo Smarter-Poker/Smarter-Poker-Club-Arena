@@ -67,6 +67,9 @@ import {
 const RAKE_CONFIG_TTL_MS = 60_000;
 import {
   loadTable,
+  loadKillSettings,
+  isUndefinedColumnError,
+  type KillSettingsRow,
   loadSeatedPlayers,
   logHandHistory,
   saveHandStateSnapshot,
@@ -125,6 +128,18 @@ import {
   type TurnFSMState,
 } from './StateMachine.js';
 import { headsUpButtonSeat } from './headsUpButton.js';
+import { deadButtonPositions, type BlindSeats } from './deadButton.js';
+import { isFixedLimitVariant } from './BettingStructure.js';
+import {
+  KILL_OFF,
+  KillPotSchedule,
+  killStakes,
+  pendingKillFromHistoryRow,
+  readKillSettings,
+  type KillCancellation,
+  type KillPotRecord,
+  type KillSettings,
+} from './KillPot.js';
 import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
@@ -448,6 +463,14 @@ export abstract class ServerTableEngineBase {
    * hand_history on restart alongside the button, for the same reason.
    */
   protected lastBigBlindSeat: number = 0;
+  /**
+   * The small blind SEAT of the last hand dealt here: the seat that posted it,
+   * or the seat it was dead at, or the button itself heads-up. On a tournament
+   * table of three or more the next button is THIS seat (TDA Rule 30, the dead
+   * button, see deadButton.ts), so it is carried the same way lastBigBlindSeat
+   * is and restored from hand_history beside it.
+   */
+  protected lastSmallBlindSeat: number = 0;
   protected consecutiveErrors: number = 0;
 
   // Bankroll Management: Track how many times a horse has re-bought at this table.
@@ -2184,6 +2207,15 @@ export abstract class ServerTableEngineBase {
   protected boundaryPauseWaiters: Set<() => void> = new Set();
   protected terminalBoundaryPersistenceGeneration = 0;
   protected terminalBoundaryPendingGenerations: Set<number> = new Set();
+  /**
+   * The THIRD outcome. A generation this engine's own fence orphaned: not
+   * pending, not failed, ABANDONED - with the reason it was abandoned and the
+   * instant it happened. See abandonTerminalBoundaryPersistence.
+   */
+  protected terminalBoundaryAbandonedGenerations: Map<
+    number,
+    { reason: string; atMs: number; handNumber: number }
+  > = new Map();
   protected terminalBoundaryPersistenceFailed = false;
   protected terminalCloseoutDiscardedPreparedHand = false;
 
@@ -2872,7 +2904,14 @@ export abstract class ServerTableEngineBase {
 
   /** ADDITIVE (#1): map an engine blind-posting `type` string to a typed BlindKind. */
   protected shadowBlindKind(t: string): BlindKind {
-    if (t === 'small_blind' || t === 'big_blind' || t === 'ante' || t === 'straddle') return t;
+    if (
+      t === 'small_blind' ||
+      t === 'big_blind' ||
+      t === 'ante' ||
+      t === 'straddle' ||
+      t === 'kill_blind'
+    )
+      return t;
     if (t === 'sb') return 'small_blind';
     if (t === 'bb') return 'big_blind';
     return 'small_blind';
@@ -3302,6 +3341,9 @@ export abstract class ServerTableEngineBase {
       // Dan 2026-08-25, BINDING: "IN THE EVENT OF AN ENGINE RESTART, WHILE PLAY
       // IS RUNNING, IT MUST ALWAYS RESTART IN THE SAME POSITION."
       await this.restoreButtonFromHistory();
+      if (!this.lifecycleCanMutate()) return;
+      // KILL POTS (kill-v1): the pending kill comes back with the button.
+      await this.restoreKillFromHistory();
       if (!this.lifecycleCanMutate()) return;
 
       // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
@@ -5133,6 +5175,11 @@ export abstract class ServerTableEngineBase {
       // is still pending.
     }
     this.handController = null;
+    // The line above is what makes an open terminal boundary unreachable: no
+    // HAND_COMPLETE can dispatch without a controller, and every resolver is
+    // downstream of it. Name that outcome here, immediately, rather than
+    // leaving a count that reads "pending" for the rest of the process's life.
+    this.abandonTerminalBoundaryPersistence(`engine_fenced:${reason}`);
     if (notifyOwner) this.signalRestartRequired(reason);
   }
 
@@ -5594,9 +5641,62 @@ export abstract class ServerTableEngineBase {
 
   /** Resolve exactly the generation opened immediately before HandController.start. */
   protected finishTerminalBoundaryPersistence(generation: number, succeeded: boolean): void {
-    if (!this.terminalBoundaryPendingGenerations.delete(generation)) return;
+    const pending = this.terminalBoundaryPendingGenerations.delete(generation);
+    // A fence can land while postHandTasks is still writing, so a generation
+    // this engine already abandoned may still be resolved afterwards by work
+    // that was in flight at the fence. A LATE FAILURE IS STILL A FAILURE:
+    // abandoning a generation drops the deadlock, never the signal. A late
+    // SUCCESS retires the abandonment record, because it did resolve.
+    const abandoned = !pending && this.terminalBoundaryAbandonedGenerations.delete(generation);
+    if (!pending && !abandoned) return;
     if (!succeeded) this.terminalBoundaryPersistenceFailed = true;
     this.notifyBoundaryPauseWaiters();
+  }
+
+  /**
+   * A THIRD named outcome: abandoned. Neither success nor failure.
+   *
+   * `beginTerminalBoundaryPersistence` opens a generation immediately before
+   * `HandController.start()`, and all three call sites that resolve one -
+   * ServerTableEngineDealing (the hand never started),
+   * ServerTableEngineSettlement (post-hand tasks rejected, and the
+   * authoritative commit succeeded) - are DOWNSTREAM OF `HAND_COMPLETE`.
+   * `fenceTerminalEngine` sets `this.handController = null` synchronously, so
+   * after a fence no `HAND_COMPLETE` can ever dispatch on this engine and no
+   * resolver can ever run. The generation is then unreachable: the count says
+   * "pending" for ever while the truth is "abandoned, and nothing will ever
+   * resolve me". That is the CLAUDE.md 10.86 shape - a signal that answers
+   * confidently when it cannot tell - and it is what held the 2026-09-18
+   * cutover shut through 70 consecutive breaks.
+   *
+   * DELIBERATELY NOT `finishTerminalBoundaryPersistence(generation, false)`.
+   * `false` sets `terminalBoundaryPersistenceFailed`, which asserts the
+   * boundary did NOT succeed - a fact not in evidence here, and one every
+   * reader checks one step earlier, so the deadlock would move up a line
+   * rather than end. Whether that hand settled is answered from the database
+   * (`hand_state_snapshots`, `f06_hand_permits`), never from the memory of a
+   * process that is already dead.
+   */
+  private abandonTerminalBoundaryPersistence(reason: string): void {
+    if (this.terminalBoundaryPendingGenerations.size === 0) return;
+    const atMs = Date.now();
+    for (const generation of [...this.terminalBoundaryPendingGenerations]) {
+      this.terminalBoundaryPendingGenerations.delete(generation);
+      if (this.terminalBoundaryAbandonedGenerations.has(generation)) continue;
+      this.terminalBoundaryAbandonedGenerations.set(generation, {
+        reason,
+        atMs,
+        handNumber: this.handCount,
+      });
+    }
+    this.notifyBoundaryPauseWaiters();
+  }
+
+  /** Read-only: what this engine's fence orphaned, and why. */
+  abandonedTerminalBoundaries(): { generation: number; reason: string; atMs: number }[] {
+    return [...this.terminalBoundaryAbandonedGenerations]
+      .map(([generation, detail]) => ({ generation, reason: detail.reason, atMs: detail.atMs }))
+      .sort((a, b) => a.generation - b.generation);
   }
 
   /** Wake every closeout waiter after a relevant lifecycle edge. */
@@ -7174,8 +7274,59 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const nextButton = this.predictButtonSeat(roster);
-    return roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+    return this.predictBlindSeats(roster)?.smallBlindSeat ?? -1;
+  }
+
+  /**
+   * THE DEAD BUTTON, AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30).
+   *
+   * On a tournament table of three or more the blinds advance and the button
+   * follows: the big blind moves one live seat, the small blind is the seat
+   * that posted the big blind last hand (dead if it has emptied) and the
+   * button is the seat that held the small blind last hand (dead if it has
+   * emptied). See deadButton.ts for the worked examples. Returns null when the
+   * rule does not apply and the caller keeps the moving-button rotation:
+   *
+   *   - a CASH table. GameRulesModal publishes the moving-button convention
+   *     for cash ("The Button Moves Clockwise Among Eligible Players, Skipping
+   *     Empty Seats") and its entry rules (wait for the big blind or post,
+   *     never enter on the button or the small blind) are built on it;
+   *   - heads-up, which headsUpButtonSeat already handles;
+   *   - a table with no previous blinds to advance from (its first hand, or a
+   *     restart whose history could not be read).
+   */
+  protected tournamentDeadButtonSeats(roster: SeatedPlayer[]): BlindSeats | null {
+    if (!this.isTournamentTable() || roster.length < 3) return null;
+    return deadButtonPositions(
+      roster.map((p) => p.seat_number),
+      { smallBlind: this.lastSmallBlindSeat, bigBlind: this.lastBigBlindSeat }
+    );
+  }
+
+  /**
+   * The button and both blind seats for the hand about to be dealt, over the
+   * roster it will be dealt to. ONE definition: the wait-for-BB gate, the
+   * cash hold-outs, the tournament arrival rule and the deal itself all read
+   * this, so no two of them can disagree about who is about to post.
+   *
+   * `smallBlindSeat` is the SEAT the small blind position is at, occupied or
+   * not; `smallBlind` is the seat that actually posts it, null when it is
+   * dead. Outside the tournament dead-button rule the two are always the same
+   * occupied seat.
+   */
+  protected predictBlindSeats(roster: SeatedPlayer[]): BlindSeats | null {
+    if (roster.length < 2) return null;
+    const dead = this.tournamentDeadButtonSeats(roster);
+    if (dead) return dead;
+    const button = this.predictButtonSeat(roster);
+    if (button <= 0) return null;
+    const smallBlind = roster.length === 2 ? button : this.getNextSeat(button, roster);
+    return {
+      button,
+      smallBlindSeat: smallBlind,
+      smallBlind,
+      bigBlind: this.getNextSeat(smallBlind, roster),
+    };
   }
 
   /**
@@ -7209,6 +7360,10 @@ export abstract class ServerTableEngineBase {
    * computation in the dealing loop was introduced to kill.
    */
   protected predictButtonSeat(roster: SeatedPlayer[]): number {
+    // Tournament, three or more: the button follows the blinds (TDA Rule 30,
+    // tournamentDeadButtonSeats). Everything below is the moving button.
+    const dead = this.tournamentDeadButtonSeats(roster);
+    if (dead) return dead.button;
     const eligible = this.buttonEligible(roster);
     const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
     if (sortedSeats.length === 0) return -1;
@@ -7264,9 +7419,7 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const nextButton = this.predictButtonSeat(roster);
-    const sbSeat = roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
-    return this.getNextSeat(sbSeat, roster);
+    return this.predictBlindSeats(roster)?.bigBlind ?? -1;
   }
 
   protected getNextSeat(fromSeat: number, players: SeatedPlayer[]): number {
@@ -7381,6 +7534,187 @@ export abstract class ServerTableEngineBase {
    * after a restart arrives one full cycle later.
    */
   protected bombPotScheduler = new BombPotScheduler();
+
+  /* ═══ KILL POTS (rule manifest kill-v1) ════════════════════════════════════
+     The table's one pending kill lives in `killSchedule`. It is created from a
+     hand's authoritative settlement (settleKillPot), frozen into the next
+     hand's HandConfig at the deal (ServerTableEngineDealing), spent when that
+     kill hand SETTLES, and restored at engine start from the table's last
+     settled hand_history row (restoreKillFromHistory). */
+  protected killSchedule = new KillPotSchedule();
+  /** The kill settings frozen at THIS hand's deal; its trigger uses these. */
+  protected currentHandKillSettings: KillSettings = KILL_OFF;
+  /** A pending kill this hand's deal cancelled, recorded on this hand's row. */
+  protected currentHandKillCancellation: KillCancellation | null = null;
+  /** hand_history.kill_pot for this hand, set at settlement. */
+  protected currentHandKillRecord: KillPotRecord | null = null;
+
+  /** The table row's kill configuration; `off` on any row without it. */
+  protected killSettingsFromTable(): KillSettings {
+    return readKillSettings(this.tableInfo as never);
+  }
+
+  /**
+   * KILL POT, EVALUATED ONCE FROM THE AUTHORITATIVE SETTLEMENT (kill-v1).
+   *
+   * Called from settleCompletedHand after HAND_COMPLETE, before the post-hand
+   * record is captured. The inputs are the settlement's own captures: the pots
+   * after uncalled bets were returned and before any deduction (their sum is
+   * the contested total), and the unmerged per-pot award breakdown, which on a
+   * Run It Twice hand carries one board per run. The ledger is keyed by the
+   * hand number, so a duplicate settlement event returns the same record and
+   * schedules nothing new. Never throws: a kill must not endanger settlement.
+   */
+  protected settleKillPot(): void {
+    try {
+      const hc = this.handController;
+      const killHand = hc?.getKillHandState?.() ?? null;
+      const pots = this.currentHandPots.map((p) => ({ index: p.index, amount: p.amount }));
+      const contestedTotal =
+        pots.length > 0
+          ? Math.round(pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) * 100) / 100
+          : this.currentHandPotSize;
+      const players = hc?.getState?.()?.players ?? [];
+      const result = this.killSchedule.settle({
+        handNumber: this.handCount,
+        settings: this.currentHandKillSettings,
+        variant: this.currentHandVariant ?? this.tableInfo?.game_variant ?? null,
+        isTournament: this.isTournamentTable(),
+        isBombHand: this.currentHandBombPot != null,
+        asset: this.tableInfo?.arena?.asset === 'diamonds' ? 'diamonds' : 'chips',
+        // The dealt BASE big blind; the threshold is always in base big blinds.
+        baseBigBlind: hc?.getBlindSnapshot?.()?.bigBlind ?? Number(this.tableInfo?.big_blind),
+        killHand,
+        pots,
+        awards: this.currentHandPerPotAwards.map((a) => ({
+          userId: a.userId,
+          potIndex: a.potIndex,
+          low: a.low,
+          board: a.board ?? null,
+        })),
+        contestedTotal,
+        seatOf: (userId) => players.find((p) => p.user_id === userId)?.seat ?? null,
+        cancellation: this.currentHandKillCancellation,
+      });
+      this.currentHandKillRecord = result.record;
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.kill_pot_settle_failed');
+    }
+  }
+
+  /**
+   * RESTORE THE PENDING KILL (kill-v1), the restoreButtonFromHistory pattern.
+   *
+   * The pending kill is written into the triggering hand's own hand_history
+   * row (`kill_pot.next_kill`), atomically with that hand. A kill hand writes
+   * its row only when it settles, so a kill hand abandoned by a crash leaves
+   * the trigger row as the table's last hand and the re-dealt hand is still
+   * the kill hand. Read only at a fixed-limit cash table - the only kind that
+   * can have set a kill - including one switched 'off' since, so the next deal
+   * records that kill as cancelled rather than silently forgetting it. Never
+   * fatal: a table that cannot read its history deals base-limit hands.
+   */
+  protected async restoreKillFromHistory(): Promise<void> {
+    if (!this.tableInfo || this.isTournamentTable()) return;
+    if (!isFixedLimitVariant(this.tableInfo.game_variant)) return;
+    try {
+      const { data, error } = await supabase
+        .from('hand_history')
+        .select('id, hand_number, kill_pot')
+        .eq('table_id', this.tableId)
+        .order('hand_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        // A database without hand_history.kill_pot (20260924034010 not yet
+        // installed) cannot have recorded a kill, so there is none to restore;
+        // loadKillSettings already said once that kill is off. Anything else
+        // is a read that could not answer, and says so.
+        if (isUndefinedColumnError(error)) return;
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Could not restore a pending kill (${error.message}).`
+        );
+        return;
+      }
+      const pending = pendingKillFromHistoryRow(data as never);
+      this.killSchedule.restore(pending);
+      if (pending) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Pending ${pending.mode} kill restored for seat ` +
+            `${pending.killerSeat} from hand #${pending.triggerHandNumber}`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Kill restore threw (${(err as Error)?.message}).`
+      );
+    }
+  }
+
+  /**
+   * Snapshot fields for the felt's kill indicators, shared by every broadcast
+   * payload (like bombPotSnapshotFields).
+   *
+   *  - `kill_hand`: THIS hand's frozen kill, straight from the controller that
+   *    sizes it, or null on a base-limit hand.
+   *  - `kill_next`: the kill scheduled for the NEXT hand, or null. A pending
+   *    kill that the current hand is already playing is not "next".
+   */
+  protected killPotSnapshotFields(): {
+    kill_hand: {
+      mode: 'half' | 'full';
+      small_bet: number;
+      big_bet: number;
+      kill_blind: number;
+      killer_seat: number;
+      killer_user_id: string;
+      killer_blind_slot: 'none' | 'sb' | 'bb';
+      chained: boolean;
+    } | null;
+    kill_next: {
+      mode: 'half' | 'full';
+      small_bet: number | null;
+      big_bet: number | null;
+      kill_blind: number | null;
+      killer_seat: number;
+      killer_user_id: string;
+    } | null;
+  } {
+    const k = this.handController?.getKillHandState?.() ?? null;
+    const pending = this.killSchedule.getPending();
+    const next = pending && pending.triggerHandNumber !== k?.triggerHandNumber ? pending : null;
+    const stakes = next
+      ? killStakes({
+          baseBigBlind: Number(this.tableInfo?.big_blind),
+          mode: next.mode,
+          asset: this.tableInfo?.arena?.asset === 'diamonds' ? 'diamonds' : 'chips',
+        })
+      : null;
+    return {
+      kill_hand: k
+        ? {
+            mode: k.mode,
+            small_bet: k.smallBet,
+            big_bet: k.bigBet,
+            kill_blind: k.killBlind,
+            killer_seat: k.killerSeat,
+            killer_user_id: k.killerUserId,
+            killer_blind_slot: k.killerBlindSlot,
+            chained: k.chained,
+          }
+        : null,
+      kill_next: next
+        ? {
+            mode: next.mode,
+            small_bet: stakes?.ok ? stakes.smallBet : null,
+            big_bet: stakes?.ok ? stakes.bigBet : null,
+            kill_blind: stakes?.ok ? stakes.killBlind : null,
+            killer_seat: next.killerSeat,
+            killer_user_id: next.killerUserId,
+          }
+        : null,
+    };
+  }
 
   /**
    * THE JUDGED VPIP OF EVERY SEAT (Dan 2026-09-04), refreshed at each hand
@@ -7562,7 +7896,7 @@ export abstract class ServerTableEngineBase {
     if (!force && now - this.lastRakeRefreshAtMs < RAKE_CONFIG_TTL_MS) return;
     this.lastRakeRefreshAtMs = now;
     try {
-      const { data: tableRow } = await supabase
+      const ruleRead = supabase
         .from('tables')
         .select(
           // ROUND 3 (2026-08-20): bomb pot settings ride the same throttled
@@ -7580,6 +7914,13 @@ export abstract class ServerTableEngineBase {
         )
         .eq('id', this.tableId)
         .maybeSingle();
+      // KILL POTS (kill-v1): read beside the rule set, never inside it. A
+      // database without the kill columns would otherwise fail the read above
+      // and silently stop every rule below from following the row. Both reads
+      // are in flight together, so this adds no latency; the kill read never
+      // rejects (see readKillSettingsForRefresh).
+      const killRead = this.readKillSettingsForRefresh();
+      const { data: tableRow } = await ruleRead;
       /* Lightning 2.0 Phase 5. Applied HERE - before the Diamond refusal below
          and before the `tableRow && this.tableInfo` block - on purpose. A halt
          is not a rule a boundary can refuse: it is an operational stop, and a
@@ -7669,6 +8010,15 @@ export abstract class ServerTableEngineBase {
            never showed up as a flood. A defect that a restart happens to wash
            away is not fixed (CLAUDE.md 10.11/10.12); it is the platform
            getting lucky on a clock. So the rules follow the row. */
+        // KILL POTS (kill-v1): the next hand boundary reads these. A pending
+        // kill keeps the mode frozen into it; a hand in flight keeps its own.
+        // An unreadable kill row (null) leaves the current values standing:
+        // a read that could not answer never turns a kill on or off.
+        const killRow = await killRead;
+        if (killRow) {
+          this.tableInfo.kill_mode = killRow.kill_mode ?? undefined;
+          this.tableInfo.kill_threshold_bb = killRow.kill_threshold_bb ?? undefined;
+        }
         this.tableInfo.ante_enabled = (tableRow as any).ante_enabled ?? undefined;
         this.tableInfo.ante = (tableRow as any).ante ?? undefined;
         this.tableInfo.big_blind_ante_enabled =
@@ -7726,6 +8076,23 @@ export abstract class ServerTableEngineBase {
       }
     } catch (err) {
       reportError(err, `ServerTableEngine.${this.tableId}.refreshRakeConfig_failed`);
+    }
+  }
+
+  /**
+   * KILL POTS (kill-v1): the kill columns for the throttled re-read.
+   * loadKillSettings answers `off` for a database that does not have them yet
+   * (logged once) and throws for anything else. Here a thrown read is REPORTED
+   * and answered with null, which refreshRakeConfig treats as "keep what the
+   * table already has": the rest of the rule set still follows the row, and a
+   * blip never flips a kill setting. Never rejects.
+   */
+  protected async readKillSettingsForRefresh(): Promise<KillSettingsRow | null> {
+    try {
+      return await loadKillSettings(this.tableId);
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.kill_settings_read_failed`);
+      return null;
     }
   }
 
@@ -8661,13 +9028,20 @@ export abstract class ServerTableEngineBase {
   private async restoreButtonFromHistory(): Promise<void> {
     try {
       // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
+      /**
+       * TWO ROWS, NOT ONE (2026-09-25, the dead button at every table size).
+       * The last hand's small blind can be DEAD - nobody posted it because the
+       * seat had just emptied - and then the only record of WHICH seat it was
+       * at is the big blind post of the hand before. One extra row on the same
+       * index is what keeps the next button honest across a restart in that
+       * window.
+       */
       const { data, error } = await supabase
         .from('hand_history')
-        .select('button_seat, players')
+        .select('button_seat, players, actions')
         .eq('table_id', this.tableId)
         .order('hand_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(2);
 
       if (error) {
         console.warn(
@@ -8677,7 +9051,13 @@ export abstract class ServerTableEngineBase {
         return;
       }
 
-      const row = data as { button_seat?: number; players?: Array<{ seat?: number }> } | null;
+      type HistoryRow = {
+        button_seat?: number;
+        players?: Array<{ seat?: number }>;
+        actions?: Array<{ seat?: number; action?: string; origin?: string }>;
+      };
+      const rows = (Array.isArray(data) ? data : data ? [data] : []) as HistoryRow[];
+      const row = rows[0] ?? null;
       const seat = Number(row?.button_seat ?? 0);
       /**
        * The big blind seat comes back with the button, derived from the same
@@ -8693,10 +9073,33 @@ export abstract class ServerTableEngineBase {
             .filter((s) => Number.isFinite(s) && s > 0)
             .sort((a, b) => a - b)
         : [];
+      /**
+       * The blind POSTS are the exact witness. `actions` carries every forced
+       * post as {seat, action: 'sb' | 'bb', origin: 'forced'} (HandEvents,
+       * FORCED_BETS_POSTED), so the seat that posted each blind is read
+       * rather than re-walked, and a dead small blind shows up as a hand with
+       * a big blind post and no small blind post. The walk stays as the
+       * fallback for a row written before the posts were recorded.
+       */
+      const postedSeat = (r: HistoryRow | null | undefined, kind: 'sb' | 'bb'): number => {
+        if (!Array.isArray(r?.actions)) return 0;
+        for (const a of r.actions) {
+          if (a && a.origin === 'forced' && a.action === kind) {
+            const s = Number(a.seat);
+            if (Number.isFinite(s) && s > 0) return s;
+          }
+        }
+        return 0;
+      };
       if (seats.length >= 2 && Number.isFinite(seat) && seat > 0) {
         const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
-        const sb = seats.length === 2 ? seat : nextOf(seat);
-        this.lastBigBlindSeat = nextOf(sb);
+        const walkedSb = seats.length === 2 ? seat : nextOf(seat);
+        const bbPosted = postedSeat(row, 'bb');
+        const sbPosted = postedSeat(row, 'sb');
+        this.lastBigBlindSeat = bbPosted > 0 ? bbPosted : nextOf(walkedSb);
+        // A dead small blind sat where the hand before posted its big blind.
+        const deadSbSeat = bbPosted > 0 && sbPosted === 0 ? postedSeat(rows[1], 'bb') : 0;
+        this.lastSmallBlindSeat = sbPosted > 0 ? sbPosted : deadSbSeat > 0 ? deadSbSeat : walkedSb;
       }
       if (Number.isFinite(seat) && seat > 0) {
         this.lastButtonSeat = seat;
@@ -8733,6 +9136,9 @@ export abstract class ServerTableEngineBase {
       if (retained) {
         this.handCount = Math.max(this.handCount, retained.handNumber);
         await this.restoreButtonFromHistory();
+        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
+        // The resumed hand is now the last settled one; so is its kill record.
+        await this.restoreKillFromHistory();
         if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
       }
     }

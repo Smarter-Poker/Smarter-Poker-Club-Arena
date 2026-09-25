@@ -51,7 +51,7 @@ export async function assertCashTablePlayEnabled(tableId: string, table: CashTab
  * Load table info from database
  */
 export async function loadTable(tableId: string) {
-  const { data, error } = await supabase
+  const rowRead = supabase
     .from('tables')
     .select(
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
@@ -61,6 +61,15 @@ export async function loadTable(tableId: string) {
     )
     .eq('id', tableId)
     .maybeSingle();
+  // KILL POTS (kill-v1): the two kill columns are read beside the row, not in
+  // it, so an engine that ships before 20260924034010 still loads its tables.
+  // Both reads are in flight together, so the extra one costs no latency.
+  const killSettings = loadKillSettings(tableId);
+  // If the row read fails first, this promise is never awaited; its own
+  // failure then has nobody to report to, and the row read's error is the one
+  // the caller sees. Awaited normally below, it still rejects.
+  killSettings.catch(() => undefined);
+  const { data, error } = await rowRead;
 
   if (error) {
     const msg = error.message || (error as any).details || JSON.stringify(error);
@@ -87,7 +96,78 @@ export async function loadTable(tableId: string) {
       assertDiamondCashSettingsOpen(tableId, arena.id, settings.data, settings.error);
     }
   }
-  return { ...data, arena };
+  const kill = await killSettings;
+  if (!kill) throw new Error(`Table ${tableId} not found`);
+  return { ...data, arena, ...kill };
+}
+
+/** tables.kill_mode / kill_threshold_bb as read, or `off` where they do not exist yet. */
+export interface KillSettingsRow {
+  kill_mode: string | null;
+  kill_threshold_bb: number | null;
+}
+
+/**
+ * Postgres 42703 (undefined_column) is what PostgREST relays for a select that
+ * names a column the table does not have; PGRST204 is its own "column not in
+ * the schema cache". Either means the kill migration is not installed yet.
+ * Nothing else does: a timeout, a permission error or any other code is a
+ * failure, not an absence, and is never read as one.
+ */
+export function isUndefinedColumnError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  return code === '42703' || code === 'PGRST204';
+}
+
+let killColumnsAbsentReported = false;
+
+/**
+ * KILL POTS (kill-v1): THE KILL SETTINGS, READ SO THE ENGINE AND THE DATABASE
+ * CAN SHIP IN EITHER ORDER.
+ *
+ * The columns arrive with migration 20260924034010. Naming them in the row
+ * read (loadTable) or in the throttled rule re-read would make an engine that
+ * reaches production first fail to load every table, or silently stop
+ * re-reading every other rule, so they are read here on their own:
+ *
+ *   - the row has them            -> they are returned as stored;
+ *   - the database lacks them     -> `{ kill_mode: 'off' }`, and the engine
+ *     says so ONCE per process. Kill cannot be on in a database that cannot
+ *     store it, so this is the true answer, not a default;
+ *   - the row does not exist      -> null (the caller decides);
+ *   - any other error             -> thrown. It is never read as "off".
+ */
+export async function loadKillSettings(tableId: string): Promise<KillSettingsRow | null> {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('kill_mode, kill_threshold_bb')
+    .eq('id', tableId)
+    .maybeSingle();
+  if (error) {
+    if (isUndefinedColumnError(error)) {
+      if (!killColumnsAbsentReported) {
+        killColumnsAbsentReported = true;
+        console.warn(
+          '[loadKillSettings] tables.kill_mode / kill_threshold_bb are not in this database yet ' +
+            `(${(error as { code?: string }).code}); kill pots are off until migration 20260924034010 is installed.`
+        );
+      }
+      return { kill_mode: 'off', kill_threshold_bb: null };
+    }
+    const msg = error.message || (error as any).details || JSON.stringify(error);
+    throw new Error(`Failed to load kill settings for table ${tableId}: ${msg}`);
+  }
+  if (!data) return null;
+  const row = data as { kill_mode?: unknown; kill_threshold_bb?: unknown };
+  return {
+    kill_mode: typeof row.kill_mode === 'string' ? row.kill_mode : null,
+    kill_threshold_bb: typeof row.kill_threshold_bb === 'number' ? row.kill_threshold_bb : null,
+  };
+}
+
+/** Test seam: forget that the absence was already reported. */
+export function resetKillColumnsAbsentReportForTests(): void {
+  killColumnsAbsentReported = false;
 }
 
 /**

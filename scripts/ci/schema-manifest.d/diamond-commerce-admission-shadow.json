@@ -1,0 +1,30 @@
+{
+  "_owner": "feat/diamond-commerce-completion (CA-DIAMOND-COMMERCE-2026-09-22 R2, completion). Declares supabase/migrations/20260924102056_diamond_commerce_admission_is_wired_in_shadow.sql. The owning task installs it through Apply Merged Migration after merge and reads it back; the nightly schema-manifest refresh absorbs this fragment.",
+  "tables": ["ca_commerce_admission_decisions"],
+  "functions": [
+    "fn_ca_commerce_admission",
+    "fn_ca_commerce_admission_decide",
+    "fn_ca_commerce_admission_message",
+    "fn_ca_commerce_admission_report",
+    "fn_ca_commerce_admit",
+    "fn_ca_commerce_record_event_basis"
+  ],
+  "columns": {
+    "ca_commerce_admission_decisions": [
+      "action",
+      "actor_id",
+      "allowed",
+      "decided_at",
+      "door",
+      "enforced",
+      "entitlement_id",
+      "id",
+      "policy_version",
+      "reason",
+      "scope_id",
+      "scope_kind",
+      "subject_id",
+      "would_allow"
+    ]
+  }
+}

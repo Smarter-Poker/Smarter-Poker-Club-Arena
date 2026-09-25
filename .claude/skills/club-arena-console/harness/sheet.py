@@ -11,12 +11,19 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+# Linux first, then the Mac - this runs on both. A missing font used to leave
+# FONT as None and the crash named `truetype`, not the font list.
 FONT = None
-for p in ('/root/.fonts/inter.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'):
+for p in ('/root/.fonts/inter.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+          '/System/Library/Fonts/Supplemental/Arial.ttf',
+          '/System/Library/Fonts/Helvetica.ttc'):
     try:
         ImageFont.truetype(p, 12); FONT = p; break
     except Exception:
         pass
+if FONT is None:
+    sys.exit('sheet.py: no usable font on this machine. Add one to the list at '
+             'the top of this file; do not guess a path that is not there.')
 
 def trim(path, pad=16):
     im = Image.open(path).convert('RGB')

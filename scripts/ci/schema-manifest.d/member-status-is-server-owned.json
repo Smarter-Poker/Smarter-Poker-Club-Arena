@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-ca-product/fix/member-status-is-server-owned (CA-PRODUCT-COMPLETION-2026-09-22 Phase 6.1). Declares supabase/migrations/20260924045900_member_status_is_changed_only_by_the_server.sql: the staff status RPC and the BEFORE UPDATE OF status guard on club_members.",
+  "functions": ["fn_club_members_status_guard", "fn_club_set_member_status"]
+}

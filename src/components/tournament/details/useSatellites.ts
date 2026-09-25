@@ -96,7 +96,8 @@ export const SATELLITE_COLUMNS = [
 /** A satellite list is a handful of events, never a page of them. */
 export const SATELLITE_LIMIT = 200;
 
-const LIVE_STATUSES = ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING'] as const;
+// BAGGED: a multi-day satellite between days is still live.
+const LIVE_STATUSES = ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING', 'BAGGED'] as const;
 
 export interface SatelliteRow {
   id: string;
@@ -104,7 +105,7 @@ export interface SatelliteRow {
 }
 
 type CardType = 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
-type CardStatus = 'registering' | 'running' | 'finished' | 'cancelled';
+type CardStatus = 'registering' | 'running' | 'bagged' | 'finished' | 'cancelled';
 
 const num = (v: unknown): number => {
   const n = Number(v);
@@ -129,6 +130,8 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
   const rawStatus = String(sat.status || '').toUpperCase();
   if (['ANNOUNCED', 'REGISTERING', 'LATE_REG'].includes(rawStatus)) status = 'registering';
   else if (rawStatus === 'RUNNING') status = 'running';
+  // Between days, never "finished" by default.
+  else if (rawStatus === 'BAGGED') status = 'bagged';
   else if (['CANCELLED', 'ABORTED'].includes(rawStatus)) status = 'cancelled';
 
   const structureFacts = describeStoredMttStructure(sat.blind_structure, sat.starting_chips);

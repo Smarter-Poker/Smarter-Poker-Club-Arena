@@ -46,55 +46,17 @@ const _membershipBreaker = (() => {
     },
   };
 })();
-import type {
-  Club,
-  ClubWithDistance,
-  ClubMember,
-  ClubLocation,
-  ClubChallenge,
-  MemberRole,
-} from '@/types/club.types';
+import type { Club, ClubMember, ClubLocation, ClubChallenge, MemberRole } from '@/types/club.types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  CLUB DISCOVERY (PostGIS)
+//  CLUB DISCOVERY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Discover clubs within a specified radius using PostGIS
- * @param location User's current location
- * @param radiusKm Search radius in kilometers (default 50km)
- * @returns Clubs sorted by proximity with < 50ms latency
- */
-export async function discoverNearbyClubs(
-  location: ClubLocation,
-  radiusKm: number = 50
-): Promise<ClubWithDistance[]> {
-  // Round 19: prod fn_discover_clubs is search-based, not lat/lng/radius
-  // (signatures: (p_search, p_limit) and (p_search, p_limit, p_offset)).
-  // The location-based discover doesn't exist in production. Until a real
-  // PostGIS-backed location RPC ships, fall back to a search-based discover
-  // and let the caller order/filter client-side. location + radiusKm are
-  // accepted to keep the public API stable but only used for client-side
-  // distance annotation when the clubs table grows lat/lng columns.
-  void location; // kept for future PostGIS upgrade
-  void radiusKm;
-  const { data, error } = await retryAsync(
-    () =>
-      supabase.rpc('fn_discover_clubs', {
-        p_search: '',
-        p_limit: 50,
-        p_offset: 0,
-      }),
-    3
-  );
-
-  if (error) {
-    reportError(error, 'ClubsService.Club_discovery_failed');
-    throw new Error('Failed to discover nearby clubs');
-  }
-
-  return (data as ClubWithDistance[]) || [];
-}
+/* There is no location-based discovery. discoverNearbyClubs used to live here,
+   headed "PostGIS" and promising clubs "sorted by proximity", while it ignored
+   the location and ran the same name search as below. Nothing rendered it, but
+   the hook in front of it asked the browser for the player's position. Club
+   discovery is the name search; nothing here reads or asks for a location. */
 
 /**
  * Search clubs by name with pattern matching
@@ -166,6 +128,13 @@ export interface CreateClubData {
   /** Stable published asset URL for a curated placeholder crest. */
   logoUrl?: string | null;
 }
+
+/**
+ * The server's refusal when a membership would pass the cap, for any cap:
+ * "You can only be a member of up to 10 clubs. Leave a club to ...". The
+ * number is captured so the copy can repeat it.
+ */
+export const MEMBERSHIP_CAP_MESSAGE = /only be a member of up to (\d+) clubs/i;
 
 export async function createClub(clubData: CreateClubData): Promise<Club> {
   const { data: user } = await getAuthUser();
@@ -261,10 +230,16 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     if (/already exists|duplicate|unique/i.test(message)) {
       throw new Error('A club with this name already exists. Please choose a different name.');
     }
-    if (/only be a member of up to 4 clubs|four-club allowance/i.test(message)) {
-      throw new Error('Your Four-Club Allowance Is Full. Leave A Club Before Creating Another.');
+    // The server states the cap in its message (fn_club_membership_cap), so the
+    // number shown is always the one that refused, never a copy held here.
+    const capReached = MEMBERSHIP_CAP_MESSAGE.exec(message);
+    if (capReached) {
+      const cap = Number(capReached[1]).toLocaleString();
+      throw new Error(
+        `Membership Limit Reached: You Belong To ${cap} Of ${cap} Clubs. Leave A Club Before Creating Another.`
+      );
     }
-    if (/temporarily unavailable/i.test(message)) {
+    if (createError?.code === 'P0001' && /temporarily unavailable/i.test(message)) {
       throw new Error('Club Creation Is Temporarily Unavailable. Please Try Again Soon.');
     }
     throw new Error('Club Could Not Be Created. Your Details Are Still Here. Please Try Again.');
@@ -327,22 +302,44 @@ export async function checkClubNameAvailability(name: string): Promise<boolean> 
   return data === true;
 }
 
-export async function getClubCreationEligibility(): Promise<{
+/** Why the server says a player cannot create a club right now. */
+export type ClubCreationBlock = 'creation_unavailable' | 'membership_cap';
+
+export interface ClubCreationEligibility {
   canCreate: boolean;
   membershipCount: number;
+  /** The club membership cap, as the server states it. */
   maxClubs: number | null;
   remaining: number | null;
-}> {
+  /** Whether the create_club rollout admits this player. null: not stated. */
+  creationOpen: boolean | null;
+  /** Why canCreate is false, or null when it is true or the server did not say. */
+  reason: ClubCreationBlock | null;
+}
+
+/**
+ * The single preflight for club membership and creation. The server
+ * (fn_get_club_creation_eligibility) owns the cap, the count and the rollout
+ * rule; nothing here restates any of them.
+ */
+export async function getClubCreationEligibility(): Promise<ClubCreationEligibility> {
   const { data, error } = await supabase.rpc('fn_get_club_creation_eligibility');
   if (error || !data || typeof data !== 'object') {
     throw new Error('Could not verify your club allowance. Please try again.');
   }
   const result = data as Record<string, unknown>;
+  const count = (value: unknown) =>
+    value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value);
   return {
     canCreate: result.can_create === true,
     membershipCount: Number(result.membership_count) || 0,
-    maxClubs: result.limit === null ? null : Number(result.limit),
-    remaining: result.remaining === null ? null : Number(result.remaining),
+    maxClubs: count(result.limit),
+    remaining: count(result.remaining),
+    creationOpen: typeof result.creation_open === 'boolean' ? result.creation_open : null,
+    reason:
+      result.reason === 'creation_unavailable' || result.reason === 'membership_cap'
+        ? result.reason
+        : null,
   };
 }
 
@@ -452,29 +449,15 @@ export async function redeemStoredInviteCode(
  */
 export async function joinClub(
   clubId: string,
-  role: MemberRole = 'member',
+  _role: MemberRole = 'member',
   knownClubName?: string
 ): Promise<ClubMember> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // ENFORCE 4-CLUB LIMIT (skip for owner role - already checked in createClub)
-  // ═══════════════════════════════════════════════════════════════════════
-  if (role !== 'owner') {
-    const { count, error: countError } = await supabase
-      .from('club_members')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('user_id', user.user.id)
-      .in('status', ['active', 'approved']);
-
-    if (countError) {
-      reportError(countError, 'ClubsService._Failed_to_check_club_membership_count');
-    } else if (count && count >= 4) {
-      throw new Error('You can only be a member of up to 4 clubs. Leave a club to join a new one.');
-    }
-  }
-
+  // No membership count here. The club membership cap is the server's alone:
+  // fn_join_club counts under the player's lock, and a browser count read
+  // before that lock can only disagree with it.
   const resolvedId = await resolveClubUUID(clubId);
 
   // Join via the SECURITY DEFINER RPC fn_join_club. The RPC resolves the caller
@@ -482,10 +465,10 @@ export async function joinClub(
   //   • caller owns the club  → role='owner',  status='active'
   //   • otherwise             → role='member', status = requires_approval
   //                             ? 'pending' : 'active'
-  // It also re-enforces the 4-club limit and is idempotent (an existing
+  // It also enforces the club membership cap and is idempotent (an existing
   // membership row is returned unchanged). Because it is SECURITY DEFINER it
   // bypasses the club_members RLS INSERT policy that (correctly) forbids
-  // privileged self-inserts. The `role` argument is retained for API
+  // privileged self-inserts. The `_role` argument is retained for API
   // compatibility but is no longer authoritative — the RPC owns that decision.
   const { data, error } = await supabase.rpc('fn_join_club', {
     p_club_id: resolvedId,
@@ -812,9 +795,9 @@ async function _getUserMembershipsUncached(
         // Only real memberships. A join request for an approval-required club
         // creates a status='pending' row (fn_join_club); without this filter the
         // requester saw a full club card on the lobby carousel and could open a
-        // club they had NOT been admitted to. This also matches the status set
-        // every 4-club-limit check counts, so "clubs shown" and "clubs counted"
-        // can never disagree.
+        // club they had NOT been admitted to. This is also the status set the
+        // club membership cap counts (fn_club_membership_count), so "clubs
+        // shown" and "clubs counted" agree.
         .in('status', ['active', 'approved'])
         .then((result) => result),
     { maxRetries: 4, baseDelayMs: 500 }
@@ -1253,37 +1236,28 @@ export async function uploadClubBanner(clubId: string, file: File): Promise<stri
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Check if user can join/create more clubs (max 4 clubs per user)
- * @returns Object with canJoin boolean and current club count
+ * Whether the player has room for another club membership, as the server
+ * counts it. Delegates to the creation preflight, which states the cap and the
+ * count; joining is not subject to the create_club rollout, so only the count
+ * against the cap decides here. A preflight that cannot be read throws rather
+ * than guessing either way.
  */
 export async function canJoinMoreClubs(): Promise<{
   canJoin: boolean;
   currentCount: number;
-  maxClubs: number;
+  maxClubs: number | null;
 }> {
-  const MAX_CLUBS = 4;
-
   const { data: user } = await getAuthUser();
-  if (!user.user) return { canJoin: false, currentCount: 0, maxClubs: MAX_CLUBS };
+  if (!user.user) return { canJoin: false, currentCount: 0, maxClubs: null };
 
-  // `user_id`, not `*` (club_members has no `id`): a count needs one column, and `*` asks for every column
-  // including the ones a player is not granted (see tableSeatsCountNamesAColumn).
-  const { count, error } = await supabase
-    .from('club_members')
-    .select('user_id', { count: 'exact', head: true })
-    .eq('user_id', user.user.id)
-    .in('status', ['active', 'approved']);
-
-  if (error) {
-    reportError(error, 'ClubsService._Failed_to_check_club_membership_count');
-    return { canJoin: true, currentCount: 0, maxClubs: MAX_CLUBS }; // Allow on error
-  }
-
-  const currentCount = count || 0;
+  const eligibility = await getClubCreationEligibility();
   return {
-    canJoin: currentCount < MAX_CLUBS,
-    currentCount,
-    maxClubs: MAX_CLUBS,
+    canJoin:
+      eligibility.maxClubs === null
+        ? eligibility.remaining === null || eligibility.remaining > 0
+        : eligibility.membershipCount < eligibility.maxClubs,
+    currentCount: eligibility.membershipCount,
+    maxClubs: eligibility.maxClubs,
   };
 }
 
@@ -1364,7 +1338,6 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
 
 // Export service object for cleaner imports
 export const ClubsService = {
-  discoverNearby: discoverNearbyClubs,
   search: searchClubs,
   get: getClub,
   create: createClub,

@@ -453,15 +453,40 @@ describe('Item 9 - the level shown is the level being played', () => {
     expect(src).not.toMatch(/data\?\.level \|\| 1/);
   });
 
-  it('the tournament HUD re-reads the row instead of trusting realtime alone', () => {
+  /**
+   * MOVED TO THE NEW MECHANISM (2026-09-22). This pinned a 45-second re-read of
+   * the whole row, per open table, hidden or not. The bar now hears the level
+   * from the engine's broadcast (relayed onto the bus by TablePage) and from
+   * the table socket, re-reads the row only where a broadcast could have been
+   * missed, and keeps a five-minute safety read while it is on screen. The
+   * behaviour is exercised in tournamentHudPolling.test.tsx; these are the
+   * structural facts that make it true.
+   */
+  it('the tournament HUD hears the level instead of trusting a 45-second poll', () => {
     const src = code(read(HUD));
-    /* Not pinned to the literal `45_000` any more — the interval is a named
-       constant now so the backoff path can reuse it, and a test that pins a
-       number rather than the behaviour breaks on a harmless rename. */
-    expect(src).toMatch(/const POLL_MS = 45_000;/);
-    expect(src).toMatch(/resyncRef\.current = setInterval\(\(\) => void refresh\(\), POLL_MS\)/);
-    // and it must clear that interval on unmount.
-    expect(src).toMatch(/if \(resyncRef\.current\) clearInterval\(resyncRef\.current\)/);
+    // The only interval left is the one-second display clock; reads are timeouts.
+    expect(src.match(/setInterval\(/g)).toHaveLength(1);
+    expect(src).toMatch(/\}, TICK_MS\);/);
+    expect(src).not.toMatch(/POLL_MS/);
+    expect(src).toMatch(/const SAFETY_READ_MS = 300_000;/);
+    // A failed read must reach the HUD as a failure, not as a null row.
+    expect(src).toMatch(/getTournament\(this\.tournamentId, \{ throwOnError: true \}\)/);
+    // The level arrives on both carriers, through the bus, not a private binding.
+    expect(src).toMatch(/masterBus\.subscribe\('BLIND_LEVEL_CHANGE'/);
+    expect(src).toMatch(/masterBus\.subscribe\('TOURNAMENT_LEVEL_UP'/);
+    expect(src).not.toMatch(/getOrCreateChannel/);
+    expect(src).not.toMatch(/postgres_changes/);
+    // The countdown is measured on the engine's clock.
+    expect(src).toMatch(/getCurrentLevelState\(row, nowMs\)/);
+    expect(src).toMatch(/const nowMs = serverNow\(\);/);
+    // And unmount retires the owner and every timer it holds.
+    expect(src).toMatch(/return \(\) => \{\s*feed\.retire\(\);/);
+    expect(src).toMatch(/retire\(\): void \{[\s\S]{0,120}this\.stopTimers\(\);/);
+  });
+
+  it('TablePage tells the bar when its table is off screen', () => {
+    const src = code(read(TABLE_PAGE));
+    expect(src).toMatch(/<TournamentHUD[\s\S]{0,400}hidden=\{!isVisible\}/);
   });
 });
 
@@ -808,20 +833,22 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
 describe('Audit - the tournament HUD stops when there is nothing left to ask', () => {
   const src = code(read(HUD));
 
-  it('stops polling only on a TERMINAL status, never on a live one', () => {
+  it('stops asking only on a TERMINAL status, never on a live one', () => {
     /* The first version was an ALLOW-LIST of live statuses and stopped the
        poll on anything else — including ANNOUNCED, a perfectly live state. A
        HUD whose first read returned ANNOUNCED never polled again, which is the
        single point of failure the poll exists to remove. Deny-list now, so an
-       unrecognised status keeps polling. */
+       unrecognised status keeps listening. */
     expect(src).toMatch(/const TERMINAL = \[/);
-    /* The clear must be INSIDE the terminal branch. The old assertion looked
-       for `clearInterval(resyncRef.current)` anywhere in the file, which the
-       unmount cleanup satisfied — the stop branch could have been deleted
-       outright (2026-08-26 audit). */
+    /* The stop must be INSIDE the terminal branch. The old assertion looked
+       for a clear anywhere in the file, which the unmount cleanup satisfied —
+       the stop branch could have been deleted outright (2026-08-26 audit).
+       Moved 2026-09-22 from the poll's clearInterval to the owner's own stop:
+       it goes quiet and its timers go with it; the listeners follow `live`. */
     expect(src).toMatch(
-      /if \(t && TERMINAL\.includes\(status\)\) \{[\s\S]{0,200}clearInterval\(resyncRef\.current\)/
+      /if \(isTerminal\(next\.status\)\) \{\s*this\.live = false;\s*this\.stopTimers\(\);/
     );
+    expect(src).toMatch(/const live = !isTerminal\(status\);/);
     expect(src).not.toMatch(/status !== 'RUNNING' && status !== 'REGISTERING'/);
     // The list must cover the ends, and must NOT contain a live status.
     const m = src.match(/const TERMINAL = \[([^\]]*)\]/);
@@ -834,25 +861,27 @@ describe('Audit - the tournament HUD stops when there is nothing left to ask', (
     }
   });
 
-  it('backs the poll off on a sustained fault instead of giving up on it', () => {
+  it('backs the reads off on a sustained fault instead of giving up on them', () => {
     /* It used to STOP after five failures, permanently — and because
        PersistentTableLayer hides rather than unmounts, permanently meant the
-       session. Five failures is about three minutes offline. */
-    expect(src).toMatch(/if \(failures <= 2\) reportError/);
+       session. Five failures is about three minutes offline.
+       Moved 2026-09-22 to the retry ladder: the first failures of a run are
+       reported, retries widen 5s, 10s, 20s ... to the five-minute cap, and a
+       success resets the run. The old counter could never engage at all -
+       without `throwOnError` a failed read arrived as a null row. */
+    expect(src).toMatch(/const REPORT_LIMIT = 2;/);
+    expect(src).toMatch(/if \(this\.failures <= REPORT_LIMIT\) \{\s*reportError\(/);
     expect(src).toMatch(/const BACKOFF_MS = /);
-    expect(src).toMatch(/setInterval\(\(\) => void refresh\(\), BACKOFF_MS\)/);
+    expect(src).toMatch(/Math\.min\(RETRY_BASE_MS \* 2 \*\* \(this\.failures - 1\), BACKOFF_MS\)/);
     // and it must come BACK to the normal cadence once a read succeeds
-    expect(src).toMatch(/backedOff && resyncRef\.current/);
-    expect(src).toMatch(/setInterval\(\(\) => void refresh\(\), POLL_MS\)/);
+    expect(src).toMatch(/this\.failures = 0;/);
     expect(src).not.toMatch(
       /if \(failures >= 5 && resyncRef\.current\) \{\s*clearInterval\(resyncRef\.current\);\s*resyncRef\.current = null;/
     );
   });
 
   it('does not tick once a second while hidden', () => {
-    expect(src).toMatch(
-      /if \(hidden \|\| !tournament \|\| tournament\.status !== 'RUNNING'\) return;/
-    );
+    expect(src).toMatch(/if \(hidden \|\| !live \|\| !feed\) return;/);
   });
 });
 

@@ -33,6 +33,7 @@ import {
   isCardPresentationDebugRequested,
 } from '../../presentation/cardPresentation/CardPresentationDebug';
 import { formatPopupText } from '../../utils/popupStyle';
+import '../../styles/table-design-tokens.css';
 import './CommunityCards.css';
 import { cardsWords } from '../../utils/cardWords';
 

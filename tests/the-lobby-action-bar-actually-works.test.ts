@@ -80,6 +80,10 @@ const CLUBS_SERVICE = read('src/services/ClubsService.ts');
 const ATOMIC_CREATE_MIGRATION = read(
   'supabase/migrations/20260831150100_club_creation_atomic_workflow.sql'
 );
+/** The current authority for the cap, which every enforcing path now calls. */
+const CAP_MIGRATION = read(
+  'supabase/migrations/20260922153234_one_club_membership_cap_one_count_one_lock.sql'
+);
 const CREATE_MODAL = read('src/components/modals/CreateClubModal.tsx');
 const JOIN_MODAL = read('src/components/modals/JoinClubModal.tsx');
 const CLUB_JOIN_SERVICE = read('src/services/ClubJoinService.ts');
@@ -166,10 +170,13 @@ describe('the join modal', () => {
 });
 
 describe('creating a club (service path — the modal and ClubsPage both delegate here)', () => {
-  it('fails closed on the 4-club limit', () => {
+  it('fails closed on the club membership cap', () => {
     // Creation now crosses one server-authoritative boundary. The client can
     // preview allowance, but the serialized transaction owns the decision.
+    // History: the atomic workflow installed a literal 4 ...
     expect(ATOMIC_CREATE_MIGRATION).toMatch(/v_memberships >= 4/);
+    // ... and the current create path compares against the one cap authority.
+    expect(CAP_MIGRATION).toMatch(/v_memberships >= public\.fn_club_membership_cap\(\)/);
     expect(CLUBS_SERVICE).toMatch(/fn_create_club_atomic/);
   });
 
@@ -307,7 +314,7 @@ describe('the discovery grid shows only data that exists', () => {
   });
 });
 
-describe('the 4-club limit is enforced where it cannot be skipped', () => {
+describe('the club membership cap is enforced where it cannot be skipped', () => {
   it('the trigger migration exists, covers insert and approval, and exempts horses', () => {
     // fn_join_club's owner branch never counts memberships, so club creation
     // relied on a client-side check alone. The trigger backstops every insert
@@ -318,6 +325,17 @@ describe('the 4-club limit is enforced where it cannot be skipped', () => {
     expect(LIMIT_MIGRATION).toMatch(/trg_four_club_limit_upd/);
     expect(LIMIT_MIGRATION).toMatch(/is_horse/);
     expect(LIMIT_MIGRATION).toMatch(/BEFORE UPDATE OF status/);
+  });
+
+  it('the trigger now locks the player and counts through the one cap authority', () => {
+    // The trigger was installed at 4 and raised to 10 in place by
+    // 20260908125235. It now takes the player lock and the shared count, and
+    // the horse exemption above it is untouched.
+    expect(CAP_MIGRATION).toContain(
+      '$trg_new$  PERFORM public.fn_club_membership_lock(NEW.user_id);\n  v_count := public.fn_club_membership_count(NEW.user_id, NEW.club_id);'
+    );
+    expect(CAP_MIGRATION).toContain('IF v_count >= public.fn_club_membership_cap() THEN');
+    expect(CAP_MIGRATION).not.toMatch(/\$trg_new\$[\s\S]*is_horse[\s\S]*\$trg_new\$/);
   });
 });
 

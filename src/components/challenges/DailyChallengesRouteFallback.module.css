@@ -3,9 +3,20 @@
   font-family: 'Rajdhani', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
 }
 
+/* The page widens StandardContentLayout's 680px reading column to 1240px
+   (daily-challenges/00-tokens-layout.realism.module.css, the last word in the
+   page's cascade). The shell paints the same frame, or above 768px - a
+   desktop, a landscape phone - the hero jumped from 680px to the page's width
+   at the handover. */
+.container > div {
+  max-width: 1240px;
+}
+
+/* Daily and monthly resolve through the live schema tokens the page itself
+   uses (club-engine.css), so the shell hands over without an accent swap. */
 .page {
-  --cycle-color: #55e8ff;
-  --cycle-glow: rgba(85, 232, 255, 0.2);
+  --cycle-color: var(--realism-cyan, #55e8ff);
+  --cycle-glow: color-mix(in srgb, var(--cycle-color) 20%, transparent);
   display: grid;
   min-height: calc(100dvh - 82px);
   gap: 18px;
@@ -24,8 +35,8 @@
 }
 
 .page[data-mission-cycle='monthly'] {
-  --cycle-color: #ffc93c;
-  --cycle-glow: rgba(214, 173, 82, 0.24);
+  --cycle-color: var(--realism-gold, #ffc93c);
+  --cycle-glow: color-mix(in srgb, var(--cycle-color) 24%, transparent);
 }
 
 .hero,
@@ -185,17 +196,28 @@
   text-transform: uppercase;
 }
 
+/* The title prints at the page's own size, weight and tracking - the values
+   the page's cascade resolves to (daily-challenges/10-hero.realism above
+   680px, 99-media.command at or below) - so it does not change size at the
+   handover. It had been larger on phones and smaller on a tablet or desktop
+   (41.6px against the page's 37.6px at 320px, 86.4px against 96px at 1440px),
+   and at a 280px phone CHALLENGES ran past its column. Like the page's, it
+   grows with the reader's text size and wraps inside its column: it had no
+   break allowed, so at 200% text the hero clipped it. overflow-wrap breaks it
+   where the column ends (10-hero.base.module.css says why nothing gentler is
+   possible). */
 .heroCopy h1 {
   margin: 10px 0 12px;
   color: #f8fcfc;
-  font-size: clamp(2.65rem, 6vw, 5.4rem);
+  font-size: clamp(3.6rem, 7vw, 6rem);
   font-weight: 600;
-  letter-spacing: 0.015em;
-  line-height: 0.92;
+  letter-spacing: 0.025em;
+  line-height: 0.86;
   text-transform: uppercase;
   text-shadow:
     0 2px 0 #000,
     0 0 24px var(--cycle-glow);
+  overflow-wrap: anywhere;
 }
 
 .heroCopy p {
@@ -420,14 +442,17 @@
     right: 20px;
   }
 
+  /* The top padding clears the cycle instrument (20px down, 58px tall), so
+     copy that grows with the text size makes the hero taller instead of
+     running under the badge; at normal text the copy sits at the foot of the
+     430px hero and nothing moves. */
   .heroCopy {
     width: 100%;
-    padding: 28px 22px;
+    padding: 92px 22px 28px;
   }
 
   .heroCopy h1 {
-    max-width: calc(100% - 16px);
-    font-size: clamp(2.45rem, 13vw, 3.55rem);
+    font-size: clamp(2rem, calc(8vw + 0.75rem), 3.75rem);
   }
 
   .loadingBoard {

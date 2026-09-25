@@ -1,416 +1,94 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  TOURNAMENT LOBBY CARD — Premium Dark Theme CSS
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENT LOBBY CARD - on the spade console (2026-09-08)
+
+   The frame, the crest, the header well, the pill slot, the two action plates
+   and the flat closing cap all come from the approved master via
+   SpadeConsole.css. This sheet only types the figures on the black glass
+   between the rails.
+
+   Dan, on the shape this replaced: "I'M NOT A BIG FAN OF THESE CARDS. I DON'T
+   LIKE THE 4 BOXES ... I'D MUCH RATHER SEE THEM LOOK MORE LIKE [the plain
+   console]." So the badge pills, the six-cell info grid, the feature-tag pills,
+   the progress bar and the gradient button are all gone. Every figure is a row:
+   label in the master's lit blue on the left, value in silver on the right,
+   an engraved rule between rows - a black cut with a light lip, the same cut
+   the master's own chrome rules are made of.
+
+   Sizes are cqw against the console; no :hover anywhere; nothing drawn.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .card {
-  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
-  border: 1px solid rgba(111, 220, 255, 0.2);
-  border-radius: 16px;
-  padding: 20px;
+  width: 100%;
+  margin: 0 0 12px;
+}
+
+/* ── The feature tags: lit words on the glass, never pills ───────────────── */
+
+.tags {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 0 0 rgba(111, 220, 255, 0);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.type {
-  background: rgba(111, 220, 255, 0.15);
-  color: #6fdcff;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.status {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.speedBadge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 6px;
-  color: white;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.freezeoutTag {
-  display: inline-block;
-  background: rgba(51, 151, 204, 0.2);
-  color: #3397cc;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: white;
-}
-
-/* Info Grid */
-.info {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  padding: 12px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.infoItem {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.infoLabel {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-}
-
-.infoValue {
-  font-size: 14px;
-  font-weight: 600;
-  color: white;
-}
-
-/* GTD Badge */
-.gtdBadge {
-  display: inline-block;
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-left: 6px;
-  letter-spacing: 0.5px;
-}
-
-/* Feature Tags */
-.featureTags {
-  display: flex;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 1.4cqw 4cqw;
+  margin: 0;
+  padding: 1cqw 0.5cqw 0;
 }
 
-.featureTag {
-  background: rgba(139, 92, 246, 0.15);
-  color: #6fdcff;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 6px;
+.tag {
+  font-size: 2.5cqw;
+  white-space: nowrap;
 }
 
-.bountyTag {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+/* ── The figures ─────────────────────────────────────────────────────────── */
+
+.rows {
+  display: grid;
 }
 
-.pkoTag {
-  background: rgba(249, 115, 22, 0.15);
-  color: #fb923c;
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.mysteryTag {
-  background: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
+/* THE MULTI-DAY LINE (visual acceptance 2026-09-24). "Day 2 Starts Sat Oct 3
+   10:00 AM PDT" is wider than the card, and on the shared two-column row the
+   value's auto column took every pixel and printed over its own label ("Day 1
+   Complete"). The start time is the whole point of the line, so it is not cut
+   either: the label takes its own line and the value wraps under it. */
+.rowStacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.2cqw;
 }
 
-.multiDayTag {
-  background: rgba(6, 182, 212, 0.15);
-  color: #22d3ee;
+.rowStacked .value {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.lateRegTag {
-  background: rgba(245, 158, 11, 0.15);
-  color: #6fdcff;
-  font-weight: 700;
-  font-family: 'Monaco', 'Consolas', monospace;
-  animation: lateRegPulse 1s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite
-    alternate;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
-}
-
-.lateRegTag.lateRegClosed {
-  animation: none;
-  background: rgba(107, 114, 128, 0.15);
-  color: #9ca3af;
-}
-
-.lateRegTag.criticalWarning {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  animation: criticalPulse 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite
-    alternate;
-}
-
-@keyframes lateRegPulse {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0.7;
-  }
-}
-
-@keyframes criticalPulse {
-  from {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
-  }
-  to {
-    opacity: 0.6;
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
-  }
-}
-
-/* Pinned */
-.pinnedCard {
-  border-color: rgba(111, 220, 255, 0.5);
-  box-shadow: 0 0 12px rgba(111, 220, 255, 0.1);
-}
-
-.pinnedBadge {
-  background: rgba(111, 220, 255, 0.2);
-  color: #6fdcff;
-  font-size: 9px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
-  letter-spacing: 1px;
-}
-
-/* PokerBros parity badges (2026-08-22): label_as_new / is_vip_only / all_in_or_fold */
-.newBadge {
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-  font-size: 9px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
-  letter-spacing: 1px;
-}
-
-.vipBadge {
-  background: rgba(167, 139, 250, 0.2);
-  color: #6fdcff;
-  font-size: 9px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
-  letter-spacing: 1px;
-}
-
-.aofBadge {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-  font-size: 9px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
-  letter-spacing: 1px;
-}
-
-/* Countdown */
-.countdown {
+.value {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px;
-  background: rgba(111, 220, 255, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(111, 220, 255, 0.2);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.6, 1);
-}
-
-.countdown.critical {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.3);
-  animation: criticalCountdown 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-.countdownLabel {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.countdownValue {
-  font-size: 18px;
-  font-weight: 700;
-  color: #6fdcff;
-  font-family: 'Monaco', 'Consolas', monospace;
-}
-
-.countdown.critical .countdownValue {
-  color: #ef4444;
-  text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
-}
-
-@keyframes criticalCountdown {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
-  }
-}
-
-/* Progress Bar */
-.progressBar {
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  gap: 2cqw;
+  align-items: baseline;
+  justify-self: end;
+  min-width: 0;
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: right;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.progressFill {
-  height: 100%;
-  background: linear-gradient(90deg, #6fdcff, #0a5dc2);
-  border-radius: 3px;
-  transition: width 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.spotsLabel {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  text-align: center;
-}
-
-/* Actions */
-.actions {
-  margin-top: 4px;
-}
-
-.registerBtn {
-  width: 100%;
-  padding: 14px;
-  background: linear-gradient(135deg, #6fdcff, #0a5dc2);
-  border: none;
-  border-radius: 12px;
-  color: #1a1a2e;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-.registerBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.unregisterBtn {
-  width: 100%;
-  padding: 14px;
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid #10b981;
-  border-radius: 12px;
-  color: #10b981;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-.playBtn {
-  width: 100%;
-  padding: 14px;
-  background: linear-gradient(135deg, #10b981, #059669);
-  border: none;
-  border-radius: 12px;
-  color: white;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
-    box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-/* ── Mobile ≤480px ── */
-@media (max-width: 480px) {
-  .card {
-    padding: 14px;
-    gap: 10px;
-    border-radius: 12px;
-  }
-  .title {
-    font-size: 15px;
-  }
-  .info {
-    gap: 8px;
-    padding: 10px 0;
-  }
-  .infoLabel {
-    font-size: 10px;
-  }
-  .infoValue {
-    font-size: 13px;
-  }
-  .countdownValue {
-    font-size: 16px;
-  }
-  .registerBtn,
-  .unregisterBtn,
-  .playBtn {
-    padding: 12px;
-    font-size: 14px;
-    border-radius: 10px;
-  }
-  .featureTag {
-    font-size: 10px;
-    padding: 3px 8px;
-  }
-}
-
-/* ── Small phones ≤380px ── */
-@media (max-width: 380px) {
-  .card {
-    padding: 12px;
-    gap: 8px;
-  }
-  .title {
-    font-size: 14px;
-  }
-  .info {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-  }
-  .infoValue {
-    font-size: 12px;
-  }
-  .registerBtn,
-  .unregisterBtn,
-  .playBtn {
-    padding: 10px;
-    font-size: 13px;
-  }
+.gtd {
+  flex: 0 0 auto;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 /* A tapered ladder needs its opening clock and range without clipping either. */

@@ -1,0 +1,17 @@
+{
+  "_owner": "feat/cashier-phase5-statements",
+  "_comment": "20260923131325: Cashier cross-wallet statement (every receipt plus the chip_ledger movement categories no receipt writer mirrors) read by one keyset, and its short-lived export job store. The private helpers are owner-only.",
+  "tables": ["ca_cashier_statement_exports", "ca_cashier_statement_export_rows"],
+  "functions": [
+    "fn_cashier_statement_scope",
+    "fn_cashier_statement_page",
+    "fn_cashier_statement_totals",
+    "fn_cashier_statement_export_start",
+    "fn_cashier_statement_export_page",
+    "fn_cashier_statement_export_cancel",
+    "fn_cashier_statement_rows",
+    "fn_cashier_statement_downline",
+    "fn_cashier_statement_filters",
+    "fn_cashier_statement_prune_expired"
+  ]
+}

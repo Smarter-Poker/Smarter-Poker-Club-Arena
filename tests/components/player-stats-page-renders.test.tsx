@@ -123,8 +123,10 @@ vi.mock('react-router-dom', () => ({
   Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
 }));
 
+// Read status since 2026-09-20 (Stats contract truth): { roles, error? }, so
+// a failed roles read is never mistaken for a player who holds no roles.
 vi.mock('../../src/services/AgentRakeService', () => ({
-  AgentRakeService: { getMyAgentRoles: vi.fn().mockResolvedValue([]) },
+  AgentRakeService: { getMyAgentRoles: vi.fn().mockResolvedValue({ roles: [] }) },
 }));
 
 vi.mock('../../src/services/StatsFactsService', () => {

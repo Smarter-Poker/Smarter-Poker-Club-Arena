@@ -1,110 +1,529 @@
 /**
- * UNION WALLET MODAL — the same cashier hardware as the Club Bank
- * (WalletCashierModal.css, smarter.poker palette only). This file carries only
- * what the union surface adds: the subtitle under the title, the club tag on
- * a club row, the role tint on a member row, the amount-and-button row, and
- * the notice. Every colour here is one the cashier already uses.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  UNION WALLET - the riveted master, and nothing drawn (#ClubArenaConsole)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This modal used to borrow the Club Bank's hardware: it imported
+ * `WalletCashierModal.css` and wore its `cbc-*` chassis - a rounded steel
+ * panel, pill tabs, a segmented control, bordered member cards, a gradient
+ * confirm button and a gold owner tint - while this file added a few union
+ * flourishes on top. None of that chassis is in any approved master, and the
+ * borrowed sheet belongs to two other components, so it could not be rebuilt
+ * in place.
+ *
+ * The frame is now PAINTED: SpadeConsole `family="riveted"`, the frame Dan's
+ * masters use for money (the table Cashier is on the same one). The balance is
+ * engraved in the header well, the word UNION prints into the master's own
+ * pill slot, and Close and the confirm sit on the two painted plates.
+ *
+ * What is left in this file: the scrim, the console's width, and the size and
+ * rhythm of everything printed on the black glass between the rails. Rows are
+ * LINES separated by an engraved rule, never cards. Every colour is the
+ * master's own ink (`sc-ink--*` in SpadeConsole.css); the only hexes here are
+ * the engraved rule, the two drawn fields and the three role tints, all of
+ * them values the kit already uses.
+ *
+ * metallic-popups.css bevels, wells, rounds and recolours every button and
+ * input inside a `[role='dialog']` with `!important` from a `:where()` at
+ * specificity 0. Each of those longhands is restated below at 0,2,1 or more.
+ *
+ * Sizes are cqw against the console (`.sc` sets container-type). No radius, no
+ * gradient, no :hover.
  */
 
 .uwm-overlay {
+  position: fixed;
+  inset: 0;
   z-index: 9999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  isolation: isolate;
+  color-scheme: dark;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-.uwm-panel {
-  max-width: 440px;
+.uwm-dialog {
+  width: min(100%, 520px);
+  min-width: 0;
+  margin: auto 0;
+  outline: 0;
+}
+
+.uwm-console {
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+}
+
+/* The balance for a screen reader. The engraved title is a painted zone and
+   cannot carry a live region, and the figure has to be announced when a send
+   lands. */
+.uwm-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .uwm-sub {
-  margin: 6px 0 0;
-  font-size: 0.72rem;
-  line-height: 1.45;
-  color: #8892a4;
+  margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.3cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
+
+/* ── The three pages: lit words on the glass ───────────────────────────── */
+
+.uwm-tabs {
+  display: flex;
+  gap: 3cqw;
+  justify-content: space-between;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.uwm-tab {
+  appearance: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.2cqw 0;
+  border: 0;
+  background: transparent;
+  color: #9aa5b3;
+  font:
+    800 3cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.uwm-tab.is-active {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+/* ── One thing per row on the glass ────────────────────────────────────── */
+
+.uwm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.uwm-label {
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.uwm-kinds {
+  display: flex;
+  gap: 5cqw;
+}
+
+.uwm-kind {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.uwm-blurb {
+  color: #9aa5b3;
+  font:
+    600 2.9cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+/* The two things the master does not paint: a place to search and a place to
+   type an amount. Drawn as little as a field can be - a line on the glass,
+   engraved above and below, no box and no corner. 16px floor on the font,
+   because anything smaller makes iOS zoom the page on focus. */
+.uwm-input.uwm-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 2.4cqw 1cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e4e7ec !important;
+  font:
+    500 max(16px, 3.5cqw) / 1.45 Inter,
+    system-ui,
+    sans-serif;
+  caret-color: #45adff;
+  outline: none;
+}
+
+.uwm-input--amount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The browser's spin buttons are a drawn control the art does not contain. */
+.uwm-input.uwm-input--amount {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.uwm-input--amount::-webkit-inner-spin-button,
+.uwm-input--amount::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.uwm-input.uwm-input::placeholder {
+  color: #9aa5b3;
+  opacity: 0.7;
+}
+
+.uwm-input.uwm-input:focus-visible {
+  outline: 0.6cqw solid #45adff !important;
+  outline-offset: -0.6cqw;
+}
+
+/* ── The directory: one target per line ────────────────────────────────── */
 
 .uwm-list {
-  max-height: 230px;
-}
-
-.uwm-club-tag {
-  flex-shrink: 0;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 3px 7px;
-  border-radius: 6px;
-  color: #6fdcff;
-  background: rgba(0, 180, 230, 0.12);
-  border: 1px solid rgba(0, 180, 230, 0.35);
-}
-
-.cbc-member--on.uwm-member--pull {
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.45);
-}
-
-.uwm-role--owner {
-  color: #ffd166;
-}
-
-.uwm-role--co_owner,
-.uwm-role--admin {
-  color: #6fdcff;
-}
-
-.uwm-role--super_agent,
-.uwm-role--agent,
-.uwm-role--sub_agent {
-  color: #9ad7ff;
-}
-
-.uwm-amount-row {
   display: flex;
-  gap: 8px;
-  align-items: stretch;
+  flex-direction: column;
+  max-height: 62cqw;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
-.uwm-amount-row .cbc-input {
-  flex: 0 0 150px;
+.uwm-target {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.2cqw 0;
+  border: 0;
+  border-top: 1px solid #000;
+  background: transparent;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.uwm-amount-row .cbc-confirm {
-  flex: 1;
+/* The chosen target is NAMED, not boxed: the whole row lights, the way the
+   master lights its own labels. */
+.uwm-target.is-on .uwm-target-name {
+  /* The name wears `sc-ink--silver`, whose -webkit-text-fill-color outranks
+     `color` in every engine that paints it, so the lit ink restates both. */
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.uwm-target.is-on.is-pull .uwm-target-name {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.uwm-target.is-blocked {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.uwm-target:focus-visible {
+  outline: 0.6cqw solid #45adff;
+  outline-offset: -0.6cqw;
+}
+
+.uwm-target-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.4cqw;
   min-width: 0;
+}
+
+.uwm-target-name {
   overflow: hidden;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.uwm-confirm--pull {
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%) !important;
-  border-color: rgba(239, 68, 68, 0.6) !important;
-  color: #fff !important;
+.uwm-target-meta {
+  overflow: hidden;
+  font-size: 2.7cqw;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uwm-tag {
+  flex-shrink: 0;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+/* THE ROLE TINT CARRIES NO GOLD ANY MORE. It was #ffd166 for an owner, a warm
+   amber on a money screen; the lead reads in engraved silver and everyone who
+   can move funds reads in the master's lit blue. */
+.uwm-role {
+  flex-shrink: 0;
+  color: #9aa5b3;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.uwm-role--owner,
+.uwm-role--co_owner {
+  color: #e4e7ec;
+}
+
+.uwm-role--admin,
+.uwm-role--super_agent,
+.uwm-role--agent,
+.uwm-role--sub_agent {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+/* ── States, totals and the ledger ─────────────────────────────────────── */
+
+.uwm-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3cqw;
+  padding: 2.6cqw 0;
+  color: #9aa5b3;
+  font:
+    600 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.uwm-empty.is-bad {
+  color: #ff5b6e;
+}
+
+.uwm-totals {
+  display: flex;
+  gap: 4cqw;
+  justify-content: space-between;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.uwm-total {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 0.8cqw;
+  min-width: 0;
+}
+
+.uwm-total strong {
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.uwm-ledger-head {
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.uwm-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8cqw;
+  padding: 2.4cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.uwm-tx-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+}
+
+.uwm-tx-type {
+  overflow: hidden;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uwm-tx-amount {
+  flex-shrink: 0;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.uwm-tx-mid,
+.uwm-tx-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 3cqw;
+  justify-content: space-between;
+  font-size: 2.7cqw;
+  font-weight: 600;
+}
+
+.uwm-tx-when {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .uwm-notice {
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 0.8rem;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font-size: 3.1cqw;
+  font-weight: 700;
   line-height: 1.4;
 }
 
-.uwm-notice--ok {
-  color: #cfe4ff;
-  background: rgba(0, 180, 230, 0.12);
-  border: 1px solid rgba(0, 180, 230, 0.4);
+/* The one lit word left on this surface: Retry Directory, inside the error
+   line it belongs to. Close, the confirm and Load More are painted plates in
+   the foot - the riveted base always paints two, so no page may leave one
+   empty. */
+.uwm-word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2cqw;
+  border: 0;
+  background: transparent;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.uwm-notice--bad {
-  color: #ffb4b4;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.4);
+.uwm-word:active,
+.uwm-kind:active,
+.uwm-tab:active {
+  filter: brightness(1.25);
+}
+
+.uwm-word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.uwm-word:focus-visible,
+.uwm-kind:focus-visible,
+.uwm-tab:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
+/* metallic-popups.css bevels every button inside a dialog with `!important`
+   at specificity 0 and paints steel hardware on anything labelled Close. A lit
+   word and a row paint nothing: the longhands are restated at 0,2,1.
+
+   COLOUR IS NOT ONE OF THEM (2026-09-22). This block also said
+   `color: inherit !important`, which no metallic rule needs undoing on these
+   four (none is a primary, danger or Close control) and which beat the tab's
+   own inks: every tab printed in the console's body colour, and the page you
+   were on was told apart by its glow alone. Each of these carries its own ink
+   (the tabs above, `sc-ink--*` on the rest). */
+[role='dialog'] .uwm-tab.uwm-tab,
+[role='dialog'] .uwm-kind.uwm-kind,
+[role='dialog'] .uwm-word.uwm-word,
+[role='dialog'] .uwm-target.uwm-target {
+  min-width: 0;
+  min-height: 44px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+[role='dialog'] .uwm-target.uwm-target {
+  border-top: 1px solid #000 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
 
 @media (max-width: 380px) {
-  .uwm-amount-row {
-    flex-direction: column;
-  }
-  .uwm-amount-row .cbc-input {
-    flex-basis: auto;
+  .uwm-tabs {
+    gap: 2cqw;
   }
 }

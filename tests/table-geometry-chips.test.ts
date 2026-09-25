@@ -42,6 +42,7 @@ import {
   CHIP_MIN_PX,
   CHIP_MAX_PX,
   CHIP_COLLECT_FRACTION,
+  POT_ANCHOR_PCT,
   CHIP_RAIL_WIDTH_PCT,
   MARKER_INSET_PX,
   FELT_MARKER_MARGIN_WIDTH_PCT,
@@ -595,11 +596,12 @@ describe('item 2 (2026-08-26) - the button never overlaps a top seat box', () =>
 describe('chip collect - every seat converges on the pot', () => {
   for (const [label, table] of Object.entries(TABLES)) {
     for (const [size, ring] of Object.entries(RINGS)) {
-      it(`${size}-max on a ${label} table: lands the same fraction short of centre`, () => {
+      it(`${size}-max on a ${label} table: lands the same fraction short of the pot`, () => {
         for (const seat of ring) {
           const rest = betChipOffsetPx(seat, table);
           const travel = chipCollectOffsetPx(seat, table);
-          const toMiddle = toPx(seat, feltCenter(), table);
+          // The pot, not the middle of the felt (Dan 2026-09-23).
+          const toMiddle = toPx(seat, POT_ANCHOR_PCT, table);
           const landed = { x: rest.x + travel.x, y: rest.y + travel.y };
           // Both halves of the sweep are rounded per axis, so the magnitude of
           // the sum can land up to ~1.4px either side. A stated window rather

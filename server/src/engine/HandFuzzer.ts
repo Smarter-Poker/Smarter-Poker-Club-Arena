@@ -57,6 +57,7 @@ import {
 } from './BettingStructure.js';
 
 import type { ActionType, GameVariant, HandConfig, SeatPlayer } from '../types.js';
+import { handFixedLimitSmallBet, killStakes, KILL_RULE_VERSION } from './KillPot.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deterministic PRNG — only the ACTION stream is seeded. The deck is not
@@ -267,6 +268,50 @@ export function randomTable(rnd: () => number): FuzzConfig {
   }
 
   return { config, seats, dealerSeat };
+}
+
+/**
+ * KILL POTS (kill-v1): a random table turned into a KILL HAND. Fixed limit
+ * only, no bomb pot (incompatible on one table) and no straddle (refused on
+ * fixed limit); the killer is any seat dealt in - button, blinds, anywhere -
+ * with whatever stack the table gave it, so short all-in killers occur. A half
+ * kill whose base big blind is an odd number of cents is played as a full kill,
+ * exactly as the exactness rule refuses the half. Every other forced post the
+ * base table samples (antes, BBA, dead blinds, post-BB entries) stays.
+ */
+export function randomKillTable(rnd: () => number): FuzzConfig {
+  const base = randomTable(rnd);
+  const variant: GameVariant = rnd() < 0.5 ? 'flh' : 'flo8';
+  const dealt = base.seats.filter((p) => !p.is_sitting_out);
+  const killer = dealt[Math.floor(rnd() * dealt.length)];
+  const wantHalf = rnd() < 0.5;
+  const half = killStakes({ baseBigBlind: base.config.bigBlind, mode: 'half' });
+  const stakes =
+    wantHalf && half.ok ? half : killStakes({ baseBigBlind: base.config.bigBlind, mode: 'full' });
+  if (!stakes.ok) throw new Error(`fuzz kill stakes refused: ${stakes.reason}`);
+  const config: HandConfig = {
+    ...base.config,
+    gameVariant: variant,
+    bombPot: undefined,
+    straddles: undefined,
+    killPot: {
+      ruleVersion: KILL_RULE_VERSION,
+      mode: stakes.mode,
+      multiplier: stakes.multiplier,
+      baseBigBlind: stakes.baseBigBlind,
+      smallBet: stakes.smallBet,
+      bigBet: stakes.bigBet,
+      killBlind: stakes.killBlind,
+      killerUserId: killer.user_id,
+      killerSeat: killer.seat,
+      killerBlindSlot: 'none',
+      triggerHandId: null,
+      triggerHandNumber: 0,
+      chained: rnd() < 0.5,
+      thresholdBb: 10,
+    },
+  };
+  return { ...base, config };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,7 +586,7 @@ function amountFor(
   // cover the fixed bet; the caller then picks a different action, which is the
   // same escape it already uses for a pot-limit cap below a full raise.
   if (isFixedLimitVariant(cfg.gameVariant)) {
-    const streetBet = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    const streetBet = fixedLimitBetSize(handFixedLimitSmallBet(cfg), st.stage);
     if (isFixedLimitCapped(st.actionHistory, st.stage, streetBet)) return null;
     const betSize = fixedLimitStreetBounds(
       st.actionHistory,
@@ -569,9 +614,9 @@ function amountFor(
   return cents(lo + rnd() * Math.max(0, hi - lo));
 }
 
-export function fuzzOneHand(seed: number): FuzzHandResult {
+export function fuzzOneHand(seed: number, opts: { kill?: boolean } = {}): FuzzHandResult {
   const rnd = mulberry32(seed);
-  const cfg = randomTable(rnd);
+  const cfg = opts.kill ? randomKillTable(rnd) : randomTable(rnd);
   const hc = new HandController(cfg.config, cfg.seats, cfg.dealerSeat);
 
   const seatStart = new Map<number, number>();

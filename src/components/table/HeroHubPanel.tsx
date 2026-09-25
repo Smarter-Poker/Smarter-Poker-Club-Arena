@@ -28,11 +28,28 @@
  * spectator has no hero avatar to tap and therefore no stats — which is
  * correct, they have no session to have stats about; the lobby button in the
  * corner is what serves them.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE CONSOLE (#ClubArenaConsole). The panel was a 16px rounded card with its
+ * own border and a 48px drop shadow, carrying an avatar disc, a rounded tab
+ * strip with a 10px-cornered active tab, a square close button, a grid of
+ * figure tiles, a card per launcher and a pill switch per quick setting.
+ *
+ * It is now Dan's approved spade master: the player's name is the eyebrow,
+ * PLAYER HUB is engraved in the header well, their stack sits in the well's
+ * painted pill slot, the four tabs and every figure, launcher and switch print
+ * as ROWS on the black glass, and Close is a lit word above the flat closing
+ * cap. Nothing is drawn - no avatar disc, no tiles, no pills.
+ *
+ * WHAT DID NOT MOVE: the dialog semantics (Escape, focus in, focus trapped,
+ * focus handed back), the roving-tabindex tab pattern, the session tab memory,
+ * every launcher, every label, and the yield behaviour below.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { Throwable } from '../../services/ThrowableService';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './HeroHubPanel.css';
 
 export type HeroHubTab = 'throwables' | 'stats' | 'profile' | 'settings';
@@ -141,7 +158,8 @@ export interface HeroHubPanelProps {
 }
 
 /**
- * One figure in the Stats tab.
+ * One figure in the Stats tab, printed as a ROW on the glass: the name in the
+ * master's lit blue on the left, the number in engraved silver on the right.
  *
  * House rule 5: numbers are formatted with toLocaleString, never padded or
  * concatenated by hand. And a value we do not have prints "-" — a fabricated
@@ -195,7 +213,6 @@ export function HeroHubPanel({
   onOpenIdentity,
   onOpenTableSettings,
   heroName,
-  heroAvatarUrl,
   stats,
   isHeroTurn = false,
   quickSettings,
@@ -304,6 +321,16 @@ export function HeroHubPanel({
     tablistRef.current?.querySelectorAll<HTMLElement>('[role="tab"]')?.[next]?.focus();
   };
 
+  /* WHOSE HUB IS THIS (2026-08-29). The panel was called "Player hub" and
+     showed no player. The name is the eyebrow and the stack is the word in the
+     header well's painted pill slot - a stack at the felt is NEVER abbreviated
+     (Dan 2026-08-28), so it is printed whole and the slot's own fitter shrinks
+     it to the painted face rather than shortening the number. */
+  const stackPill =
+    stats?.stack != null
+      ? stats.stack.toLocaleString(undefined, { maximumFractionDigits: 2 })
+      : undefined;
+
   return (
     <div
       /* --yield: the hero is on the clock. The backdrop stops painting and
@@ -323,159 +350,162 @@ export function HeroHubPanel({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* WHOSE HUB IS THIS (2026-08-29). The panel was called "Player hub"
-            and showed no player — no name, no avatar, no stack. */}
-        {(heroName || heroAvatarUrl) && (
-          <div className="hero-hub__identity">
-            {heroAvatarUrl ? (
-              <img className="hero-hub__identity-avatar" src={heroAvatarUrl} alt="" />
-            ) : null}
-            <span className="hero-hub__identity-name">{heroName}</span>
-            {stats?.stack != null && (
-              <span className="hero-hub__identity-stack">
-                {stats.stack.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-            )}
-          </div>
-        )}
-
-        <div
-          className="hero-hub__tabs"
-          role="tablist"
-          aria-label="Player Hub Sections"
-          ref={tablistRef}
-          onKeyDown={onTablistKeyDown}
+        <SpadeConsole
+          onClose={onClose}
+          as="div"
+          className="hero-hub__console"
+          eyebrow={heroName}
+          title="Player Hub"
+          pill={stackPill}
+          pillInk="silver"
+          foot="foot"
         >
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`hero-hub-tab-${t.id}`}
-              aria-controls={`hero-hub-panel-${t.id}`}
-              aria-selected={tab === t.id}
-              /* Roving tabindex: the tablist is ONE tab stop, arrows move
-                 within it — the pattern screen-reader users expect. */
-              tabIndex={tab === t.id ? 0 : -1}
-              className={`hero-hub__tab${tab === t.id ? ' hero-hub__tab--active' : ''}`}
-              onClick={() => selectTab(t.id)}
+          <div
+            className="hero-hub__tabs"
+            role="tablist"
+            aria-label="Player Hub Sections"
+            ref={tablistRef}
+            onKeyDown={onTablistKeyDown}
+          >
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`hero-hub-tab-${t.id}`}
+                aria-controls={`hero-hub-panel-${t.id}`}
+                aria-selected={tab === t.id}
+                /* Roving tabindex: the tablist is ONE tab stop, arrows move
+                   within it — the pattern screen-reader users expect. */
+                tabIndex={tab === t.id ? 0 : -1}
+                className={`hero-hub__tab${tab === t.id ? ' hero-hub__tab--active' : ''}`}
+                onClick={() => selectTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'throwables' &&
+            (emojiEnabled ? (
+              <div
+                className="hero-hub__throwables"
+                role="tabpanel"
+                id="hero-hub-panel-throwables"
+                aria-labelledby="hero-hub-tab-throwables"
+              >
+                {/* The leaf selector, unchanged. Its onClose closes the whole
+                    hub — after a throw there is nothing left to pick. (Its own
+                    × is hidden by HeroHubPanel.css while embedded: two close
+                    buttons that do the same thing read as a bug. The component
+                    is NOT forked — it is pinned by protected-features.json.) */}
+                <ThrowableSelector userId={userId} onSelect={onThrowableSelect} onClose={onClose} />
+              </div>
+            ) : (
+              <div
+                className="hero-hub__empty"
+                role="tabpanel"
+                id="hero-hub-panel-throwables"
+                aria-labelledby="hero-hub-tab-throwables"
+              >
+                Throwables Are Disabled In Table Settings
+              </div>
+            ))}
+
+          {tab === 'stats' && (
+            <div
+              className="hero-hub__menu"
+              role="tabpanel"
+              id="hero-hub-panel-stats"
+              aria-labelledby="hero-hub-tab-stats"
             >
-              {t.label}
-            </button>
-          ))}
+              {/* THE FIGURES, HERE, NOT ONE TAP AWAY (2026-08-29). This tab used
+                  to hold a single button that closed the hub and opened another
+                  panel — a "Stats" tab with no stats in it. Everything below is
+                  already computed on the page. A missing value prints "-", never
+                  a fabricated 0. */}
+              {stats && (
+                <div className="hero-hub__figures">
+                  {statFigure('Stack', stats.stack, { decimals: 2 })}
+                  {!isTournament &&
+                    statFigure('Session', stats.profitLoss, { signed: true, decimals: 2 })}
+                  {!isTournament &&
+                    statFigure('BB Won', stats.bigBlindsWon, { signed: true, decimals: 1 })}
+                  {statFigure('Hands', stats.handsPlayed)}
+                  {statFigure('VPIP', stats.vpipPercent, { suffix: '%' })}
+                  {statFigure('PFR', stats.pfrPercent, { suffix: '%' })}
+                </div>
+              )}
+              {item('Full Session Stats', 'Trajectory Graph And Deeper Analytics', onOpenStats)}
+              {isTournament &&
+                item('Tournament Info', 'Standings, Payouts And Blind Clock', onOpenTournamentInfo)}
+            </div>
+          )}
+
+          {tab === 'profile' && (
+            <div
+              className="hero-hub__menu"
+              role="tabpanel"
+              id="hero-hub-panel-profile"
+              aria-labelledby="hero-hub-tab-profile"
+            >
+              {item('View Profile', 'Your Table Identity And Session', onOpenProfileView)}
+              {item('Change Avatar', 'Pick A New Table Avatar', onOpenAvatarPicker)}
+              {item('Display Name', 'Real Name Or Alias At The Table', onOpenIdentity)}
+            </div>
+          )}
+
+          {tab === 'settings' && (
+            <div
+              className="hero-hub__menu"
+              role="tabpanel"
+              id="hero-hub-panel-settings"
+              aria-labelledby="hero-hub-tab-settings"
+            >
+              {/* THE SWITCHES YOU REACH FOR MID-SESSION, HERE (2026-08-30).
+                  This tab used to be one button that closed the hub and opened
+                  SettingsPanel — the same weakness the Stats tab had. These
+                  write through the settings' single owner; the full panel is
+                  still one tap below for everything else. */}
+              {quickSettings && quickSettings.length > 0 && (
+                <div className="hero-hub__toggles">
+                  {quickSettings.map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      role="switch"
+                      aria-checked={s.value}
+                      className={`hero-hub__toggle${s.value ? ' is-on' : ''}`}
+                      onClick={() => onToggleQuickSetting?.(s.key)}
+                      title={s.description}
+                    >
+                      <span className="hero-hub__toggle-label">{s.label}</span>
+                      {/* The state is a word. The master paints no switch, and
+                          a 999px track with a round thumb is the drawn control
+                          the standard exists to delete; `aria-checked` above
+                          carries the semantics either way. */}
+                      <span className="hero-hub__toggle-state" aria-hidden="true">
+                        {s.value ? 'On' : 'Off'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {item(
+                'All Table Settings',
+                'Gameplay, Display, Sound And Customization',
+                onOpenTableSettings
+              )}
+            </div>
+          )}
+
+          {/* One action, so the foot is the flat closing cap and Close is a lit
+              word - the master paints BOTH plates, and a single action would
+              leave one of them painted and empty. */}
           <button type="button" className="hero-hub__close" onClick={onClose} aria-label="Close">
-            ×
+            Close
           </button>
-        </div>
-
-        {tab === 'throwables' &&
-          (emojiEnabled ? (
-            <div
-              className="hero-hub__throwables"
-              role="tabpanel"
-              id="hero-hub-panel-throwables"
-              aria-labelledby="hero-hub-tab-throwables"
-            >
-              {/* The leaf selector, unchanged. Its onClose closes the whole
-                  hub — after a throw there is nothing left to pick. (Its own
-                  × is hidden by HeroHubPanel.css while embedded: two close
-                  buttons that do the same thing read as a bug. The component
-                  is NOT forked — it is pinned by protected-features.json.) */}
-              <ThrowableSelector userId={userId} onSelect={onThrowableSelect} onClose={onClose} />
-            </div>
-          ) : (
-            <div
-              className="hero-hub__empty"
-              role="tabpanel"
-              id="hero-hub-panel-throwables"
-              aria-labelledby="hero-hub-tab-throwables"
-            >
-              Throwables Are Disabled In Table Settings
-            </div>
-          ))}
-
-        {tab === 'stats' && (
-          <div
-            className="hero-hub__menu"
-            role="tabpanel"
-            id="hero-hub-panel-stats"
-            aria-labelledby="hero-hub-tab-stats"
-          >
-            {/* THE FIGURES, HERE, NOT ONE TAP AWAY (2026-08-29). This tab used
-                to hold a single button that closed the hub and opened another
-                panel — a "Stats" tab with no stats in it. Everything below is
-                already computed on the page. A missing value prints "-", never
-                a fabricated 0. */}
-            {stats && (
-              <div className="hero-hub__figures">
-                {statFigure('Stack', stats.stack, { decimals: 2 })}
-                {!isTournament &&
-                  statFigure('Session', stats.profitLoss, { signed: true, decimals: 2 })}
-                {!isTournament &&
-                  statFigure('BB Won', stats.bigBlindsWon, { signed: true, decimals: 1 })}
-                {statFigure('Hands', stats.handsPlayed)}
-                {statFigure('VPIP', stats.vpipPercent, { suffix: '%' })}
-                {statFigure('PFR', stats.pfrPercent, { suffix: '%' })}
-              </div>
-            )}
-            {item('Full Session Stats', 'Trajectory Graph And Deeper Analytics', onOpenStats)}
-            {isTournament &&
-              item('Tournament Info', 'Standings, Payouts And Blind Clock', onOpenTournamentInfo)}
-          </div>
-        )}
-
-        {tab === 'profile' && (
-          <div
-            className="hero-hub__menu"
-            role="tabpanel"
-            id="hero-hub-panel-profile"
-            aria-labelledby="hero-hub-tab-profile"
-          >
-            {item('View Profile', 'Your Table Identity And Session', onOpenProfileView)}
-            {item('Change Avatar', 'Pick A New Table Avatar', onOpenAvatarPicker)}
-            {item('Display Name', 'Real Name Or Alias At The Table', onOpenIdentity)}
-          </div>
-        )}
-
-        {tab === 'settings' && (
-          <div
-            className="hero-hub__menu"
-            role="tabpanel"
-            id="hero-hub-panel-settings"
-            aria-labelledby="hero-hub-tab-settings"
-          >
-            {/* THE SWITCHES YOU REACH FOR MID-SESSION, HERE (2026-08-30).
-                This tab used to be one button that closed the hub and opened
-                SettingsPanel — the same weakness the Stats tab had. These
-                write through the settings' single owner; the full panel is
-                still one tap below for everything else. */}
-            {quickSettings && quickSettings.length > 0 && (
-              <div className="hero-hub__toggles">
-                {quickSettings.map((s) => (
-                  <button
-                    key={s.key}
-                    type="button"
-                    role="switch"
-                    aria-checked={s.value}
-                    className={`hero-hub__toggle${s.value ? ' is-on' : ''}`}
-                    onClick={() => onToggleQuickSetting?.(s.key)}
-                    title={s.description}
-                  >
-                    <span className="hero-hub__toggle-label">{s.label}</span>
-                    <span className="hero-hub__toggle-track" aria-hidden="true">
-                      <span className="hero-hub__toggle-thumb" />
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {item(
-              'All Table Settings',
-              'Gameplay, Display, Sound And Customization',
-              onOpenTableSettings
-            )}
-          </div>
-        )}
+        </SpadeConsole>
       </div>
     </div>
   );

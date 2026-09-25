@@ -1,0 +1,48 @@
+.unclaimedBar {
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr) auto;
+  min-height: 148px;
+  padding: 0 24px 0 0;
+  border-color: rgba(214, 173, 82, 0.62);
+  background:
+    radial-gradient(circle at 12% 50%, rgba(85, 232, 255, 0.12), transparent 15rem),
+    linear-gradient(100deg, rgba(7, 61, 50, 0.56), rgba(8, 12, 11, 0.95) 54%), #060908;
+}
+
+.unclaimedBar::before {
+  width: 4px;
+  background: linear-gradient(var(--mission-gold), var(--mission-blue), var(--mission-gold));
+  box-shadow: 0 0 22px rgba(85, 232, 255, 0.45);
+}
+
+.vaultArtwork {
+  align-self: end;
+  width: 192px;
+  max-height: 166px;
+  margin-left: -6px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.52));
+}
+
+.vaultCopy {
+  display: grid;
+  gap: 4px;
+  padding-left: 16px;
+}
+
+.vaultCopy strong {
+  font-size: clamp(1.15rem, 2.2vw, 1.55rem);
+}
+
+.vaultCopy small {
+  color: var(--mission-blue);
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.claimAllButton {
+  min-width: 205px;
+  border-color: var(--mission-gold);
+}

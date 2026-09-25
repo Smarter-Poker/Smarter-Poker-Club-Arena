@@ -146,7 +146,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
     let query = supabase
       .from('hand_history')
       .select('*')
-      .contains('players', [{ userId: user.id }]);
+      .contains('players', JSON.stringify([{ userId: user.id }]));
 
     if (clubId) {
       const resolvedId = await resolveClubUUID(clubId);

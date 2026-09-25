@@ -8,6 +8,8 @@ from satellite_qualifier_fixture import compose, module, table_sql, exact_table_
 MIGRATION=Path("supabase/migrations/20260918092329_retained_hand_submission_atomic_acknowledgement.sql")
 DATA=Path("scripts/ci/fixtures/hand-submission")
 PROBE=Path("scripts/ci/probes/hand-submission-native.sql")
+SUCCESSOR_MIGRATION=Path("supabase/migrations/20260922022319_a_superseded_original_hands_off_its_retained_hand.sql")
+SUPERSEDED_PROBE=Path("scripts/ci/probes/hand-submission-superseded.sql")
 
 def private_snapshot(e,db,label):
     query="""CREATE FUNCTION pg_temp.private_elimination_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
@@ -121,7 +123,7 @@ def prepare(root,out):
         obligations=obligations.replace(anchor,"'seat_id','86300000-0000-0000-0000-00000000000"+str(index)+"','seat_joined_at','2026-09-08T12:00:"+second+"+00:00',"+anchor)
         helpers=parts[0]+"CREATE FUNCTION pg_temp.atomic_hand_row()"+middle+"CREATE FUNCTION pg_temp.atomic_hand_obligations()"+obligations
     (out/"opening.sql").write_text(opening+"\nSET LOCAL session_replication_role = origin;\n"+helpers)
-    paths=[Path(__file__).relative_to(root),MIGRATION,PROBE,Path("scripts/ci/build-hand-submission-migration.py"),Path("scripts/ci/probes/hand-submission-authority.sql"),Path("scripts/ci/probes/hand-submission-disposition.spec"),Path("scripts/ci/probes/hand-submission-successor.sql"),Path("scripts/ci/probes/hand-submission-owner.spec"),Path("scripts/ci/probes/hand-submission-maintenance.spec"),Path("scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json"),Path("scripts/ci/test-mtt-unlimited.py"),Path("scripts/ci/probes/atomic-tournament-hand-boundary.sql"),Path("scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql"),Path("supabase/migrations/20260917230925_cash_funding_retains_original_participant_custody.sql")]+[p.relative_to(root) for p in (root/DATA).glob("*.json")]
+    paths=[Path(__file__).relative_to(root),MIGRATION,PROBE,SUCCESSOR_MIGRATION,SUPERSEDED_PROBE,Path("scripts/ci/build-hand-submission-migration.py"),Path("scripts/ci/probes/hand-submission-authority.sql"),Path("scripts/ci/probes/hand-submission-disposition.spec"),Path("scripts/ci/probes/hand-submission-successor.sql"),Path("scripts/ci/probes/hand-submission-owner.spec"),Path("scripts/ci/probes/hand-submission-maintenance.spec"),Path("scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json"),Path("scripts/ci/test-mtt-unlimited.py"),Path("scripts/ci/probes/atomic-tournament-hand-boundary.sql"),Path("scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql"),Path("supabase/migrations/20260917230925_cash_funding_retains_original_participant_custody.sql")]+[p.relative_to(root) for p in (root/DATA).glob("*.json")]
     m["source_sha256"].update({str(p):sha(root/p) for p in paths})
     (out/"source-manifest.json").write_text(json.dumps(m,indent=2)+"\n")
     return m
@@ -233,6 +235,69 @@ def qualify_maintenance_first(e,root,db,native):
             raise RuntimeError('exact maintenance-first race failed: '+label)
         e.discard(case);e.report['races'].append({'case':label,'observed_exclusive_owner':True,'exact_outcome':True,'database_removed':True})
 
+def superseded_opening(e,root):
+    probe=(root/PROBE).read_text()
+    probe=probe[:probe.index('DO $cash_successor$')]+probe[probe.index('END $cash_successor$;')+len('END $cash_successor$;'):]
+    return (e.output/'opening.sql').read_text()+probe[:probe.index('DO $retained$')]
+
+def qualify_superseded(e,root,db):
+    # Production recorded 69 retained originals whose own lease proof expired
+    # before dispatch. The candidate installs over the qualified journal and a
+    # replay is refused by its own pins.
+    e.sql(db,file=root/SUCCESSOR_MIGRATION,label="superseded-successor-install")
+    code,_,err=e.sql(db,file=root/SUCCESSOR_MIGRATION,label="superseded-successor-replay",check=False)
+    if code==0 or 'HAND_SUBMISSION_SUCCESSOR_DRIFT' not in err:
+        raise RuntimeError('installed successor replay was not refused')
+    before=e.snapshot(db,"superseded-before-data");catalog=e.catalog_snapshot(db,"superseded-before-catalog");private=private_snapshot(e,db,"superseded-before-private")
+    probe="BEGIN;\n"+superseded_opening(e,root)+(root/SUPERSEDED_PROBE).read_text()+"\nROLLBACK;\n"
+    path=e.output/"superseded-probe.sql";path.write_text(probe)
+    code,stdout,stderr=e.sql(db,file=path,label="superseded-original-handoff",check=False,seconds=120)
+    e.report.update(superseded_output=stdout,superseded_errors=stderr)
+    if code or any(x in stderr for x in ["ERROR:","FATAL:","PANIC:","WARNING:"]):raise RuntimeError("superseded original probe failed")
+    if stdout.splitlines().count("HAND_SUBMISSION_SUPERSEDED_PASS")!=1:raise RuntimeError("superseded completion marker missing")
+    if before!=e.snapshot(db,"superseded-after-data") or catalog!=e.catalog_snapshot(db,"superseded-after-catalog") or private!=private_snapshot(e,db,"superseded-after-private"):raise RuntimeError("superseded rollback differs")
+    count=len(re.findall(r"HAND SUBMISSION PASS: superseded: ",stderr))
+    e.report.update(superseded_assertions=count)
+    if count!=16:raise RuntimeError("superseded assertion count differs: "+str(count))
+
+def qualify_superseded_race(e,root,db,native):
+    # The original's settlement is in flight holding the lease KEY SHARE and
+    # this hand's submission lock. The successor's real claim waits for it; a
+    # landed original is acknowledged, a rolled-back one is handed off once.
+    binary=native.stock_isolationtester(e.pg)
+    spec=(root/'scripts/ci/probes/hand-submission-owner.spec').read_text()
+    opening="BEGIN; CREATE SCHEMA hand_submission_native;\n"+superseded_opening(e,root)
+    opening+="SELECT public.fn_ca_retain_hand_submission(pg_temp.submission_request());"
+    opening+="UPDATE public.tables SET lifecycle=NULL WHERE id='86100000-0000-0000-0000-000000000001'; COMMIT;"
+    authority="SET request.jwt.claim.role='service_role'; SET app.smarter_data_actor='tournament-manager'; SET app.smarter_tournament_id='86000000-0000-0000-0000-000000000001'; SET app.smarter_tournament_lease_generation='86500000-0000-0000-0000-000000000002';"
+    original="SET app.smarter_tournament_lease_generation='86500000-0000-0000-0000-000000000001'; SELECT public.fn_ca_commit_hand_submission('86400000-0000-0000-0000-000000000001','atomic-hand-boundary-probe','86500000-0000-0000-0000-000000000001');"
+    claim="public.claim_tournament_lease_v2('86000000-0000-0000-0000-000000000001','successor-one',NULL,'86500000-0000-0000-0000-000000000002',30)"
+    resume="public.fn_ca_resume_hand_submission('86100000-0000-0000-0000-000000000001','successor-one','86500000-0000-0000-0000-000000000002')"
+    boundary="UPDATE public.engine_tournament_leases SET heartbeat_at=clock_timestamp()-interval '1 hour' WHERE tournament_id='86000000-0000-0000-0000-000000000001';"
+    for finish in ('COMMIT','ROLLBACK'):
+        label='superseded-original-in-flight-'+finish.lower();case=e.database(db)
+        e.sql(case,opening.replace('pg_temp.','hand_submission_native.'),label=label+'-opening')
+        handoff='false' if finish=='COMMIT' else 'true'
+        b="DO $$ DECLARE c record; r jsonb; BEGIN SELECT * INTO c FROM "+claim+"; IF c.granted IS DISTINCT FROM true THEN RAISE EXCEPTION 'successor did not acquire'; END IF; r:="+resume+"; IF r->>'completed' IS DISTINCT FROM 'true' OR r->>'financial_handoff' IS DISTINCT FROM '"+handoff+"' THEN RAISE EXCEPTION 'superseded outcome differs: %',r; END IF; RAISE NOTICE 'SUBMISSION_OWNER_OUTCOME_PROVEN'; END $$;"
+        checks="(SELECT count(*) FROM public.hand_atomic_commits WHERE table_id='86100000-0000-0000-0000-000000000001' AND hand_id='86400000-0000-0000-0000-000000000001' AND post_commit_result->>'ok'='true')<>1"
+        checks+=" OR (SELECT count(*) FROM public.hand_history WHERE table_id='86100000-0000-0000-0000-000000000001')<>1"
+        checks+=" OR (SELECT sum(stack) FROM public.table_seats WHERE table_id='86100000-0000-0000-0000-000000000001')<>20"
+        checks+=" OR NOT EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits WHERE permit_id='86600000-0000-0000-0000-000000000001' AND state='accepted')"
+        checks+=" OR EXISTS(SELECT 1 FROM smarter_private.hand_submission_dispatch) OR EXISTS(SELECT 1 FROM smarter_private.hand_submission_failures)"
+        if finish=='COMMIT':
+            checks+=" OR EXISTS(SELECT 1 FROM smarter_private.hand_submission_handoffs)"
+        else:
+            checks+=" OR (SELECT count(*) FROM smarter_private.hand_submission_handoffs WHERE original_generation='86500000-0000-0000-0000-000000000001' AND lease_generation='86500000-0000-0000-0000-000000000002')<>1"
+            checks+=" OR (SELECT count(*) FROM smarter_private.hand_submission_handoff_results WHERE result->>'handoff_evidence'='superseded_generation')<>1"
+        final="DO $$ BEGIN IF "+checks+" THEN RAISE EXCEPTION 'SUBMISSION_OWNER_FINAL_CHANGED'; END IF; RAISE NOTICE 'SUBMISSION_OWNER_FINAL_PROVEN'; END $$;"
+        rendered=spec.replace('AUTHORITY',authority).replace('A_OPERATION',original).replace('B_OPERATION',b).replace('A_FINISH',finish).replace('FIXTURE_BOUNDARY',boundary).replace('FINAL_STATE',final)
+        code,out,err=e.run(label,[binary,f'host={e.socket} port={e.port} dbname={case} user=postgres'],text=rendered,seconds=25,check=False)
+        expected=Counter({'a_begin':1,'b_begin':1,'a_write':1,'fixture_boundary':1,'b_write':2,'observed_wait':1,'a_finish':1,'b_commit':1,'final_state':1})
+        notices=re.findall(r'NOTICE:\s*(SUBMISSION_OWNER_[A-Z_]+)',out+'\n'+err)
+        if code or err.strip() or re.search(r'^(?:[a-z_]+: )?(ERROR|FATAL|PANIC|WARNING):',out,re.M) or Counter(re.findall(r'^step ([a-z_]+):',out,re.M))!=expected or out.count('<waiting ...>')!=1 or out.count('<... completed>')!=1 or notices!=['SUBMISSION_OWNER_WAIT_PROVEN','SUBMISSION_OWNER_OUTCOME_PROVEN','SUBMISSION_OWNER_FINAL_PROVEN']:
+            raise RuntimeError('exact superseded race failed: '+label)
+        e.discard(case);e.report['races'].append({'case':label,'observed_wait':True,'exact_outcome':True,'database_removed':True})
+
 def qualify_installation(e,root,db):
     e.report['installation_refusals']=[]
     signature='public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'
@@ -285,6 +350,10 @@ def main():
         e.report.update(assertions=stderr.count("HAND SUBMISSION PASS:"),data_rollback=True,catalog_rollback=True,private_catalog_and_data_rollback=True)
         if stderr.count("HAND SUBMISSION PASS:")!=50:raise RuntimeError("exact assertion count differs")
         qualify_fences(e,root,db,native)
+        qualify_owners(e,root,db,native)
+        qualify_maintenance_first(e,root,db,native)
+        qualify_superseded(e,root,db)
+        qualify_superseded_race(e,root,db,native)
         qualify_owners(e,root,db,native)
         qualify_maintenance_first(e,root,db,native)
         for path,digest in m["source_sha256"].items():

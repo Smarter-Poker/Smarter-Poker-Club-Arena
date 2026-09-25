@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { gpuFrameRenderer } from './gpuFrameRenderer';
+import { isSoftwareRenderer } from './rendererTier';
 
 export function metal(color: number, roughness = 0.2) {
   return new THREE.MeshPhysicalMaterial({ color, metalness: 0.85, roughness, clearcoat: 0.8 });
@@ -26,11 +27,16 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
     antialias: true,
     powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // A CPU rasteriser pays for every pixel and every shadow tap; it draws the
+  // same scene at one pixel per CSS pixel with no shadow maps.
+  const software = isSoftwareRenderer(
+    typeof renderer.getContext === 'function' ? renderer.getContext() : null
+  );
+  renderer.setPixelRatio(software ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(width, height, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.9;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = !software;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070b10);

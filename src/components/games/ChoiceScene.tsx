@@ -5,6 +5,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { gpuFrameRenderer } from './gpuFrameRenderer';
+import { isSoftwareRenderer } from './rendererTier';
 import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
@@ -753,8 +754,13 @@ function CrossingScene(props: Props) {
     canvas.className = styles.canvas;
     canvas.setAttribute('aria-hidden', 'true');
     node.prepend(canvas);
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
+    // A CPU rasteriser pays for every pixel and every shadow tap; it draws the
+    // same road at one pixel per CSS pixel with no shadow maps.
+    const software = isSoftwareRenderer(
+      typeof renderer.getContext === 'function' ? renderer.getContext() : null
+    );
+    renderer.setPixelRatio(software ? 1 : Math.min(devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = !software;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;

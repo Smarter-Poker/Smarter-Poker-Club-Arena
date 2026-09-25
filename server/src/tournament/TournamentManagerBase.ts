@@ -172,7 +172,24 @@ import {
   AbandonedGenerationRefusedError,
   abandonedPermitGeneration,
   closeAbandonedGeneration,
+  countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
+
+/**
+ * What one ask of the abandoned-generation door came to.
+ *
+ * `decided` - the door answered: the permit is closed (now, or by an earlier
+ * receipt this one replayed), so the tables can be read again.
+ * `refused`  - the door named a rule that asking again cannot pass. This
+ * manager does not ask about that generation twice.
+ * `undecided`- no answer reached the door or came back from it (the
+ * maintenance freeze outlasted the wait, a lane it would not hold, an
+ * unreadable reply). NOT the same as `refused`, and not the same as
+ * `decided`: it is the third outcome CLAUDE.md 10.86 rule 1 requires, and
+ * folding it into either of the others is what left 526 tables wedged
+ * through the 2026-09-25 cutover.
+ */
+type AbandonedGenerationAsk = 'decided' | 'refused' | 'undecided';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -1719,6 +1736,67 @@ export abstract class TournamentManagerBase {
         // Ordinary multi-table custody remains reachable after explicit no-start noneligibility.
         await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
         return;
+      }
+      /**
+       * A DEAD GENERATION'S HAND IS DECIDED WHERE THE REFUSAL IS MET
+       * (2026-09-25).
+       *
+       * This is the line that has been refusing every wedged table, every
+       * fifteen seconds, for days: a reserved permit of a generation that is
+       * no longer the lease holder makes `blocked_reason` read
+       * `hand_permit_unresolved`, and `f06_engine_admission_unproven` is
+       * correct - the projection is genuinely unproven and nothing may deal on
+       * it. What was missing is that nothing here ever DECIDED the permit. The
+       * abandoned-generation door was asked once, during adoption, and
+       * `resumeLifecycle` runs exactly once per manager, so any adoption whose
+       * single ask ended without a decision left the table blocked for the
+       * whole life of that manager. On the 15:29 cutover that was 526 tables
+       * in 388 events, holding 2,061 seated players, and the door was never
+       * requested once.
+       *
+       * So ask it here, from the admission that is already being refused, and
+       * then refuse this attempt anyway: the next admission re-reads the state
+       * the door left and proves itself normally. This is not a sweep, a
+       * healer or a repair job (CLAUDE.md 10.12) - it is this table's own live
+       * path deciding the thing that blocks this table, at the moment it is
+       * blocked, through the platform's own idempotent door. The receipt is
+       * derived from (event, dead generation), so a second ask replays the
+       * first rather than minting anything; a rule the door names is asked
+       * once and never again by this manager; and an undecided answer is asked
+       * again no sooner than the cooldown, because the admission's own
+       * fifteen-second cadence must not become the door's.
+       */
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'hand_permit_unresolved'
+      ) {
+        const abandoned = abandonedPermitGeneration(
+          state,
+          this.tournamentId,
+          tableId,
+          leaseGeneration
+        );
+        if (abandoned) {
+          const last = this.abandonedGenerationAskedAt.get(abandoned);
+          const cooldown =
+            last?.ask === 'refused'
+              ? TournamentManagerBase.ABANDONED_GENERATION_REFUSED_COOLDOWN_MS
+              : TournamentManagerBase.ABANDONED_GENERATION_ADMISSION_COOLDOWN_MS;
+          if (last === undefined || Date.now() - last.at >= cooldown) {
+            this.abandonedGenerationAskedAt.set(abandoned, { at: Date.now(), ask: 'undecided' });
+            const ask = await this.decideAbandonedGeneration(
+              lifecycle,
+              abandoned,
+              [tableId],
+              leaseGeneration
+            );
+            this.abandonedGenerationAskedAt.set(abandoned, { at: Date.now(), ask });
+          }
+        }
       }
       if (
         !current() ||
@@ -5613,10 +5691,15 @@ export abstract class TournamentManagerBase {
             p_lease_generation: leaseGeneration,
             p_table_id: tableId,
           });
-          if (!error) state = data;
+          if (error) countAbandonedGenerationOutcome('unreadable');
+          else state = data;
         } catch {
-          // Unread is not decided: the table's own admission reads it again
-          // and refuses exactly as it did before.
+          // Unread is not decided, and it is not nothing either. The table's
+          // own admission reads it again and now asks the door itself
+          // (startManagedTableEngine), so this is no longer the last chance -
+          // but it is still counted, because for three days a swallowed read
+          // was indistinguishable from a healthy table.
+          countAbandonedGenerationOutcome('unreadable');
         }
         const generation = abandonedPermitGeneration(
           state,
@@ -5641,18 +5724,53 @@ export abstract class TournamentManagerBase {
     this.assertLifecycleCurrent(lifecycle);
     let decided = false;
     for (const [generation, tables] of blocked) {
-      if (await this.decideAbandonedGeneration(lifecycle, generation, tables, leaseGeneration))
-        decided = true;
+      const ask = await this.decideAbandonedGeneration(
+        lifecycle,
+        generation,
+        tables,
+        leaseGeneration
+      );
+      if (ask === 'decided') decided = true;
     }
     return decided;
   }
+
+  /**
+   * When this manager last asked the door about each dead generation, and how
+   * that ask ended. Read ONLY by the table admission: the adoption is the
+   * door's caller of record and asks exactly as it always has.
+   */
+  private readonly abandonedGenerationAskedAt = new Map<
+    string,
+    { at: number; ask: AbandonedGenerationAsk }
+  >();
+  /**
+   * The soonest a table admission asks the door about the same dead generation
+   * again after an UNDECIDED answer. The admission itself retries every ~15 s
+   * and must keep doing so; the door is the expensive half, and an undecided
+   * answer is usually a freeze or a lane that a minute resolves.
+   */
+  static readonly ABANDONED_GENERATION_ADMISSION_COOLDOWN_MS = 60_000;
+  /**
+   * And after a rule the door NAMED. Longer, because asking again cannot pass
+   * until something outside this table changes - but NOT never.
+   *
+   * A permanent memo was written here first, and it was wrong. Measured on
+   * 2026-09-25, 44 of the 56 generations still wedged after the settlement are
+   * refused F06_ABANDONED_ROSTER_CHANGED: a `playing` registration at that
+   * table with no live chair. That is a defect somewhere else, and when it is
+   * repaired the door will accept these hands - so a manager that had written
+   * the generation off for the rest of its life would hold the table blocked
+   * for no reason at all. A rule is not a blip, and it is not a life sentence.
+   */
+  static readonly ABANDONED_GENERATION_REFUSED_COOLDOWN_MS = 10 * 60_000;
 
   private async decideAbandonedGeneration(
     lifecycle: TournamentLifecycleToken,
     generation: string,
     tables: readonly string[],
     leaseGeneration: string
-  ): Promise<boolean> {
+  ): Promise<AbandonedGenerationAsk> {
     let retainedFinished = false;
     let attempt = 0;
     for (;;) {
@@ -5679,11 +5797,17 @@ export abstract class TournamentManagerBase {
         }
         this.assertLifecycleCurrent(lifecycle);
         if (isMaintenanceFrozen()) {
+          // A FREEZE GIVE-UP IS A NUMBER (2026-09-25). This branch returned
+          // in silence, and it is the only exit from an ask that never
+          // reaches the door - so a fleet with 526 wedged tables read 0 on
+          // every label of the closures counter, which is exactly what a
+          // healthy fleet reads.
+          countAbandonedGenerationOutcome('frozen');
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
               `left a reserved hand on ${tables.length} table(s) - the maintenance freeze outlasted the wait`
           );
-          return false;
+          return 'undecided';
         }
       }
       attempt += 1;
@@ -5702,7 +5826,7 @@ export abstract class TournamentManagerBase {
           `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
             `left a reserved hand on ${tables.length} table(s) - ${outcome}`
         );
-        return true;
+        return 'decided';
       } catch (error) {
         this.assertLifecycleCurrent(lifecycle);
         const refused = error instanceof AbandonedGenerationRefusedError ? error : null;
@@ -5734,9 +5858,10 @@ export abstract class TournamentManagerBase {
           });
           continue;
         }
-        // Whatever went wrong, adoption goes on: this table stays exactly as
-        // blocked as it was before this door existed, and the next adoption
-        // asks again.
+        // Whatever went wrong, the caller goes on: this table stays exactly
+        // as blocked as it was before this door existed. A rule the door
+        // named is final for this manager; anything else is undecided, and
+        // the table's own admission asks again.
         reportError(error, 'Tournament.abandoned_generation_refused', {
           tournamentId: this.tournamentId,
           generation,
@@ -5744,7 +5869,7 @@ export abstract class TournamentManagerBase {
           code: refused?.code ?? 'unexpected',
           refusal: refused?.refusal ?? 'unexpected',
         });
-        return false;
+        return refused?.refusal === 'definite' ? 'refused' : 'undecided';
       }
     }
   }

@@ -25,9 +25,12 @@ was written.
 The hands dealt at the destination after the move are read back - `id` and
 `players`, oldest first, at most 200 - and the mover is looked for in them in
 the guard, where the shape is known (`players[].userId`, read from the rows).
-One hand with the mover in it admits the move exactly as before; no hand, a
-page that fills, an error or an unreadable row keeps the refusal exactly as it
-was. No operator whose serialisation depends on the client's guess of the
+One hand with the mover in it admits the move exactly as before, however full
+the page is: the fastest tables deal about 290 hands an hour (measured at
+04:18 UTC), so a page of 200 fills forty minutes after a move into one, and
+the mover is dealt long before. No hand, a page that fills without the mover
+(`dealtSincePageFilled`), an error or an unreadable row keeps the refusal
+exactly as it was. No operator whose serialisation depends on the client's guess of the
 column type is left on this path.
 
 ## Pinned

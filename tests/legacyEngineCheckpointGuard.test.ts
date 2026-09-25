@@ -3165,7 +3165,7 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     ['an unreadable answer', () => ({ data: null, error: { code: '22P02' } })],
     ['a row it cannot read', () => ({ data: [{ id: 'x', players: 'x' }], error: null })],
     [
-      'a page that fills',
+      'a page that fills without the mover in it',
       () => ({
         data: Array.from({ length: 200 }, (_, i) => ({ id: uuid(72000 + i), players: [] })),
         error: null,
@@ -3179,6 +3179,39 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     const result: any = await f.run();
     expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
     expect(f.calls).toEqual([]);
+  });
+
+  it('a page that fills WITH the mover in it has answered: the fastest tables fill it inside the hour', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 45 * 60000).toISOString());
+    f.onDealt(() => ({
+      data: Array.from({ length: 200 }, (_, i) => ({
+        id: uuid(72000 + i),
+        players:
+          i === 3 ? [{ userId: from.departed, seat: 2 }] : [{ userId: uuid(71000), seat: 1 }],
+      })),
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.bankDisposition).toContain('arrivalsDealtSince=1');
+  });
+
+  it('a page that fills without the mover names the filled page, not a move in transit', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 45 * 60000).toISOString());
+    f.onDealt(() => ({
+      data: Array.from({ length: 200 }, (_, i) => ({ id: uuid(72000 + i), players: [] })),
+      error: null,
+    }));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.dealtSincePageFilled',
+      failedTable: uuid(67000),
+    });
   });
 
   it('asks nothing about a move that executed over an hour ago', async () => {

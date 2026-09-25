@@ -3459,8 +3459,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          hour and never reached the read. So the hands dealt at the destination
          after the move are read back - ids and players, oldest first, at most
          `dealtCeiling` of them - and the player is looked for in them here,
-         where the shape is known. A page that fills is COULD NOT TELL and
-         refuses as every other filled page in this proof does. */
+         where the shape is known. A page that fills WITHOUT the mover in it
+         is COULD NOT TELL and refuses; a page that holds the mover has
+         answered, however full it is - the fastest tables deal ~290 hands an
+         hour (measured 2026-09-25 04:18 UTC), so a page of 200 fills forty
+         minutes after a move into one, and the mover is dealt long before. */
       const claimableSince = Date.now() - 3600000;
       const dealtCeiling = 200;
       const inWindow = arrivals.filter((arrival) => {
@@ -3481,7 +3484,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           : Promise.resolve({ data: [], error: null });
       }))).entries()) {
         const arrival = inWindow[index];
-        answered(answer, dealtCeiling - 1, 'bank_residue_unproven', 'dealtSinceRead');
+        answered(answer, dealtCeiling, 'bank_residue_unproven', 'dealtSinceRead');
         const player = lower(arrival.player_id);
         const dealt = answer.data.some(
           (row) =>
@@ -3496,7 +3499,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           arrivalsDealtSince++;
           continue;
         }
-        refuseAt('proveBanksHeldNothing.seatMoveInTransit', arrival.to_table_id, 'bank_residue_unproven');
+        refuseAt(
+          answer.data.length >= dealtCeiling
+            ? 'proveBanksHeldNothing.dealtSincePageFilled'
+            : 'proveBanksHeldNothing.seatMoveInTransit',
+          arrival.to_table_id,
+          'bank_residue_unproven'
+        );
       }
       // 3. The felt is quiet at every stopped table whose metadata outlived the
       // banks its stop disposed: the release gate's own predicate.

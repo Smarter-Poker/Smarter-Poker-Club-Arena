@@ -476,7 +476,19 @@ def original_cash_funding_tables(root):
   raise RuntimeError("Original wallet transaction schema is missing")
  defaults="\n".join(line for line in captured.splitlines()
   if line.startswith('ALTER TABLE "public"."wallet_transactions" ALTER COLUMN '))
- return funding[start:end]+"\n"+wallet.group(0)+"\n"+defaults
+ # 2026-09-23 (issue #5008): recording migration 20260917181100 gave this probe
+ # the atomic_distribute_rake body production has actually been running since
+ # 2026-09-17, and its closure grew from 23 functions to 27. Two of the four
+ # relations it newly reaches are in this same reviewed capture, so they come
+ # from there rather than being retyped here; the other two are defined by that
+ # migration and stand in fixture.sql beside every other bare table.
+ accounting=[]
+ for table in ("accounting_agreement_history","union_rakeback_log"):
+  found=re.search(r'CREATE TABLE "public"\."%s"\(.*?;'%table,captured,re.S)
+  if found is None:
+   raise RuntimeError(f"Original {table} schema is missing from the capture")
+  accounting.append(found.group(0))
+ return funding[start:end]+"\n"+wallet.group(0)+"\n"+defaults+"\n"+"\n".join(accounting)
 
 
 pg=os.environ.get("PSQL", "/opt/homebrew/opt/postgresql@17/bin/psql")

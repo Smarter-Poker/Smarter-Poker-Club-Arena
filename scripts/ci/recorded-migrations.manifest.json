@@ -108,6 +108,25 @@
       "liveVerdict": "fn_record_engine_alerts is CREATE OR REPLACE of a function first declared on 2026-09-13 (20260913170312). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. Every function this file creates in the new operational_source_intake schema carries REVOKE ALL FROM PUBLIC,anon,authenticated,service_role in the same file."
     },
     {
+      "version": "20260917181100",
+      "name": "union_weekly_accounting_atomic_activation_20260917",
+      "file": "supabase/migrations/20260917181100_union_weekly_accounting_atomic_activation_20260917.sql",
+      "md5": "b244edf6ee9ef6552d7103020bc8b732",
+      "appliedToProductionAt": "2026-09-17T18:11:00Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule",
+        "check-definer-authorization: roster rule",
+        "check-money-trigger-declared",
+        "check-no-new-band-aids",
+        "a-declared-guard-change-is-recorded-not-raised"
+      ],
+      "liveVerdict": "1.67 MB, 180 functions, every finding read against production on 2026-09-23. NOT ONE function it declares is reachable by anon. Three are reachable by authenticated: fn_reduce_agent_credit_v1 and fn_retire_agent_credit_reduction_v1, which write AND consult auth.uid()/auth.role()/auth.jwt() so the writer rule is satisfied, and fn_notification_has_personal_destination, covered under 20260916111614. Every other flagged name holds {postgres=X/postgres} or {postgres=X/postgres,service_role=X/postgres}. fn_cashout_request, fn_cashout_approve and fn_cashout_release are not SECURITY DEFINER at all any more: each one's entire body is RAISE EXCEPTION 'cashier_v2_intent_required'. Of the 25 money-trigger findings, 24 are text inside a $catalog$ JSON literal the migration asserts against; the one real CREATE TRIGGER on a watched table, accounting_tournament_recognized_bank_immutable on chip_ledger, is bound by the reviewed contract in scripts/ci/money-trigger-recovery-policy.json and was declared in public.ca_declared_money_triggers at 2026-09-18 04:18:09Z by migration 20260918041452. The two band-aid names, fn_repair_tournament_rake_attribution and fn_backpay_tournament_rake_attribution, were first declared on 2026-08-28 and 2026-08-31 and both hold a row in docs/BAND-AIDS-REGISTER.md; this file replaces bodies, it creates neither. The guard redefinition of fn_ca_post_correction it did not declare was recorded forward on 2026-09-21 by 20260921022420, and public.ca_guard_defs.declared_ref has named this exact migration since 02:25:53Z that day."
+    },
+    {
       "version": "20260920070556",
       "name": "the_minutely_reconciler_stops_rewriting_a_column_a_trigger_owns",
       "file": "supabase/migrations/20260920070556_the_minutely_reconciler_stops_rewriting_a_column_a_trigger_owns.sql",

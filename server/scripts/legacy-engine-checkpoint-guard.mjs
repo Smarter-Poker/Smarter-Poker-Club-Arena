@@ -3445,8 +3445,24 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          So a move inside the hour is asked ONE more question, from rows: has
          `hand_history` recorded a hand at the destination table, after the
          move executed, with that player in it? One row is enough. No row, an
-         error or an unreadable answer keeps the refusal exactly as it was. */
+         error or an unreadable answer keeps the refusal exactly as it was.
+
+         THE QUESTION IS ASKED IN A FORM THE DATABASE CAN ANSWER (2026-09-25).
+         Run 36081290135 (the 01:24 recovery window) was the first to meet a
+         move inside the hour since this question was written, and refused
+         `bank_residue_unproven` at `dealtSinceRead` with `error=22P02`: the
+         read was `.contains('players', [{ userId }])`, and the client
+         serialises a JavaScript ARRAY as a Postgres array literal
+         (`cs.{[object Object]}`), which is not JSON, so Postgres refused the
+         cast before the question was ever put. The 21:36 and 22:44 windows
+         passed this proof only because their one arrival was older than the
+         hour and never reached the read. So the hands dealt at the destination
+         after the move are read back - ids and players, oldest first, at most
+         `dealtCeiling` of them - and the player is looked for in them here,
+         where the shape is known. A page that fills is COULD NOT TELL and
+         refuses as every other filled page in this proof does. */
       const claimableSince = Date.now() - 3600000;
+      const dealtCeiling = 200;
       const inWindow = arrivals.filter((arrival) => {
         const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
         return !(Number.isFinite(executed) && executed < claimableSince);
@@ -3457,16 +3473,26 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         return typeof executed === 'string'
           ? modules.client.supabase
               .from('hand_history')
-              .select('id')
+              .select('id,players')
               .eq('table_id', arrival.to_table_id)
               .gt('created_at', executed)
-              .contains('players', [{ userId: arrival.player_id }])
-              .limit(1)
+              .order('created_at', { ascending: true })
+              .limit(dealtCeiling)
           : Promise.resolve({ data: [], error: null });
       }))).entries()) {
         const arrival = inWindow[index];
-        answered(answer, 1, 'bank_residue_unproven', 'dealtSinceRead');
-        if (answer.data.length === 1 && record(answer.data[0]) && uuid(answer.data[0].id)) {
+        answered(answer, dealtCeiling - 1, 'bank_residue_unproven', 'dealtSinceRead');
+        const player = lower(arrival.player_id);
+        const dealt = answer.data.some(
+          (row) =>
+            record(row) &&
+            uuid(row.id) &&
+            Array.isArray(row.players) &&
+            row.players.some(
+              (seat) => record(seat) && typeof seat.userId === 'string' && lower(seat.userId) === player
+            )
+        );
+        if (dealt) {
           arrivalsDealtSince++;
           continue;
         }

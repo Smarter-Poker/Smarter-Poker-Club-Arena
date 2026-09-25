@@ -446,7 +446,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                closes is simply absent from the next loadSeatedPlayers. */
             if (!this.isTournamentTable()) {
               this.disconnectEngine.unregisterPlayer(this.tableId, id);
-              this.timeBankEngine.removePlayer(this.tableId, id);
+              this.forgetTimeBank(id);
               this.straddleEngine.removePlayer(this.tableId, id);
               this.preActionEngine.removePlayer(this.tableId, id);
               this.leaveHeldByClock.delete(id);
@@ -814,7 +814,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 const current = this.seatedPlayers.find((sp) => sp.user_id === leftUserId);
                 if (current && current.occupancy_id !== occupancyId) continue;
                 this.disconnectEngine.unregisterPlayer(this.tableId, leftUserId);
-                this.timeBankEngine.removePlayer(this.tableId, leftUserId);
+                this.forgetTimeBank(leftUserId);
                 this.straddleEngine.removePlayer(this.tableId, leftUserId);
                 this.preActionEngine.removePlayer(this.tableId, leftUserId);
                 this.leaveHeldByClock.delete(leftUserId);

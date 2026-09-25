@@ -460,7 +460,7 @@ describe('Crash settles one displayed round once', () => {
       older.resolve({ ...state, bets: [{ bet_diamonds: 150, cap_cents: 150, playable: true }] });
     });
     expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
-    expect(screen.getByText(/Up To 50x On This Bet/)).toBeInTheDocument();
+    expect(screen.getByText(/Every Round Is Capped At 50\.00x/)).toBeInTheDocument();
   });
   it('does not let an old poll overwrite a new round after cashout', async () => {
     const poll = deferred<typeof settled>();
@@ -677,7 +677,7 @@ describe('Crash shows its guarantee before the round starts', () => {
     expect(guaranteedBay()).toHaveTextContent('0.50 Chips');
     expect(guaranteedBay()).not.toHaveAttribute('data-ink', 'gold');
     expect(readout()).toHaveTextContent('Pays At Least 0.50 Chips On Any Loss.');
-    expect(readout()).toHaveTextContent('Up To 1000x On This Bet.');
+    expect(readout()).toHaveTextContent('Every Round Is Capped At 1000.00x.');
     fireEvent.change(screen.getByLabelText('Entry Diamonds'), { target: { value: '250' } });
     await act(async () => {});
     expect(guaranteedBay()).toHaveTextContent('1.25 Chips');

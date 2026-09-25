@@ -124,6 +124,19 @@ print(instance)
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
+#
+# THE O_EXCL BELOW IS THE ONE-SHOT AND IT IS NOT WEAKENED HERE. What changed on
+# 2026-09-21 is only that its refusal has a NAME. Run 35626149078 re-entered
+# this helper under the same run key after its owning transaction was
+# interrupted; O_EXCL did exactly its job and the operator was shown
+# `FileExistsError: [Errno 17] File exists` followed by `could not reattach to
+# the durable Hetzner release transaction (1)` - a raw traceback that reads
+# identically to a full disk, a permission fault or a broken interpreter.
+# "This run key already opened the checkpoint" is a different outcome from
+# "the write failed", so it gets its own sentence and its own code, 70
+# (CLAUDE.md 10.86 rule 1). Nothing is retried, nothing is retired, and the
+# guard still refuses: 70 ends the release exactly as 1 did.
+set +e
 CHECKPOINT_INTENT="$(python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$INSTANCE" "$CONTAINER_ID" "$STARTED_AT" "$HOST_PID" "$LEGACY_SHA" "$RUN_ID" "${REQUEST[4]}" <<'PY'
 import json,os,sys,time,uuid
 path,instance,container,started,pid,source,run,control=sys.argv[1:]
@@ -133,7 +146,11 @@ if source=="8825af51817f379c4261658ca29ecc9d8d81932d":
     if instance!="1-3846b8bb": raise SystemExit("original process instance changed")
     intent["custody"]=[{"tournament_id":event,"transfer_id":str(uuid.uuid4()),"successor_generation":str(uuid.uuid4())}
         for event in ["5a387a75-754a-416e-8fee-b85b15fc2702","615783bf-15e3-40b7-9368-75f21b6ac53b"]]
-fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+try:
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+except FileExistsError:
+    sys.stderr.write("[legacy-engine-checkpoint] the one-shot intent for this run key already exists at "+path+"\n")
+    raise SystemExit(70)
 try:
     os.write(fd,(json.dumps(intent)+"\n").encode())
     os.fsync(fd)
@@ -144,6 +161,14 @@ finally: os.close(fd)
 print(json.dumps(intent,separators=(",",":")))
 PY
 )"
+CHECKPOINT_INTENT_RC=$?
+set -e
+if [ "$CHECKPOINT_INTENT_RC" = 70 ]; then
+  echo "[legacy-engine-checkpoint] ALREADY ENTERED: this run key opened the one-shot checkpoint before, and its durable intent is still on disk. Whether that entry acted CANNOT be read from here, so re-entering is forbidden and nothing is retried or retired. Dispatch a new run key." >&2
+  exit 70
+fi
+[ "$CHECKPOINT_INTENT_RC" = 0 ] \
+  || die 'the durable one-shot checkpoint intent could not be written; nothing was attempted'
 
 set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \

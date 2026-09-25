@@ -968,6 +968,31 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * A FENCED DEALER ITS MANAGER IS REPLACING NEEDS NO RENEWED PROOF
+   * (2026-09-25, release 778075b4).
+   *
+   * The zombie watchdog kills a tournament table with
+   * `fenceForEngineLeaseLoss('tournament_table_zombie', true)`: the fence
+   * expires this dealer's proof, marks it terminal, and signals the owning
+   * manager, whose identity-CAS replacement then stops it and installs a
+   * fresh generation. Between the fence and the end of that stop this object
+   * is terminal, not running, cannot mutate (`lifecycleCanMutate` is false on
+   * both counts) and cannot renew (`renewEngineLeaseProof` refuses an expired
+   * proof by design). The manager's renewal pass used to ask it to renew
+   * anyway, take the refusal as a lost tournament lease, and fence every
+   * sibling table: one zombie kill at 19:54:05 UTC and one at 20:15:20 UTC
+   * quarantined 17 managers. This is the read-only identity the manager
+   * consults instead: the same table, the same tournament lease generation,
+   * fenced and stopped, with no claim about teardown completion (that is
+   * `isTerminalDrainedForTournamentLease`), no claim about custody, and no
+   * authority to deal. The manager combines it with its own replacement
+   * bookkeeping; an engine nobody is replacing still fences the tournament.
+   */
+  isTerminalFencedForTournamentLease(tableId: string, authority: EngineLeaseAuthority): boolean {
+    return this.terminal && !this.running && this.hasTournamentLeaseIdentity(tableId, authority);
+  }
+
   private hasTerminalTournamentLeaseIdentity(
     tableId: string,
     authority: EngineLeaseAuthority
@@ -976,7 +1001,6 @@ export abstract class ServerTableEngineBase {
       this.terminalTeardownComplete &&
       this.terminal &&
       !this.running &&
-      this.tableId === tableId &&
       !ServerTableEngineBase.liveEngines.has(this.tableId) &&
       this.dealingLoopPromise === null &&
       this.settlementInFlight.size === 0 &&
@@ -984,6 +1008,14 @@ export abstract class ServerTableEngineBase {
       this.readContinuationTasks.size === 0 &&
       this.snapshotFlushPromise === null &&
       this.handController === null &&
+      this.hasTournamentLeaseIdentity(tableId, authority)
+    );
+  }
+
+  /** The same table under the same live tournament lease generation, nothing more. */
+  private hasTournamentLeaseIdentity(tableId: string, authority: EngineLeaseAuthority): boolean {
+    return (
+      this.tableId === tableId &&
       this.engineLeaseScope === 'tournament' &&
       this.engineLeaseVerified &&
       authority.scope === 'tournament' &&
@@ -4044,7 +4076,7 @@ export abstract class ServerTableEngineBase {
           );
           this.leaveHeldByClock.delete(userId);
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.forgetTimeBank(userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.chipContinuity.forget(userId);
@@ -4426,7 +4458,7 @@ export abstract class ServerTableEngineBase {
          the start of the hand. */
       this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
-      this.timeBankEngine.removePlayer(this.tableId, m.player_id);
+      this.forgetTimeBank(m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
       this.preActionEngine.removePlayer(this.tableId, m.player_id);
       this.leaveHeldByClock.delete(m.player_id);
@@ -4620,12 +4652,58 @@ export abstract class ServerTableEngineBase {
     return true;
   }
 
+  /**
+   * A DEPARTED PLAYER LEAVES NO TIME-BANK METADATA BEHIND (2026-09-25,
+   * release 778075b4).
+   *
+   * The invariant: `timeBankMeta` may name only a user who either has a live
+   * bank in `timeBankEngine` or is covered by `stoppedTimeBankCustody`. The
+   * deal creates the bank and its metadata together
+   * (ServerTableEngineDealing, "Only initialize time bank if player is NEW"),
+   * `captureParkedTimeBanks` reads them together, and `performStop` refuses
+   * custody when metadata names a user with no bank ("Stopped time bank
+   * metadata has no original balance"). Until this helper, every departure
+   * removed the bank and kept the metadata: the cash branch of
+   * `adoptSeatRoster` was the one place that deleted it, and the tournament
+   * branch deleted nothing. So on a tournament table every player who was
+   * ever moved to another table or eliminated left a metadata entry behind,
+   * the stop-time check refused, the refusal happened before the custody
+   * object was assigned, `hasUnretiredStoppedTimeBankCustody()` answered true
+   * for ever through its `timeBankMeta.size > 0` branch, `unregisterTableEngine`
+   * refused, and the manager's stop failed every five seconds. Production
+   * measured 31,061 such refusals over 24 engines in 1.6 hours; 17 managers
+   * quarantined with `tournament_lease_lost_stop_failed`, 50 tables idle.
+   *
+   * The stop-time check is right and is not weakened. The departures agree
+   * with it: a player who leaves this engine loses the bank and the metadata
+   * in one call. A cash seat-move deposits the player's presence (with the
+   * bank and its metadata) for the destination BEFORE it calls this, in the
+   * same synchronous block; a tournament move carries nothing engine-side
+   * (the destination deals a fresh allowance), so nothing is deposited after
+   * it is forgotten.
+   */
+  protected forgetTimeBank(userId: string): void {
+    this.timeBankEngine.removePlayer(this.tableId, userId);
+    this.timeBankMeta.delete(userId);
+  }
+
   /** Retire departed/replaced cash stays; return only replacements for arrival detection. */
   protected adoptSeatRoster(nextRoster: SeatedPlayer[]): string[] {
     if (!this.lifecycleCanMutate()) return [];
     const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
     this.seatedPlayers = nextRoster;
     if (this.isTournamentTable()) {
+      // A tournament seat closes in the database (a balancing move or an
+      // accepted elimination) and is simply absent from the next roster; the
+      // engine runs no leave path of its own for it (TournamentGhostSeat.law).
+      // This is therefore the one place a tournament departure is observed,
+      // and the bank and its metadata are forgotten here, together. The
+      // seat's parked balance, if any, is dropped with `parkedTimeBanks` by
+      // `applyParkedTimeBanks` below exactly as before.
+      for (const userId of previous.keys()) {
+        if (nextRoster.some((p) => p.user_id === userId)) continue;
+        this.forgetTimeBank(userId);
+      }
       this.applyParkedTimeBanks(nextRoster);
       return [];
     }
@@ -6165,7 +6243,45 @@ export abstract class ServerTableEngineBase {
    * gate reads and the reason an operator reads can never disagree.
    */
   maintenanceDurabilityReason(): string | null {
-    if (this.hasUnretiredStoppedTimeBankCustody()) return 'stopped_bank_custody_unconfirmed';
+    /* THE STOPPED-CUSTODY REFUSAL HAS THREE OUTCOMES, NOT TWO (2026-09-25).
+       ────────────────────────────────────────────────────────────────────
+       This used to answer one string, `stopped_bank_custody_unconfirmed`, for
+       every terminal engine still holding a stopped time bank - and on
+       2026-09-25 that was 137 of ~324 tables, holding the platform's restart
+       certificate shut for 8 consecutive breaks.
+
+       "Unconfirmed" conflated two different facts:
+
+         · the bank is genuinely NOT on disk, so a restart would lose a
+           player's time bank - which must refuse, exactly as
+           `bank_park_write_incomplete` refuses; and
+         · the bank IS on disk and what is unconfirmed is only this PROCESS's
+           in-memory handoff to a replacement engine - a handoff that, for a
+           terminal engine, no code path in this process can ever complete
+           (see hasUnretiredStoppedTimeBankCustody). Answering "not yet" to a
+           question whose true answer is "never" is CLAUDE.md 10.86 rule 1, and
+           it is the same shape MaintenanceBreak bounded for the F06 class in
+           #4909 after it held engine 8825af51 shut for 70 breaks.
+
+       The cause is fixed in persistPresenceForRestart rather than papered over
+       here: a terminal engine now WRITES the frozen custody it already holds,
+       so `hasUnretiredStoppedTimeBankCustody` clears on its own arithmetic and
+       its own evidence. No allow-list, no relaxed threshold, no gate passed
+       over. What is left is naming the residue, and all three still refuse:
+       `unwritten` is a real bank at stake, `unreadable` is "I could not tell",
+       and the durable case returns no reason at all because there is nothing
+       left to report. */
+    if (this.hasUnretiredStoppedTimeBankCustody()) {
+      // Accounting still in flight is the one case we cannot even ASK about:
+      // a debit whose outcome is unknown must not be frozen into a snapshot.
+      if (
+        this.timeBankAccountingUnconfirmed ||
+        this.timeBankAccountingPending.size > 0 ||
+        this.presenceSavePending > 0
+      )
+        return 'stopped_bank_custody_unreadable';
+      return 'stopped_bank_custody_unwritten';
+    }
     if (!this.maintenancePaused) return null;
     if (this.timeBankAccountingUnconfirmed) return 'accounting_unconfirmed';
     if (this.timeBankAccountingPending.size > 0) return 'accounting_pending';
@@ -6292,6 +6408,92 @@ export abstract class ServerTableEngineBase {
     return this.maintenanceDurabilityReason() === null;
   }
 
+  /**
+   * MAKE A TERMINAL ENGINE'S STOPPED TIME BANK DURABLE (2026-09-25).
+   *
+   * A tournament table that breaks goes terminal, and at that fence
+   * `stoppedTimeBankCustody` freezes every seated player's bank - already
+   * past `cancelActiveForTable`, already past every pending accounting event,
+   * already refused by `captureParkedTimeBanks` if any bank were active or
+   * unrestorable. It is final, immutable, and exactly what a `'parked'`
+   * capture would have produced.
+   *
+   * It was never written down. Every `persistPresenceForRestart('parked')`
+   * call site is inside the dealing loop (`if (this.maintenancePaused) await
+   * ...`), and a terminal engine has no dealing loop, so when the break's
+   * fan-out calls `pauseForMaintenance` on it the only path it can take is
+   * `'announced'` - and `'announced'` passes `timeBanks: undefined`, writes
+   * `time_bank_snapshot: null`, and records no acknowledgement, because line
+   * 6284 only sets `acknowledgedTimeBankPark` when `when === 'parked'`.
+   *
+   * So `hasUnretiredStoppedTimeBankCustody()` compared a null acknowledgement
+   * against a real custody hand number and answered "unconfirmed" for ever.
+   * On 2026-09-25 that was 137 tables, every one of them holding the restart
+   * certificate shut, and it is why an engine 6 commits behind main could not
+   * be replaced by the release that carried its own fix.
+   *
+   * The fix is the write, not an exemption. This persists the custody the
+   * engine is already holding, at the custody's OWN hand number, in the shape
+   * `loadTimeBanksFromPark(tableId, handCount)` reads back - so the bank is
+   * genuinely recoverable by the next process, and the existing arithmetic in
+   * `hasUnretiredStoppedTimeBankCustody()` then clears by itself. If the write
+   * is refused the acknowledgement is not recorded and the gate stays shut:
+   * a bank we could not persist is still a bank at stake (CLAUDE.md 10.86,
+   * fail closed).
+   *
+   * Called ONLY from the `'announced'` path, which is the only path a terminal
+   * engine can reach. STRICTLY ADDITIVE: it returns true, owning this park,
+   * only when it has actually written the custody down and acknowledged it.
+   * Every other answer is false and falls through to the behaviour this file
+   * already had, so nothing that used to be written stops being written. A
+   * decline therefore records no acknowledgement and the restart gate stays
+   * shut - a bank we could not persist is still a bank at stake (10.86).
+   */
+  private shouldPersistStoppedCustody(): boolean {
+    const custody = this.stoppedTimeBankCustody;
+    if (
+      !this.terminal ||
+      !custody ||
+      this.stoppedTimeBankCustodyTransferred ||
+      !this.hasUnretiredStoppedTimeBankCustody()
+    )
+      return false;
+    // Never freeze an unknown debit into a snapshot, and never write while
+    // another presence save for this table is still in flight.
+    if (
+      this.timeBankAccountingUnconfirmed ||
+      this.timeBankAccountingPending.size > 0 ||
+      this.presenceSavePending > 1
+    )
+      return false;
+    // A live engine for this table is the authority on its park row; the
+    // upsert is keyed on table_id and must never clobber a newer snapshot.
+    // Same predicate captureDrainedF06Identity already uses for "I am alone".
+    if (ServerTableEngineBase.liveEngines.has(this.tableId)) return false;
+    return Number.isSafeInteger(custody.handNumber) && custody.handNumber >= 0;
+  }
+
+  private async persistStoppedCustodyForRestart(generation: number): Promise<boolean> {
+    const custody = this.stoppedTimeBankCustody;
+    if (!custody) return false;
+    const banks = structuredClone(custody.banks) as Record<string, ParkedTimeBank>;
+    const saved = await savePresenceAtPark({
+      tableId: this.tableId,
+      disconnectStates: structuredClone(custody.disconnectStates),
+      engineInstance: `${INSTANCE_ID}:stopped_custody`,
+      handNumber: custody.handNumber,
+      timeBanks: banks,
+    });
+    if (generation !== this.maintenanceCheckpointGeneration) return true;
+    if (this.stoppedTimeBankCustody !== custody) return true;
+    if (!saved) return false;
+    this.acknowledgedTimeBankPark = {
+      handNumber: custody.handNumber,
+      banks: this.timeBankCustodyFingerprint(custody.banks),
+    };
+    return true;
+  }
+
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
     this.presenceSavePending++;
     const generation = this.maintenanceCheckpointGeneration;
@@ -6304,6 +6506,19 @@ export abstract class ServerTableEngineBase {
     await previous;
     try {
       if (generation !== this.maintenanceCheckpointGeneration) return;
+      // ONLY the announcement path. A terminal engine can reach no other (every
+      // 'parked' call site is inside the dealing loop it no longer has), and
+      // this must never stand in for the 'parked' path's accounting work.
+      //
+      // The decision is SYNCHRONOUS on purpose. An `await` here, taken even
+      // when this engine has no stopped custody, adds a microtask before the
+      // ordinary write and changes the interleaving of a concurrent
+      // announcement and park - which is pinned by ParkedTimeBank's "orders a
+      // slow announcement before the final bank snapshot". A fix has no
+      // business shifting the timing of the paths it is not fixing.
+      if (when === 'announced' && this.shouldPersistStoppedCustody()) {
+        if (await this.persistStoppedCustodyForRestart(generation)) return;
+      }
       if (when === 'parked') {
         this.parkedBankSaveComplete = false;
         // Complete the real hand-boundary transition, including its accounting
@@ -8574,7 +8789,7 @@ export abstract class ServerTableEngineBase {
     });
     this.chipContinuity.forget(player.user_id);
     this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-    this.timeBankEngine.removePlayer(this.tableId, player.user_id);
+    this.forgetTimeBank(player.user_id);
     this.straddleEngine.removePlayer(this.tableId, player.user_id);
     this.preActionEngine.removePlayer(this.tableId, player.user_id);
     return true;
@@ -8757,7 +8972,7 @@ export abstract class ServerTableEngineBase {
             timestamp: Date.now(),
           });
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.forgetTimeBank(userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.leaveHeldByClock.delete(userId);

@@ -151,14 +151,15 @@ export function enforcePlayableBlindLevel(
     ante?: unknown;
   },
   /**
-   * The row `level` was grown from, when the caller has it. `level`'s own two
-   * numbers are each a rounded product, so their quotient is a rounded share
-   * and can sit a fraction of a chip under the authored one - enough for the
-   * floor below to shave a whole chip off a level that was already correct.
-   * The anchor row is authored, exact, and the share the SQL resolver reads.
-   * Omitted, the level speaks for itself.
+   * The row `level` was grown from, when the caller has it. `level`'s own
+   * numbers are each a rounded product, so their quotients are rounded shares
+   * and can sit a fraction of a chip under the authored ones - enough for the
+   * floors below to shave a whole chip off a level that was already correct.
+   * The anchor row is authored, exact, and the share the SQL resolver reads,
+   * for the ante (2026-09-25) exactly as for the small blind. Omitted, the
+   * level speaks for itself.
    */
-  authoredShareFrom?: { smallBlind?: unknown; bigBlind?: unknown }
+  authoredShareFrom?: { smallBlind?: unknown; bigBlind?: unknown; ante?: unknown }
 ): PlayableBlindLevel {
   const positive = (value: unknown, fallback: number) => {
     const parsed = Number(value);
@@ -168,8 +169,7 @@ export function enforcePlayableBlindLevel(
   const rawBigBlind = positive(level?.bigBlind, 2);
   const rawAnte = Number(level?.ante);
   const bigBlind = Math.max(2, rawBigBlind);
-  let smallBlind =
-    rawSmallBlind < bigBlind ? rawSmallBlind : Math.max(1, Math.floor(bigBlind / 2));
+  let smallBlind = rawSmallBlind < bigBlind ? rawSmallBlind : Math.max(1, Math.floor(bigBlind / 2));
 
   /**
    * THE SMALL BLIND KEEPS ITS REQUESTED SHARE OF THE BIG BLIND (2026-09-21).
@@ -226,7 +226,59 @@ export function enforcePlayableBlindLevel(
     }
   }
 
-  const ante = Number.isFinite(rawAnte) && rawAnte >= 0 ? Math.min(rawAnte, MAX_BLIND_VALUE) : 0;
+  let ante = Number.isFinite(rawAnte) && rawAnte >= 0 ? Math.min(rawAnte, MAX_BLIND_VALUE) : 0;
+
+  /**
+   * THE ANTE KEEPS ITS AUTHORED SHARE OF THE BIG BLIND (2026-09-25).
+   *
+   * The small blind got this ceiling on 2026-09-21 and the SQL resolver got
+   * the ante's on 2026-09-20 (`the_overflow_ante_keeps_its_authored_share_of
+   * _the_big_blind`). This file did not, and this file is what the manager
+   * actually publishes from: `Math.min(rawAnte, MAX_BLIND_VALUE)` above is
+   * the independent ceiling the header warns about, applied to the ante. On a
+   * deep overflow the grown ante and the grown big blind both saturate to
+   * 10,000,000, `capLevelToChipsInPlay` then rescales all three by one
+   * factor, and the level leaves here with ante = bigBlind.
+   *
+   * Production, 2026-09-25: 158 live (non-closed) tables carried
+   * ante >= big_blind. 6 of them are the one genuine big blind ante on the
+   * board (Sunday $200 Deep Stack, an authored share of 1). The other 131
+   * tournament tables, across 15 RUNNING events, author 0.120-0.133 x bigBlind
+   * and were dealing ante = bigBlind - seven to eight times the authored ante.
+   * Calling fn_tournament_current_blinds on the same 15 events returned the
+   * correct ante every time (24,500/49,000 ante 6,125 where the published
+   * level said ante 49,000), which is what proves the distortion is this
+   * function's and not the resolver's.
+   *
+   * So hold the ante to the share the anchor row authored, read before either
+   * ceiling touched it, exactly as the small blind above is held. A CEILING
+   * and never a floor: it only ever lowers an ante, so no level becomes more
+   * expensive than it is today. A structure that authors ante = bigBlind (a
+   * big blind ante; AnteMath.ts reads `ante >= bigBlind` as "this structure
+   * authored a TOTAL" and counts two of them) is left alone, so its saturated
+   * level still publishes sb = bb = ante. A structure with no ante never
+   * reaches here with one.
+   */
+  const requestedAnte = Number(shareSource?.ante);
+  if (
+    ante > 0 &&
+    Number.isFinite(levelBigBlind) &&
+    levelBigBlind > MAX_BLIND_VALUE &&
+    Number.isFinite(requestedAnte) &&
+    requestedAnte > 0 &&
+    Number.isFinite(requestedBigBlind) &&
+    requestedBigBlind > 0 &&
+    requestedAnte < requestedBigBlind
+  ) {
+    // Multiply before dividing, so a share like 200,000/1,500,000 is not
+    // rounded to a quotient before it is applied.
+    const anteCeiling = (bigBlind * requestedAnte) / requestedBigBlind;
+    // Compared unrounded, assigned rounded: a level already sitting at its
+    // requested share is left alone rather than shaved by the floor.
+    if (Number.isFinite(anteCeiling) && ante > anteCeiling) {
+      ante = Math.max(1, Math.floor(anteCeiling));
+    }
+  }
 
   return {
     smallBlind,

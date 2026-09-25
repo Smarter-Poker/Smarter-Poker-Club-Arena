@@ -532,3 +532,125 @@ describe('the history strip', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+/**
+ * THE CAP IS SAID AND THE ROAD NOT TAKEN IS SHOWN (Dan 2026-09-25: "the
+ * multiplier should be 25x max and that should be displayed to the user so
+ * they know thats the max they can get ... if a user books the win it should
+ * show them how high it would have gone").
+ */
+describe('the cap and the would-have-gone plate', () => {
+  it('prints the cap as a permanent chip and draws it on the axis once the scale reaches it', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve {...base} capCents={2500} phase="open" replayElapsedMs={0} tickerCents={100} />
+    );
+    expect(container.querySelector('[data-cap="2500"]')).toHaveTextContent('Max 25.00x');
+    frame(100);
+    const cap = container.querySelector('[data-line="cap"]')!;
+    expect(cap.getAttribute('visibility')).toBe('hidden');
+    rerender(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="open"
+        replayElapsedMs={secondsTo(2200)}
+        tickerCents={2200}
+      />
+    );
+    for (let now = 140; now <= 3000; now += 40) frame(now);
+    expect(labels(container, '[data-line-label="cap"]')).toEqual(['Max 25.00x']);
+    // Above the 20.00x line, below the top of the axis.
+    expect(at(cap, 'y1')).toBeLessThan(at(tick(container, 2000), 'y1'));
+    expect(at(cap, 'y1')).toBeGreaterThan(0);
+  });
+
+  it('raises the plate the moment a booked replay reaches the crash point, and not before', () => {
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={950}
+      />
+    );
+    const plate = container.querySelector('[data-reveal="would-have-gone"]') as HTMLElement;
+    expect(plate).toHaveTextContent('It Would Have Gone To 9.50x');
+    expect(plate).toHaveTextContent('You Booked 2.57x');
+    frame(100);
+    frame(2000);
+    expect(plate.dataset.shown).toBeUndefined();
+    for (let now = 2040; now <= 3600; now += 40) frame(now);
+    expect(plate.dataset.shown).toBe('true');
+    expect(plate.style.animationDuration).toBe('520ms');
+    expect(CSS).toContain('@keyframes revealIn');
+  });
+
+  it('says when it crashed right after the booking, and when the cap came first', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={258}
+      />
+    );
+    const plate = () => container.querySelector('[data-reveal="would-have-gone"]')!;
+    expect(plate()).toHaveTextContent('It Crashed Right After You Booked');
+    rerender(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={410}
+        cashoutCents={410}
+        crashCents={3000}
+      />
+    );
+    expect(plate()).toHaveTextContent('It Would Have Gone To The 25.00x Max');
+    expect(plate()).toHaveTextContent('You Booked 4.10x');
+    rerender(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={2500}
+        cashoutCents={2500}
+        crashCents={3000}
+      />
+    );
+    expect(plate()).toHaveTextContent('Booked At The 25.00x Max');
+    expect(hero(container)).toHaveTextContent('25.00x');
+    frame(100);
+    rerender(<CrashCurve {...base} capCents={2500} phase="idle" />);
+    expect(container.querySelector('[data-reveal="would-have-gone"]')).toBeNull();
+  });
+
+  it('keeps the plate under reduced motion, static and immediate', () => {
+    motion.reduced = true;
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={950}
+      />
+    );
+    const plate = container.querySelector('[data-reveal="would-have-gone"]') as HTMLElement;
+    expect(plate).toHaveAttribute('data-reduced', 'true');
+    expect(plate.style.animationDuration).toBe('');
+    frame(100);
+    frame(300);
+    expect(plate.dataset.shown).toBe('true');
+    expect(CSS).toContain(".reveal[data-reduced='true'][data-shown='true']");
+  });
+});

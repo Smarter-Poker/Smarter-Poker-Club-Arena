@@ -2236,9 +2236,15 @@ describe('every host mutation path obeys the durable release authority', () => {
       'while :; do',
       transaction.indexOf('source_target_is_current')
     );
-    const certificate = transaction.indexOf('maintenance_certificate)', releaseLoop);
+    const certificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate',
+      releaseLoop
+    );
     const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", certificate);
-    const lockedCertificate = transaction.indexOf('maintenance_certificate)', lock);
+    const lockedCertificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate',
+      lock
+    );
     const prepare = transaction.indexOf(
       'PREPARE_OUTPUT="$(bounded_break_command',
       lockedCertificate
@@ -2577,7 +2583,10 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     );
     const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", releaseLoop);
     const freshness = transaction.indexOf('source_target_is_current', lock);
-    const certificate = transaction.indexOf('maintenance_certificate)', freshness);
+    const certificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate',
+      freshness
+    );
     const prepare = transaction.indexOf('PREPARE_OUTPUT="$(bounded_break_command', certificate);
     const autohealFence = transaction.indexOf('docker stop -t 15 sp-autoheal', prepare);
     const start = transaction.indexOf('ENGINE_UP_LOCK_HELD=1', autohealFence);
@@ -2688,8 +2697,14 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       'while :; do',
       transaction.indexOf('source_target_is_current')
     );
-    const certificate = transaction.indexOf('maintenance_certificate)', releaseLoop);
-    const lockedCertificate = transaction.indexOf('maintenance_certificate)', certificate + 1);
+    const certificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate',
+      releaseLoop
+    );
+    const lockedCertificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate',
+      certificate + 1
+    );
     const prepared = transaction.indexOf('PREPARED=1', lockedCertificate);
     const mutated = transaction.indexOf('MUTATION_STARTED=1', prepared);
     const engineStart = transaction.indexOf('ENGINE_UP_LOCK_HELD=1', mutated);

@@ -49,6 +49,7 @@ const ALLOWED: Record<string, Reason> = {
   'src/components/common/MilestoneToast.tsx': 'identifier', // toast instance id
   'src/components/customization/AvatarCustomizer.tsx': 'identifier', // mutation instance id
   'src/components/customization/AvatarGallery.tsx': 'identifier', // mutation instance id
+  'src/components/crash/CrashCurve.tsx': 'animation', // wake particle scatter behind the jet; the multiplier and the crash point come from the server
   'src/components/effects/ConfettiEffect.tsx': 'animation',
   'src/components/effects/DiamondRainEffect.tsx': 'animation',
   'src/components/gamification/ConfettiEffect.tsx': 'animation',

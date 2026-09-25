@@ -4787,7 +4787,7 @@ export class GameServer {
       // published so the next break answers that in one scrape. Labels are
       // the fixed reason set, zero-seeded, so a rule can read any of them
       // before it has ever been the reason.
-      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, unknown)',
+      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, unknown)',
       '# TYPE poker_maintenance_unparked_tables gauge',
       ...(() => {
         const counts = (this.maintenanceBreak.snapshot().unparkedReasons ?? {}) as Record<
@@ -4806,6 +4806,17 @@ export class GameServer {
              table's restart certificate shut. */
           'f06_preparation_unresolved',
           'f06_preparation_stuck',
+          /* The stopped-custody class, split into its two REFUSING outcomes on
+             2026-09-25. It used to publish one name, stopped_bank_custody_
+             unconfirmed, and it was never in this seed list at all - it only
+             ever reached /metrics through the dynamic extension below, so no
+             rule could read it before it had already wedged the fleet, which
+             is how 137 tables held 8 consecutive breaks shut unnoticed.
+             `unwritten` is a real bank not yet on disk; `unreadable` is an
+             accounting outcome this process cannot yet ask about. Both refuse.
+             See ServerTableEngineBase.maintenanceDurabilityReason. */
+          'stopped_bank_custody_unwritten',
+          'stopped_bank_custody_unreadable',
           'unknown',
         ];
         for (const reason of Object.keys(counts)) {

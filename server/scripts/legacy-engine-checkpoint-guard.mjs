@@ -1895,6 +1895,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             custodyCommitAttempted = true;
           const response = await modules.client.supabase.rpc(name, args);
           checkAll();
+          const engineShape = () => (Array.isArray(local?.engines) ? local.engines : []);
+          const allocationBacked = () =>
+            engineShape().filter((e) => e.permit === null && typeof e.allocation_epoch === 'string');
           /* ═══ THE DATABASE NAMED IT AND THE GUARD CALLED IT UNKNOWN (2026-09-24) ═══
 
              Run 36068474418 is the measurement: 62 tables attempted, 62
@@ -1937,6 +1940,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             ],
             () => ({
               failedField: name,
+              failedTable: manager.tournamentId,
               observed: sqlState(response.error?.code),
               observedDetail: [
                 `sqlstate=${sqlState(response.error?.code)}`,
@@ -1949,6 +1953,22 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 `tournament=${
                   uuid(args.p_tournament_id) ? args.p_tournament_id : describe(args.p_tournament_id)
                 }`,
+                // From #5218: the physical map this manager refused on. Kept
+                // after the database's own answer above, so a truncation at the
+                // carrier limit drops the shape and never the SQLSTATE.
+                `engines=${engineShape().length}`,
+                `permits=${engineShape().filter((e) => e.permit !== null).length}`,
+                `allocationBacked=${allocationBacked().length}`,
+                `nullLifecycle=${engineShape().filter((e) => e.lifecycle === null).length}`,
+                `backed=${allocationBacked()
+                  .slice(0, 12)
+                  .map(
+                    (e) =>
+                      `${String(e.table_id).slice(0, 8)}:${String(e.allocation_epoch).slice(0, 8)}:${
+                        e.lifecycle === null ? 'null' : e.lifecycle
+                      }:hand=${e.bank_custody?.hand_number}:seats=${e.bank_custody?.roster?.length}`
+                  )
+                  .join('/')}`,
               ]
                 .join(',')
                 .slice(0, 512),
@@ -2024,24 +2044,44 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           const matches = proof.engine_lifecycles.filter((e) => e.table_id === original.tableId);
           require(matches.length === 1, 'mixed_original_lifecycle_evidence_missing');
           const witness = matches[0];
+          /* AN EPOCH THAT NEVER RESERVED A HAND IS WITNESSED BY ITS ABSENCE
+             (2026-09-24). An engine holds one allocator epoch for its life and
+             every hand it deals reserves a permit under it, so an epoch with
+             no permit row is an engine that dealt nothing in this generation -
+             a table admitted and left waiting for players. Run 36068474418
+             refused the whole transfer for seven of them. The database now
+             witnesses that case under its locks (migration
+             20260924225647): no permit under the epoch, no reserved hand on
+             the table, the table's own lifecycle, `permits: []` and
+             `witness: 'never_reserved'`. This holds the receipt to exactly
+             that shape, and to the shape it always had for an epoch that did
+             reserve; a receipt saying neither refuses as before. */
+          const neverReserved =
+            witness.witness === 'never_reserved' &&
+            Array.isArray(witness.permits) &&
+            witness.permits.length === 0 &&
+            original.permit === null &&
+            original.lifecycle === null;
           require(witness.allocation_epoch === original.allocationEpoch &&
             typeof witness.lifecycle === 'string' &&
             /^[1-9][0-9]{0,18}$/.test(witness.lifecycle) &&
             (original.lifecycle === null || original.lifecycle === witness.lifecycle) &&
             Array.isArray(witness.permits) &&
-            witness.permits.length > 0 &&
-            new Set(witness.permits.map((p) => p.permit_id)).size === witness.permits.length &&
-            witness.permits.every(
-              (p) =>
-                uuid(p.permit_id) &&
-                p.tournament_id === manager.tournamentId &&
-                p.generation === manager.tournamentLeaseGeneration &&
-                p.table_id === original.tableId &&
-                p.custody_id === original.allocationEpoch &&
-                Number.isSafeInteger(p.lifecycle) &&
-                String(p.lifecycle) === witness.lifecycle &&
-                ['accepted', 'never_started', 'aborted_unsettled'].includes(p.state)
-            ), 'mixed_original_lifecycle_evidence_invalid');
+            (neverReserved ||
+              (witness.witness === 'permits' &&
+                witness.permits.length > 0 &&
+                new Set(witness.permits.map((p) => p.permit_id)).size === witness.permits.length &&
+                witness.permits.every(
+                  (p) =>
+                    uuid(p.permit_id) &&
+                    p.tournament_id === manager.tournamentId &&
+                    p.generation === manager.tournamentLeaseGeneration &&
+                    p.table_id === original.tableId &&
+                    p.custody_id === original.allocationEpoch &&
+                    Number.isSafeInteger(p.lifecycle) &&
+                    String(p.lifecycle) === witness.lifecycle &&
+                    ['accepted', 'never_started', 'aborted_unsettled'].includes(p.state)
+                ))), 'mixed_original_lifecycle_evidence_invalid');
           original.lifecycle = witness.lifecycle;
           local.engines.find((e) => e.table_id === original.tableId).lifecycle = witness.lifecycle;
         }
@@ -2086,6 +2126,31 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           }
         }
         require(originalDispositions === 1, 'mixed_original_disposition_set_changed');
+        capture.commit = { rpc, input, proof };
+      }
+      /* ═══ EVERY MANAGER IS OBSERVED BEFORE ANY IS COMMITTED (2026-09-24) ═══
+
+         The commit call (`p_expected` set) INSERTS an immutable
+         `f06_manager_custody_transfers` row carrying this run's
+         `release_checkpoint` (run id, ownership token, break times). Until
+         today each manager was observed and committed in turn, so a refusal
+         on the SECOND manager's observation - which the rows say is exactly
+         what the next attempt will meet: `F06_RETIRED_CANONICAL_CHANGED:
+         registrations` on 615783bf, a bust recorded after its origin was
+         attested - would have left the FIRST manager's row behind, and every
+         later attempt would then refuse that manager as
+         `F06_MIXED_TRANSFER_CHANGED` against a row nothing can delete. The
+         wedge one level up (CLAUDE.md 10.86 rule 4), made by this guard.
+
+         So the two calls are two phases. Every manager's observation, and
+         every check this guard makes of it, completes before the first commit
+         is sent; a refusal anywhere in the first phase commits nothing. The
+         database still holds each commit to its own observation
+         (`F06_MIXED_CANONICAL_CHANGED`), so nothing that could move between
+         the phases is admitted by the split. */
+      for (const capture of retainedManagers) {
+        const { manager, proposal, local } = capture;
+        const { rpc, input, proof } = capture.commit;
         const committed = await rpc('fn_f06_prepare_mixed_manager_custody', {
           ...input,
           p_expected: proof,

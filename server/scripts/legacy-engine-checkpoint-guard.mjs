@@ -176,17 +176,42 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
      the outcome is unknown. Nothing here is read by a decision, nothing here
      names a player, a bank or a row, and the predecessor is the process that
      is about to be replaced. */
+  /* ═══ AND IT SAYS WHICH STEP, NOT JUST WHICH STAGE (2026-09-25) ═══
+
+     Run 36144233010 (the 13:56 break) is the measurement. The record above
+     did its job - `stage: mixed_custody`, 65 tables attempted, completed and
+     verified, `elapsedMs: 5954` - and the next question it raised had no
+     answer in it. `mixed_custody` is TWO operations, `proveAbandonedBoundaries`
+     then `sealAndRetireOriginals`, and each one opened by overwriting the note
+     with the stage's own name, so the record could not say which of them was
+     in flight, which manager it was on, or which RPC it was waiting for.
+     `witness` and `noteRefusal` cannot answer it either: they travel in the
+     guard's RETURN VALUE, and the whole point of an unknown outcome is that
+     the return value never arrived. This record is the only channel, so the
+     record has to carry the step.
+
+     `note` is now the step's own name, never the stage's, and `detail` holds
+     the compact `key=value` pairs that name the page, the manager and the
+     RPC. A bare `progress()` refreshes the counters and keeps both; a NAMED
+     step replaces both, so a detail can never outlive the step that wrote it.
+     Observability only, exactly as above: no check, threshold or outcome
+     moves, and nothing here names a player, a bank or a row. */
   const progressStartedAt = Date.now();
   let progressNote = 'start';
-  const progress = (note) => {
+  let progressDetail = null;
+  const progress = (note, detail) => {
     try {
-      if (typeof note === 'string') progressNote = note;
+      if (typeof note === 'string') {
+        progressNote = note;
+        progressDetail = typeof detail === 'string' ? detail.slice(0, 512) : null;
+      }
       globalThis.__legacyEngineCheckpointProgress = {
         schema: 'legacy-engine-checkpoint-progress/v1',
         startedAt: progressStartedAt,
         elapsedMs: Date.now() - progressStartedAt,
         stage,
         note: progressNote,
+        detail: progressDetail,
         attemptedTables,
         completedCalls,
         verifiedTables,
@@ -2167,12 +2192,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     async function proveAbandonedBoundaries(checkAll) {
       if (deferredAbandonedBoundaries.size === 0) return;
       stage = 'mixed_custody';
-      progress('mixed_custody');
+      progress('proveAbandonedBoundaries', `tables=${deferredAbandonedBoundaries.size}`);
       const ids = [...deferredAbandonedBoundaries.keys()].sort();
       require(ids.length <= maxTables, 'mixed_abandoned_generation_unproven');
       const since = new Date(Date.now() - inflightWindowMs).toISOString();
+      const pages = Math.ceil(ids.length / readPageSize);
       for (let offset = 0; offset < ids.length; offset += readPageSize) {
         const page = ids.slice(offset, offset + readPageSize);
+        progress(
+          'proveAbandonedBoundariesPage',
+          `page=${offset / readPageSize + 1}/${pages},ids=${page.length}`
+        );
         checkAll();
         const { data, error } = await modules.client.supabase
           .from('hand_state_snapshots')
@@ -2195,12 +2225,22 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
 
     async function sealAndRetireOriginals(checkAll) {
       stage = 'mixed_custody';
-      progress('mixed_custody');
+      progress('sealObserveManagers', `managers=${retainedManagers.length}`);
+      let observedManagers = 0;
       for (const capture of retainedManagers) {
         // A sealed manager's transfer is already in the rows: no observe, no
         // commit, no readback. Its fresh intent ids stay unused.
         if (capture.sealed === true) continue;
         const { manager, proposal, local } = capture;
+        progress(
+          'sealObserveManager',
+          // The count is of managers that need an observe; a manager whose
+          // transfer the rows already proved sealed is named separately, so
+          // `manager=1/2,sealed=1` cannot be read as a manager gone missing.
+          `manager=${++observedManagers}/${retainedManagers.length},sealed=${
+            retainedManagers.filter((c) => c.sealed === true).length
+          },tournament=${manager.tournamentId}`
+        );
         const input = {
           p_transfer_id: proposal.transfer_id,
           p_tournament_id: manager.tournamentId,
@@ -2213,6 +2253,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           checkAll();
           if (name === 'fn_f06_prepare_mixed_manager_custody' && args.p_expected !== null)
             custodyCommitAttempted = true;
+          // The call that is actually on the wire. An unknown outcome inside a
+          // custody RPC and an unknown outcome between two of them are not the
+          // same fact, and only the second is safe to describe as `nothing was
+          // sent`. Observability only; the call, its arguments and its checks
+          // are untouched.
+          progress(
+            'mixedCustodyRpc',
+            `rpc=${name},phase=${
+              args.p_expected === undefined ? 'read' : args.p_expected === null ? 'observe' : 'commit'
+            },tournament=${manager.tournamentId},commitAttempted=${custodyCommitAttempted}`
+          );
           const response = await modules.client.supabase.rpc(name, args);
           checkAll();
           const engineShape = () => (Array.isArray(local?.engines) ? local.engines : []);
@@ -2293,6 +2344,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 .join(',')
                 .slice(0, 512),
             })
+          );
+          // The answer is in hand. An outcome lost from HERE was lost while
+          // this guard was checking a reply it already had, which is not the
+          // same fact as an outcome lost with a call still on the wire.
+          progress(
+            'mixedCustodyRpcAnswered',
+            `rpc=${name},tournament=${manager.tournamentId},commitAttempted=${custodyCommitAttempted}`
           );
           return response.data;
         };
@@ -2468,6 +2526,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          database still holds each commit to its own observation
          (`F06_MIXED_CANONICAL_CHANGED`), so nothing that could move between
          the phases is admitted by the split. */
+      progress('sealCommitManagers', `managers=${retainedManagers.length}`);
       for (const capture of retainedManagers) {
         if (capture.sealed === true) continue;
         const { manager, proposal, local } = capture;
@@ -2494,6 +2553,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // Both continuing owners must exist before retiring either event. All CAS
       // calls are synchronous and all captured local objects remain untouched.
       checkAll();
+      progress('sealRetireOriginals', `managers=${retainedManagers.length}`);
       for (const capture of retainedManagers) {
         if (capture.sealed === true) {
           // The seal was proved from rows at capture. What is retired below is

@@ -2297,7 +2297,10 @@ export default function CreateTournamentModal({
 
             {/* ── Validation Summary ── */}
             {!canSubmit && !isSubmitting && (
-              <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
+              <div
+                className={styles.validationSummary}
+                style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}
+              >
                 {!name.trim() && <p>Tournament Name Is Required</p>}
                 {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
                 {!payoutsValid && (

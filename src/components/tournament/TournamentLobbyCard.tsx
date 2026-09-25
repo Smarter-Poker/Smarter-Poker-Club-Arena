@@ -873,7 +873,7 @@ function TournamentLobbyCardInner({
           )}
 
         {tournament.status === 'bagged' && stageNote && (
-          <div className={styles.row}>
+          <div className={`${styles.row} ${styles.rowStacked}`}>
             <span className="sc-label sc-ink--blue">{stageNote.headline}</span>
             <span className={`${styles.value} sc-ink--gold`}>
               {stageNote.next ?? 'Next Day To Be Announced'}

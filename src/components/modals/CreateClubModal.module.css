@@ -87,6 +87,21 @@
   line-height: 1.35;
 }
 
+/* The allowance line WRAPS (visual acceptance 2026-09-24). .sc-label is
+   nowrap, and "Membership Limit Reached: You Belong To 10 Of 10 Clubs" in its
+   0.16em caps is about 440px on one line: at 393px it ran off both edges of
+   the phone, the one line that says why Create is refused. Two classes, so
+   this wins over .sc-label whatever order the sheets bundle in. */
+.pageFooter .status {
+  white-space: normal;
+}
+
+.pageFooter .status > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 /* One picture, centred. */
 .console {
   width: 100%;

@@ -198,6 +198,9 @@ export class HorseDecisionJournalPublisher {
   private pausedReason: HorseJournalCapacityReason | null = null;
   private pausedAt: number | null = null;
   private failedAt: number | null = null;
+  /** Whether any writer this publisher owned ever answered READY. A publisher
+   * whose writers all died before READY never started capture at all. */
+  private everReady = false;
   private probeTimer?: ReturnType<typeof setInterval>;
   private stats: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number]> | null = null;
   private statsAt: number | null = null;
@@ -211,6 +214,8 @@ export class HorseDecisionJournalPublisher {
       /** Wall clock for pausedSince/failedSince; tests pin it. */
       wallNow?: () => number;
       capacityProbeMs?: number;
+      /** Told once, when capture ends without any writer ever reaching READY. */
+      onStartFailed?: () => void;
     } = {}
   ) {
     this.lastProgress = this.now();
@@ -295,10 +300,20 @@ export class HorseDecisionJournalPublisher {
     this.failedAt = this.wallNow();
     this.endPause();
     this.count('unavailable');
+    if (reason === 'start_failed') this.count('start_failed');
     // Exactly one line per publisher lifetime. Until now a terminal writer
     // failure only bumped a counter, so capture stopped with nothing in the
     // log to say why until the next restart. Reason and mode only.
-    console.warn(`[HorseDecisionJournal] capture stopped mode=failed reason=${reason}`);
+    console.warn(
+      `[HorseDecisionJournal] capture stopped mode=${this.reportedMode()} reason=${reason}`
+    );
+    if (reason === 'start_failed') {
+      try {
+        this.options.onStartFailed?.();
+      } catch {
+        /* the lifecycle note never interrupts the failure path */
+      }
+    }
     clearInterval(this.watchdog);
     clearTimeout(this.retryTimer);
     void this.retireWriter()
@@ -384,6 +399,18 @@ export class HorseDecisionJournalPublisher {
     // that meets the same quota pauses again from its first append.
     this.endPause();
     if (!this.options.restart || this.retries >= 2) {
+      /* A WRITER THAT NEVER SAID READY NEVER STARTED (2026-09-26). A module
+         that cannot load is reported by `new Worker()` ASYNCHRONOUSLY, as an
+         'error' then an 'exit' event - never as a throw - so the try/catch in
+         startHorseDecisionJournal cannot see it, and the journal used to end
+         this path as `retry_exhausted` after announcing itself started. No
+         writer ever opened the store, so nothing was retried: capture never
+         began. Name it for what it is, the same `start_failed` a synchronous
+         construction failure reports. */
+      if (!this.everReady) {
+        this.fail('start_failed');
+        return;
+      }
       if (this.options.restart) this.count('retry_exhausted');
       this.fail(this.options.restart ? 'retry_exhausted' : 'restart_unavailable');
       return;
@@ -410,7 +437,7 @@ export class HorseDecisionJournalPublisher {
               this.count('retry_started');
               this.attach(replacement);
             } catch {
-              this.fail('restart_failed');
+              this.fail(this.everReady ? 'restart_failed' : 'start_failed');
             }
           },
           this.retries === 1 ? 250 : 1000
@@ -487,6 +514,7 @@ export class HorseDecisionJournalPublisher {
   private message(message: any): void {
     if (this.mode === 'failed' || this.mode === 'stopped') return;
     if (message?.type === 'READY' && this.mode === 'starting') {
+      this.everReady = true;
       this.mode = 'ready';
       this.lastProgress = this.now();
       this.dispatch();
@@ -603,6 +631,13 @@ export class HorseDecisionJournalPublisher {
     };
     this.statsAt = this.now();
   }
+  /** A journal that never started is `unavailable`, exactly as a writer that
+   * could not even be constructed is; `failed` is a journal that once ran. */
+  private reportedMode(): HorseJournalMode {
+    return this.mode === 'failed' && this.lastFailureReason === 'start_failed'
+      ? 'unavailable'
+      : this.mode;
+  }
   /** Synchronous and never waits on the writer: answers the cached figures and
    * asks a ready writer for fresh ones at most once a second, without a timer.
    * A reply that never comes leaves the age growing, which is the evidence. */
@@ -621,7 +656,7 @@ export class HorseDecisionJournalPublisher {
       }
     }
     return {
-      mode: this.mode,
+      mode: this.reportedMode(),
       lastFailureReason: this.lastFailureReason,
       pausedReason: this.pausedReason,
       pausedSince: isoTime(this.pausedAt),
@@ -750,9 +785,17 @@ export function startHorseDecisionJournal(): void {
     const archive = runtimeHorseJournalArchiveOptions(directory);
     const createWriter = () =>
       new Worker(new URL(entry, import.meta.url), { workerData: { directory, archive } });
-    publisher = new HorseDecisionJournalPublisher(createWriter(), fireBrainTelemetry, {
+    // `lifecycle` says only that construction did not throw. A writer module
+    // that cannot load fails later, as an event; the publisher reports that as
+    // start_failed and moves the lifecycle with it.
+    const owned: { publisher: HorseDecisionJournalPublisher | null } = { publisher: null };
+    owned.publisher = new HorseDecisionJournalPublisher(createWriter(), fireBrainTelemetry, {
       restart: createWriter,
+      onStartFailed: () => {
+        if (publisher === owned.publisher && lifecycle === 'started') lifecycle = 'start_failed';
+      },
     });
+    publisher = owned.publisher;
     lifecycle = 'started';
   } catch {
     lifecycle = 'start_failed';

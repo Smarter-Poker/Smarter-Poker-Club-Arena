@@ -1418,3 +1418,93 @@ describe('the journal says why it stopped and shows itself to /health', () => {
     expect(p.health()).toMatchObject({ mode: 'ready', queued: 0 });
   });
 });
+
+describe('a writer that never said READY never started', () => {
+  it('a real worker whose module cannot load is start_failed and unavailable, never ready', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // `new Worker()` does not throw for a module that fails to load: it
+      // reports an 'error' then an 'exit' event after the constructor returned.
+      const broken = () =>
+        new Worker(
+          new URL(
+            'data:text/javascript,' +
+              encodeURIComponent('throw new Error("horse journal writer failed to load")')
+          )
+        );
+      const notes: string[] = [],
+        startFailed = vi.fn(),
+        restart = vi.fn(broken),
+        p = new HorseDecisionJournalPublisher(broken(), (x) => notes.push(x), {
+          restart,
+          onStartFailed: startFailed,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      const deadline = Date.now() + 8000;
+      const seen = new Set<string>();
+      while (Date.now() < deadline && p.health().mode !== 'unavailable') {
+        seen.add(p.health().mode);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(seen.has('ready')).toBe(false);
+      expect(p.health()).toMatchObject({
+        mode: 'unavailable',
+        lastFailureReason: 'start_failed',
+        queued: 1,
+      });
+      // The bounded replacements were still tried: a lock at open is transient.
+      expect(restart).toHaveBeenCalledTimes(2);
+      expect(startFailed).toHaveBeenCalledOnce();
+      expect(notes).toContain('phase15_journal_start_failed');
+      expect(notes).not.toContain('phase15_journal_retry_exhausted');
+      expect(warn).toHaveBeenCalledWith(
+        '[HorseDecisionJournal] capture stopped mode=unavailable reason=start_failed'
+      );
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  }, 15_000);
+  it('a writer that was once ready and then keeps dying is still retry_exhausted', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const a = new FakeWorker(),
+        b = new FakeWorker(),
+        c = new FakeWorker(),
+        writers = [b, c],
+        startFailed = vi.fn(),
+        p = new HorseDecisionJournalPublisher(a, () => {}, {
+          restart: () => writers.shift()!,
+          now: () => Date.now(),
+          onStartFailed: startFailed,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      a.emit({ type: 'READY' });
+      for (const w of [a, b, c]) {
+        w.listeners.get('error')?.(new Error('died'));
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(p.health()).toMatchObject({ mode: 'failed', lastFailureReason: 'retry_exhausted' });
+      expect(startFailed).not.toHaveBeenCalled();
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('a writer that dies before READY with no restart available is start_failed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const a = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(a, () => {});
+      a.listeners.get('exit')?.(1);
+      expect(p.health()).toMatchObject({
+        mode: 'unavailable',
+        lastFailureReason: 'start_failed',
+      });
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

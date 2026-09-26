@@ -404,6 +404,7 @@ export default function ClubOpeningWizard({
       <SpadeConsole
         as="div"
         className="club-setup-wizard__shell"
+        onClose={saving ? undefined : onClose}
         eyebrow="Club Arena / Opening Pit Boss"
         title={`Open ${titleCase(clubName)}`}
         titleId="club-setup-title"

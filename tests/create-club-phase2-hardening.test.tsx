@@ -93,6 +93,14 @@ async function makeCreatable(user: ReturnType<typeof userEvent.setup>, name: str
 }
 
 const guardDialog = () => screen.queryByRole('dialog', { name: 'Close Create Club?' });
+const closePlate = () => {
+  const dialog = screen.getByRole('dialog', { name: 'Create A Club' });
+  return within(dialog.querySelector('.sc__foot') as HTMLElement).getByRole('button', {
+    name: 'Close',
+  });
+};
+const consoleCloseX = () =>
+  within(screen.getByRole('dialog', { name: 'Create A Club' })).getByTestId('sc-close');
 
 describe('the focus trap holds the whole console, plates included', () => {
   it('tabs forward from the last form field onto the painted plates, then wraps', async () => {
@@ -103,14 +111,17 @@ describe('the focus trap holds the whole console, plates included', () => {
     const terms = screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ });
     terms.focus();
     await user.tab();
-    const close = screen.getByRole('button', { name: 'Close' });
+    const close = closePlate();
     expect(document.activeElement).toBe(close);
     expect(close.classList.contains('sc-plate')).toBe(true);
 
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Create Club' }));
 
-    // The last plate wraps to the first field; focus never leaves the dialog.
+    // The console X is the final explicit close control, then the trap wraps
+    // to the first field; focus never leaves the dialog.
+    await user.tab();
+    expect(document.activeElement).toBe(consoleCloseX());
     await user.tab();
     expect(document.activeElement).toBe(screen.getByLabelText('Club Name'));
   });
@@ -122,8 +133,11 @@ describe('the focus trap holds the whole console, plates included', () => {
 
     screen.getByLabelText('Club Name').focus();
     await user.tab({ shift: true });
-    // Create Club is disabled on a pristine form, so the last stop is Close.
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
+    // Create Club is disabled on a pristine form, so the final stop is the
+    // console X; one more reverse tab reaches the painted Close plate.
+    expect(document.activeElement).toBe(consoleCloseX());
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(closePlate());
     expect(
       screen.getByRole('dialog', { name: 'Create A Club' }).contains(document.activeElement)
     ).toBe(true);
@@ -205,12 +219,12 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
     expect(screen.getByLabelText('Club Name')).toHaveValue('Alpha Room');
 
     // A tap on the guard's backdrop cancels too, and never asks again.
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(closePlate());
     await user.click(document.querySelector('.confirm-modal-overlay') as HTMLElement);
     expect(guardDialog()).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(closePlate());
     await user.click(
       within(guardDialog() as HTMLElement).getByRole('button', { name: 'Close Now' })
     );
@@ -222,7 +236,7 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
     const user = userEvent.setup();
     render(<CreateClubModal isOpen onClose={vi.fn()} />);
     await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(closePlate());
     const guard = guardDialog() as HTMLElement;
     const keepEditing = within(guard).getByRole('button', { name: 'Keep Editing' });
     await waitFor(() => expect(document.activeElement).toBe(keepEditing));
@@ -256,7 +270,7 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
     await makeCreatable(user, 'Alpha Room');
     await user.click(screen.getByRole('button', { name: 'Create Club' }));
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled());
+    await waitFor(() => expect(closePlate()).toBeDisabled());
     await user.keyboard('{Escape}');
     expect(guardDialog()).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();

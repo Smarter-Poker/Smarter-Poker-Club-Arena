@@ -16,11 +16,11 @@
  *
  * NOW:
  * - Data is loaded ONCE on first auth, cached in this store
- * - Updates come ONLY via Supabase Realtime channels (no polling)
- * - Realtime channel is managed at the store level (survives route changes)
+ * - Updates use source events and visibility/rejoin reads (no periodic polling)
+ * - Badge channels belong to the store; the primary header owns appearance signals
  * - Badge counts are hydrated from localStorage for instant re-entry
  *
- * GlobalHeader is now a PURE RENDERER of this store — zero fetches.
+ * GlobalHeader renders this store; its private signal requests an authoritative refresh.
  */
 
 import { create } from 'zustand';
@@ -61,6 +61,7 @@ interface HeaderDataState {
 
   // Actions
   loadOnce: (userId: string) => void;
+  refreshAppearance: () => Promise<void>;
   setProfileHeaderData: (row: Record<string, unknown>) => void;
   setAvatarUrl: (url: string | null) => void;
   setCosmetics: (frame: string | null, aura: string | null) => void;
@@ -202,6 +203,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   _userId: null,
   _channelKey: null,
   _busUnsubscribers: [],
+
+  refreshAppearance: async () => undefined,
 
   setProfileHeaderData: (row) => {
     const state = get();
@@ -356,8 +359,69 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       _vipExpiresAt: null,
     });
 
+    let appearanceReading = false;
+    let appearanceRevision = 0;
+    let appearancePendingRead = false;
+    let appearanceController: AbortController | undefined;
+    const refreshAppearance = async () => {
+      if (get().refreshAppearance !== refreshAppearance || pendingPlayerAppearance.size > 0) return;
+      if (document.visibilityState === 'hidden') return;
+      if (appearanceReading) {
+        appearancePendingRead = true;
+        return;
+      }
+      appearanceReading = true;
+      appearanceController = new AbortController();
+      const request = appearanceController;
+      const startedAtRevision = appearanceRevision;
+      const deadline = setTimeout(() => request.abort(), 15_000);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select(
+            'avatar_url, arena_avatar_url, use_avatar_as_profile_pic, is_vip, vip_expires_at, equipped_frame, equipped_aura'
+          )
+          .eq('id', userId)
+          .abortSignal(request.signal)
+          .maybeSingle();
+        if (get().refreshAppearance !== refreshAppearance) return;
+        if (error) throw error;
+        if (request.signal.aborted) throw new Error('The appearance read timed out');
+        if (!data) throw new Error('The profile appearance is unavailable');
+        if (startedAtRevision !== appearanceRevision) {
+          appearancePendingRead = true;
+          return;
+        }
+        if (pendingPlayerAppearance.size > 0) return;
+        get().setProfileHeaderData(data as Record<string, unknown>);
+        get().setCosmetics(data.equipped_frame ?? null, data.equipped_aura ?? null);
+      } catch (error) {
+        if (get().refreshAppearance === refreshAppearance)
+          reportError(error, 'useHeaderDataStore.appearance_refresh');
+      } finally {
+        clearTimeout(deadline);
+        appearanceReading = false;
+        if (appearancePendingRead && get().refreshAppearance === refreshAppearance) {
+          appearancePendingRead = false;
+          void refreshAppearance();
+        }
+      }
+    };
+    set({ refreshAppearance });
+    const onAppearanceVisible = () => {
+      if (document.visibilityState !== 'hidden') void refreshAppearance();
+    };
+    document.addEventListener('visibilitychange', onAppearanceVisible);
+    window.addEventListener('online', onAppearanceVisible);
+    const stopAppearanceReads = () => {
+      appearanceController?.abort();
+      document.removeEventListener('visibilitychange', onAppearanceVisible);
+      window.removeEventListener('online', onAppearanceVisible);
+    };
+
     // ── Fetch initial data (non-blocking) ──
     (async () => {
+      const initialAppearanceRevision = appearanceRevision;
       try {
         // Parallel fetch: avatar + notification count + message count
         const [profileResult, notifResult, msgResult] = await Promise.all([
@@ -381,7 +445,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         ]);
 
         // Guard: if user switched while fetch was in-flight, discard stale result
-        if (get()._userId !== userId) return;
+        if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return;
 
         // supabase-js RESOLVES on a rejected request — a 403/42501 arrives as
         // { data: null, error }, never as a throw, so the catch below cannot see
@@ -406,7 +470,11 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // A FAILED avatar read must not overwrite the cached one with null.
         // Only a query that actually came back gets to say the player has no
         // avatar; anything else keeps the face already on screen.
-        if (!profileResult.error && pendingPlayerAppearance.size === 0) {
+        if (
+          !profileResult.error &&
+          pendingPlayerAppearance.size === 0 &&
+          initialAppearanceRevision === appearanceRevision
+        ) {
           get().setProfileHeaderData((profileResult.data ?? {}) as Record<string, unknown>);
           get().setCosmetics(
             profileResult.data?.equipped_frame ?? null,
@@ -423,8 +491,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         reportError(e, 'useHeaderDataStore.Initial_load_failed');
         // Retry once after 2s — transient network failures are common on mobile
         setTimeout(async () => {
-          if (get()._userId !== userId) return; // User switched — abort retry
+          if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return; // User switched — abort retry
           try {
+            const retryAppearanceRevision = appearanceRevision;
             const [pR, nR, mR] = await Promise.all([
               supabase
                 .from('profiles')
@@ -444,12 +513,16 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
                 .eq('receiver_id', userId)
                 .eq('is_read', false),
             ]);
-            if (get()._userId !== userId) return;
+            if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return;
             if (pR.error) reportError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
             if (nR.error)
               reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
-            if (!pR.error && pendingPlayerAppearance.size === 0) {
+            if (
+              !pR.error &&
+              pendingPlayerAppearance.size === 0 &&
+              retryAppearanceRevision === appearanceRevision
+            ) {
               get().setProfileHeaderData((pR.data ?? {}) as Record<string, unknown>);
               get().setCosmetics(pR.data?.equipped_frame ?? null, pR.data?.equipped_aura ?? null);
             }
@@ -544,46 +617,6 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           });
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'profiles',
-          filter: `id=eq.${userId}`,
-        },
-        (payload: { new?: Record<string, unknown> }) => {
-          /* The player's own row changed. This is what makes a change made on
-             ANOTHER surface — the World Hub's avatar page, a second tab, the
-             table's settings panel — reach this header without a reload.
-             THAT IS WHAT IT WAS FOR. It has not worked since 2026-09-06.
-
-             This said "`profiles` is in the supabase_realtime publication
-             (verified 2026-08-25)", and on 2026-08-25 that was true. The
-             2026-09-06 trim removed it - 1,000,061 writes over 120 columns at
-             45.29ms per change, the worst per-change cost measured - and
-             nothing re-read this comment afterwards. A verification carries the
-             date it was taken, not a guarantee about later.
-
-             So this channel joins, reports SUBSCRIBED and receives nothing: an
-             avatar changed on the World Hub or in a second tab does NOT reach
-             this header until a reload. `table_seats` is still NOT published
-             either, so the identical-looking `table-seats-live` subscription in
-             TablePage remains dead for the same reason.
-
-             A partial payload must not blank the orb. setProfileHeaderData
-             merges only columns actually present in the replication payload,
-             then applies the same Photo/Avatar preference used by World Hub. */
-          const row = payload?.new;
-          if (!row) return;
-          if (pendingPlayerAppearance.size > 0) return;
-          get().setProfileHeaderData(row);
-          get().setCosmetics(
-            typeof row['equipped_frame'] === 'string' ? (row['equipped_frame'] as string) : null,
-            typeof row['equipped_aura'] === 'string' ? (row['equipped_aura'] as string) : null
-          );
-        }
-      )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           console.debug('[HeaderDataStore] Realtime channel error:', err?.message || err);
@@ -640,10 +673,12 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
 
     const unsubAppearanceMutation = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
       if (event.payload.kind !== 'player-appearance' || event.payload.scope !== userId) return;
+      appearanceRevision += 1;
       if (event.payload.state === 'pending') {
         pendingPlayerAppearance.add(event.payload.mutationId);
       } else if (event.payload.state !== 'rolling-back') {
         pendingPlayerAppearance.delete(event.payload.mutationId);
+        void refreshAppearance();
       }
     });
 
@@ -671,6 +706,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
 
     set({
       _busUnsubscribers: [
+        stopAppearanceReads,
         unsubNotifRead,
         unsubDmCount,
         unsubAppearanceMutation,
@@ -722,6 +758,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       _loaded: false,
       _userId: null,
       _channelKey: null,
+      refreshAppearance: async () => undefined,
       _busUnsubscribers: [],
     });
   },

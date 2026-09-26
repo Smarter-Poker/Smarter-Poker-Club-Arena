@@ -11,6 +11,7 @@ import { sizedStorageUrl } from '../../utils/avatarGenerator';
 const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
 import { Link, useNavigate } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusBroadcastChannel } from '../../hooks/useMasterBusBroadcastChannel';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
@@ -94,6 +95,20 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
     clearUnreadNotifications,
     clearUnreadMessages,
   } = useHeaderDataStore();
+  // One primary header owns the private profile signal; copies inside table
+  // tabs render the same store and must not claim the same channel twice.
+  useMasterBusBroadcastChannel({
+    channelName: !inTab && authUser?.id ? `profile-appearance:${authUser.id}` : null,
+    event: 'appearance_changed',
+    private: true,
+    onPayload: (message) => {
+      if ((message as { payload?: { user_id?: unknown } })?.payload?.user_id === authUser?.id)
+        void useHeaderDataStore.getState().refreshAppearance();
+    },
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') void useHeaderDataStore.getState().refreshAppearance();
+    },
+  });
   // The portrait is at most 57 CSS px in the 96px desktop band and 44px
   // on mobile. A 64px bound preserves retina detail without a full-size JPEG.
   const portraitSource = avatarUrl || DEFAULT_AVATAR;

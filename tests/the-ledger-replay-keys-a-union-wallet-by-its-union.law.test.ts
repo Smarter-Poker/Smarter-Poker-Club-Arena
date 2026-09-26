@@ -34,11 +34,14 @@ const latestDefinitionOf = (fn: string): { file: string; body: string } | null =
 };
 /** The text of one CREATE OR REPLACE FUNCTION ... $function$ block. */
 const functionBlock = (sql: string, fn: string): string => {
-  const start = sql.search(new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${fn}\\s*\\(`, 'i'));
+  const start = sql.search(
+    new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${fn}\\s*\\(`, 'i')
+  );
   expect(start, `${fn} is defined`).toBeGreaterThanOrEqual(0);
-  const open = sql.indexOf('$function$', start);
-  const close = sql.indexOf('$function$', open + 10);
-  return sql.slice(start, close + 10);
+  const tag = '$function$';
+  const open = sql.indexOf(tag, start);
+  const close = sql.indexOf(tag, open + tag.length);
+  return sql.slice(start, close + tag.length);
 };
 
 const M = migrationNamed('the_ledger_replay_keys_a_union_wallet_by_its_union');
@@ -68,7 +71,9 @@ describe('the ledger replay keys a union wallet by its union', () => {
     expect(M).toContain("'5f1a5e9507b9c9c11ae61b41fd842eaa'");
     expect(M).toContain("'05378ace9b11c3200a060458460d6f57'");
     expect(M).toContain('{postgres=X/postgres,service_role=X/postgres}');
-    expect(M).toMatch(/GRANT EXECUTE ON FUNCTION public\.fn_ca_leg_accounts\(timestamptz, timestamptz\) TO service_role/);
+    expect(M).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_ca_leg_accounts\(timestamptz, timestamptz\) TO service_role/
+    );
     expect(M).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.fn_ca_leg_accounts_since_snapshot\(timestamptz, pg_snapshot\) TO service_role/
     );
@@ -82,7 +87,9 @@ describe('the ledger replay keys a union wallet by its union', () => {
   it('the balance reader it relies on still reads every union wallet by union_id', () => {
     const live = latestDefinitionOf('fn_ca_account_balance');
     if (live) {
-      expect(live.body).toMatch(/union_wallets\.promo_wallet'[\s\S]*FROM public\.union_wallets WHERE union_id = p_entity/);
+      expect(live.body).toMatch(
+        /union_wallets\.promo_wallet'[\s\S]*FROM public\.union_wallets WHERE union_id = p_entity/
+      );
     }
   });
 });

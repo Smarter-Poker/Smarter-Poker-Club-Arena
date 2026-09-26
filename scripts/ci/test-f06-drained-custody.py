@@ -19,6 +19,13 @@ PREPARED_FIXTURE='scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_q
 ADDED='supabase/migrations/20260926043127_a_column_added_after_a_movement_proof_was_taken_is_not_a_cha.sql'
 ADDED_PROBE='scripts/ci/probes/f06-movement-added-column.sql'
 ADDED_PASSES=31
+# 20260926091645: a receipted chip is movement evidence. A committed purchase,
+# a receipted arrival and a begun break's winner receipts prove a movement
+# roster; a validated bust completes on a park whose custody holds no proof.
+RECEIPT='supabase/migrations/20260926091645_a_receipted_chip_is_movement_evidence.sql'
+RECEIPT_PROBE='scripts/ci/probes/f06-movement-receipt-evidence.sql'
+FUNDING='supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql'
+RECEIPT_PASSES={'before':30,'after':34}
 def main():
  p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2]);p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  root,out=a.root.resolve(),a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
@@ -26,7 +33,7 @@ def main():
  manifest=f.prepare(root,out)
  mixed_builder=module(root/'scripts/ci/build-f06-mixed-custody.py','mixed_custody_builder')
  if mixed_builder.render(root)!=(root/mixed_builder.MIGRATION).read_text():raise ValueError('mixed installer binding differs')
- paths=['scripts/ci/mtt_break_authoring_native.py',ADDED,ADDED_PROBE,PROBE,SPEC,FORMAT,FINISH,RELEASE,STALE,PREPARED_FIXTURE,MIXED,PAID,MIXED_FIXTURE,b.MIGRATION,b.AUTHORITY,b.PREPARED,'scripts/ci/build-f06-drained-custody.py','scripts/ci/test-f06-drained-custody.py','scripts/ci/test-f06-movement-admission.py']
+ paths=['scripts/ci/mtt_break_authoring_native.py',ADDED,ADDED_PROBE,RECEIPT,RECEIPT_PROBE,FUNDING,PROBE,SPEC,FORMAT,FINISH,RELEASE,STALE,PREPARED_FIXTURE,MIXED,PAID,MIXED_FIXTURE,b.MIGRATION,b.AUTHORITY,b.PREPARED,'scripts/ci/build-f06-drained-custody.py','scripts/ci/test-f06-drained-custody.py','scripts/ci/test-f06-movement-admission.py']
  paths +=[m.MIGRATION,m.OPENING,m.RECEIPT,m.AUTHORITIES,m.PUBLIC_F06,m.DEPENDENCY_FUNCTIONS,m.DEPENDENCY_CATALOG,m.FINAL_RELATIONS,m.PRIVATE,m.CONTROL,m.CONTINUATION]
  paths += [mixed_builder.MIGRATION,mixed_builder.AUTHORITY,mixed_builder.MOVEMENT_AUTHORITY,mixed_builder.MOVEMENT,'supabase/migrations/20260904230754_engine_presence_survives_the_restart.sql','supabase/migrations/20260917120432_parked_time_banks_retain_their_seat_occupancy.sql','supabase/migrations/20260823_engine_leadership.sql','scripts/ci/build-f06-mixed-custody.py','scripts/ci/probes/f06-mixed-custody.sql','scripts/ci/probes/f06-mixed-restart-qualification.py']
  manifest['source_sha256'].update({p:sha(root/p) for p in paths})
@@ -147,6 +154,31 @@ def main():
   if rc or stderr.count('ADDED_COLUMN_COMPLETE')!=1 or stderr.count('ADDED_COLUMN PASS:')!=ADDED_PASSES or 'ERROR:' in stderr:raise RuntimeError('added-column movement cases failed')
   if e.snapshot(db,'added-after-data')!=added_before or f.private_snapshot(e,db,'added-after-private')!=added_private or e.catalog_snapshot(db,'added-after-catalog')!=added_catalog:raise RuntimeError('added-column full rollback differs')
   e.report.update(added_assertions=stderr.count('ADDED_COLUMN PASS:'),added_rollback=True,added_installer_refusal='F06_MOVEMENT_PROOF_PREIMAGE_DRIFT')
+
+  # The funding receipts the purchase evidence reads, from their own migration.
+  funding=(root/FUNDING).read_text();funding=funding[funding.index('CREATE TABLE public.tournament_participant_funding_receipts'):funding.index('CREATE TABLE public.tournament_accounting_credit_receipts')]
+  e.sql(db,funding,label='actual-funding-receipt-relation')
+  # Red before: on the production pre-image every receipted state refuses
+  # exactly as production refused it. The installer refuses a drifted
+  # pre-image and leaves nothing behind. Green after: the same states admit
+  # and every unreceipted variant still refuses.
+  for phase in ('before','after'):
+   if phase=='after':
+    for label,mutation in [('guard',"ALTER FUNCTION smarter_private.f06_source_guard() SET work_mem='64kB';"),('prior',"GRANT EXECUTE ON FUNCTION smarter_private.f06_movement_prior(uuid,uuid) TO service_role;")]:
+     case=e.database(db);e.sql(case,mutation,label='receipt-installer-drift-'+label)
+     receipt_catalog=e.catalog_snapshot(case,'receipt-installer-before-'+label);receipt_private=f.private_snapshot(e,case,'receipt-installer-private-before-'+label)
+     rc,_,err=e.sql(case,file=root/RECEIPT,label='receipt-installer-refusal-'+label,check=False)
+     if rc==0 or 'F06_MOVEMENT_RECEIPT_PREIMAGE_DRIFT' not in err:raise RuntimeError('receipt installer did not refuse drift: '+label)
+     if e.catalog_snapshot(case,'receipt-installer-after-'+label)!=receipt_catalog or f.private_snapshot(e,case,'receipt-installer-private-after-'+label)!=receipt_private:raise RuntimeError('refused receipt installer changed catalog or private records')
+     e.discard(case)
+    e.sql(db,file=root/RECEIPT,label='receipt-install')
+   receipt_before=e.snapshot(db,'receipt-'+phase+'-before-data');receipt_private=f.private_snapshot(e,db,'receipt-'+phase+'-before-private');receipt_catalog=e.catalog_snapshot(db,'receipt-'+phase+'-before-catalog')
+   rc,stdout,stderr=e.sql(db,file=root/RECEIPT_PROBE,label='receipt-evidence-'+phase,check=False,seconds=60)
+   e.report['receipt_'+phase+'_output']=stderr
+   if rc or stderr.count('RECEIPT_EVIDENCE_COMPLETE '+phase)!=1 or stderr.count('RECEIPT_EVIDENCE PASS:')!=RECEIPT_PASSES[phase] or 'ERROR:' in stderr:raise RuntimeError('receipt evidence cases failed: '+phase)
+   if e.snapshot(db,'receipt-'+phase+'-after-data')!=receipt_before or f.private_snapshot(e,db,'receipt-'+phase+'-after-private')!=receipt_private or e.catalog_snapshot(db,'receipt-'+phase+'-after-catalog')!=receipt_catalog:raise RuntimeError('receipt evidence full rollback differs: '+phase)
+   e.report['receipt_'+phase+'_assertions']=stderr.count('RECEIPT_EVIDENCE PASS:')
+  e.report.update(receipt_installer_refusal='F06_MOVEMENT_RECEIPT_PREIMAGE_DRIFT')
 
   restart=module(root/'scripts/ci/probes/f06-mixed-restart-qualification.py','mixed_committed_restart')
   restart.qualify(e,db,root)

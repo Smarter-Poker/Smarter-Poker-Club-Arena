@@ -121,7 +121,37 @@ export interface FleetPolicyContext {
   stakeBand?: string | null;
   /** This table's game variant, for `variants`. */
   variant?: string | null;
+  /**
+   * Age in ms of the OLDEST queued horse decision at cycle time, read from
+   * `liveHorseDecisionWorkerStatus().oldestQueuedAgeMs`. null when the lane
+   * reports no queue. This is a live measurement, not a policy row field.
+   */
+  decisionLaneWaitMs?: number | null;
+  /**
+   * The decision lane's phase at cycle time (`liveHorseDecisionWorkerStatus().phase`).
+   * Anything other than 'ready' means there is no brain to think for a new seat.
+   */
+  decisionLanePhase?: string;
 }
+
+/**
+ * How far behind the live horse decision lane may be, in ms, before the fleet
+ * seats no new horse this cycle.
+ *
+ * MEASURED 2026-09-26. The fleet re-expanded to 780-880 dealing tables on
+ * engine-01 (two EPYC Milan cores, four SMT threads) and the one-thread
+ * decision lane could not think for that many tables: queue depth 566-986,
+ * the oldest queued decision 7.4-13.5 s old, 40-68 expiries per second, and
+ * completedJobs 40,221 against expiredJobs 53,652 in 29 minutes. An expired
+ * decision is a seat taking the legal check or fold without thinking - 57%
+ * of all decisions. Eight days before, at 85 tables, expiries were 0. Cash
+ * table hand gaps went from p50 22 s / p90 56 s to p50 63 s / p90 141 s.
+ *
+ * Two seconds is well under the shortest action clock, so a lane that is
+ * held here has already lost its margin, and it is far above the sub-100 ms
+ * a healthy lane reports, so an ordinary burst cannot trip it.
+ */
+export const HORSE_FLEET_DECISION_LANE_HOLD_MS = 2000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE DEFAULTS - TODAY'S BEHAVIOUR, WRITTEN DOWN
@@ -478,6 +508,19 @@ export function horseAllowedByPolicy(
  * and variant eligibility, then the schedule. First cause wins, so an operator
  * who disabled the fleet is told that, not told it is outside its schedule.
  *
+ * ONE CAUSE SITS BETWEEN THE PAUSE AND THE CAPS AND IS NOT A POLICY FIELD:
+ * `brain_behind`. It is a live measurement of the horse decision lane taken
+ * once per cycle (see HORSE_FLEET_DECISION_LANE_HOLD_MS). When the oldest
+ * queued decision is HORSE_FLEET_DECISION_LANE_HOLD_MS or older, or the lane
+ * is not in its 'ready' phase, no new horse is seated this cycle: on
+ * 2026-09-26 at 780-880 tables the lane sat 7.4-13.5 s behind and 57% of all
+ * decisions expired into a check or fold that nobody thought about. Seating
+ * more horses into that lane only makes more of them play without thinking.
+ * An operator's kill switch and pause still outrank it, because they are
+ * statements of intent and this is a symptom; it outranks the caps because a
+ * cap says how many may sit and this says the ones already sitting are not
+ * being served. Like every other cause here it withholds NEW seats only.
+ *
  * Every context field is optional and a cause whose field is absent is
  * skipped, which is what lets one function serve both scopes: the cycle asks
  * with the hour and the fleet-wide seated count, a single table asks with its
@@ -486,6 +529,16 @@ export function horseAllowedByPolicy(
 export function withheldReason(policy: FleetPolicy, ctx: FleetPolicyContext = {}): string | null {
   if (!policy.enabled) return 'fleet_disabled';
   if (policy.pauseNewSeatings) return 'seating_paused';
+  if (ctx.decisionLanePhase !== undefined && ctx.decisionLanePhase !== 'ready') {
+    return 'brain_behind';
+  }
+  if (
+    typeof ctx.decisionLaneWaitMs === 'number' &&
+    Number.isFinite(ctx.decisionLaneWaitMs) &&
+    ctx.decisionLaneWaitMs >= HORSE_FLEET_DECISION_LANE_HOLD_MS
+  ) {
+    return 'brain_behind';
+  }
   if (policy.maxHorses !== null && ctx.seatedHorses !== undefined) {
     if (ctx.seatedHorses >= policy.maxHorses) return 'max_horses_reached';
   }

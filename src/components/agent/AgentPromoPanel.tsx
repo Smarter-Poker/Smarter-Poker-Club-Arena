@@ -54,6 +54,8 @@ interface DownlinePlayer {
   profiles?: { display_name?: string; username?: string; avatar_url?: string } | null;
 }
 
+type DownlineEvent = { kind: 'remove' } | { kind: 'balance'; value: number };
+
 interface AgentPromoPanelProps {
   clubId: string;
   userId: string;
@@ -69,6 +71,8 @@ export default function AgentPromoPanel({
 }: AgentPromoPanelProps) {
   const [promoBalance, setPromoBalance] = useState<number | null>(null);
   const [downline, setDownline] = useState<DownlinePlayer[]>([]);
+  const downlineRef = useRef<DownlinePlayer[]>([]);
+  const downlineEventsRef = useRef(new Map<string, DownlineEvent>());
   const [loading, setLoading] = useState(true);
   const [balanceError, setBalanceError] = useState(false);
   const [downlineError, setDownlineError] = useState(false);
@@ -149,6 +153,10 @@ export default function AgentPromoPanel({
     enabled: Boolean(clubId && userId && isAgent),
     intervalMs: 60_000,
     read: async (signal) => {
+      // Events arriving after this snapshot starts must survive its delayed
+      // response. This map belongs to one read, never another account's read.
+      const events = new Map<string, DownlineEvent>();
+      downlineEventsRef.current = events;
       const players = await fetchAllRows<{ user_id: string; chip_balance: number }>(
         (from, to) =>
           supabase
@@ -177,12 +185,29 @@ export default function AgentPromoPanel({
         if (error) throw error;
         for (const profile of profiles || []) playerProfileMap[profile.id] = profile;
       }
-      return players
-        .map((player) => ({ ...player, profiles: playerProfileMap[player.user_id] || null }))
-        .sort((a, b) => b.chip_balance - a.chip_balance);
+      return {
+        players: players.map((player) => ({
+          ...player,
+          profiles: playerProfileMap[player.user_id] || null,
+        })),
+        events,
+      };
     },
-    onData: (players) => {
-      setDownline(players);
+    onData: ({ players, events }) => {
+      const current = players
+        .flatMap((player) => {
+          const event = events.get(player.user_id);
+          if (event?.kind === 'remove') return [];
+          return [
+            {
+              ...player,
+              chip_balance: event?.kind === 'balance' ? event.value : player.chip_balance,
+            },
+          ];
+        })
+        .sort((a, b) => b.chip_balance - a.chip_balance);
+      downlineRef.current = current;
+      setDownline(current);
       setDownlineError(false);
       setLoading(false);
     },
@@ -192,6 +217,8 @@ export default function AgentPromoPanel({
       setLoading(false);
     },
     onReset: () => {
+      downlineRef.current = [];
+      downlineEventsRef.current = new Map();
       setDownline([]);
       setDownlineError(false);
       setLoading(true);
@@ -211,22 +238,73 @@ export default function AgentPromoPanel({
   });
   useEffect(() => {
     if (!clubId || !userId || !isAgent) return;
+    let active = true;
+    const scope = readScope;
     const channelKey = `agent-promo-${clubId}-${userId}`;
     masterBus
       .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'club_members', filter: `agent_id=eq.${userId}` },
-        refreshDownline
+        (payload) => {
+          if (!active || scopeRef.current !== scope) return;
+          if (!['INSERT', 'UPDATE', 'DELETE'].includes(payload.eventType)) return;
+          const deleted = payload.eventType === 'DELETE';
+          const row = deleted ? payload.old : payload.new;
+          // Default replica identity is (club_id,user_id). DELETE filtering
+          // and old non-key fields cannot establish membership in this list.
+          if (row?.club_id !== clubId || typeof row.user_id !== 'string') return;
+          const known = downlineRef.current.find((player) => player.user_id === row.user_id);
+          const membershipKnown =
+            (typeof row.agent_id === 'string' || row.agent_id === null) &&
+            typeof row.role === 'string';
+          if (deleted || (membershipKnown && (row.agent_id !== userId || row.role !== 'player'))) {
+            downlineEventsRef.current.set(row.user_id, { kind: 'remove' });
+            if (known) {
+              const remaining = downlineRef.current.filter(
+                (player) => player.user_id !== row.user_id
+              );
+              downlineRef.current = remaining;
+              setDownline(remaining);
+              setSelectedPlayer((selected) => (selected === row.user_id ? null : selected));
+            }
+            return;
+          }
+          const value = row.chip_balance;
+          if (
+            !known ||
+            !membershipKnown ||
+            !['number', 'string'].includes(typeof value) ||
+            String(value).trim() === '' ||
+            !Number.isFinite(Number(value))
+          ) {
+            refreshDownline();
+            return;
+          }
+          const balance = Number(value);
+          // Heartbeats and unrelated membership fields do not reload all
+          // players and profiles. The delivered new row already has the chips.
+          downlineEventsRef.current.set(row.user_id, { kind: 'balance', value: balance });
+          if (known.chip_balance === balance) return;
+          const players = downlineRef.current
+            .map((player) =>
+              player.user_id === row.user_id ? { ...player, chip_balance: balance } : player
+            )
+            .sort((a, b) => (b.chip_balance ?? 0) - (a.chip_balance ?? 0));
+          downlineRef.current = players;
+          setDownline(players);
+        }
       )
       .subscribe((status: string, error?: Error) => {
+        if (!active || scopeRef.current !== scope) return;
         if (status === 'SUBSCRIBED') refreshDownline();
         if (status === 'CHANNEL_ERROR' && error) reportError(error, 'AgentPromoPanel.Channel');
       });
     return () => {
+      active = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId, userId, isAgent, refreshDownline]);
+  }, [clubId, userId, isAgent, readScope, refreshDownline]);
 
   const handleDistribute = async () => {
     if (!selectedPlayer || !amount || promoBalance === null || balanceError || downlineError)

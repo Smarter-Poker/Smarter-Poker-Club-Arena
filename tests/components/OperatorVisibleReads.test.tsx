@@ -141,6 +141,205 @@ describe('operator views observe only their visible scope', () => {
 });
 
 describe('promo float observation does not rewrite money', () => {
+  it('uses scoped balance payloads without rereading every player for activity, and fences deletes', async () => {
+    state.query.mockImplementation(async (name: string) => ({
+      data:
+        name === 'agents'
+          ? { id: 'agent', promo_wallet_balance: 500 }
+          : name === 'club_members'
+            ? [{ user_id: 'player-one', chip_balance: 20 }]
+            : [],
+      error: null,
+    }));
+    render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" />);
+    await flush();
+    const event = state.channel.mock.calls[0][2];
+    const row = {
+      club_id: 'club-a',
+      user_id: 'player-one',
+      agent_id: 'agent-a',
+      role: 'player',
+      chip_balance: 20,
+    };
+    const readCount = () =>
+      state.query.mock.calls.filter(([name]) => name === 'club_members').length;
+    expect(readCount()).toBe(1);
+    await act(async () => {
+      event({ eventType: 'UPDATE', new: { ...row, last_active_at: 'later' } });
+      event({ eventType: 'UPDATE', new: { ...row, club_id: 'club-b', chip_balance: 99 } });
+      event({ eventType: 'DELETE', old: { club_id: 'club-b', user_id: 'player-one' } });
+    });
+    expect(readCount()).toBe(1);
+    await act(async () => event({ eventType: 'UPDATE', new: { ...row, chip_balance: '75' } }));
+    expect(screen.getByRole('option', { name: /Chips: 75$/ })).toBeDefined();
+    expect(readCount()).toBe(1);
+    await act(async () =>
+      event({ eventType: 'DELETE', old: { club_id: 'club-a', user_id: 'player-one' } })
+    );
+    expect(screen.queryByRole('option', { name: /player-o/ })).toBeNull();
+    expect(readCount()).toBe(1);
+  });
+  it('keeps newer membership balance and removal events when an older read finishes', async () => {
+    let finish!: (value: unknown) => void;
+    state.query.mockImplementation(async (name: string) => ({
+      data:
+        name === 'agents'
+          ? { id: 'agent', promo_wallet_balance: 500 }
+          : name === 'club_members'
+            ? [
+                { user_id: 'player-one', chip_balance: 20 },
+                { user_id: 'player-two', chip_balance: 30 },
+              ]
+            : [],
+      error: null,
+    }));
+    render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" />);
+    await flush();
+    const event = state.channel.mock.calls[0][2];
+    await act(async () =>
+      event({
+        eventType: 'UPDATE',
+        new: {
+          club_id: 'club-a',
+          user_id: 'player-one',
+          agent_id: 'agent-a',
+          role: 'player',
+          chip_balance: 75,
+        },
+      })
+    );
+    state.query.mockImplementation((name: string) =>
+      name === 'club_members'
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve({
+            data: name === 'agents' ? { id: 'agent', promo_wallet_balance: 500 } : [],
+            error: null,
+          })
+    );
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    await act(async () => {
+      event({
+        eventType: 'UPDATE',
+        new: {
+          club_id: 'club-a',
+          user_id: 'player-one',
+          agent_id: 'agent-a',
+          role: 'player',
+          chip_balance: 75,
+        },
+      });
+      event({ eventType: 'DELETE', old: { club_id: 'club-a', user_id: 'player-two' } });
+      finish({
+        data: [
+          { user_id: 'player-one', chip_balance: 20 },
+          { user_id: 'player-two', chip_balance: 30 },
+        ],
+        error: null,
+      });
+    });
+    expect(screen.getByRole('option', { name: /Chips: 75$/ })).toBeDefined();
+    expect(screen.queryByRole('option', { name: /Chips: 30$/ })).toBeNull();
+  });
+  it('rereads unknown and malformed membership data without inventing zero or accepting an old scope', async () => {
+    state.query.mockImplementation(async (name: string) => ({
+      data:
+        name === 'agents'
+          ? { id: 'agent', promo_wallet_balance: 500 }
+          : name === 'club_members'
+            ? [{ user_id: 'player-one', chip_balance: 20 }]
+            : [],
+      error: null,
+    }));
+    const view = render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" />);
+    await flush();
+    const oldEvent = state.channel.mock.calls[0][2];
+    await act(async () =>
+      oldEvent({
+        eventType: 'INSERT',
+        new: {
+          club_id: 'club-a',
+          user_id: 'new-player',
+          agent_id: 'agent-a',
+          role: 'player',
+          chip_balance: 5,
+        },
+      })
+    );
+    expect(state.query.mock.calls.filter(([name]) => name === 'club_members')).toHaveLength(2);
+    state.query.mockImplementation(async (name: string) => ({
+      data: name === 'agents' ? { id: 'agent', promo_wallet_balance: 500 } : null,
+      error: name === 'club_members' ? new Error('Denied') : null,
+    }));
+    await act(async () =>
+      oldEvent({
+        eventType: 'UPDATE',
+        new: {
+          club_id: 'club-a',
+          user_id: 'player-one',
+          agent_id: 'agent-a',
+          role: 'player',
+          chip_balance: null,
+        },
+      })
+    );
+    expect(screen.getByRole('alert')).toBeDefined();
+    expect(screen.queryByRole('option', { name: /Chips: 0$/ })).toBeNull();
+    view.rerender(<AgentPromoPanel clubId="club-b" userId="agent-b" role="agent" />);
+    await flush();
+    const calls = state.query.mock.calls.length;
+    await act(async () =>
+      oldEvent({
+        eventType: 'INSERT',
+        new: {
+          club_id: 'club-a',
+          user_id: 'new-player',
+          agent_id: 'agent-a',
+          role: 'player',
+          chip_balance: 5,
+        },
+      })
+    );
+    expect(state.query).toHaveBeenCalledTimes(calls);
+  });
+  it('removes a reassigned player and observes assignments missing from the filtered stream', async () => {
+    let players = [
+      { user_id: 'player-one', chip_balance: 20 },
+      { user_id: 'player-two', chip_balance: 30 },
+    ];
+    state.query.mockImplementation(async (name: string) => ({
+      data:
+        name === 'agents'
+          ? { id: 'agent', promo_wallet_balance: 500 }
+          : name === 'club_members'
+            ? players
+            : [],
+      error: null,
+    }));
+    render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" />);
+    await flush();
+    const event = state.channel.mock.calls[0][2];
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'player-one' } });
+    await act(async () =>
+      event({
+        eventType: 'UPDATE',
+        new: {
+          club_id: 'club-a',
+          user_id: 'player-one',
+          agent_id: null,
+          role: 'player',
+          chip_balance: 20,
+        },
+      })
+    );
+    expect(screen.queryByRole('option', { name: /Chips: 20$/ })).toBeNull();
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('');
+    players = [];
+    // A reassignment no longer matching agent_id may send no WAL event.
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(screen.getByText('No Players Assigned To You Yet.')).toBeDefined();
+  });
   it('refreshes only the narrow float every eight seconds and retains the low-cost membership carrier', async () => {
     render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" />);
     await flush();

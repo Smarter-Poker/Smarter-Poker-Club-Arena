@@ -139,3 +139,38 @@ is recorded here for the owner of the movement lane.
 ## Measured after apply
 
 Recorded on the pull request.
+
+## Addendum 13:40 UTC: superseded by 20260926091645, and the file is deleted
+
+This migration (`20260926092954`, PR #5328) merged at 09:38 UTC and was
+**never applied**. A different fix for the same refusal,
+`20260926091645_a_receipted_chip_is_movement_evidence`, had been applied to
+production earlier the same morning from branch
+`fix/f06-movement-receipt-admission-0926` (worktree `f06-movement-0926`). That
+branch was never pushed and has had no activity since 09:40 UTC. So main
+carried an unapplyable migration, and production ran a definition main did not
+have. `20260926092954`'s own preimage (`fn_f06_admit_parked_movement` md5
+`9bcb1b3b...`) can no longer match: production's door is `b77d5c53...`, the
+091645 definition. Applying it would refuse, which is correct.
+
+The live fix did the job. Read from rows:
+
+- Break dce8ddb0 is `acknowledged`. Its custody generation is a0d79cf9, a
+  live one; its origin 29afae24 is dead. `close_receipt` is closed, with 0
+  players left on 244a2997.
+- The members dealt on 26c00afc and 9e432569 from 09:36:14.
+- 7c6277e7 ran to COMPLETED at 09:50:11. 6b3f4393 won with 338,000 chips,
+  the whole field.
+- Prizes were paid once each through the terminal path: 142.64, 81.93 and
+  59.23. That is 283.80 = the escrow's `prize_out`, and `prize_balance` is
+  0.00.
+- One 1.20 burn row was also written.
+- No second prize row exists for any player.
+
+The same pull request brings 091645 onto main. Its file bytes match the
+recorded statement (md5 `0331cf932810322ea895b9f8b1bd707c`, 43,317 bytes). It
+also deletes 092954 and its schema-manifest promise of
+`smarter_private.f06_movement_abandoned_begun_proof` (a function that will
+never exist). That is the route `check-migrations-are-live.mjs` prescribes for
+a superseded migration. The law now pins the live door, with its own planted
+regressions.

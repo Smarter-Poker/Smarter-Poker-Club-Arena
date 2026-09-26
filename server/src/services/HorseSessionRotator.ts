@@ -103,7 +103,7 @@ export interface RotatorLeaveResult {
   success: boolean;
   error?: string;
   immediate?: boolean;
-  code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY';
+  code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY' | 'LIGHTNING_HAND_IN_PROGRESS';
   stay_remaining_ms?: number;
 }
 

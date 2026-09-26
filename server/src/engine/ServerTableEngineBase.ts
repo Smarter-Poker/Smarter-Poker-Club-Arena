@@ -65,6 +65,50 @@ import {
  * not pay for two extra row reads on every hand at every table.
  */
 const RAKE_CONFIG_TTL_MS = 60_000;
+
+/**
+ * THE HALT FIELDS ALONE, RE-READ EVERY FIVE SECONDS ON A CASH CLUSTER TABLE
+ * (Lightning 2.0 Phase 5 remediation, 2026-09-25).
+ *
+ * The conversion commit now refuses until every leased table of the Cluster
+ * has ACKNOWLEDGED its halt (`fn_cash_table_observe_dealing_halt`), so the
+ * time between the halt being written and each table reading it is time the
+ * whole Cluster stands in PENDING_ON. Riding RAKE_CONFIG_TTL_MS, that was up
+ * to a minute per table - and a busy table went on starting hands for that
+ * minute too.
+ *
+ * WHY FIVE SECONDS IS AFFORDABLE, against the database's CPU budget:
+ *   - WHO: only a cash table with a `cluster_id`, the only population the
+ *     column is ever written for, and at this rate only while that table is
+ *     halted or its Cluster has `lightning_enabled` (only such a Cluster can
+ *     be halted). Any other Cluster table polls once a minute
+ *     (DEALING_HALT_SLOW_TTL_MS); tournament tables and cash tables outside a
+ *     Cluster make no extra request at all.
+ *   - WHAT: one select of two columns by primary key. No join, no second
+ *     statement, and the SAME single writer (`applyDealingHaltFromRow`) as
+ *     the rule re-read, so the two can never disagree.
+ *   - HOW OFTEN: never more than once per five seconds per table, and less
+ *     when a fresher read already exists (the rule re-read and `start()` both
+ *     stamp the clock). A DEALING table asks at most once per hand, inside
+ *     the prepared-hand inputs and in parallel with the roster read, so it
+ *     adds no latency to the deal; a parked or quiet table asks once per pass.
+ *   - AGAINST WHAT IS ALREADY THERE: every pass of both loops already reads
+ *     the full roster with an embedded profile. This is a strictly smaller
+ *     request, on a strictly smaller population, at no higher a rate.
+ * Five seconds also matches the ClusterController's own pass (CLUSTER_TICK_MS),
+ * so a halt written by one pass is observed, at worst, one pass later.
+ */
+const DEALING_HALT_TTL_MS = 5_000;
+
+/**
+ * The halt poll's cadence for a Cluster table that is NOT halted and whose
+ * Cluster does not have Lightning enabled - which cannot be halted at all.
+ * The rule re-read's minute; see refreshDealingHalt.
+ */
+const DEALING_HALT_SLOW_TTL_MS = RAKE_CONFIG_TTL_MS;
+
+/** A failing halt read or acknowledgement is said once a minute per table, not every pass. */
+const DEALING_HALT_FAILURE_LOG_INTERVAL_MS = 60_000;
 import {
   loadTable,
   loadKillSettings,
@@ -82,6 +126,7 @@ import {
   type ParkedTimeBank,
   supabase,
   atomicCashout,
+  processLeavePending,
 } from '../services/supabase.js';
 import {
   collectNitEvictions,
@@ -119,6 +164,9 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { isMissingFunctionError } from '../lightning/rpcErrors.js';
+import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
+import { presenceFromFsm, type PresenceTableReport } from '../lightning/LightningPresence.js';
 import { subscribeBombRequests, unsubscribeBombRequests } from '../services/BombRequestBus.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
@@ -3273,8 +3321,11 @@ export abstract class ServerTableEngineBase {
        * place every table passes through on every start.
        */
       let tableData: unknown;
+      let haltReadSeq = 0;
       for (let attempt = 1; ; attempt++) {
         try {
+          // Sequenced BEFORE the request goes out (see beginDealingHaltRead).
+          haltReadSeq = this.beginDealingHaltRead();
           tableData = await loadTable(this.tableId);
           break;
         } catch (err) {
@@ -3298,7 +3349,7 @@ export abstract class ServerTableEngineBase {
          engine is new, the row is not - this is the read that makes a reaped
          and rebuilt engine honour a conversion that started before it existed,
          and it is why `dealing_halted_at` is in the loadTable select. */
-      this.applyDealingHaltFromRow(this.tableInfo);
+      this.applyDealingHaltFromRow(this.tableInfo, haltReadSeq);
 
       // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
       // moment the engine knows which tournament it serves. The cache used to
@@ -3539,6 +3590,20 @@ export abstract class ServerTableEngineBase {
         }
         firstWaitSweep = false;
 
+        /* A QUEUED LEAVE IS COMPLETED HERE TOO (2026-09-25). A leave the
+           database refused with LIGHTNING_HAND_IN_PROGRESS is written as a
+           durable `leave_pending` request and retried on every pass until
+           the Lightning hand is over. Above the halt gate on purpose, for the
+           reason `prepareNextHand` gives for its own sweep: it is a departure
+           the PLAYER asked for, not a decision the engine takes about a seat.
+           Asked only when the roster shows a `leave_pending` seat. */
+        try {
+          await this.sweepQueuedLeaves();
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_queued_leaves');
+        }
+        if (!this.lifecycleCanMutate()) return;
+
         /* ═══ THE QUIET TABLE HEARS THE CLUSTER'S HALT TOO ════════════════
            (Lightning 2.0 Phase 5 remediation, 2026-09-25)
 
@@ -3585,9 +3650,21 @@ export abstract class ServerTableEngineBase {
         if (!this.isTournamentTable() && this.tableInfo?.cluster_id) {
           await this.refreshRakeConfig();
           if (!this.lifecycleCanMutate()) return;
+          /* And the halt columns alone, on DEALING_HALT_TTL_MS: a new halt
+             (or its clearing) is seen within five seconds, not sixty. The
+             rule re-read above stamps the same clock, so this is a no-op on
+             a pass where that read just ran. */
+          await this.refreshDealingHalt();
+          if (!this.lifecycleCanMutate()) return;
         }
         if (this.dealingHaltLock) {
           this.setLoopPhase('cluster_dealing_halted');
+          /* Acknowledge the halt (the conversion waits for it), and let an
+             EMPTY table on a closed Cluster row end its engine: this branch
+             `continue`s before the line below that used to be the only
+             place a quiet table could do that. */
+          await this.passWhileDealingHalted();
+          if (!this.lifecycleCanMutate()) return;
           /* Read-only, and the one thing a halted quiet table still owes a
              client: someone opening it sees seats and stacks, not a spinner. */
           try {
@@ -4136,6 +4213,9 @@ export abstract class ServerTableEngineBase {
   ): void {
     const current = this.seatedPlayers.find((p) => p.user_id === userId);
     const original = occupancyId;
+    // The stay clock holds this leave now; its own release retries it, not
+    // the every-pass Lightning retry.
+    this.lightningDeferredLeaves?.delete(userId);
     if (!original || current?.occupancy_id !== original) return;
     this.leaveHeldByClock.set(userId, original);
     this.chipContinuity.noteRefusal(userId, stayRemainingMs);
@@ -4824,18 +4904,78 @@ export abstract class ServerTableEngineBase {
    *
    * THE LATENCY, STATED PLAINLY. The value is re-read by `refreshRakeConfig`,
    * throttled to RAKE_CONFIG_TTL_MS (60s) and called once per pass of the
-   * dealing loop through `prepareNextHand`. So a halt written now takes effect
-   * at the end of the hand in progress PLUS AT MOST 60 SECONDS (less in the
-   * usual case: the throttle runs from the last read, not from the halt), and
-   * the resume when a conversion aborts is bounded by the same 60 seconds -
-   * acceptance F04 costs a minute at worst. A rebuilt engine is immediate: it
-   * reads the row in `start()`. If Phase 5 ever needs a tighter bound the
-   * honest fix is a shorter TTL or a dedicated poll on this one column, not a
-   * second mechanism alongside this one.
+   * dealing loop through `prepareNextHand`. On its own that made a halt take
+   * effect at the end of the hand in progress PLUS AT MOST 60 SECONDS.
+   *
+   * THE TIGHTER BOUND (2026-09-25). The conversion commit now waits for every
+   * leased table to ACKNOWLEDGE the halt, so that minute became a minute the
+   * whole Cluster stood in PENDING_ON. The honest fix this comment always
+   * named has been taken: a dedicated poll on the halt columns alone,
+   * `refreshDealingHalt`, throttled to DEALING_HALT_TTL_MS (5s) for a cash
+   * table whose Cluster has Lightning enabled or which is halted, and feeding
+   * the SAME single writer below. Such a table asks inside the prepared-hand
+   * inputs, so a halt costs the hand in progress plus AT MOST 5 SECONDS plus
+   * the rest before the next deal; a parked one asks every pass, so the
+   * resume after an abort is bounded by the same 5 seconds. A Cluster table
+   * whose Cluster cannot be halted polls once a minute (it also learns
+   * `lightning_enabled` that way), and every other table keeps the 60-second
+   * rule re-read and nothing more. A rebuilt engine is immediate: it reads
+   * the row in `start()`. Every read is numbered before it is sent, and an
+   * answer older than one already applied, or sent before the acknowledgement,
+   * can never release the halt.
+   *
+   * THE ACKNOWLEDGEMENT. A table PARKED at either halt gate with no hand in
+   * progress calls `fn_cash_table_observe_dealing_halt` once per distinct
+   * `dealing_halted_at` value (`observeDealingHalt`). Parked is the whole
+   * promise: the loop leaves the gate only on a read that shows the column
+   * cleared, so a table that has acknowledged deals nothing more until the
+   * database itself says it may.
    */
   protected dealingHaltLock: boolean = false;
   /** Why the row says this table may not deal. Log copy; never a gate. */
   protected dealingHaltReason: string | null = null;
+  /**
+   * The row's `dealing_halted_at`, verbatim, while halted. The acknowledgement
+   * is owed once per distinct value: an abort clears it and a new begin writes
+   * a new one, and the new one must be acknowledged afresh.
+   */
+  protected dealingHaltedAt: string | null = null;
+  /** The `dealing_halted_at` value this engine has acknowledged, if any. */
+  protected dealingHaltObservedFor: string | null = null;
+  /** When the halt columns were last read by ANY path (start, rule re-read, halt poll). */
+  protected lastDealingHaltReadAtMs = 0;
+  /**
+   * ORDERING THE READS (verifier P1, 2026-09-26). Three reads carry the halt
+   * columns - `start()`'s loadTable, the rule re-read and the halt poll - and
+   * a step budget abandons a slow one without cancelling it, so answers can
+   * land out of order. Each read takes a number from `beginDealingHaltRead()`
+   * BEFORE its request is sent; an answer is applied only if its number is
+   * newer than the last one applied.
+   */
+  private dealingHaltReadSeq = 0;
+  private dealingHaltAppliedSeq = 0;
+  /**
+   * The newest read number issued when the acknowledgement was SENT. A read
+   * issued at or before it may have been answered before the halt was
+   * written, so it may never release a halt: after acknowledging, only a read
+   * the database answered afterwards can say the halt has lifted.
+   */
+  private dealingHaltAckBarrierSeq = 0;
+  /**
+   * `cash_games.lightning_enabled` of this table's Cluster, as the halt poll
+   * last read it; null until read (or when the read cannot embed it). Only a
+   * Lightning-enabled Cluster can be halted, so it is what earns the fast poll.
+   */
+  protected clusterLightningEnabled: boolean | null = null;
+  /** When the halt poll itself last ran; its slow cadence is kept on its own clock. */
+  private lastDealingHaltPollAtMs = 0;
+  /** The poll's embedded Cluster read failed once; fall back to the two columns. */
+  private dealingHaltEmbedUnavailable = false;
+  /** Rate limit for the halt poll's and the acknowledgement's failure lines. */
+  private readonly dealingHaltFailureLog = new RateLimitedLog(
+    DEALING_HALT_FAILURE_LOG_INTERVAL_MS,
+    8
+  );
 
   /**
    * Apply `tables.dealing_halted_at` from a freshly read row. The ONLY writer
@@ -4849,17 +4989,38 @@ export abstract class ServerTableEngineBase {
    * outcome the conversion cannot survive; failing closed costs a table
    * nothing but the next 60-second pass.
    */
-  protected applyDealingHaltFromRow(row: unknown): void {
+  /** Number a read that carries the halt columns. Call BEFORE sending it. */
+  protected beginDealingHaltRead(): number {
+    return ++this.dealingHaltReadSeq;
+  }
+
+  protected applyDealingHaltFromRow(
+    row: unknown,
+    readSeq: number = this.beginDealingHaltRead()
+  ): void {
     const fresh = (row ?? null) as {
       dealing_halted_at?: unknown;
       dealing_halted_reason?: unknown;
     } | null;
     if (!fresh) return;
+    // An answer older than one already applied says nothing new.
+    if (readSeq <= this.dealingHaltAppliedSeq) return;
     const halted = fresh.dealing_halted_at != null;
+    // A read sent before the acknowledgement may predate the halt itself;
+    // it can never be the one that lets an acknowledged table deal again.
+    if (!halted && this.dealingHaltLock && readSeq <= this.dealingHaltAckBarrierSeq) return;
+    this.dealingHaltAppliedSeq = readSeq;
     const reason =
       halted && typeof fresh.dealing_halted_reason === 'string'
         ? fresh.dealing_halted_reason
         : null;
+    const haltedAt = halted ? String(fresh.dealing_halted_at) : null;
+    // Any successful read of the columns is as fresh as the halt poll's own.
+    this.lastDealingHaltReadAtMs = Date.now();
+    const haltedAtChanged = haltedAt !== this.dealingHaltedAt;
+    this.dealingHaltedAt = haltedAt;
+    // A cleared halt owes no acknowledgement, and the next halt owes its own.
+    if (haltedAt === null) this.dealingHaltObservedFor = null;
     if (this.tableInfo) {
       // Keep the cached row honest too: `tableInfo` is what every other reader
       // of these two columns will reach for, and a boot-time snapshot of a
@@ -4868,7 +5029,10 @@ export abstract class ServerTableEngineBase {
       this.tableInfo.dealing_halted_at = halted ? String(fresh.dealing_halted_at) : null;
       this.tableInfo.dealing_halted_reason = reason;
     }
-    if (halted === this.dealingHaltLock && reason === this.dealingHaltReason) return;
+    if (halted === this.dealingHaltLock && reason === this.dealingHaltReason && !haltedAtChanged)
+      return;
+    // A new halt gets its own first leave sweep (see shouldSweepQueuedLeaves).
+    if (halted && !this.dealingHaltLock) this.queuedLeaveProbeDone = false;
     this.dealingHaltLock = halted;
     this.dealingHaltReason = reason;
     console.log(
@@ -4917,6 +5081,308 @@ export abstract class ServerTableEngineBase {
         `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
       );
       await this.stop();
+    }
+  }
+
+  /**
+   * The halt columns ALONE, on DEALING_HALT_TTL_MS (5s), for a cash table
+   * that belongs to a Cluster. See that constant for why the interval is
+   * affordable and `dealingHaltLock` for the contract.
+   *
+   * One select of two columns by primary key, applied through the one writer.
+   * A read that fails or finds no row leaves the lock exactly as it was, for
+   * the reason `applyDealingHaltFromRow` gives: failing open would resume a
+   * converting table on a database blip.
+   */
+  protected async refreshDealingHalt(): Promise<void> {
+    if (!this.tableInfo || this.isTournamentTable() || !this.tableInfo.cluster_id) return;
+    const now = Date.now();
+    /* THE FAST POLL IS EARNED (verifier P2, 2026-09-26). Only a Cluster with
+       Lightning enabled can be halted, so a table polls every
+       DEALING_HALT_TTL_MS only while it IS halted (to see the lift, and a new
+       halt value, quickly) or while its Cluster has `lightning_enabled`. Every
+       other Cluster table asks on DEALING_HALT_SLOW_TTL_MS - the rule
+       re-read's minute - on its own clock, because this read is also the one
+       that learns `lightning_enabled`. With every Cluster must_move and
+       Lightning off, that is one small select per table per minute instead of
+       twelve. */
+    const fast = this.dealingHaltLock || this.clusterLightningEnabled === true;
+    if (fast) {
+      if (now - this.lastDealingHaltReadAtMs < DEALING_HALT_TTL_MS) return;
+    } else if (now - this.lastDealingHaltPollAtMs < DEALING_HALT_SLOW_TTL_MS) {
+      return;
+    }
+    this.lastDealingHaltPollAtMs = now;
+    this.lastDealingHaltReadAtMs = now;
+    try {
+      const readSeq = this.beginDealingHaltRead();
+      let row: Record<string, unknown> | null = null;
+      if (!this.dealingHaltEmbedUnavailable) {
+        // One select: the two halt columns and the Cluster's Lightning switch,
+        // embedded through tables.cluster_id (hinted by column, so the
+        // constraint's name does not matter).
+        const embedded = await supabase
+          .from('tables')
+          .select(
+            'dealing_halted_at, dealing_halted_reason, cluster:cash_games!cluster_id(lightning_enabled)'
+          )
+          .eq('id', this.tableId)
+          .maybeSingle();
+        if (embedded.error) {
+          // Only a relationship PostgREST cannot resolve (PGRST200-series)
+          // retires the embed; anything else is a failed read, retried.
+          const code = String((embedded.error as { code?: unknown }).code ?? '');
+          if (!code.startsWith('PGRST20')) throw embedded.error;
+          this.dealingHaltEmbedUnavailable = true;
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] halt poll cannot embed cash_games.lightning_enabled ` +
+              `(${String((embedded.error as { message?: unknown }).message ?? embedded.error)}); ` +
+              'reading the halt columns alone on the slow cadence'
+          );
+        } else {
+          row = (embedded.data ?? null) as Record<string, unknown> | null;
+          const cluster = Array.isArray(row?.cluster) ? row?.cluster[0] : row?.cluster;
+          const enabled = (cluster as { lightning_enabled?: unknown } | null | undefined)
+            ?.lightning_enabled;
+          this.clusterLightningEnabled = typeof enabled === 'boolean' ? enabled : null;
+        }
+      }
+      if (this.dealingHaltEmbedUnavailable) {
+        const { data, error } = await supabase
+          .from('tables')
+          .select('dealing_halted_at, dealing_halted_reason')
+          .eq('id', this.tableId)
+          .maybeSingle();
+        if (error) throw error;
+        row = (data ?? null) as Record<string, unknown> | null;
+      }
+      this.applyDealingHaltFromRow(row, readSeq);
+    } catch (err) {
+      if (this.dealingHaltFailureLog.shouldLog('read')) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.dealing_halt_read_failed');
+      }
+    }
+  }
+
+  /**
+   * ACKNOWLEDGE THE HALT (Lightning 2.0 Phase 5 remediation, 2026-09-25).
+   *
+   * The conversion commit refuses until every leased member table has
+   * acknowledged, through `fn_cash_table_observe_dealing_halt`, that it is
+   * parked at a halt gate with no hand in progress. Called ONLY from the two
+   * halt gates (the dealing loop's and the quiet loop's), so "parked" is true
+   * by construction, and re-checked here for the hand and the settlement,
+   * so a future caller cannot acknowledge from the middle of one.
+   *
+   * ONCE PER DISTINCT `dealing_halted_at`. A value already acknowledged is not
+   * sent again; a new value (an abort followed by a new begin) is.
+   *
+   * WHY THE ANSWER IS SAFE TO GIVE. After this call the loop leaves the gate
+   * only on a read that shows the column cleared. That read happens after
+   * this call returned, so the database's clearing of the halt came before
+   * it, and any LATER halt carries a later `dealing_halted_at` than the
+   * acknowledgement this call recorded - it can never be mistaken for one.
+   *
+   * NEVER A FAULT. A failure - including PGRST202 while the migration is not
+   * yet live - is logged at most once a minute and retried on the next park
+   * pass. The table stays parked either way: an acknowledgement is the one
+   * thing a halted table owes, and not being able to give it is no reason to
+   * deal. A null answer means the database holds no halt for this table (it
+   * was cleared between our read and this call); nothing is recorded, and the
+   * next read will release the gate.
+   */
+  protected async observeDealingHalt(): Promise<void> {
+    if (!this.dealingHaltLock || this.dealingHaltedAt === null) return;
+    if (this.dealingHaltObservedFor === this.dealingHaltedAt) return;
+    if (this.handController !== null || this.hasSettlementInFlight()) return;
+    const haltedAt = this.dealingHaltedAt;
+    // Every read already sent is older than this acknowledgement: none of
+    // them may release the halt it acknowledges (applyDealingHaltFromRow).
+    this.dealingHaltAckBarrierSeq = this.dealingHaltReadSeq;
+    try {
+      const { data, error } = await supabase.rpc('fn_cash_table_observe_dealing_halt', {
+        p_table_id: this.tableId,
+      });
+      if (error) throw error;
+      if (data === null || data === undefined) {
+        if (this.dealingHaltFailureLog.shouldLog('observe_null')) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] halt acknowledgement found no halt to acknowledge - ` +
+              'waiting for the next read'
+          );
+        }
+        return;
+      }
+      if (!this.dealingHaltLock || this.dealingHaltedAt !== haltedAt) return;
+      this.dealingHaltObservedFor = haltedAt;
+      this.dealingHaltFailureLog.forget('observe');
+      console.log(
+        `[ServerTableEngine:${this.tableId}] cluster halt acknowledged (halted at ${haltedAt}, ` +
+          `observed at ${String(data)}) - parked with no hand in progress`
+      );
+    } catch (err) {
+      if (!this.dealingHaltFailureLog.shouldLog('observe')) return;
+      if (isMissingFunctionError(err)) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] fn_cash_table_observe_dealing_halt is not available ` +
+            'yet - the table stays parked and retries on its next pass'
+        );
+        return;
+      }
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.dealing_halt_observe_failed');
+    }
+  }
+
+  /**
+   * One pass of a table parked at a halt gate: finish any departure the
+   * player asked for, acknowledge the halt, and let an EMPTY table on a
+   * closed Cluster row end its engine. Nothing here deals, moves a seat the
+   * player did not ask to move, or touches a stack.
+   *
+   * `stopIfClusterTableClosed` belongs here because both halt branches
+   * `continue` before the line that used to reach it, so a halted table that
+   * emptied and was closed kept an engine for ever. It is safe under a halt:
+   * it demands a closed row AND zero seated players, and moves no chip.
+   */
+  protected async passWhileDealingHalted(): Promise<void> {
+    await this.completeQueuedLeavesWhileHalted();
+    if (!this.lifecycleCanMutate()) return;
+    await this.observeDealingHalt();
+    if (!this.lifecycleCanMutate()) return;
+    await this.stopIfClusterTableClosed().catch((err) =>
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.halted_cluster_closed')
+    );
+  }
+
+  /**
+   * The quiet loop's queued-leave retry; the dealing loop overrides this to
+   * take the sweep `prepareNextHand` already launched. See sweepQueuedLeaves.
+   */
+  protected async completeQueuedLeavesWhileHalted(): Promise<void> {
+    /* The quiet loop runs its own sweep above its gate; nothing to take here. */
+  }
+
+  /**
+   * Leaves the database deferred with LIGHTNING_HAND_IN_PROGRESS, by user,
+   * holding the occupancy that asked (verifier P3, 2026-09-26). THESE are
+   * retried every pass; a leave the stay clock is holding is not - it has its
+   * own release (`releaseLeavesHeldByClock`), and sweeping it every pass would
+   * only ask the database a question whose answer is already known.
+   */
+  protected lightningDeferredLeaves = new Map<string, string>();
+  /**
+   * Whether this halt (or, outside a halt, this engine) has already swept the
+   * `leave_pending` seats once. The one probe is what finds a Lightning
+   * deferral after a restart, when the map above is empty; after it, only
+   * deferred seats earn a retry.
+   */
+  protected queuedLeaveProbeDone = false;
+
+  protected noteLightningDeferredLeave(userId: string, occupancyId: string): void {
+    // Tolerates an engine built with `Object.create(ServerTableEngine.prototype)`,
+    // the harness several tests use, where no field initialiser has run.
+    if (!(this.lightningDeferredLeaves instanceof Map)) this.lightningDeferredLeaves = new Map();
+    this.lightningDeferredLeaves.set(userId, occupancyId);
+  }
+
+  /**
+   * Should a pass sweep `leave_pending` seats? Yes while a seated occupancy
+   * has a Lightning-deferred leave; otherwise once (per halt, and once per
+   * engine outside one) if the roster shows any `leave_pending` seat at all.
+   * Deferrals for occupancies no longer seated are forgotten here.
+   */
+  protected shouldSweepQueuedLeaves(): boolean {
+    if (!(this.lightningDeferredLeaves instanceof Map)) this.lightningDeferredLeaves = new Map();
+    for (const [userId, occupancyId] of [...this.lightningDeferredLeaves]) {
+      const seat = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!seat || seat.occupancy_id !== occupancyId) this.lightningDeferredLeaves?.delete(userId);
+    }
+    if (this.lightningDeferredLeaves.size > 0) return true;
+    return !this.queuedLeaveProbeDone && this.seatedPlayers.some((p) => p.leave_pending === true);
+  }
+
+  /**
+   * Everything the engine holds for a player who has left, forgotten in one
+   * place - the disconnect FSM, the time bank, the straddle, the pre-action,
+   * the stay-clock hold and the continuity mirror - and the seat dropped from
+   * the roster. Keyed by occupancy, so a player who has already rejoined in a
+   * new seat keeps the new seat's state.
+   */
+  protected releaseDepartedSeats(departed: Array<{ userId: string; occupancyId: string }>): void {
+    for (const { userId: leftUserId, occupancyId } of departed) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === leftUserId);
+      if (current && current.occupancy_id !== occupancyId) continue;
+      this.disconnectEngine.unregisterPlayer(this.tableId, leftUserId);
+      this.forgetTimeBank(leftUserId);
+      this.straddleEngine.removePlayer(this.tableId, leftUserId);
+      this.preActionEngine.removePlayer(this.tableId, leftUserId);
+      this.leaveHeldByClock.delete(leftUserId);
+      this.chipContinuity.forget(leftUserId);
+      this.lightningDeferredLeaves?.delete(leftUserId);
+    }
+    if (departed.length > 0) {
+      this.seatedPlayers = this.seatedPlayers.filter(
+        (sp) =>
+          !departed.some(
+            (left) => left.userId === sp.user_id && left.occupancyId === sp.occupancy_id
+          )
+      );
+    }
+  }
+
+  /**
+   * A LEAVE THE DATABASE SAID "NOT NOW" TO IS RETRIED ON THE NEXT PASS
+   * (Lightning 2.0 Phase 5 remediation, 2026-09-25).
+   *
+   * A player in a live Lightning hand cannot have their seat's stack or
+   * `left_at` changed: the database refuses with LIGHTNING_HAND_IN_PROGRESS.
+   * `leaveTable` answers that by writing the durable `leave_pending` request
+   * and telling the client the leave is queued, so the request survives this
+   * process. This is what completes it.
+   *
+   * The dealing loop's `prepareNextHand` sweep already covers a DEALING table.
+   * A table below the minimum to deal lives in `start()`'s wait loop, which
+   * had no sweep at all (every leave there used to be immediate), so a queued
+   * leave on a quiet table would have waited for a hand that might never come.
+   *
+   * Asked only when `shouldSweepQueuedLeaves()` says so: every pass while a
+   * seated occupancy has a Lightning-deferred leave, and otherwise once per
+   * engine when the roster shows a `leave_pending` seat (the probe that finds
+   * a deferral after a restart). A leave the stay clock holds is released by
+   * `releaseLeavesHeldByClock`, not by retrying here, and a quiet table with
+   * nobody leaving makes no extra request. `processLeavePending` keeps a
+   * refused seat pending (stay clock or Lightning hand) and reports only the
+   * seats that actually left, each through its own one-transaction cash-out,
+   * so a retry can neither drop the leave nor pay it twice.
+   */
+  protected async sweepQueuedLeaves(): Promise<void> {
+    if (this.isTournamentTable() || !this.shouldSweepQueuedLeaves()) return;
+    // CLAUDE.md 13 rule 5: a sweep that moves money checks the freeze first.
+    if (isMaintenanceFrozen()) return;
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      if (!this.lifecycleCanMutate()) return;
+      this.queuedLeaveProbeDone = true;
+      const departed = await processLeavePending(
+        this.tableId,
+        this.tableInfo?.club_id || '',
+        (lockedUserId, stayRemainingMs, occupancyId) => {
+          // Now the stay clock's to release, not this sweep's.
+          this.lightningDeferredLeaves?.delete(lockedUserId);
+          this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
+        },
+        undefined,
+        undefined,
+        (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
+      );
+      if (!this.lifecycleCanMutate()) return;
+      this.releaseDepartedSeats(departed);
+      if (departed.length > 0) {
+        this.wakeClusterGame('seat_left');
+        void this.broadcastCurrentState();
+      }
+    } finally {
+      releaseSeatBoundary();
     }
   }
 
@@ -5635,6 +6101,28 @@ export abstract class ServerTableEngineBase {
       seat_number: p.seat_number,
       is_horse: !!p.is_horse,
     }));
+  }
+
+  /**
+   * LIGHTNING PRESENCE (2026-09-25): what this engine knows about the clients
+   * of the players seated at it, for the Lightning worker's p_disconnected
+   * feed. Read-only, synchronous, no I/O. Every seated player is reported -
+   * horses exactly as humans (CLAUDE.md 10.5) - and a player this engine has
+   * no presence entry for is `unknown`, never assumed present. See
+   * src/lightning/LightningPresence.ts for how the feed uses it.
+   */
+  lightningPresenceReport(): PresenceTableReport {
+    return {
+      tableId: this.tableId,
+      clusterId: this.isTournamentTable() ? null : (this.tableInfo?.cluster_id ?? null),
+      players: this.seatedPlayers.map((p) => ({
+        userId: p.user_id,
+        presence: presenceFromFsm(
+          this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state ?? null,
+          this.disconnectEngine.isConnected(this.tableId, p.user_id)
+        ),
+      })),
+    };
   }
 
   /** Local fields only. No writer join, authority check, RPC or cleanup. */
@@ -6811,8 +7299,14 @@ export abstract class ServerTableEngineBase {
     this.pauseMaxWaitMs = null;
     this.pauseRequiresExplicitResume = false;
     this.holdBeforeNextHand = false;
-    // Bible V8 §3.1: Table FSM — paused → running
-    if (this.tableFSM.state === 'paused' && !this.adminPauseLock && !this.maintenanceLock) {
+    // Bible V8 §3.1: Table FSM, paused to running, and only when NOTHING
+    // forbids the next hand. This used to name two of the polled owners
+    // (admin pause, maintenance lock) and miss the third: a maintenance break
+    // lifting over a Cluster-halted table relabelled it 'running' while it was
+    // still parked at the halt gate. isNextHandPaused() is the one list of
+    // every owner; the owner being released has already cleared its own flag
+    // and `holdBeforeNextHand` above, so it cannot hold the edge closed itself.
+    if (this.tableFSM.state === 'paused' && !this.isNextHandPaused()) {
       this.tableFSM.transition('running');
     }
     this.releasePendingPauseWait();
@@ -8259,6 +8753,9 @@ export abstract class ServerTableEngineBase {
     if (!force && now - this.lastRakeRefreshAtMs < RAKE_CONFIG_TTL_MS) return;
     this.lastRakeRefreshAtMs = now;
     try {
+      // Sequenced BEFORE the request goes out: this read carries the halt
+      // columns too, and a late answer must not overrule a newer one.
+      const haltReadSeq = this.beginDealingHaltRead();
       const ruleRead = supabase
         .from('tables')
         .select(
@@ -8291,7 +8788,7 @@ export abstract class ServerTableEngineBase {
          not admit must still stop dealing when its Cluster says so. It is also
          the only assignment in this method that is not a "rule the player was
          sold under the game's name". */
-      this.applyDealingHaltFromRow(tableRow);
+      this.applyDealingHaltFromRow(tableRow, haltReadSeq);
       /* A DIAMOND TABLE'S RULES DO NOT LEAVE THE BOUNDARY UNDER IT (2026-09-11,
          restated 2026-09-12 when straddles and run it twice were admitted).
 

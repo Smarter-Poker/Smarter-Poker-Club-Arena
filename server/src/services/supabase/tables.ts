@@ -259,7 +259,7 @@ export async function loadSeatedPlayers(tableId: string) {
 }
 
 const SEAT_SELECT =
-  'id, joined_at, user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
+  'id, joined_at, user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed, leave_pending';
 
 interface SeatRow {
   id: string;
@@ -274,6 +274,7 @@ interface SeatRow {
   sit_out_at?: string | null;
   entry_hold?: string | null;
   entry_post_agreed?: boolean | null;
+  leave_pending?: boolean | null;
 }
 
 interface SeatedProfileRow extends ArenaNameProfile {
@@ -318,6 +319,7 @@ function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
     sit_out_at: seat.sit_out_at ?? null,
     entry_hold: seat.entry_hold ?? null,
     entry_post_agreed: seat.entry_post_agreed === true,
+    leave_pending: seat.leave_pending === true,
     avatar_url: profile.avatar_url || '',
     equipped_frame: profile.equipped_frame || '',
     equipped_aura: profile.equipped_aura || '',

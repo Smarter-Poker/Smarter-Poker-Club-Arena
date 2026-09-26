@@ -3797,7 +3797,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // Owed the moment the cash-out commits, so a later seat's timeout or a
         // rejected sibling read cannot take the teardown with it.
         (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId),
-        diagnostic?.departures
+        diagnostic?.departures,
+        // Lightning (2026-09-26): a seat deferred here is retried every pass.
+        (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
       ),
       this.tableInfo?.cluster_id
         ? pendingSeatMoves(this.tableId, diagnostic?.move_read)

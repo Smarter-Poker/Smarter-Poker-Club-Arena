@@ -61,3 +61,44 @@ number that cannot change. The sit-out eviction below the gate is the opposite c
 stopped: that player asked for nothing. The per-player teardown sits below the gate too,
 so a halt defers it to the first pass after the lift rather than losing it, and no second
 sweep can start while the first is un-taken.
+
+REMEDIATION, 2026-09-25 (second pass) - THE TABLE ACKNOWLEDGES, HEARS FAST, AND STAYS HEALTHY
+WHILE PARKED. The conversion commit now refuses until every leased member table has
+ACKNOWLEDGED its halt, so a table parked at either halt gate with no hand in progress calls
+`fn_cash_table_observe_dealing_halt(p_table_id)` once per distinct `dealing_halted_at` value
+(`observeDealingHalt`), calls it again when the value changes (an abort followed by a new
+begin), forgets the acknowledgement when the column clears, and treats every failure -
+PGRST202 while the migration is not yet live included - as "retry on the next parked pass",
+logged at most once a minute and never a reason to deal. Once acknowledged the table leaves
+the gate only on a read showing the column cleared, which is what makes the answer true. A
+cash table with a `cluster_id` also re-reads the two halt columns alone on
+`DEALING_HALT_TTL_MS` (5s) through `refreshDealingHalt` - one select, primary key, the same
+single writer - inside the prepared-hand inputs (once per hand, in parallel with the roster,
+honoured by the `isNextHandPaused()` check after the rest with no second read there, so the
+two-second rest law is untouched), and on every parked or quiet pass; every other table
+keeps only the 60-second rule re-read, so the halt costs a dealing Cluster table the hand in
+progress plus at most five seconds. Both halt branches now run `passWhileDealingHalted`, which
+reaches `stopIfClusterTableClosed` (an EMPTY table on a closed row ends its engine; a seated
+one never does), the dealing branch resets `consecutiveErrors` after each completed parked pass
+so a long conversion cannot age a table into `dealing_loop_10_consecutive_errors`, and
+`releasePauseGate` relabels a paused table `running` only when `isNextHandPaused()` names no
+owner, so a maintenance break lifting over a halted table leaves it `paused`. The `leave_pending`
+sweep above the gate is no longer one-per-halt: the database refuses a seat change for a player
+in a live Lightning hand with LIGHTNING_HAND_IN_PROGRESS, `leaveTable` answers that by writing
+the durable `leave_pending` request and telling the client the leave is queued, and a halted
+table re-arms the sweep on every pass while its roster shows a leaver (the halt branch takes
+the prepared sweep and releases the departed seats), while a quiet table runs
+`sweepQueuedLeaves` above its own gate. A deferred seat is never reported as departed, and
+every retry is the same occupancy-keyed one-transaction cash-out, so the leave is neither
+dropped nor paid twice.
+
+VERIFIER FIXES, 2026-09-26. Every read that carries the halt columns (`start()`'s loadTable,
+the rule re-read, the halt poll) takes a number from `beginDealingHaltRead()` before it is
+sent; `applyDealingHaltFromRow` ignores an answer older than one already applied, and a read
+sent before the acknowledgement can never release the halt it acknowledged, so a step budget
+abandoning a slow rule read cannot let a late, pre-halt answer lift an acknowledged halt. The
+5-second poll is earned: it runs only while the table is halted or its Cluster has
+`lightning_enabled` (read in the same select through `cash_games!cluster_id`); any other
+Cluster table polls once a minute. The every-pass leave retry covers only seats deferred by
+LIGHTNING_HAND_IN_PROGRESS (tracked in memory, found after a restart by one probe per halt or
+engine start); a leave the stay clock holds keeps its own release.

@@ -122,13 +122,14 @@ describe('the jackpot subscription watches the row the jackpot came from', () =>
     );
   });
 
-  it('rebinds the channel when the pool id resolves', () => {
-    // The first fetch is what produces the id. Without it in the deps the
-    // subscription stays on the pre-fetch fallback for the life of the mount.
-    const dep = WALLET.match(
-      /\}, \[userId, resolvedId, currentUnionId, bbjPoolId, channelEpoch, variant\]\);/
-    );
-    expect(dep, 'bbjPoolId is not in the realtime effect deps').not.toBeNull();
+  it('rebinds and releases the shared jackpot watch when the club resolves', () => {
+    // The shared source resolves the pool on the server. The wallet must
+    // return its unsubscribe and rebind on the resolved club, including when
+    // switching into or out of the arena's diamond-only wallet.
+    const watch = sliceEnclosingBlock(WALLET, 'return watchBbjPool(resolvedId,');
+    expect(watch).toContain('if (!isMounted.current) return;');
+    expect(WALLET).toContain('return watchBbjPool(resolvedId,');
+    expect(WALLET).toMatch(/\}, \[resolvedId, hasChipWallet\]\);/);
   });
 });
 

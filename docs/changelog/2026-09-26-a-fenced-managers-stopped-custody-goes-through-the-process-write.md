@@ -108,3 +108,24 @@ The first apply at 13:14Z revoked the trigger function from `PUBLIC` and from
 names `PUBLIC`, so the file now does that. The single statement was executed on
 production (a no-op, same ACL `{postgres=X/postgres}`), and the history row was
 re-recorded with the file's exact bytes (md5 `cebc8f96d9af8358005802b7858ec8f4`).
+
+## What happened next, and the busy lock (20260926145903)
+
+- 13:53Z fan-out: `stopped_bank_custody_stuck` on `cd5892e8` fell from 629 to 100. The refusals were, from postgres logs: `custody_transfer_busy` 123,
+  `mixed_transfer_recorded` 82, `newer_park` 2, `hand_after_custody` 2.
+- The 13:55Z break certified at 13:56:26Z (`unparked_at_countdown` 0). That was
+  too late for the 260000ms admission. A release transaction then requested a
+  "Deployment Recovery" window at 14:03:37Z. `f2e484a3` (which carries #5323 and
+  `243b0318`) was admitted in it and sealed at 14:09:10Z: deploy attempt #717,
+  `shipped = true`.
+- At the 14:55Z countdown `f2e484a3` reported `stopped_bank_custody_unwritten: 17`.
+  At the 14:53Z fan-out it called `fn_park_stopped_time_bank_custody` 48 times
+  and 29 parked. Siblings of one tournament call it at the same instant, and
+  its retired-origin lock was a try-lock, so it answered `custody_transfer_busy`
+  at once, and the engine asks again only an hour later.
+
+Migration `20260926145903` makes `fn_park_stopped_time_bank_custody` ask for
+that lock again, at most 40 times and 25 ms apart (about one second), before it
+answers busy. The lock is still taken before anything is read or written.
+Every refusal, the ACL and the write paths are unchanged. Law:
+`tests/a-busy-custody-lock-is-waited-for-briefly.law.test.ts`.

@@ -215,7 +215,9 @@ describe('the club Promo Wallet cashier stands at the right account', () => {
   });
 
   it('reads BOTH accounts on open, so the switch never shows a fabricated balance', () => {
-    expect(cashier).toMatch(/select\('id, name, union_id, chip_treasury, promo_balance'\)/);
+    expect(stripComments(read('src/services/cashierBalanceRead.ts'))).toMatch(
+      /select\('id, name, union_id, chip_treasury, promo_balance'\)/
+    );
     expect(cashier).toContain('setPromoPot(');
     expect(cashier).toContain('setPromoFloat(');
     expect(cashier).toMatch(/setBank\(promoSource === 'club_pot' \? promoPot : promoFloat\)/);

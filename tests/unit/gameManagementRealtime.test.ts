@@ -40,7 +40,7 @@ describe('Table Management realtime and observability architecture', () => {
     expect(globalSync).toContain("masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED'");
   });
 
-  it('refreshes every management surface from named events without polling', () => {
+  it('refreshes every management surface through named events from the visible feed', () => {
     expect(page).toContain('useGameManagementRealtime');
     expect(page).toContain("['GAME_MANAGEMENT_ACCESS_CHANGED']");
     expect(ticker).toContain("'TICKER_SETTINGS_CHANGED'");

@@ -1210,7 +1210,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
      having just been superseded.
 
      An access change alters what the operator is allowed to see. onResync
-     fires when the realtime channel has just (re)subscribed and is saying "I
+     fires when the visible management feed has (re)connected and is saying "I
      may have missed something", which is precisely the moment a rate limit
      must not add delay. */
   useMasterBusSubscriptions(
@@ -1437,11 +1437,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           <div className={styles.headerRight}>
             <div className={styles.countRail}>
               <span
-                className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}
+                className={realtimeStatus === 'current' ? styles.healthGood : styles.healthWarn}
                 role="status"
                 aria-live="polite"
               >
-                <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
+                <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
+                Automatically
               </span>
               <span>
                 <strong>{liveCount}</strong> Live

@@ -1,0 +1,3 @@
+# tests/a-busy-custody-lock-is-waited-for-briefly.law.test.ts
+
+`fn_park_stopped_time_bank_custody` asks for the tournament's retired-origin lock at most 40 times, 25 ms apart, before it answers `custody_transfer_busy`, so terminal engines of one tournament that write their stopped time-bank custody at the same :53 fan-out no longer refuse each other for a whole hour; the lock is still taken before anything is read or written, and every refusal, the `ON CONFLICT DO NOTHING` insert and the absence of `ON CONFLICT DO UPDATE` from #5323 are unchanged (migration 20260926145903, applied 2026-09-26 15:03Z).

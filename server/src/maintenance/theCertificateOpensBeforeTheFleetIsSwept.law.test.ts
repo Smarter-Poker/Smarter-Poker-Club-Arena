@@ -230,12 +230,15 @@ describe('the certificate opens before the fleet is swept', () => {
   // ── 5. THE RELEASE GATE NEVER PASSES OVER A BANK ─────────────────────────
   it('keeps every stopped-custody reason out of the release allow-list', () => {
     const sh = read(`../../scripts/engine-${RELEASE_SH}.sh`);
-    const allow = sh.match(/^PREPARATION_ONLY=\{(.*)\}$/m);
+    const allow = sh.match(/^BOUNDED_ONLY=\{(.*)\}$/m);
     expect(allow, 'the allow-list must stay a literal set').toBeTruthy();
     // An ALLOW-list, never a deny-list (the script says so itself). A bank
     // class must never be admitted into it: `bank_park_write_incomplete` was
     // deliberately kept fatal because passing it over can cost a player their
-    // time bank, and these two are the same class.
+    // time bank, and every custody name is the same class - including
+    // `stopped_bank_custody_stuck`, which #5266 admitted on 2026-09-25 and
+    // #5267 took back out on 2026-09-26: on a build with this law's own
+    // announcement write, custody past the bound is a bank still not on disk.
     expect(allow![1]).not.toContain('bank');
     expect(allow![1]).not.toContain('custody');
   });

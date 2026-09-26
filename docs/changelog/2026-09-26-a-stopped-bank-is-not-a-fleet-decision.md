@@ -185,3 +185,26 @@ custody count restarts from zero at each process start and climbs (0 at the
 01:55 countdown after a restart, 29 at the 02:07 recovery window), so a
 cutover off it needs a break at which it reads zero. No release-script
 exception was added for it.
+
+## #5266 merged first (02:25:46 UTC, autopilot)
+
+#5266 was squash-merged (16dfb5df08) while this was being reconciled. This PR
+therefore merges main and corrects it in place rather than superseding it:
+
+- `BOUNDED_ONLY` loses `stopped_bank_custody_stuck`; the
+  `theCertificateOpensBeforeTheFleetIsSwept` pin goes back to "no `bank`, no
+  `custody` in the set".
+- The engine side is replaced by the registry version above (same shared
+  helper; past the bound: named, still refusing).
+- #5266's tests are kept case for case with the verdict changed:
+  `theGateSaysWhyItIsShut` (six cases), and
+  `tests/a-stopped-bank-that-can-never-be-released-does-not-hold-the-restart-shut.law.test.ts`
+  section 1 now pins that `stopped_bank_custody_stuck` is refused from every
+  serving release, alone or mixed with preparation reasons.
+- Left untouched, for the release owner to rule on: #5266's exact-SHA
+  exception admitting the raw `stopped_bank_custody_unconfirmed` when the
+  serving release is `778075b4`. That is a custody reason in the release
+  allow-list. It is also, as far as the code shows, the only route off
+  `778075b4` other than a break that happens to read zero custody: that build
+  cannot persist the custody it holds, so any restart of it discards that
+  custody anyway, including the unplanned one at 01:58 UTC.

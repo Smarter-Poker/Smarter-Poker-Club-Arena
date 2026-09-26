@@ -308,7 +308,7 @@ describe('every restart blocker declares its bound', () => {
 
   it('keeps every bank and custody name out of the release allow-list', () => {
     const sh = read('../../scripts/engine-release-transaction.sh');
-    const allow = sh.match(/^PREPARATION_ONLY=\{(.*)\}$/m);
+    const allow = sh.match(/^BOUNDED_ONLY=\{(.*)\}$/m);
     expect(allow, 'the allow-list must stay a literal set').toBeTruthy();
     expect(allow![1]).not.toMatch(/bank|custody/);
   });

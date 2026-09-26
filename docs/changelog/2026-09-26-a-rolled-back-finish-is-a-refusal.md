@@ -52,3 +52,56 @@ new negative proofs:
 This does not change the finish lane, the lock timeout or any database function.
 The lane holder waiting on a row lock is its own question, and it belongs to the
 lane's owners.
+
+## And the rakeback settler: a durable deferral is a deferral, however long it took to arrive
+
+The same PR changes `server/src/services/RakebackSettlerService.ts`; law
+`server/src/services/aDurableDeferralIsADeferral.law.test.ts`.
+
+The settler's cursor held at 2026-09-22 18:29:21 from 04:19 UTC, and the engine
+log explains it. Every cycle logged `fn_rakeback_recompute_periods failed ...
+supabase_timeout; durable receipt not confirmed: request is blocked, not a ready
+user-scoped receipt`, followed by `286 period recompute(s) failed ... holding the
+watermark`.
+
+While the settler catches up, every page-scoped recompute of the open week is
+refused with `cash_source_receipts_incomplete`, because the hands after the page
+have no sources yet. The function records that deferral on its request row in
+the same transaction.
+
+The two paths treated that deferral differently:
+
+- **Direct response.** When the response arrived inside the 15 s client deadline,
+  `readPeriodRecomputeReceipt` accepted it as a durable deferral and the page
+  advanced. The weekly close recomputes the whole period later.
+- **Read-back.** The blocked path measured 11.2 s idle and 18.9-28.4 s under load
+  on 2026-09-26. When the response was lost, the read-back from #5269 refused the
+  identical durable deferral.
+
+So the cursor could only move when the database happened to be quick.
+
+`judgePeriodRecomputeReceipt` now returns `deferred` for a row that meets all of
+these:
+
+- it is fresh (attempted at or after this call);
+- it is `blocked`;
+- it carries a request id;
+- its receipt is the canonical deferral for exactly that club and week: version 2,
+  status blocked, 0 written, a named reason, no error or failure.
+
+The caller counts that row exactly as it counts a direct deferral.
+
+These are still refused, as 11 negative cases in the law and the existing
+`rakebackWatermark.test.ts` pins show:
+
+- a stale row;
+- an anonymous row;
+- a receipt for another club or week;
+- a receipt that wrote something;
+- a receipt without a reason, or of another version;
+- a receipt carrying a failure or an error;
+- a receipt another writer cleared;
+- a ready receipt on a blocked row.
+
+Negative proof: both new tests fail against the previous
+`RakebackSettlerService.ts`.

@@ -1304,6 +1304,39 @@ describe('a timed-out period recompute reads its durable receipt', () => {
     held();
   });
 
+  it('accepts the deferral this call committed after the client gave up, and advances the source cursor', async () => {
+    // The live shape of 2026-09-26: the open week is incomplete behind the
+    // page, the blocked path outlives DB_TIMEOUT_MS, and the function records
+    // its deferral on the request row in the same transaction.
+    setup(() =>
+      Date.now() < COMMIT_AT
+        ? requestRow({})
+        : requestRow({
+            id: 'c0d4b8e2-2a6f-4c55-9b0e-6e8a2f1d9a31',
+            status: 'blocked',
+            attempted_at: pgInstant(COMMIT_AT),
+            last_result: {
+              ...readyReceipt(0),
+              status: 'blocked',
+              written: 0,
+              reason: 'cash_source_receipts_incomplete',
+              source_count: 316722,
+            },
+          })
+    );
+    recomputeTimesOut();
+    expect(await runFor(90_000)).toBe('more');
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(200),
+      high_water_mark_id: uid(1),
+    });
+    expect(
+      mockReportError.mock.calls.some(([, label]) =>
+        String(label).startsWith('RakebackSettler.period_recompute')
+      )
+    ).toBe(false);
+  });
+
   it('does not read back a definite server error, which rolled back', async () => {
     setup(() => requestRow({ attempted_at: pgInstant(COMMIT_AT), last_result: readyReceipt(1) }));
     recomputeTimesOut({ message: 'canceling statement due to statement timeout', code: '57014' });

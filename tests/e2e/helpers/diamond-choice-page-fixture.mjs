@@ -42,7 +42,10 @@ export function diamondChoicePageFixture() {
       clubIdResolver: `export const resolveClubUUID=async()=> 'club-fixture-0000-4000-8000-000000000001';`,
       errorReporter: `export const reportError=console.error;`,
       HapticService: `export const triggerHaptic=()=>{};`,
-      SoundService: `export const soundService={playWin:()=>{},playBigWin:()=>{},playSpinTick:()=>{},playSpinStart:()=>{},playSpinTicking:()=>{},playSpinPeg:()=>{},playSpinResult:()=>{},playSpinMultiplierResult:()=>{}};`,
+      // Every cue is a no-op, whatever its name: the scenes play their own sounds
+      // (2026-09-26) and a fixed list of method names broke the build each time a
+      // cue was added. PLINKO_PEG_GAP_MS mirrors src/services/SoundService.ts.
+      SoundService: `export const soundService=new Proxy({},{get:()=>()=>{}});export const haptic=new Proxy({},{get:()=>()=>{}});export const PLINKO_PEG_GAP_MS=30;`,
       supabase: `export const supabase={rpc:async()=>({data:{ok:true,commit_id:'commit-fixture-0001',server_seed_hash:'a'.repeat(64)},error:null}),from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:null,error:null})})})}),channel:()=>({on:()=>({subscribe:()=>({})}),subscribe:()=>({})}),removeChannel:()=>{}};`,
       diamondBonusRecovery: `export class PriorBonusPending extends Error{};export const pendingBonus=()=>null;export const rememberBonus=()=>{};export const forgetBonus=()=>{};`,
       // ── The money boundary. A layout fixture may read a round, never bet. ──

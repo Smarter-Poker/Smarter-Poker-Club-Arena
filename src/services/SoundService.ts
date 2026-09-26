@@ -51,6 +51,15 @@
  * - playChipSplash()           Multi-chip side pot scatter
  * - playBuyInConfirm()         Satisfying confirmation chime
  *
+ * Diamond games (2026-09-26, called by the scenes on the frame that shows each beat):
+ * - driveCrashEngine() / stopCrashEngine()   The jet's engine, following the multiplier
+ * - playCrashExplosion() / playCrashMax()     The crash burst; the gold fanfare at the cap
+ * - playBonusBooked()                         A win booked (Crash, Donkey Cross, Mines)
+ * - playPlinkoPeg() / playPlinkoLanding()     Peg ticks (rate limited); the bucket clink
+ * - playCrossingHoof() / driveCrossingCar() / playCrossingBrake() / playCrossingHorn()
+ *   / playCrossingHit() / playCrossingLanded()   The walk, the car, and the two outcomes
+ * - playMinesGem() / playMinesExplosion()     A gem chime that climbs; a mine going off
+ *
  * Also includes:
  * - Volume controls (master, effects)
  * - Premium haptic patterns (12 context-specific vibration sequences)
@@ -226,6 +235,58 @@ const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
   ui: 10,
 };
 
+/** The continuous voices of the Diamond games. See driveMotor. */
+export type MotorName = 'crash' | 'car';
+interface Motor {
+  a: OscillatorNode;
+  b: OscillatorNode;
+  lp: BiquadFilterNode;
+  band: BiquadFilterNode;
+  gain: GainNode;
+  /** Everything that must be stopped when the voice ends. */
+  sources: AudioScheduledSourceNode[];
+  /** When the sound switch was last consulted, in Date.now() ms. */
+  checkedMs: number;
+  /** The last target written, so an unchanged frame writes nothing. */
+  hz: number;
+  level: number;
+}
+interface MotorSpec {
+  /** The second saw, as a ratio of the first. */
+  ratio: number;
+  /** The lowpass over both saws, from the pitch. */
+  cutoff: (hz: number) => number;
+  throbHz: number;
+  throbDepth: number;
+  /** The noise band's centre as a ratio of the pitch, and its level in the voice. */
+  airRatio: number;
+  air: number;
+}
+/** A jet: a fifth over the root, a fast flutter, plenty of afterburner air. */
+const CRASH_ENGINE: MotorSpec = {
+  ratio: 1.5,
+  cutoff: (hz) => 420 + hz * 7,
+  throbHz: 11,
+  throbDepth: 2.5,
+  airRatio: 9,
+  air: 0.55,
+};
+/** A car: an octave over the root, a slower lope, a little road noise. */
+const CROSSING_CAR: MotorSpec = {
+  ratio: 2,
+  cutoff: (hz) => 260 + hz * 9,
+  throbHz: 6.5,
+  throbDepth: 4,
+  airRatio: 12,
+  air: 0.3,
+};
+/** At most one Plinko peg tick in this many milliseconds, however many diamonds fall. */
+export const PLINKO_PEG_GAP_MS = 30;
+/** The player's Animation Speed as a duration multiplier, clamped like playKnockoutFlurry's. */
+function gameSpeed(speed: number): number {
+  return Math.min(4, Math.max(0.1, Number.isFinite(speed) && speed > 0 ? speed : 1));
+}
+
 class SoundService {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
@@ -395,6 +456,10 @@ class SoundService {
     window.addEventListener('touchstart', unlock, { passive: true });
     window.addEventListener('keydown', unlock);
     document.addEventListener('visibilitychange', () => {
+      // A continuous voice (the Crash engine, the car coming to a street) is
+      // driven from a frame loop that stops while the tab is hidden, so the
+      // voice must stop with it rather than drone on under another app.
+      if (document.hidden) this.stopAllMotors(0.05);
       if (!document.hidden && this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {
           /* best-effort — the gesture listeners above are the fallback */
@@ -2877,9 +2942,541 @@ class SoundService {
     haptic.medium();
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE DIAMOND GAMES CAN BE HEARD AND FELT (2026-09-26)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The Diamond Spins wheel has had a full score since August: a lever, a
+   * peg click on every seam that crosses the pointer, a landing. Crash,
+   * Plinko, Donkey Cross and Diamond Mines were nearly silent. These cues
+   * give each of them sound that follows the action and a pulse on the key
+   * beats, so the games feel physical on a phone.
+   *
+   * THE SCENES CALL THESE, NOT THE PAGES. Every cue here is called from the
+   * frame that shows its moment (the Crash, Plinko and crossing frame loops,
+   * the Mines board's render), so a sound can never run ahead of the picture
+   * that makes it. Anything tied to motion takes the player's Animation Speed
+   * and stretches with it.
+   *
+   * THE GATES. `gameBeat` is the one door:
+   *   - a hidden tab plays nothing and buzzes nothing;
+   *   - a per cue throttle absorbs a double fire from a re-render (and, for
+   *     the Plinko peg tick, is the rate limit that stops a batch of a hundred
+   *     drops machine-gunning);
+   *   - the BUZZ goes through vibrationGate before the sound gate is asked,
+   *     because vibration has its own switch: a player who plays muted still
+   *     feels the beats, and a player who turns vibration off feels nothing;
+   *   - the SOUND then needs the master switch (soundGate) and a context.
+   * These cues leave the 50 ms rank window alone, like the spin cues above:
+   * they are movements of one scene, not competitors for a felt's frame.
+   * Every voice connects to `this.out`, so master and effects volume apply.
+   *
+   * CONTINUOUS VOICES ARE REUSED. The Crash engine and the car coming to a
+   * street are ONE voice each (`motors`), built once and then only steered:
+   * the frame loop calls drive*() every frame and that writes two or three
+   * AudioParam targets, never a node. They stop on every terminal beat, on
+   * unmount, when sound is switched off mid flight and when the tab is hidden.
+   *
+   * Short hits share one cached noise grain (`grainBuffer`) instead of
+   * filling a fresh buffer each time, so a board of falling diamonds does not
+   * allocate a buffer per peg.
+   */
+
+  private gameCueMs: Record<string, number> = {};
+  private motors: Partial<Record<MotorName, Motor>> = {};
+  private grain: AudioBuffer | null = null;
+
+  private tabHidden(): boolean {
+    return typeof document !== 'undefined' && document.hidden === true;
+  }
+
+  /** The one door for the Diamond game cues. See the note above. */
+  private gameBeat(cue: string, minGapMs: number, buzz?: () => void): boolean {
+    if (this.tabHidden()) return false;
+    const nowMs = Date.now();
+    if (nowMs - (this.gameCueMs[cue] ?? Number.NEGATIVE_INFINITY) < minGapMs) return false;
+    this.gameCueMs[cue] = nowMs;
+    buzz?.();
+    if (!this.enabled || !isSoundAllowed()) return false;
+    return this.ensureContext();
+  }
+
+  /** 1.2 s of white noise, filled once and shared by every short hit. */
+  private grainBuffer(): AudioBuffer {
+    if (!this.grain) this.grain = this.noiseBuffer(1.2);
+    return this.grain;
+  }
+
+  /** A filtered slice of the shared grain: a click, a clop, a crack or a rumble. */
+  private grainBurst(
+    at: number,
+    duration: number,
+    volume: number,
+    type: BiquadFilterType,
+    hz: number,
+    q = 0.9
+  ) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const dur = Math.max(0.01, Math.min(1.15, duration));
+    const src = ctx.createBufferSource();
+    src.buffer = this.grainBuffer();
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.setValueAtTime(hz, at);
+    filter.Q.value = q;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.linearRampToValueAtTime(Math.max(0.0002, volume), at + Math.min(0.004, dur * 0.2));
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.out);
+    // A different slice of the grain each time, so repeated hits are not clones.
+    src.start(at, Math.random() * (1.2 - dur), dur + 0.02);
+  }
+
+  /** A falling sine: the weight under an impact. */
+  private thump(at: number, fromHz: number, toHz: number, duration: number, volume: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(fromHz, at);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, toHz), at + duration);
+    gain.gain.setValueAtTime(volume, at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(at);
+    osc.stop(at + duration + 0.02);
+  }
+
+  /** An explosion: a bright crack, a falling thump and a rumble under it. */
+  private blast(at: number, s: number, crackHz: number, weight: number) {
+    this.grainBurst(at, 0.22 * s, 0.34 * weight, 'lowpass', crackHz, 0.7);
+    this.grainBurst(at + 0.01, 0.07, 0.2 * weight, 'highpass', 3200, 0.7);
+    this.thump(at, 120, 34, 0.55 * s, 0.46 * weight);
+    this.grainBurst(at + 0.02, Math.min(1.1, 0.95 * s), 0.2 * weight, 'lowpass', 170, 0.7);
+  }
+
+  /** Build a continuous voice: two detuned saws and a looped noise band, one gain. */
+  private buildMotor(name: MotorName, hz: number, spec: MotorSpec): Motor | null {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    const t = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(spec.cutoff(hz), t);
+    lp.Q.value = 0.8;
+    const a = ctx.createOscillator();
+    const b = ctx.createOscillator();
+    a.type = 'sawtooth';
+    b.type = 'sawtooth';
+    a.frequency.setValueAtTime(hz, t);
+    b.frequency.setValueAtTime(hz * spec.ratio, t);
+    b.detune.setValueAtTime(-9, t);
+    // The throb: a slow wobble on the fundamental, or it is a test tone.
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(spec.throbHz, t);
+    lfoGain.gain.setValueAtTime(spec.throbDepth, t);
+    lfo.connect(lfoGain);
+    lfoGain.connect(a.frequency);
+    // The air: a looped band of the shared grain that follows the pitch.
+    const air = ctx.createBufferSource();
+    air.buffer = this.grainBuffer();
+    air.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(hz * spec.airRatio, t);
+    band.Q.value = 0.7;
+    const airGain = ctx.createGain();
+    airGain.gain.setValueAtTime(spec.air, t);
+    air.connect(band);
+    band.connect(airGain);
+    airGain.connect(gain);
+    a.connect(lp);
+    b.connect(lp);
+    lp.connect(gain);
+    gain.connect(this.out);
+    a.start(t);
+    b.start(t);
+    lfo.start(t);
+    air.start(t);
+    const motor: Motor = {
+      a,
+      b,
+      lp,
+      band,
+      gain,
+      sources: [a, b, lfo, air],
+      checkedMs: Date.now(),
+      hz: 0,
+      level: 0,
+    };
+    this.motors[name] = motor;
+    return motor;
+  }
+
+  /**
+   * Steer a continuous voice to a pitch and level, building it the first time.
+   * Called every frame; it writes AudioParam targets only when the target has
+   * actually moved, and asks the sound switch at most four times a second.
+   */
+  private driveMotor(name: MotorName, hz: number, level: number, spec: MotorSpec) {
+    if (this.tabHidden()) {
+      this.stopMotor(name, 0.05);
+      return;
+    }
+    let motor = this.motors[name];
+    const nowMs = Date.now();
+    if (!motor || nowMs - motor.checkedMs >= 250) {
+      if (!this.enabled || !isSoundAllowed()) {
+        this.stopMotor(name, 0.08);
+        return;
+      }
+      if (motor) motor.checkedMs = nowMs;
+    }
+    if (!motor) {
+      if (!this.ensureContext()) return;
+      motor = this.buildMotor(name, hz, spec) ?? undefined;
+      if (!motor) return;
+    }
+    if (Math.abs(hz - motor.hz) < motor.hz * 0.002 && Math.abs(level - motor.level) < 0.001) return;
+    const t = this.ctx!.currentTime;
+    motor.a.frequency.setTargetAtTime(hz, t, 0.05);
+    motor.b.frequency.setTargetAtTime(hz * spec.ratio, t, 0.05);
+    motor.lp.frequency.setTargetAtTime(spec.cutoff(hz), t, 0.06);
+    motor.band.frequency.setTargetAtTime(hz * spec.airRatio, t, 0.06);
+    motor.gain.gain.setTargetAtTime(Math.max(0.0001, level), t, motor.hz === 0 ? 0.08 : 0.12);
+    motor.hz = hz;
+    motor.level = level;
+  }
+
+  /** Fade a continuous voice out and release its nodes. Safe to call when none is running. */
+  private stopMotor(name: MotorName, fadeSec: number) {
+    const motor = this.motors[name];
+    if (!motor) return;
+    delete this.motors[name];
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const fade = Math.max(0.02, fadeSec);
+    try {
+      motor.gain.gain.cancelScheduledValues(t);
+      motor.gain.gain.setValueAtTime(Math.max(0.0001, motor.gain.gain.value), t);
+      motor.gain.gain.exponentialRampToValueAtTime(0.0001, t + fade);
+      for (const source of motor.sources) source.stop(t + fade + 0.05);
+    } catch {
+      /* already stopped */
+    }
+  }
+
+  private stopAllMotors(fadeSec: number) {
+    for (const name of Object.keys(this.motors) as MotorName[]) this.stopMotor(name, fadeSec);
+  }
+
+  /** True while a continuous voice is sounding. For tests and diagnostics. */
+  isMotorRunning(name: MotorName): boolean {
+    return Boolean(this.motors[name]);
+  }
+
+  // ─── Crash ───────────────────────────────────────────────────────────
+
+  /**
+   * The jet's engine, following the live multiplier. One voice for the whole
+   * flight: the first call builds it, every later call steers it. Pitch climbs
+   * about a musical ninth by 5x and two octaves by 25x (log scale, because
+   * 1x to 2x must be heard as clearly as 10x to 20x), and the level rises a
+   * little with it. Stopped by stopCrashEngine on every terminal state.
+   */
+  driveCrashEngine(cents: number) {
+    const climb = Math.log2(Math.max(100, Number.isFinite(cents) ? cents : 100) / 100);
+    const octaves = Math.min(2.2, climb * 0.47);
+    const hz = 68 * Math.pow(2, octaves);
+    const level = 0.05 + 0.04 * Math.min(1, octaves / 2.2);
+    this.driveMotor('crash', hz, level, CRASH_ENGINE);
+  }
+
+  stopCrashEngine(fadeSec = 0.12) {
+    this.stopMotor('crash', fadeSec);
+  }
+
+  /** The flight ends in a burst: crack, falling thump and rumble. Strong buzz. */
+  playCrashExplosion(speed = 1) {
+    if (!this.gameBeat('crash-explosion', 400, () => haptic.strong())) return;
+    this.blast(this.ctx!.currentTime, gameSpeed(speed), 1900, 1);
+  }
+
+  /**
+   * A win is booked: a dry latch, then two gold bell notes a fourth apart,
+   * with a low confirmation under them so it lands on a phone speaker. The
+   * multiplier lifts the pitch a little and brightens the upper partial;
+   * every booking gets the same shape. Medium buzz. Shared by Crash, Donkey
+   * Cross and Diamond Mines, so "booked" is one sound on the platform.
+   */
+  playBonusBooked(multiplier: number) {
+    if (!this.gameBeat('booked', 400, () => haptic.medium())) return;
+    const t = this.ctx!.currentTime;
+    const lift = Math.min(
+      1,
+      Math.log2(Math.max(1, Number.isFinite(multiplier) ? multiplier : 1)) / 4.6
+    );
+    const root = 880 * Math.pow(2, (lift * 5) / 12);
+    this.grainBurst(t, 0.03, 0.18, 'bandpass', 3200, 2);
+    this.scheduleTone(t, 196, 0.24, 0.14, 'sine');
+    this.scheduleTone(t + 0.02, root, 0.34, 0.15, 'triangle');
+    this.scheduleTone(t + 0.02, root * 2.01, 0.22, 0.045, 'sine');
+    this.scheduleTone(t + 0.11, root * 1.335, 0.55, 0.16, 'triangle');
+    this.scheduleTone(t + 0.11, root * 2.67, 0.38, 0.04 + 0.05 * lift, 'sine');
+  }
+
+  /**
+   * A round booked AT the cap: a gold brass fanfare over the crown burst,
+   * C-E-G-C rising, the last three held as a chord, and a shimmer on top.
+   * Timed against the crown burst, so it stretches with Animation Speed.
+   * The jackpot buzz.
+   */
+  playCrashMax(speed = 1) {
+    if (!this.gameBeat('crash-max', 800, () => haptic.jackpot())) return;
+    const ctx = this.ctx!;
+    const s = gameSpeed(speed);
+    const t = ctx.currentTime;
+    const bus = ctx.createGain();
+    bus.gain.value = 0.9;
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.setValueAtTime(900, t);
+    tone.frequency.linearRampToValueAtTime(3400, t + 0.3 * s);
+    tone.Q.value = 0.6;
+    bus.connect(tone);
+    tone.connect(this.out);
+    const NOTES = [523.25, 659.25, 783.99, 1046.5];
+    const hold = 1.1 * s;
+    NOTES.forEach((f, i) => {
+      const at = t + i * 0.09 * s;
+      const end = i === 0 ? at + 0.22 * s : t + hold;
+      [-7, 7].forEach((cents) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(f, at);
+        osc.detune.setValueAtTime(cents, at);
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.linearRampToValueAtTime(0.05, at + 0.03);
+        g.gain.setValueAtTime(0.05, Math.max(at + 0.03, end - 0.35 * s));
+        g.gain.exponentialRampToValueAtTime(0.0001, end);
+        osc.connect(g);
+        g.connect(bus);
+        osc.start(at);
+        osc.stop(end + 0.05);
+      });
+    });
+    this.thump(t, 150, 60, 0.4 * s, 0.24);
+    this.grainBurst(t + 0.27 * s, Math.min(1.1, 0.8 * s), 0.07, 'highpass', 6500, 0.7);
+    [2093, 2637, 3136].forEach((f, i) => {
+      this.scheduleTone(t + (0.3 + i * 0.08) * s, f, 0.3, 0.05, 'sine');
+    });
+  }
+
+  // ─── Plinko ──────────────────────────────────────────────────────────
+
+  /**
+   * A diamond strikes a peg: a soft chrome tick. Rate limited to one every
+   * 30 ms however many diamonds are falling, so a batch of a hundred is a
+   * patter, not a machine gun. Pitch falls down the board, row by row;
+   * `hits` (pegs struck in the same frame) adds a little weight.
+   */
+  playPlinkoPeg(row: number, hits = 1) {
+    if (!this.gameBeat('plinko-peg', PLINKO_PEG_GAP_MS)) return;
+    const t = this.ctx!.currentTime;
+    const r = Math.max(0, Math.min(15, Number.isFinite(row) ? row : 0));
+    const hz = 2600 * Math.pow(2, -r / 22);
+    const weight = Math.min(1, 0.6 + 0.12 * (Math.max(1, hits) - 1));
+    this.scheduleTone(t, hz, 0.05, 0.05 * weight, 'triangle');
+    this.grainBurst(t, 0.018, 0.06 * weight, 'bandpass', hz * 1.4, 3);
+  }
+
+  /**
+   * A diamond lands in a bucket: the glass plate clinks, brighter the more
+   * the bucket pays (the same log scale the bucket colours use, 0.05x cold to
+   * 25x hot). A big win (5x or better) adds a gold sparkle and the jackpot
+   * buzz; any other landing is a light tap.
+   */
+  playPlinkoLanding(cents: number, big: boolean) {
+    const buzz = () => (big ? haptic.jackpot() : haptic.light());
+    if (!this.gameBeat('plinko-landing', 25, buzz)) return;
+    const t = this.ctx!.currentTime;
+    const c = Number.isFinite(cents) ? cents : 0;
+    const heat = c <= 5 ? 0 : c >= 2500 ? 1 : Math.log(c / 5) / Math.log(500);
+    const hz = 620 * Math.pow(2, heat * 1.6);
+    this.scheduleTone(t, hz, 0.24, 0.12, 'triangle');
+    this.scheduleTone(t, hz * 2.76, 0.14, 0.035 + 0.05 * heat, 'sine');
+    this.grainBurst(t, 0.025, 0.09, 'highpass', 2600, 0.8);
+    if (big) {
+      this.thump(t, 180, 70, 0.3, 0.2);
+      [1567.98, 1975.53, 2349.32, 3135.96].forEach((f, i) => {
+        this.scheduleTone(t + 0.06 + i * 0.07, f, 0.32, 0.07, 'sine');
+      });
+      this.grainBurst(t + 0.1, 0.5, 0.05, 'highpass', 7000, 0.7);
+    }
+  }
+
+  // ─── Donkey Cross ────────────────────────────────────────────────────
+
+  /** One hoof on the asphalt: a clop, alternating a little in pitch by foot. */
+  playCrossingHoof(step: number) {
+    if (!this.gameBeat('hoof', 40)) return;
+    const t = this.ctx!.currentTime;
+    const high = Math.abs(Math.round(step)) % 2 === 0;
+    this.grainBurst(t, 0.05, 0.15, 'bandpass', high ? 1150 : 920, 2.2);
+    this.scheduleTone(t, high ? 210 : 180, 0.06, 0.12, 'sine');
+    this.scheduleTone(t + 0.01, high ? 1500 : 1320, 0.022, 0.035, 'triangle');
+  }
+
+  /**
+   * The car coming to the street: one engine voice, louder, brighter and a
+   * little higher the nearer it is (`closeness`, 0 far to 1 at the donkey).
+   * Driven by the crossing's frame loop; stopped when it brakes or strikes.
+   */
+  driveCrossingCar(closeness: number) {
+    const near = Math.max(0, Math.min(1, Number.isFinite(closeness) ? closeness : 0));
+    this.driveMotor('car', 58 + 42 * near, 0.02 + 0.075 * near * near, CROSSING_CAR);
+  }
+
+  stopCrossingCar(fadeSec = 0.1) {
+    this.stopMotor('car', fadeSec);
+  }
+
+  /** The car brakes on a safe street: a tyre squeal over the braking time. */
+  playCrossingBrake(speed = 1) {
+    if (!this.gameBeat('brake', 300)) return;
+    const ctx = this.ctx!;
+    const s = gameSpeed(speed);
+    const t = ctx.currentTime;
+    const dur = 0.34 * s;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(1500, t);
+    band.Q.value = 2.5;
+    const bus = ctx.createGain();
+    bus.gain.setValueAtTime(0.0001, t);
+    bus.gain.linearRampToValueAtTime(0.11, t + 0.03);
+    bus.gain.setValueAtTime(0.11, t + dur * 0.6);
+    bus.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    band.connect(bus);
+    bus.connect(this.out);
+    const wobble = ctx.createOscillator();
+    const wobbleGain = ctx.createGain();
+    wobble.frequency.setValueAtTime(26, t);
+    wobbleGain.gain.setValueAtTime(38, t);
+    wobble.connect(wobbleGain);
+    [1240, 1335].forEach((f) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, t);
+      osc.frequency.linearRampToValueAtTime(f * 0.9, t + dur);
+      wobbleGain.connect(osc.frequency);
+      osc.connect(band);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+    });
+    wobble.start(t);
+    wobble.stop(t + dur + 0.05);
+    this.grainBurst(t, dur, 0.06, 'bandpass', 2400, 1.2);
+  }
+
+  /** The car's horn: two notes a third apart, one blast. */
+  playCrossingHorn() {
+    if (!this.gameBeat('horn', 400)) return;
+    this.hornAt(this.ctx!.currentTime);
+  }
+
+  private hornAt(t: number) {
+    const ctx = this.ctx!;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1900, t);
+    lp.Q.value = 0.7;
+    const bus = ctx.createGain();
+    bus.gain.setValueAtTime(0.0001, t);
+    bus.gain.linearRampToValueAtTime(0.09, t + 0.02);
+    bus.gain.setValueAtTime(0.09, t + 0.26);
+    bus.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+    lp.connect(bus);
+    bus.connect(this.out);
+    [392, 493.88].forEach((f) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(f, t);
+      osc.connect(lp);
+      osc.start(t);
+      osc.stop(t + 0.38);
+    });
+  }
+
+  /**
+   * The car strikes: a crunch, a clank of metal and a heavy thump. Strong
+   * buzz. `withHorn` layers the horn under it for a scene that had no
+   * approach to sound it in (reduced motion, or no scene at all).
+   */
+  playCrossingHit(options: { withHorn?: boolean; speed?: number } = {}) {
+    if (!this.gameBeat('crossing-hit', 400, () => haptic.strong())) return;
+    const t = this.ctx!.currentTime;
+    const s = gameSpeed(options.speed ?? 1);
+    if (options.withHorn) this.hornAt(t);
+    this.grainBurst(t, 0.2 * s, 0.3, 'lowpass', 2300, 0.8);
+    this.thump(t, 140, 42, 0.4 * s, 0.42);
+    this.scheduleTone(t + 0.01, 620, 0.12, 0.07, 'triangle');
+    this.scheduleTone(t + 0.02, 913, 0.09, 0.05, 'triangle');
+  }
+
+  /**
+   * The donkey reaches the far side of a street: a soft two note step up,
+   * climbing a little with each street crossed. Light buzz.
+   */
+  playCrossingLanded(street: number) {
+    if (!this.gameBeat('crossing-landed', 150, () => haptic.light())) return;
+    const t = this.ctx!.currentTime;
+    const n = Math.max(0, Math.min(16, Number.isFinite(street) ? street : 0));
+    const hz = 587.33 * Math.pow(2, n / 24);
+    this.scheduleTone(t, hz, 0.12, 0.09, 'triangle');
+    this.scheduleTone(t + 0.06, hz * 1.5, 0.18, 0.08, 'triangle');
+  }
+
+  // ─── Diamond Mines ───────────────────────────────────────────────────
+
+  /**
+   * A gem turns over: a crystalline chime that climbs a pentatonic ladder
+   * with each consecutive gem (`streak`, 1 for the first). Light buzz.
+   */
+  playMinesGem(streak: number) {
+    if (!this.gameBeat('mines-gem', 60, () => haptic.light())) return;
+    const t = this.ctx!.currentTime;
+    const LADDER = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
+    const i = Math.max(0, Math.min(LADDER.length - 1, Math.floor(streak) - 1));
+    const hz = 1046.5 * Math.pow(2, LADDER[i] / 12);
+    this.scheduleTone(t, hz, 0.55, 0.1, 'sine');
+    this.scheduleTone(t, hz * 2.005, 0.32, 0.04, 'sine');
+    this.scheduleTone(t + 0.005, hz * 3.01, 0.2, 0.025, 'triangle');
+    this.grainBurst(t, 0.12, 0.035, 'highpass', 7200, 0.7);
+  }
+
+  /** A mine goes off under the tile. Strong buzz. Stretches with the blast animation. */
+  playMinesExplosion(speed = 1) {
+    if (!this.gameBeat('mines-explosion', 400, () => haptic.strong())) return;
+    this.blast(this.ctx!.currentTime, gameSpeed(speed), 2400, 0.9);
+  }
+
   // ─── Cleanup ─────────────────────────────────────────────────────────
 
   destroy() {
+    this.stopAllMotors(0.02);
     this.stopTimerWarning();
     if (this.ctx && this.ctx.state !== 'closed') {
       this.ctx.close();

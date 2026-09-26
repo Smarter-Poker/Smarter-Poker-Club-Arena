@@ -68,7 +68,10 @@ export function diamondWheelPageFixture() {
       FloorFeed: `export default()=>null`,
       Toast: `const t={success:()=>{},error:()=>{},info:()=>{},warning:()=>{}};export const useToast=()=>t;`,
       errorReporter: `export const reportError=console.error`,
-      SoundService: `export const soundService={playWin:()=>{},playBigWin:()=>{},playSpinStart:()=>{},playSpinTicking:()=>{},playSpinPeg:()=>{},playSpinResult:()=>{}};`,
+      // Every cue is a no-op, whatever its name: the scenes play their own sounds
+      // (2026-09-26) and a fixed list of method names broke the build each time a
+      // cue was added. PLINKO_PEG_GAP_MS mirrors src/services/SoundService.ts.
+      SoundService: `export const soundService=new Proxy({},{get:()=>()=>{}});export const haptic=new Proxy({},{get:()=>()=>{}});export const PLINKO_PEG_GAP_MS=30;`,
       HapticService: `export const triggerHaptic=()=>{};`,
     };
     const result = await build({

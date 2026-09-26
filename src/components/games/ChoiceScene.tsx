@@ -20,6 +20,7 @@ import {
   anticipationFrame,
   approachFrame,
   APPROACH_REST_Z,
+  APPROACH_COMMITTED,
   WALK_MS,
   type StreetState,
 } from '../../utils/crossingScene';
@@ -27,6 +28,7 @@ import { CHOICE_MODE, ROAD_LADDERS_V4, type ChoiceGame } from '../../utils/diamo
 import { gameChips } from '../../utils/bonusGameBudget';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { reportError } from '../../utils/errorReporter';
+import { soundService } from '../../services/SoundService';
 import styles from './ChoiceScene.module.css';
 
 /**
@@ -1136,13 +1138,33 @@ function CrossingScene(props: Props) {
    */
   const [ghostAt, setGhostAt] = useState(-1);
   const pending = useRef<Pending | null>(null);
+  /** Whether the car coming to this street has already sounded its horn. */
+  const horned = useRef(false);
   // Held in a ref so the draw loop, which is mounted once, always calls the
   // live one without listing it as a dependency it cannot have.
   const commit = useRef((next: Shown, moments: readonly CrossingMoment[]) => {
     pending.current = null;
     shownRef.current = next;
     setShown(next);
-    for (const moment of moments) latest.current.onMoment?.(moment, next.step);
+    for (const moment of moments) {
+      /* THE BEATS ARE HEARD AND FELT HERE (2026-09-26), on the frame that
+         shows them, the same frame the page is told. They moved here from the
+         page's onMoment so there is one owner and never two: a landing is a
+         light tick and buzz, a hit is the impact (with the horn, when there
+         was no approach to sound it in) and a strong buzz, a booked win is the
+         booked sting and a medium buzz. Reduced motion and a scene that cannot
+         draw commit through this same door, so they keep every beat. */
+      if (moment === 'landed') soundService.playCrossingLanded(next.step);
+      else if (moment === 'hit') {
+        soundService.playCrossingHit({ withHorn: !horned.current, speed: getAnimationSpeed() });
+        horned.current = false;
+      } else {
+        const road = latest.current.ladder ?? ROAD_LADDERS_V4[CHOICE_MODE.crossing];
+        const at = Math.min(Math.max(next.step, 1), road.length) - 1;
+        soundService.playBonusBooked((road[at] ?? 100) / 100);
+      }
+      latest.current.onMoment?.(moment, next.step);
+    }
   });
   const lost = shown.phase === 'lost';
   // Read as a subscription, not once at mount: a player who turns the setting
@@ -1842,12 +1864,23 @@ function CrossingScene(props: Props) {
       carried = 0,
       turn = 0,
       departX = 0,
-      notified = false;
+      notified = false,
+      /** Hoof steps sounded on this walk, four a street. */
+      hoofs = 4,
+      /** The approach car's engine is sounding, and has finished for this street. */
+      carOn = false,
+      carDone = false;
     let approaching: 'safe' | 'hit' | null = null,
       departing: THREE.Group | null = null;
     let lastVisibleFrame: number | null = null;
+    const silenceCar = (fadeSec: number) => {
+      if (!carOn) return;
+      carOn = false;
+      soundService.stopCrossingCar(fadeSec);
+    };
     const visibilityChanged = () => {
       lastVisibleFrame = null;
+      if (document.hidden) silenceCar(0.05);
     };
     document.addEventListener('visibilitychange', visibilityChanged);
     /** The road is repainted only when its ladder changes: tints and traffic density. */
@@ -1947,7 +1980,15 @@ function CrossingScene(props: Props) {
         // which also stops a resumed open round hopping across every lane.
         const advanced = signature !== '' && id !== '' && id === was.roundId && p.phase !== 'idle';
         const next: Shown = { roundId: id, step, phase: p.phase };
-        const owed = advanced ? momentsFor(was, next) : null;
+        // Already shown (reduced motion and a failed scene commit a change the
+        // moment it lands): nothing is owed, so no beat is told twice.
+        const seenAlready = was.step === next.step && was.phase === next.phase;
+        const owed = advanced && !seenAlready ? momentsFor(was, next) : null;
+        // A new street, or a new round: whatever the last car was doing, it is done.
+        silenceCar(0.1);
+        carDone = false;
+        horned.current = false;
+        hoofs = 4;
         signature = newSignature;
         to = streetCenter(step);
         if (owed && owed.moments.length) {
@@ -1961,6 +2002,7 @@ function CrossingScene(props: Props) {
             turn = 1 - turn;
           }
           approaching = p.phase === 'lost' ? 'hit' : 'safe';
+          if (Math.abs(to - from) > 0.01) hoofs = 0;
           // The lean the walk now absorbs: the donkey carries on from the kerb
           // it stepped to, it does not snap back to the middle of its street.
           carried = lean;
@@ -2008,6 +2050,12 @@ function CrossingScene(props: Props) {
       animal.legs.forEach((leg, i) => {
         leg.rotation.z = walk < 1 ? Math.sin(walk * Math.PI * 4 + (i % 2) * Math.PI) * 0.5 : 0;
       });
+      // A hoof on the road each time a pair of legs passes the vertical: the
+      // gait above is two strides a street, so four steps, on the walk's clock.
+      if (hoofs < 4 && !reduced && walk >= (hoofs + 0.5) / 4) {
+        soundService.playCrossingHoof(hoofs);
+        hoofs = walk >= 1 ? 4 : hoofs + 1;
+      }
       /**
        * THE IDLE ATTRACT. Before the first street the traffic already flows;
        * the donkey flicks an ear every few seconds and shifts its weight
@@ -2173,6 +2221,29 @@ function CrossingScene(props: Props) {
           }
         }
         struck = impact.hit;
+        /* The car is heard as it is seen: its engine grows as it closes on
+           the street; past the point where a safe street and a hit part, the
+           safe car's tyres squeal as it brakes and the other sounds its horn;
+           the engine ends when it has stopped or struck (the strike itself is
+           the 'hit' beat, told on the frame that shows it). Under reduced
+           motion there is no approach to hear, only the beats. */
+        if (!reduced && !carDone && impact.t > 0) {
+          if (outcome === 'safe' && impact.brake > 0) {
+            carDone = true;
+            silenceCar(0.3 * speed);
+            soundService.playCrossingBrake(speed);
+          } else if (outcome === 'hit' && impact.hit) {
+            carDone = true;
+            silenceCar(0.04);
+          } else {
+            carOn = true;
+            soundService.driveCrossingCar(Math.max(0, Math.min(1, (9 - impact.carZ) / 9)));
+            if (outcome === 'hit' && !horned.current && impact.t >= APPROACH_COMMITTED) {
+              horned.current = true;
+              soundService.playCrossingHorn();
+            }
+          }
+        }
         // A street ends when its car has settled, braked or driven through, so
         // a safe crossing and a hit resolve on the very same beat.
         arrived = impact.resting;
@@ -2252,6 +2323,7 @@ function CrossingScene(props: Props) {
     return () => {
       cancelAnimationFrame(raf);
       clearTimeout(compileTimer);
+      silenceCar(0.05);
       document.removeEventListener('visibilitychange', visibilityChanged);
       frames.dispose();
       observer.disconnect();

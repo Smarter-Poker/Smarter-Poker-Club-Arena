@@ -1592,7 +1592,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
-      - name: "Club membership cap: one count, one lock, one limit"
+      - name: 'Club membership cap: one count, one lock, one limit'
         if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1612,7 +1612,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
-      - name: "Tournament creation refuses what the client refuses"
+      - name: 'Tournament creation refuses what the client refuses'
         if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1688,6 +1688,11 @@ jobs:
           path: ${{ runner.temp }}/original-paid-custody/
           if-no-files-found: error
           retention-days: 7
+      - name: Profile appearance signals preserve scoped access
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-profile-appearance-postgres.py
       - name: Parked tables retain canonical movement custody
         id: f06_movement_admission
         if: matrix.shard == 3

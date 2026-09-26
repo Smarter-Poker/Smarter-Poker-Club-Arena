@@ -121,6 +121,14 @@ interface PendingTournamentSeatMoveOutcome {
   input: TournamentSeatMoveInput;
 }
 
+/**
+ * A retired original's roster does not fit the other open tables yet. This
+ * is a wait, not an outcome: it is thrown from inside retirement custody only
+ * so that custody keeps the table fenced under the same identity, and
+ * `retireTournamentBreak` turns it back into a pending break.
+ */
+class TournamentBreakAwaitsSeatsError extends Error {}
+
 export class TournamentManager extends TournamentManagerEliminations {
   private mixedRecovery: {
     transfer: MixedF06Transfer;
@@ -1359,7 +1367,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         (this.durableTournamentBreaks.get(owned.break_id)?.revision === owned.revision &&
           this.durableTournamentBreaks.get(owned.break_id)?.lifecycle ===
             binding.tableIncarnation));
-    await host.withRetirementCustody(
+    const retirement = host.withRetirementCustody(
       binding,
       this.tableEngines,
       current,
@@ -1391,6 +1399,24 @@ export class TournamentManager extends TournamentManagerEliminations {
               const begun = await this.prepareParkedTournamentBreak(owned);
               custody.assertCurrent();
               if (!begun) {
+                /*
+                 * A FULL FIELD IS NOT THE LAST TABLE (2026-09-26).
+                 *
+                 * `prepareParkedTournamentBreak` also answers null when the
+                 * roster does not fit the free seats elsewhere. Event
+                 * 45b5b001, table 7441f3b1: 9 players, 6 free seats across
+                 * four other open tables; this branch asked the last-table
+                 * continuation, SQL refused it (five tables open), and every
+                 * sweep threw "placement remains pending". Only the event's
+                 * last open table may continue; any other source waits,
+                 * fenced under this same custody, for seats.
+                 */
+                const last = await this.isOnlyOpenTournamentTable(binding.tableId);
+                custody.assertCurrent();
+                if (!last)
+                  throw new TournamentBreakAwaitsSeatsError(
+                    'F06 original roster awaits seats at the other open tables'
+                  );
                 // The last physical table cannot move its roster elsewhere.
                 // SQL accepts only the original immutable never-started outcome.
                 this.pendingNoStartContinuations.set(owned.break_id, {
@@ -1412,6 +1438,11 @@ export class TournamentManager extends TournamentManagerEliminations {
                 continued = true;
                 return;
               }
+              // A capacity refusal from BEGIN leaves the row pre-manifest.
+              if (begun.state === 'park_requested' && begun.members.length === 0)
+                throw new TournamentBreakAwaitsSeatsError(
+                  'F06 original roster awaits seats at the other open tables'
+                );
               if (begun.state !== 'begun')
                 throw new Error('F06 original placement remains pending');
               owned = begun;
@@ -1501,6 +1532,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.rememberTournamentBreak(claimed);
       }
     );
+    if (await this.breakAwaitsSeats(retirement, binding)) return;
     if (continued) {
       const engine = this.stoppedOriginalBreaks.get(owned.break_id);
       if (!engine) throw new Error('F06 continued original missing');
@@ -1515,6 +1547,52 @@ export class TournamentManager extends TournamentManagerEliminations {
         movedPlayers: owned.members.length,
         reason: 'table_break',
       });
+  }
+
+  private readonly breaksAwaitingSeats = new Set<string>();
+
+  /**
+   * Settle one retirement attempt. A roster that does not fit yet ends the
+   * attempt with the break still pending and its custody still holding the
+   * table (the custody is released only by an acknowledged retirement), and
+   * asks the Manager's existing redrive; a bust elsewhere also wakes the
+   * sweep. It is named once per break, not reported on every sweep.
+   */
+  private async breakAwaitsSeats(
+    retirement: Promise<unknown>,
+    binding: BreakRetirementBinding
+  ): Promise<boolean> {
+    try {
+      await retirement;
+      this.breaksAwaitingSeats.delete(binding.breakId);
+      return false;
+    } catch (error) {
+      if (!(error instanceof TournamentBreakAwaitsSeatsError)) throw error;
+      if (!this.breaksAwaitingSeats.has(binding.breakId)) {
+        this.breaksAwaitingSeats.add(binding.breakId);
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${binding.breakId.slice(0, 8)} of table ${binding.tableId.slice(0, 8)} waits for seats at the other open tables`
+        );
+      }
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return true;
+    }
+  }
+
+  /**
+   * Read-only hint: is this table the event's only open table? The same read
+   * `continueExcludedNoStartTable` makes; the continuation RPC repeats the
+   * complete locked scope check itself.
+   */
+  private async isOnlyOpenTournamentTable(tableId: string): Promise<boolean> {
+    const { data: openTables, error } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .neq('status', 'closed')
+      .or('is_deleted.is.null,is_deleted.eq.false');
+    if (error || !openTables) throw new Error('F06 open table scope unproven');
+    return openTables.length === 1 && openTables[0]?.id === tableId;
   }
 
   private async eligibleBreakDestinations(
@@ -2616,7 +2694,42 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.noteSeatMoveQuarantineRefusal(
           stillPending ? 'recovery:source_seat_move_pending' : 'recovery:break_source_retained'
         );
-        if (stillPending || this.retainsTournamentBreakSource(tableId, engine)) return false;
+        if (stillPending) return false;
+        /*
+         * A KILLED BREAK SOURCE WHOSE PARK WAS NEVER CLAIMED IS REBUILT
+         * (2026-09-26).
+         *
+         * The retention exists to keep this exact generation as the source a
+         * break decided its moves against. That decision is made only across
+         * a CLAIMED boundary: the park is claimed before the manifest is
+         * begun and before any member moves, and a claimed owner survives
+         * teardown so the stopped engine can still serve as the quarantined
+         * source. A claimed boundary therefore still refuses here.
+         *
+         * A break whose one-second park probe missed has retained the source
+         * but claimed nothing, and a killed engine drops that unclaimed owner
+         * (`clearUnclaimedTournamentMovePauses`). Refusing replacement then
+         * waited for a break that could never move: on a stopped engine
+         * `parkForTournamentMove` answers yes only for an already-claimed
+         * park, so `prepareParkedTournamentBreak` returned null for ever, and
+         * this certificate rescheduled recovery for ever. On 2026-09-26
+         * 04:22-04:43 UTC that held ten dead tables in four events (55 players
+         * seated) with their break rows at `park_requested`, revision 0,
+         * custody null - 22 of 30 stalled-table observations.
+         *
+         * Such a retention protects nothing a replacement could cross: no
+         * move was decided, none is in flight, and the database refuses every
+         * hand on the table while the row exists (`source_excluded`). So it
+         * is released here and recovery replaces the engine. The replacement
+         * meets `source_excluded` at admission and starts movement-only
+         * (`startParkedMovementEngine`, `fn_f06_admit_parked_movement`, which
+         * claims a null custody), and the break retains and parks THAT
+         * engine on its next pass.
+         */
+        if (this.retainsTournamentBreakSource(tableId, engine)) {
+          if (engine.hasClaimedTournamentMoveBoundary()) return false;
+          this.retainedTournamentBreakSources.delete(tableId);
+        }
         engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         this.noteSeatMoveQuarantineRefusal('recovery:claimed_move_boundary');
         if (engine.hasClaimedTournamentMoveBoundary()) return false;

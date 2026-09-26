@@ -46,7 +46,7 @@ It is now proportionate instead of per merge.
    break. It may ask for an off-cycle window only when a commit it adds over
    the sealed high-water carries the trailer `Engine-Release: urgent`; when
    `/health` shows the serving engine degraded (`liveness` dead,
-   `wholeFleetStalled`, `breaksSinceRestartCertified` of 1 or more, or 10 or
+   `wholeFleetStalled`, `breaksSinceRestartCertified` of 1 or more, or 100 or
    more quarantined tournament managers); when no scheduled break can admit it
    before its own certificate deadline; or when it was already waiting while a
    break could still admit it, that break never did, and no release shipped in
@@ -85,3 +85,15 @@ not-after (12000 - 600 seconds) is never the shorter clock. Pinned by
 - `tests/engine-release-seal.law.test.ts`: the real seal limits the hour,
   replays a run's own reservation, counts an unreadable reservation by its
   file time, accepts the three named causes and refuses any other.
+
+## Calibration After The First Hour In Production
+
+The policy went live with a1a17fbd. At 07:03Z that release logged that
+209d1b45 had shipped in the 06:55 scheduled break it also waited through, and
+asked for nothing, which is the case that used to cost a window every time. At
+07:35Z the newest release, 3de1c39f, read 16 quarantined tournament managers
+as "degraded" and spent the hour's window at 07:37Z; neither waiting release
+was admitted in it. 209d1b45 was dealing normally (liveness ok, 27 managers
+quarantined by 07:45Z), while the 04:45Z wedge fixed by #5298 quarantined 338.
+The quarantine threshold is now 100: a quarantine count is a reason to pause
+every table only when it is wedge-sized.

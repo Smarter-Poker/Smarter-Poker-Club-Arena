@@ -251,8 +251,10 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                 self.assertIn('reason: engine-degraded ' + sign, result.stdout)
 
     def test_healthy_signals_are_not_degradation(self):
+        # 27 quarantined managers is what a normally dealing 209d1b45 carried on
+        # 2026-09-26; its 07:37Z window, spent on 16 of them, shipped nothing.
         result, events = invoke(eligible=False, health_extra={
-            'liveness': 'ok', 'wholeFleetStalled': False, 'tournamentManagersQuarantined': 2},
+            'liveness': 'ok', 'wholeFleetStalled': False, 'tournamentManagersQuarantined': 27},
             maintenance_extra={'breaksSinceRestartCertified': 0})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'UNLOCK'])

@@ -23,7 +23,7 @@ cluster = Path(tempfile.mkdtemp(prefix='ca-appearance-', dir=args.scratch))
 data = cluster / 'data'
 socket = cluster / 's'
 socket.mkdir(mode=0o700)
-started = False
+start_attempted = False
 
 def run(argv, sql=None):
     result = subprocess.run([str(v) for v in argv], input=sql, text=True,
@@ -42,8 +42,8 @@ try:
     run([pg/'initdb', '-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
     with (data/'postgresql.conf').open('a') as conf:
         conf.write("\nlisten_addresses = ''\nunix_socket_directories = '" + str(socket) + "'\nautovacuum = off\n")
+    start_attempted = True
     run([pg/'pg_ctl', '-D', data, '-l', cluster/'server.log', '-w', 'start'])
-    started = True
     endpoint = json.loads(query("select json_build_object('address',inet_server_addr(),'data',current_setting('data_directory'),'listen',current_setting('listen_addresses'));"))
     assert endpoint == {'address': None, 'data': str(data), 'listen': ''}, endpoint
     query((ROOT/'scripts/ci/fixtures/profile-appearance/setup.sql').read_text())
@@ -54,6 +54,9 @@ try:
         raise RuntimeError('Acceptance marker missing')
     print(result)
 finally:
-    if started:
+    # pg_ctl may time out after starting our private server. Never delete a
+    # running cluster just because the start acknowledgment was interrupted.
+    # A failed stop preserves the directory for diagnosis instead of erasing it.
+    if start_attempted and (data/'postmaster.pid').exists():
         run([pg/'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])
     shutil.rmtree(cluster)

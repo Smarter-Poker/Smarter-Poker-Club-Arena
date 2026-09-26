@@ -10,6 +10,8 @@ currently occupied tables. Authenticated table access remains governed by the
 existing table RLS policies; browser clients receive no producer permission.
 Financial/statistical writes and unchanged appearance values produce no signal.
 The existing private Broadcast hook supplies authentication and reconnect.
+One app-level account subscriber stays mounted on routes that hide the main
+header, so table-tab header copies do not create duplicate subscriptions.
 
 The table and header read their small authorized projections on the event,
 rejoin and visibility return. Scope disposal, request coalescing, failure states
@@ -24,6 +26,11 @@ other-account/anonymous denial, existing table RLS, malformed topics, forged
 client sends and failed transport without source rollback. That finite check is
 part of the existing required accounting job. The preimage fails the missing
 signal assertion. Hook/store regressions also fail before the repair.
+The existing production customization certification additionally requires an
+authenticated edit in a third session to arrive as an actual private WebSocket
+signal on both receiving devices, render the persisted portrait without a
+reload, and leave the other reserved player's portrait unchanged. It uses the
+existing isolated-account cleanup and does not touch a real player's account.
 
 Source, database installation, protected publication and connected production
 proof are separate evidence layers. No invoice savings or universal live health

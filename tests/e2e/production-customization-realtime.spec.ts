@@ -448,6 +448,24 @@ test.describe('production Table Studio realtime contract', () => {
       // the exact same two-device/isolation proof without shared mutable state.
       primaryAccount = await createTemporaryCustomizationAccount(environment, 'theme-primary', 0);
       otherAccount = await createTemporaryCustomizationAccount(environment, 'theme-other', 0);
+      // The shared fixture sets an Arena avatar, but intentionally does not opt
+      // it into the global header. Establish this test's explicit baseline
+      // through each reserved player's own authenticated session before opening
+      // the receiving browsers; never depend on a production column default.
+      for (const account of [primaryAccount, otherAccount]) {
+        const baseline = await account.client
+          .from('profiles')
+          .update({ use_avatar_as_profile_pic: true })
+          .eq('id', account.id)
+          .select('arena_avatar_url,use_avatar_as_profile_pic');
+        if (baseline.error) throw baseline.error;
+        expect(baseline.data).toEqual([
+          {
+            arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
+            use_avatar_as_profile_pic: true,
+          },
+        ]);
+      }
       primaryDesktop = await browser.newContext({
         ...devices['Desktop Chrome'],
         baseURL,

@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 166353,
-      "sha256": "f524fb42f45316a4568f9364f39db730199ce8916548eee70e4a9c012c6f54b3"
+      "bytes": 166603,
+      "sha256": "60b5ac395084f8a4d5652ea474134e1fcc2ef380bd664de69afaf73c44cefa7a"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

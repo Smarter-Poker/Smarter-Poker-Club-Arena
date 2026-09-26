@@ -101,12 +101,30 @@ BEGIN
     RAISE EXCEPTION
       'SATELLITE_SEAT_PREIMAGE_CHANGED: fn_ca_settle_satellite_cohort is not the definition this migration patches';
   END IF;
+  -- fn_seat_late_registrant is CALLED, not replaced, so what has to hold is its
+  -- CONTRACT, not its bytes. A byte hash of a function this migration does not
+  -- own refuses for reasons that have nothing to do with this change: the first
+  -- attempt on 2026-09-25 22:30 was refused because a concurrent delivery had
+  -- re-declared it with an added `SET statement_timeout` and an unchanged body.
+  -- That refusal was correct behaviour from the wrong assertion. So this pins
+  -- exactly what the seat delivery below depends on: a SECURITY DEFINER
+  -- authority owned by postgres that takes the canonical seat-acquisition lane
+  -- and reaches the terminal seat gate. Nothing weaker - a fn_seat_late_registrant
+  -- that stopped taking the lane would still refuse this migration - and the
+  -- byte-for-byte preimage on fn_ca_settle_satellite_cohort, the function this
+  -- migration actually replaces, is unchanged above.
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public'
        AND p.proname = 'fn_seat_late_registrant'
-       AND md5(p.prosrc) = '51a3254789bfdc2c1f80994d0c26ad6a'
-       AND p.prosecdef)
+       AND p.prokind = 'f'
+       AND p.pronargs = 2
+       AND pg_get_function_identity_arguments(p.oid) = 'uuid, uuid'
+       AND p.prorettype = 'jsonb'::regtype
+       AND p.prosecdef
+       AND pg_get_userbyid(p.proowner) = 'postgres'
+       AND p.prosrc LIKE '%fn_ca_lock_tournament_seat_acquisition(%'
+       AND p.prosrc LIKE '%fn_seat_late_registrant_before_terminal_seat_gate(%')
   THEN
     RAISE EXCEPTION
       'SATELLITE_SEAT_PREIMAGE_CHANGED: fn_seat_late_registrant is not the canonical seat authority this migration calls';
@@ -892,7 +910,15 @@ BEGIN
          new lane is introduced. A refusal raises rather than leaving a
          registration the tournament will never deal in: the satellite
          settlement is atomic, so the whole delivery is rolled back and retried
-         rather than half-made. */
+         rather than half-made.
+
+         A maintenance freeze is one such refusal:
+         fn_ca_lock_tournament_seat_acquisition answers
+         {"ok": false, "reason": "platform_frozen"} and this raises, so a
+         satellite that finishes inside the hourly break settles after the thaw
+         instead of admitting a winner the frozen platform cannot seat. That is
+         the same answer every other seat door gives during a break, and this
+         settlement is idempotent on its own receipt. */
       IF upper(COALESCE(v_target.status, '')) = 'RUNNING' THEN
         v_seat_receipt := public.fn_seat_late_registrant(
           v_target_id, v_finisher.user_id);

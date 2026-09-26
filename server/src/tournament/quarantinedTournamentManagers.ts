@@ -108,6 +108,15 @@ export interface QuarantinedTournamentManager {
   readonly tournamentId: string;
   /** Why the stop did not complete, as the stop path reported it. */
   readonly reason: string;
+  /**
+   * Why the custody transfer that would have released this manager was
+   * refused, as `path:guard[:clause]` (see F06CustodyRefusal), or null when no
+   * transfer has been refused for this manager. `reason` says a stop failed;
+   * this says which of the fifteen guards behind it answered no. Added
+   * 2026-09-25, when seventeen quarantined managers had a reason and nothing
+   * else for hours.
+   */
+  readonly custodyRefusal: string | null;
   readonly sinceMs: number;
   readonly attempts: number;
   readonly dueAtMs: number;
@@ -124,14 +133,33 @@ export interface QuarantinedTournamentManager {
 export class QuarantinedTournamentManagers {
   private readonly held = new Map<
     string,
-    { reason: string; sinceMs: number; attempts: number; dueAtMs: number; owner: unknown }
+    {
+      reason: string;
+      custodyRefusal: string | null;
+      sinceMs: number;
+      attempts: number;
+      dueAtMs: number;
+      owner: unknown;
+    }
   >();
 
   /**
    * A stop for this tournament settled without releasing the slot. Returns the
    * delay until it will be offered to the stop path again.
+   *
+   * `custodyRefusal` names the refused custody transfer behind this stop, when
+   * the stop path has one. Left undefined, a record by the SAME manager keeps
+   * the refusal it already carries (the retry pass records the attempt before
+   * the transfer runs, and must not blank what the previous transfer said);
+   * a record by a different manager starts with none.
    */
-  record(tournamentId: string, reason: string, nowMs: number, owner: unknown = null): number {
+  record(
+    tournamentId: string,
+    reason: string,
+    nowMs: number,
+    owner: unknown = null,
+    custodyRefusal?: string | null
+  ): number {
     const previous = this.held.get(tournamentId);
     // A DIFFERENT manager stuck on the same tournament is a new quarantine,
     // not a continuation: keeping the old age would date this one to a corpse
@@ -142,6 +170,8 @@ export class QuarantinedTournamentManagers {
     const delayMs = quarantineRetryDelayMs(attempts);
     this.held.set(tournamentId, {
       reason,
+      custodyRefusal:
+        custodyRefusal !== undefined ? custodyRefusal : sameOwner ? previous.custodyRefusal : null,
       sinceMs: sameOwner ? previous.sinceMs : nowMs,
       attempts,
       dueAtMs: nowMs + delayMs,
@@ -193,6 +223,7 @@ export class QuarantinedTournamentManagers {
       .map(([tournamentId, entry]) => ({
         tournamentId,
         reason: entry.reason,
+        custodyRefusal: entry.custodyRefusal,
         sinceMs: entry.sinceMs,
         attempts: entry.attempts,
         dueAtMs: entry.dueAtMs,

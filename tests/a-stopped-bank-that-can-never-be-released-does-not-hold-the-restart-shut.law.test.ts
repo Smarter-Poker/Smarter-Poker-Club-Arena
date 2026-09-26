@@ -40,11 +40,13 @@
  *    re-checks it on an ordinary cutover. No bank or custody name is in
  *    BOUNDED_ONLY. Engine-side cases: server/src/maintenance/
  *    aStoppedBankPastItsBoundIsNamedAndStillRefuses.law.test.ts.
- * 2. The RAW reason is admitted from exactly one serving release: the exact
- *    predecessor profile that can never present the bounded class because the
- *    bound is not in that build. An allow-list of full SHAs, like the
- *    checkpoint predecessor profiles. Any other serving release keeps refusing
- *    it, so the exception retires itself with the first bounded engine.
+ * 2. RETIRED 2026-09-26. The RAW reason was admitted from exactly one serving
+ *    release, the unbounded predecessor 778075b4, as a one-shot way off that
+ *    build. It fired, production moved on, and a rollback to 778075b4 would
+ *    have re-armed a custody reason in the allow-list. It is removed: the raw
+ *    reason now refuses from EVERY serving release, 778075b4 included, and
+ *    tests/noServingReleaseBuysACustodyException.law.test.ts pins that no
+ *    SHA-specific exception can come back.
  * 3. `cards_in_air`, the refusing bank classes and unknown reasons still
  *    refuse, from every serving release, predecessor included.
  * 4. Every other refusal is exactly as it was: the database proof is still
@@ -166,79 +168,27 @@ describe('1. the stuck stopped-bank class is refused, from every serving release
   });
 });
 
-describe('2. the raw reason is admitted from the exact predecessor only', () => {
-  it('admits stopped_bank_custody_unconfirmed when the serving release is the pinned predecessor', () => {
-    const result = certificate({
-      reasons: { f06_preparation_stuck: 13, stopped_bank_custody_unconfirmed: 154 },
-      releaseSha: PREDECESSOR,
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain('the database confirms no hand is in the air');
-    expect(result.stderr).toContain(
-      'restart certificate is held shut by stopped-bank custody the predecessor 778075b4 can never release; ' +
-        'the bound that retires it is not in that release; consulting the database for hands actually in the air'
-    );
-  });
-
-  it('still requires the database proof from the predecessor', () => {
-    for (const rc of [1, 3, 127]) {
-      expect(
-        certificate({
-          reasons: { stopped_bank_custody_unconfirmed: 154 },
-          releaseSha: PREDECESSOR,
-          inflightRc: rc,
-        }).status,
-        `helper rc ${rc}`
-      ).not.toBe(0);
+describe('2. the raw reason refuses from every serving release, the retired predecessor included', () => {
+  it.each([BOUNDED_RELEASE, PREDECESSOR, PREDECESSOR.slice(0, 8), undefined, null, 42])(
+    'refuses stopped_bank_custody_unconfirmed while %j is serving',
+    (releaseSha) => {
+      for (const reasons of [
+        { stopped_bank_custody_unconfirmed: 154 },
+        { f06_preparation_stuck: 13, stopped_bank_custody_unconfirmed: 195 },
+      ]) {
+        const result = certificate({ reasons, releaseSha });
+        expect(result.status, JSON.stringify({ releaseSha, reasons })).not.toBe(0);
+        expect(result.stderr).not.toContain('the database confirms');
+        expect(result.stderr).not.toContain('can never release');
+      }
     }
-    expect(
-      certificate({
-        reasons: { stopped_bank_custody_unconfirmed: 154 },
-        releaseSha: PREDECESSOR,
-        hands: 1,
-      }).status
-    ).not.toBe(0);
-  });
+  );
 
-  it.each([
-    BOUNDED_RELEASE,
-    PREDECESSOR.slice(0, 8),
-    PREDECESSOR.toUpperCase(),
-    `${PREDECESSOR} `,
-    undefined,
-    null,
-    42,
-    true,
-    {},
-    // A mixed case list is not spread by it.each, so this arrives as an array.
-    [PREDECESSOR],
-  ])('refuses the raw reason from any other serving identity: %j', (releaseSha) => {
-    const result = certificate({
-      reasons: { stopped_bank_custody_unconfirmed: 154 },
-      releaseSha,
-    });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).not.toContain('the database confirms');
-    expect(result.stderr).not.toContain('can never release');
-  });
-
-  it('the predecessor allow-list is a literal set of exact full SHAs', () => {
-    const literal = TRANSACTION.slice(
-      TRANSACTION.indexOf('STOPPED_BANK_UNBOUNDED_PREDECESSORS={'),
-      TRANSACTION.indexOf('}', TRANSACTION.indexOf('STOPPED_BANK_UNBOUNDED_PREDECESSORS={')) + 1
-    );
-    const shas = [...literal.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
-    expect(shas).toEqual([PREDECESSOR]);
-    for (const sha of shas) expect(sha).toMatch(/^[0-9a-f]{40}$/);
-    // Membership is exact string membership, on a string, with no prefix,
-    // pattern or case relaxation anywhere near it.
-    expect(TRANSACTION).toContain(
-      'predecessor=isinstance(serving,str) and serving in STOPPED_BANK_UNBOUNDED_PREDECESSORS'
-    );
-    expect(TRANSACTION).toContain('serving=d.get("releaseSha")');
-    expect(TRANSACTION).toContain(
-      'if k not in BOUNDED_ONLY and not (k==RAW_STOPPED_BANK and predecessor): raise SystemExit(1)'
-    );
+  it('the exception is gone from the source, not merely unreachable', () => {
+    expect(TRANSACTION).not.toContain('STOPPED_BANK_UNBOUNDED_PREDECESSORS');
+    expect(TRANSACTION).not.toContain('RAW_STOPPED_BANK');
+    expect(TRANSACTION).not.toContain('serving=d.get("releaseSha")');
+    expect(TRANSACTION).toContain('    if k not in BOUNDED_ONLY: raise SystemExit(1)\n');
   });
 });
 
@@ -293,8 +243,8 @@ describe('5. stdout is the verdict and nothing else', () => {
   // database branch captured the helper's announcement as the figure and the
   // transaction died on `$(( ... / 1000 ))` before prepare.
   it('an admitted certificate prints only the remaining milliseconds, which the caller can do arithmetic on', () => {
-    // (#5267: stopped_bank_custody_stuck is refused, so the admitted shapes
-    // are the preparation reasons and the predecessor's raw reason.)
+    // (#5267 and the retired predecessor exception: the admitted shapes are
+    // the preparation reasons only.)
     for (const reasons of [
       { f06_preparation_stuck: 13 },
       { f06_preparation_unresolved: 1 },
@@ -305,12 +255,6 @@ describe('5. stdout is the verdict and nothing else', () => {
       expect(result.stdout).toMatch(/^[0-9]+\n$/);
       expect(result.stderr).toContain('[engine-release-inflight-hands] answer 0');
     }
-    const raw = certificate({
-      reasons: { f06_preparation_stuck: 13, stopped_bank_custody_unconfirmed: 186 },
-      releaseSha: PREDECESSOR,
-    });
-    expect(raw.status, raw.stderr).toBe(0);
-    expect(raw.stdout).toBe('296000\n');
   });
 
   it('the caller evaluates the captured figure exactly as the transaction does', () => {

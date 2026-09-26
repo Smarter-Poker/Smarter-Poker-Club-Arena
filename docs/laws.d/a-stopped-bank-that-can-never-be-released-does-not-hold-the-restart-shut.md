@@ -24,4 +24,6 @@ bounded engine; that `cards_in_air`, the refusing bank classes (`unwritten`,
 refuse, predecessor included; and that the database proof remains the only
 path that proceeds, with no bypass.
 
-Corrected 2026-09-26 (#5267): `stopped_bank_custody_stuck` is no longer admitted. Past the bound the engine still refuses under that name and the release refuses it too, from every serving release; what outlives the bound on a build with #5255 is a bank still not on disk. The exact-SHA raw-reason exception for predecessor `778075b4` is unchanged and still pinned here.
+Corrected 2026-09-26 (#5267): `stopped_bank_custody_stuck` is no longer admitted. Past the bound the engine still refuses under that name and the release refuses it too, from every serving release; what outlives the bound on a build with #5255 is a bank still not on disk. The exact-SHA raw-reason exception for predecessor `778075b4` was unchanged by #5267.
+
+Retired 2026-09-26: the exact-SHA exception fired once, got production off `778075b4`, and was removed, because a rollback to that SHA would have re-armed a custody reason in the release allow-list. This law now pins that `stopped_bank_custody_unconfirmed` refuses from every serving release, `778075b4` included, and that the exception is gone from the source; `tests/noServingReleaseBuysACustodyException.law.test.ts` pins that no SHA-specific exception can be reintroduced.

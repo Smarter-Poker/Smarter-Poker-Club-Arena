@@ -374,7 +374,7 @@ seconds_to_next_break() {
 
 source_target_is_current() {
   local main_sha latest remaining lock_wait fetch_wait attempt fetched source_deadline
-  local high_water high_water_contained
+  local high_water high_water_contained target_already_sealed_past
   remaining="$(remaining_seconds)" || die 'deadline expired before protected-main verification'
   source_deadline="$DEADLINE"
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -447,10 +447,33 @@ source_target_is_current() {
   [ "$remaining" -le 10 ] || remaining=10
   high_water="$(timeout --signal=TERM --kill-after=1s 5s "$RELEASE_SEAL" get high-water-sha 2>/dev/null || true)"
   high_water_contained=0
+  target_already_sealed_past=0
   if [[ "$high_water" =~ ^[0-9a-f]{40}$ ]]; then
     if timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
       git -C "$REPO_DIR" merge-base --is-ancestor "$high_water" "$SHA" 2>/dev/null; then
       high_water_contained=1
+    else
+      # A NEWER RELEASE ALREADY CARRIES THIS ONE (2026-09-26). Two exact-SHA
+      # requests run side by side (the workflow's concurrency group is per
+      # SHA), so the newer one can seal first. The older one then finds a
+      # high-water it does not contain - and it never will, because the sealed
+      # release is its descendant. That is a stand-down, not a broken build:
+      # run 36216296821 (target 31ee0764, sealed high-water f1d956c3) said
+      # "does not contain the sealed high-water release" and its receipt read
+      # "the durable Hetzner release transaction did not complete", because
+      # the workflow's classifier (classify_release_failure) only recognises
+      # "is stale; protected main requires <sha>", a phrase nothing had printed
+      # since #4539. The refusal is unchanged - it still dies, before any
+      # mutation, with status 1 - only its words are the ones the classifier
+      # and check-engine-deploy-starvation.mjs read as "stood down".
+      remaining=$((source_deadline - $(date +%s)))
+      if [ "$remaining" -gt 2 ]; then
+        [ "$remaining" -le 10 ] || remaining=10
+        if timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+          git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$high_water" 2>/dev/null; then
+          target_already_sealed_past=1
+        fi
+      fi
     fi
   fi
   flock -u 8
@@ -458,6 +481,9 @@ source_target_is_current() {
   [[ "$EXPECTED_SERVER_TREE" =~ ^[0-9a-f]{40}$ ]] || die 'target server tree is unreadable'
   [[ "$high_water" =~ ^[0-9a-f]{40}$ ]] \
     || die "target $SHA cannot prove the sealed high-water release"
+  if [ "$high_water_contained" != 1 ] && [ "$target_already_sealed_past" = 1 ]; then
+    die "target $SHA does not contain the sealed high-water release $high_water, which already contains it: target $SHA is stale; protected main requires $high_water (stood down before mutation)"
+  fi
   [ "$high_water_contained" = 1 ] \
     || die "target $SHA does not contain the sealed high-water release $high_water"
   SUPERSEDED_BY=''
@@ -585,11 +611,14 @@ health_instance() {
 # persists its custody at every break announcement, so what outlives the bound
 # there is a write that keeps failing, a player's bank genuinely not on disk,
 # and nothing behind this script re-checks it on an ordinary cutover. The RAW
-# reason stays refused, with one self-retiring exception: when
-# the serving release is one of the exact predecessors that cannot present
-# the bounded class because the bound is not in that build, the raw reason is
-# admitted under the SAME database in-flight proof. The moment a bounded
-# engine is serving, that exception is dead code by construction.
+# reason stays refused from EVERY serving release. Until 2026-09-26 one exact
+# predecessor SHA (778075b4, which had no bound in its build) was admitted
+# past the raw reason under the database in-flight proof; that one-shot
+# exception fired once, got production off 778075b4, and was removed because a
+# rollback to that SHA would have re-armed a custody reason in the allow-list.
+# No bank or custody reason, and no serving-release identity, may widen what
+# this certificate admits (pinned by
+# noServingReleaseBuysACustodyException.law.test.ts).
 maintenance_certificate() {
   # The minimum break remaining is the strict MIN_BREAK_REMAINING_MS unless the
   # caller names another; the only caller that does is the read straight after
@@ -643,17 +672,6 @@ if ok:
 # No bank or custody name may appear in this set (pinned by
 # theCertificateOpensBeforeTheFleetIsSwept and everyRestartBlockerDeclaresItsBound).
 BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
-# The one reason admitted UNBOUNDED, and only from these exact serving
-# releases: predecessors whose MaintenanceBreak counts
-# stopped_bank_custody_unconfirmed with no bound and can therefore never
-# present stopped_bank_custody_stuck, however long the custody has been held.
-# An allow-list of full SHAs, like the checkpoint predecessor profiles in
-# legacy-engine-checkpoint.mjs. Any other serving release keeps refusing the
-# raw reason, so this exception retires itself with the first bounded engine.
-STOPPED_BANK_UNBOUNDED_PREDECESSORS={"778075b419d078c58565c284c0ca7c5225bb773a"}
-RAW_STOPPED_BANK="stopped_bank_custody_unconfirmed"
-serving=d.get("releaseSha")
-predecessor=isinstance(serving,str) and serving in STOPPED_BANK_UNBOUNDED_PREDECESSORS
 unparked=m.get("unparkedTables")
 if not isinstance(unparked,int) or isinstance(unparked,bool) or unparked<1: raise SystemExit(1)
 reasons=m.get("unparkedReasons")
@@ -664,14 +682,12 @@ if not isinstance(reasons,dict) or not reasons: raise SystemExit(1)
 # are all outside the set and all keep the gate shut.
 for k,v in reasons.items():
     if not isinstance(k,str): raise SystemExit(1)
-    if k not in BOUNDED_ONLY and not (k==RAW_STOPPED_BANK and predecessor): raise SystemExit(1)
+    if k not in BOUNDED_ONLY: raise SystemExit(1)
     if not isinstance(v,int) or isinstance(v,bool) or v<0: raise SystemExit(1)
 # The engine own physical witness, which must be PRESENT and zero. Absent is
 # unreadable, and unreadable is a refusal, never an assumed zero.
 hands=d.get("handsInFlightTotal")
 if not isinstance(hands,int) or isinstance(hands,bool) or hands!=0: raise SystemExit(1)
-if RAW_STOPPED_BANK in reasons:
-    sys.stderr.write("[engine-release-transaction] restart certificate is held shut by stopped-bank custody the predecessor " + serving[:8] + " can never release; the bound that retires it is not in that release; consulting the database for hands actually in the air\n")
 sys.stderr.write("[engine-release-transaction] restart certificate is held shut only by " + repr(reasons) + "; consulting the database for hands actually in the air\n")
 print(remaining)
 raise SystemExit(4)

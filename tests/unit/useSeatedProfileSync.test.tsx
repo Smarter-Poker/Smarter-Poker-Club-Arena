@@ -1,336 +1,302 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
 
-type Handler = (event: any) => void;
-
-const bus = {
-  events: [] as string[],
-  handlers: new Map<string, Handler[]>(),
-  removed: 0,
-};
-
-const emitBus = (event: string, payload: unknown) => {
-  for (const handler of bus.handlers.get(event) ?? []) handler({ payload });
-};
-
-const realtime = {
-  channelNames: [] as string[],
-  bindings: [] as Array<{ config: Record<string, string>; handler: Handler }>,
-  statuses: [] as Array<(status: string, error?: Error) => void>,
-  removed: 0,
-  profileRows: [] as Array<Record<string, unknown>>,
-  profileReads: 0,
-};
-
+const model = vi.hoisted(() => ({
+  options: null as any,
+  rows: [] as Record<string, unknown>[],
+  error: null as unknown,
+  pending: null as Promise<any> | null,
+  reads: [] as string[][],
+  handlers: new Map<string, Set<(event: any) => void>>(),
+}));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
-    subscribe: (event: string, handler: Handler) => {
-      bus.events.push(event);
-      const handlers = bus.handlers.get(event) ?? [];
-      handlers.push(handler);
-      bus.handlers.set(event, handlers);
-      return () => {
-        bus.removed += 1;
-      };
+    subscribe: (name: string, handler: (event: any) => void) => {
+      if (!model.handlers.has(name)) model.handlers.set(name, new Set());
+      model.handlers.get(name)!.add(handler);
+      return () => model.handlers.get(name)!.delete(handler);
     },
   },
 }));
-
+vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
+  useMasterBusBroadcastChannel: (options: any) => {
+    model.options = options;
+  },
+}));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: () => ({
       select: () => ({
-        in: () => {
-          realtime.profileReads += 1;
-          return Promise.resolve({ data: realtime.profileRows, error: null });
+        in: (_column: string, ids: string[]) => {
+          model.reads.push(ids);
+          const reply = model.pending ?? Promise.resolve({ data: model.rows, error: model.error });
+          return Object.assign(reply, { abortSignal: () => reply });
         },
       }),
     }),
-    channel: (name: string) => {
-      realtime.channelNames.push(name);
-      const channel = {
-        on: (_kind: string, config: Record<string, string>, handler: Handler) => {
-          realtime.bindings.push({ config, handler });
-          return channel;
-        },
-        subscribe: (callback: (status: string, error?: Error) => void) => {
-          realtime.statuses.push(callback);
-          return channel;
-        },
-      };
-      return channel;
+    // The predecessor can join its dead WAL channel; failures against it are
+    // missing delivery/health behavior, not an absent mocked SDK method.
+    channel: () => {
+      const c = { on: () => c, subscribe: () => c };
+      return c;
     },
-    removeChannel: () => {
-      realtime.removed += 1;
-      return Promise.resolve();
-    },
+    removeChannel: () => Promise.resolve(),
   },
 }));
-
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
-
 import { useSeatedProfileSync } from '../../src/hooks/useSeatedProfileSync';
-
 const A = 'aaaaaaaa-1111-2222-3333-444444444444';
 const B = 'bbbbbbbb-1111-2222-3333-444444444444';
-
+const T = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const U = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const row = (avatar: string) => ({
+  id: A,
+  arena_avatar_url: avatar,
+  avatar_url: '/social.jpg',
+  equipped_frame: null,
+  equipped_aura: 'aura-fire',
+});
+const flush = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+const emit = (name: string, payload: unknown) => {
+  for (const fn of model.handlers.get(name) ?? []) fn({ payload });
+};
 beforeEach(() => {
-  bus.events = [];
-  bus.handlers = new Map();
-  bus.removed = 0;
-  realtime.channelNames = [];
-  realtime.bindings = [];
-  realtime.statuses = [];
-  realtime.removed = 0;
-  realtime.profileRows = [];
-  realtime.profileReads = 0;
+  model.options = null;
+  model.rows = [];
+  model.error = null;
+  model.pending = null;
+  model.reads = [];
+  model.handlers.clear();
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+});
+afterEach(() => {
+  vi.useRealTimers();
 });
 
-describe('useSeatedProfileSync', () => {
-  it('subscribes to the zero-latency player appearance event', () => {
-    renderHook(() => useSeatedProfileSync('t1', [A, B], () => {}));
-    expect(bus.events).toEqual(['CUSTOMIZATION_MUTATION_STATE', 'PLAYER_APPEARANCE_CHANGED']);
+describe('seated appearance uses the private source signal', () => {
+  it('reads a bounded roster and joins one private table topic, without publishing profiles', async () => {
+    renderHook(() => useSeatedProfileSync(T, [A, B, A], vi.fn()));
+    await flush();
+    expect(model.reads).toEqual([[A, B]]);
+    expect(model.options).toMatchObject({
+      channelName: `table-appearance:${T}`,
+      private: true,
+      event: 'appearance_changed',
+    });
   });
-
-  it('uses one channel with one user-filtered binding per seated player', () => {
-    renderHook(() => useSeatedProfileSync('t1', [A, B], () => {}));
-    expect(realtime.channelNames).toHaveLength(1);
-    expect(realtime.bindings.map((binding) => binding.config.filter)).toEqual([
-      `id=eq.${A}`,
-      `id=eq.${B}`,
-    ]);
-    expect(realtime.bindings.every((binding) => binding.config.table === 'profiles')).toBe(true);
+  it('reads the authoritative appearance after another device sends only the player identity', async () => {
+    const change = vi.fn();
+    renderHook(() => useSeatedProfileSync(T, [A], change));
+    await flush();
+    model.rows = [row('/avatars/new.webp')];
+    act(() => model.options?.onPayload({ payload: { user_id: A } }));
+    await flush();
+    expect(change).toHaveBeenCalledWith({
+      userId: A,
+      avatar: '/avatars/new.webp',
+      frame: null,
+      aura: 'aura-fire',
+    });
   });
-
-  it('reports channel health and reconciles the authoritative seated profiles once live', async () => {
-    const onChange = vi.fn();
-    realtime.profileRows = [
-      {
-        id: A,
-        arena_avatar_url: '/avatars/table/current.webp',
-        equipped_frame: 'frame-gold',
-        equipped_aura: null,
-      },
-    ];
-    const { result } = renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-
-    expect(result.current.state).toBe('connecting');
-    act(() => realtime.statuses[0]?.('SUBSCRIBED'));
-
-    await waitFor(() => expect(result.current.state).toBe('live'));
-    await waitFor(() =>
-      expect(onChange).toHaveBeenCalledWith({
+  it('reports live only after a subscribed channel and successful authoritative read', async () => {
+    model.error = new Error('permission refused');
+    const { result } = renderHook(() => useSeatedProfileSync(T, [A], vi.fn()));
+    await flush();
+    act(() => model.options?.onSubscriptionStatus('SUBSCRIBED'));
+    await flush();
+    expect(result.current.state).toBe('error');
+    model.error = null;
+    model.rows = [row('/readable.webp')];
+    act(() => model.options?.onSubscriptionStatus('SUBSCRIBED'));
+    await flush();
+    expect(result.current.state).toBe('live');
+  });
+  it('recovers a missed edit on reconnect', async () => {
+    const change = vi.fn();
+    const { result } = renderHook(() => useSeatedProfileSync(T, [A], change));
+    await flush();
+    act(() => model.options?.onSubscriptionStatus('CHANNEL_ERROR'));
+    expect(result.current.state).toBe('error');
+    model.rows = [row('/avatars/while-offline.webp')];
+    act(() => model.options?.onSubscriptionStatus('SUBSCRIBED'));
+    await flush();
+    expect(change).toHaveBeenCalledWith(
+      expect.objectContaining({ avatar: '/avatars/while-offline.webp' })
+    );
+    expect(result.current.state).toBe('live');
+  });
+  it('reads on visibility return but does not read an appearance signal in a hidden tab', async () => {
+    const change = vi.fn();
+    renderHook(() => useSeatedProfileSync(T, [A], change));
+    await flush();
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    model.rows = [row('/avatars/visible.webp')];
+    act(() => model.options?.onPayload({ payload: { user_id: A } }));
+    await flush();
+    expect(model.reads).toHaveLength(1);
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await flush();
+    expect(change).toHaveBeenCalledWith(
+      expect.objectContaining({ avatar: '/avatars/visible.webp' })
+    );
+  });
+  it('ignores absent or unseated signal identities', async () => {
+    renderHook(() => useSeatedProfileSync(T, [A], vi.fn()));
+    await flush();
+    act(() => {
+      model.options?.onPayload({ payload: {} });
+      model.options?.onPayload({ payload: { user_id: B } });
+    });
+    await flush();
+    expect(model.reads).toHaveLength(1);
+  });
+  it('keeps immediate local and cross-tab appearance events', async () => {
+    const change = vi.fn();
+    renderHook(() => useSeatedProfileSync(T, [A], change));
+    await flush();
+    act(() =>
+      emit('PLAYER_APPEARANCE_CHANGED', {
         userId: A,
-        avatar: '/avatars/table/current.webp',
-        frame: 'frame-gold',
+        avatar: '/chosen.webp',
+        frame: 'gold',
         aura: null,
       })
     );
-    expect(realtime.profileReads).toBe(1);
+    expect(change).toHaveBeenCalledWith({
+      userId: A,
+      avatar: '/chosen.webp',
+      frame: 'gold',
+      aura: null,
+    });
+    change.mockClear();
+    act(() => emit('PLAYER_APPEARANCE_CHANGED', { userId: B, avatar: '/other.webp' }));
+    expect(change).not.toHaveBeenCalled();
   });
-
-  it('re-reads seated profiles after a channel outage so missed avatar updates cannot stay stale', async () => {
-    const onChange = vi.fn();
-    const { result } = renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    act(() => realtime.statuses[0]?.('SUBSCRIBED'));
-    await waitFor(() => expect(result.current.state).toBe('live'));
-    onChange.mockClear();
-
-    act(() => realtime.statuses[0]?.('CHANNEL_ERROR', new Error('offline')));
+  it('never lets a read started before an optimistic edit repaint the old avatar', async () => {
+    let resolve!: (v: unknown) => void;
+    model.pending = new Promise((r) => {
+      resolve = r;
+    });
+    const change = vi.fn();
+    renderHook(() => useSeatedProfileSync(T, [A], change));
+    act(() => {
+      emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: A,
+        mutationId: 'one',
+        state: 'pending',
+      });
+      emit('PLAYER_APPEARANCE_CHANGED', { userId: A, avatar: '/new.webp' });
+    });
+    model.pending = null;
+    model.rows = [row('/new.webp')];
+    change.mockClear();
+    act(() =>
+      emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: A,
+        mutationId: 'one',
+        state: 'confirmed',
+      })
+    );
+    await act(async () => resolve({ data: [row('/old.webp')], error: null }));
+    await flush();
+    expect(change).not.toHaveBeenCalledWith(expect.objectContaining({ avatar: '/old.webp' }));
+    expect(change).toHaveBeenCalledWith(expect.objectContaining({ avatar: '/new.webp' }));
+  });
+  it('discards a prior table reply and releases bus/visibility listeners on unmount', async () => {
+    let resolve!: (v: unknown) => void;
+    model.pending = new Promise((r) => {
+      resolve = r;
+    });
+    const change = vi.fn();
+    const { rerender, unmount } = renderHook(
+      ({ table }) => useSeatedProfileSync(table, [A], change),
+      { initialProps: { table: T } }
+    );
+    model.pending = null;
+    rerender({ table: U });
+    await flush();
+    await act(async () => resolve({ data: [row('/old-table.webp')], error: null }));
+    expect(change).not.toHaveBeenCalled();
+    unmount();
+    const before = model.reads.length;
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      emit('PLAYER_APPEARANCE_CHANGED', { userId: A, avatar: '/leaked.webp' });
+    });
+    await flush();
+    expect(change).not.toHaveBeenCalled();
+    expect(model.reads).toHaveLength(before);
+    expect([...model.handlers.values()].every((set) => set.size === 0)).toBe(true);
+  });
+  it('does not churn for roster reordering or callback identity changes', async () => {
+    const { rerender } = renderHook(({ ids, callback }) => useSeatedProfileSync(T, ids, callback), {
+      initialProps: { ids: [A, B], callback: vi.fn() },
+    });
+    await flush();
+    rerender({ ids: [B, A], callback: vi.fn() });
+    await flush();
+    expect(model.reads).toHaveLength(1);
+  });
+  it('drops non-UUID roster entries and disables an empty roster', async () => {
+    renderHook(() => useSeatedProfileSync(T, ["'); drop table profiles; --"], vi.fn()));
+    await flush();
+    expect(model.options?.channelName).toBeNull();
+    expect(model.reads).toHaveLength(0);
+  });
+  it('does not claim live when RLS returns an incomplete roster', async () => {
+    const { result } = renderHook(() => useSeatedProfileSync(T, [A], vi.fn()));
+    await flush();
+    act(() => model.options?.onSubscriptionStatus('SUBSCRIBED'));
+    await flush();
     expect(result.current.state).toBe('error');
-    realtime.profileRows = [
-      {
-        id: A,
-        arena_avatar_url: '/avatars/table/changed-while-offline.webp',
-        equipped_frame: null,
-        equipped_aura: 'aura-fire',
-      },
-    ];
-    act(() => realtime.statuses[0]?.('SUBSCRIBED'));
-
-    await waitFor(() => expect(realtime.profileReads).toBe(2));
-    expect(onChange).toHaveBeenCalledWith({
-      userId: A,
-      avatar: '/avatars/table/changed-while-offline.webp',
-      frame: null,
-      aura: 'aura-fire',
-    });
   });
-
-  it('does nothing without a table or without any seated player', () => {
-    renderHook(() => useSeatedProfileSync(null, [A], () => {}));
-    renderHook(() => useSeatedProfileSync('t1', [], () => {}));
-    renderHook(() => useSeatedProfileSync('t1', [null, undefined], () => {}));
-    expect(bus.events).toHaveLength(0);
-    expect(realtime.channelNames).toHaveLength(0);
-  });
-
-  it('drops anything that is not a uuid', () => {
-    // It should not subscribe if the array contains no valid UUIDs
-    renderHook(() => useSeatedProfileSync('t1', ["'); drop table profiles; --"], () => {}));
-    expect(bus.events).toHaveLength(0);
-  });
-
-  it('reads arena_avatar_url, because realtime carries raw column names', () => {
-    const onChange = vi.fn();
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    emitBus('PLAYER_APPEARANCE_CHANGED', {
-      userId: A,
-      avatar: '/avatars/table/vip_wolf@2x.webp',
-      source: 'avatar-picker',
+  it('preserves a pending optimistic edit when another seat joins', async () => {
+    model.rows = [row('/old.webp'), { ...row('/other.webp'), id: B }];
+    const change = vi.fn();
+    const { rerender } = renderHook(({ ids }) => useSeatedProfileSync(T, ids, change), {
+      initialProps: { ids: [A] },
     });
-    expect(onChange).toHaveBeenCalledWith({
-      userId: A,
-      avatar: '/avatars/table/vip_wolf@2x.webp',
-      frame: undefined,
-      aura: undefined,
-    });
-  });
-
-  it('carries optimistic cosmetics through alongside the avatar', () => {
-    const onChange = vi.fn();
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    emitBus('PLAYER_APPEARANCE_CHANGED', {
-      userId: A,
-      frame: 'frame-gold',
-      aura: 'aura-fire',
-      source: 'cosmetic-picker',
-    });
-    expect(onChange).toHaveBeenCalledWith({
-      userId: A,
-      avatar: undefined,
-      frame: 'frame-gold',
-      aura: 'aura-fire',
-    });
-  });
-
-  it('normalizes raw database columns from the scoped realtime binding', () => {
-    const onChange = vi.fn();
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    realtime.bindings[0].handler({
-      new: {
-        id: A,
-        arena_avatar_url: '/avatars/table/vip_wolf@2x.webp',
-        avatar_url: '/social.jpg',
-        equipped_frame: null,
-        equipped_aura: 'aura-fire',
-      },
-    });
-    expect(onChange).toHaveBeenCalledWith({
-      userId: A,
-      avatar: '/avatars/table/vip_wolf@2x.webp',
-      frame: null,
-      aura: 'aura-fire',
-    });
-  });
-
-  it('does not let an older database echo repaint over an optimistic avatar', () => {
-    const onChange = vi.fn();
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    emitBus('CUSTOMIZATION_MUTATION_STATE', {
-      kind: 'player-appearance',
-      scope: A,
-      mutationId: 'avatar-2',
-      state: 'pending',
-    });
-    emitBus('PLAYER_APPEARANCE_CHANGED', {
-      userId: A,
-      avatar: '/avatars/table/new.webp',
-      mutationId: 'avatar-2',
-      source: 'avatar-picker',
-    });
-    onChange.mockClear();
-
-    realtime.bindings[0].handler({
-      new: { id: A, arena_avatar_url: '/avatars/table/old.webp' },
-    });
-    expect(onChange).not.toHaveBeenCalled();
-
-    emitBus('CUSTOMIZATION_MUTATION_STATE', {
-      kind: 'player-appearance',
-      scope: A,
-      mutationId: 'avatar-2',
-      state: 'confirmed',
-    });
-    realtime.bindings[0].handler({
-      new: { id: A, arena_avatar_url: '/avatars/table/new.webp' },
-    });
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: A, avatar: '/avatars/table/new.webp' })
+    await flush();
+    act(() =>
+      emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: A,
+        mutationId: 'pending',
+        state: 'pending',
+      })
+    );
+    change.mockClear();
+    rerender({ ids: [A, B] });
+    await flush();
+    expect(change).not.toHaveBeenCalledWith(expect.objectContaining({ userId: A }));
+    model.rows = [row('/confirmed.webp'), { ...row('/other.webp'), id: B }];
+    act(() =>
+      emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'player-appearance',
+        scope: A,
+        mutationId: 'pending',
+        state: 'confirmed',
+      })
+    );
+    await flush();
+    expect(change).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: A, avatar: '/confirmed.webp' })
     );
   });
-
-  it('ignores a payload with no id', () => {
-    const onChange = vi.fn();
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    emitBus('PLAYER_APPEARANCE_CHANGED', {
-      frame: 'frame-gold',
-      source: 'cosmetic-picker',
+  it('contains a throwing consumer callback', async () => {
+    model.rows = [row('/safe.webp')];
+    const change = vi.fn(() => {
+      throw new Error('render');
     });
-    realtime.bindings[0].handler({ new: {} });
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it('ignores a payload for a user that is not seated', () => {
-    const onChange = vi.fn();
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    // B is not in the array [A]
-    emitBus('PLAYER_APPEARANCE_CHANGED', {
-      userId: B,
-      frame: 'frame-gold',
-      source: 'cosmetic-picker',
-    });
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it('survives a throwing callback without tearing down the subscription', () => {
-    const onChange = vi.fn(() => {
-      throw new Error('render blew up');
-    });
-    renderHook(() => useSeatedProfileSync('t1', [A], onChange));
-    expect(() =>
-      emitBus('PLAYER_APPEARANCE_CHANGED', {
-        userId: A,
-        frame: 'frame-gold',
-        source: 'cosmetic-picker',
-      })
-    ).not.toThrow();
-  });
-
-  it('does not resubscribe when only the callback identity changes', () => {
-    const { rerender } = renderHook(({ cb }) => useSeatedProfileSync('t1', [A], cb), {
-      initialProps: { cb: () => {} },
-    });
-    rerender({ cb: () => {} });
-    rerender({ cb: () => {} });
-    expect(bus.events).toHaveLength(2);
-    expect(bus.removed).toBe(0);
-  });
-
-  it('does not resubscribe when the same ids arrive in a different order', () => {
-    const { rerender } = renderHook(({ ids }) => useSeatedProfileSync('t1', ids, () => {}), {
-      initialProps: { ids: [A, B] as (string | null | undefined)[] },
-    });
-    rerender({ ids: [B, A] });
-    expect(bus.events).toHaveLength(2);
-    expect(bus.removed).toBe(0);
-  });
-
-  it('resubscribes when a player actually joins', () => {
-    const { rerender } = renderHook(({ ids }) => useSeatedProfileSync('t1', ids, () => {}), {
-      initialProps: { ids: [A] as (string | null | undefined)[] },
-    });
-    rerender({ ids: [A, B] });
-    expect(bus.events).toHaveLength(4);
-    expect(bus.removed).toBe(2);
-    expect(realtime.channelNames).toHaveLength(2);
-    expect(realtime.removed).toBe(1);
-  });
-
-  it('removes the subscription on unmount', () => {
-    const { unmount } = renderHook(() => useSeatedProfileSync('t1', [A], () => {}));
-    unmount();
-    expect(bus.removed).toBe(2);
-    expect(realtime.removed).toBe(1);
+    renderHook(() => useSeatedProfileSync(T, [A], change));
+    await flush();
+    expect(change).toHaveBeenCalled();
   });
 });

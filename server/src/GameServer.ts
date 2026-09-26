@@ -1847,6 +1847,14 @@ export class GameServer {
    */
   private readonly processStartedAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /**
+   * When each installed manager was admitted. The never-dealt sweep measures a
+   * manager's idleness from here, not from the event's started_at: an event
+   * that started days ago and was just continued has a manager that is seconds
+   * old (2026-09-26, e9c07fe8: every fresh manager retired inside its Spin
+   * reveal hold, before its first deal).
+   */
+  private tournamentManagerAdmittedAtMs: WeakMap<TournamentManager, number> = new WeakMap();
   /** Re-entrancy guard for the event-driven managerless bounty-outbox drain. */
   private bountyRecoverySweepInFlight = false;
   /** A committed outbox event arrived while the current bounded drain was active. */
@@ -2462,6 +2470,15 @@ export class GameServer {
    * drains its accepted work. Retain its slot and lease until physical stop
    * completes; coalesce repeated board passes into that one tracked drain.
    */
+  /**
+   * Whether a manager has itself had the never-dealt sweep's 15 minutes to
+   * deal. A manager whose admission was never recorded keeps the old reading.
+   */
+  private neverDealtManagerHadItsWindow(manager: TournamentManager, nowMs: number): boolean {
+    const admittedAt = this.tournamentManagerAdmittedAtMs?.get(manager);
+    return admittedAt === undefined || nowMs - admittedAt >= 15 * 60 * 1000;
+  }
+
   private retireTournamentManagerInDiscovery(
     tournamentId: string,
     manager: TournamentManager,
@@ -2780,6 +2797,7 @@ export class GameServer {
       manager
     );
     this.tournamentEngines.set(tournamentId, manager);
+    this.tournamentManagerAdmittedAtMs?.set(manager, Date.now());
     try {
       if (dispositionOwner === 'drained_originals' || dispositionOwner === 'mixed_transfer') {
         manager.enterF06RecoveryOwnership();
@@ -8114,10 +8132,21 @@ export class GameServer {
           if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;
           if (liveSeats < stillPlaying) continue;
 
+          const idleNeverDealtTm = this.tournamentEngines.get(t.id);
+          // The cutoff above is measured from the EVENT's start. A manager
+          // admitted inside the same window has not yet had its chance to deal
+          // (a continued park, a Spin reveal hold); releasing it only admits
+          // another that is released the same way, each leaving a reserved
+          // permit behind.
+          if (
+            idleNeverDealtTm &&
+            !this.neverDealtManagerHadItsWindow(idleNeverDealtTm, Date.now())
+          ) {
+            continue;
+          }
           console.warn(
             `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - releasing its idle manager for RUNNING resume`
           );
-          const idleNeverDealtTm = this.tournamentEngines.get(t.id);
           if (idleNeverDealtTm) {
             this.retireTournamentManagerInDiscovery(
               String(t.id),

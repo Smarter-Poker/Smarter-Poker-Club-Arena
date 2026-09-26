@@ -11,9 +11,7 @@
       "recoveredOn": "2026-09-23",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
-      "refusedBy": [
-        "check-definer-authorization: anon rule"
-      ],
+      "refusedBy": ["check-definer-authorization: anon rule"],
       "liveVerdict": "fn_notification_has_personal_destination(uuid,uuid) WAS genuinely reachable without an account: this migration wrote GRANT EXECUTE ... TO anon,authenticated,service_role, it is SECURITY DEFINER, and it never calls auth.uid(). Closed in production on 2026-09-19 07:13:57Z by migration 20260919071357 anon_grant_from_public_is_the_one_that_mattered, so the exposure ran 2 days 19 hours 58 minutes. Read live 2026-09-23: proacl is {postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}, has_function_privilege('anon',...) is false. It is STABLE and read-only, takes two uuids the caller must already know, and is the qual of RLS policy personal_notification_destination on public.notifications, so EXECUTE for authenticated must stay: revoking it would deny every SELECT on notifications to every logged-in player."
     },
     {
@@ -137,6 +135,83 @@
         "check-definer-authorization: anon rule"
       ],
       "liveVerdict": "fn_ca_tournament_finished_but_not_completed is CREATE OR REPLACE of a function first declared on 2026-09-07 (20260907045424). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. The one function this file creates new, fn_ca_finished_not_completed_open_alert(uuid), carries its own REVOKE ALL ... FROM PUBLIC,anon,authenticated and GRANT EXECUTE ... TO service_role in the same file."
+    },
+    {
+      "version": "20260926084812",
+      "name": "the_ledger_replay_keys_a_union_wallet_by_its_union",
+      "file": "supabase/migrations/20260926084812_the_ledger_replay_keys_a_union_wallet_by_its_union.sql",
+      "md5": "83b50c4bce4bca0aaa99197ed5e1572c",
+      "appliedToProductionAt": "2026-09-26T08:48:12Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from the unpushed branch agent/money7/money-items. Ledger-replay leg readers key union wallet legs by their union. Not horse-based; not reversed. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
+    },
+    {
+      "version": "20260926085132",
+      "name": "the_house_pays_the_mystery_bounty_make_good_the_ruling_owed",
+      "file": "supabase/migrations/20260926085132_the_house_pays_the_mystery_bounty_make_good_the_ruling_owed.sql",
+      "md5": "b3311c0dcbf3476ad060043bda51dd9d",
+      "appliedToProductionAt": "2026-09-26T08:51:32Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from agent/money7/money-items. Pays the mystery-bounty make-good (76.90) to five players; not a take-back or unpaid closure. Not reversed. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
+    },
+    {
+      "version": "20260926092115",
+      "name": "the_bots_paid_twice_on_2026_09_02_return_the_duplicate",
+      "file": "supabase/migrations/20260926092115_the_bots_paid_twice_on_2026_09_02_return_the_duplicate.sql",
+      "md5": "0369cdc4172c737bfbf0828cceb339e7",
+      "appliedToProductionAt": "2026-09-26T09:21:15Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from agent/money7/money-items. REVERSED by Dan 2026-09-26: it clawed 1,001.00 back from 32 horse wallets because they were horses (CLAUDE.md 10.5, 10.9 rule 3). Returned by 20260926131530; the return is verified exactly once by 20260926131420. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
+    },
+    {
+      "version": "20260926092142",
+      "name": "a_bot_only_pko_shortfall_and_confirmed_noise_are_closed_with",
+      "file": "supabase/migrations/20260926092142_a_bot_only_pko_shortfall_and_confirmed_noise_are_closed_with.sql",
+      "md5": "e1d8f1f4eaa595be37d8f46e65e33f32",
+      "appliedToProductionAt": "2026-09-26T09:21:42Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from agent/money7/money-items. Part 1 (event 3f19bd70, closed unpaid because every entrant was a horse) REVERSED by Dan 2026-09-26 and reopened by 20260926131420; part 1 for a21c0cb6 and part 2 stand. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
+    },
+    {
+      "version": "20260926093159",
+      "name": "the_week_of_2026_09_14_horse_rakeback_is_closed_by_dispositi",
+      "file": "supabase/migrations/20260926093159_the_week_of_2026_09_14_horse_rakeback_is_closed_by_dispositi.sql",
+      "md5": "3ac4d82db7451aa62a8e4a57bf56b9ee",
+      "appliedToProductionAt": "2026-09-26T09:31:59Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from agent/money7/money-items. REVERSED by Dan 2026-09-26: it closed the week of 2026-09-14 rakeback unpaid because every recipient was a horse. Voided on the obligation rows by 20260926131554; the alert reopened by 20260926131420. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
+    },
+    {
+      "version": "20260926131530",
+      "name": "a_horse_keeps_the_duplicate_prize_our_defect_paid_it_and_the",
+      "file": "supabase/migrations/20260926131530_a_horse_keeps_the_duplicate_prize_our_defect_paid_it_and_the.sql",
+      "md5": "691a2a5a62d47afbf709d21ba91f2f72",
+      "appliedToProductionAt": "2026-09-26T13:15:30Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from the unpushed branch fix/money-owed-is-paid-and-a-players-overpay-is-the-houses (money-d worktree). Returns the 1,001.00 that 20260926092115 took back, one settlement leg per player. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
+    },
+    {
+      "version": "20260926131554",
+      "name": "the_week_of_2026_09_14_rakeback_stays_owed_on_the_calculator",
+      "file": "supabase/migrations/20260926131554_the_week_of_2026_09_14_rakeback_stays_owed_on_the_calculator.sql",
+      "md5": "b714098e00c6e8ee153fb49ff94b27f4",
+      "appliedToProductionAt": "2026-09-26T13:15:54Z",
+      "recoveredOn": "2026-09-26",
+      "recoveredFrom": "byte-identical to supabase_migrations.schema_migrations.statements[1] (md5 of the file bytes = md5(statements[1]) = fn_ca_migration_text md5)",
+      "refusedBy": [],
+      "liveVerdict": "Recorded from fix/money-owed-is-paid-and-a-players-overpay-is-the-houses (money-d worktree). Voids the 093159 write-off on the obligation rows; its resolution of the alert is reversed by 20260926131420. Applied to production without a pull request; recording is not endorsement. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids pass on it as an ordinary migration; it is recorded here because it creates no object and carries no @live-proof line, and a recording cannot be edited to add one - its liveness is its schema_migrations row."
     }
   ]
 }

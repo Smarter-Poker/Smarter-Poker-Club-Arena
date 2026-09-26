@@ -27,6 +27,7 @@ import shutil
 import sys
 import tempfile
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -115,7 +116,9 @@ def person(db, tag, diamonds=0, role='user'):
 def club(db, tag, owner, union_id=None):
     cid = u('club:' + tag)
     un = 'NULL' if union_id is None else f"'{union_id}'"
-    q(db, f"""INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES ('{cid}','Completion {tag}','{owner}',{un},0,0,false);
+    q(db, f"""LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
+      INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union)
+      SELECT '{cid}',COALESCE(max(club_id),10000)+1,'Completion {tag}','{owner}',{un},0,0,false FROM public.clubs;
       INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{cid}','{owner}','owner','active',0);""")
     return cid
 
@@ -382,7 +385,25 @@ def main():
             r = h.run(h.PSQL + ['-d', TEMPLATE, '-f', str(m)])
             if r.returncode:
                 raise SystemExit(f'migration {m.name} failed:\n' + r.stderr)
-        h.seed()
+        # Reproduce the hosted failure deterministically: every omitted code
+        # would collide with an existing club. Only synthetic INSERTs allocate
+        # explicit codes; the captured schema and production bodies stay intact.
+        original_default = q(TEMPLATE, "SELECT pg_get_expr(d.adbin,d.adrelid) FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid=d.adrelid AND a.attnum=d.adnum WHERE d.adrelid='public.clubs'::regclass AND a.attname='club_id'")
+        occupied = q(TEMPLATE, 'SELECT min(club_id) FROM public.clubs')
+        q(TEMPLATE, f'ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT {occupied}')
+        try:
+            h.seed()
+            seeded = js(TEMPLATE, "SELECT json_agg(club_id) FROM public.clubs WHERE id IN (" + ','.join(lit(i) for i in [h.C1,h.C2,h.C3,h.C4]) + ')')
+            record('FIXTURE the four seed clubs avoid an occupied default identifier',
+                   len(seeded) == 4 and len(set(seeded)) == 4 and int(occupied) not in seeded, seeded)
+            owner = person(TEMPLATE, 'fixture-code-owner')
+            with ThreadPoolExecutor(max_workers=4) as workers:
+                ids = list(workers.map(lambda n: club(TEMPLATE, f'fixture-code-{n}', owner), range(8)))
+            codes = js(TEMPLATE, "SELECT json_agg(club_id) FROM public.clubs WHERE id IN (" + ','.join(lit(i) for i in ids) + ')')
+            record('FIXTURE concurrent synthetic clubs receive distinct unoccupied identifiers',
+                   len(codes) == 8 and len(set(codes)) == 8 and int(occupied) not in codes, codes)
+        finally:
+            q(TEMPLATE, f'ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT {original_default}')
         q('postgres', f'CREATE DATABASE {RED} TEMPLATE {TEMPLATE}')
         q('postgres', f'CREATE DATABASE {GREEN} TEMPLATE {TEMPLATE}')
 

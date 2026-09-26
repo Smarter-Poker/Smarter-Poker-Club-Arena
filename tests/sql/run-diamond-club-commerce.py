@@ -193,16 +193,24 @@ U = '20000000-0000-4000-8000-000000000001'
 
 def seed():
     sql(f"""
+    -- Synthetic fixture identifiers must not inherit the captured random
+    -- five-digit default. Allocate above occupied codes in this transaction;
+    -- the lock also makes concurrent fixture writers serialize correctly.
+    LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
     INSERT INTO auth.users(id) VALUES ('{A}'),('{B}'),('{D}'),('{P}'),('{S}'),('{X}');
     INSERT INTO public.profiles(id,username,diamonds,diamond_balance,role) VALUES
       ('{A}','commerce_owner_a',1000,1000,'user'),('{B}','commerce_union_b',5000,5000,'user'),('{D}','commerce_owner_d',100,100,'user'),
       ('{P}','commerce_player',0,0,'user'),('{S}','commerce_staff',0,0,'admin'),('{X}','commerce_owner_x',3000,3000,'user');
     INSERT INTO public.unions(id,name,owner_id,slug) VALUES ('{U}','Commerce Union','{B}','commerce-union');
-    INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES
-      ('{C1}','Commerce Club One','{A}',NULL,0,0,false),
-      ('{C2}','Commerce Club Two','{B}','{U}',0,0,false),
-      ('{C3}','Commerce Club Three','{D}','{U}',0,0,false),
-      ('{C4}','Commerce Club Four','{X}',NULL,0,0,false);
+    WITH fixtures(ord,id,name,owner_id,union_id) AS (VALUES
+      (1,'{C1}','Commerce Club One','{A}',NULL),
+      (2,'{C2}','Commerce Club Two','{B}','{U}'),
+      (3,'{C3}','Commerce Club Three','{D}','{U}'),
+      (4,'{C4}','Commerce Club Four','{X}',NULL)
+    ), occupied AS (SELECT COALESCE(max(club_id),10000) AS code FROM public.clubs)
+    INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union)
+      SELECT f.id::uuid,o.code+f.ord,f.name,f.owner_id::uuid,f.union_id::uuid,0,0,false
+      FROM fixtures f CROSS JOIN occupied o;
     INSERT INTO public.union_clubs(union_id,club_id) VALUES ('{U}','{C2}'),('{U}','{C3}');
     INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES
       ('{C1}','{A}','owner','active',0),('{C1}','{P}','player','active',0),

@@ -42,3 +42,12 @@ window. The filename follows provider-assigned version `20260926150415`; its
 Readback confirmed the enabled trigger, both SELECT-only private policies, no
 anonymous/authenticated function execution and profiles still unpublished.
 Client publication and connected browser proof remain separate.
+
+Current-main accounting qualification also exposed an independent fixture
+failure before any commerce assertion: four synthetic clubs inherited a
+random five-digit code and collided on the retained unique constraint.
+The shared seed and completion fixture now supply explicit unoccupied codes
+under their local transaction lock. The captured schema and production money
+bodies are unchanged. The existing native completion runner forces an occupied
+default and verifies both the four-club seed and concurrent fixture creation,
+then restores the original default before its commerce scenarios.

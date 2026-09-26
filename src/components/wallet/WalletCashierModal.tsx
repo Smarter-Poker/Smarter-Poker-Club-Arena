@@ -93,7 +93,8 @@ import { useRecentRecipients } from '../../hooks/useRecentRecipients';
 import { fuzzyMatch } from '../../utils/fuzzyMatch';
 
 import { reportError } from '../../utils/errorReporter';
-import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
+import { readCashierBalances } from '../../services/cashierBalanceRead';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { roleLabel, normaliseRole, roleRank } from '../../types/clubRoles';
 import { canMintInClubBank, canHoldAgentWallet } from './walletRows';
 import {
@@ -428,107 +429,44 @@ export default function WalletCashierModal({
     if (coerceToAgentWallet && destination !== 'agent_wallet') setDestination('agent_wallet');
   }, [coerceToAgentWallet, destination]);
 
-  // ── Club + bank balance ───────────────────────────────────────────────────
-  const loadClub = useCallback(async () => {
-    if (!clubId) {
-      /* Returning before setClubLoading(false) left `clubLoading` true
-         forever, which SUPPRESSES the "That Club Could Not Be Resolved" note
-         below and shows "..." where the balance belongs, permanently. */
-      setClubUuid(null);
-      setBank(null);
-      setClubLoading(false);
-      return;
-    }
-    setClubLoading(true);
-    setBank(null);
-    // resolveClubUUID NEVER returns null - on a failed lookup it hands back
-    // whatever it was given, so `|| clubId` catches nothing. A 6-digit club
-    // CODE reaching a uuid RPC argument is a raw postgres error at the worst
-    // moment, so the failure is caught here instead.
-    const uuid = await resolveClubUUID(clubId);
-    if (!isMounted.current) return;
-    if (!isUUID(uuid)) {
-      setClubUuid(null);
-      setBank(null);
-      setClubLoading(false);
-      return;
-    }
-    setClubUuid(uuid);
-    const { data: club, error: clubReadError } = await supabase
-      .from('clubs')
-      .select('id, name, union_id, chip_treasury, promo_balance')
-      .eq('id', uuid)
-      .maybeSingle();
-    if (!isMounted.current) return;
-    /* A READ THAT FAILED IS NOT A TREASURY OF ZERO. Every balance below used
-       to be `Number(undefined) || 0`, so an RLS refusal or a dropped
-       connection printed a confident 0.00 as the Club Bank - and `cap` became
-       0, so every send was refused with "The Wallet Only Holds 0 Chips". Left
-       null, the header says Unavailable once the read has finished (and "..."
-       only while it is still running), never a number. */
-    if (clubReadError) {
-      reportError(clubReadError, 'WalletCashierModal.loadClub');
-      setBank(null);
-      setClubLoading(false);
-      return;
-    }
-    setClubUuid(uuid);
-    setClubName((club?.name as string) || 'Club');
-    setInUnion(club ? Boolean(club.union_id) : null);
+  const balanceScopeRef = useRef(0);
 
-    if (walletType === 'promo_wallet') {
-      /* BOTH promo accounts are read, every time. The pot came off the club
-         row above; the float is the viewer's own agents row. `bank` - the
-         figure this cashier spends against - is derived from whichever source
-         is selected, below, so a source switch never waits on a refetch. A
-         bank role with no agents row has no float: null, never 0.00. */
-      setPromoPot(
-        club?.promo_balance !== undefined && club?.promo_balance !== null
-          ? Number(club?.promo_balance)
-          : null
-      );
-      const { data: agent, error: agentReadError } = await supabase
-        .from('agents')
-        .select('promo_wallet_balance')
-        .eq('club_id', uuid)
-        .eq('user_id', user?.id)
-        .maybeSingle();
-      if (agentReadError) {
-        reportError(agentReadError, 'WalletCashierModal.loadClub_promo_wallet');
-        setPromoFloat(null);
-      } else {
-        setPromoFloat(
-          agent?.promo_wallet_balance !== undefined && agent?.promo_wallet_balance !== null
-            ? Number(agent?.promo_wallet_balance)
-            : null
-        );
-      }
-    } else if (walletType === 'agent_wallet') {
-      const { data: agent, error: agentReadError } = await supabase
-        .from('agents')
-        .select('agent_wallet_balance')
-        .eq('club_id', uuid)
-        .eq('user_id', user?.id)
-        .maybeSingle();
-      if (agentReadError) {
-        reportError(agentReadError, 'WalletCashierModal.loadClub_agent_wallet');
-        setBank(null);
-      } else {
-        setBank(
-          agent?.agent_wallet_balance !== undefined && agent?.agent_wallet_balance !== null
-            ? Number(agent?.agent_wallet_balance)
-            : null
-        );
-      }
-    } else {
-      setBank(
-        club?.chip_treasury !== undefined && club?.chip_treasury !== null
-          ? Number(club?.chip_treasury)
-          : null
-      );
-    }
-    setClubLoading(false);
-  }, [clubId, walletType, user?.id, isMounted]);
+  // clubs and agents are deliberately excluded from Realtime publication.
+  // Read only while this cashier is open and visible, rather than publishing
+  // every hand's treasury/agent updates across the platform. Money commands
+  // still authorize and lock the actual balance inside their transaction.
+  const loadClub = useVisibleRead({
+    scopeKey: `${clubId}:${user?.id}:${walletType}`,
+    enabled: isOpen && allowed && Boolean(clubId && user?.id),
+    read: (signal) => readCashierBalances(clubId, user!.id, walletType, signal),
+    onReset: () => {
+      balanceScopeRef.current++;
+      setClubUuid(null);
+      setBank(null);
+      setPromoPot(null);
+      setPromoFloat(null);
+      setInUnion(null);
+      setClubLoading(isOpen && allowed && Boolean(clubId && user?.id));
+    },
+    onData: (snapshot) => {
+      setClubUuid(snapshot.clubId);
+      setClubName(snapshot.name);
+      setInUnion(snapshot.inUnion);
+      if (walletType !== 'promo_wallet') setBank(snapshot.bank);
+      setPromoPot(snapshot.promoPot);
+      setPromoFloat(snapshot.promoFloat);
+      setClubLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'WalletCashierModal.loadClub');
+      // An unread balance is unavailable, never zero or permission to spend.
+      setBank(null);
+      setPromoPot(null);
+      setPromoFloat(null);
+      setInUnion(null);
+      setClubLoading(false);
+    },
+  });
 
   /**
    * ── Who this cashier may transact with ────────────────────────────────────
@@ -549,11 +487,12 @@ export default function WalletCashierModal({
    */
   const loadMembers = useCallback(
     async (uuid: string) => {
+      const scope = balanceScopeRef.current;
       setMembersLoading(true);
       const { data, error } = await supabase.rpc('fn_club_cashier_members', {
         p_club_id: uuid,
       });
-      if (!isMounted.current) return;
+      if (!isMounted.current || scope !== balanceScopeRef.current) return;
       if (error) {
         /* A read that failed is not an empty club. Leaving the roster empty and
            saying so is honest; pretending the club has nobody in it would let a
@@ -591,11 +530,12 @@ export default function WalletCashierModal({
    */
   const loadReversible = useCallback(
     async (uuid: string) => {
+      const scope = balanceScopeRef.current;
       setReversibleLoading(true);
       const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
         p_club_id: uuid,
       });
-      if (!isMounted.current) return;
+      if (!isMounted.current || scope !== balanceScopeRef.current) return;
       if (error) {
         reportError(error, 'WalletCashierModal.loadReversible');
         setReversible([]);
@@ -623,7 +563,9 @@ export default function WalletCashierModal({
   const loadLedger = useCallback(
     async (uuid: string, offset: number, types: string | null) => {
       const seq = ++ledgerSeqRef.current;
-      const current = () => isMounted.current && seq === ledgerSeqRef.current;
+      const scope = balanceScopeRef.current;
+      const current = () =>
+        isMounted.current && seq === ledgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
       try {
@@ -672,7 +614,9 @@ export default function WalletCashierModal({
   const loadPromoLedger = useCallback(
     async (uuid: string, offset: number, source: PromoSource) => {
       const seq = ++promoLedgerSeqRef.current;
-      const current = () => isMounted.current && seq === promoLedgerSeqRef.current;
+      const scope = balanceScopeRef.current;
+      const current = () =>
+        isMounted.current && seq === promoLedgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
       try {
@@ -748,8 +692,7 @@ export default function WalletCashierModal({
     setClaimingId(null);
     opIdRef.current = newOpId();
     busyRef.current = false;
-    loadClub();
-  }, [isOpen, user?.id, loadClub, walletType, role]);
+  }, [isOpen, clubId, user?.id, walletType, role]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
   // expects of a modal and neither was here.
@@ -869,48 +812,6 @@ export default function WalletCashierModal({
       cancelled = true;
     };
   }, [tab, destination, recipient, clubUuid, isMounted]);
-
-  // ── Realtime: the bank balance is live while the cashier is open ──────────
-  // Two people funding agents at once is the normal case in a busy club, and a
-  // balance that is only correct at open time is how one of them authorises a
-  // send against money the other already moved.
-  useEffect(() => {
-    if (!isOpen || !clubUuid || !allowed) return;
-    const channel = supabase
-      .channel(`club-bank-cashier-${clubUuid}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'clubs', filter: `id=eq.${clubUuid}` },
-        (p) => {
-          if (!isMounted.current) return;
-          if (walletType === 'club_bank' && p.new?.chip_treasury !== undefined)
-            setBank(p.new.chip_treasury !== null ? Number(p.new.chip_treasury) : null);
-          // The club promo pot is live too: a union promo send lands while
-          // the cashier is open and the header moves without a reopen.
-          if (walletType === 'promo_wallet' && p.new?.promo_balance !== undefined)
-            setPromoPot(p.new.promo_balance !== null ? Number(p.new.promo_balance) : null);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${user?.id}` },
-        (p) => {
-          if (!isMounted.current || p.new?.club_id !== clubUuid) return;
-          if (walletType === 'promo_wallet' && p.new?.promo_wallet_balance !== undefined)
-            setPromoFloat(
-              p.new.promo_wallet_balance !== null ? Number(p.new.promo_wallet_balance) : null
-            );
-          if (walletType === 'agent_wallet' && p.new?.agent_wallet_balance !== undefined)
-            setBank(
-              p.new.agent_wallet_balance !== null ? Number(p.new.agent_wallet_balance) : null
-            );
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isOpen, clubUuid, allowed, isMounted, walletType, user?.id]);
 
   // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched

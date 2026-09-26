@@ -789,10 +789,15 @@ export function deriveContext(
   const elapsedTournamentMin = Number.isFinite(startedMs)
     ? Math.max(0, (nowMs - startedMs) / 60_000)
     : Infinity;
-  // Mirror the database entry-window authority: a positive level cap wins;
-  // the minute deadline is only the legacy fallback when no level cap exists.
+  // Mirror fn_tournament_late_registration_open (20260926035534): a positive
+  // level cap and a positive minute deadline must BOTH still be open, so
+  // whichever passes first closes late registration. A level clock that
+  // stalls can no longer hold entry open past the configured minutes.
   // Both windows close at their exact boundary and once the pool is final.
   const prizePoolFinalized = row.prize_pool_finalized === true;
+  const levelWindowOpen = lateRegLevelCap <= 0 || currentLevel < lateRegLevelCap;
+  const clockWindowOpen =
+    lateRegMinutes <= 0 || (Number.isFinite(startedMs) && elapsedTournamentMin < lateRegMinutes);
   const entryCapacity = row.effective_max_players;
   const hasEntryCapacity =
     entryCapacity === null ||
@@ -801,6 +806,18 @@ export function deriveContext(
       entryCapacity > 0 &&
       entrants < entryCapacity);
   const lateRegistrationOpen =
+    entryTermsValid &&
+    status === 'RUNNING' &&
+    !prizePoolFinalized &&
+    hasEntryCapacity &&
+    (lateRegLevelCap > 0 || lateRegMinutes > 0) &&
+    levelWindowOpen &&
+    clockWindowOpen;
+  // Acceleration follows the MANAGER, which halves levels once its entry
+  // window authority (fn_close_tournament_entry_window, level cap first, the
+  // minute deadline only without one) has closed entry. That schedule is
+  // unchanged; admission above is the stricter of the two clocks.
+  const managerEntryWindowOpen =
     entryTermsValid &&
     status === 'RUNNING' &&
     !prizePoolFinalized &&
@@ -851,7 +868,7 @@ export function deriveContext(
     {
       isSpin: format === 'spin',
       totalChipsInPlay: chipSum,
-      accelerated: row.accelerated_mtt === true && !lateRegistrationOpen,
+      accelerated: row.accelerated_mtt === true && !managerEntryWindowOpen,
       onBreak: row.on_break === true,
     }
   );

@@ -1353,6 +1353,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-satellite-seat-preimage.py
+      - name: Late registration closes at whichever of its level or clock deadline comes first
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-late-registration-clock.py
       - name: Lightning Phase 2 domain schema carries its invariants as constraints
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

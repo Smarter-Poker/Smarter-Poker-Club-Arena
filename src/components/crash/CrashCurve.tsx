@@ -75,6 +75,7 @@ import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSp
 import { crashMultiplierCents } from '../../utils/diamondGamesFairness';
 import { gameChips } from '../../utils/bonusGameBudget';
 import { reportError } from '../../utils/errorReporter';
+import { soundService } from '../../services/SoundService';
 import styles from './CrashCurve.module.css';
 export type CrashPhase = 'idle' | 'open' | 'cashed' | 'crashed';
 export interface CrashCurveProps {
@@ -1046,8 +1047,18 @@ export default function CrashCurve(props: CrashCurveProps) {
   const [reduced] = useState(prefersReducedMotion);
   const latest = useRef(props);
   latest.current = props;
+  /**
+   * The beats this scene has already sounded. Held outside the frame loop so
+   * a resize, which rebuilds the loop, never sounds a finished round again.
+   * It starts at the phase the scene was mounted in: a round that was already
+   * over when the scene appeared is not announced as if it had just happened.
+   */
+  const sounded = useRef(props.phase);
+  /** Read by the frame loop: a scene that cannot draw still owes its beats. */
+  const failedRef = useRef(false);
   const width = props.width ?? 360;
   const height = props.height ?? 300;
+  failedRef.current = failed;
   useEffect(() => {
     if (failed && (props.phase === 'cashed' || props.phase === 'crashed'))
       latest.current.onSettled?.();
@@ -1098,13 +1109,21 @@ export default function CrashCurve(props: CrashCurveProps) {
       plateShown = false,
       revealedFor = 0,
       axisLog = 0,
-      clockShown = -1;
+      clockShown = -1,
+      engine = false;
     let lastVisibleFrame: number | null = null;
+    /** The engine voice ends with the flight, the loop or the visible tab. */
+    const silenceEngine = (fadeSec: number) => {
+      if (!engine) return;
+      engine = false;
+      soundService.stopCrashEngine(fadeSec);
+    };
     // Hidden: the loop is cancelled outright, not merely skipped. Shown again:
     // it resumes from the next frame with no visible time charged for the gap.
     const visibilityChanged = () => {
       lastVisibleFrame = null;
       if (document.hidden) {
+        silenceEngine(0.05);
         cancelAnimationFrame(raf);
         raf = 0;
       } else if (raf === 0) {
@@ -1334,6 +1353,24 @@ export default function CrashCurve(props: CrashCurveProps) {
         plate.current.dataset.shown = 'true';
       }
       const submitted = kit ? kit.render() : false;
+      /* THE SOUND IS ON THIS FRAME'S CLOCK (2026-09-26). The engine is one
+         voice for the whole flight, steered to the figure this frame printed;
+         it stops on the frame the round stops. A terminal beat sounds on the
+         frame that shows it (the red flash, or the cash marker, which reads
+         "Max" for a round booked at the cap, so that booking gets the gold
+         fanfare instead of the ordinary sting), and a scene that cannot draw
+         still owes it on the same frame. */
+      if (p.phase === 'open') {
+        engine = true;
+        soundService.driveCrashEngine(current);
+      } else silenceEngine(p.phase === 'crashed' ? 0.03 : 0.25);
+      if (sounded.current !== p.phase && (submitted || !kit || failedRef.current)) {
+        sounded.current = p.phase;
+        if (p.phase === 'crashed') soundService.playCrashExplosion(speed);
+        else if (p.phase === 'cashed' && atCap) soundService.playCrashMax(speed);
+        else if (p.phase === 'cashed')
+          soundService.playBonusBooked((p.cashoutCents ?? p.finalCents ?? 100) / 100);
+      }
       const terminalComplete =
         finished &&
         (reduced || revealedFor >= (p.phase === 'cashed' ? 800 + 2600 * speed : 1200 * speed));
@@ -1346,6 +1383,7 @@ export default function CrashCurve(props: CrashCurveProps) {
     const glassNode = glass.current;
     return () => {
       cancelAnimationFrame(raf);
+      silenceEngine(0.05);
       document.removeEventListener('visibilitychange', visibilityChanged);
       surface?.removeEventListener('webglcontextlost', lost);
       surface?.removeEventListener('webglcontextrestored', restored);

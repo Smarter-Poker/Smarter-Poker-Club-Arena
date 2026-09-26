@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { gameChips } from '../../utils/bonusGameBudget';
+import { soundService } from '../../services/SoundService';
 import styles from './MinesGrid.module.css';
 /**
  * The gem and the mine a tile turns over. The geometry is the original art; the
@@ -141,6 +142,33 @@ export default function MinesGrid({
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
+  /**
+   * THE BOARD IS HEARD AS IT TURNS (2026-09-26). A tile flips, or the mine
+   * blasts, on the render that shows it, so the cue is played from the effect
+   * that follows that render: a crystalline chime for a gem, climbing with
+   * each gem found this round, a blast for the mine, the booked sting for a
+   * win. Each fires once per change; a new round (or a board that mounts on a
+   * round already in progress) starts from where it stands, silently.
+   * Reduced motion keeps every cue: only the motion collapses.
+   */
+  const heard = useRef({ roundId, picks: picked.length, phase });
+  const lastPick = picked[picked.length - 1];
+  const lastIsMine = lastPick !== undefined && (mines?.includes(lastPick) ?? false);
+  useEffect(() => {
+    const was = heard.current;
+    heard.current = { roundId, picks: picked.length, phase };
+    if (was.roundId !== roundId) return;
+    const picks = picked.length;
+    if (phase === 'lost') {
+      if (was.phase !== 'lost') soundService.playMinesExplosion(getAnimationSpeed());
+      return;
+    }
+    if (picks > was.picks && !lastIsMine) soundService.playMinesGem(picks);
+    if (phase === 'cashed' && was.phase !== 'cashed')
+      soundService.playBonusBooked(
+        betChips && betChips > 0 && payoutChips !== undefined ? payoutChips / betChips : 1
+      );
+  }, [roundId, phase, picked.length, lastIsMine, betChips, payoutChips]);
   const speed = getAnimationSpeed();
   const readouts =
     prizes && betChips !== undefined && betChips > 0

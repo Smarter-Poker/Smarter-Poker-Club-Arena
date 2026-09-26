@@ -7,6 +7,7 @@ import { plinkoCabinet } from './plinkoCabinet';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
+import { PLINKO_PEG_GAP_MS, soundService } from '../../services/SoundService';
 import styles from './PlinkoBoard.module.css';
 export const PLINKO_ROWS = 16;
 /** Sixteen rows of pegs drop into seventeen buckets. */
@@ -385,9 +386,18 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       ringAt = Number.NEGATIVE_INFINITY,
       ringSlot = 8,
       booked = 0,
-      bestCents = -1;
+      bestCents = -1,
+      /** The single drop's last row struck, so each peg ticks once. */
+      dropRow = -1,
+      /** When the last peg tick sounded, on the frame clock. */
+      tickedAt = Number.NEGATIVE_INFINITY,
+      /** The best bucket landed on since the last drawn frame, and whether any paid 5x. */
+      clinkCents = -1,
+      clinkBig = false;
     /** When each ball of the batch was released, in visible milliseconds of the batch. */
     const releaseAt: number[] = [];
+    /** The last row each ball of the batch has struck; grows only when a ball is released. */
+    const ballRow: number[] = [];
     let lastVisibleFrame: number | null = null;
     const visibilityChanged = () => {
       lastVisibleFrame = null;
@@ -404,6 +414,10 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         ringSlot = index;
       }
       if (cents > bestCents) bestCents = cents;
+      // One clink a drawn frame, at the best bucket it shows landing: ten
+      // diamonds landing together under reduced motion are one beat, one buzz.
+      if (cents > clinkCents) clinkCents = cents;
+      if (hitBig[index]) clinkBig = true;
     };
     const writeTally = (count: number, total: number) => {
       if (tally.current) tally.current.textContent = tallyLine(count, total, bestCents);
@@ -447,7 +461,11 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         reported = -1;
         booked = 0;
         bestCents = -1;
+        dropRow = -1;
+        clinkCents = -1;
+        clinkBig = false;
         releaseAt.length = 0;
+        ballRow.length = 0;
         ringAt = Number.NEGATIVE_INFINITY;
         hitAt.fill(Number.NEGATIVE_INFINITY);
         hitBig.fill(false);
@@ -482,8 +500,12 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           ? releaseAt[releaseAt.length - 1]
           : Number.NEGATIVE_INFINITY;
         releaseAt.push(Math.max(visibleElapsed, previous + gap));
+        ballRow.push(-1);
         landed = false;
       }
+      /** Pegs newly struck this frame, and the lowest row among them, for the tick. */
+      let strikes = 0,
+        strikeRow = 0;
       if (p.batchPathBits?.length && !landed) {
         const count = p.batchPathBits.length;
         const progressOf = (index: number) =>
@@ -503,6 +525,11 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           let rights = 0;
           for (let k = 0; k < row; k++) rights += (bits >> k) & 1;
           struck.push(pegIndexAt(row, rights));
+          if (row > (ballRow[index] ?? -1)) {
+            ballRow[index] = row;
+            strikes++;
+            strikeRow = Math.max(strikeRow, row);
+          }
           const mesh = batchBalls[j++];
           mesh.visible = true;
           mesh.rotation.set(0.22, reduced ? 0.32 : visibleElapsed / 850 + index, -0.12);
@@ -541,6 +568,11 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         if (!reduced) {
           struckNow.push(pegIndexAt(row, rights));
           falling.push(ball);
+          if (row > dropRow && progress < 16) {
+            dropRow = row;
+            strikes++;
+            strikeRow = row;
+          }
         }
         if (progress >= 16) {
           landed = true;
@@ -606,6 +638,19 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         pulsing,
       });
       if (kit.render()) {
+        /* THE BOARD IS HEARD ON THE FRAME THAT SHOWS IT (2026-09-26). A tick
+           for the pegs this frame shows being struck, at most one every
+           PLINKO_PEG_GAP_MS on the frame clock, pitched by the lowest row
+           struck; a clink for the best landing it shows. */
+        if (strikes > 0 && now - tickedAt >= PLINKO_PEG_GAP_MS) {
+          tickedAt = now;
+          soundService.playPlinkoPeg(strikeRow, strikes);
+        }
+        if (clinkCents >= 0) {
+          soundService.playPlinkoLanding(clinkCents, clinkBig);
+          clinkCents = -1;
+          clinkBig = false;
+        }
         if (pendingProgress !== null) {
           p.onProgress?.(pendingProgress);
           pendingProgress = null;

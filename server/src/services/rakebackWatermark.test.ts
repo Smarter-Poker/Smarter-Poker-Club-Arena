@@ -1384,6 +1384,48 @@ describe('the catch-up re-arms while backlog remains', () => {
   it('does not arm once the range is empty', async () => {
     expect((await drive(['more', 'idle'])).backlog).toEqual([false]);
   });
+
+  /** Several cycles on ONE settler: the retry allowance lives across cycles. */
+  const cycles = async (perCycle: string[][]) => {
+    const settler = new RakebackSettlerService();
+    const inner = vi.spyOn(settler as any, '_runSettlementInner');
+    for (const r of perCycle.flat()) inner.mockResolvedValueOnce(r);
+    for (const method of [
+      'runWeeklyFinancialClose',
+      'runTournamentSentinel',
+      'runUnionTreasurySentinel',
+      'runUnionGovernanceSentinel',
+      'runUnionRakeRollupCatchup',
+      'runUnionEcoRecord',
+      'runTournamentChipConservation',
+    ] as const)
+      vi.spyOn(settler as any, method).mockResolvedValue(undefined);
+    const schedule = vi.spyOn(settler as any, 'scheduleCatchUp');
+    for (let i = 0; i < perCycle.length; i++) await settler.runSettlement();
+    return schedule.mock.calls.map(([backlog]) => backlog);
+  };
+
+  it('retries a first-page stall once, right after a productive cycle, then waits the interval', async () => {
+    expect(await cycles([['more', 'more', 'more'], ['halted'], ['halted']])).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it('a productive cycle that itself halted still earns the one retry', async () => {
+    expect(await cycles([['more', 'halted'], ['halted'], ['halted']])).toEqual([true, true, false]);
+  });
+
+  it('the allowance is restored only by a cycle that acknowledges a page', async () => {
+    expect(
+      await cycles([['more', 'more', 'more'], ['halted'], ['more', 'idle'], ['halted'], ['halted']])
+    ).toEqual([true, true, false, true, false]);
+  });
+
+  it('an idle cycle spends nothing and earns nothing', async () => {
+    expect(await cycles([['idle'], ['halted']])).toEqual([false, false]);
+  });
 });
 
 /**

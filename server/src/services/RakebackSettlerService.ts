@@ -622,6 +622,8 @@ export class RakebackSettlerService {
    * whole period before any payer stage regardless.
    */
   private readonly openWeekIncomplete = new Map<string, number>();
+  /** Earned by a cycle that acknowledged a page; spent by one first-page retry. */
+  private stalledPageRetryAvailable = false;
 
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
@@ -979,6 +981,28 @@ export class RakebackSettlerService {
             );
             break;
           }
+          /*
+           * ONE RETRY AFTER A STALLED FIRST PAGE, AND ONLY ONE (2026-09-26).
+           * A page can halt with its work already durable: a credit chunk the
+           * client abandoned at DB_TIMEOUT_MS commits server-side, and the
+           * retry replays it in milliseconds and moves on. Measured live
+           * 09:12-09:14Z: a productive cycle (3 pages, 40 s each) was followed
+           * by a first-page 'Cash source batch failed' timeout, and the drain
+           * then idled for the full 30-minute interval. So the cycle right
+           * after a productive one earns ONE 60 s retry of a first-page halt.
+           * The allowance is spent by that retry and restored only by a cycle
+           * that acknowledges a page, so a persistent failure still falls back
+           * to the interval after a single extra attempt.
+           */
+          if (result === 'halted' && pagesAcknowledged === 0 && this.stalledPageRetryAvailable) {
+            this.stalledPageRetryAvailable = false;
+            backlogRemains = true;
+            console.warn(
+              `[RakebackSettler] drain halted on its first page right after a productive cycle - ` +
+                `one retry in ${CATCH_UP_DELAY_MS / 1000}s; a second stall waits the full interval`
+            );
+            break;
+          }
           if (result !== 'more') break;
           if (batch >= MAX_DRAIN_BATCHES) {
             backlogRemains = true;
@@ -990,6 +1014,8 @@ export class RakebackSettlerService {
             break;
           }
         }
+        if (pagesAcknowledged > 0) this.stalledPageRetryAvailable = true;
+        else if (!backlogRemains) this.stalledPageRetryAvailable = false;
         this.scheduleCatchUp(backlogRemains, generation);
         // One server coordinator owns the schedule, financial stages, invoices,
         // notices and retries. Its receipt is the completion authority.

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 const migration = read(
-  'supabase/migrations/20260926143409_profile_appearance_changes_have_a_private_bounded_signal.sql'
+  'supabase/migrations/20260926150415_profile_appearance_changes_have_a_private_bounded_signal.sql'
 );
 
 describe('appearance invalidation stays separate from high-write profile data', () => {

@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'supabase/migrations/20260926143409_profile_appearance_changes_have_a_private_bounded_signal.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260926150415_profile_appearance_changes_have_a_private_bounded_signal.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))

@@ -35,3 +35,10 @@ existing isolated-account cleanup and does not touch a real player's account.
 Source, database installation, protected publication and connected production
 proof are separate evidence layers. No invoice savings or universal live health
 is inferred from these tests.
+
+Database installation: one qualified apply at 15:04 UTC, outside the DDL break
+window. The filename follows provider-assigned version `20260926150415`; its
+3,018 bytes match the recorded SQL MD5 `cfa751faf120e0880b764e741af141fe`.
+Readback confirmed the enabled trigger, both SELECT-only private policies, no
+anonymous/authenticated function execution and profiles still unpublished.
+Client publication and connected browser proof remain separate.

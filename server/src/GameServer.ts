@@ -2467,6 +2467,25 @@ export class GameServer {
   ): void {
     if (manager.isF06RecoveryOwner?.() || this.tournamentManagerRetirementOperations.has(manager))
       return;
+    /* A QUARANTINED STOP IS RETRIED ON ITS OWN SCHEDULE (2026-09-26).
+       Once a stop has failed, the quarantine owns when it is tried again:
+       10s, doubling, capped at 60s. Four discovery sweeps (completed cleanup,
+       seat-first stall, overstayed COMPLETING, never-dealt RUNNING) called
+       straight in here every ~5s pass with no regard for that schedule, so a
+       stop that could not succeed was re-run on every pass. On engine
+       209d1b45 that was 436 quarantined managers x one attempt every ~4.4s
+       (964 attempts in 71 minutes each) - about 100 futile fenced requests a
+       second, each throwing and logging a stack. It drove the main event loop
+       to p50 225ms / p99 601ms, which made lease renewals late, which lost
+       more leases, which quarantined more managers: a feedback loop that
+       collapsed the fleet within an hour of every restart. The quarantine's
+       own due-time retry still comes through here, and a manager the
+       quarantine does not hold is untouched. */
+    if (
+      errorContext !== QUARANTINED_MANAGER_STOP_RETRY &&
+      this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager
+    )
+      return;
     this.launchDiscoveryJob(
       this.stopTournamentManagerIfOwned(tournamentId, manager, errorContext),
       errorContext,

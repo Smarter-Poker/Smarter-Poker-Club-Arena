@@ -1943,6 +1943,22 @@ export abstract class ServerTableEngineBase {
    */
   protected tournamentMovePauseOwners: Set<string> = new Set();
   protected claimedTournamentMovePauseOwners: Set<string> = new Set();
+  /**
+   * A TABLE EXCLUDED BY ITS OWN BREAK WAITS FOR THE BREAK (2026-09-26).
+   *
+   * Owners whose pause is backed by a durable table-break row for THIS table
+   * (`smarter_private.f06_operations`, `park_requested` or later). The
+   * unclaimed-park expiry above exists for a planner that stopped wanting a
+   * move; a durable break is not that planner. While its row exists the
+   * database refuses every hand on this table (`fn_f06_hand_number_state`
+   * answers `source_excluded`), so releasing the pause can only make the
+   * dealer ask for hand numbers it will never get. On 2026-09-26 table
+   * 715aee14 parked 51 s after its break was requested, no sweep slot came
+   * within 15 s, the expiry released it, and it failed nine allocations until
+   * the zombie watchdog killed it with four players seated. Only the break's
+   * own end (acknowledgement, withdrawal, or engine teardown) releases these.
+   */
+  private readonly breakHeldTournamentMovePauseOwners: Set<string> = new Set();
   private f06MovementAdmission: {
     ownerId: string;
     receipt: F06MovementAdmission;
@@ -5907,7 +5923,11 @@ export abstract class ServerTableEngineBase {
    * this guarantees a long legitimate hand cannot outrun the request while a
    * stale planner can never leave a healthy table parked forever.
    */
-  async parkForTournamentMove(ownerId: string, maxWaitMs: number): Promise<boolean> {
+  async parkForTournamentMove(
+    ownerId: string,
+    maxWaitMs: number,
+    heldByDurableBreak = false
+  ): Promise<boolean> {
     if (!ownerId) return false;
     if (this.f06MovementAdmission) {
       if (ownerId !== this.f06MovementAdmission.ownerId) return false;
@@ -5930,6 +5950,13 @@ export abstract class ServerTableEngineBase {
       );
     }
     this.tournamentMovePauseOwners.add(ownerId);
+    if (heldByDurableBreak) {
+      // A durable break never expires into a dealer; see the field comment.
+      this.breakHeldTournamentMovePauseOwners.add(ownerId);
+      const expiry = this.tournamentMovePauseExpiryTimers.get(ownerId);
+      if (expiry) clearTimeout(expiry);
+      this.tournamentMovePauseExpiryTimers.delete(ownerId);
+    }
     this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
     // A quiet source may be sleeping for its next roster read. Wake that
@@ -5986,6 +6013,7 @@ export abstract class ServerTableEngineBase {
     if (this.tournamentMoveOperationByOwner.has(ownerId)) return;
     this.tournamentMovePauseOwners.delete(ownerId);
     this.claimedTournamentMovePauseOwners.delete(ownerId);
+    this.breakHeldTournamentMovePauseOwners.delete(ownerId);
     const expiry = this.tournamentMovePauseExpiryTimers.get(ownerId);
     if (expiry) clearTimeout(expiry);
     this.tournamentMovePauseExpiryTimers.delete(ownerId);
@@ -6006,11 +6034,15 @@ export abstract class ServerTableEngineBase {
     for (const ownerId of this.tournamentMovePauseOwners) {
       if (
         this.claimedTournamentMovePauseOwners.has(ownerId) ||
+        this.breakHeldTournamentMovePauseOwners.has(ownerId) ||
         this.tournamentMovePauseExpiryTimers.has(ownerId)
       )
         continue;
       const timer = setTimeout(() => {
-        if (!this.claimedTournamentMovePauseOwners.has(ownerId)) {
+        if (
+          !this.claimedTournamentMovePauseOwners.has(ownerId) &&
+          !this.breakHeldTournamentMovePauseOwners.has(ownerId)
+        ) {
           this.releaseTournamentMovePause(ownerId);
         }
       }, ServerTableEngineBase.TOURNAMENT_MOVE_UNCLAIMED_PARK_MS);
@@ -6026,6 +6058,7 @@ export abstract class ServerTableEngineBase {
     for (const ownerId of [...this.tournamentMovePauseOwners]) {
       if (!this.claimedTournamentMovePauseOwners.has(ownerId)) {
         this.tournamentMovePauseOwners.delete(ownerId);
+        this.breakHeldTournamentMovePauseOwners.delete(ownerId);
       }
     }
   }
@@ -6103,6 +6136,22 @@ export abstract class ServerTableEngineBase {
       }
       this.notifyBoundaryPauseWaiters();
     }
+  }
+
+  /**
+   * Parked at the physical gate with a tournament-move owner that no sweep has
+   * claimed yet. The Manager reads this on the park edge and wakes its own
+   * sweep, so the claim follows the park as an event instead of waiting for
+   * whichever redrive the shared scheduler reaches next.
+   */
+  awaitsTournamentMoveClaim(): boolean {
+    return (
+      this.running &&
+      this.handForHandResolve !== null &&
+      [...this.tournamentMovePauseOwners].some(
+        (owner) => !this.claimedTournamentMovePauseOwners.has(owner)
+      )
+    );
   }
 
   /** A replacement dealer may not cross an unresolved move outcome. */
@@ -6894,7 +6943,8 @@ export abstract class ServerTableEngineBase {
             this.f06MovementAdmission !== null ||
             this.pauseRequiresExplicitResume ||
             this.terminalCloseoutPaused ||
-            this.claimedTournamentMovePauseOwners.size > 0
+            this.claimedTournamentMovePauseOwners.size > 0 ||
+            this.breakHeldTournamentMovePauseOwners.size > 0
           ) {
             // A synchronized break can outlast its initial drain estimate.
             // Only its manager can release that pause after all hands finish.

@@ -15,6 +15,7 @@ import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import { settleHorseExecutionWitness } from '../HorseExecutionWitness.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
+import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
 import {
   HorseDecisionAbortedError,
   HorseDecisionExpiredError,
@@ -1973,5 +1974,81 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
     worker.emitExit(0);
     await stopped;
     expect(client.status().phase).toBe('stopped');
+  });
+});
+
+describe('/health shows the journal the Horse worker owns, not an empty main-thread copy', () => {
+  // 2026-09-25/26: the publisher failed at 19:34:05 UTC inside the Horse
+  // decision worker, and /health, served by the main thread, kept answering
+  // `starting` with every figure null for seven hours: the main thread's copy
+  // of the module never had a publisher. The worker's STATUS reply now carries
+  // the journal's own report across the thread boundary.
+  it('relays the worker journal report from STATUS_RESULT to horseDecisionJournalHealth', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/private/horse-journal');
+    try {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const reply = (horseJournal: unknown) => {
+        const status = worker.sent.at(-1) as { requestId: number };
+        worker.emitMessage({
+          type: 'STATUS_RESULT',
+          requestId: status.requestId,
+          generation: 0,
+          fence: 'worker:status',
+          solverStores: ready.solverStores,
+          solverPolicyArtifact: ready.solverPolicyArtifact,
+          governor: ready.governor,
+          horseJournal,
+        });
+      };
+      const journal = {
+        mode: 'failed',
+        lastFailureReason: 'ack_mismatch',
+        pausedReason: null,
+        pausedSince: null,
+        failedSince: '2026-09-25T19:34:05.000Z',
+        queued: 64,
+        appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+        maxCatalogBytes: 6 * 1024 * 1024 * 1024,
+        catalogBytes: 5_000_000_000,
+        pendingSegments: 0,
+        records: 7_999_990,
+        maxRecords: 8_000_000,
+        maxRowid: 7_999_990,
+        statsAgeMs: 1_000,
+        reportAgeMs: null,
+      };
+      await vi.advanceTimersByTimeAsync(1_000);
+      reply(journal);
+      expect(horseDecisionJournalHealth()).toMatchObject({
+        ...journal,
+        statsAgeMs: expect.any(Number),
+        reportAgeMs: expect.any(Number),
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      reply({
+        ...journal,
+        mode: 'paused',
+        lastFailureReason: null,
+        failedSince: null,
+        pausedReason: 'archive_segments',
+        pausedSince: '2026-09-25T19:34:05.000Z',
+      });
+      expect(horseDecisionJournalHealth()).toMatchObject({
+        mode: 'paused',
+        pausedReason: 'archive_segments',
+        records: 7_999_990,
+      });
+      // A malformed journal report is a diagnostics gap, never a worker failure.
+      await vi.advanceTimersByTimeAsync(1_000);
+      reply({ mode: 'bogus' });
+      expect(client.status().phase).toBe('ready');
+      expect(horseDecisionJournalHealth()).toMatchObject({ mode: 'paused' });
+    } finally {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    }
   });
 });

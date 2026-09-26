@@ -33,7 +33,12 @@ import {
   validateHorseJournalRecord,
   type HorseJournalRecord,
 } from './horseDecisionJournal/record.js';
-import { HorseDecisionJournalPublisher, type HorseJournalWorker } from './HorseDecisionJournal.js';
+import {
+  HorseDecisionJournalPublisher,
+  horseDecisionJournalHealth,
+  relayHorseDecisionJournalHealth,
+  type HorseJournalWorker,
+} from './HorseDecisionJournal.js';
 
 const folders: string[] = [],
   stores: HorseDecisionJournalStore[] = [];
@@ -904,56 +909,415 @@ describe('bounded immutable Horse archive custody', () => {
   });
 });
 
-describe('archive capacity reporting uses the existing terminal failure path', () => {
-  it.each([
-    'archive_bytes',
-    'archive_segments',
-    'archive_catalog_capacity',
-    'archive_storage_capacity',
-  ])('reports %s without acknowledging uncaptured records', async (reason) => {
-    const w = new FakeWorker(),
-      notes: string[] = [],
-      p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
-    p.record('decision', 'hand', 'turn', {});
-    w.emit({ type: 'READY' });
-    w.emit({ type: 'UNAVAILABLE', reason });
-    p.record('decision', 'hand', 'turn2', {});
-    await p.stop();
-    expect(notes).toContain('phase15_journal_' + reason);
-    expect(notes).not.toContain('phase15_journal_recorded');
-    expect(notes).toContain('phase15_journal_capture_unavailable');
-    expect(w.terminate).toHaveBeenCalledTimes(1);
+describe('the capacity probe asks the writer, read-only, whether a quota has room', () => {
+  const archiveOptions = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  it('agrees with the writer at the segment and byte quotas and changes nothing', () => {
+    const dir = folder(),
+      s = store(dir, { archive: archiveOptions(dir, { maxSegments: 1 }) });
+    expect(s.capacityRefusal([record(1)])).toBeNull();
+    expect(s.appendBatch([record(1)])).toEqual(['recorded']);
+    const before = s.storageStats();
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(s.capacityRefusal([record(2)])).toBe('archive_segments');
+    expect(s.storageStats()).toEqual(before);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
+    expect(() => s.appendBatch([record(2)])).toThrow('horse_archive_segment_capacity');
+    const small = folder(),
+      tiny = store(small, { archive: archiveOptions(small, { maxBytes: 1 }) });
+    expect(tiny.capacityRefusal([record(1)])).toBe('archive_bytes');
+    expect(() => tiny.appendBatch([record(1)])).toThrow('horse_archive_byte_capacity');
+    expect(() => s.capacityRefusal([])).toThrow();
+  });
+  it('sees catalog room return and the writer then accepts the same batch', () => {
+    const dir = folder(),
+      s = store(dir, { archive: archiveOptions(dir) });
+    expect(s.append(record())).toBe('recorded');
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    const pages = Number(writer.prepare('PRAGMA page_count').get()!.page_count),
+      before = s.storageStats().archive!;
+    writer.exec(`PRAGMA max_page_count=${pages + 8};`);
+    expect(s.capacityRefusal([record(2), record(3)])).toBe('archive_catalog_capacity');
+    expect(() => s.appendBatch([record(2), record(3)])).toThrow('horse_archive_catalog_capacity');
+    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
+    writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
+    expect(s.capacityRefusal([record(2), record(3)])).toBeNull();
+    expect(s.appendBatch([record(2), record(3)])).toEqual(['recorded', 'recorded']);
+    expect(s.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+  });
+  it('the actual dedicated worker answers a probe without writing', async () => {
+    const dir = folder();
+    const tsx = pathToFileURL(createRequire(import.meta.url).resolve('tsx/esm/api')).href;
+    const entry = new URL('./horseDecisionJournal/worker.ts', import.meta.url).href;
+    const code = `import { tsImport } from ${JSON.stringify(tsx)}; await tsImport(${JSON.stringify(entry)}, ${JSON.stringify(import.meta.url)});`;
+    const worker = new Worker(new URL('data:text/javascript,' + encodeURIComponent(code)), {
+      workerData: { directory: dir, archive: archiveOptions(dir, { maxSegments: 1 }) },
+    });
+    try {
+      const next = () =>
+        new Promise<any>((resolve, reject) => {
+          worker.once('message', resolve);
+          worker.once('error', reject);
+        });
+      const ask = (message: unknown) => {
+        const reply = next();
+        worker.postMessage(message);
+        return reply;
+      };
+      expect(await next()).toEqual({ type: 'READY' });
+      expect(await ask({ type: 'PROBE', records: [record(1)] })).toEqual({
+        type: 'CAPACITY',
+        room: true,
+      });
+      expect(await ask({ type: 'APPEND', records: [record(1)] })).toMatchObject({ type: 'ACK' });
+      expect(await ask({ type: 'APPEND', records: [record(2)] })).toEqual({
+        type: 'UNAVAILABLE',
+        reason: 'archive_segments',
+      });
+      expect(await ask({ type: 'PROBE', records: [record(2)] })).toEqual({
+        type: 'CAPACITY',
+        room: false,
+        reason: 'archive_segments',
+      });
+      // A malformed probe is answered "no room", never a failure of the writer.
+      expect(await ask({ type: 'PROBE', records: [{ bogus: true }] })).toEqual({
+        type: 'CAPACITY',
+        room: false,
+      });
+      const stats = await ask({ type: 'STATS' });
+      expect(stats.stats.archive).toMatchObject({ records: 1, segments: 1, pendingSegments: 0 });
+      expect(await ask({ type: 'STOP' })).toEqual({ type: 'STOPPED' });
+    } finally {
+      await worker.terminate();
+    }
   });
 });
 
-describe('the journal says why it stopped and shows itself to /health', () => {
-  it('logs exactly one structured line when capture stops, with the named reason', async () => {
+const CAPACITY_REASONS = [
+  'archive_bytes',
+  'archive_segments',
+  'archive_catalog_capacity',
+  'archive_storage_capacity',
+] as const;
+const PAUSED_AT = Date.parse('2026-09-25T19:34:05.000Z');
+const identities = (records: readonly HorseJournalRecord[]) =>
+  records.map((r) => [r.eventId, r.sha256]);
+const sentOf = (w: FakeWorker, type: string) =>
+  w.sent.filter((m) => m.type === type) as Array<{ type: string; records: HorseJournalRecord[] }>;
+const STATS_ARCHIVE = {
+  compressedBytes: 10,
+  segments: 1,
+  records: 3,
+  pendingSegments: 0,
+  catalogBytes: 40960,
+  maxRowid: 3,
+  maxBytes: 1024,
+  maxSegments: 100,
+  maxRecords: 1600,
+  maxCatalogBytes: 6 * 1024 * 1024 * 1024,
+  appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+};
+
+describe('capacity is a condition: the journal pauses at its quota and says so', () => {
+  it.each(CAPACITY_REASONS)(
+    'pauses on %s, keeps its queue, re-probes and replays the same records once when room returns',
+    async (reason) => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const w = new FakeWorker(),
+          notes: string[] = [],
+          p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x), {
+            wallNow: () => PAUSED_AT,
+          });
+        p.record('decision', 'hand', 'turn', { n: 1 });
+        w.emit({ type: 'READY' });
+        const head = sentOf(w, 'APPEND')[0]!.records;
+        w.emit({ type: 'UNAVAILABLE', reason });
+        expect(p.health()).toMatchObject({
+          mode: 'paused',
+          pausedReason: reason,
+          pausedSince: '2026-09-25T19:34:05.000Z',
+          lastFailureReason: null,
+          failedSince: null,
+          queued: 1,
+        });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          `[HorseDecisionJournal] capture paused mode=paused reason=${reason} queued=1`
+        );
+        // The writer is kept: a quota is not a broken writer.
+        expect(w.terminate).not.toHaveBeenCalled();
+        expect(notes).toContain('phase15_journal_' + reason);
+        expect(notes).toContain('phase15_journal_capacity_paused');
+        expect(notes).not.toContain('phase15_journal_unavailable');
+        // record() while paused is counted as paused, not as a failed journal,
+        // and still queues within the same bounds.
+        p.record('execution', 'hand', 'turn', { n: 2 });
+        expect(notes).toContain('phase15_journal_capture_paused_capacity');
+        expect(notes).not.toContain('phase15_journal_capture_unavailable');
+        expect(p.health().queued).toBe(2);
+        expect(sentOf(w, 'APPEND')).toHaveLength(1);
+        // A fixed, bounded schedule: nothing before a minute, then one a minute.
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(sentOf(w, 'PROBE')).toHaveLength(0);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sentOf(w, 'PROBE')).toHaveLength(1);
+        const probed = sentOf(w, 'PROBE')[0]!.records;
+        expect(probed).toHaveLength(2);
+        expect(identities(probed.slice(0, 1))).toEqual(identities(head));
+        w.emit({ type: 'CAPACITY', room: false, reason });
+        expect(p.health()).toMatchObject({ mode: 'paused', pausedReason: reason });
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(sentOf(w, 'PROBE')).toHaveLength(2);
+        expect(sentOf(w, 'APPEND')).toHaveLength(1);
+        // A probe is not a retry: the restart budget is untouched.
+        expect(notes).not.toContain('phase15_journal_retry_scheduled');
+        // Room again (a quota raised for the next start, or a rotated archive).
+        w.emit({ type: 'CAPACITY', room: true });
+        expect(p.health()).toMatchObject({
+          mode: 'ready',
+          pausedReason: null,
+          pausedSince: null,
+          lastFailureReason: null,
+        });
+        expect(warn).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenLastCalledWith(
+          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`
+        );
+        expect(notes).toContain('phase15_journal_capacity_resumed');
+        const replay = sentOf(w, 'APPEND')[1]!.records;
+        expect(identities(replay)).toEqual(identities(probed));
+        expect(replay[0]).toEqual(head[0]);
+        w.emit({
+          type: 'ACK',
+          receipts: replay.map((r) => ({
+            eventId: r.eventId,
+            sha256: r.sha256,
+            status: 'recorded',
+          })),
+        });
+        expect(p.health()).toMatchObject({ mode: 'ready', queued: 0 });
+        expect(notes.filter((x) => x === 'phase15_journal_recorded')).toHaveLength(2);
+        // Resumed: no more probes and no second copy of anything.
+        await vi.advanceTimersByTimeAsync(180_000);
+        expect(sentOf(w, 'PROBE')).toHaveLength(2);
+        expect(sentOf(w, 'APPEND')).toHaveLength(2);
+        const stopping = p.stop();
+        expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
+        w.emit({ type: 'STOPPED' });
+        await stopping;
+        expect(p.health().mode).toBe('stopped');
+      } finally {
+        warn.mockRestore();
+      }
+    }
+  );
+  it('keeps the bounded queue while paused and drops beyond it with the same count', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const w = new FakeWorker(),
-        p = new HorseDecisionJournalPublisher(w, () => {});
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'READY' });
-      expect(warn).not.toHaveBeenCalled();
-      w.emit({ type: 'UNAVAILABLE', reason: 'archive_catalog_capacity' });
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(
-        '[HorseDecisionJournal] capture stopped mode=failed reason=archive_catalog_capacity'
-      );
-      // A second failure signal, another record and the stop do not log again.
-      w.emit({ type: 'UNAVAILABLE' });
-      p.record('decision', 'hand', 'turn2', {});
-      await p.stop();
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(p.health()).toMatchObject({
-        mode: 'failed',
-        lastFailureReason: 'archive_catalog_capacity',
-        queued: 1,
-      });
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      for (let i = 0; i < 70; i++) p.record('decision', 'hand', 'turn', { i });
+      expect(p.health().queued).toBe(64);
+      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(7);
+      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(70);
+      // Stopping while paused is prompt and names the gap it leaves.
+      const stopping = p.stop();
+      expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
+      w.emit({ type: 'STOPPED' });
+      await stopping;
+      expect(p.health().mode).toBe('stopped');
+      expect(notes).toContain('phase15_journal_shutdown_unverified');
+      expect(notes).not.toContain('phase15_journal_recorded');
     } finally {
       warn.mockRestore();
     }
   });
+  it('a quota refusal while draining for shutdown stops at once and names the gap', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      const stopping = p.stop();
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
+      w.emit({ type: 'STOPPED' });
+      await stopping;
+      expect(p.health().mode).toBe('stopped');
+      expect(notes).toContain('phase15_journal_shutdown_unverified');
+      expect(sentOf(w, 'PROBE')).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('an integrity refusal stays terminal: ack_mismatch fails, never pauses, never probes', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x), {
+          wallNow: () => PAUSED_AT,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      const head = sentOf(w, 'APPEND')[0]!.records[0]!;
+      w.emit({
+        type: 'ACK',
+        receipts: [{ eventId: 'wrong', sha256: head.sha256, status: 'recorded' }],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        '[HorseDecisionJournal] capture stopped mode=failed reason=ack_mismatch'
+      );
+      // /health says failed, with the reason, when, and the last stats it had.
+      expect(p.health()).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'ack_mismatch',
+        failedSince: '2026-09-25T19:34:05.000Z',
+        pausedReason: null,
+        pausedSince: null,
+        queued: 1,
+        records: 3,
+        catalogBytes: 40960,
+        maxRecords: 1600,
+      });
+      p.record('decision', 'hand', 'turn2', {});
+      expect(notes).toContain('phase15_journal_capture_unavailable');
+      expect(notes).not.toContain('phase15_journal_capture_paused_capacity');
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(sentOf(w, 'PROBE')).toHaveLength(0);
+      expect(w.terminate).toHaveBeenCalledOnce();
+      // A late capacity answer cannot revive a failed journal.
+      w.emit({ type: 'CAPACITY', room: true });
+      expect(p.health().mode).toBe('failed');
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('a capacity report from a writer that never became ready stays terminal', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+      p.record('decision', 'hand', 'turn', {});
+      // The writer could not open (it closes its port after this message).
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_storage_capacity' });
+      expect(p.health()).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'archive_storage_capacity',
+      });
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('shows paused with its reason and keeps the last stats while paused', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let clock = 0;
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, {
+          now: () => clock,
+          wallNow: () => PAUSED_AT,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      clock = 100;
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      clock = 5000;
+      expect(p.health()).toMatchObject({
+        mode: 'paused',
+        pausedReason: 'archive_segments',
+        pausedSince: '2026-09-25T19:34:05.000Z',
+        lastFailureReason: null,
+        failedSince: null,
+        queued: 1,
+        records: 3,
+        maxRecords: 1600,
+        catalogBytes: 40960,
+        statsAgeMs: 5000,
+      });
+      // A paused writer is alive, so it is still asked for fresh figures.
+      expect(sentOf(w, 'STATS')).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('/health reads the journal from the thread that runs it', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  it('says disabled without a directory, starting before any report, then the owning report', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '');
+      expect(horseDecisionJournalHealth()).toMatchObject({ mode: 'disabled' });
+      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/private/horse-journal');
+      // This thread owns no publisher and nothing has reported yet.
+      expect(horseDecisionJournalHealth()).toMatchObject({
+        mode: 'starting',
+        lastFailureReason: null,
+        reportAgeMs: null,
+      });
+      // The publisher that failed lives in the Horse decision worker.
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      w.emit({ type: 'ACK', receipts: [] });
+      relayHorseDecisionJournalHealth(JSON.parse(JSON.stringify(p.health())));
+      const relayed = horseDecisionJournalHealth()!;
+      expect(relayed).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'ack_mismatch',
+        failedSince: '2026-09-25T19:34:05.000Z',
+        queued: 1,
+        records: 3,
+        maxRecords: 1600,
+      });
+      expect(typeof relayed.reportAgeMs).toBe('number');
+      // A malformed report is ignored rather than shown.
+      relayHorseDecisionJournalHealth({ mode: 'fine', path: '/private/horse-journal' });
+      relayHorseDecisionJournalHealth(null);
+      expect(horseDecisionJournalHealth()!.mode).toBe('failed');
+      // Only the finite field set crosses; free text never does.
+      relayHorseDecisionJournalHealth({
+        ...p.health(),
+        path: '/private/horse-journal',
+        lastFailureReason: 'ENOSPC /private/horse-journal',
+      });
+      expect(horseDecisionJournalHealth()).not.toHaveProperty('path');
+      expect(horseDecisionJournalHealth()!.lastFailureReason).toBeNull();
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('the journal says why it stopped and shows itself to /health', () => {
   it('names the publisher fence that gave up when the writer never said', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -982,6 +1346,9 @@ describe('the journal says why it stopped and shows itself to /health', () => {
     expect(p.health()).toEqual({
       mode: 'starting',
       lastFailureReason: null,
+      pausedReason: null,
+      pausedSince: null,
+      failedSince: null,
       queued: 0,
       appliedMaxCatalogBytes: null,
       maxCatalogBytes: null,
@@ -991,6 +1358,7 @@ describe('the journal says why it stopped and shows itself to /health', () => {
       maxRecords: null,
       maxRowid: null,
       statsAgeMs: null,
+      reportAgeMs: null,
     });
     // A writer that is not ready is not asked.
     expect(w.sent).toEqual([]);

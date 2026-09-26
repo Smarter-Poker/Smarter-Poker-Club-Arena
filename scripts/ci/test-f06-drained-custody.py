@@ -14,6 +14,11 @@ MIXED='scripts/ci/fixtures/f06-drained-custody/installed-mixed-authority.json'
 PAID='scripts/ci/fixtures/f06-drained-custody/installed-paid-dependency.sql'
 MIXED_FIXTURE='scripts/ci/probes/f06-shared-hand-lane/mixed-fixture.sql'
 PREPARED_FIXTURE='scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py'
+# 20260926043127: a column added to a sealed hand row after a movement proof
+# was taken (hand_history.kill_pot, 20260924034010) is not a changed hand.
+ADDED='supabase/migrations/20260926043127_a_column_added_after_a_movement_proof_was_taken_is_not_a_cha.sql'
+ADDED_PROBE='scripts/ci/probes/f06-movement-added-column.sql'
+ADDED_PASSES=31
 def main():
  p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2]);p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  root,out=a.root.resolve(),a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
@@ -21,7 +26,7 @@ def main():
  manifest=f.prepare(root,out)
  mixed_builder=module(root/'scripts/ci/build-f06-mixed-custody.py','mixed_custody_builder')
  if mixed_builder.render(root)!=(root/mixed_builder.MIGRATION).read_text():raise ValueError('mixed installer binding differs')
- paths=['scripts/ci/mtt_break_authoring_native.py',PROBE,SPEC,FORMAT,FINISH,RELEASE,STALE,PREPARED_FIXTURE,MIXED,PAID,MIXED_FIXTURE,b.MIGRATION,b.AUTHORITY,b.PREPARED,'scripts/ci/build-f06-drained-custody.py','scripts/ci/test-f06-drained-custody.py','scripts/ci/test-f06-movement-admission.py']
+ paths=['scripts/ci/mtt_break_authoring_native.py',ADDED,ADDED_PROBE,PROBE,SPEC,FORMAT,FINISH,RELEASE,STALE,PREPARED_FIXTURE,MIXED,PAID,MIXED_FIXTURE,b.MIGRATION,b.AUTHORITY,b.PREPARED,'scripts/ci/build-f06-drained-custody.py','scripts/ci/test-f06-drained-custody.py','scripts/ci/test-f06-movement-admission.py']
  paths +=[m.MIGRATION,m.OPENING,m.RECEIPT,m.AUTHORITIES,m.PUBLIC_F06,m.DEPENDENCY_FUNCTIONS,m.DEPENDENCY_CATALOG,m.FINAL_RELATIONS,m.PRIVATE,m.CONTROL,m.CONTINUATION]
  paths += [mixed_builder.MIGRATION,mixed_builder.AUTHORITY,mixed_builder.MOVEMENT_AUTHORITY,mixed_builder.MOVEMENT,'supabase/migrations/20260904230754_engine_presence_survives_the_restart.sql','supabase/migrations/20260917120432_parked_time_banks_retain_their_seat_occupancy.sql','supabase/migrations/20260823_engine_leadership.sql','scripts/ci/build-f06-mixed-custody.py','scripts/ci/probes/f06-mixed-custody.sql','scripts/ci/probes/f06-mixed-restart-qualification.py']
  manifest['source_sha256'].update({p:sha(root/p) for p in paths})
@@ -126,6 +131,22 @@ def main():
   if rc or stderr.count('MIXED_CUSTODY_COMPLETE')!=1 or stderr.count('MIXED_CUSTODY PASS:')!=66 or 'ERROR:' in stderr:raise RuntimeError('mixed custody cases failed')
   if e.snapshot(db,'mixed-after-data')!=mixed_before or f.private_snapshot(e,db,'mixed-after-private')!=mixed_private or e.catalog_snapshot(db,'mixed-after-catalog')!=mixed_catalog:raise RuntimeError('mixed full rollback differs')
   e.report.update(mixed_assertions=stderr.count('MIXED_CUSTODY PASS:'),mixed_rollback=True,mixed_before_missing=True)
+
+  # The installed movement assert is the production pre-image; the added-column
+  # installer refuses any other one and leaves nothing behind, then installs.
+  case=e.database(db);e.sql(case,"ALTER FUNCTION smarter_private.f06_assert_movement(uuid) SET work_mem='64kB';",label='added-column-installer-drift')
+  added_catalog=e.catalog_snapshot(case,'added-column-installer-before');added_private=f.private_snapshot(e,case,'added-column-installer-private-before')
+  rc,_,err=e.sql(case,file=root/ADDED,label='added-column-installer-refusal',check=False)
+  if rc==0 or 'F06_MOVEMENT_PROOF_PREIMAGE_DRIFT' not in err:raise RuntimeError('added-column installer did not refuse a drifted movement assert')
+  if e.catalog_snapshot(case,'added-column-installer-after')!=added_catalog or f.private_snapshot(e,case,'added-column-installer-private-after')!=added_private:raise RuntimeError('refused added-column installer changed catalog or private records')
+  e.discard(case)
+  e.sql(db,file=root/ADDED,label='added-column-install')
+  added_before=e.snapshot(db,'added-before-data');added_private=f.private_snapshot(e,db,'added-before-private');added_catalog=e.catalog_snapshot(db,'added-before-catalog')
+  rc,stdout,stderr=e.sql(db,file=root/ADDED_PROBE,label='added-column-cases',check=False,seconds=60)
+  e.report.update(added_output=stdout,added_errors=stderr)
+  if rc or stderr.count('ADDED_COLUMN_COMPLETE')!=1 or stderr.count('ADDED_COLUMN PASS:')!=ADDED_PASSES or 'ERROR:' in stderr:raise RuntimeError('added-column movement cases failed')
+  if e.snapshot(db,'added-after-data')!=added_before or f.private_snapshot(e,db,'added-after-private')!=added_private or e.catalog_snapshot(db,'added-after-catalog')!=added_catalog:raise RuntimeError('added-column full rollback differs')
+  e.report.update(added_assertions=stderr.count('ADDED_COLUMN PASS:'),added_rollback=True,added_installer_refusal='F06_MOVEMENT_PROOF_PREIMAGE_DRIFT')
 
   restart=module(root/'scripts/ci/probes/f06-mixed-restart-qualification.py','mixed_committed_restart')
   restart.qualify(e,db,root)

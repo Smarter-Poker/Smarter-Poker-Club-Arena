@@ -1,6 +1,6 @@
 # A bystander seated after a finished hand does not hold its settlement
 
-2026-09-26. Migration `20260926091455`. Law
+2026-09-26. Migration `20260926131050` (replaces `20260926091455`, see below). Law
 `tests/a-bystander-seated-after-a-finished-hand-does-not-hold-its-settlement.law.test.ts`.
 
 ## What was frozen
@@ -91,3 +91,16 @@ On 2026-09-26 at 09:13 UTC, one transaction ran this exact handoff body as a
 
 Every player here is a horse. The same ruling applies to a human (CLAUDE.md
 10.5).
+
+## Replaced by 20260926131050 (2026-09-26 13:10 UTC)
+
+`20260926091455` never reached the database and never could. Its pre-image
+pins `fn_ca_resume_hand_submission` at `1aa58a5d`, and PR #5320
+(`20260926091630`, applied) had already moved that body to `828edb10` with
+its own late-chair clause for the same table. So the handoff half of this
+change is live through #5320, and the file is deleted.
+
+The door half was not live anywhere: `fn_f06_abort_abandoned_generation`
+still read the last dealt hand by write time. `20260926131050` installs
+exactly the reviewed door body above (`adeba11b`) on the live pre-image
+(`f7424f0f`), asserts the live handoff is #5320's and leaves it alone.

@@ -122,9 +122,10 @@ const leaseLostReports = (): string[] =>
   reportErrorMock.mock.calls
     .filter(([, context]) => context === 'GameServer.tournament_lease_lost')
     .map(([error]) => {
-      const match = /^Tournament (\S+) no longer proves its current lease generation$/.exec(
-        String((error as Error).message)
-      );
+      const match =
+        /^Tournament (\S+) (?:no longer proves its current lease generation|could not prove its lease generation inside its window)/.exec(
+          String((error as Error).message)
+        );
       expect(match).not.toBeNull();
       return match![1];
     });

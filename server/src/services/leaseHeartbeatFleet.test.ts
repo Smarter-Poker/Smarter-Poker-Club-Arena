@@ -289,19 +289,29 @@ describe.each(['tournament', 'table'] as const)('%s heartbeat fleet', (scope) =>
       await heartbeat(capture(2501), delivered);
       expect(requests).toHaveLength(4);
     }
-    // Complete one old transport: its callback has expired. The queue now
-    // contains the latest captured pass, not eight duplicate sets of claims.
-    requests[0].resolve(kept(requests[0].claims));
-    await vi.waitFor(() => expect(requests).toHaveLength(5));
-    expect(delivered).not.toHaveBeenCalled();
-    expect(requests[4].claims[0][rowKey]).toBe(id(2000));
-    requests[4].resolve(kept(requests[4].claims));
-    await vi.waitFor(() => expect(requests).toHaveLength(6));
-    requests[5].resolve(kept(requests[5].claims));
-    await vi.waitFor(() => expect(delivered).toHaveBeenCalledTimes(2));
-    expect(delivered.mock.calls.flatMap(([outcome]) => outcome.proofs)).toHaveLength(501);
-    for (const request of requests.slice(1, 4)) request.resolve(kept(request.claims));
-    await Promise.resolve();
+    // Four transports never settled, so no claim has been answered for 40 s,
+    // and still no more than four transports are ever in flight. Later passes
+    // queued fresh questions for the claims nobody answered (a claim nobody
+    // answered is asked again, 2026-09-26) instead of waiting on the stuck ones.
+    // Complete the old transports: their callbacks expired, so nothing is
+    // delivered from them. The queued questions then go out on the freed
+    // workers and every one of them is answered and delivered.
+    for (const request of requests.slice(0, 4)) request.resolve(kept(request.claims));
+    for (let drained = 4; drained < 40; drained++) {
+      try {
+        await vi.waitFor(() => expect(requests.length).toBeGreaterThan(drained), { timeout: 200 });
+      } catch {
+        break;
+      }
+      requests[drained].resolve(kept(requests[drained].claims));
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    const proven = new Set(
+      delivered.mock.calls.flatMap(([outcome]) =>
+        outcome.proofs.map((proof: Record<string, string>) => proof[inputKey])
+      )
+    );
+    expect(proven.size).toBe(2501);
   });
 
   it('does not dispatch queued claims whose owner was replaced or deliver after shutdown', async () => {

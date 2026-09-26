@@ -318,9 +318,12 @@ test.each(['cash', 'tournament'] as const)(
         'the ordinary next pass must renew the healthy batch'
       );
       assert.equal(owners[0].fenced, 0);
-      assert.equal(heldCalls, 1, 'the retained exact claim cannot be dispatched twice');
+      // A claim nobody answered is asked again (2026-09-26), never more than
+      // three questions at once; here every question about it hangs.
+      assert(heldCalls <= 3, 'an unanswered claim holds at most three questions at once');
     }
-    assert(owners[500].fenced > 0, 'unknown sibling still expires under its original proof');
+    assert(heldCalls > 1, 'the unanswered claim was asked again on a later pass');
+    assert(owners[500].fenced > 0, 'unknown sibling still expires when no question is answered');
     held.resolve(kept(heldClaims));
     await h.flush();
     assert.equal(owners[500].renewed, 0, 'late transport cannot resurrect expired authority');

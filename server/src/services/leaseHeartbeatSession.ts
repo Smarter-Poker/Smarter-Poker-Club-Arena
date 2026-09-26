@@ -69,6 +69,8 @@ export const LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS = 8_000;
 /** A silent socket is dropped this long after its statement was sent. */
 export const LEASE_HEARTBEAT_LOCAL_BOUND_MS = LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS + 2_000;
 const CONNECT_TIMEOUT_MS = 5_000;
+/** A hedge does not queue behind a dedicated statement older than this. */
+export const LEASE_HEARTBEAT_HEDGE_TO_SHARED_AFTER_MS = 1_000;
 /** Connect, SET and the privilege check together; a caller may wait this long once. */
 const CONNECT_BOUND_MS = CONNECT_TIMEOUT_MS + 2_000;
 
@@ -172,6 +174,8 @@ class LeaseHeartbeatSession {
   private tail: Promise<void> = Promise.resolve();
   private stopped = false;
   private disabledReason = '';
+  /** Monotonic start of the statement now on the dedicated session, if any. */
+  private statementStartedAtMs: number | null = null;
 
   connects = 0;
   disconnects = 0;
@@ -205,6 +209,20 @@ class LeaseHeartbeatSession {
     if (this.state === 'connecting' && this.connecting) await this.connecting;
     if (this.state !== 'ready') return this.shared(args);
 
+    /* A STUCK STATEMENT IS NOT A QUEUE TO JOIN (2026-09-26). A caller here
+       while the session's current statement has been outstanding for a
+       second or more is a hedge (leaseHeartbeatBatches: a claim nobody
+       answered is asked again). Waiting behind the statement that has not
+       answered is the one place a hedge cannot help, so it asks on the shared
+       client instead. An ordinary pass never sees this: the statement is
+       ~50 ms, and consecutive batches still take turns on the session. */
+    if (
+      this.statementStartedAtMs !== null &&
+      performance.now() - this.statementStartedAtMs >= LEASE_HEARTBEAT_HEDGE_TO_SHARED_AFTER_MS
+    ) {
+      return this.shared(args);
+    }
+
     // One statement at a time on this scope's session. The caller's proof
     // deadline was read before this call, so waiting here only shortens it.
     const prior = this.tail;
@@ -216,7 +234,12 @@ class LeaseHeartbeatSession {
     try {
       const client = this.client;
       if (this.state !== 'ready' || !client) return await this.shared(args);
-      return await this.dedicated(client, args);
+      this.statementStartedAtMs = performance.now();
+      try {
+        return await this.dedicated(client, args);
+      } finally {
+        this.statementStartedAtMs = null;
+      }
     } finally {
       release();
     }

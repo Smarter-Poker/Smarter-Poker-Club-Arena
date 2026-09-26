@@ -175,6 +175,44 @@ describe('the shared Data API pool is full of game traffic', () => {
 });
 
 describe('the dedicated session changes the transport and nothing else', () => {
+  it('a hedge does not queue behind a dedicated statement that has not answered (2026-09-26)', async () => {
+    let clock = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    let statements = 0;
+    pgFake.state.behaviour = {
+      connect: async () => undefined,
+      query: async (_client, text) => {
+        if (text.startsWith('SET ')) return { rows: [] };
+        if (text.includes('has_function_privilege')) return { rows: [{ ok: true }] };
+        statements++;
+        return hang(); // the session's statement never answers
+      },
+    };
+    shared.mockResolvedValue({
+      data: [{ tournament_id: T(1), state: 'kept', lease_generation: GEN }],
+      error: null,
+    });
+    const session = await import('./leaseHeartbeatSession.js');
+    await session._resetLeaseHeartbeatSessionsForTests({ connectionString: 'postgres://x' });
+    const args = {
+      p_instance_id: 'engine-1',
+      p_claims: [{ tournament_id: T(1), lease_generation: GEN }],
+      p_stale_seconds: 30,
+    };
+    void session.leaseHeartbeatRpc('tournament', args);
+    await flush();
+    expect(statements).toBe(1);
+    expect(shared).not.toHaveBeenCalled();
+
+    // A second question a second and a half later is a hedge: it must reach
+    // the database, not wait behind the statement that has not answered.
+    clock = 1_500;
+    const hedge = await session.leaseHeartbeatRpc('tournament', args);
+    expect(hedge.error).toBeNull();
+    expect(shared).toHaveBeenCalledTimes(1);
+    expect(statements).toBe(1);
+  });
+
   it('runs one heartbeat statement per scope with an 8 s statement timeout on verified TLS', async () => {
     const session = await import('./leaseHeartbeatSession.js');
     await session._resetLeaseHeartbeatSessionsForTests({ connectionString: 'postgres://x' });

@@ -463,7 +463,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       setTicket(null);
       uncertainTicket.current = null;
       setUncertain(false);
-      triggerHaptic('light');
       await load(uuid);
     } catch (e) {
       reportError(e, 'DiamondChoicePage.start');
@@ -989,6 +988,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : `Cross Street ${picks + 1} For ${gameChips(crossable)} Chips`,
           onClick: () => {
             if (!open) {
+              // Inside the tap: a phone only allows a buzz here, not when the
+              // server answers.
+              triggerHaptic('medium');
               void start();
               return;
             }

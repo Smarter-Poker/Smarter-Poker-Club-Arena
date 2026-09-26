@@ -5,6 +5,7 @@ import { diamondGameTitle } from '../../utils/diamondGameTitles';
 import type { WheelRunPrize } from '../../utils/autoRun';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import revealStyles from './WheelWinReveal.module.css';
+import { TapHaptic } from '../haptics/TapHaptic';
 import styles from './WheelRunPanels.module.css';
 
 /**
@@ -57,6 +58,7 @@ export function WheelBonusQueue({
         onClick={() => onPlay(next)}
       >
         Play Game
+        <TapHaptic disabled={disabled} />
       </button>
     </section>
   );
@@ -89,6 +91,7 @@ export function WheelRunResume({
       <div className={styles.cardActions}>
         <button type="button" className={styles.cardButtonQuiet} disabled={busy} onClick={onEnd}>
           End Run
+          <TapHaptic disabled={busy} />
         </button>
         <button
           type="button"
@@ -97,6 +100,7 @@ export function WheelRunResume({
           onClick={onResume}
         >
           {left === 0 ? 'Run Complete' : `Resume Run (${left.toLocaleString()} Left)`}
+          <TapHaptic disabled={busy || left === 0} />
         </button>
       </div>
     </section>

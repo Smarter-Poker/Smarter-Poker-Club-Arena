@@ -41,6 +41,8 @@
 }
 .cardButton,
 .cardButtonQuiet {
+  /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
+  position: relative;
   flex: 1;
   min-height: 44px;
   min-width: 160px;

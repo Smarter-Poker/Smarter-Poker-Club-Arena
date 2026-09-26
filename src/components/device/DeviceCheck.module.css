@@ -1,0 +1,100 @@
+.check {
+  display: grid;
+  gap: 14px;
+  color: #e4e6eb;
+  font:
+    500 14px 'Roboto Condensed',
+    system-ui,
+    sans-serif;
+}
+
+.lead {
+  margin: 0;
+  color: #b8c2cf;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(110px, 38%) 1fr;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 4%);
+}
+
+.row dt {
+  color: #9aa5b3;
+}
+
+.row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #f4f7fb;
+}
+
+.tests {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.test,
+.copy,
+.ask button {
+  position: relative;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #3b4a5c;
+  border-top-color: #9aa5b3;
+  border-radius: 6px;
+  background: #101a29;
+  color: #f4f7fb;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.test:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.copy {
+  border-color: #1877f2;
+  color: #45adff;
+}
+
+.ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ask span {
+  flex: 1 1 100%;
+}
+
+.ask button {
+  flex: 1 1 0;
+}
+
+.ask button[aria-pressed='true'] {
+  border-color: #45adff;
+  color: #45adff;
+}
+
+.note {
+  margin: 0;
+  color: #b8c2cf;
+  font-size: 13px;
+  white-space: pre-wrap;
+}

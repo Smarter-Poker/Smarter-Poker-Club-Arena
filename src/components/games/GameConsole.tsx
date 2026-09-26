@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { SHORT_LANDSCAPE_QUERY } from '../../hooks/useSceneBudget';
+import { TapHaptic } from '../haptics/TapHaptic';
 import type { DeckBay } from '../console/DeckConsole';
 import type { PlateButtonProps, ConsoleInk } from '../console/SpadeConsole';
 import styles from './GameConsole.module.css';
@@ -85,6 +86,7 @@ export function GameConsole({
         data-plate={main ? 'primary' : 'secondary'}
       >
         {label}
+        <TapHaptic disabled={Boolean(rest.disabled) || pending} radius="4px" />
       </button>
     );
   };
@@ -116,6 +118,7 @@ export function GameConsole({
                   >
                     {bay.value}
                     <span aria-hidden="true"> ↻</span>
+                    <TapHaptic disabled={bay.disabled} radius="4px" />
                   </button>
                 ) : (
                   bay.value
@@ -161,6 +164,7 @@ export function GamePanel({
                   onClick={button.onClick}
                 >
                   {button.label}
+                  <TapHaptic disabled={button.disabled} radius="4px" />
                 </button>
               )
           )}

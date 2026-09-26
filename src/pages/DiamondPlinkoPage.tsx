@@ -40,6 +40,7 @@ import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed, hmacSha256Hex, sha256Hex } from '../utils/wheelFairness';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import { triggerHaptic } from '../services/HapticService';
 import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { roundedMinePrize } from '../utils/diamondChoiceMath';
 import styles from './diamondGames.module.css';
@@ -669,7 +670,14 @@ function DiamondPlinkoGame() {
         ]}
         secondary={{
           label: animating ? (allReleased ? 'Show Results' : 'Drop All') : 'Refresh',
-          onClick: () => (animating ? (allReleased ? showResults() : release(true)) : void check()),
+          // Every plate buzzes inside its own tap, the one moment a phone allows it.
+          onClick: () => {
+            triggerHaptic('selection');
+            if (animating) {
+              if (allReleased) showResults();
+              else release(true);
+            } else void check();
+          },
           disabled: busy || uncertain,
         }}
         primary={
@@ -678,7 +686,10 @@ function DiamondPlinkoGame() {
                 label: allReleased
                   ? 'Dropping'
                   : `Drop ${(released + 1).toLocaleString()} Of ${(result?.drops.length ?? 0).toLocaleString()}`,
-                onClick: () => release(false),
+                onClick: () => {
+                  triggerHaptic('light');
+                  release(false);
+                },
                 disabled: allReleased,
               }
             : {
@@ -688,7 +699,10 @@ function DiamondPlinkoGame() {
                     : step === 'offer'
                       ? 'Answer The Offer First'
                       : 'Drop Diamonds',
-                onClick: () => void play(),
+                onClick: () => {
+                  triggerHaptic('medium');
+                  void play();
+                },
                 disabled: busy || uncertain || blocked || !ticket,
               }
         }

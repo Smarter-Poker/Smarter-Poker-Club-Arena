@@ -27,7 +27,7 @@ const OCC_B = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 const db = vi.hoisted(() => ({
   /** userId -> what fn_cashout_seat_occupancy answers next. */
-  cashout: new Map<string, 'lightning' | 'ok' | 'boom'>(),
+  cashout: new Map<string, 'lightning' | 'ok' | 'boom' | 'locked'>(),
   pending: [] as Array<{ user_id: string; seat_number: number; occupancy_id: string }>,
   departures: [] as Array<Record<string, unknown>>,
   cashoutCalls: [] as Array<Record<string, unknown>>,
@@ -48,6 +48,7 @@ vi.mock('../services/supabase/client.js', () => {
       const verdict = db.cashout.get(args.p_user_id) ?? 'ok';
       if (verdict === 'lightning') return { data: null, error: LIGHTNING_ERROR };
       if (verdict === 'boom') return { data: null, error: { message: 'connection reset' } };
+      if (verdict === 'locked') return { data: null, error: { message: 'LEAVE_LOCKED:240000' } };
       return {
         data: {
           ok: true,
@@ -273,6 +274,44 @@ describe('a player leaving while their chips are in a Lightning hand', () => {
     expect(db.departures).toHaveLength(1);
     expect(db.departures[0]).toMatchObject({ p_leave_mode: 'forced' });
     expect(e.seatedPlayers).toHaveLength(1);
+    e.preciseTimer?.dispose?.();
+  });
+
+  it('only a Lightning deferral is retried every pass; a stay-clock hold gets one probe (verifier P3)', async () => {
+    // After a restart: two durable leave_pending seats, nothing in memory.
+    const e = tableWith(
+      { user_id: ALICE, occupancy_id: OCC_A, seat_number: 1 },
+      { user_id: BOB, occupancy_id: OCC_B, seat_number: 2 }
+    );
+    for (const p of e.seatedPlayers) p.leave_pending = true;
+    db.pending = [
+      { user_id: ALICE, seat_number: 1, occupancy_id: OCC_A },
+      { user_id: BOB, seat_number: 2, occupancy_id: OCC_B },
+    ];
+    db.cashout.set(ALICE, 'locked'); // ahead with stay clock left
+    db.cashout.set(BOB, 'lightning'); // in a live Lightning hand
+
+    await e.sweepQueuedLeaves(); // the one probe finds both
+    expect(db.cashoutCalls.map((c) => c.p_user_id)).toEqual([ALICE, BOB]);
+    expect(e.leaveHeldByClock.get(ALICE), 'the clock now owns Alice').toBe(OCC_A);
+    expect(e.lightningDeferredLeaves.get(BOB)).toBe(OCC_B);
+
+    // Next pass: Bob is deferred, so the sweep runs (it reads every pending
+    // seat - one transaction per seat, nothing moves for a refused one).
+    db.pending = [{ user_id: BOB, seat_number: 2, occupancy_id: OCC_B }];
+    await e.sweepQueuedLeaves();
+    expect(db.cashoutCalls).toHaveLength(3);
+
+    // Bob's hand ends and he leaves; Alice is still on the clock. No more
+    // every-pass sweeps: Alice waits on releaseLeavesHeldByClock.
+    db.cashout.set(BOB, 'ok');
+    await e.sweepQueuedLeaves();
+    expect(e.seatedPlayers.map((p: any) => p.user_id)).toEqual([ALICE]);
+    const after = db.cashoutCalls.length;
+    db.pending = [{ user_id: ALICE, seat_number: 1, occupancy_id: OCC_A }];
+    await e.sweepQueuedLeaves();
+    await e.sweepQueuedLeaves();
+    expect(db.cashoutCalls, 'a clock-held leave is not re-swept every pass').toHaveLength(after);
     e.preciseTimer?.dispose?.();
   });
 

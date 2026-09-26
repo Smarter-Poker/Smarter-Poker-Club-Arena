@@ -1691,9 +1691,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          Lightning, so "retry after the halt lifts" meant never. Now the halt
          branch takes the prepared sweep and does the teardown
          (passWhileDealingHalted -> completeQueuedLeavesWhileHalted), and a
-         halted table sweeps again on the next pass - but only while its roster
-         shows a `leave_pending` seat, so a halted table with nobody leaving
-         makes no extra request. The add-on precondition is not asked under a
+         halted table sweeps again on the next pass - but only while a seated
+         occupancy has a leave the database deferred for a Lightning hand
+         (`shouldSweepQueuedLeaves`), plus one probe per halt when the roster
+         shows any `leave_pending` seat. A leave the stay clock holds keeps its
+         own release (releaseLeavesHeldByClock) and is not re-swept every pass,
+         and a halted table with nobody leaving makes no extra request. The
+         add-on precondition is not asked under a
          halt: the add-on sweep sits below the gate and cannot run, so waiting
          for it would hold the leave for the whole halt; and a leave settling
          before a pending add-on is the order settlement itself uses (step 6
@@ -1703,16 +1707,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         !this.isTournamentTable() &&
         this.preparedLeavePending === null &&
         (this.dealingHaltLock
-          ? this.hasQueuedLeave()
+          ? this.shouldSweepQueuedLeaves()
           : !this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0);
       let rawSweep: ReturnType<typeof processLeavePending> | null = null;
       let budgetedSweep: ReturnType<typeof processLeavePending> | null = null;
       if (leaveSweepCanRace) {
+        if (this.dealingHaltLock) this.queuedLeaveProbeDone = true;
         rawSweep = processLeavePending(
           this.tableId,
           this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs, occupancyId) =>
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
+          (lockedUserId, stayRemainingMs, occupancyId) => {
+            this.lightningDeferredLeaves.delete(lockedUserId);
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
+          },
+          undefined,
+          undefined,
+          (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
         );
         budgetedSweep = this.withStepBudget(
           'leave_pending',
@@ -1824,8 +1834,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return processLeavePending(
       this.tableId,
       this.tableInfo?.club_id || '',
-      (lockedUserId, stayRemainingMs, occupancyId) =>
-        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
+      (lockedUserId, stayRemainingMs, occupancyId) => {
+        this.lightningDeferredLeaves.delete(lockedUserId);
+        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
+      },
+      undefined,
+      undefined,
+      (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
     );
   }
 

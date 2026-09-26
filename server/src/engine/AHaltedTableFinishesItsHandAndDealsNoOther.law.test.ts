@@ -255,7 +255,7 @@ describe('a halted table finishes its hand and deals no other', () => {
       BASE.indexOf('this.tableInfo = tableData as TableInfo;'),
       BASE.indexOf('if (this.tableInfo?.tournament_id) {')
     );
-    expect(start).toMatch(/this\.applyDealingHaltFromRow\(this\.tableInfo\);/);
+    expect(start).toMatch(/this\.applyDealingHaltFromRow\(this\.tableInfo, haltReadSeq\);/);
 
     // ...and a brand-new engine handed that row is halted from its first pass.
     const rebuilt = engine();
@@ -567,7 +567,7 @@ describe('a halted table finishes its hand and deals no other', () => {
     // halt branch takes the prepared sweep so the next pass may launch another;
     // a halted table with no leaver launches none.
     expect(DEALING).toMatch(
-      /this\.preparedLeavePending === null &&\s*\(this\.dealingHaltLock\s*\?\s*this\.hasQueuedLeave\(\)\s*:\s*!this\.pendingAddOnSweepNeeded && this\.pendingAddOns\.size === 0\)/
+      /this\.preparedLeavePending === null &&\s*\(this\.dealingHaltLock\s*\?\s*this\.shouldSweepQueuedLeaves\(\)\s*:\s*!this\.pendingAddOnSweepNeeded && this\.pendingAddOns\.size === 0\)/
     );
     const take = DEALING.slice(
       DEALING.indexOf('protected override async completeQueuedLeavesWhileHalted('),
@@ -590,7 +590,17 @@ describe('a halted table finishes its hand and deals no other', () => {
       BASE.indexOf('protected async sweepQueuedLeaves('),
       BASE.indexOf('protected isContinuityActive(')
     );
-    expect(SWEEP, 'asked only when somebody is leaving').toMatch(/!this\.hasQueuedLeave\(\)/);
+    expect(SWEEP, 'asked only when somebody is leaving').toMatch(
+      /!this\.shouldSweepQueuedLeaves\(\)/
+    );
+    // Only a LIGHTNING deferral earns the every-pass retry; a leave the stay
+    // clock holds gets one probe and then waits on its own release.
+    const SHOULD = BASE.slice(
+      BASE.indexOf('protected shouldSweepQueuedLeaves(): boolean {'),
+      BASE.indexOf('protected releaseDepartedSeats(')
+    );
+    expect(SHOULD).toMatch(/if \(this\.lightningDeferredLeaves\.size > 0\) return true;/);
+    expect(SHOULD).toMatch(/return !this\.queuedLeaveProbeDone && /);
     expect(SWEEP, 'CLAUDE.md 13 rule 5').toMatch(/isMaintenanceFrozen\(\)/);
   });
 
@@ -647,16 +657,75 @@ describe('a halted table finishes its hand and deals no other', () => {
     dispose(e);
   });
 
-  it('a cash Cluster table re-reads the halt columns alone, on the short clock; nobody else does', async () => {
+  const HALT_POLL =
+    'dealing_halted_at, dealing_halted_reason, cluster:cash_games!cluster_id(lightning_enabled)';
+  const haltReads = () =>
+    selectSpy.mock.calls.filter(
+      (c) =>
+        c[0] === 'tables' &&
+        (c[1] === HALT_POLL || c[1] === 'dealing_halted_at, dealing_halted_reason')
+    );
+
+  it('a Cluster that cannot be halted is polled once a minute; a Lightning-enabled one every 5 s', async () => {
+    // Lightning OFF and not halted: nothing can halt this table, so the halt
+    // poll keeps the rule re-read's minute (verifier P2, 2026-09-26).
+    const off = engine();
+    maybeSingle.mockResolvedValue({ data: { ...liveRow, cluster: { lightning_enabled: false } } });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(20_000_000);
+    await off.refreshDealingHalt();
+    expect(haltReads(), 'one select carries the halt and the Cluster switch').toHaveLength(1);
+    expect(selectSpy.mock.calls[0][1]).toBe(HALT_POLL);
+    expect(off.clusterLightningEnabled).toBe(false);
+    for (const t of [5_001, 30_000, 59_999]) {
+      now.mockReturnValue(20_000_000 + t);
+      await off.refreshDealingHalt();
+    }
+    expect(haltReads(), 'no fast poll for a Cluster that cannot be halted').toHaveLength(1);
+    now.mockReturnValue(20_060_000);
+    await off.refreshDealingHalt();
+    expect(haltReads()).toHaveLength(2);
+    dispose(off);
+
+    // Lightning ON: every DEALING_HALT_TTL_MS.
+    selectSpy.mockReset();
+    const on = engine();
+    maybeSingle.mockResolvedValue({ data: { ...liveRow, cluster: { lightning_enabled: true } } });
+    now.mockReturnValue(30_000_000);
+    await on.refreshDealingHalt();
+    now.mockReturnValue(30_004_000);
+    await on.refreshDealingHalt();
+    expect(haltReads()).toHaveLength(1);
+    now.mockReturnValue(30_005_001);
+    await on.refreshDealingHalt();
+    expect(haltReads()).toHaveLength(2);
+    dispose(on);
+
+    // An embed PostgREST cannot resolve falls back to the two columns alone.
+    selectSpy.mockReset();
+    const fallback = engine();
+    maybeSingle
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST200', message: 'no relationship' },
+      })
+      .mockResolvedValueOnce({ data: haltedRow, error: null });
+    now.mockReturnValue(40_000_000);
+    await fallback.refreshDealingHalt();
+    expect(selectSpy.mock.calls.map((c) => c[1])).toEqual([
+      HALT_POLL,
+      'dealing_halted_at, dealing_halted_reason',
+    ]);
+    expect(fallback.dealingHaltLock).toBe(true);
+    dispose(fallback);
+    now.mockRestore();
+  });
+
+  it('a halted Cluster table re-reads the halt columns alone, on the short clock; nobody else does', async () => {
     const e = engine();
     maybeSingle.mockResolvedValue({ data: haltedRow });
     const now = vi.spyOn(Date, 'now').mockReturnValue(10_000_000);
     await e.refreshDealingHalt();
-    const haltReads = () =>
-      selectSpy.mock.calls.filter(
-        (c) => c[0] === 'tables' && c[1] === 'dealing_halted_at, dealing_halted_reason'
-      );
-    expect(haltReads(), 'one select, two columns').toHaveLength(1);
+    expect(haltReads(), 'one select').toHaveLength(1);
     expect(e.dealingHaltLock).toBe(true);
     // Inside DEALING_HALT_TTL_MS: no second read.
     now.mockReturnValue(10_004_000);

@@ -441,7 +441,13 @@ export async function processLeavePending(
    * that ever changes, this callback already covers it.
    */
   onDeparted?: (userId: string, occupancyId: string) => void,
-  diagnostic?: LeavePendingOperation
+  diagnostic?: LeavePendingOperation,
+  /**
+   * LIGHTNING (2026-09-26): told of each seat deferred because its player is
+   * in a live Lightning hand, so the caller can retry THOSE seats on its next
+   * pass without re-sweeping seats the stay clock is holding.
+   */
+  onLightningDeferred?: (userId: string, occupancyId: string) => void
 ): Promise<Array<{ userId: string; occupancyId: string }>> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
@@ -489,7 +495,10 @@ export async function processLeavePending(
     // failure and not a refusal of the leave: `leave_pending` stays set, the
     // seat is untouched, and the next pass asks again. Never reported as
     // departed, so no teardown runs for a player who is still seated.
-    if (out.lightning) continue;
+    if (out.lightning) {
+      onLightningDeferred?.(seat.user_id, seat.occupancy_id);
+      continue;
+    }
     if (out.lockedMs !== null) {
       // Refusal does not cancel the accepted departure. Keep the durable
       // pending flag so a new engine process reads the same occupancy after

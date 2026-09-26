@@ -21,6 +21,10 @@ const db = vi.hoisted(() => ({
   row: null as Record<string, unknown> | null,
   selects: [] as Array<{ table: string; cols: string }>,
   observeReply: null as null | (() => { data: unknown; error: unknown }),
+  /** The Cluster's `lightning_enabled`, as the halt poll's embed reads it. */
+  lightningEnabled: true,
+  /** When set, a read of these columns answers only when the test says so. */
+  hold: null as null | ((cols: string) => Promise<{ data: unknown; error: unknown }> | null),
 }));
 const rpc = vi.hoisted(() => vi.fn());
 
@@ -28,9 +32,18 @@ vi.mock('../services/supabase/client.js', () => {
   const from = (table: string) => ({
     select: (cols: string) => {
       db.selects.push({ table, cols });
+      // The row as it stands WHEN THE REQUEST IS SENT, which is what a real
+      // round trip answers with however late the answer arrives.
+      const sent =
+        table !== 'tables' || db.row === null
+          ? null
+          : cols.includes('cluster:')
+            ? { ...db.row, cluster: { lightning_enabled: db.lightningEnabled } }
+            : { ...db.row };
+      const held = db.hold?.(cols) ?? null;
       return {
         eq: () => ({
-          maybeSingle: async () => ({ data: table === 'tables' ? db.row : null, error: null }),
+          maybeSingle: async () => (held ? held : { data: sent, error: null }),
         }),
       };
     },
@@ -91,6 +104,8 @@ beforeEach(() => {
   db.row = null;
   db.selects = [];
   db.observeReply = null;
+  db.lightningEnabled = true;
+  db.hold = null;
   rpc.mockReset();
   rpc.mockImplementation(async (fn: string) => {
     if (fn === 'fn_cash_table_observe_dealing_halt') {
@@ -196,7 +211,7 @@ describe('a halted Cluster table, through the real dealing loop', () => {
       // The halt was read with the narrow two-column select, not only the rule read.
       expect(db.selects).toContainEqual({
         table: 'tables',
-        cols: 'dealing_halted_at, dealing_halted_reason',
+        cols: 'dealing_halted_at, dealing_halted_reason, cluster:cash_games!cluster_id(lightning_enabled)',
       });
     } finally {
       e.running = false;
@@ -273,6 +288,63 @@ describe('a halted Cluster table, through the real dealing loop', () => {
       e.running = false;
       e.preciseTimer?.dispose?.();
     }
+  });
+});
+
+describe('reads that answer out of order (verifier P1, 2026-09-26)', () => {
+  it('a late rule-read answer sent before the halt can never release an acknowledged halt', async () => {
+    // The table is live and its Cluster is Lightning-enabled.
+    db.row = { ...live };
+    const { e } = dealingTable(() => {});
+    // 1. The rule re-read goes out while the row is still live; its answer
+    //    is slow (the step budget gives up on it, the request carries on).
+    let answerLate!: () => void;
+    db.hold = (cols) =>
+      cols.startsWith('rake_percent')
+        ? new Promise((resolve) => {
+            answerLate = () => resolve({ data: { ...live }, error: null });
+          })
+        : null;
+    const lateRuleRead = e.refreshRakeConfig(true);
+    db.hold = null;
+
+    // 2. The Cluster halts the table; the halt poll reads it, and the parked
+    //    table acknowledges.
+    db.row = halted(H1);
+    clock += 6_000;
+    await e.refreshDealingHalt();
+    expect(e.dealingHaltLock).toBe(true);
+    await e.observeDealingHalt();
+    expect(observeCalls()).toHaveLength(1);
+    expect(e.dealingHaltObservedFor).toBe(H1);
+
+    // 3. The stale answer finally lands. It was read before the halt existed.
+    answerLate();
+    await lateRuleRead;
+    expect(e.dealingHaltLock, 'a stale read must not lift an acknowledged halt').toBe(true);
+    expect(e.dealingHaltObservedFor).toBe(H1);
+    expect(e.isNextHandPaused()).toBe(true);
+
+    // 4. A read sent AFTER the acknowledgement that finds the row cleared is
+    //    the only thing that lifts it.
+    db.row = { ...live };
+    clock += 6_000;
+    await e.refreshDealingHalt();
+    expect(e.dealingHaltLock).toBe(false);
+    e.running = false;
+    e.preciseTimer?.dispose?.();
+  });
+
+  it('an older answer landing after a newer one is ignored, whichever way it points', async () => {
+    db.row = halted(H1);
+    const { e } = dealingTable(() => {});
+    const older = e.beginDealingHaltRead();
+    const newer = e.beginDealingHaltRead();
+    e.applyDealingHaltFromRow(halted(H1), newer);
+    e.applyDealingHaltFromRow({ ...live }, older);
+    expect(e.dealingHaltLock).toBe(true);
+    e.running = false;
+    e.preciseTimer?.dispose?.();
   });
 });
 

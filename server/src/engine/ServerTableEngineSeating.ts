@@ -1761,6 +1761,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const seat = this.seatedPlayers.find(
       (p) => p.user_id === userId && p.occupancy_id === occupancyId
     );
+    this.noteLightningDeferredLeave(userId, occupancyId);
     if (seat) {
       seat.leave_pending = true;
       // Out of this table's deal until the cash-out lands, as a mid-hand

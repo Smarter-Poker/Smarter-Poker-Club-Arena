@@ -25,6 +25,7 @@
 
 import { useEffect, useId } from 'react';
 import { quarterHourOptions } from '../../lib/quarterHourStartSelect';
+import { WEEKDAY_NAMES, scheduleZoneLabel } from '../../utils/scheduleTimeZone';
 import './WeeklyScheduleEditor.css';
 
 export interface WeeklyScheduleValue {
@@ -42,7 +43,6 @@ export const DEFAULT_WEEKLY_SCHEDULE: WeeklyScheduleValue = {
 };
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export const TIME_UTC_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
@@ -55,7 +55,8 @@ export const TIME_UTC_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 export function describeSchedule(
   days: number[],
   times: string[],
-  intervalMinutes: number | null
+  intervalMinutes: number | null,
+  timeZone?: string | null
 ): string {
   const dayText =
     days.length === 7
@@ -63,10 +64,10 @@ export function describeSchedule(
       : days
           .slice()
           .sort((a, b) => a - b)
-          .map((d) => DAY_NAMES[d]?.slice(0, 3) ?? String(d))
+          .map((d) => WEEKDAY_NAMES[d]?.slice(0, 3) ?? String(d))
           .join(', ');
-  if (intervalMinutes) return `${dayText}, Every ${intervalMinutes.toLocaleString()} Minutes`;
-  return `${dayText} At ${times.join(', ')} UTC`;
+  if (intervalMinutes) return `${dayText} - Every ${intervalMinutes.toLocaleString()} Min`;
+  return `${dayText} At ${times.join(', ')} ${scheduleZoneLabel(timeZone)}`;
 }
 
 export default function WeeklyScheduleEditor({
@@ -74,6 +75,7 @@ export default function WeeklyScheduleEditor({
   onChange,
   hideDays = false,
   hideInterval = false,
+  timeZone = null,
 }: {
   value: WeeklyScheduleValue;
   onChange: (next: WeeklyScheduleValue) => void;
@@ -84,8 +86,11 @@ export default function WeeklyScheduleEditor({
    * as its start times and handed back as 'times'. Default false.
    */
   hideInterval?: boolean;
+  /** The zone the days and times are in (saved with the row); null = UTC. */
+  timeZone?: string | null;
 }) {
   const modeGroupName = useId();
+  const zoneLabel = scheduleZoneLabel(timeZone);
   const mode: WeeklyScheduleValue['mode'] = hideInterval ? 'times' : value.mode;
 
   /** Every change leaves through here, so a times-only host never receives 'interval'. */
@@ -122,7 +127,7 @@ export default function WeeklyScheduleEditor({
             <button
               key={day}
               type="button"
-              aria-label={DAY_NAMES[day]}
+              aria-label={WEEKDAY_NAMES[day]}
               aria-pressed={value.daysOfWeek.includes(day)}
               className={`wse-day-chip ${value.daysOfWeek.includes(day) ? 'active' : ''}`}
               onClick={() => toggleDay(day)}
@@ -143,7 +148,7 @@ export default function WeeklyScheduleEditor({
               checked={mode === 'times'}
               onChange={() => emit({ ...value, mode: 'times' })}
             />
-            <span className="wse-mode-text">At Set Times (UTC)</span>
+            <span className="wse-mode-text">At Set Times ({zoneLabel})</span>
           </label>
           <label className="wse-mode-option">
             <input
@@ -165,7 +170,7 @@ export default function WeeklyScheduleEditor({
               <span className="wse-row-label">Start Time {(i + 1).toLocaleString()}</span>
               <select
                 className="wse-time-input"
-                aria-label={`Start Time ${(i + 1).toLocaleString()} (UTC)`}
+                aria-label={`Start Time ${(i + 1).toLocaleString()} (${zoneLabel})`}
                 value={time}
                 onChange={(e) => setTime(i, e.target.value)}
               >
@@ -226,7 +231,7 @@ export default function WeeklyScheduleEditor({
       )}
 
       <p className="wse-hint">
-        Days And Times Are In UTC.{' '}
+        Days And Times Are In {zoneLabel}.{' '}
         {hideDays ? 'Choose At Least One Start Time' : 'Pick At Least One Day'}
         {mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
       </p>

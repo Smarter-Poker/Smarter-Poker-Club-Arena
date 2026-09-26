@@ -28,6 +28,20 @@ const MAX_HAND_ACTIONS = 4096;
 const STREETS = ['preflop', 'flop', 'turn', 'river'];
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'];
 export const ADAPTIVE_OBSERVATION_HORIZON_MS = 30 * 24 * 60 * 60 * 1000;
+/** The keys `fn_horse_committed_observation_snapshot` projects onto every
+ * persisted action before it crosses the service boundary. There is no `seat`:
+ * identity lives on `userId`, the seat lives on the public node it acted from.
+ * HorseAdaptiveObservation.committedShape.test.ts pins this to the migration.
+ */
+export const COMMITTED_OBSERVATION_ACTION_KEYS = Object.freeze([
+  'action',
+  'observationIdentity',
+  'origin',
+  'publicNode',
+  'stage',
+  'timestamp',
+  'userId',
+] as const);
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const amount = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const count = (v: unknown): v is number => amount(v) && Number.isSafeInteger(v);
@@ -69,6 +83,38 @@ function boardFeatures(board: string, variant: string): readonly unknown[] {
     Object.freeze([...suits.values()].sort((a, b) => b - a)),
     connected,
   ]);
+}
+
+/** userId to seat as the hand's own captured nodes prove it. The committed
+ * snapshot RPC projects no `seat` column (COMMITTED_OBSERVATION_ACTION_KEYS),
+ * so an action without one is owned by the seat its userId acted from, and
+ * only when that ownership is one actor per seat and one seat per actor across
+ * the whole hand. A contradiction voids the mapping: nothing in that hand can
+ * then prove whose public position, price or stack an action inherits.
+ */
+function actorSeatsOf(
+  actions: NonNullable<CompletedHandObservation['actions']>
+): ReadonlyMap<string, number> | null {
+  const byActor = new Map<string, number>(),
+    bySeat = new Map<number, string>();
+  for (const action of actions) {
+    if (!action || typeof action !== 'object') continue;
+    const node = action.publicNode;
+    if (!node || node.status !== 'captured' || !Number.isInteger(node.actorSeat)) continue;
+    if (typeof action.userId !== 'string' || !UUID.test(action.userId)) continue;
+    const actor = action.userId.toLowerCase(),
+      seat = node.actorSeat;
+    const knownSeat = byActor.get(actor),
+      knownActor = bySeat.get(seat);
+    if (
+      (knownSeat !== undefined && knownSeat !== seat) ||
+      (knownActor !== undefined && knownActor !== actor)
+    )
+      return null;
+    byActor.set(actor, seat);
+    bySeat.set(seat, actor);
+  }
+  return byActor;
 }
 
 /** Persisted JSON needs validation even though its producer already validates. */
@@ -392,6 +438,7 @@ export function qualifyAdaptiveHand(
     return finish();
   }
   const lines = STREETS.map(emptyLine);
+  const actorSeats = actorSeatsOf(hand.actions);
   let lineUnavailable = false,
     previousStreet = 0,
     handScope: string | undefined;
@@ -405,9 +452,17 @@ export function qualifyAdaptiveHand(
     if (!ACTIONS.includes(action.action)) {
       // These producer records do not represent voluntary betting choices.
       if (
-        !['sb', 'bb', 'post', 'ante', 'straddle', 'bomb_ante', 'discard', 'return'].includes(
-          action.action
-        )
+        ![
+          'sb',
+          'bb',
+          'post',
+          'ante',
+          'straddle',
+          'bomb_ante',
+          'kill_blind',
+          'discard',
+          'return',
+        ].includes(action.action)
       )
         lineUnavailable = true;
       reject('non_betting_action');
@@ -436,12 +491,20 @@ export function qualifyAdaptiveHand(
       if (handScope !== undefined && handScope !== capturedHandScope)
         throw Error('hand scope changed');
       handScope = capturedHandScope;
+      // Recheck persisted action ownership even when an earlier producer
+      // attached a bound identity. A changed actor must not inherit another
+      // seat's public position, price, stack or node-specific model scope.
+      // The committed snapshot RPC projects no `seat`; the actor is then the
+      // seat its userId provably acted from in this hand, or nothing.
+      const seat =
+        action.seat === undefined
+          ? typeof action.userId === 'string'
+            ? actorSeats?.get(action.userId.toLowerCase())
+            : undefined
+          : action.seat;
       if (
-        // Recheck persisted action ownership even when an earlier producer
-        // attached a bound identity. A changed actor must not inherit another
-        // seat's public position, price, stack or node-specific model scope.
-        !Number.isInteger(action.seat) ||
-        node.actorSeat !== action.seat ||
+        !Number.isInteger(seat) ||
+        node.actorSeat !== seat ||
         node.street !== action.stage ||
         !node.legalActions.includes(action.action as never) ||
         STREETS.indexOf(node.street) < previousStreet

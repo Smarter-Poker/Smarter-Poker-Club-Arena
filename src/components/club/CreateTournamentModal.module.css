@@ -180,6 +180,14 @@
 .lockedRule span {
   color: #9aa5b3;
 }
+/* The refusals under the form (visual acceptance 2026-09-24). The red is set
+   on the block, but every <p> is recoloured by the global `p` rule and the
+   popup muting rule, so each refusal printed in the same grey as the helper
+   copy and did not read as a refusal. The lines take the block's ink. */
+.validationSummary p {
+  color: inherit;
+}
+
 .helperText {
   display: block;
   margin-top: 6px;

@@ -137,7 +137,27 @@ import {
   TournamentLifecycleEpoch,
   type TournamentLifecycleToken,
 } from './TournamentLifecycleEpoch.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
+import {
+  bagTournamentStage,
+  beginStageEnd,
+  beginStageResume,
+  completeStageResume,
+  drawStageSeats,
+  mayCarryMultiDayPlan,
+  readMultiDayStagePlan,
+  readNextLevelIndex,
+  readStageEntitlements,
+  readTableWatermarks,
+  resumeTargetStage,
+  runningStage,
+  seatStageEntitlement,
+  stageEndingAtLevel,
+  stageSeatsPerTable,
+  type MultiDayPlanRead,
+  type StageFirstLevel,
+  type StageRpcOutcome,
+} from './multiDayStages.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
@@ -148,6 +168,28 @@ import {
 } from '../observability/liveTableFormat.js';
 import { launchStacksMeetFundingFloor } from './tournamentLaunchStackProof.js';
 import { isUuidShape } from '../lib/uuidShape.js';
+import {
+  AbandonedGenerationRefusedError,
+  abandonedPermitGeneration,
+  closeAbandonedGeneration,
+  countAbandonedGenerationOutcome,
+} from './abandonedGenerationDoor.js';
+
+/**
+ * What one ask of the abandoned-generation door came to.
+ *
+ * `decided` - the door answered: the permit is closed (now, or by an earlier
+ * receipt this one replayed), so the tables can be read again.
+ * `refused`  - the door named a rule that asking again cannot pass. This
+ * manager does not ask about that generation twice.
+ * `undecided`- no answer reached the door or came back from it (the
+ * maintenance freeze outlasted the wait, a lane it would not hold, an
+ * unreadable reply). NOT the same as `refused`, and not the same as
+ * `decided`: it is the third outcome CLAUDE.md 10.86 rule 1 requires, and
+ * folding it into either of the others is what left 526 tables wedged
+ * through the 2026-09-25 cutover.
+ */
+type AbandonedGenerationAsk = 'decided' | 'refused' | 'undecided';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -208,6 +250,26 @@ interface TournamentLaunchCompleteResult {
   reason?: string;
   lease_generation?: string;
 }
+
+/**
+ * The clause `captureDrainedF06Originals` last refused on, per manager; absent
+ * after a capture that returned the originals. Kept beside the class, not on
+ * it, so the capture's body reads exactly the terms the release guard walks.
+ */
+const drainedF06OriginalsRefusals = new WeakMap<TournamentManagerBase, string>();
+
+/**
+ * The guard the last seat-move release certificate refused on, per manager;
+ * absent after a certificate that passed. Kept beside the class for the same
+ * reason as the map above: the certificate's body reads exactly the terms the
+ * stop diagnostic reports, and nothing else may write this.
+ *
+ * It is a DIAGNOSTIC, never authority. `resolveTournamentSeatMoveQuarantine`
+ * still returns the boolean that decides; this only says which clause produced
+ * it, because on 2026-09-25 three different clauses all reported themselves as
+ * `retained an unresolved seat-move UUID` and two of them are not a UUID.
+ */
+const seatMoveQuarantineRefusals = new WeakMap<TournamentManagerBase, string>();
 
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
@@ -270,32 +332,53 @@ export abstract class TournamentManagerBase {
     this.f06RecoveryOwnership = false;
   }
 
-  /** Positive completion of every exact stop, not merely loss of a registry slot. */
+  /**
+   * WHY THE STOPPED ORIGINALS CANNOT BE OFFERED FOR CUSTODY, or null when they
+   * can. Every condition is the one `captureDrainedF06Originals` always
+   * applied, in the same order, named on the way out (2026-09-25, see
+   * drainedF06Custody.ts F06CustodyRefusal). The walk lives in the capture
+   * and this reads its verdict, so the packet a capture returns and the reason
+   * an operator reads can never disagree.
+   */
+  protected drainedF06OriginalsRefusal(): string | null {
+    this.captureDrainedF06Originals();
+    return drainedF06OriginalsRefusals.get(this) ?? null;
+  }
+
+  /**
+   * Positive completion of every exact stop, not merely loss of a registry slot.
+   *
+   * Every term this reads is walked by name in the release guard's
+   * `drainWitness` (tests/a-race-that-touched-nothing-names-it-and-waits.law),
+   * which is why the refusal is recorded beside the class rather than on it:
+   * the body must read exactly the terms the guard diagnoses, no more.
+   */
   protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
-    const originals = this.drainedF06Originals;
-    if (
-      !originals ||
-      !this.stopFenceApplied ||
-      !this.tournamentLeaseAuthorityExpired ||
-      this.running ||
-      this.teardownPromise ||
-      this.lifecycleOperation ||
-      this.lifecycleJobs.size ||
-      this.tableEngineStartJobs.size ||
-      this.tableEngineRunJobs.size ||
-      this.eliminationSchedulerJobs.size ||
-      this.lifecycleTimeouts.size ||
-      this.lifecycleIntervals.size ||
-      this.tableEngines.size !== originals.length ||
-      originals.some(
-        ([id, engine]) =>
-          this.tableEngines.get(id) !== engine ||
-          engine.isRunning() ||
-          !engine.hasReleasedProcessOwnership() ||
-          engine.hasSettlementInFlight()
-      )
-    )
+    const refuse = (reason: string): null => {
+      drainedF06OriginalsRefusals.set(this, reason);
       return null;
+    };
+    const originals = this.drainedF06Originals;
+    if (!originals) return refuse('engine_stops_not_all_fulfilled');
+    if (!this.stopFenceApplied) return refuse('stop_fence_not_applied');
+    if (!this.tournamentLeaseAuthorityExpired) return refuse('lease_authority_not_expired');
+    if (this.running) return refuse('manager_running');
+    if (this.teardownPromise) return refuse('teardown_in_flight');
+    if (this.lifecycleOperation) return refuse('lifecycle_operation_in_flight');
+    if (this.lifecycleJobs.size) return refuse('lifecycle_jobs_pending');
+    if (this.tableEngineStartJobs.size) return refuse('engine_start_jobs_pending');
+    if (this.tableEngineRunJobs.size) return refuse('engine_run_jobs_pending');
+    if (this.eliminationSchedulerJobs.size) return refuse('elimination_jobs_pending');
+    if (this.lifecycleTimeouts.size) return refuse('lifecycle_timeouts_armed');
+    if (this.lifecycleIntervals.size) return refuse('lifecycle_intervals_armed');
+    if (this.tableEngines.size !== originals.length) return refuse('engine_registry_changed');
+    for (const [id, engine] of originals) {
+      if (this.tableEngines.get(id) !== engine) return refuse('original_not_registered');
+      if (engine.isRunning()) return refuse('engine_running');
+      if (!engine.hasReleasedProcessOwnership()) return refuse('engine_process_ownership_held');
+      if (engine.hasSettlementInFlight()) return refuse('engine_settlement_in_flight');
+    }
+    drainedF06OriginalsRefusals.delete(this);
     return originals;
   }
 
@@ -313,6 +396,8 @@ export abstract class TournamentManagerBase {
   private readonly tableEngineRecoveries = new WeakMap<ServerTableEngine, Promise<void>>();
   /** One causally-triggered retry per durable table; healthy tables arm none. */
   private readonly tableEngineRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The exact dead generation each booked retry names (null: a missing table to re-admit). */
+  private readonly tableEngineRecoveryExpected = new Map<string, ServerTableEngine | null>();
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
@@ -575,7 +660,33 @@ export abstract class TournamentManagerBase {
     context: Record<string, unknown> = {}
   ): Promise<void> {
     if (isNew) {
-      await raiseFinancialAlert(severity, source, message, context);
+      // THE SUBJECT KEY, AND THE REASON, BOTH GO WITH IT (2026-09-25).
+      //
+      // `isNew` above is in-memory state on THIS manager: one slot holding the
+      // last reason. It cannot survive a process restart, and two reasons that
+      // alternate are each "new" every time they come round, so it throttles a
+      // tight loop and nothing slower. That left 15,426 unresolved criticals on
+      // 1,003 tournaments that had all since completed and paid in full.
+      //
+      // The durable guard is in the database and keys on the subject, so the
+      // key names the tournament AND the reason: a genuinely different refusal
+      // still gets its own open alert, and the same one stops re-reporting
+      // whatever this process happens to remember.
+      //
+      // The reason also goes into the context. 14,388 of those 15,426 rows
+      // carried no error and no error_name at all - a critical money alert
+      // asserting `proven_refusal: true` while recording nothing about what
+      // was refused. See CLAUDE.md 10.86 rule 1.
+      const reasonForKey = this.lastFinishRefusalReason;
+      const subject = context.tournament_id ?? this.tournamentId;
+      await raiseFinancialAlert(
+        severity,
+        source,
+        message,
+        reasonForKey ? { ...context, refusal_reason: reasonForKey } : context,
+        `${String(subject)}:${reasonForKey ?? 'unknown'}`,
+        String(subject)
+      );
       return;
     }
     const reason = this.lastFinishRefusalReason;
@@ -651,6 +762,47 @@ export abstract class TournamentManagerBase {
   // Synchronized break state
   protected onBreak: boolean = false;
   /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  MULTI-DAY: THE STAGE-END PAUSE IS A FOURTH, INDEPENDENT AUTHORITY
+   *  (R5 engine, 2026-09-24; MULTI-DAY-DESIGN.md section 6)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * `multiDayPlan` is null until this manager has asked, `none` for every
+   * event that is not a sealed multi-day plan with the capability available
+   * (which is every event today, and the engine then behaves exactly as it
+   * did before this existed), `unknown` when the question could not be
+   * answered, and `active` with the stage rows it read.
+   *
+   * `stageEndPause` is set only AFTER fn_begin_stage_end committed the day-end
+   * intent, so a restart always finds the intent it is holding for. It is
+   * independent of `onBreak`, the add-on break and hand-for-hand (CLAUDE.md 13
+   * invariant 2: whoever paused resumes): none of their resume paths may lift
+   * it, and nothing lifts it at all - the bag ends the day and this manager.
+   */
+  protected multiDayPlan: MultiDayPlanRead | null = null;
+  protected stageEndPause: { stageNo: number; endedLevel: number } | null = null;
+  /** One bag attempt at a time; set until its answer is handled. */
+  private stageBagInFlight = false;
+  /** The bag committed: this manager's day is over. */
+  private stageBagCommitted = false;
+  /** A refusal this manager will not retry by itself (recovery required). */
+  private stageBagHeldReason: string | null = null;
+  /** Consecutive "the felt is not at rest yet" refusals, bounded. */
+  private stageBagRedrives = 0;
+  /** The one thaw subscription a frozen bag waits on. */
+  private stageThawUnsubscribe: (() => void) | null = null;
+  /** A frozen refusal answered after the local freeze already lifted. */
+  private stageBagFrozenRetryUsed = false;
+  /** Ask the barrier again the moment the attempt in flight has settled. */
+  private stageBagAskAgainWhenSettled = false;
+  /** True while resumeStage() seats the next stage; no break may start. */
+  protected stageResumeInProgress = false;
+  /** Latch so an unreadable plan is reported once per manager. */
+  private multiDayPlanUnknownReported = false;
+  /** Latch so a refused day-end intent is reported once per manager. */
+  private stageEndRefusalReported = false;
+  static readonly STAGE_BAG_MAX_REDRIVES = 5;
+  /**
    * How long the last hand is allowed to take after :55 before the break
    * countdown starts regardless. Sized so a slow all-in-with-runouts hand still
    * finishes, while a genuinely wedged table cannot stall the break forever.
@@ -675,8 +827,37 @@ export abstract class TournamentManagerBase {
    * carries no end time yet -- see the break-recovery block there.
    */
   static readonly BREAK_DURATION_MS = 5 * 60 * 1000;
+  /**
+   * How long a level that came due against a tournament dealing nothing waits
+   * before it asks again. Purely local: no database request, no broadcast.
+   * Short enough that the level goes up promptly once a hand lands, long
+   * enough that a multi-day stall is not a per-second wake. See
+   * A_LEVEL_IS_NOT_SPENT_ON_A_HAND_THAT_WAS_NEVER_DEALT in advanceBlindLevel.
+   */
+  static readonly STALLED_LEVEL_RECHECK_MS = 15 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
+  /**
+   * Wall clock of the last hand this manager watched finish on any table it
+   * owns. ZERO until it has watched one, deliberately.
+   *
+   * This is the witness advanceBlindLevel consults before spending a level.
+   * It is an assignment inside a callback that already fires on every hand -
+   * it adds no wake and no query, and deliberately does NOT go through
+   * requestEliminationSweep, whose zero-stack gate exists to keep the
+   * scheduler's fan-out small.
+   *
+   * Seeding it to `Date.now()` instead would be the trap one level up
+   * (CLAUDE.md 10.86 rule 4): a replacement manager adopting a long-stalled
+   * event would inherit a clean witness, find its overdue level due at once
+   * and spend it on a table that has still dealt nothing - so the very first
+   * thing a recovery did would be the burn this guard exists to stop. Zero
+   * costs a healthy restart at most one recheck interval, because its tables
+   * deal within seconds of adoption.
+   */
+  protected lastObservedHandCompletedAtMs = 0;
+  /** One line per held level, not one per recheck. */
+  private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
   /**
    * True once beginBreakCountdown has stamped an end time on THIS break.
    *
@@ -979,9 +1160,33 @@ export abstract class TournamentManagerBase {
       // A retired original can retain or replay F06 custody in both registries.
       // The exact admitted replay keeps its own barrier and outcome checks;
       // neither it nor an idle original needs a renewed gameplay proof.
+      //
+      // ONE ZOMBIE TABLE DOES NOT FENCE ITS TOURNAMENT (2026-09-25, release
+      // 778075b4). A dealer the zombie watchdog killed
+      // (GameServer: `fenceForEngineLeaseLoss('tournament_table_zombie', true)`)
+      // is fenced, stopped and cannot renew: its proof is expired by that
+      // fence, and `renewEngineLeaseProof` refuses an expired proof by
+      // design. Its stop was signalled to this manager by the same fence and
+      // is in flight here, in `tableEngineRecoveries`, or booked for a retry
+      // that names it (`tableEngineRecoveryExpected`). Until that stop
+      // completes it is not yet drained, so it fell through to the renewal
+      // below, refused, and this manager fenced EVERY sibling table for it.
+      // Single-table zombie kills at 19:54:05 and 20:15:20 UTC quarantined
+      // 17 managers with `tournament_lease_lost_stop_failed` and left 50
+      // tables idle for hours, while GameServer's comment at the kill
+      // promised the opposite ("its identity-CAS replacement preserves the
+      // tournament lease").
+      //
+      // A fenced dealer this manager is replacing is treated like a drained
+      // original: it needs no gameplay proof (it cannot mutate), ownership is
+      // still checked, and the manager's own lease is not lost for it. A
+      // fenced dealer NOBODY is replacing, and a live dealer that truly cannot
+      // renew, still fence the tournament exactly as before.
       if (
         engine.isTerminalDrainedForTournamentLease?.(tableId, authority) ||
-        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority)
+        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority) ||
+        (engine.isTerminalFencedForTournamentLease?.(tableId, authority) &&
+          this.isReplacingManagedTableEngine(tableId, engine))
       ) {
         if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
           this.fenceForTournamentLeaseLoss();
@@ -996,6 +1201,22 @@ export abstract class TournamentManagerBase {
     }
     this.armTournamentLeaseExpiryTimer();
     return true;
+  }
+
+  /**
+   * True while this manager holds a replacement operation for this exact
+   * dealer generation (`tableEngineRecoveries`, one per object) or a booked
+   * retry that names it (`tableEngineRecoveryTimers` with
+   * `tableEngineRecoveryExpected`, armed by the failed attempt before the
+   * operation is released). Read-only; it starts nothing.
+   */
+  private isReplacingManagedTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    return (
+      this.tableEngines.get(tableId) === engine &&
+      (this.tableEngineRecoveries.has(engine) ||
+        (this.tableEngineRecoveryTimers.has(tableId) &&
+          this.tableEngineRecoveryExpected.get(tableId) === engine))
+    );
   }
 
   /** Read-time fence used after every heartbeat, including UNKNOWN results. */
@@ -1137,6 +1358,7 @@ export abstract class TournamentManagerBase {
     const timer = this.tableEngineRecoveryTimers.get(tableId);
     if (timer) this.clearLifecycleTimeout(timer);
     this.tableEngineRecoveryTimers.delete(tableId);
+    this.tableEngineRecoveryExpected.delete(tableId);
     if (resetAttempts) this.tableEngineRecoveryAttempts.delete(tableId);
   }
 
@@ -1145,6 +1367,7 @@ export abstract class TournamentManagerBase {
       this.clearLifecycleTimeout(timer);
     }
     this.tableEngineRecoveryTimers.clear();
+    this.tableEngineRecoveryExpected.clear();
     this.tableEngineRecoveryAttempts.clear();
   }
 
@@ -1201,6 +1424,15 @@ export abstract class TournamentManagerBase {
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
+    // The day is ending: a replacement dealer inherits the stage-end pause
+    // before it can deal, exactly as it inherits a synchronized break.
+    if (this.stageEndPause) {
+      engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
+        beforeNextHand: true,
+        untilResumed: true,
+      });
+      return;
+    }
     if (this.addOnBreakActive && this.addOnBreakEndsAtMs > Date.now()) {
       // The absolute hold is independent of hand-for-hand's pause flag, so a
       // barrier resume cannot deal through an overlapping add-on break.
@@ -1258,6 +1490,7 @@ export abstract class TournamentManagerBase {
     timer = this.setLifecycleTimeout(async () => {
       if (this.tableEngineRecoveryTimers.get(tableId) !== timer) return;
       this.tableEngineRecoveryTimers.delete(tableId);
+      this.tableEngineRecoveryExpected.delete(tableId);
       if (!this.lifecycleIsCurrent(lifecycle)) {
         this.tableEngineRecoveryAttempts.delete(tableId);
         return;
@@ -1298,6 +1531,7 @@ export abstract class TournamentManagerBase {
       }
     }, delayMs);
     this.tableEngineRecoveryTimers.set(tableId, timer);
+    this.tableEngineRecoveryExpected.set(tableId, expected);
   }
 
   /** Admit a table retired after a failed start, after proving it is still live. */
@@ -1381,6 +1615,21 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * Name the clause one seat-move release certificate refused on, or clear the
+   * name when it certified. Called by the certificate itself, immediately
+   * before the clause it names is tested.
+   */
+  protected noteSeatMoveQuarantineRefusal(refusal: string | null): void {
+    if (refusal === null) seatMoveQuarantineRefusals.delete(this);
+    else seatMoveQuarantineRefusals.set(this, refusal);
+  }
+
+  /** Which clause the last seat-move release certificate refused on. */
+  seatMoveQuarantineRefusal(): string | null {
+    return seatMoveQuarantineRefusals.get(this) ?? null;
+  }
+
+  /**
    * Layer-three managers override this with exact UUID replay. Minimal test
    * harnesses have no seat-move ledger; they may proceed only when no concrete
    * engine reports a retained move boundary.
@@ -1389,7 +1638,9 @@ export abstract class TournamentManagerBase {
     _tableId: string | null,
     engine: ServerTableEngine | null
   ): Promise<boolean> {
-    return !engine?.hasClaimedTournamentMoveBoundary();
+    const claimed = engine?.hasClaimedTournamentMoveBoundary() === true;
+    this.noteSeatMoveQuarantineRefusal(claimed ? 'harness:claimed_move_boundary' : null);
+    return !claimed;
   }
 
   private async performManagedTableEngineRecovery(
@@ -1514,6 +1765,13 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  /**
+   * The database refused this table a hand because a table break names it as
+   * its source. Layer three owns the move boundary that break is waiting for;
+   * the base manager has no break authority and does nothing.
+   */
+  protected holdSourceForItsBreak(_tableId: string, _engine: ServerTableEngine): void {}
+
   /** A manager is not torn down until every table start it launched has settled. */
   protected async startParkedMovementEngine(
     _engine: ServerTableEngine,
@@ -1590,6 +1848,67 @@ export abstract class TournamentManagerBase {
         await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
         return;
       }
+      /**
+       * A DEAD GENERATION'S HAND IS DECIDED WHERE THE REFUSAL IS MET
+       * (2026-09-25).
+       *
+       * This is the line that has been refusing every wedged table, every
+       * fifteen seconds, for days: a reserved permit of a generation that is
+       * no longer the lease holder makes `blocked_reason` read
+       * `hand_permit_unresolved`, and `f06_engine_admission_unproven` is
+       * correct - the projection is genuinely unproven and nothing may deal on
+       * it. What was missing is that nothing here ever DECIDED the permit. The
+       * abandoned-generation door was asked once, during adoption, and
+       * `resumeLifecycle` runs exactly once per manager, so any adoption whose
+       * single ask ended without a decision left the table blocked for the
+       * whole life of that manager. On the 15:29 cutover that was 526 tables
+       * in 388 events, holding 2,061 seated players, and the door was never
+       * requested once.
+       *
+       * So ask it here, from the admission that is already being refused, and
+       * then refuse this attempt anyway: the next admission re-reads the state
+       * the door left and proves itself normally. This is not a sweep, a
+       * healer or a repair job (CLAUDE.md 10.12) - it is this table's own live
+       * path deciding the thing that blocks this table, at the moment it is
+       * blocked, through the platform's own idempotent door. The receipt is
+       * derived from (event, dead generation), so a second ask replays the
+       * first rather than minting anything; a rule the door names is asked
+       * once and never again by this manager; and an undecided answer is asked
+       * again no sooner than the cooldown, because the admission's own
+       * fifteen-second cadence must not become the door's.
+       */
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'hand_permit_unresolved'
+      ) {
+        const abandoned = abandonedPermitGeneration(
+          state,
+          this.tournamentId,
+          tableId,
+          leaseGeneration
+        );
+        if (abandoned) {
+          const last = this.abandonedGenerationAskedAt.get(abandoned);
+          const cooldown =
+            last?.ask === 'refused'
+              ? TournamentManagerBase.ABANDONED_GENERATION_REFUSED_COOLDOWN_MS
+              : TournamentManagerBase.ABANDONED_GENERATION_ADMISSION_COOLDOWN_MS;
+          if (last === undefined || Date.now() - last.at >= cooldown) {
+            this.abandonedGenerationAskedAt.set(abandoned, { at: Date.now(), ask: 'undecided' });
+            const ask = await this.decideAbandonedGeneration(
+              lifecycle,
+              abandoned,
+              [tableId],
+              leaseGeneration
+            );
+            this.abandonedGenerationAskedAt.set(abandoned, { at: Date.now(), ask });
+          }
+        }
+      }
       if (
         !current() ||
         error ||
@@ -1631,11 +1950,24 @@ export abstract class TournamentManagerBase {
           );
           const a = allocation as {
             ok?: boolean;
+            reason?: string | null;
             table_id?: string;
             lifecycle?: string;
             hand_number?: unknown;
             hand_number_high_water?: unknown;
           } | null;
+          /**
+           * A TABLE EXCLUDED BY ITS OWN BREAK WAITS FOR THE BREAK (2026-09-26).
+           * `source_excluded` is not an unproven allocation: it is the
+           * database saying a break row for this table exists and no hand may
+           * start here until that break is acknowledged or withdrawn. Asking
+           * again cannot change the answer. Name it, fence this dealer for
+           * the break, and wake the Manager so the break is claimed.
+           */
+          if (current() && !allocationError && a?.ok === false && a.reason === 'source_excluded') {
+            this.holdSourceForItsBreak(tableId, engine);
+            throw new Error('f06_source_excluded_by_break');
+          }
           if (
             !current() ||
             allocationError ||
@@ -1663,6 +1995,16 @@ export abstract class TournamentManagerBase {
           p_table_id: tableId,
         });
         const latest = refreshed.data as typeof state;
+        if (
+          current() &&
+          !refreshed.error &&
+          latest?.ok === true &&
+          latest.table_id === tableId &&
+          latest.blocked_reason === 'source_excluded'
+        ) {
+          this.holdSourceForItsBreak(tableId, engine);
+          throw new Error('f06_source_excluded_by_break');
+        }
         if (
           !current() ||
           refreshed.error ||
@@ -1955,6 +2297,9 @@ export abstract class TournamentManagerBase {
    */
   protected wireEliminationWake(engine: ServerTableEngine): void {
     engine.onHandComplete((_tableId, finalStacks) => {
+      // The blind clock's witness. Every hand, not just the zero-stack shape
+      // below: a level is spent by play, and play is what this records.
+      this.lastObservedHandCompletedAtMs = Date.now();
       if (finalStacks.some((player) => Number(player.stack) <= 0)) {
         if (this.isCohortSatellite()) {
           const tableId = this.tableIdForManagedEngine(engine);
@@ -1971,6 +2316,13 @@ export abstract class TournamentManagerBase {
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
+      // A seat move or table break whose one-second probe missed is waiting
+      // for exactly this edge. Wake the sweep that claims it now, rather than
+      // leaving the claim to whichever redrive the shared scheduler reaches.
+      if (engine.awaitsTournamentMoveClaim())
+        this.requestEliminationSweep('tournament_move_parked');
+      // A table parking is the edge the stage-end barrier waits for.
+      if (this.stageEndPause) this.advanceStageEndBarrier();
     });
     engine.onRestartRequired((reason) => {
       const lifecycle = this.captureLifecycleToken();
@@ -2085,7 +2437,11 @@ export abstract class TournamentManagerBase {
    * them.
    */
   isOnBreak(): boolean {
-    return this.onBreak || this.addOnBreakActive;
+    // The stage-end pause holds tables exactly like a break of the event's
+    // own: the maintenance resume, hand-for-hand and the bubble burst all ask
+    // this before releasing a table, so none of them can deal a day-ending
+    // event back into play.
+    return this.onBreak || this.addOnBreakActive || !!this.stageEndPause;
   }
 
   /**
@@ -2250,6 +2606,19 @@ export abstract class TournamentManagerBase {
   async pauseForBreak(breakDurationMs: number): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.onBreak) return;
+    /**
+     * A DAY THAT IS ENDING TAKES NO BREAK (multi-day, 2026-09-24). The
+     * stage-end pause already holds every table, the level clock is stopped,
+     * and the bag closes any break in progress. Starting one here would write
+     * on_break to a row the bag is about to close and hand the level clock to
+     * resumeFromBreak. A stage still being seated has no tables to break.
+     */
+    if (this.stageEndPause || this.stageResumeInProgress) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - the stage is ending or resuming`
+      );
+      return;
+    }
     /**
      * ═════════════════════════════════════════════════════════════════════
      *  A SPIN NEVER BREAKS — AND THE GATE LIVES HERE (2026-08-27)
@@ -2866,7 +3235,9 @@ export abstract class TournamentManagerBase {
       this.addOnBreakOwnsPause = true;
       this.addOnBreakOwnsLevelClock = true;
     }
-    if (!this.handForHandActive && !addOnBreakStillActive) {
+    // A day-ending event keeps its tables held: the break was never the
+    // stage-end pause's owner and may not lift it.
+    if (!this.handForHandActive && !addOnBreakStillActive && !this.stageEndPause) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -2899,7 +3270,7 @@ export abstract class TournamentManagerBase {
      * (see pauseForBreak); startBlindTimer with no override grants a fresh
      * full level, which is the safe direction to be wrong in.
      */
-    if (!addOnBreakStillActive) {
+    if (!addOnBreakStillActive && !this.stageEndPause) {
       const blindStructure = this.tournamentCache?.blind_structure || [];
       const remaining = this.savedBlindTimerRemaining;
       // Cleared before arming: a stale value from a previous level must never
@@ -4279,7 +4650,10 @@ export abstract class TournamentManagerBase {
       this.assertLifecycleCurrent(lifecycle);
 
       if (!tournament) throw new Error('Tournament not found');
-      if (['COMPLETING', 'COMPLETED', 'CANCELLED'].includes(tournament.status)) {
+      // BAGGED (multi-day) has no manager, no lease and no tables between
+      // stages. Only resumeStage() may take it back to RUNNING, through the
+      // stage-resume receipt; a launch must never touch it.
+      if (['COMPLETING', 'COMPLETED', 'CANCELLED', 'BAGGED'].includes(tournament.status)) {
         this.running = false;
         return;
       }
@@ -5347,6 +5721,9 @@ export abstract class TournamentManagerBase {
       }
       await this.drainTableEngineStartJobs();
       this.assertLifecycleCurrent(lifecycle);
+      // Multi-day: learn the stage plan before the level clock can reach a
+      // day's last level. No I/O for any format a plan cannot be sealed on.
+      await this.loadMultiDayPlan(tournament, lifecycle);
 
       /**
        * Start blind timer — AT THE ADVERTISED START, not at seating.
@@ -5403,6 +5780,236 @@ export abstract class TournamentManagerBase {
       reportError(err, `Tournament.${this.tournamentId.slice(0, 8)}.start_failed`);
       this.running = false;
       this.unregisterEliminationScheduler();
+    }
+  }
+
+  /**
+   * The adoption that already asked the abandoned-generation door. Its own
+   * second pass, which starts again from the event row, does not ask again.
+   */
+  private abandonedGenerationsAskedFor: TournamentLifecycleToken | null = null;
+  /** Tables read at once while an adoption looks for dead generations. */
+  static readonly ABANDONED_GENERATION_READ_CONCURRENCY = 4;
+  /**
+   * How often one adoption asks the door about one dead generation when the
+   * answer says nothing about the hand (a lane it would not wait for, a lost
+   * connection), and the pause before asking again. A rule the door names
+   * is never asked twice.
+   */
+  static readonly ABANDONED_GENERATION_ATTEMPTS = 3;
+  static readonly ABANDONED_GENERATION_RETRY_MS = 1_000;
+  /**
+   * How long an adoption inside the maintenance freeze waits for the thaw
+   * before it gives up on a dead generation. The freeze runs from the :53
+   * announcement to the :00 thaw, so seven minutes covers any adoption in it.
+   */
+  static readonly ABANDONED_GENERATION_FREEZE_CEILING_MS = 7 * 60_000;
+
+  /**
+   * Find every earlier generation of this event that left a reserved hand on
+   * one of these tables, and ask the abandoned-generation door to decide it.
+   * Returns true when the door answered with a decision (made now, replayed,
+   * or made by another receipt since the tables were read): the event row
+   * may have moved, and the caller must read it again before adopting it.
+   */
+  private async decideAbandonedGenerations(
+    lifecycle: TournamentLifecycleToken,
+    tableIds: readonly string[]
+  ): Promise<boolean> {
+    const leaseGeneration = this.tournamentLeaseGeneration;
+    if (!leaseGeneration || tableIds.length === 0) return false;
+    const blocked = new Map<string, string[]>();
+    let next = 0;
+    const readTables = async (): Promise<void> => {
+      while (next < tableIds.length && this.lifecycleIsCurrent(lifecycle)) {
+        const tableId = tableIds[next++];
+        let state: unknown = null;
+        try {
+          const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {
+            p_tournament_id: this.tournamentId,
+            p_lease_generation: leaseGeneration,
+            p_table_id: tableId,
+          });
+          if (error) countAbandonedGenerationOutcome('unreadable');
+          else state = data;
+        } catch {
+          // Unread is not decided, and it is not nothing either. The table's
+          // own admission reads it again and now asks the door itself
+          // (startManagedTableEngine), so this is no longer the last chance -
+          // but it is still counted, because for three days a swallowed read
+          // was indistinguishable from a healthy table.
+          countAbandonedGenerationOutcome('unreadable');
+        }
+        const generation = abandonedPermitGeneration(
+          state,
+          this.tournamentId,
+          tableId,
+          leaseGeneration
+        );
+        if (generation) blocked.set(generation, [...(blocked.get(generation) ?? []), tableId]);
+      }
+    };
+    await Promise.all(
+      Array.from(
+        {
+          length: Math.min(
+            TournamentManagerBase.ABANDONED_GENERATION_READ_CONCURRENCY,
+            tableIds.length
+          ),
+        },
+        readTables
+      )
+    );
+    this.assertLifecycleCurrent(lifecycle);
+    let decided = false;
+    for (const [generation, tables] of blocked) {
+      const ask = await this.decideAbandonedGeneration(
+        lifecycle,
+        generation,
+        tables,
+        leaseGeneration
+      );
+      if (ask === 'decided') decided = true;
+    }
+    return decided;
+  }
+
+  /**
+   * When this manager last asked the door about each dead generation, and how
+   * that ask ended. Read ONLY by the table admission: the adoption is the
+   * door's caller of record and asks exactly as it always has.
+   */
+  private readonly abandonedGenerationAskedAt = new Map<
+    string,
+    { at: number; ask: AbandonedGenerationAsk }
+  >();
+  /**
+   * The soonest a table admission asks the door about the same dead generation
+   * again after an UNDECIDED answer. The admission itself retries every ~15 s
+   * and must keep doing so; the door is the expensive half, and an undecided
+   * answer is usually a freeze or a lane that a minute resolves.
+   */
+  static readonly ABANDONED_GENERATION_ADMISSION_COOLDOWN_MS = 60_000;
+  /**
+   * And after a rule the door NAMED. Longer, because asking again cannot pass
+   * until something outside this table changes - but NOT never.
+   *
+   * A permanent memo was written here first, and it was wrong. Measured on
+   * 2026-09-25, 44 of the 56 generations still wedged after the settlement are
+   * refused F06_ABANDONED_ROSTER_CHANGED: a `playing` registration at that
+   * table with no live chair. That is a defect somewhere else, and when it is
+   * repaired the door will accept these hands - so a manager that had written
+   * the generation off for the rest of its life would hold the table blocked
+   * for no reason at all. A rule is not a blip, and it is not a life sentence.
+   */
+  static readonly ABANDONED_GENERATION_REFUSED_COOLDOWN_MS = 10 * 60_000;
+
+  private async decideAbandonedGeneration(
+    lifecycle: TournamentLifecycleToken,
+    generation: string,
+    tables: readonly string[],
+    leaseGeneration: string
+  ): Promise<AbandonedGenerationAsk> {
+    let retainedFinished = false;
+    let attempt = 0;
+    for (;;) {
+      this.assertLifecycleCurrent(lifecycle);
+      // The door refuses while the platform is frozen, and every engine
+      // release adopts its whole fleet inside the freeze (boot ~:58, thaw
+      // :00). Skipping there left the release's own adoptions - the ones that
+      // inherit every dead generation - unable to decide any of them. So an
+      // adoption that found a dead generation waits for the thaw, fenced by
+      // its lifecycle and bounded: nothing deals during the freeze, and past
+      // the ceiling the table stays exactly as blocked as it was before this
+      // door existed.
+      if (isMaintenanceFrozen()) {
+        const waitedFrom = Date.now();
+        while (
+          isMaintenanceFrozen() &&
+          this.lifecycleIsCurrent(lifecycle) &&
+          Date.now() - waitedFrom < TournamentManagerBase.ABANDONED_GENERATION_FREEZE_CEILING_MS
+        ) {
+          await new Promise<void>((resolve) => {
+            const poll = setTimeout(resolve, TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+            poll.unref?.();
+          });
+        }
+        this.assertLifecycleCurrent(lifecycle);
+        if (isMaintenanceFrozen()) {
+          // A FREEZE GIVE-UP IS A NUMBER (2026-09-25). This branch returned
+          // in silence, and it is the only exit from an ask that never
+          // reaches the door - so a fleet with 526 wedged tables read 0 on
+          // every label of the closures counter, which is exactly what a
+          // healthy fleet reads.
+          countAbandonedGenerationOutcome('frozen');
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
+              `left a reserved hand on ${tables.length} table(s) - the maintenance freeze outlasted the wait`
+          );
+          return 'undecided';
+        }
+      }
+      attempt += 1;
+      try {
+        const outcome = await closeAbandonedGeneration(
+          async (_door, args) => {
+            const { data, error } = await supabase.rpc('fn_f06_abort_abandoned_generation', args);
+            return { data, error };
+          },
+          this.tournamentId,
+          generation,
+          leaseGeneration
+        );
+        this.assertLifecycleCurrent(lifecycle);
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
+            `left a reserved hand on ${tables.length} table(s) - ${outcome}`
+        );
+        return 'decided';
+      } catch (error) {
+        this.assertLifecycleCurrent(lifecycle);
+        const refused = error instanceof AbandonedGenerationRefusedError ? error : null;
+        if (refused?.refusal === 'retained_submission' && !retainedFinished) {
+          // The hand has an original the table's admission finishes first.
+          // Finish it the same way now, then ask once more.
+          retainedFinished = true;
+          for (const tableId of tables) {
+            try {
+              await resumeRetainedHandSubmission(tableId, INSTANCE_ID, leaseGeneration);
+            } catch {
+              // Pending or unreadable: the door refuses again and the
+              // table's own admission handles it exactly as before.
+            }
+            this.assertLifecycleCurrent(lifecycle);
+          }
+          continue;
+        }
+        if (
+          refused?.refusal === 'transient' &&
+          attempt < TournamentManagerBase.ABANDONED_GENERATION_ATTEMPTS
+        ) {
+          await new Promise<void>((resolve) => {
+            const pause = setTimeout(
+              resolve,
+              TournamentManagerBase.ABANDONED_GENERATION_RETRY_MS * attempt
+            );
+            pause.unref?.();
+          });
+          continue;
+        }
+        // Whatever went wrong, the caller goes on: this table stays exactly
+        // as blocked as it was before this door existed. A rule the door
+        // named is final for this manager; anything else is undecided, and
+        // the table's own admission asks again.
+        reportError(error, 'Tournament.abandoned_generation_refused', {
+          tournamentId: this.tournamentId,
+          generation,
+          tables,
+          code: refused?.code ?? 'unexpected',
+          refusal: refused?.refusal ?? 'unexpected',
+        });
+        return refused?.refusal === 'definite' ? 'refused' : 'undecided';
+      }
     }
   }
 
@@ -5470,6 +6077,17 @@ export abstract class TournamentManagerBase {
       this.onBreak = tournament.on_break === true;
       await this.readTournamentClub(tournament.club_id);
       this.assertLifecycleCurrent(lifecycle);
+      /**
+       * A DAY THAT WAS ENDING IS STILL ENDING (multi-day, 2026-09-24).
+       *
+       * The day-end intent is durable (the stage row says `day_ending`), and
+       * the pause that honours it lived only on the previous manager. Re-arm
+       * it here, before a single replacement dealer exists, so every table
+       * this adoption builds inherits it in prepareManagedTableEngineForPlay
+       * and the level clock below is never armed.
+       */
+      await this.loadMultiDayPlan(tournament, lifecycle);
+      this.rearmStageEndPauseFromPlan();
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
@@ -5492,6 +6110,31 @@ export abstract class TournamentManagerBase {
         throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
       if (!Array.isArray(tables))
         throw new Error('Tournament resume table inventory was unreadable');
+
+      /**
+       * A DEAD GENERATION'S HAND IS DECIDED BEFORE THIS ONE ADOPTS THE CLOCK
+       * (2026-09-22). A table where an earlier generation of this event left
+       * a reserved hand refused every dealer this generation admitted, for
+       * the rest of its life (tournament/abandonedGenerationDoor.ts). The
+       * abandoned-generation door decides that hand, and in the same
+       * transaction may return the event's blind level to where play
+       * stopped and re-stake every table. So it is asked here, before any
+       * dealer exists, and when it decided anything this adoption starts
+       * again from the event row: the clock, the blinds and the inventory
+       * are then the ones the door left, never the ones read before it.
+       */
+      if (this.abandonedGenerationsAskedFor !== lifecycle) {
+        this.abandonedGenerationsAskedFor = lifecycle;
+        if (
+          await this.decideAbandonedGenerations(
+            lifecycle,
+            tables.map((table) => String(table.id))
+          )
+        ) {
+          await this.resumeLifecycle(lifecycle);
+          return;
+        }
+      }
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
@@ -5701,7 +6344,8 @@ export abstract class TournamentManagerBase {
           this.savedBlindTimerRemaining = remainingMs ?? durationMs;
           this.onBreak = true;
           restoredLevelClockSuspended = true;
-        } else {
+        } else if (!this.stageEndPause) {
+          // A day-ending event's clock stays unarmed: its last level is over.
           this.startBlindTimer(tournament.blind_structure || [], remainingMs);
         }
       }
@@ -5885,6 +6529,8 @@ export abstract class TournamentManagerBase {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed - ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );
+      // Tables that were already at rest publish no new pause edge; ask once.
+      if (this.stageEndPause) this.advanceStageEndBarrier();
     } catch (err) {
       if (
         err instanceof TournamentLifecycleAbortedError ||
@@ -5896,6 +6542,710 @@ export abstract class TournamentManagerBase {
       this.running = false;
       this.unregisterEliminationScheduler();
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  MULTI-DAY (R5 engine, 2026-09-24). MULTI-DAY-DESIGN.md sections 3-6.
+  //  Every method below is a no-op unless `multiDayPlan` is `active`.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Ask once per adoption whether this event is a live multi-day plan. A
+   * format the seal refuses costs nothing: no request is made.
+   */
+  protected async loadMultiDayPlan(
+    tournament: unknown,
+    lifecycle: TournamentLifecycleToken
+  ): Promise<void> {
+    if (!mayCarryMultiDayPlan(tournament)) {
+      this.multiDayPlan = { kind: 'none' };
+      return;
+    }
+    const plan = await readMultiDayStagePlan(this.tournamentId);
+    this.assertLifecycleCurrent(lifecycle);
+    this.multiDayPlan = plan;
+    if (plan.kind === 'unknown') this.reportUnknownMultiDayPlan(plan.error);
+  }
+
+  private reportUnknownMultiDayPlan(error: unknown): void {
+    if (this.multiDayPlanUnknownReported) return;
+    this.multiDayPlanUnknownReported = true;
+    reportError(error, 'Tournament.multi_day_plan_unreadable', { tournamentId: this.tournamentId });
+  }
+
+  /** Adoption: a stage the database already says is ending holds this manager. */
+  private rearmStageEndPauseFromPlan(): void {
+    const plan = this.multiDayPlan;
+    if (!plan || plan.kind !== 'active') return;
+    const stage = runningStage(plan.stages);
+    if (!stage || stage.state !== 'day_ending' || stage.endAfterLevel === null) return;
+    this.stageEndPause = { stageNo: stage.stageNo, endedLevel: stage.endAfterLevel };
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Adopted DURING day ${stage.stageNo}'s end - tables stay held for the bag`
+    );
+  }
+
+  /**
+   * Called by advanceBlindLevel before it builds a publication. `publish`
+   * means carry on exactly as before; `ended` means the day-end intent is
+   * committed and the stage-end pause holds the event; `hold` means the level
+   * is owed but cannot be decided yet (recheck on the stalled-level cadence);
+   * `blocked` means a refusal only a fix can clear (reported, nothing armed).
+   */
+  private async endStageInsteadOfPublishing(
+    endingLevel: number,
+    lifecycle: TournamentLifecycleToken | null
+  ): Promise<'publish' | 'ended' | 'hold' | 'blocked'> {
+    let plan = this.multiDayPlan;
+    if (!plan || plan.kind === 'none') return 'publish';
+    if (plan.kind === 'unknown') {
+      plan = await readMultiDayStagePlan(this.tournamentId);
+      if (!this.lifecycleIsCurrent(lifecycle)) return 'blocked';
+      this.multiDayPlan = plan;
+      if (plan.kind === 'none') return 'publish';
+      if (plan.kind === 'unknown') {
+        this.reportUnknownMultiDayPlan(plan.error);
+        return 'hold';
+      }
+    }
+    const current = runningStage(plan.stages);
+    if (current?.state === 'day_ending' && current.endAfterLevel !== null) {
+      // The intent is already durable; only the pause was missing.
+      this.armStageEndPause(current.stageNo, current.endAfterLevel);
+      return 'ended';
+    }
+    const stage = stageEndingAtLevel(plan.stages, endingLevel);
+    if (!stage) return 'publish';
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation) return 'hold';
+
+    const outcome = await beginStageEnd(this.tournamentId, generation, stage.stageNo, endingLevel);
+    if (!this.lifecycleIsCurrent(lifecycle)) return 'blocked';
+    if (outcome.kind === 'ok') {
+      stage.state = 'day_ending';
+      this.armStageEndPause(stage.stageNo, endingLevel);
+      return 'ended';
+    }
+    if (outcome.kind === 'unknown') {
+      // The intent may have committed. The same call replays its receipt.
+      reportError(outcome.error, 'Tournament.multi_day_day_end_unacknowledged', {
+        tournamentId: this.tournamentId,
+        stageNo: stage.stageNo,
+      });
+      return 'hold';
+    }
+    if (outcome.kind === 'refused' && outcome.reason === 'capability_unavailable') {
+      // The capability was withdrawn: the engine reads that as "no multi-day"
+      // and the database refuses every stage door, so the event plays on.
+      this.multiDayPlan = { kind: 'none' };
+      return 'publish';
+    }
+    if (outcome.kind === 'refused' && outcome.reason === 'lease_lost') {
+      this.standDownForDatabaseFence();
+      return 'blocked';
+    }
+    this.reportStageRefusal('day_end', outcome, stage.stageNo);
+    return 'blocked';
+  }
+
+  private reportStageRefusal(step: string, outcome: StageRpcOutcome, stageNo: number): void {
+    if (step === 'day_end') {
+      if (this.stageEndRefusalReported) return;
+      this.stageEndRefusalReported = true;
+    }
+    const reason =
+      outcome.kind === 'refused' ? outcome.reason : outcome.kind === 'ok' ? 'ok' : outcome.kind;
+    reportError(
+      new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] multi-day ${step} for stage ${stageNo} ` +
+          `was refused (${reason}); holding until its cause is fixed`
+      ),
+      `Tournament.multi_day_${step}_refused`,
+      {
+        tournamentId: this.tournamentId,
+        stageNo,
+        reason,
+        detail: outcome.kind === 'refused' ? outcome.data : undefined,
+      }
+    );
+  }
+
+  /** Take the pause: no table deals past the hand it is playing. */
+  private armStageEndPause(stageNo: number, endedLevel: number): void {
+    const alreadyArmed = !!this.stageEndPause;
+    this.stageEndPause = { stageNo, endedLevel };
+    if (this.blindTimer) {
+      this.clearLifecycleTimeout(this.blindTimer);
+      this.blindTimer = null;
+    }
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
+    for (const engine of this.tableEngines.values()) {
+      try {
+        engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
+          beforeNextHand: true,
+          untilResumed: true,
+        });
+      } catch (err) {
+        reportError(err, 'TournamentManagerBase.stage_end_pause_engine');
+      }
+    }
+    if (!alreadyArmed) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] DAY ${stageNo} ENDING after level ${endedLevel} - the hands in play finish, then the field is bagged`
+      );
+      void this.broadcast('stage_day_ending', { stageNo, level: endedLevel });
+    }
+    this.advanceStageEndBarrier();
+  }
+
+  /**
+   * The stage-end barrier. Driven by edges only: a table parking, the pause
+   * being armed, an elimination sweep finishing, the maintenance thaw. Every
+   * table must be at rest with no cards in the air and no recovery pending,
+   * and the platform must not be frozen, before the bag is asked.
+   */
+  protected advanceStageEndBarrier(): void {
+    const pause = this.stageEndPause;
+    if (
+      !pause ||
+      !this.running ||
+      this.stageBagInFlight ||
+      this.stageBagCommitted ||
+      this.stageBagHeldReason !== null ||
+      this.isProcessingEliminations ||
+      this.tableEngineRecoveryAttempts.size > 0 ||
+      !this.areAllTablesParked()
+    )
+      return;
+    if (isMaintenanceFrozen()) {
+      this.waitForThawThenAdvanceStageEnd();
+      return;
+    }
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle) return;
+    this.stageBagInFlight = true;
+    void this.trackLifecycleJob(this.attemptStageBag(lifecycle, pause.stageNo))
+      .catch((error) =>
+        reportError(error, 'Tournament.multi_day_bag_attempt_failed', {
+          tournamentId: this.tournamentId,
+        })
+      )
+      .finally(() => {
+        this.stageBagInFlight = false;
+        if (this.stageBagAskAgainWhenSettled) {
+          this.stageBagAskAgainWhenSettled = false;
+          this.advanceStageEndBarrier();
+        }
+      });
+  }
+
+  /** One subscription; the thaw edge re-drives the barrier exactly once. */
+  private waitForThawThenAdvanceStageEnd(): void {
+    if (this.stageThawUnsubscribe) return;
+    this.stageThawUnsubscribe = onMaintenanceThaw(() => {
+      this.stageThawUnsubscribe?.();
+      this.stageThawUnsubscribe = null;
+      this.stageBagFrozenRetryUsed = false;
+      if (this.running) this.advanceStageEndBarrier();
+    });
+  }
+
+  private async attemptStageBag(
+    lifecycle: TournamentLifecycleToken,
+    stageNo: number
+  ): Promise<void> {
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation) return;
+    const watermarks = await readTableWatermarks(this.tournamentId);
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (!watermarks) {
+      // Unreadable is not "no hands". Re-drive through this manager's own
+      // bounded scheduler; the sweep's completion asks the barrier again.
+      this.redriveStageBag('watermarks_unreadable', stageNo);
+      return;
+    }
+    const outcome = await bagTournamentStage(this.tournamentId, generation, stageNo, watermarks);
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
+
+    if (outcome.kind === 'ok') {
+      this.stageBagCommitted = true;
+      const facts = outcome.data;
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] DAY ${stageNo} BAGGED - ${Number(facts.players ?? 0).toLocaleString()} players, ${Number(facts.total_chips ?? 0).toLocaleString()} chips; next stage ${String(facts.next_stage_start_utc ?? 'unscheduled')}`
+      );
+      await this.broadcast('stage_bagged', {
+        stageNo,
+        nextStageNo: facts.next_stage_no ?? stageNo + 1,
+        nextStageStartUtc: facts.next_stage_start_utc ?? null,
+        timeZone: facts.time_zone ?? null,
+        players: facts.players ?? null,
+        totalChips: facts.total_chips ?? null,
+      });
+      // The bag closed every table and vacated every seat. This manager's
+      // event is over until the next stage resumes it: release the engines
+      // through the existing close path. Not awaited - stop() drains this job.
+      const teardown = this.stop();
+      void teardown.catch((error) =>
+        reportError(error, 'Tournament.multi_day_bag_stop_failed', {
+          tournamentId: this.tournamentId,
+        })
+      );
+      return;
+    }
+    if (outcome.kind === 'unknown') {
+      // The bag may have committed. Nothing here can tell; the durable record
+      // can. Stand down so the next owner re-reads it: a BAGGED row is left
+      // alone by resume, a day_ending row re-arms this pause and replays the
+      // bag, whose receipt answers a committed one.
+      reportError(outcome.error, 'Tournament.multi_day_bag_unacknowledged', {
+        tournamentId: this.tournamentId,
+        stageNo,
+      });
+      this.stageBagHeldReason = 'unacknowledged';
+      const teardown = this.stop();
+      void teardown.catch((error) =>
+        reportError(error, 'Tournament.multi_day_bag_stop_failed', {
+          tournamentId: this.tournamentId,
+        })
+      );
+      return;
+    }
+    if (outcome.kind === 'refused') {
+      switch (outcome.reason) {
+        case 'platform_frozen':
+          // Nothing moved. Retry after the thaw notification, never on a timer.
+          if (!isMaintenanceFrozen() && !this.stageBagFrozenRetryUsed) {
+            // The local freeze lifted while the request was in flight: its
+            // thaw edge has already passed, so ask once more now.
+            this.stageBagFrozenRetryUsed = true;
+            this.stageBagAskAgainWhenSettled = true;
+          } else {
+            this.waitForThawThenAdvanceStageEnd();
+          }
+          return;
+        case 'lease_lost':
+          this.standDownForDatabaseFence();
+          return;
+        case 'hand_in_flight':
+        case 'watermark_mismatch':
+        case 'watermark_tables_mismatch':
+        case 'felt_differs_from_accepted_hand':
+        case 'roster_seat_mismatch':
+        case 'stack_invalid':
+        case 'unseated_registrant':
+          // The felt is not at rest yet: a bust to record, a table to close,
+          // a hand whose commit is still landing. The elimination sweep owns
+          // all of those; its completion asks the barrier again.
+          this.redriveStageBag(outcome.reason, stageNo);
+          return;
+        case 'field_decided':
+          // One player is left: the tournament is over, not bagged. The
+          // terminal path finishes it; this pause stays so nothing is dealt.
+          this.stageBagHeldReason = outcome.reason;
+          this.requestEliminationSweep('multi_day_field_decided');
+          return;
+        default:
+          break;
+      }
+    }
+    this.stageBagHeldReason = outcome.kind === 'refused' ? outcome.reason : outcome.kind;
+    this.reportStageRefusal('bag', outcome, stageNo);
+  }
+
+  private redriveStageBag(reason: string, stageNo: number): void {
+    this.stageBagRedrives += 1;
+    // Every table may legitimately park once ahead of the sweep that records
+    // its last busts, so the budget grows with the field's tables.
+    const budget = TournamentManagerBase.STAGE_BAG_MAX_REDRIVES + 2 * this.tableEngines.size;
+    if (this.stageBagRedrives > budget) {
+      this.stageBagHeldReason = reason;
+      this.reportStageRefusal('bag', { kind: 'refused', reason, data: {} }, stageNo);
+      return;
+    }
+    this.requestEliminationSweep('multi_day_stage_end');
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE NEXT STAGE STARTS (resumeStageLifecycle)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * GameServer.discoverStageResumes admits a manager in this mode when a
+   * BAGGED event's next stage is due. It claims the resume receipt, seats
+   * every entitlement exactly once, completes the resume, and then carries on
+   * as the event's ordinary running manager. Every step is idempotent on its
+   * receipt, so a successor adopting a half-finished resume (begun with no
+   * seats, partly seated, completed with the answer lost) replays it from the
+   * durable record rather than repairing anything afterwards.
+   */
+  async resumeStage(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
+    if (this.teardownPromise) await this.teardownPromise;
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      return;
+    }
+    if (this.lifecycleOperation) return this.lifecycleOperation;
+    this.stopFenceApplied = false;
+    this.shutdownDrainFenceApplied = false;
+    const lifecycle = this.lifecycleEpoch.begin();
+    this.running = true;
+    this.armTournamentLeaseExpiryTimer();
+    const operation = this.resumeStageLifecycle(lifecycle);
+    this.lifecycleOperation = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.lifecycleOperation === operation) this.lifecycleOperation = null;
+    }
+  }
+
+  private async resumeStageLifecycle(lifecycle: TournamentLifecycleToken): Promise<void> {
+    this.stageResumeInProgress = true;
+    let continueAsRunning = false;
+    try {
+      continueAsRunning = await this.driveStageResume(lifecycle);
+    } catch (err) {
+      if (
+        err instanceof TournamentLifecycleAbortedError ||
+        !this.lifecycleEpoch.isCurrent(lifecycle)
+      ) {
+        return;
+      }
+      reportError(err, `Tournament.${this.tournamentId.slice(0, 8)}.stage_resume_failed`);
+    } finally {
+      this.stageResumeInProgress = false;
+    }
+    if (!this.lifecycleEpoch.isCurrent(lifecycle)) return;
+    if (!continueAsRunning) {
+      // Stand down; the resume lane re-reads the durable record next pass.
+      this.running = false;
+      return;
+    }
+    await this.resumeLifecycle(lifecycle);
+  }
+
+  /** Resolves when the platform is not frozen, or when this lifecycle ends. */
+  private waitForStageThaw(lifecycle: TournamentLifecycleToken): Promise<void> {
+    if (!isMaintenanceFrozen()) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let unsubscribe: (() => void) | null = null;
+      const done = () => {
+        unsubscribe?.();
+        unsubscribe = null;
+        lifecycle.signal.removeEventListener('abort', done);
+        resolve();
+      };
+      unsubscribe = onMaintenanceThaw(done);
+      lifecycle.signal.addEventListener('abort', done, { once: true });
+      if (!isMaintenanceFrozen() || lifecycle.signal.aborted) done();
+    });
+  }
+
+  /** The first level of the next stage, from this engine's own resolver. */
+  protected stageFirstLevel(blindStructure: any[], index: number): StageFirstLevel | null {
+    let resolved = this.resolveBlindLevel(blindStructure, index);
+    // A structure break row carries no blinds; the stage opens on the blinds
+    // of the next playable row, exactly as advanceBlindLevel steps over one.
+    let probe = index;
+    while (resolved?.isBreak && probe < blindStructure.length) {
+      probe += 1;
+      resolved = this.resolveBlindLevel(blindStructure, probe);
+    }
+    if (!resolved) return null;
+    const playable = enforcePlayableBlindLevel(resolved);
+    const durationMs = Math.round(this.levelDurationMs(resolved));
+    return {
+      index,
+      small_blind: playable.smallBlind,
+      big_blind: playable.bigBlind,
+      ante: playable.ante,
+      duration_ms: durationMs,
+    };
+  }
+
+  /** true: the event is RUNNING and this manager continues as its owner. */
+  private async driveStageResume(lifecycle: TournamentLifecycleToken): Promise<boolean> {
+    const { data: tournament, error } = await supabase
+      .from('tournaments')
+      .select('*')
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    this.assertLifecycleCurrent(lifecycle);
+    if (error) throw new Error(`Stage resume read failed: ${error.message}`);
+    if (!tournament || tournament.id !== this.tournamentId)
+      throw new Error('Stage resume did not identify the admitted event');
+    // A predecessor completed the resume: continue as the running manager.
+    if (tournament.status === 'RUNNING') return true;
+    if (tournament.status !== 'BAGGED' || !mayCarryMultiDayPlan(tournament)) return false;
+
+    if (typeof tournament.blind_structure === 'string') {
+      try {
+        tournament.blind_structure = JSON.parse(tournament.blind_structure);
+      } catch {
+        tournament.blind_structure = [];
+      }
+    }
+    if (!Array.isArray(tournament.blind_structure)) tournament.blind_structure = [];
+    this.tournamentCache = tournament;
+    this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+    this.tournamentEntryWindowClosed = this.prizePoolFinalized;
+
+    const plan = await readMultiDayStagePlan(this.tournamentId);
+    this.assertLifecycleCurrent(lifecycle);
+    this.multiDayPlan = plan;
+    if (plan.kind !== 'active') {
+      if (plan.kind === 'unknown') this.reportUnknownMultiDayPlan(plan.error);
+      return false;
+    }
+    const target = resumeTargetStage(plan.stages);
+    if (!target) return false;
+    if (
+      target.state === 'scheduled' &&
+      target.scheduledStartUtc !== null &&
+      Date.parse(target.scheduledStartUtc) > Date.now()
+    )
+      return false;
+
+    const nextIndex = await readNextLevelIndex(this.tournamentId, target.stageNo - 1);
+    this.assertLifecycleCurrent(lifecycle);
+    if (nextIndex === null) {
+      reportError(
+        new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] bagged clock snapshot unreadable`),
+        'Tournament.multi_day_snapshot_unreadable',
+        { tournamentId: this.tournamentId, stageNo: target.stageNo }
+      );
+      return false;
+    }
+    const firstLevel = this.stageFirstLevel(tournament.blind_structure, nextIndex);
+    if (!firstLevel) throw new Error('The next stage has no first level to open with');
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation) throw new Error('Stage resume requires the active tournament lease');
+
+    // RESUME BEGIN. Nothing moves inside the freeze: wait for its end, and
+    // retry a frozen refusal only after the thaw notification.
+    let begun: StageRpcOutcome;
+    for (;;) {
+      await this.waitForStageThaw(lifecycle);
+      this.assertLifecycleCurrent(lifecycle);
+      begun = await beginStageResume(
+        this.tournamentId,
+        target.stageNo,
+        nodeCrypto.randomUUID(),
+        target.scheduleGeneration,
+        generation,
+        firstLevel
+      );
+      this.assertLifecycleCurrent(lifecycle);
+      if (begun.kind === 'refused' && begun.reason === 'platform_frozen' && isMaintenanceFrozen())
+        continue;
+      break;
+    }
+    if (begun.kind !== 'ok') {
+      if (begun.kind === 'refused' && begun.reason === 'lease_lost') {
+        this.standDownForDatabaseFence();
+        return false;
+      }
+      // not_due and schedule_generation_stale are the schedule moving; the
+      // resume lane re-reads it. Anything else needs its cause fixed.
+      if (
+        !(
+          begun.kind === 'refused' &&
+          (begun.reason === 'not_due' || begun.reason === 'schedule_generation_stale')
+        )
+      )
+        this.reportStageRefusal('resume_begin', begun, target.stageNo);
+      return false;
+    }
+    if (begun.data.completed === true) return true;
+    const resumeId = begun.data.resume_id;
+    if (typeof resumeId !== 'string') throw new Error('Stage resume receipt carried no resume id');
+
+    // SEAT ONCE, then COMPLETE. One more seating pass answers a completion
+    // that finds an entitlement still unseated (a seat whose answer was lost).
+    for (let pass = 0; pass < 2; pass++) {
+      const seated = await this.seatStageEntitlements(
+        lifecycle,
+        tournament,
+        target.stageNo,
+        resumeId,
+        generation
+      );
+      if (!seated) return false;
+      await this.waitForStageThaw(lifecycle);
+      this.assertLifecycleCurrent(lifecycle);
+      const completed = await completeStageResume(this.tournamentId, resumeId, generation);
+      this.assertLifecycleCurrent(lifecycle);
+      if (completed.kind === 'ok') {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] DAY ${target.stageNo} RESUMED - ${Number(completed.data.players ?? 0).toLocaleString()} players at level ${String(completed.data.current_level ?? nextIndex)}`
+        );
+        return true;
+      }
+      if (completed.kind === 'refused' && completed.reason === 'unseated_entitlements') continue;
+      if (completed.kind === 'refused' && completed.reason === 'lease_lost') {
+        this.standDownForDatabaseFence();
+        return false;
+      }
+      if (completed.kind !== 'unknown')
+        this.reportStageRefusal('resume_complete', completed, target.stageNo);
+      else
+        reportError(completed.error, 'Tournament.multi_day_resume_complete_unacknowledged', {
+          tournamentId: this.tournamentId,
+        });
+      return false;
+    }
+    return false;
+  }
+
+  /**
+   * Seat every active entitlement of the stage exactly once. Tables are
+   * created for the whole field (humans and horses alike, one random draw),
+   * a predecessor's tables and seats are adopted, and the :55 freeze is
+   * waited out before every seat write.
+   */
+  private async seatStageEntitlements(
+    lifecycle: TournamentLifecycleToken,
+    tournament: any,
+    stageNo: number,
+    resumeId: string,
+    generation: string
+  ): Promise<boolean> {
+    const entitlements = await readStageEntitlements(this.tournamentId, stageNo);
+    this.assertLifecycleCurrent(lifecycle);
+    if (!entitlements) {
+      reportError(
+        new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] stage entitlements unreadable`),
+        'Tournament.multi_day_entitlements_unreadable',
+        { tournamentId: this.tournamentId, stageNo }
+      );
+      return false;
+    }
+    const active = entitlements.filter((entitlement) => entitlement.state === 'active');
+    if (active.length === 0) return true;
+    // No table is built and no chair is taken inside the :55 freeze.
+    await this.waitForStageThaw(lifecycle);
+    this.assertLifecycleCurrent(lifecycle);
+
+    const { data: existingTables, error: tablesError } = await supabase
+      .from('tables')
+      .select('id, max_players')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting'])
+      .order('created_at', { ascending: true });
+    this.assertLifecycleCurrent(lifecycle);
+    if (tablesError || !Array.isArray(existingTables)) {
+      throw new Error(`Stage table inventory read failed: ${tablesError?.message ?? 'no rows'}`);
+    }
+    const { data: liveSeats, error: seatsError } = await supabase
+      .from('table_seats')
+      .select(
+        'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
+      )
+      .is('left_at', null)
+      .eq('tables.tournament_id', this.tournamentId);
+    this.assertLifecycleCurrent(lifecycle);
+    if (seatsError || !Array.isArray(liveSeats)) {
+      throw new Error(`Stage live-seat read failed: ${seatsError?.message ?? 'no rows'}`);
+    }
+    const occupied = new Map<string, Set<number>>();
+    for (const seat of liveSeats as Array<{ table_id: string; seat_number: number }>) {
+      if (!occupied.has(seat.table_id)) occupied.set(seat.table_id, new Set());
+      occupied.get(seat.table_id)!.add(seat.seat_number);
+    }
+
+    const perTable = stageSeatsPerTable(tournament.table_size, tournament.game_type);
+    const drawTables = (existingTables as Array<{ id: string; max_players: number | null }>).map(
+      (table) => ({
+        id: table.id,
+        capacity: Math.max(1, Math.min(10, Number(table.max_players) || perTable)),
+        occupied: occupied.get(table.id) ?? new Set<number>(),
+      })
+    );
+    const free = drawTables.reduce(
+      (sum, table) => sum + Math.max(0, table.capacity - table.occupied.size),
+      0
+    );
+    const tablesToCreate = Math.max(
+      Math.ceil(entitlements.length / perTable) - drawTables.length,
+      Math.ceil(Math.max(0, active.length - free) / perTable)
+    );
+    const opening = tournament.blind_level_state ?? {};
+    for (let i = 0; i < tablesToCreate; i++) {
+      const { data: table, error } = await supabase
+        .from('tables')
+        .insert({
+          club_id: tournament.club_id,
+          tournament_id: this.tournamentId,
+          name: `${tournament.name} - Day ${stageNo} Table ${drawTables.length + 1}`,
+          game_type: 'tournament',
+          game_variant: tournament.game_type?.toLowerCase() || 'nlh',
+          stakes: `${opening.small_blind ?? 0}/${opening.big_blind ?? 0}`,
+          small_blind: opening.small_blind ?? 0,
+          big_blind: opening.big_blind ?? 0,
+          ante: opening.ante ?? 0,
+          min_buy_in: 0,
+          max_buy_in: 0,
+          max_players: perTable,
+          current_players: 0,
+          status: 'running',
+          action_time_seconds: tournament.action_time_seconds || 15,
+          big_blind_ante_enabled: tournament.big_blind_ante === true,
+          all_in_or_fold: tournament.all_in_or_fold === true,
+          allow_rabbit_hunt: tournament.allow_rabbit_hunt !== false,
+        })
+        .select('id')
+        .maybeSingle();
+      this.assertLifecycleCurrent(lifecycle);
+      if (error || !table) {
+        throw new Error(
+          `Stage table ${drawTables.length + 1} was not created: ${error?.message || 'insert returned no row'}`
+        );
+      }
+      drawTables.push({ id: table.id, capacity: perTable, occupied: new Set() });
+    }
+
+    const draw = drawStageSeats(
+      active.map((entitlement) => entitlement.id),
+      drawTables,
+      secureRandomInt
+    );
+    if (!draw) throw new Error('The stage tables cannot hold every entitlement');
+    for (const assignment of draw) {
+      await this.waitForStageThaw(lifecycle);
+      this.assertLifecycleCurrent(lifecycle);
+      const outcome = await seatStageEntitlement(
+        this.tournamentId,
+        resumeId,
+        generation,
+        assignment.entitlementId,
+        assignment.tableId,
+        assignment.seatNumber
+      );
+      this.assertLifecycleCurrent(lifecycle);
+      if (outcome.kind === 'ok') continue;
+      if (outcome.kind === 'refused' && outcome.reason === 'entitlement_already_consumed') continue;
+      if (outcome.kind === 'refused' && outcome.reason === 'lease_lost') {
+        this.standDownForDatabaseFence();
+        return false;
+      }
+      // A seat that is taken, an unknown answer or a refusal: stop here. The
+      // durable receipt lets the next pass re-draw from what is really seated.
+      if (outcome.kind === 'unknown') {
+        reportError(outcome.error, 'Tournament.multi_day_seat_unacknowledged', {
+          tournamentId: this.tournamentId,
+          entitlementId: assignment.entitlementId,
+        });
+      } else {
+        this.reportStageRefusal('seat', outcome, stageNo);
+      }
+      return false;
+    }
+    return true;
   }
 
   private applyManagerMutationFence(clearLeaseExpiry: boolean): Promise<void> | null {
@@ -5913,6 +7263,11 @@ export abstract class TournamentManagerBase {
       this.blindTimer = null;
     }
     this.unregisterEliminationScheduler();
+    // A retired generation must not be re-armed by the next thaw.
+    if (this.stageThawUnsubscribe) {
+      this.stageThawUnsubscribe();
+      this.stageThawUnsubscribe = null;
+    }
     for (const timer of [
       this.addOnPeriodEndTimer,
       this.addOnResumeBroadcastRetryTimer,
@@ -6028,6 +7383,21 @@ export abstract class TournamentManagerBase {
       this.drainedF06Originals = stopResults.every((result) => result.status === 'fulfilled')
         ? Object.freeze(engines.map(([id, engine]) => Object.freeze([id, engine] as const)))
         : null;
+      /* WRITE THE BANK DOWN BEFORE ASKING WHETHER IT IS RETAINED (2026-09-26).
+         A stopped engine that holds a frozen time bank not yet on disk made
+         this stop fail "retained time-bank custody" - 134,904 times in the
+         sixteen minutes before the 08:55Z restart - and the only other place
+         that bank gets written is the next break's announcement, up to an
+         hour away. Each engine now writes its own custody first, at the
+         process root and through the guarded database function, so the check
+         below reads a bank that is on disk rather than one that is waiting.
+         A refused or unknown write records nothing, and the check still
+         refuses exactly as it did. */
+      await Promise.allSettled(
+        engines.map(([, engine]) =>
+          Promise.resolve().then(() => engine.persistStoppedTimeBankCustody?.())
+        )
+      );
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];
@@ -6046,8 +7416,21 @@ export abstract class TournamentManagerBase {
       }
       try {
         if (!(await this.resolveTournamentSeatMoveQuarantine(null, null))) {
+          /* THE UUID THAT WAS NOT THERE (2026-09-25). This error read
+             `retained an unresolved seat-move UUID` for every refusal of the
+             manager-shutdown certificate, including the two that are not a
+             UUID at all. On release 778075b4 it fired 5,678 times in
+             twenty-five minutes across thirteen tournaments while
+             `Tournament.atomic_move_refused_or_unknown` - the ONLY event that
+             can put a UUID in the pending set - had not fired once in the
+             whole retained log. Nobody could tell, from the log, that there
+             was no move. The certificate names its clause now and this
+             reports that name. */
           stopFailures.push(
-            new Error(`Tournament ${this.tournamentId} retained an unresolved seat-move UUID`)
+            new Error(
+              `Tournament ${this.tournamentId} refused its seat-move release certificate: ` +
+                `${this.seatMoveQuarantineRefusal() ?? 'refusal_unnamed'}`
+            )
           );
         }
       } catch (error) {
@@ -7283,6 +8666,56 @@ export abstract class TournamentManagerBase {
         deferredWakeMs = 1000;
         return;
       }
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A LEVEL IS NOT SPENT ON A HAND THAT WAS NEVER DEALT (2026-09-23)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The two guards above already say this twice: a level that comes due
+       * during a break is owed, not spent, and a level that comes due inside
+       * the maintenance freeze is owed, not spent. Both exist because a blind
+       * level is a wall-clock deadline a PLAYER loses to, and CLAUDE.md 13
+       * invariant 4 is explicit that such a deadline is thawed, never burned.
+       *
+       * There is a third way the field cannot play and it was not covered:
+       * the tournament's own tables stop dealing. The level clock is a local
+       * setTimeout chain and it keeps its own time perfectly well while every
+       * table under it is dead, so the blinds climb against stacks that
+       * cannot act. Measured on production 2026-09-23, on an engine that had
+       * been unable to restart for five days:
+       *
+       *   Evening Mystery Bounty (PLO5) 95a31bb1 - last hand 09-22 13:28:45
+       *     at 2,000/4,000, two players holding 30,000 each (7.5 BB). The
+       *     level clock ran on unattended to 09-22 16:56 and stopped at
+       *     500,000/1,000,000 with a 150,000 ante: 0.03 BB apiece, and less
+       *     than a quarter of one ante. Resuming that would not have been the
+       *     game they were playing - the first hand posts every chip either
+       *     of them owns before a card is read.
+       *   $100 Freeroll 12:00 AM 37f7d04b - four days of unattended levels,
+       *     30 BB average down to 2.86 BB.
+       *   $100 Freeroll 6:00 AM 6915596c - 12.83 BB down to 0.16 BB.
+       *   Breakfast Turbo 019b6263 - 5.80 BB down to 0.15 BB.
+       *
+       * Twelve events in all. So: the level is owed, exactly as it is owed
+       * across a break, and it goes up the instant a hand lands. This is the
+       * hard-coded fix (10.11/10.12) - it prevents the outcome rather than
+       * repairing stacks afterwards, and there is no sweep behind it.
+       *
+       * The hold is announced once per level so that a hold which never ends
+       * is a line somebody can read, rather than a tournament whose blinds
+       * mysteriously stopped (10.83, 10.86 rule 4).
+       */
+      if (this.lastObservedHandCompletedAtMs < this.blindTimerStartedAt) {
+        if (!this.stalledLevelHoldAnnouncedFor.has(this.currentLevel)) {
+          this.stalledLevelHoldAnnouncedFor.add(this.currentLevel);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel} came due with no hand dealt since it began - holding it until this tournament deals again`
+          );
+        }
+        deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
+        return;
+      }
       if (this.blindClockNeedsThawResync) {
         const { data: clock, error: clockError } = await supabase
           .from('tournaments')
@@ -7326,6 +8759,29 @@ export abstract class TournamentManagerBase {
       }
 
       const prevLevel = this.pendingBlindTransition?.previousLevel ?? this.currentLevel;
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  THE LAST LEVEL OF A DAY IS NOT FOLLOWED BY A LEVEL (multi-day)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * When a sealed plan says the level that just expired ends this stage
+       * and a next stage exists, the day ends here instead of publishing:
+       * fn_begin_stage_end records the intent, the stage-end pause holds
+       * every table after the hand it is playing, and the level clock stays
+       * unarmed. A pending (possibly committed) publication is replayed as
+       * before; it was measured before the day could end. Inert (no read, no
+       * request) for every event without an active plan.
+       */
+      if (this.multiDayPlan && this.multiDayPlan.kind !== 'none' && !this.pendingBlindTransition) {
+        const stageEnd = await this.endStageInsteadOfPublishing(prevLevel, lifecycle);
+        if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
+        if (stageEnd === 'hold') {
+          deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
+          return;
+        }
+        if (stageEnd !== 'publish') return;
+      }
       let nextLevel = this.pendingBlindTransition?.nextLevel ?? this.currentLevel + 1;
 
       /**
@@ -7771,7 +9227,7 @@ export abstract class TournamentManagerBase {
     // Hand-for-hand may have ended while the add-on owned this shared gate.
     // With neither tournament pause remaining, release it even when the
     // add-on originally inherited the parked table from hand-for-hand.
-    if (!this.onBreak && !this.handForHandActive) {
+    if (!this.onBreak && !this.handForHandActive && !this.stageEndPause) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -7781,7 +9237,7 @@ export abstract class TournamentManagerBase {
       }
     }
 
-    if (ownsLevelClock && !this.onBreak) {
+    if (ownsLevelClock && !this.onBreak && !this.stageEndPause) {
       const blindStructure = this.tournamentCache?.blind_structure || [];
       const remaining = this.savedBlindTimerRemaining;
       this.savedBlindTimerRemaining = 0;

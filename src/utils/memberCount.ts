@@ -15,9 +15,6 @@
 import { supabase } from '../lib/supabase';
 import { reportError } from './errorReporter';
 
-/** Valid statuses for "active" members */
-const ACTIVE_STATUSES = ['active', 'approved'] as const;
-
 /**
  * Get LIVE active member count for a single club.
  * Filters by status IN ('active', 'approved').
@@ -107,30 +104,4 @@ export async function getActiveMemberCountBatch(clubIds: string[]): Promise<Map<
   );
 
   return countMap;
-}
-
-/**
- * Get the count of clubs a user actively belongs to.
- * Used for the 4-club membership limit check.
- * Filters by active/approved status so bans don't count against the limit.
- *
- * @param userId - The user's UUID
- * @returns The count of active club memberships
- */
-export async function getUserActiveClubCount(userId: string): Promise<number> {
-  try {
-    const { count, error } = await supabase
-      .from('club_members')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .in('status', [...ACTIVE_STATUSES]);
-
-    if (!error && typeof count === 'number') {
-      return count;
-    }
-  } catch (e) {
-    reportError(e, 'memberCount.getUserActiveClubCount');
-    // Fall through
-  }
-  return 0;
 }

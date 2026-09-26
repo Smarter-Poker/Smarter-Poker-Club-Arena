@@ -161,6 +161,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         ))}
       </div>
       <SpadeConsole
+        onClose={handleDismiss}
         as="div"
         className="winner-console winner-entrance winner-golden"
         eyebrow={tournamentName}

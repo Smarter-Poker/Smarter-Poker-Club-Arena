@@ -38,12 +38,31 @@ describe('raiseFinancialAlert', () => {
     // fn_raise_financial_alert would throw 28000 under service_role — using it
     // here would silently disable every server alert.
     expect(fnName).toBe('fn_raise_server_financial_alert');
+    // UPDATED 2026-09-25, same commit as the change it pins. The wrapper now
+    // also forwards p_dedupe_key and p_entity_id. They had existed on the RPC
+    // all along, implementing "ONE OPEN ALERT PER THING THAT IS WRONG, not per
+    // pass over it", and this wrapper never passed them - so the guard was
+    // armed and unreachable from all 33 call sites that go through here, and
+    // Tournament.atomic_finish_refused alone reached 15,426 unresolved
+    // criticals. A caller that passes no key still sends null, which is what
+    // the RPC treats as "no subject", so the previous behaviour is preserved
+    // exactly for every caller that has not opted in.
     expect(args).toEqual({
       p_severity: 'critical',
       p_source: 'Src.thing',
       p_message: 'boom',
       p_context: { hand: 7 },
+      p_dedupe_key: null,
+      p_entity_id: null,
     });
+  });
+
+  it('forwards a subject key and entity id when the caller supplies them', async () => {
+    // The whole defect was that these two never left this function.
+    await raiseFinancialAlert('critical', 'Src.thing', 'boom', { hand: 7 }, 'tid:reason', 'tid');
+    const [, args] = mockRpc.mock.calls[0] as [string, Record<string, unknown>];
+    expect(args.p_dedupe_key).toBe('tid:reason');
+    expect(args.p_entity_id).toBe('tid');
   });
 
   it('defaults the context to an empty object rather than sending undefined', async () => {

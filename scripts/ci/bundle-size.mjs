@@ -180,8 +180,31 @@ async function main() {
   // gz, versus main's 296kB. No new source module enters first paint.
   // This accounts for the new product surface with 77kB total headroom;
   // initial-load limits and the entry-module gate remain unchanged.
-  const TOTAL_GZ_CEILING = 2800;
-  const TOTAL_RAW_CEILING = 10000;
+  // 2026-09-24: raised to 2840 with the owner's explicit approval (Dan, in the
+  // #5193 delivery session) for the club and union diamond commerce UI.
+  // Paired builds with the same dependencies: main 91837c041 2794kB gz; #5193
+  // 2816kB gz. A source-map audit of every chunk found no module in two
+  // chunks; the one duplicated vendor (immer 10 beside immer 11) was removed
+  // in #5196. The growth is new product surface: the staff Commerce Desk
+  // route (+14.6kB gz with its stylesheet) and the owner Diamond Costs page
+  // (+6.4kB gz). Initial load is unchanged at 307kB gz; the initial-load
+  // limits and the entry-module gate are untouched.
+  // 2026-09-26: raised to 2880 gz / 10150 raw with the owner's explicit
+  // approval (Dan, in the mobile spins delivery session: "Raise it to 2,880 /
+  // 10,150") for the Diamond bonus games programme, phases 3 to 6. Paired
+  // local builds with the same dependencies: main dd555bf57a measured 2835kB gz
+  // / 9999kB raw, one kilobyte of raw room left; main plus phases 3 and 4
+  // (Donkey Cross horizon, Plinko and Mines look) 2842kB / 10006kB (hosted);
+  // plus phase 5 (sound and haptics) 2844kB / 10029kB; plus phase 6 (reveals
+  // and landscape) 2846kB / 10042kB; all four together about 2848kB / 10065kB.
+  // Per-chunk diff against main: the growth is PlinkoBoard (+3.2kB gz),
+  // ChoiceScene (+2.7kB gz plus 0.7kB of CSS), CrashCurve and the new cues in
+  // the shared entry (+2.5kB gz); no module appears in two chunks and no
+  // vendor arrives twice (one Three.js chunk, one React, one Supabase). Initial
+  // load moves 306 -> 309kB gz, inside the untouched 320kB initial limit; the
+  // initial-load limits and the entry-module gate are unchanged.
+  const TOTAL_GZ_CEILING = 2880;
+  const TOTAL_RAW_CEILING = 10150;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

@@ -182,6 +182,20 @@ export function classifyChangedPaths(paths) {
   const tournamentAccountingInput = matches(
     /^(docs\/changelog\/2026-09-11-a-bust-is-ranked-by-when-it-happened\.rollback\.sql|scripts\/ci\/probes\/chip-journal-atomicity\/postgres-runtime\/package(-lock)?\.json)$/
   );
+  // THE DIAMOND SCREENSHOT HARNESSES ARE NOT ACCOUNTING INPUTS (2026-09-26).
+  // `scripts/dev/` admits the PostgreSQL accounting job because its
+  // test-*.sh and probe-*.py/sql files are what that job executes. Two files
+  // in the same directory are headless-Chromium screenshot and frame-time
+  // tools for the Diamond fixture page; nothing in accounting_postgres, the
+  // server shards or any other script invokes them (grep, 2026-09-26). PR
+  // #5260 changed one of them beside a client-only scene change and paid
+  // 29.5 minutes of accounting plus four server shards for it. Named exactly,
+  // never a pattern: every other scripts/dev/ path still admits the job, and
+  // a harness changed together with anything server-bound still runs it.
+  const devPaths = paths.filter(
+    (p) => !/^scripts\/dev\/diamond-(?:test-shots|scene-perf)\.mjs$/.test(p)
+  );
+  const devMatches = (pattern) => devPaths.some((p) => pattern.test(p));
   return {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
@@ -202,7 +216,7 @@ export function classifyChangedPaths(paths) {
       spinRules ||
       horsePriority ||
       tournamentAccountingInput ||
-      matches(
+      devMatches(
         /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
       ) ||
       matches(spinExpiry) ||

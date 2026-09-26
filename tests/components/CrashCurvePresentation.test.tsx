@@ -267,7 +267,15 @@ describe('the axes follow the flight', () => {
     const twoAfterOneFrame = at(tick(container, 200), 'y1');
     for (let now = 180; now <= 3000; now += 40) frame(now);
     const twoSettled = at(tick(container, 200), 'y1');
-    expect(labels(container, '[data-tick-label]')).toEqual(['1.00x', '2.00x', '5.00x', '10.00x']);
+    // Every line the climb needs is drawn; 2.00x sits too close to the launch
+    // line on this glass to print its label as well (phase 2, below).
+    expect(shown(container, '[data-tick]').map((n) => n.getAttribute('data-tick'))).toEqual([
+      '100',
+      '200',
+      '500',
+      '1000',
+    ]);
+    expect(labels(container, '[data-tick-label]')).toEqual(['1.00x', '5.00x', '10.00x']);
     // As the axis grows the 2.00x line slides down towards the launch line.
     expect(twoSettled).toBeGreaterThan(twoAtStart);
     // One 40ms frame moves it part of the way, never all of it.
@@ -530,5 +538,245 @@ describe('the history strip', () => {
   it('prints nothing when the host has no rounds yet', () => {
     const { container } = render(<CrashPointsStrip points={[]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+/**
+ * THE CAP IS SAID AND THE ROAD NOT TAKEN IS SHOWN (Dan 2026-09-25: "the
+ * multiplier should be 25x max and that should be displayed to the user so
+ * they know thats the max they can get ... if a user books the win it should
+ * show them how high it would have gone").
+ */
+describe('the cap and the would-have-gone plate', () => {
+  it('prints the cap as a permanent chip and draws it on the axis once the scale reaches it', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve {...base} capCents={2500} phase="open" replayElapsedMs={0} tickerCents={100} />
+    );
+    expect(container.querySelector('[data-cap="2500"]')).toHaveTextContent('Max 25.00x');
+    frame(100);
+    const cap = container.querySelector('[data-line="cap"]')!;
+    expect(cap.getAttribute('visibility')).toBe('hidden');
+    rerender(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="open"
+        replayElapsedMs={secondsTo(2200)}
+        tickerCents={2200}
+      />
+    );
+    for (let now = 140; now <= 3000; now += 40) frame(now);
+    expect(labels(container, '[data-line-label="cap"]')).toEqual(['Max 25.00x']);
+    // Above the 20.00x line, below the top of the axis.
+    expect(at(cap, 'y1')).toBeLessThan(at(tick(container, 2000), 'y1'));
+    expect(at(cap, 'y1')).toBeGreaterThan(0);
+  });
+
+  it('raises the plate the moment a booked replay reaches the crash point, and not before', () => {
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={950}
+      />
+    );
+    const plate = container.querySelector('[data-reveal="would-have-gone"]') as HTMLElement;
+    expect(plate).toHaveTextContent('It Would Have Gone To 9.50x');
+    expect(plate).toHaveTextContent('You Booked 2.57x');
+    frame(100);
+    frame(2000);
+    expect(plate.dataset.shown).toBeUndefined();
+    for (let now = 2040; now <= 3600; now += 40) frame(now);
+    expect(plate.dataset.shown).toBe('true');
+    expect(plate.style.animationDuration).toBe('520ms');
+    expect(CSS).toContain('@keyframes revealIn');
+  });
+
+  it('says when it crashed right after the booking, and when the cap came first', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={258}
+      />
+    );
+    const plate = () => container.querySelector('[data-reveal="would-have-gone"]')!;
+    expect(plate()).toHaveTextContent('It Crashed Right After You Booked');
+    rerender(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={410}
+        cashoutCents={410}
+        crashCents={3000}
+      />
+    );
+    expect(plate()).toHaveTextContent('It Would Have Gone To The 25.00x Max');
+    expect(plate()).toHaveTextContent('You Booked 4.10x');
+    rerender(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={2500}
+        cashoutCents={2500}
+        crashCents={3000}
+      />
+    );
+    expect(plate()).toHaveTextContent('Booked At The 25.00x Max');
+    expect(hero(container)).toHaveTextContent('25.00x');
+    frame(100);
+    rerender(<CrashCurve {...base} capCents={2500} phase="idle" />);
+    expect(container.querySelector('[data-reveal="would-have-gone"]')).toBeNull();
+  });
+
+  it('keeps the plate under reduced motion, static and immediate', () => {
+    motion.reduced = true;
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={950}
+      />
+    );
+    const plate = container.querySelector('[data-reveal="would-have-gone"]') as HTMLElement;
+    expect(plate).toHaveAttribute('data-reduced', 'true');
+    expect(plate.style.animationDuration).toBe('');
+    frame(100);
+    frame(300);
+    expect(plate.dataset.shown).toBe('true');
+    expect(CSS).toContain(".reveal[data-reduced='true'][data-shown='true']");
+  });
+});
+
+describe('a round booked at the ceiling is crowned, not crashed (phase 2)', () => {
+  it('turns the frame gold once the replay reaches the cap, reads the cap on the cash mark, and pins no crash', () => {
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={2500}
+        cashoutCents={2500}
+        crashCents={4000}
+      />
+    );
+    const frameNode = container.querySelector('[data-phase="cashed"]') as HTMLElement;
+    frame(100);
+    frame(2000);
+    expect(frameNode.dataset.max).toBe('false');
+    for (let now = 2040; now <= 3600; now += 40) frame(now);
+    expect(frameNode.dataset.max).toBe('true');
+    expect(labels(container, '[data-marker-label="cash"]')).toEqual(['Max 25.00x']);
+    // The cap line still draws, but the cash mark already says Max: one label, not two.
+    expect(shown(container, '[data-line="cap"]')).toHaveLength(1);
+    expect(labels(container, '[data-line-label="cap"]')).toEqual([]);
+    expect(shown(container, '[data-marker="crash"]')).toHaveLength(0);
+    expect(container.querySelector('[data-reveal="would-have-gone"]')).toHaveTextContent(
+      'Booked At The 25.00x Max'
+    );
+    expect(CSS).toContain(".frame[data-max='true']::before");
+    expect(CSS).toContain(".frame[data-max='true'] .cap");
+    expect(CSS).toContain('@keyframes maxBreathe');
+    expect(CSS).toContain(".frame[data-max='true'][data-reduced='true']::before");
+  });
+
+  it('never marks an ordinary booking or a crash as the ceiling', () => {
+    const { tick: frame } = clock();
+    const { container, rerender } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        phase="cashed"
+        finalCents={257}
+        cashoutCents={257}
+        crashCents={950}
+      />
+    );
+    for (let now = 100; now <= 3600; now += 40) frame(now);
+    expect((container.querySelector('[data-phase]') as HTMLElement).dataset.max).toBe('false');
+    expect(shown(container, '[data-marker="crash"]')).toHaveLength(1);
+    rerender(<CrashCurve {...base} capCents={2500} phase="crashed" finalCents={150} />);
+    for (let now = 3640; now <= 5000; now += 40) frame(now);
+    expect((container.querySelector('[data-phase]') as HTMLElement).dataset.max).toBe('false');
+  });
+});
+
+describe('the axis labels give way before they overprint (phase 2)', () => {
+  it('keeps every tick line and hides only a label that would sit on the one above it', () => {
+    const { tick: frame } = clock();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        capCents={2500}
+        height={200}
+        phase="open"
+        replayElapsedMs={secondsTo(2400)}
+        tickerCents={2400}
+      />
+    );
+    for (let now = 100; now <= 3000; now += 40) frame(now);
+    // On a 200px glass with the axis at 27x, 1.00x and 2.00x are a few pixels apart.
+    const one = tick(container, 100),
+      two = tick(container, 200);
+    expect(one.getAttribute('visibility')).not.toBe('hidden');
+    expect(two.getAttribute('visibility')).not.toBe('hidden');
+    expect(Math.abs(at(one, 'y1') - at(two, 'y1'))).toBeLessThan(14);
+    const oneLabel = container.querySelector('[data-tick-label="100"]')!;
+    const twoLabel = container.querySelector('[data-tick-label="200"]')!;
+    // The launch line always keeps its label; the one crowding it gives way.
+    expect(oneLabel.getAttribute('visibility')).toBe('visible');
+    expect(twoLabel.getAttribute('visibility')).toBe('hidden');
+    // Higher up there is room: 10.00x and 20.00x both print.
+    expect(labels(container, '[data-tick-label]')).toEqual(
+      expect.arrayContaining(['10.00x', '20.00x'])
+    );
+  });
+});
+
+describe('the frame is alive between rounds (phase 2)', () => {
+  it('breathes its launch line and LEDs while idle, opacity only, and rests them under reduced motion', () => {
+    const { container } = render(<CrashCurve {...base} capCents={2500} phase="idle" />);
+    expect(container.querySelector('[data-attract="launch-line"]')).not.toBeNull();
+    expect(CSS).toContain(".frame[data-phase='idle'] .launchLine");
+    expect(CSS).toContain(".frame[data-phase='idle']::after");
+    expect(CSS).toContain('@keyframes launchBreathe');
+    expect(CSS).toContain('@keyframes ledBreathe');
+    expect(CSS).toContain(".frame[data-phase='idle'][data-reduced='true'] .launchLine");
+    // Only the idle frame breathes: the base rule carries no animation, so the
+    // line stays hidden over a flight and a result (a running animation would
+    // override its opacity: 0).
+    const baseRule = CSS.slice(
+      CSS.indexOf('\n.launchLine {'),
+      CSS.indexOf('}', CSS.indexOf('\n.launchLine {'))
+    );
+    expect(baseRule).toContain('opacity: 0;');
+    expect(baseRule).not.toContain('animation');
+    const idleRule = CSS.slice(
+      CSS.indexOf(".frame[data-phase='idle'] .launchLine {"),
+      CSS.indexOf('}', CSS.indexOf(".frame[data-phase='idle'] .launchLine {"))
+    );
+    expect(idleRule).toContain('animation: launchBreathe');
+    expect(CSS).toContain(".frame[data-phase='idle'][data-reduced='true']::after");
+    const breathe = CSS.slice(
+      CSS.indexOf('@keyframes launchBreathe'),
+      CSS.indexOf('}', CSS.indexOf('@keyframes launchBreathe') + 60)
+    );
+    expect(breathe).not.toContain('transform');
   });
 });

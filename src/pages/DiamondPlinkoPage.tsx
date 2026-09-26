@@ -6,7 +6,7 @@ import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import BonusCompletion from '../components/games/BonusCompletion';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
@@ -699,7 +699,13 @@ function DiamondPlinkoGame() {
           spentDiamonds={player?.diamonds_today ?? 0}
           noun="Rounds"
         />
-        <div ref={stageRef}>
+        <div
+          ref={stageRef}
+          className={styles.sceneFit}
+          data-scene="plinko"
+          // Held sideways, the day's line above the board shares its height.
+          style={{ '--scene-reserve': '28px' } as CSSProperties}
+        >
           <PlinkoBoard
             width={Math.max(240, Math.min(680, width))}
             multipliersCents={painted}
@@ -849,6 +855,13 @@ function DiamondPlinkoGame() {
           awardId={result.award_id ?? null}
           chips={result.payout_chips}
           detail={`${result.drops.length} Drops Completed.`}
+          // The best bucket the batch landed in, lit in its own tint.
+          game="plinko"
+          figure={
+            result.drops.length
+              ? Math.max(...result.drops.map((drop) => drop.multiplier_cents)) / 100
+              : null
+          }
         />
       )}
     </div>

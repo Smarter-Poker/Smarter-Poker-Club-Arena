@@ -11,7 +11,10 @@ import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
 import { noteFire } from '../BrainTelemetry.js';
-import { horseDecisionJournalConfigured } from '../../services/HorseDecisionJournal.js';
+import {
+  horseDecisionJournalConfigured,
+  relayHorseDecisionJournalHealth,
+} from '../../services/HorseDecisionJournal.js';
 import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 import { isHorseLifecycleRequest } from '../../services/horseDecisionJournal/lifecycle.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
@@ -180,34 +183,6 @@ interface QueuedJob {
   /** One poll-turn grace for a worker response already waiting on its port. */
   executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
 }
-
-const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
-  phase: 'stopped',
-  startedAt: null,
-  readyAt: null,
-  maxInFlight: 0,
-  queueDepth: 0,
-  inFlightJobs: 0,
-  activeRequestId: null,
-  activeJobAgeMs: null,
-  oldestQueuedAgeMs: null,
-  lastCompletedAt: null,
-  lastComputeMs: null,
-  completedJobs: 0,
-  expiredJobs: 0,
-  lastExpiredAt: null,
-  lastExpiredRequestType: null,
-  lastExpiredPhase: null,
-  recoverableRequestErrors: 0,
-  lastRecoverableRequestErrorAt: null,
-  lastRecoverableRequestErrorType: null,
-  lastRecoverableRequestError: null,
-  lastError: null,
-  solverStores: null,
-  solverPolicyArtifact: null,
-  governor: null,
-  statusSampledAt: null,
-});
 
 function defaultWorkerFactory(): WorkerLike {
   // Production executes compiled JS; `npm run dev` executes this source via
@@ -1172,6 +1147,9 @@ export class LiveHorseDecisionWorkerClient {
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = this.lastCompletedAt;
+      // The journal publisher runs in this worker; /health runs here. Without
+      // this relay /health answered `starting` for a journal that had failed.
+      relayHorseDecisionJournalHealth(message.horseJournal);
     }
     if (!active.settled) {
       active.settled = true;
@@ -1339,34 +1317,5 @@ export class LiveHorseDecisionWorkerClient {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }
     return this.terminationPromise;
-  }
-}
-
-let singleton: LiveHorseDecisionWorkerClient | null = null;
-
-export async function startLiveHorseDecisionWorker(
-  options: LiveHorseDecisionWorkerClientOptions = {}
-): Promise<LiveHorseDecisionWorkerClient> {
-  if (!singleton) singleton = new LiveHorseDecisionWorkerClient(options);
-  await singleton.ready();
-  return singleton;
-}
-
-export function getLiveHorseDecisionWorker(): LiveHorseDecisionWorkerClient {
-  if (!singleton) throw new Error('live horse decision worker has not been started');
-  return singleton;
-}
-
-export function liveHorseDecisionWorkerStatus(): LiveHorseDecisionWorkerStatus {
-  return singleton?.status() ?? stoppedStatus();
-}
-
-export async function stopLiveHorseDecisionWorker(): Promise<void> {
-  const owned = singleton;
-  if (!owned) return;
-  try {
-    await owned.stop();
-  } finally {
-    if (singleton === owned) singleton = null;
   }
 }

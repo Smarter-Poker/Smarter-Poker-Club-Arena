@@ -61,7 +61,7 @@ try {
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
-      "  if(process.argv[2]==='hang')return new Promise(()=>{});",
+      "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',detail:'rpc=fn_f06_prepare_mixed_manager_custody,phase=commit',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
       "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
       "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
       "  return {ok:true,completedCalls:1,privatePayload:'synthetic-secret-must-not-export'};",
@@ -315,7 +315,44 @@ try {
       });
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
-    if (scenario === 'timeout') assert.equal(result.reason, 'inspector operation outcome unknown');
+    if (scenario === 'timeout') {
+      assert.equal(result.reason, 'inspector operation outcome unknown');
+      // An unknown outcome says how far the guard got (2026-09-24): the
+      // record it left on the target's global object, held to its shape, and
+      // nothing else that was on it.
+      assert.deepEqual(result.progress, {
+        elapsedMs: 123,
+        attemptedTables: 0,
+        completedCalls: 0,
+        verifiedTables: 0,
+        stage: 'preflight',
+        note: 'joinPreviousWork',
+        detail: 'rpc=fn_f06_prepare_mixed_manager_custody,phase=commit',
+      });
+      // AN UNKNOWN OUTCOME NAMES ITS OPERATION AND ITS DEADLINE (2026-09-25).
+      // Run 36144233010 reported this reason and nothing else, so it could not
+      // say whether the budget had already been spent before the call was
+      // issued or whether the call was issued and outran the slice it was
+      // given. Here it is the second, and it says so - naming the operation,
+      // the CDP method, the milliseconds the operation was allowed and the
+      // milliseconds it actually waited. The refusal itself does not move:
+      // `reason` is byte-identical and `retryAllowed` is still false.
+      assert.match(
+        result.transportDetail,
+        /^op=guardCall,cause=request_timeout,method=Runtime\.callFunctionOn,allowanceMs=\d+,waitedMs=\d+,budgetMs=500,spentMs=\d+,invoked=yes$/
+      );
+      const allowanceMs = Number(/allowanceMs=(\d+)/.exec(result.transportDetail)[1]);
+      const waitedMs = Number(/waitedMs=(\d+)/.exec(result.transportDetail)[1]);
+      // The operation was given what was LEFT of the 500ms work budget, not
+      // the whole of it, and it waited that out. This is the number that says
+      // whether the fix is a bigger budget or a cheaper operation, and until
+      // today it was never written down.
+      assert.ok(allowanceMs > 0 && allowanceMs < 500, 'allowance is the remaining slice');
+      assert.ok(waitedMs >= allowanceMs, 'the operation waited out its whole slice');
+      assert.equal(result.retryAllowed, false);
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
+    }
     if (['success', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)) {
       assert.equal(clientCloseWhileOpen, 0, 'client must not race the native inspector close');
       assert.equal(clientCloseCalls, 0, 'scheduled native shutdown owns the close handshake');

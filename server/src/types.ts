@@ -229,6 +229,16 @@ export interface TableInfo {
    * many seconds of the due time. NULL = always show.
    */
   bomb_pot_announce_seconds?: number | null;
+  /**
+   * KILL POTS (rule manifest kill-v1). 'off' (default) | 'half' | 'full'.
+   * Honoured only at a fixed-limit cash table; read by KillPot.readKillSettings,
+   * which treats a row without the column as 'off'. Like every rule here it is
+   * in the loadTable select AND the throttled re-read, and it takes effect at
+   * the next hand boundary.
+   */
+  kill_mode?: string | null;
+  /** KILL POTS: the scoop threshold in BASE big blinds, one of 8, 10, 12, 15. */
+  kill_threshold_bb?: number | null;
   /** Bible V8 §2.1: Minimum players to start a hand */
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
@@ -292,6 +302,15 @@ export interface TableInfo {
   role?: 'main' | 'feeder' | null;
   main_index?: number | null;
   lifecycle?: 'opening' | 'live' | 'breaking' | 'closed' | null;
+  /**
+   * Lightning 2.0 Phase 5. Set on every table of a Cluster while it converts
+   * MUST_MOVE -> LIGHTNING, cleared if the conversion aborts. It means FINISH
+   * THE HAND YOU ARE IN AND START NO OTHER - never close, unseat or cash out.
+   * See `dealingHaltLock` on ServerTableEngineBase for the whole contract.
+   */
+  dealing_halted_at?: string | null;
+  /** null, 'lightning_pending_on' or 'lightning'. Log copy, never a gate. */
+  dealing_halted_reason?: string | null;
 }
 
 export interface SeatedPlayer {
@@ -338,6 +357,13 @@ export interface SeatedPlayer {
    * the limit could never mature. Written only by trg_stamp_sit_out_at.
    */
   sit_out_at?: string | null;
+  /**
+   * Persisted `table_seats.leave_pending` (2026-09-25): the player has asked
+   * to leave and the seat has not yet been cashed out. Read so a loop can
+   * retry a departure the database deferred (LIGHTNING_HAND_IN_PROGRESS)
+   * without a second query on every pass of a table where nobody is leaving.
+   */
+  leave_pending?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
   /** Equipped avatar frame token for broadcast, e.g. `frame-gold`. */
@@ -416,6 +442,15 @@ export interface HandConfig {
      */
     triggerReason?: string;
   };
+  /**
+   * KILL POT (rule manifest kill-v1): present only on a kill hand at a
+   * fixed-limit cash table. Frozen at the deal. It carries the hand's
+   * EFFECTIVE fixed-limit sizes (smallBet / bigBet), the killer and the kill
+   * blind; every fixed-limit reader sizes from it (KillPot.handFixedLimitSmallBet)
+   * so no two readers can disagree. `smallBlind` / `bigBlind` above stay the
+   * BASE blinds: rake, BBJ and hand history all read those.
+   */
+  killPot?: import('./engine/KillPot.js').KillHandState;
   /** Bible V8 §2.8 / §4.20: Whether Run It Twice is enabled for this hand */
   ritEnabled?: boolean;
   /** Bible V8 §2.8 / §4.19: Whether Insurance is enabled for this hand */
@@ -428,6 +463,16 @@ export interface HandConfig {
    * they're buying in early out of position. Distinct from deadBlinds.
    */
   bbOnlyPosts?: { seat: number }[];
+  /**
+   * THE DEAD BUTTON AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30). The seats
+   * that post the blinds this hand, decided by the engine's rotation. When
+   * present HandController posts from exactly these seats instead of walking
+   * from the button: `smallBlind` is null when the small blind is DEAD (the
+   * seat that posted the big blind last hand has emptied, nobody posts it),
+   * and the button may sit on an empty seat. Absent on a cash table, whose
+   * published rule is the moving button and whose controller walk is exact.
+   */
+  blindSeats?: { smallBlind: number | null; bigBlind: number };
   /** Bible V8 §1.9 / Appendix A: BBJ config for this hand */
   bbjConfig?: {
     /** Whether BBJ is enabled for this variant */
@@ -1011,6 +1056,9 @@ export type TournamentStatus =
   | 'ANNOUNCED'
   | 'REGISTERING'
   | 'RUNNING'
+  // Multi-day (2026-09-24): between two stages of one event. Not terminal:
+  // the event still owns its players, their stacks (as bags) and its money.
+  | 'BAGGED'
   | 'COMPLETED'
   | 'CANCELLED'
   | 'LATE_REG';

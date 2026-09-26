@@ -85,19 +85,42 @@ describe('GameServer boot - horses keep their seats across a restart (Dan 2026-0
   });
 });
 
-describe('the bomb-pot award ledger is repaired, not just retried', () => {
-  it('the repair sweep is armed on start and cleared on stop', () => {
-    expect(GS_CODE).toMatch(/this\.startBombLedgerRepairSweep\(\)/);
-    expect(GS_CODE).toMatch(/clearInterval\(this\.bombLedgerRepairTimer\)/);
+describe('the bomb-pot award ledger cannot need repairing', () => {
+  /**
+   * RETIRED 2026-09-22. This block used to pin an HOURLY SWEEP in GameServer
+   * that called fn_backfill_bomb_pot_award_units to rebuild award units the
+   * settlement write had lost: that write is fire-and-forget by design, so a
+   * blip outlasting its third retry left a PERMANENT hole, roughly 17 a day,
+   * and only a human backfill closed one.
+   *
+   * The hole is closed at the source, so the sweep has nothing left to find.
+   * fn_ca_insert_hand_with_awards writes hand_history and bomb_pot_award_units
+   * in ONE transaction, and the constraint trigger
+   * zz_ca_bomb_hand_keeps_its_award_units, DEFERRABLE INITIALLY DEFERRED,
+   * refuses at commit any bomb hand that distributes chips without its units.
+   *
+   * MEASURED ON PRODUCTION 2026-09-24 03:18 UTC: 0 bomb hands in retention
+   * missing their award units, all time, against 70,534 award units written in
+   * the preceding 7 days. CLAUDE.md 10.12: deleting the repair loop is part of
+   * the fix, once the writer is correct and its candidate set is empty.
+   */
+  it('the engine runs no bomb-ledger repair sweep', () => {
+    // Comment-stripped source: prose about a retired sweep must not read as one.
+    expect(GS_CODE).not.toMatch(/startBombLedgerRepairSweep/);
+    expect(GS_CODE).not.toMatch(/bombLedgerRepairTimer/);
+    expect(GS_CODE).not.toMatch(/fn_backfill_bomb_pot_award_units/);
   });
 
-  it('it runs on a schedule and calls the arithmetic backfill for real', () => {
-    const body = sliceMethod(GS_CODE, 'private startBombLedgerRepairSweep');
-    expect(body).toMatch(/rpc\(\s*'fn_backfill_bomb_pot_award_units'/);
-    expect(body).toMatch(/p_dry_run:\s*false/);
-    expect(body).toMatch(/setInterval\(/);
-    // Housekeeping never fails a boot: every path reports and returns.
-    expect(body).toMatch(/reportError\(/);
+  it('the guarantee that replaced it is pinned by a law of its own', () => {
+    /* Not circular: if someone deletes the law that keeps the bomb guard
+       attached, the negative assertions above would quietly become the only
+       thing left, and an empty rule passes. This fails instead. */
+    const law = fs.readFileSync(
+      path.join(ROOT, 'src/services/noEngineTimerReDrivesAFeeTheHandOwes.law.test.ts'),
+      'utf8'
+    );
+    expect(law).toContain('zz_ca_bomb_hand_keeps_its_award_units');
+    expect(law).toContain('fn_ca_bomb_hand_keeps_its_award_units');
   });
 });
 
@@ -107,9 +130,10 @@ describe('a bomb hand that awards nothing says so', () => {
   );
 
   it('winners with an empty per-pot award array are reported', () => {
-    /* Otherwise the hole is indistinguishable from a transport loss, and the
-       repair sweep chases it forever - the units were never computed, so no
-       backfill can reconstruct them. */
+    /* Otherwise the hole is indistinguishable from a transport loss. The
+       units were never COMPUTED, so no backfill could ever have reconstructed
+       them, which is why reporting it is the only honest answer and why the
+       retired sweep above was never the thing that closed this case. */
     expect(settlement).toMatch(/bomb_award_units_empty/);
     // 2026-08-31 stale-continuation sweep: postHandTasks reads the per-hand
     // SNAPSHOT (snap.*), never the live fields - the pin follows the rename.

@@ -652,7 +652,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     await settle();
     const said = () => document.querySelector('[aria-live]')?.textContent ?? '';
     const bay = (label: string) => screen.getByText(label).nextElementSibling;
-    /** The light buzz belongs to the landing; the start fires one of its own. */
+    /** The page's own light buzzes. The landing's buzz is the scene's now (2026-09-26). */
     const landings = () =>
       vi.mocked(triggerHaptic).mock.calls.filter(([kind]) => kind === 'light').length;
     expect(bay('Street')).toHaveTextContent('1');
@@ -673,12 +673,14 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     expect(soundService.playSpinTick).not.toHaveBeenCalled();
     expect(landings()).toBe(landed);
     // The donkey lands: every surface moves to street two on that one beat.
+    // Its tick and buzz are played by the scene itself on that frame
+    // (tests/components/DiamondGamesSound.test.tsx), so the page adds neither.
     fireEvent.click(screen.getByRole('button', { name: 'Present Landing' }));
     expect(pill()).toBe('In Play');
     expect(bay('Street')).toHaveTextContent('2');
     expect(said()).toContain('Street 2 Crossed.');
-    expect(soundService.playSpinTick).toHaveBeenCalledTimes(1);
-    expect(landings()).toBe(landed + 1);
+    expect(soundService.playSpinTick).not.toHaveBeenCalled();
+    expect(landings()).toBe(landed);
   });
 
   /**
@@ -1393,7 +1395,13 @@ describe('every choice names its chips, and every outcome has one name', () => {
 });
 
 /**
- * SOUND AND HAPTICS LAND ON THE SCENE'S MOMENTS (review 2026-09-22). Donkey
+ * SOUND AND HAPTICS LAND ON THE SCENE'S MOMENTS (review 2026-09-22), AND
+ * SINCE 2026-09-26 THE SCENE PLAYS THEM ITSELF. ChoiceScene's commit plays
+ * each beat's cue (the landing tick, the hit's horn and impact, the booked
+ * sting) and its buzz on the frame that shows it, and the page plays none of
+ * them, so a beat can never be heard or felt twice. What the scene plays is
+ * pinned in tests/components/DiamondGamesSound.test.tsx; this block pins that
+ * the page stays out of it, and that the receipt never sings. Donkey
  * Cross played no game sound at all, and its one buzz fired when the RPC
  * answered - about three quarters of a second before the car reached the
  * donkey - so the buzz gave the result away before the eye had it. The receipt
@@ -1435,23 +1443,23 @@ describe('the scene owns the sound and the buzz', () => {
     expect(soundService.playSpinMultiplierResult).not.toHaveBeenCalled();
   });
 
-  it('ticks the street on the frame the donkey lands on it', async () => {
+  it('leaves the landing tick and buzz to the scene', async () => {
     await crossing(road({ picked: [0, 1] }));
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     vi.mocked(triggerHaptic).mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Present Landing' }));
-    expect(soundService.playSpinTick).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(triggerHaptic).mock.calls).toEqual([['light']]);
+    expect(soundService.playSpinTick).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalled();
   });
 
-  it('never celebrates a hit: one heavy buzz, no sound, and a silent receipt', async () => {
+  it('never celebrates a hit: the page adds nothing, and the receipt is silent', async () => {
     await crossing(road({ status: 'lost', picked: [0, 1], payout_chips: 0.2 }));
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     vi.mocked(triggerHaptic).mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
-    expect(vi.mocked(triggerHaptic).mock.calls).toEqual([['heavy']]);
+    expect(triggerHaptic).not.toHaveBeenCalled();
     expect(soundService.playSpinTick).not.toHaveBeenCalled();
     expect(soundService.playSpinMultiplierResult).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
@@ -1462,16 +1470,16 @@ describe('the scene owns the sound and the buzz', () => {
     expect(triggerHaptic).not.toHaveBeenCalledWith('success');
   });
 
-  it('sings a booked win at the multiplier it was booked at', async () => {
+  it('leaves the booked sting to the scene, and the receipt does not sing it', async () => {
     await crossing(road({ status: 'cashed', picked: [0, 1], payout_chips: 1.45 }));
     fireEvent.click(screen.getByRole('button', { name: /^Book The Win/ }));
     expect(vi.mocked(triggerHaptic).mock.calls).toEqual([['selection']]);
     await settle();
     vi.mocked(triggerHaptic).mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Present Booking' }));
-    // Street 2 on today's road is 1.45x, the same voice Crash cashes out with.
-    expect(soundService.playSpinMultiplierResult).toHaveBeenCalledExactlyOnceWith(1.45);
-    expect(vi.mocked(triggerHaptic).mock.calls).toEqual([['success']]);
+    // The scene plays the booked sting at street 2's 1.45x; the page does not.
+    expect(soundService.playSpinMultiplierResult).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     // The scene already sang it: the receipt does not sing it again.
@@ -1479,7 +1487,7 @@ describe('the scene owns the sound and the buzz', () => {
     expect(soundService.playWin).not.toHaveBeenCalled();
   });
 
-  it('leaves Mines its own buzz, which lands when its grid reveals', async () => {
+  it('leaves Mines its buzz to the board, which buzzes as its tile turns', async () => {
     backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
     backend.state
       .mockResolvedValueOnce({
@@ -1492,12 +1500,42 @@ describe('the scene owns the sound and the buzz', () => {
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Pick Tile' }));
     await settle();
-    expect(vi.mocked(triggerHaptic).mock.calls).toEqual([['heavy']]);
+    // MinesGrid blasts the mine with its own strong buzz on the render that
+    // shows it (DiamondGamesSound.test.tsx); the page adds no second one.
+    expect(triggerHaptic).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     // A lost Mines round is not sung over either.
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(soundService.playWin).not.toHaveBeenCalled();
+  });
+
+  it('leaves a booked Mines win to the board, and the receipt does not sing it again', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.state
+      .mockResolvedValueOnce({
+        ...state,
+        open_round: { ...opened('mines'), game: 'mines', picked: [3] },
+      })
+      .mockResolvedValue(state);
+    backend.act.mockResolvedValue({
+      ...fixtures.receipts.mines,
+      status: 'cashed',
+      picked: [3],
+      payout_chips: 1.5,
+    });
+    render(<DiamondChoicePage game="mines" />);
+    await settle();
+    fireEvent.click(screen.getAllByRole('button', { name: /^Book/ })[0]);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Present Booking' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    // MinesGrid plays the booked sting and its buzz as the board shows the
+    // booking (DiamondGamesSound.test.tsx); the receipt adds no second chord.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalledWith('success');
   });
 });
 

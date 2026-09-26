@@ -334,3 +334,44 @@ describe('the law registry admits the suite that reads it', () => {
     expect(classifyChangedPaths(['docs/LAWS.md']).tests).toBe(false);
   });
 });
+
+/**
+ * MEASURED 2026-09-26. PR #5260 changed a client scene and
+ * scripts/dev/diamond-scene-perf.mjs, a headless-Chromium frame-time tool for
+ * the Diamond fixture page. `scripts/dev/` admits the PostgreSQL accounting
+ * job (it is where that job's test-*.sh and probe-* files live), so the tool
+ * alone bought 29.5 minutes of accounting and four server shards. The two
+ * screenshot/perf harnesses are named out of that lane exactly; nothing else
+ * in scripts/dev/ moves, and a harness changed beside anything server-bound
+ * still runs the job.
+ */
+describe('the Diamond screenshot harnesses do not buy the accounting job', () => {
+  it.each(['scripts/dev/diamond-test-shots.mjs', 'scripts/dev/diamond-scene-perf.mjs'])(
+    '%s alone does not admit the server lane',
+    (path) => {
+      expect(classifyChangedPaths([path]).server).toBe(false);
+    }
+  );
+
+  it.each([
+    'scripts/dev/test-accounting-delivery.sh',
+    'scripts/dev/probe-atomic-tournament-blinds-pg17.py',
+    'scripts/dev/diamond-wheel-render.mjs',
+    'scripts/dev/diamond-test-shots.mjs.bak',
+    'scripts/dev/nested/diamond-test-shots.mjs',
+  ])('every other scripts/dev path still admits it: %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it('a harness changed beside a migration or server source still runs accounting', () => {
+    expect(
+      classifyChangedPaths([
+        'scripts/dev/diamond-test-shots.mjs',
+        'supabase/migrations/20260926000000_example.sql',
+      ]).server
+    ).toBe(true);
+    expect(
+      classifyChangedPaths(['scripts/dev/diamond-scene-perf.mjs', 'server/src/index.ts']).server
+    ).toBe(true);
+  });
+});

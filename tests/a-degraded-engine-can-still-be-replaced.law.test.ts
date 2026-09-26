@@ -61,10 +61,10 @@ describe('a degraded engine can still be replaced', () => {
   });
 
   it('rechecks the certificate under the mutation lock before preparing a release', () => {
-    const firstCertificate = transaction.indexOf('BREAK_REMAINING_MS="$(maintenance_certificate)"');
+    const firstCertificate = transaction.indexOf('BREAK_REMAINING_MS="$(maintenance_certificate');
     const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", firstCertificate);
     const secondCertificate = transaction.indexOf(
-      'BREAK_REMAINING_MS="$(maintenance_certificate)"',
+      'BREAK_REMAINING_MS="$(maintenance_certificate',
       lock
     );
     const rollbackProof = transaction.indexOf('prove_rollback_readiness', secondCertificate);

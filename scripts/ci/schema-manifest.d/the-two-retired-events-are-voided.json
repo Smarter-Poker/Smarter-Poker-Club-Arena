@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/the-two-retired-events-are-voided-money-neutral",
+  "_comment": "Reviewed money-neutral void of retired mixed-custody events 5a387a75 and 615783bf (20260926131948).",
+  "functions": ["smarter_private.f06_void_retired_mixed_custody_event"],
+  "tables": ["smarter_private.f06_retired_event_voids"]
+}

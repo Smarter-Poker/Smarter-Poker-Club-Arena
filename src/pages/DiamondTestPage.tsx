@@ -5,12 +5,15 @@ import PlinkoBoard from '../components/plinko/PlinkoBoard';
 import CrashCurve from '../components/crash/CrashCurve';
 import DoubleDownOffer from '../components/games/DoubleDownOffer';
 import { WheelWinReveal } from '../components/wheel/WheelWinReveal';
+import { BonusReceiptArt } from '../components/games/BonusReceiptArt';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
+import { useSceneBudget } from '../hooks/useSceneBudget';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import {
   CHOICE_MODE,
   CHOICE_PAYOUT_VERSION,
   minePrizeV4,
+  RANDOM_SPACE,
   roadLadder,
   roadSurvives,
 } from '../utils/diamondChoiceMath';
@@ -39,6 +42,10 @@ type Game = DiamondBonusGame;
 const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
 const MINES = Number(CHOICE_MODE.mines);
 const MINE_PICKS = 25 - MINES;
+/** Every crash round is capped at 25.00x, as the server seals it. */
+const CRASH_CAP = 2500;
+/** The live curve: e^(0.10 t), the 25x ceiling in about 32 seconds (migration 20260925215112). */
+const CRASH_K = 0.1;
 function roll48() {
   const a = crypto.getRandomValues(new Uint32Array(2));
   return BigInt(a[0]) * 65536n + BigInt(a[1] & 65535);
@@ -52,6 +59,11 @@ export default function DiamondTestPage() {
   const candidate = params.get('game') ?? 'plinko';
   const game: Game = candidate in games ? (candidate as Game) : 'plinko';
   const upgraded = params.get('super') === '1';
+  const rollParam = Number(params.get('roll'));
+  const fixedRoll =
+    params.has('roll') && Number.isFinite(rollParam) && rollParam >= 0 && rollParam < 1
+      ? BigInt(Math.floor(rollParam * Number(RANDOM_SPACE)))
+      : null;
   const boost = upgraded ? 2 : 1;
   const [entry, setEntry] = useState(100),
     // Double Diamonds can be opened already taken, so the board a Super award
@@ -71,12 +83,16 @@ export default function DiamondTestPage() {
     [liveCents, setLiveCents] = useState(100),
     [notice, setNotice] = useState('');
   const [measure, width] = useMeasuredWidth<HTMLDivElement>(600);
+  // Held sideways, the scene gets the height the console leaves it.
+  const sceneBudget = useSceneBudget();
   const started = useRef(0),
     crash = useRef(100),
     sealedRoad = useRef(0n),
     mines = useRef<number[]>([]),
     busy = useRef(false),
-    payout = useRef(0);
+    payout = useRef(0),
+    // The best bucket the batch lands in, for the receipt's own art.
+    bestCents = useRef(0);
   const total = entry * boost + (doubled ? entry : 0),
     chips = total / 100,
     // What the player paid: the spin entry, plus the add-on when it was taken.
@@ -114,9 +130,9 @@ export default function DiamondTestPage() {
     if (!open || game !== 'crash') return;
     let frame: number;
     const tick = () => {
-      const cents = crashMultiplierCents(0.04, performance.now() - started.current, 10000);
+      const cents = crashMultiplierCents(CRASH_K, performance.now() - started.current, CRASH_CAP);
       setLiveCents(cents);
-      if (cents >= 10000 && crash.current >= 10000) finish(chips * 100, 'cashed');
+      if (cents >= CRASH_CAP && crash.current >= CRASH_CAP) finish(chips * 25, 'cashed');
       else if (cents >= crash.current) finish(minimum, 'lost');
       else frame = requestAnimationFrame(tick);
     };
@@ -150,6 +166,11 @@ export default function DiamondTestPage() {
     if (game === 'plinko') {
       const next = Array.from(crypto.getRandomValues(new Uint16Array(dropCount)));
       setPaths(next);
+      bestCents.current = Math.max(
+        ...next.map(
+          (path) => table.multipliersCents[plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]
+        )
+      );
       const dropped = next.reduce(
         (sum, path) =>
           sum +
@@ -162,15 +183,18 @@ export default function DiamondTestPage() {
       payout.current = Math.max(dropped, minimum);
     } else if (game === 'crash')
       crash.current = Math.min(
-        10000,
+        CRASH_CAP,
         crashPointCentsFromRoll(
-          roll48(),
+          fixedRoll ?? roll48(),
           chips,
           minimum,
           crashPointFloorCents(CRASH_PAYOUT_VERSION)
         )
       );
-    else if (game === 'crossing') sealedRoad.current = roll48();
+    // A fixed road for screenshots and demos: ?roll=0.07 seals the road at that
+    // fraction of the draw space (0 crosses every street, 1 is hit on street 2).
+    // The same ?roll= seals a crash point (0.02 flies to 15.5x, 0.3 crashes at 1.50x).
+    else if (game === 'crossing') sealedRoad.current = fixedRoll ?? roll48();
     // CONTRACT 4: the board is not dealt until the first tile is picked, so
     // that tile is always a gem and the ladder's first rung is certain.
     else mines.current = [];
@@ -201,11 +225,11 @@ export default function DiamondTestPage() {
   const cash = () => {
     if (!open) return;
     if (game === 'crash') {
-      const cents = crashMultiplierCents(0.04, performance.now() - started.current, 10000);
+      const cents = crashMultiplierCents(CRASH_K, performance.now() - started.current, CRASH_CAP);
       setLiveCents(cents);
       finish(
-        cents >= crash.current && crash.current < 10000 ? minimum : (chips * cents) / 100,
-        cents >= crash.current && crash.current < 10000 ? 'lost' : 'cashed'
+        cents >= crash.current && crash.current < CRASH_CAP ? minimum : (chips * cents) / 100,
+        cents >= crash.current && crash.current < CRASH_CAP ? 'lost' : 'cashed'
       );
     } else if (picked.length) finish(nextPrize(picked.length), 'cashed');
   };
@@ -218,6 +242,12 @@ export default function DiamondTestPage() {
     setSettled(false);
     setPrize(0);
   };
+  // How far the sealed road really ran, told once the win is booked, exactly
+  // as the live page reads it from the round's proof.
+  const roadEnd =
+    game === 'crossing' && phase === 'cashed'
+      ? ROAD.filter((target) => roadSurvives(sealedRoad.current, target, chips, minimum)).length
+      : null;
   const current = open
     ? game === 'crash'
       ? (chips * liveCents) / 100
@@ -345,7 +375,7 @@ export default function DiamondTestPage() {
           onClick: cash,
         }}
       >
-        <div ref={measure} style={{ width: '100%' }}>
+        <div ref={measure} className={styles.sceneFit} data-scene={game}>
           {game === 'plinko' ? (
             <PlinkoBoard
               key={epoch}
@@ -367,13 +397,17 @@ export default function DiamondTestPage() {
             <CrashCurve
               key={epoch}
               width={width}
-              height={Math.max(280, Math.min(560, width * 0.7))}
+              height={Math.min(
+                Math.max(280, Math.min(560, width * 0.7)),
+                sceneBudget === null ? Infinity : Math.max(200, sceneBudget)
+              )}
               phase={phase === 'lost' ? 'crashed' : phase}
-              growthK={0.04}
-              capCents={10000}
+              growthK={CRASH_K}
+              capCents={CRASH_CAP}
               startedAtLocalMs={open ? started.current : null}
               finalCents={phase === 'lost' ? crash.current : liveCents}
               cashoutCents={phase === 'cashed' ? liveCents : null}
+              crashCents={phase === 'cashed' ? crash.current : null}
               autoCashoutCents={null}
               onSettled={animationComplete}
             />
@@ -384,7 +418,7 @@ export default function DiamondTestPage() {
               phase={phase}
               picked={picked}
               mines={phase === 'lost' ? mines.current : null}
-              roadEnd={null}
+              roadEnd={roadEnd}
               busy={sceneBusy || !open}
               onPick={pick}
               onSettled={animationComplete}
@@ -424,6 +458,27 @@ export default function DiamondTestPage() {
           autoContinue
           autoContinueAfterMs={5000}
           onOpen={() => setReveal(false)}
+          // The live receipt's own art and figure, and its loss dress.
+          eyebrow={phase === 'lost' ? 'Guarantee Paid' : undefined}
+          // As on the live pages: only Plinko's receipt sings a win; the other
+          // three scenes sound their own ending.
+          silent={phase === 'lost' || game !== 'plinko'}
+          art={
+            <BonusReceiptArt
+              game={game}
+              cap={CRASH_CAP / 100}
+              dim={phase === 'lost'}
+              figure={
+                game === 'crash'
+                  ? (phase === 'lost' ? crash.current : liveCents) / 100
+                  : game === 'plinko'
+                    ? bestCents.current / 100
+                    : game === 'mines' && phase === 'lost'
+                      ? Math.max(0, picked.length - 1)
+                      : picked.length
+              }
+            />
+          }
         />
       )}
     </main>

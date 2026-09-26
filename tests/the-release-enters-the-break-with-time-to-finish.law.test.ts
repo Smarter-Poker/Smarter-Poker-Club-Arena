@@ -293,17 +293,28 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
     expect(ok.stdout.trim()).toMatch(/^\d+$/);
   });
 
-  it('exit 75 means nothing was attempted, and is only reachable above the durable intent', () => {
+  it('the UNCONDITIONAL defer is only ever reachable above the durable intent', () => {
+    // NARROWED 2026-09-21 (see tests/a-race-that-touched-nothing-names-it-and-
+    // waits.law.test.ts). This pin used to read "below the intent, only `die`",
+    // and that sentence is no longer true: there is now exactly ONE further
+    // deferral below it, for a receipt that PROVES the guard touched nothing.
+    // What this still pins, unchanged, is the rule that mattered - `defer`
+    // itself, the unconditional one that fires on a plain shell check, can
+    // never be reached once the one-shot intent exists.
     expect(checkpointShell).toContain(
       'defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }'
     );
     const intentAt = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
     expect(intentAt).toBeGreaterThan(0);
-    // every `defer` sits ABOVE the O_EXCL intent write; below it, only `die`
     const defers = [...checkpointShell.matchAll(/^\s*.*\|\| defer /gm)].map((m) => m.index!);
     expect(defers.length).toBeGreaterThan(0);
     for (const at of defers) expect(at).toBeLessThan(intentAt);
-    expect(checkpointShell.slice(intentAt)).not.toContain('defer ');
+    // below the intent, `defer` is unreachable and the ONLY deferral is the
+    // proved one, which carries a different name on purpose so neither can be
+    // widened into the other by an edit that never read both.
+    const below = checkpointShell.slice(intentAt);
+    expect(below).not.toMatch(/(?:^|[^_\w])defer(?![_\w])/);
+    expect(below).toContain("defer_proved_not_started 'the fleet moved");
   });
 
   it('the physical probe DEFERS on a short break and writes no intent', () => {
@@ -405,5 +416,246 @@ printf '%s' inspector-boundary-reached
     const invoke = transaction.indexOf('"$LEGACY_CHECKPOINT" "$RUN_ID"\n    LEGACY_CHECKPOINT_RC');
     expect(raise).toBeGreaterThan(0);
     expect(raise).toBeLessThan(invoke);
+  });
+});
+
+/**
+ * THE SAME LAW, FOR THE RELEASE THAT NEEDS NO CHECKPOINT (2026-09-25)
+ * ═══════════════════════════════════════════════════════════════════
+ * Everything above budgets the LEGACY ladder. The ORDINARY one - every
+ * release now that the engine is off 8825af51 and the three other pinned
+ * predecessors - had no entry budget at all and carried the identical
+ * deficit, twice over.
+ *
+ * `beginCountdown` starts the 300000ms clock, sets breakEndsAt, broadcasts
+ * and arms the end timer, and only THEN awaits the countdown row's durable
+ * save. `durableConfirmed` - which maintenance_certificate requires before it
+ * will even look at the time remaining - is set inside `persist`, after that
+ * write commits. So the first instant any gate can observe a certificate is
+ * already seconds into a countdown that is already running, and the 15000ms
+ * the strict 285000ms admission leaves has to cover every one of them.
+ *
+ * MEASURED. Runs 36155409978, 36157652866 and 36157811057 logged the first
+ * certifiable read of six consecutive breaks at 284625, 284061, 283592,
+ * 281545, 280940 and 280154 ms remaining - 15375 to 19846 ms into the break,
+ * six out of six past the allowance. Each run then spent its whole two-hour
+ * deadline refusing every break it was offered, and `origin/main` drifted
+ * eight merges ahead of production, which is exactly how the 2026-09-18
+ * seven-day outage began.
+ *
+ * And a run that DID win that 15000ms coin toss was owed a second refusal:
+ * the locked read after acquire_engine_lock, source_target_is_current and the
+ * exact-instance probe demanded the SAME 285000ms the admission had just
+ * spent seconds getting past. That is #5026's fault, one gate later, in the
+ * path nobody had exercised because production had been on the legacy path.
+ *
+ * THE ORDINARY LADDER, derived the same way the legacy one is:
+ *
+ *   admission  maintenance_certificate 260000   >= 285000 - 25000 lag
+ *   locked     maintenance_certificate 245000   >= 260000 - 15000 entry
+ *
+ * 25s is the measured lag (19846ms worst, plus this script's own 5000ms
+ * pre-certificate poll). 15s is the entry between the two reads, the same
+ * figure LEGACY_ENTRY_ALLOWANCE_MS already measures for strictly more work.
+ * Both come out of the CANDIDATE PROOF (150 -> 125 -> 110 seconds) and never
+ * out of the 135-second rollback reserve, and the bottom rung lands exactly
+ * on the 245000ms floor the legacy ladder already holds and run 36154480502
+ * shipped 778075b4 on.
+ */
+const ORDINARY_ADMISSION_MS = 260_000;
+const ORDINARY_LOCKED_MS = 245_000;
+/** remainingMs of the first certifiable read of six consecutive real breaks. */
+const MEASURED_FIRST_CERTIFICATES = [284_625, 284_061, 283_592, 281_545, 280_940, 280_154];
+
+const certificateHelper = transaction.slice(
+  transaction.indexOf('maintenance_certificate() {'),
+  transaction.indexOf("\n# Entry to the exact predecessor's checkpoint")
+);
+const constantsBlock = transaction.slice(
+  transaction.indexOf('BREAK_CUTOVER_PROOF_SECONDS=150'),
+  transaction.indexOf('\ndie() {')
+);
+const ladderAssertions = transaction.slice(
+  transaction.indexOf('# The ladder is derived, so assert the derivation'),
+  transaction.indexOf('[ "$(id -u)" = 0 ] || die')
+);
+
+/** Drive the REAL maintenance_certificate with a stubbed /health body. */
+function certificate(remainingMs: number, minimum?: number) {
+  const body = JSON.stringify({
+    running: true,
+    handsInFlightTotal: 0,
+    maintenance: {
+      active: true,
+      phase: 'counting_down',
+      durableConfirmed: true,
+      readyForRestart: true,
+      unparkedTables: 0,
+      remainingMs,
+    },
+  });
+  return spawnSync(
+    'bash',
+    [
+      '-c',
+      `set -u
+MIN_BREAK_REMAINING_MS=${ENTRY_MS}
+curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
+${certificateHelper}
+maintenance_certificate${minimum === undefined ? '' : ` ${minimum}`}`,
+    ],
+    { encoding: 'utf8', timeout: 10_000, env: { ...process.env, PROBE_BODY: body } }
+  );
+}
+
+/** Run the REAL constants and the REAL ladder assertions, with overrides. */
+function ladder(overrides = '') {
+  return spawnSync(
+    'bash',
+    [
+      '-c',
+      `set -euo pipefail
+${constantsBlock}
+die() { echo "[engine-release-transaction] FATAL: $*" >&2; exit 1; }
+${overrides}
+${ladderAssertions}
+printf '%s %s %s %s' "$MIN_BREAK_REMAINING_MS" "$BREAK_ADMISSION_MIN_BREAK_MS" \\
+  "$BREAK_LOCKED_MIN_BREAK_MS" "$LEGACY_MIN_BREAK_REMAINING_MS"`,
+    ],
+    { encoding: 'utf8', timeout: 10_000 }
+  );
+}
+
+describe('the ordinary release enters the break the engine can actually offer', () => {
+  it('the engine starts the countdown clock before the certificate it gates on can exist', () => {
+    const begin = maintenance.indexOf('const scheduledStartAt = this.announcedAt');
+    const clock = maintenance.indexOf(
+      'this.breakEndsAt = this.breakStartedAt + MaintenanceBreak.BREAK_DURATION_MS;',
+      begin
+    );
+    const durable = maintenance.indexOf('await this.persistWithRetry(', clock);
+    expect(begin).toBeGreaterThan(0);
+    expect(clock).toBeGreaterThan(begin);
+    // The clock is running before the row is even offered to the store...
+    expect(durable).toBeGreaterThan(clock);
+    // ...and durableConfirmed is raised only once that save has committed.
+    expect(maintenance.slice(begin, durable)).toContain('this.durableConfirmed = false;');
+    expect(maintenance).toContain(
+      'await this.deps.store.save(state);\n      this.durableConfirmed = true;'
+    );
+    // which is precisely the predicate the certificate refuses without
+    expect(certificateHelper).toContain('m.get("durableConfirmed") is True');
+  });
+
+  it('the ordinary ladder descends from the strict figure by the two measured costs', () => {
+    expect(transaction).toMatch(/^BREAK_CERTIFICATE_LAG_SECONDS=25$/m);
+    expect(transaction).toMatch(/^BREAK_LOCKED_ENTRY_SECONDS=15$/m);
+    expect(transaction).toContain(
+      'BREAK_ADMISSION_MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS - BREAK_CERTIFICATE_LAG_SECONDS * 1000))'
+    );
+    expect(transaction).toContain(
+      'BREAK_LOCKED_MIN_BREAK_MS=$((BREAK_ADMISSION_MIN_BREAK_MS - BREAK_LOCKED_ENTRY_SECONDS * 1000))'
+    );
+    const result = ladder();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe(
+      `${ENTRY_MS} ${ORDINARY_ADMISSION_MS} ${ORDINARY_LOCKED_MS} ${GUARD_RESERVE_MS}`
+    );
+    // Every deduction comes out of candidate proof, never the rollback reserve,
+    // and the bottom rung is the floor the legacy ladder already holds.
+    expect(ORDINARY_LOCKED_MS).toBe(GUARD_RESERVE_MS);
+    expect(ORDINARY_LOCKED_MS - 135_000).toBe(110_000);
+    expect(ENTRY_MS - ORDINARY_ADMISSION_MS).toBe(25_000);
+    expect(ORDINARY_ADMISSION_MS - ORDINARY_LOCKED_MS).toBe(15_000);
+    // and the entry between the two reads is the figure the legacy budget
+    // already measures, for strictly more work than the ordinary path does
+    expect(ORDINARY_ADMISSION_MS - ORDINARY_LOCKED_MS).toBe(LEGACY_BUDGET_MS - 25_000);
+  });
+
+  it('admits the six certificates the engine really presented, every one of which used to refuse', () => {
+    for (const remaining of MEASURED_FIRST_CERTIFICATES) {
+      // what production did: rc 2, "waiting for a later certificate", for ever
+      const before = certificate(remaining, ENTRY_MS);
+      expect(before.status, `${remaining} @285000`).toBe(2);
+      expect(before.stdout.trim()).toBe(String(remaining));
+      // what it does now
+      const after = certificate(remaining, ORDINARY_ADMISSION_MS);
+      expect(after.status, `${remaining} @260000: ${after.stderr}`).toBe(0);
+      expect(after.stdout.trim()).toBe(String(remaining));
+      // and every one of them is genuinely late: the allowance was 15000ms
+      expect(300_000 - remaining).toBeGreaterThan(300_000 - ENTRY_MS);
+    }
+  });
+
+  it('holds an exact boundary at each rung and refuses one millisecond below it', () => {
+    expect(certificate(ORDINARY_ADMISSION_MS, ORDINARY_ADMISSION_MS).status).toBe(0);
+    const shortAdmission = certificate(ORDINARY_ADMISSION_MS - 1, ORDINARY_ADMISSION_MS);
+    expect(shortAdmission.status).toBe(2);
+    expect(shortAdmission.stdout.trim()).toBe(String(ORDINARY_ADMISSION_MS - 1));
+    expect(certificate(ORDINARY_LOCKED_MS, ORDINARY_LOCKED_MS).status).toBe(0);
+    expect(certificate(ORDINARY_LOCKED_MS - 1, ORDINARY_LOCKED_MS).status).toBe(2);
+    // THE LADDER'S POINT: a run admitted at the exact admission boundary that
+    // then spends its whole measured entry still passes the locked read. Under
+    // the old contract - both reads at 285000 - it could not.
+    expect(certificate(ORDINARY_ADMISSION_MS - 15_000, ORDINARY_LOCKED_MS).status).toBe(0);
+    expect(certificate(ORDINARY_ADMISSION_MS - 15_000, ENTRY_MS).status).toBe(2);
+  });
+
+  it('both ordinary reads name their own rung; neither takes the default any more', () => {
+    // The bare call was the bug: it always meant 285000, on both sides of the
+    // lock, whatever the gate before it had just proved.
+    expect(transaction).not.toContain('BREAK_REMAINING_MS="$(maintenance_certificate)"');
+    expect(transaction).toContain(
+      'BREAK_REMAINING_MS="$(maintenance_certificate "$ADMISSION_MIN_BREAK_MS")"'
+    );
+    expect(transaction).toContain(
+      'BREAK_REMAINING_MS="$(maintenance_certificate "$BREAK_LOCKED_MIN_BREAK_MS")"'
+    );
+    expect(transaction).toContain('CERTIFICATE_MIN_BREAK_MS="$BREAK_LOCKED_MIN_BREAK_MS"');
+    // and the refusal says which figure it refused against, not a constant it
+    // never used (CLAUDE.md 10.86 rule 2)
+    expect(transaction).toContain(
+      'below the ${ADMISSION_MIN_BREAK_MS}ms candidate-and-recovery budget'
+    );
+  });
+
+  it('leaves the legacy ladder exactly where PR #5062 left it', () => {
+    expect(transaction).toContain('ADMISSION_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
+    expect(transaction).toContain('ADMISSION_MIN_BREAK_MS="$BREAK_ADMISSION_MIN_BREAK_MS"');
+    // the legacy admission, its post-checkpoint read and its derived ceiling
+    // are all untouched
+    expect(transaction).toContain('MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom))');
+    expect(transaction).toContain(
+      'BREAK_REMAINING_MS="$(maintenance_certificate "$LEGACY_MIN_BREAK_REMAINING_MS")"'
+    );
+    expect(transaction).toContain(
+      'BREAK_ENTRY_BUDGET_CEILING_MS=$((BREAK_WINDOW_MS - MIN_BREAK_REMAINING_MS - LEGACY_ENTRY_ALLOWANCE_MS))'
+    );
+    expect(admit(ENTRY_MS, 0).status).toBe(0);
+    expect(admit(ENTRY_MS - 1, 0).status).not.toBe(0);
+  });
+
+  it('refuses on this host, by name, if a later edit inverts the derivation', () => {
+    // An admission a 300000ms countdown can never offer - the fault this law
+    // exists for - dies at startup instead of refusing every break in silence.
+    const impossible = ladder(
+      'BREAK_ADMISSION_MIN_BREAK_MS=300000\nBREAK_LOCKED_MIN_BREAK_MS=285000'
+    );
+    expect(impossible.status).toBe(1);
+    expect(impossible.stderr).toContain('demands more countdown than the engine ever offers');
+    // A locked floor below the reserve the legacy ladder already holds is the
+    // other direction, and is refused just as loudly: this law makes the
+    // release ARRIVE in time, it never lowers what the release must prove.
+    const shallow = ladder('BREAK_LOCKED_MIN_BREAK_MS=230000');
+    expect(shallow.status).toBe(1);
+    expect(shallow.stderr).toContain('below the reserve the legacy ladder already holds');
+    // and a floor that no longer covers the whole rollback reserve
+    const noRollback = ladder('LEGACY_MIN_BREAK_REMAINING_MS=0\nBREAK_LOCKED_MIN_BREAK_MS=135000');
+    expect(noRollback.status).toBe(1);
+    expect(noRollback.stderr).toContain('no longer holds the whole rollback reserve');
+    // a ladder that does not descend
+    const flat = ladder('BREAK_ADMISSION_MIN_BREAK_MS=240000');
+    expect(flat.status).toBe(1);
+    expect(flat.stderr).toContain('does not descend');
   });
 });

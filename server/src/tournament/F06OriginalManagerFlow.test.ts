@@ -351,35 +351,24 @@ it('ownership loss after park response cannot stop or move the original', async 
   expect(f.state().state).toBe('park_requested');
 });
 
-it.each(['success', 'allocation lost', 'owner changed'])(
-  'allocation-only original retry: %s',
-  async (outcome) => {
-    const f = await fixture();
-    f.engine.f06CurrentPermit = null;
-    f.engine.running = false;
-    const originalFailure = new Error('original allocation reply lost');
-    const allocate = vi.fn(async () => {
-      if (outcome === 'allocation lost') throw new Error('second allocation reply lost');
-      if (outcome === 'owner changed') f.invalidate();
-      return 1000002;
-    });
-    f.engine.installF06Allocator('original-epoch', allocate, () => true);
-    f.engine.preparedF06AllocationError = originalFailure;
-    f.engine.running = true;
-    if (outcome === 'success') {
-      await f.manager.recoverF06OriginalAdmissions();
-      expect(f.engine.getF06FailedAllocation()).toBeNull();
-      expect(f.engine.takePreparedHandNumber()).toBe(1000002);
-    } else {
-      await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
-      expect(f.engine.getF06FailedAllocation().failure).toBe(originalFailure);
-      expect(f.engine.preparedHandNumberValue).toBeNull();
-    }
-    expect(allocate).toHaveBeenCalledTimes(1);
-    expect(f.state()).toBeNull();
-    expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
-  }
-);
+it('the Manager sweep leaves a failed allocation to the dealer and allocates nothing', async () => {
+  // A failed allocation claims no hand; the dealer's next preparation
+  // allocates fresh. The sweep neither retries it nor clears it.
+  const f = await fixture();
+  f.engine.f06CurrentPermit = null;
+  f.engine.running = false;
+  const originalFailure = new Error('original allocation reply lost');
+  const allocate = vi.fn(async () => 1000002);
+  f.engine.installF06Allocator('original-epoch', allocate, () => true);
+  f.engine.preparedF06AllocationError = originalFailure;
+  f.engine.running = true;
+  await f.manager.recoverF06OriginalAdmissions();
+  expect(allocate).not.toHaveBeenCalled();
+  expect(f.engine.preparedF06AllocationError).toBe(originalFailure);
+  expect(f.engine.preparedHandNumberValue ?? null).toBeNull();
+  expect(f.state()).toBeNull();
+  expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
+});
 it('retained stopped original never silently falls back to successor custody', async () => {
   const f = await fixture('fn_f06_begin_break');
   await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
@@ -414,9 +403,11 @@ it('committed ACK with lost response releases only retained proven absence', asy
 it('capacity delay preserves original no-start evidence and reservation for later placement', async () => {
   const f = await fixture();
   f.manager.eligibleBreakDestinations.mockResolvedValueOnce([]);
-  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow(
-    'placement remains pending'
-  );
+  // Two tables are open, so the wait is pending, not an error and not the
+  // last-table continuation (aFullFieldIsNotTheLastTable.law.test.ts).
+  await expect(f.manager.recoverF06OriginalAdmissions()).resolves.toBeUndefined();
+  expect(f.calls.some((c) => c.name === 'fn_f06_continue_no_start_last_table')).toBe(false);
+  expect(f.state()).toMatchObject({ state: 'park_requested', members: [] });
   expect(f.engine.getF06RetainedPermit()).toBeNull();
   expect(f.server.tableEngines.get(source)).toBe(f.engine);
   expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
@@ -910,6 +901,10 @@ it('a replacement Manager admission cannot reconstruct an unresolved original pe
 async function lastTableFixture() {
   const f = await fixture();
   f.manager.eligibleBreakDestinations.mockResolvedValue([]);
+  // The last table is the event's only open table (2026-09-26: a source whose
+  // roster merely does not fit elsewhere is not; aFullFieldIsNotTheLastTable).
+  const tables: any = supabase.from('tables');
+  tables.or = async () => ({ data: [{ id: source }], error: null });
   const fresh: any = new ServerTableEngine(source);
   vi.spyOn(fresh, 'start').mockImplementation(async () => {
     fresh.running = true;

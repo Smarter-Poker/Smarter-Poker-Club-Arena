@@ -290,6 +290,10 @@ const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDa
 /* House ads: smarter.poker's own promotions, platform-staff only. The page
    gates on profiles.role and the API route behind it checks again. */
 const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
+/* Commerce Desk (2026-09-24): platform staff decide club and union diamond
+   refunds, run the catalog price lifecycle and verify comparison evidence.
+   PlatformStaffGuard closes the route; every door checks staff again. */
+const CommerceDeskPage = lazyWithRetry(() => import('./pages/admin/CommerceDeskPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -2317,6 +2321,18 @@ function FullApp() {
                       <PageErrorBoundary pageName="House Ads">
                         <HouseAdsPage />
                       </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="commerce-desk"
+                  element={
+                    <AuthGuard>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Commerce Desk">
+                          <CommerceDeskPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
                     </AuthGuard>
                   }
                 />

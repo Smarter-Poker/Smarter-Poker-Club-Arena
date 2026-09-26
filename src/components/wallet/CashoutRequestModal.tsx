@@ -562,6 +562,7 @@ function CashoutRequestContent({
     >
       <div className="cashout-modal ac-popup" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={isBusy ? undefined : onClose}
           as="div"
           eyebrow="Chip Cashout"
           title="Request Cashout"

@@ -910,11 +910,72 @@ REAPPLY
 # about three NOTICES, and a NOTICE is the only evidence that the three
 # substituting DO blocks took their early return instead of patching an
 # already-patched body.
+# EVERY @live-proof THE MIGRATION MAKES, EVALUATED ------------------------------
+# The migration ends its header with a block of `-- @live-proof:` lines: scalar
+# SQL expressions meant to be true of the database the file produces. They are
+# COMMENTS, so nothing in a psql run evaluates them, and three proofs in a later
+# Lightning phase shipped false in three separate rounds - every one of them the
+# proof drifting away from code that was right.
+#
+# Generated from the file under test rather than written by hand, for the same
+# reason this harness installs the real pre-migration bodies rather than
+# transcribing them: a hand-copied list is a second place for a proof to drift,
+# and drift is the only thing this section exists to catch. The mechanism is
+# section 22 of scripts/dev/test-lightning-phase4-population.sh, copied exactly:
+# each expression is inlined as CODE rather than as a string literal, so nothing
+# in it needs escaping and a proof that no longer PARSES fails the run too.
+#
+# It runs AFTER the assertions and BEFORE the second application, so what it
+# reads is the catalogue and the estate the FIRST application left behind -
+# every board the fixture and the assertions opened still standing, the
+# Lightning cluster still feeder-first.
+#
+# There is no quarantine here and there must not be one: every proof in the file
+# is evaluated and every one must be true.
+: > "$fixture/live-proofs.sql"
+printf '%s\n' 'CREATE TEMP TABLE lp (n integer, lineno integer, ok boolean);' \
+  >> "$fixture/live-proofs.sql"
+proof_n=0
+while IFS= read -r proof_line; do
+  proof_n=$((proof_n + 1))
+  proof_lineno=${proof_line%%:*}
+  proof_expr=${proof_line#*:}
+  proof_expr=${proof_expr#-- @live-proof: }
+  {
+    printf '%s%s%s%s%s' 'INSERT INTO lp VALUES (' "$proof_n" ', ' "$proof_lineno" ', coalesce(('
+    printf '%s%s\n' "$proof_expr" ')::boolean, false));'
+  } >> "$fixture/live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$migration")
+
+if [ "$proof_n" -lt 13 ]; then
+  echo "FAIL live-proof: only $proof_n @live-proof line(s) were found in $migration, so this section would prove almost nothing"
+  exit 1
+fi
+
+{
+  printf '%s\n' 'DO $lp$'
+  printf '%s\n' 'DECLARE v_bad text; v_n integer;'
+  printf '%s\n' 'BEGIN'
+  printf '%s%s%s\n' '  SELECT count(*)::integer INTO v_n FROM lp; IF v_n IS DISTINCT FROM ' "$proof_n" ' THEN'
+  printf '%s%s%s\n' "    RAISE EXCEPTION 'FAIL live-proof: % of the " "$proof_n" " proof expressions were evaluated', v_n;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' '  -- NON-VACUITY: a run in which every proof answered NULL would coalesce to'
+  printf '%s\n' '  -- false and fail below, and a run in which the table was empty fails above.'
+  printf '%s\n' "  SELECT string_agg('#' || n || ' (line ' || lineno || ' of the migration)', ', ' ORDER BY n) INTO v_bad"
+  printf '%s\n' '    FROM lp WHERE ok IS DISTINCT FROM true;'
+  printf '%s\n' '  IF v_bad IS NOT NULL THEN'
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL live-proof: the migration carries @live-proof % that is NOT true of the database it just produced', v_bad;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' 'END $lp$;'
+  printf '%s%s%s\n' "\\echo '  ok  EVERY LIVE PROOF  all " "$proof_n" " @live-proof expressions the migration carries in its own header were extracted from the file under test, inlined as code so that one which no longer PARSES is a failure too, and evaluated against the throwaway catalogue and the estate the first application left behind - and every single one of them is true, with no quarantine and no exception list'"
+} >> "$fixture/live-proofs.sql"
+
 set +e
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55545 -d postgres \
   -f "$root/scripts/dev/fixtures/lightning-phase3-feeder-first-schema.sql" \
   -f "$migration" \
   -f "$fixture/assertions.sql" \
+  -f "$fixture/live-proofs.sql" \
   -f "$migration" \
   -f "$fixture/reapply-assertions.sql" 2>&1 | tee "$fixture/psql.out"
 psql_status=${PIPESTATUS[0]}
@@ -942,4 +1003,4 @@ notice_once 'already names a first-table feeder after the game'   'cluster write
 notice_once "already leaves a Lightning cluster's lone feeder alone" 'tick'
 echo '  ok  RE-APPLY NOTICES  each of the three substituting blocks announced its early return exactly once, so the first pass patched and the second pass did not'
 
-echo 'PASS: Lightning Phase 3 feeder-first must-move, 11 checks: a Lightning-capable game opens exactly one live table with role feeder and no main_index under the game name with lightning_enabled on the row and in the answer and cluster_mode still must_move, a game with no flag and a game with the flag false both still open Main 1 named after the game, a non-boolean flag and a Lightning manual table are both refused by name while a manual game an unknown override key and the OVERRIDE_LOCKED sibling guard all still behave as before, the tick leaves a Lightning lone feeder alone and writes no feeder_promoted_to_main while the same tick on the same board without the flag promotes it and writes that row, a second table restores ordinary must-move with the older table as Main 1 under the game name and the newer as feeder, R3 reopens a feeder reporting feeder1 for a Lightning cluster and Main 1 reporting main1 for an ordinary one, the front table is Main 1 over an older live feeder and the oldest live table without one and NULL for a cluster that does not exist and skips closed and deleted rows, the tick worklist reports a feeder-first cluster feeder where the old question answered NULL and still reports an ordinary Main 1, the must-move lobby lists nobody on a feeder-first cluster single table and exactly the second table player once there is one and still lists the feeder and not the Main on an ordinary board, and the migration is idempotent on re-apply with all six bodies byte-identical and each of its three substituting blocks announcing its early return exactly once'
+echo 'PASS: Lightning Phase 3 feeder-first must-move, 12 checks: a Lightning-capable game opens exactly one live table with role feeder and no main_index under the game name with lightning_enabled on the row and in the answer and cluster_mode still must_move, a game with no flag and a game with the flag false both still open Main 1 named after the game, a non-boolean flag and a Lightning manual table are both refused by name while a manual game an unknown override key and the OVERRIDE_LOCKED sibling guard all still behave as before, the tick leaves a Lightning lone feeder alone and writes no feeder_promoted_to_main while the same tick on the same board without the flag promotes it and writes that row, a second table restores ordinary must-move with the older table as Main 1 under the game name and the newer as feeder, R3 reopens a feeder reporting feeder1 for a Lightning cluster and Main 1 reporting main1 for an ordinary one, the front table is Main 1 over an older live feeder and the oldest live table without one and NULL for a cluster that does not exist and skips closed and deleted rows, the tick worklist reports a feeder-first cluster feeder where the old question answered NULL and still reports an ordinary Main 1, the must-move lobby lists nobody on a feeder-first cluster single table and exactly the second table player once there is one and still lists the feeder and not the Main on an ordinary board, every one of the thirteen @live-proof expressions the migration carries in its own header extracted from the file under test and evaluated against the estate it produced with no quarantine and no exception list, and the migration is idempotent on re-apply with all six bodies byte-identical and each of its three substituting blocks announcing its early return exactly once'

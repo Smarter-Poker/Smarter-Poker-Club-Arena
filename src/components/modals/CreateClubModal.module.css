@@ -102,6 +102,18 @@
   line-height: 1.35;
 }
 
+/* Refusal copy can be longer than a phone. It wraps inside the locked footer
+   instead of widening or clipping the full-page console. */
+.pageFooter .status {
+  white-space: normal;
+}
+
+.pageFooter .status > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 /* One picture, centred, exactly as tall as the stage. Two classes on purpose:
    the kit sets --sc-max on `.sc` at one class, and its sheet may load later. */
 .console.console {

@@ -18,7 +18,7 @@ RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_bre
 
 def run_queue(certificates, *, now=100, deadline=1000, certificate_deadline=900,
               supersede_on=0, cancellation=False, already_released=False, legacy=False,
-              checkpoint_exits=(0,), intent_after_defer=False):
+              checkpoint_exits=(0,), intent_after_defer=False, waiting_since=0):
     with tempfile.TemporaryDirectory(prefix='engine-window-queue-') as temp:
         directory = Path(temp)
         sequence = directory / 'certificate-sequence'
@@ -42,6 +42,8 @@ NEXT_FRESHNESS_CHECK=0
 BREAK_END_EPOCH=0
 MIN_BREAK_REMAINING_MS=285000
 LEGACY_MIN_BREAK_REMAINING_MS=245000
+BREAK_ADMISSION_MIN_BREAK_MS=260000
+BREAK_LOCKED_MIN_BREAK_MS=245000
 LEGACY_CHECKPOINT_BUDGET_SECONDS=40
 LEGACY_ENTRY_ALLOWANCE_MS=15000
 BREAK_WINDOW_MS=300000
@@ -50,6 +52,7 @@ BREAK_ENTRY_BUDGET_MS=0
 REQUEST_ROOT={shlex.quote(str(directory))}
 CHECKPOINT_SEQUENCE={shlex.quote(str(checkpoint_sequence))}
 LOCK_HELD=0
+RECOVERY_WAIT_STARTED_EPOCH={waiting_since}
 LEGACY_CHECKPOINT_REQUIRED={int(legacy)}
 LEGACY_CHECKPOINT_ATTEMPTED=0
 FRESHNESS_CALLS=0
@@ -129,7 +132,8 @@ maintenance_certificate() {{
 {QUEUE}
   [ "$LOCK_HELD" = 1 ] || exit 95
   [ "$BREAK_REMAINING_MS" -ge "$CERTIFICATE_MIN_BREAK_MS" ] || exit 94
-  [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] || [ "$CERTIFICATE_MIN_BREAK_MS" = "$MIN_BREAK_REMAINING_MS" ] || exit 93
+  [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] || [ "$CERTIFICATE_MIN_BREAK_MS" = "$BREAK_LOCKED_MIN_BREAK_MS" ] || exit 93
+  event "MISSED:$RECOVERY_ADMISSION_MISSED"
   event "PREPARE_ALLOWED:$DEADLINE:$CERTIFICATE_DEADLINE:$BREAK_END_EPOCH"
   break
 done
@@ -216,7 +220,7 @@ class WindowQueueTests(unittest.TestCase):
         result, events = run_queue([(0, 299999), (0, 299000)])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
-                         ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:285000'])
+                         ['CERTIFICATE:1:0:260000', 'CERTIFICATE:2:1:245000'])
         self.assertNotIn('LEGACY_CHECKPOINT:1:1', events)
 
     def test_legacy_checkpoint_is_read_against_the_legacy_reserve_after_it_ran(self):
@@ -275,6 +279,25 @@ class WindowQueueTests(unittest.TestCase):
         self.assertIn('LEGACY_CHECKPOINT:1:1', events)
         self.assertNotIn('LEGACY_CHECKPOINT:1:2', events)
         self.assertEqual(events[-1], 'DIE:legacy checkpoint deferred but its durable intent exists; refusing a retry')
+
+
+    def test_a_short_break_is_a_missed_scheduled_break_only_for_a_release_already_waiting(self):
+        # NOW=100 reads 240000ms: the break opened at t=40 and could admit
+        # until t=80. Waiting since 0 it missed that break; waiting since 90
+        # it arrived after the break could admit anyone, which is not the
+        # break failing, and it gets no off-cycle reason from it.
+        for waiting_since, expected in [(0, 'MISSED:1'), (80, 'MISSED:1'), (90, 'MISSED:0')]:
+            with self.subTest(waiting_since=waiting_since):
+                result, events = run_queue([(2, 240000), (0, 299999), (0, 299000)],
+                                           waiting_since=waiting_since)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events[-2], expected)
+        # The locked read's short answer is judged the same way.
+        result, events = run_queue([(0, 299999), (2, 240000), (0, 299999), (0, 299000)],
+                                   waiting_since=90)
+        self.assertEqual(events[-2], 'MISSED:0')
+        result, events = run_queue([(0, 299999), (2, 240000), (0, 299999), (0, 299000)])
+        self.assertEqual(events[-2], 'MISSED:1')
 
 
 if __name__ == '__main__':

@@ -28,6 +28,25 @@ try {
       port.postMessage({ type: 'STATS', stats });
       return;
     }
+    if (message && typeof message === 'object' && 'type' in message && message.type === 'PROBE') {
+      // A paused publisher asks whether a quota has room for its next batch.
+      // Read-only: nothing is reserved, written or deleted. A probe that cannot
+      // be answered says no room, and never reclassifies or stops the writer.
+      let reason: ReturnType<typeof store.capacityRefusal> | undefined;
+      try {
+        reason = store.capacityRefusal((message as { records?: unknown }).records as never);
+      } catch {
+        reason = undefined;
+      }
+      port.postMessage(
+        reason === null
+          ? { type: 'CAPACITY', room: true }
+          : reason === undefined
+            ? { type: 'CAPACITY', room: false }
+            : { type: 'CAPACITY', room: false, reason }
+      );
+      return;
+    }
     try {
       const batch = message as { type?: string; records?: unknown[] };
       if (batch?.type !== 'APPEND' || !Array.isArray(batch.records) || batch.records.length > 16)

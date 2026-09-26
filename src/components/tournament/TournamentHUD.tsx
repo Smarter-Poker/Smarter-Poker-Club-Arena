@@ -1,4 +1,3 @@
-import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT HUD — Compact in-game heads-up display (felt overlay)
@@ -11,35 +10,71 @@ import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
  * lobby/detail pages; this is the terse in-hand version.
  *
  * DESIGN GOALS
- *   • Drop-in: self-fetches by tournamentId and subscribes to live level changes.
- *     No parent wiring required beyond passing the id.
+ *   • Drop-in: self-fetches by tournamentId. TablePage passes the id and
+ *     `hidden` when its table is not the one on screen.
  *   • Server-authoritative: the level and countdown come from the engine-persisted
  *     tournaments.current_level / level_started_at via
- *     tournamentService.getCurrentLevelState() — the same source the sweep-4/5
- *     work made authoritative — so the HUD never drifts ahead of the real timer,
- *     survives breaks / hand-for-hand pauses / restarts, and re-syncs on every
- *     realtime UPDATE.
+ *     tournamentService.getCurrentLevelState(), measured on the ENGINE's clock
+ *     (serverNow) rather than this device's. A real break (on_break /
+ *     break_ends_at, or the add-on break at the end of the persisted add-on
+ *     window) shows its own countdown, because the engine suspends the level
+ *     clock for it.
  *   • Standalone styling: all styles are inline, so there is NO extra CSS file to
- *     import and nothing to wire into a build. Ready to render the moment a table
- *     page imports it.
+ *     import and nothing to wire into a build.
  *
- * INTENDED USAGE (once TablePage is unlocked — do NOT modify TablePage here):
- *   <TournamentHUD
- *     tournamentId={table.tournament_id}
- *     playersRemaining={playersRemaining}   // optional live overrides
- *     averageStack={avgStack}
- *   />
  * ═══════════════════════════════════════════════════════════════════════════════
+ *  IT LISTENS, AND CATCHES UP WHEN IT MAY HAVE MISSED SOMETHING (2026-09-22)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This bar used to re-read the whole tournament row (~95 columns plus the club
+ * embed) every 45 seconds, per open table, hidden or not, and again on every
+ * elimination anywhere in the field - plus the whole field of player rows on
+ * every level. Its failure handling never engaged: getTournament was called
+ * without `throwOnError`, so a failed read came back as null, the bar vanished
+ * and the failure count reset. And it held its own binding on `t-break-<id>`,
+ * which cannot be removed while TablePage still holds the channel, so every
+ * remount left one more live listener firing reads.
+ *
+ * Now:
+ *   • EVENTS. TablePage already joins `t-break-<id>` and relays every broadcast
+ *     onto MasterBus (tournamentEventBridge). This bar only subscribes to the
+ *     bus, and unsubscribes on unmount, on an account or tournament switch and
+ *     once the event is over. A level change also arrives from the engine's
+ *     table socket (TOURNAMENT_LEVEL_UP); either carrier triggers one read.
+ *   • ONE READER. One read in flight plus one trailing, owned by this
+ *     (tournament, account, mount). A response for any other owner is
+ *     dropped, so a late answer can never paint another account or event.
+ *   • A FAILED READ KEEPS THE LAST CONFIRMED ROW. Real failures (a thrown
+ *     PostgREST error, or no row) count, report the first two, and retry at
+ *     5s, 10s, 20s ... up to five minutes. A success resets the ladder.
+ *   • BOUNDED CATCH-UP where the broadcast could have been missed: on mount;
+ *     when the shared channel (re)joins; when the tab or the table comes back
+ *     on screen; when the engine link reconnects; when a level, break or
+ *     start time passes with no event (a few reads, then it stops); and on a
+ *     level_up that skips a level.
+ *   • A FIVE-MINUTE SAFETY READ, only while the bar is on screen. The
+ *     broadcasts carry no sequence number and are never replayed, and a
+ *     failed engine broadcast is not retried, so late registration, the
+ *     add-on window and the prize pool have no deadline to notice a lost
+ *     event by. Five minutes bounds how long one can go unseen.
+ *   • LEFT / RANK / AVG are re-read at most once per ten seconds, trailing the
+ *     busts that moved them, and bubble_burst's own count shows at once.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
 import { tournamentService } from '../../services/TournamentService';
+import { engineChannelClient } from '../../services/EngineStateClient';
 import type { Tournament } from '../../types/database.types';
 import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
-import { relayTournamentEvent } from '../../services/tournamentEventBridge';
+import { serverNow } from '../../utils/serverClock';
+import {
+  tournamentEntryWindow,
+  tournamentEntryWindowOpen,
+} from '../../utils/tournamentEntryWindow';
 
 interface TournamentHUDProps {
   tournamentId: string;
@@ -49,7 +84,11 @@ interface TournamentHUDProps {
   averageStack?: number;
   /** Spin prize pool replaces the low-value average stack readout. */
   spinPrizePool?: number;
-  /** Hide the HUD entirely (e.g. between hands) without unmounting. */
+  /**
+   * The table is not on screen (a background slot in single view, or the
+   * whole table layer while the player is elsewhere in the app). The bar
+   * renders nothing, stops its clock and asks nothing until it is shown again.
+   */
   hidden?: boolean;
   /**
    * Dan 2026-08-30: "IF YOU CLICK THE LEVEL TAB BUTTON IT WILL OPEN TO THE
@@ -58,6 +97,54 @@ interface TournamentHUDProps {
    * to sit beside the bar is gone - the bar itself is the entry point.
    */
   onOpen?: () => void;
+}
+
+/**
+ * Nothing left to ask once the event is over. A DENY-list of terminal states:
+ * an allow-list of live ones once stopped the bar on ANNOUNCED, a perfectly
+ * live status, and it never started again. Anything unrecognised stays live.
+ */
+const TERMINAL = ['COMPLETED', 'CANCELLED', 'FINISHED', 'ABORTED'];
+/** The long safety read, only while the bar is on screen. See the header. */
+const SAFETY_READ_MS = 300_000;
+/** The first retry after a failed read; each further failure doubles it. */
+const RETRY_BASE_MS = 5_000;
+/** Where the retry ladder stops widening: a sustained fault reads every 5 min. */
+const BACKOFF_MS = 300_000;
+/** The first failures of a run are information; the rest are noise. */
+const REPORT_LIMIT = 2;
+/** Left / Rank / Avg trail the busts that moved them by this much. */
+const FIELD_READ_DELAY_MS = 10_000;
+/**
+ * A level, break or start time has passed and no event said so. Read at these
+ * offsets after it passed, then stop: four reads, not a poll.
+ */
+const DEADLINE_CATCH_UP_MS = [5_000, 15_000, 45_000, 120_000];
+const TICK_MS = 1_000;
+
+const isTerminal = (status: unknown) => TERMINAL.includes(String(status ?? '').toUpperCase());
+
+const documentHidden = () => typeof document !== 'undefined' && document.hidden === true;
+
+const scopeKeyOf = (tournamentId: string, userId: string | undefined) =>
+  `${tournamentId}|${userId ?? ''}`;
+
+/** Epoch ms, or null for absent/unparseable. Never NaN, never a silent zero. */
+function epochMs(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const t = typeof value === 'number' ? value : Date.parse(String(value));
+  return Number.isFinite(t) ? t : null;
+}
+
+/** A non-negative integer, or null. `Number(null)` is 0, and 0 is a real level. */
+function wholeNumberOf(value: unknown): number | null {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
 function fmtClock(totalSeconds: number): string {
@@ -74,6 +161,540 @@ function fmtChips(n: number): string {
   return Math.trunc(n).toLocaleString();
 }
 
+/**
+ * Is play stopped for a break, and until when?
+ *
+ * `on_break` / `break_ends_at` are the synchronized break's own columns
+ * (TournamentManagerBase.pauseForBreak, beginBreakCountdown, and the release
+ * that clears both with the credited level anchor in one row version).
+ * `break_ends_at` is NULL while the last hand is still being played, so
+ * there is no clock to show yet. As TournamentClock does, a stamped end still
+ * in the future counts on its own.
+ *
+ * The add-on break is not a column: it is the final `addon_break_minutes`
+ * (1 to 10, default 1) of the persisted add-on window, exactly the arithmetic
+ * TournamentManagerBase.addOnBreakStartMs uses to schedule it.
+ */
+type HudPause =
+  | { kind: 'none' }
+  | { kind: 'break'; endsAtMs: number | null }
+  | { kind: 'addon'; endsAtMs: number };
+
+function addOnBreakMs(row: Tournament): number {
+  const configured = Number(row.addon_break_minutes ?? 1);
+  const minutes = Math.min(
+    10,
+    Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : 1)
+  );
+  return minutes * 60_000;
+}
+
+function hudPause(row: Tournament, nowMs: number): HudPause {
+  if (String(row.status ?? '').toUpperCase() !== 'RUNNING') return { kind: 'none' };
+  const breakEndsAt = epochMs(row.break_ends_at);
+  if (row.on_break === true || (breakEndsAt !== null && breakEndsAt > nowMs)) {
+    return { kind: 'break', endsAtMs: breakEndsAt };
+  }
+  const addOnStarts = epochMs(row.addon_period_started_at);
+  const addOnEnds = epochMs(row.addon_period_ends_at);
+  if (
+    addOnStarts !== null &&
+    addOnEnds !== null &&
+    nowMs < addOnEnds &&
+    nowMs >= Math.max(addOnStarts, addOnEnds - addOnBreakMs(row))
+  ) {
+    return { kind: 'addon', endsAtMs: addOnEnds };
+  }
+  return { kind: 'none' };
+}
+
+/**
+ * The instant this row stops describing the event, and the event that should
+ * have arrived by then: the start time (pre-start), the break's end, or the
+ * level's end. Null when nothing is due.
+ */
+function rowDeadline(row: Tournament, nowMs: number): { key: string; atMs: number } | null {
+  const status = String(row.status ?? '').toUpperCase();
+  if (isTerminal(status)) return null;
+  // Multi-day, between days: live (not terminal) but nothing on the row is
+  // due; the resume arrives as a status change, not at a predictable instant.
+  if (status === 'BAGGED') return null;
+  if (status !== 'RUNNING') {
+    const startsAt = epochMs(row.start_time);
+    return startsAt === null ? null : { key: `start:${startsAt}`, atMs: startsAt };
+  }
+  const pause = hudPause(row, nowMs);
+  if (pause.kind === 'break') {
+    return pause.endsAtMs === null
+      ? null
+      : { key: `break:${pause.endsAtMs}`, atMs: pause.endsAtMs };
+  }
+  if (pause.kind === 'addon') return { key: `addon:${pause.endsAtMs}`, atMs: pause.endsAtMs };
+  // No anchor means the countdown is the whole level; nothing can expire.
+  if (!row.level_started_at) return null;
+  const state = tournamentService.getCurrentLevelState(row, nowMs);
+  return {
+    key: `level:${String(row.current_level)}:${String(row.level_started_at)}`,
+    atMs: nowMs + state.timeRemainingSeconds * 1000,
+  };
+}
+
+/** Same arithmetic the lobby uses: only events that actually sell a rebuy say so. */
+function sellsRebuys(row: Tournament): boolean {
+  return (
+    Number(row.rebuy_cost ?? 0) > 0 || Number(row.rebuy_chips ?? 0) > 0 || row.is_reentry === true
+  );
+}
+
+/**
+ * Late registration, from the same projection of fn_tournament_late_registration_open
+ * every lobby uses (utils/tournamentEntryWindow): a finalized prize pool, a
+ * malformed column or a closed minutes window all read Closed, and Closed
+ * shows nothing.
+ *
+ * Dan 2026-08-30: "WHEN ITS THE LAST LEVEL FOR REBUYS, OR THE ADD ON PERIOD IT
+ * SHOULD BE SHOWN AND DISPLAYED IN THE LEVEL BAR." Rebuys close with the entry
+ * window, so the last level of that window is the last rebuy level.
+ */
+function lateRegBanner(row: Tournament, nowMs: number): string | null {
+  if (!tournamentEntryWindowOpen(row, nowMs)) return null;
+  const entry = tournamentEntryWindow(row);
+  if (entry.mode === 'levels') {
+    if (entry.current < entry.cap - 1) return `Late Reg Through Level ${entry.cap}`;
+    return sellsRebuys(row) ? 'Last Rebuy Level' : 'Last Late Reg Level';
+  }
+  if (entry.mode === 'minutes') {
+    const closesAt = Date.parse(String(row.started_at ?? '')) + entry.minutes * 60_000;
+    return `Late Reg Closes In ${fmtClock((closesAt - nowMs) / 1000)}`;
+  }
+  return null;
+}
+
+/** The persisted add-on window, the one the purchase path itself checks. */
+function addOnWindowOpen(row: Tournament, nowMs: number): boolean {
+  const startsAt = epochMs(row.addon_period_started_at);
+  const endsAt = epochMs(row.addon_period_ends_at);
+  return startsAt !== null && endsAt !== null && nowMs >= startsAt && nowMs < endsAt;
+}
+
+/**
+ * Has the shared `t-break-<id>` channel (re)joined since we last looked?
+ *
+ * TablePage owns that subscription, and a Realtime channel reports SUBSCRIBED
+ * only to the component whose subscribe() opened it - a second subscribe() on
+ * a joined channel is a no-op that never registers its callback. So this
+ * looks rather than listens: the channel's own join reference changes on every
+ * successful (re)join, and reading it binds nothing that could outlive us.
+ */
+function tBreakJoinMarker(tournamentId: string): string | null {
+  const topic = `realtime:t-break-${tournamentId}`;
+  const channel = supabase.getChannels().find((c) => c.topic === topic);
+  if (!channel || String(channel.state) !== 'joined') return null;
+  return channel.joinPush?.ref || 'joined';
+}
+
+interface HudField {
+  remaining: number | null;
+  avgStack: number | null;
+  rank: number | null;
+}
+
+interface HudPaint {
+  row(key: string, row: Tournament): void;
+  field(key: string, field: HudField): void;
+  left(key: string, remaining: number): void;
+}
+
+/**
+ * Everything one (tournament, account, mount) knows and is waiting for. A new
+ * owner is made for every switch; the old one is retired and anything it still
+ * has in flight lands nowhere.
+ */
+class HudFeed {
+  readonly key: string;
+  readonly tournamentId: string;
+  private readonly userId: string | undefined;
+  private readonly readsField: boolean;
+  private readonly paint: HudPaint;
+  /** False once another owner has the screen, or the HUD unmounted. */
+  private active = true;
+  /** False once the row reads terminal: nothing left to ask. */
+  private live = true;
+  private started = false;
+  private hidden = false;
+  /** The first time it is on screen is its mount read, however late that is. */
+  private shownOnce = false;
+  private row: Tournament | null = null;
+  private lastGoodAt = 0;
+  // The row reader: one read in flight, plus one trailing.
+  private inFlight = false;
+  private pending = false;
+  private failures = 0;
+  private readTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Break facts that arrived while a read was in flight, re-applied to its answer. */
+  private patches: Array<(row: Tournament) => Tournament> | null = null;
+  /** Something may have moved while this bar could not look. Read when it can. */
+  private dirty = false;
+  /** Highest level index already asked about, so two carriers cost one read. */
+  private levelAsked = -1;
+  // The field reader (Left / Rank / Avg).
+  private fieldTimer: ReturnType<typeof setTimeout> | null = null;
+  private fieldInFlight = false;
+  private fieldPending = false;
+  private fieldDirty = false;
+  private leftSeq = 0;
+  private leftPatch: { value: number; seq: number } | null = null;
+  // Catch-up bookkeeping.
+  private deadline: { key: string; expiredAt: number | null; attempts: number } | null = null;
+  private joinMarker: string | null;
+
+  constructor(
+    tournamentId: string,
+    userId: string | undefined,
+    readsField: boolean,
+    paint: HudPaint
+  ) {
+    this.tournamentId = tournamentId;
+    this.userId = userId;
+    this.readsField = readsField;
+    this.paint = paint;
+    this.key = scopeKeyOf(tournamentId, userId);
+    this.joinMarker = tBreakJoinMarker(tournamentId);
+  }
+
+  /** The first call starts the feed; later calls follow the table on and off screen. */
+  setHidden(hidden: boolean): void {
+    if (!this.active || (this.started && hidden === this.hidden)) return;
+    this.started = true;
+    this.hidden = hidden;
+    if (hidden) {
+      // Off screen: stop spending. Whatever arrives meanwhile marks it dirty.
+      this.clearReadTimer();
+      this.parkFieldTimer();
+      return;
+    }
+    if (!this.shownOnce) {
+      this.shownOnce = true;
+      this.readRow('mount');
+      this.readField();
+      return;
+    }
+    const stale = !this.row || this.failures > 0 || Date.now() - this.lastGoodAt >= SAFETY_READ_MS;
+    if (this.dirty || stale) this.readRow('shown');
+    else this.scheduleNextRead();
+    if (this.fieldDirty) this.requestFieldRead();
+  }
+
+  /** The tab came back (or went away). Coming back is the likeliest moment to be stale. */
+  onDocumentVisibility(): void {
+    if (!this.active || !this.live || !this.started) return;
+    if (documentHidden()) {
+      this.clearReadTimer();
+      this.parkFieldTimer();
+      return;
+    }
+    if (this.hidden) {
+      this.dirty = true;
+      return;
+    }
+    this.catchUp('visible');
+  }
+
+  catchUp(reason: string): void {
+    this.readRow(reason);
+    this.requestFieldRead();
+  }
+
+  /** Once a second while on screen: the channel's join, and anything overdue. */
+  tick(): void {
+    if (!this.active || !this.live || !this.started || this.hidden || documentHidden()) return;
+    const marker = tBreakJoinMarker(this.tournamentId);
+    const rejoined = marker !== null && marker !== this.joinMarker;
+    this.joinMarker = marker;
+    if (rejoined) this.catchUp('channel-joined');
+    this.checkDeadline();
+  }
+
+  /** A level change from either carrier. `index` is zero-based, or null if unreadable. */
+  onLevel(index: number | null): void {
+    if (!this.active || !this.live) return;
+    const known = wholeNumberOf(this.row?.current_level);
+    if (index !== null) {
+      if ((known !== null && index <= known) || index <= this.levelAsked) return;
+      this.levelAsked = index;
+    }
+    this.readRow(index !== null && known !== null && index > known + 1 ? 'level-gap' : 'level');
+  }
+
+  /**
+   * `tournament_break` (last hand, no end yet) or `tournament_break_started`
+   * (the real end). The payload is what the engine just persisted, so it is
+   * applied as it stands - and to any read already in flight, whose answer
+   * may predate it.
+   */
+  onBreakStarted(breakEndsAt: string | null): void {
+    if (!this.active || !this.live) return;
+    const patch = (row: Tournament): Tournament => {
+      const heldEnd = epochMs(row.break_ends_at);
+      const held = row.on_break === true && heldEnd !== null && heldEnd > serverNow();
+      return {
+        ...row,
+        on_break: true,
+        break_ends_at: breakEndsAt ?? (held ? row.break_ends_at : null),
+      };
+    };
+    this.patches?.push(patch);
+    if (!this.row) return;
+    this.row = patch(this.row);
+    this.paint.row(this.key, this.row);
+  }
+
+  /** The release re-anchors level_started_at, which the broadcast does not carry. */
+  onBreakEnded(): void {
+    this.readRow('break-ended');
+  }
+
+  onUpdated(status: string, playersRemaining: number | null): void {
+    if (!this.active || !this.live) return;
+    // The relay publishes BLIND_LEVEL_CHANGE beside this; that carries the level.
+    if (status.startsWith('blind_level_')) return;
+    if (status === 'bubble_burst') {
+      if (this.readsField && playersRemaining !== null) {
+        this.leftSeq += 1;
+        this.leftPatch = { value: playersRemaining, seq: this.leftSeq };
+        this.paint.left(this.key, playersRemaining);
+      }
+      this.requestFieldRead();
+      return;
+    }
+    if (status === 'final_table') {
+      this.requestFieldRead();
+      return;
+    }
+    // late_reg_closed, addon_period_start, or a client-side change to the row.
+    this.readRow(status ? `updated:${status}` : 'updated');
+  }
+
+  /** A bust moves Left / Rank / Avg, not the tournament row. */
+  onElimination(): void {
+    this.requestFieldRead();
+  }
+
+  retire(): void {
+    this.active = false;
+    this.patches = null;
+    this.stopTimers();
+  }
+
+  // ── the row ──────────────────────────────────────────────────────────────
+
+  private readRow(reason: string): void {
+    if (!this.active || !this.live || !this.started) return;
+    if (this.hidden || documentHidden()) {
+      this.dirty = true;
+      return;
+    }
+    if (this.inFlight) {
+      this.pending = true;
+      return;
+    }
+    this.clearReadTimer();
+    this.inFlight = true;
+    void this.runReads(reason);
+  }
+
+  private async runReads(reason: string): Promise<void> {
+    let why = reason;
+    try {
+      do {
+        this.pending = false;
+        this.dirty = false;
+        // Any join before this read is covered by it.
+        this.joinMarker = tBreakJoinMarker(this.tournamentId);
+        await this.readRowOnce(why);
+        why = 'trailing';
+      } while (this.pending && this.active && this.live && !this.hidden && !documentHidden());
+    } finally {
+      this.inFlight = false;
+      if (this.pending) {
+        this.pending = false;
+        this.dirty = true;
+      }
+      this.scheduleNextRead();
+    }
+  }
+
+  private async readRowOnce(reason: string): Promise<void> {
+    this.patches = [];
+    let row: Tournament | null = null;
+    let failure: unknown = null;
+    try {
+      row = await tournamentService.getTournament(this.tournamentId, { throwOnError: true });
+    } catch (error) {
+      failure = error;
+    }
+    const patches = this.patches ?? [];
+    this.patches = null;
+    // Retired while in flight: another owner has the screen now.
+    if (!this.active) return;
+    if (!row) {
+      // Unknown is not "gone": the last confirmed row stays on screen.
+      this.failures += 1;
+      if (this.failures <= REPORT_LIMIT) {
+        reportError(failure ?? new Error('Tournament Row Not Returned'), 'TournamentHUD.load', {
+          tournamentId: this.tournamentId,
+          failures: this.failures,
+          reason,
+        });
+      }
+      return;
+    }
+    const next = patches.reduce((current, patch) => patch(current), row);
+    const levelMoved = this.row !== null && this.row.current_level !== next.current_level;
+    this.failures = 0;
+    this.lastGoodAt = Date.now();
+    this.row = next;
+    if (isTerminal(next.status)) {
+      this.live = false;
+      this.stopTimers();
+    }
+    this.paint.row(this.key, next);
+    if (this.live && levelMoved) this.requestFieldRead();
+  }
+
+  private scheduleNextRead(): void {
+    this.clearReadTimer();
+    if (!this.active || !this.live || !this.started || this.inFlight) return;
+    if (this.hidden || documentHidden()) return;
+    const delay =
+      this.failures > 0
+        ? Math.min(RETRY_BASE_MS * 2 ** (this.failures - 1), BACKOFF_MS)
+        : Math.max(0, this.lastGoodAt + SAFETY_READ_MS - Date.now());
+    this.readTimer = setTimeout(() => {
+      this.readTimer = null;
+      this.readRow(this.failures > 0 ? 'retry' : 'safety');
+    }, delay);
+  }
+
+  private checkDeadline(): void {
+    if (!this.row) return;
+    const nowMs = serverNow();
+    const due = rowDeadline(this.row, nowMs);
+    if (!due) {
+      this.deadline = null;
+      return;
+    }
+    let watch = this.deadline;
+    if (!watch || watch.key !== due.key) {
+      watch = { key: due.key, expiredAt: null, attempts: 0 };
+      this.deadline = watch;
+    }
+    if (nowMs < due.atMs) return;
+    if (watch.expiredAt === null) watch.expiredAt = nowMs;
+    if (watch.attempts >= DEADLINE_CATCH_UP_MS.length) return;
+    if (nowMs - watch.expiredAt < DEADLINE_CATCH_UP_MS[watch.attempts]) return;
+    watch.attempts += 1;
+    this.readRow(`deadline:${due.key.split(':')[0]}`);
+  }
+
+  // ── the field (Left / Rank / Avg) ───────────────────────────────────────
+
+  requestFieldRead(): void {
+    if (!this.readsField || !this.active || !this.live || !this.started) return;
+    if (this.hidden || documentHidden()) {
+      this.fieldDirty = true;
+      return;
+    }
+    // One trailing read is already on its way; this bust rides it.
+    if (this.fieldTimer) return;
+    this.fieldTimer = setTimeout(() => {
+      this.fieldTimer = null;
+      this.readField();
+    }, FIELD_READ_DELAY_MS);
+  }
+
+  private readField(): void {
+    if (!this.readsField || !this.active || !this.live) return;
+    if (this.hidden || documentHidden()) {
+      this.fieldDirty = true;
+      return;
+    }
+    if (this.fieldInFlight) {
+      this.fieldPending = true;
+      return;
+    }
+    this.fieldInFlight = true;
+    void this.runFieldReads();
+  }
+
+  private async runFieldReads(): Promise<void> {
+    try {
+      do {
+        this.fieldPending = false;
+        this.fieldDirty = false;
+        await this.readFieldOnce();
+      } while (this.fieldPending && this.active && this.live && !this.hidden && !documentHidden());
+    } finally {
+      this.fieldInFlight = false;
+      if (this.fieldPending) {
+        this.fieldPending = false;
+        this.fieldDirty = true;
+      }
+    }
+  }
+
+  private async readFieldOnce(): Promise<void> {
+    const seqAtStart = this.leftSeq;
+    let rows: unknown = null;
+    try {
+      const { data, error } = await supabase
+        .from('tournament_players')
+        .select('user_id, chips, status')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['playing', 'registered']);
+      if (!error) rows = data;
+    } catch {
+      /* optional enrichment: the last figures stay on screen */
+    }
+    if (!this.active || !Array.isArray(rows)) return;
+    const field = rows as Array<{ user_id?: string; chips?: number | null }>;
+    const totalChips = field.reduce((sum, r) => sum + (r.chips || 0), 0);
+    /* Rank = 1 + players with strictly more chips. Ties share the better
+       rank, which is how every tournament lobby already counts it. */
+    const hero = this.userId ? field.find((r) => r.user_id === this.userId) : undefined;
+    const heroChips = hero ? hero.chips || 0 : 0;
+    // A bubble count that arrived after this read began is the newer fact.
+    const bubble = this.leftPatch && this.leftPatch.seq > seqAtStart ? this.leftPatch : null;
+    if (!bubble) this.leftPatch = null;
+    this.paint.field(this.key, {
+      remaining: bubble ? bubble.value : field.length,
+      avgStack: field.length ? Math.trunc(totalChips / field.length) : 0,
+      rank: hero ? 1 + field.filter((r) => (r.chips || 0) > heroChips).length : null,
+    });
+  }
+
+  // ── timers ───────────────────────────────────────────────────────────────
+
+  private clearReadTimer(): void {
+    if (this.readTimer) clearTimeout(this.readTimer);
+    this.readTimer = null;
+  }
+
+  /** A trailing field read that cannot run now is owed, not dropped. */
+  private parkFieldTimer(): void {
+    if (!this.fieldTimer) return;
+    clearTimeout(this.fieldTimer);
+    this.fieldTimer = null;
+    this.fieldDirty = true;
+  }
+
+  private stopTimers(): void {
+    this.clearReadTimer();
+    if (this.fieldTimer) clearTimeout(this.fieldTimer);
+    this.fieldTimer = null;
+  }
+}
+
 export function TournamentHUD({
   tournamentId,
   playersRemaining,
@@ -83,338 +704,162 @@ export function TournamentHUD({
   onOpen,
 }: TournamentHUDProps) {
   const { user } = useAuthUser();
-  const [tournament, setTournament] = useState<Tournament | null>(null);
-  const handForHand = useTournamentHandForHand(
-    tournamentId,
-    user?.id,
-    tournament?.status === 'RUNNING'
-  );
-  const [tick, setTick] = useState(0); // forces a 1s re-render for the countdown
-  const [derivedRemaining, setDerivedRemaining] = useState<number | null>(null);
-  const [derivedAvgStack, setDerivedAvgStack] = useState<number | null>(null);
-  /** Dan 2026-08-30: "IT SHOULD ALSO SAY YOUR CURRENT RANK AFTER THE COUNTDOWN
-      CLOCK AND BEFORE HOW MANY ARE LEFT." Derived from the same live player
-      rows the Left/Avg segments already read. Null while the hero holds no
-      live stack in this event (observer, eliminated). */
-  const [derivedRank, setDerivedRank] = useState<number | null>(null);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const resyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const userId = user?.id;
+  const readsField = playersRemaining === undefined || averageStack === undefined;
+  const scopeKey = scopeKeyOf(tournamentId, userId);
+  const [shown, setShown] = useState<{ key: string; row: Tournament } | null>(null);
+  const [field, setField] = useState<(HudField & { key: string }) | null>(null);
+  const [, setTick] = useState(0); // forces a 1s re-render for the countdown
+  const feedRef = useRef<HudFeed | null>(null);
 
-  // ── Load + subscribe to live tournament level changes ──
+  // Only this owner's answers are ever drawn: a row read for another event or
+  // another account is not this bar's row, however recently it arrived.
+  const row = shown && shown.key === scopeKey ? shown.row : null;
+  const status = String(row?.status ?? '').toUpperCase();
+  const live = !isTerminal(status);
+  const running = status === 'RUNNING';
+  const handForHand = useTournamentHandForHand(tournamentId, userId, running && !hidden);
+
+  // ── One feed per tournament, per account, per mount ──
   useEffect(() => {
     if (!tournamentId) return;
-    let mounted = true;
-
-    /**
-     * 2026-08-25 audit: two defects lived in the first version of this.
-     *
-     *  - It reported EVERY failure, forever. No backoff, no counter, no
-     *    de-dupe. A persistent failure — an RLS denial, a deleted row, an
-     *    offline tab — filed an error report every 45 seconds, per open table,
-     *    for as long as the component stayed mounted (which, because
-     *    PersistentTableLayer hides rather than unmounts, is "the session").
-     *    Only the first few are information; the rest are noise that buries
-     *    real reports.
-     *  - Nothing stopped it. A COMPLETED or CANCELLED tournament has no next
-     *    level and no clock, and was polled every 45s regardless.
-     */
-    const POLL_MS = 45_000;
-    /** Where the poll retreats to after a sustained fault. See the catch. */
-    const BACKOFF_MS = 300_000;
-    let failures = 0;
-    let backedOff = false;
-    const refresh = async () => {
-      try {
-        const t = await tournamentService.getTournament(tournamentId);
-        if (!mounted) return;
-        // Recovered: come back to the normal cadence rather than staying on
-        // the five-minute backoff for the rest of the tournament.
-        if (backedOff && resyncRef.current) {
-          clearInterval(resyncRef.current);
-          resyncRef.current = setInterval(() => void refresh(), POLL_MS);
-          backedOff = false;
-        }
-        failures = 0;
-        setTournament(t);
-        /* Nothing left to track once the event is OVER: stop the poll rather
-           than asking the same settled question every 45 seconds.
-           
-           2026-08-25, second audit: this was an ALLOW-LIST of live statuses
-           (RUNNING / REGISTERING / LATE_REG) and it stopped the poll on
-           anything else — including ANNOUNCED, which is a perfectly live state
-           a tournament sits in before registration opens. A HUD whose first
-           read returned ANNOUNCED stopped polling FOREVER (the effect only
-           re-runs on tournamentId, and nothing restarts the interval), so when
-           the event went RUNNING it was back to realtime-only: the exact single
-           point of failure this poll was added to remove. An empty or missing
-           status tripped it too.
-           
-           It is a DENY-LIST of terminal states now. Anything unrecognised keeps
-           polling, which is the safe direction: a needless read every 45s costs
-           nothing, a stopped clock costs the player the blind level. */
-        const status = String((t as { status?: string } | null)?.status ?? '').toUpperCase();
-        const TERMINAL = ['COMPLETED', 'CANCELLED', 'FINISHED', 'ABORTED'];
-        if (t && TERMINAL.includes(status)) {
-          if (resyncRef.current) {
-            clearInterval(resyncRef.current);
-            resyncRef.current = null;
-          }
-        }
-      } catch (e) {
-        if (!mounted) return;
-        failures += 1;
-        // First two only. After that the fault is established and repeating it
-        // tells nobody anything new.
-        if (failures <= 2) reportError(e, 'TournamentHUD.load', { tournamentId, failures });
-        /* 2026-08-25, second audit: this used to STOP the poll after five
-           failures, permanently. Five consecutive failures is about three
-           minutes — i.e. a tab that was offline over a train tunnel — and
-           because PersistentTableLayer hides rather than unmounts, "permanently"
-           meant the rest of the session. The cure was worse than the noise it
-           was treating.
-           
-           It BACKS OFF instead: the interval widens to five minutes so a hard
-           fault is quiet, and the moment a read succeeds the normal cadence is
-           restored (see the success branch). A clock that is late is recoverable;
-           a clock that has given up is not. */
-        /* `>= 5 && !backedOff`, not `=== 5` (2026-08-26 audit). With strict
-           equality, a failure that arrived when `resyncRef.current` happened to
-           be null — the terminal-status stop racing a failure — skipped the
-           install, and because the ref stays null the poll was then dead for
-           good: the exact "gave up permanently" bug this block replaced. */
-        if (failures >= 5 && !backedOff) {
-          if (resyncRef.current) clearInterval(resyncRef.current);
-          resyncRef.current = setInterval(() => void refresh(), BACKOFF_MS);
-          backedOff = true;
-        }
-      }
+    const feed = new HudFeed(tournamentId, userId, readsField, {
+      row: (key, next) => setShown({ key, row: next }),
+      field: (key, next) => setField({ key, ...next }),
+      left: (key, remaining) =>
+        setField((prev) =>
+          prev && prev.key === key
+            ? { ...prev, remaining }
+            : { key, remaining, avgStack: null, rank: null }
+        ),
+    });
+    feedRef.current = feed;
+    return () => {
+      feed.retire();
+      if (feedRef.current === feed) feedRef.current = null;
     };
+  }, [tournamentId, userId, readsField]);
 
-    void refresh();
+  // ── On screen or not: starts the feed, parks it, and catches it up ──
+  useEffect(() => {
+    feedRef.current?.setHidden(hidden);
+  }, [scopeKey, readsField, hidden]);
 
-    /**
-     * Dan 2026-08-25 (binding): "blind levels on the screen are never
-     * increasing."
-     *
-     * This HUD had EXACTLY ONE way to learn that the level changed: a
-     * postgres_changes subscription on the tournaments row. That is a single
-     * point of failure with no fallback — a dropped socket, a tab that slept
-     * through the UPDATE, a subscribe() that returned CHANNEL_ERROR (nothing
-     * here even looked at the status), and the HUD sits on its mount-time
-     * snapshot for the rest of the tournament, cheerfully printing LEVEL 1
-     * while the felt plays level 9. It never re-fetched, not once.
-     *
-     * A clock that can be wrong for an hour is worse than no clock. It now
-     * re-reads the authoritative row every 45 seconds while RUNNING, so the
-     * realtime feed is an OPTIMISATION (instant update) rather than the only
-     * source of truth, and the worst case is a level that is late by under a
-     * minute instead of stale forever.
-     */
-    resyncRef.current = setInterval(() => void refresh(), POLL_MS);
-
-    /* THE CARRIER THE COMMENT BELOW SAID DID NOT EXIST YET: IT DOES.
-       The engine has been broadcasting the blind level on `t-break-<id>` all
-       along - `TournamentManagerBase.broadcast('level_up', {...})`, sent over
-       Realtime Broadcast, which is independent of the postgres_changes
-       publication and needs no row image. TournamentPage has consumed it since
-       it was written. This HUD, the one every seated player reads while betting,
-       never did, and it was the only tournament surface in the client with no
-       bus fallback of ANY kind: no BLIND_LEVEL_CHANGE listener, no
-       PLAYER_ELIMINATED listener, nothing. Its 45s poll, degrading to five
-       minutes after a sustained fault, was the entire mechanism.
-
-       So it now joins that broadcast. On a level change or an elimination it
-       re-reads the authoritative row immediately instead of waiting out the
-       poll. `refresh()` rather than merging the broadcast payload is a
-       deliberate choice: the payload carries `level` as a zero-based index and
-       no `level_started_at`, so merging it would mean re-deriving the display
-       convention and the countdown here, which is exactly the arithmetic that
-       has shipped wrong twice. The authoritative read has neither problem.
-
-       `getOrCreateChannel` is refcounted, so when TablePage (which mounts this
-       HUD) already holds `t-break-<id>`, this adds a listener to that same
-       subscription rather than a second socket.
-
-       THE SUBSCRIPTION FURTHER DOWN STILL CANNOT FIRE, and saying so is still
-       the point. `tournaments` is NOT in the supabase_realtime publication:
-       5,477,895 writes over 117 columns, measured at 39.40ms per change on
-       2026-09-06, which is why the trim keeps it out. It is kept rather than
-       deleted because it is correct code for a delivery path that does not
-       exist yet: the filter is row-scoped, and UPDATE payloads carry a full
-       `new` row regardless of replica identity, so the day `tournaments` gains
-       a scoped carrier it works unchanged.
-
-       What was NOT kept is the silence. The comment above has named
-       "a subscribe() that returned CHANNEL_ERROR (nothing here even looked at
-       the status)" since it was written, while this very call still passed no
-       callback - so a genuine transport failure and a permanently unpublished
-       table looked identical from here, which is exactly how this stayed
-       unnoticed. The status is now read and a real error is reported. */
-    const breakKey = `t-break-${tournamentId}`;
-    const breakChannel = masterBus.getOrCreateChannel(breakKey);
-    breakChannel
-      .on('broadcast', { event: 'tournament_event' }, (message: { payload?: unknown }) => {
-        const envelope = message?.payload as { type?: string } | undefined;
-        if (!envelope?.type) return;
-        /* Feed the bus from here too, so the clock and the details pages get
-           the level and the bust even when no other consumer of this channel
-           happens to be mounted. The relay dedupes, so TablePage also relaying
-           the same broadcast costs one extra map lookup. */
-        relayTournamentEvent(tournamentId, envelope);
-        switch (envelope.type) {
-          case 'level_up':
-          case 'break_ended':
-          case 'player_eliminated':
-          case 'bubble_burst':
-          case 'final_table':
-          case 'late_reg_closed':
-            void refresh();
-            break;
-          default:
-            break;
+  // ── Listeners, only while the event can still change ──
+  useEffect(() => {
+    const feed = feedRef.current;
+    if (!feed || !live) return;
+    const mine = (payload: { tournamentId?: unknown } | null | undefined) =>
+      payload?.tournamentId === feed.tournamentId;
+    const stops: Array<() => void> = [
+      // The relay converts the engine's index to the DISPLAY level; undo it once.
+      masterBus.subscribe('BLIND_LEVEL_CHANGE', ({ payload }) => {
+        if (!mine(payload)) return;
+        const display = wholeNumberOf(payload.level);
+        feed.onLevel(display !== null && display >= 1 ? display - 1 : null);
+      }),
+      // The engine's own table socket carries the same level, index and all.
+      masterBus.subscribe('TOURNAMENT_LEVEL_UP', ({ payload }) => {
+        const data = (payload ?? {}) as Record<string, unknown>;
+        if ((data.tournament_id ?? data.tournamentId) !== feed.tournamentId) return;
+        feed.onLevel(wholeNumberOf(data.new_level ?? data.newLevel));
+      }),
+      masterBus.subscribe('TOURNAMENT_BREAK', ({ payload }) => {
+        if (!mine(payload)) return;
+        const endsAt = (payload as { breakEndsAt?: unknown }).breakEndsAt;
+        feed.onBreakStarted(typeof endsAt === 'string' && epochMs(endsAt) !== null ? endsAt : null);
+      }),
+      masterBus.subscribe('TOURNAMENT_BREAK_END', ({ payload }) => {
+        if (mine(payload)) feed.onBreakEnded();
+      }),
+      masterBus.subscribe('PLAYER_ELIMINATED', ({ payload }) => {
+        if (mine(payload)) feed.onElimination();
+      }),
+      masterBus.subscribe('TOURNAMENT_UPDATED', ({ payload }) => {
+        if (!mine(payload)) return;
+        const left = wholeNumberOf((payload as { playersRemaining?: unknown }).playersRemaining);
+        feed.onUpdated(String(payload.status ?? ''), left);
+      }),
+    ];
+    // The engine link coming BACK, not its first connect: the mount read has that.
+    let connected = engineChannelClient.getStatus() === 'connected';
+    let dropped = false;
+    stops.push(
+      engineChannelClient.onStatusChange((next) => {
+        if (next === 'connected') {
+          if (dropped) feed.catchUp('engine-reconnected');
+          connected = true;
+          dropped = false;
+        } else if (connected) {
+          connected = false;
+          dropped = true;
         }
       })
-      .subscribe();
-
-    const channel = masterBus.getOrCreateChannel(`tournament-hud-${tournamentId}`);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` },
-        (payload: { eventType: string; new?: Record<string, unknown> }) => {
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            setTournament((prev) => (prev ? ({ ...prev, ...payload.new } as Tournament) : prev));
-          }
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR' && err) {
-          reportError(err?.message || err, 'TournamentHUD.Realtime_channel_error', {
-            tournamentId,
-          });
-        }
-        if (status === 'TIMED_OUT') {
-          reportError('realtime channel timed out', 'TournamentHUD.Realtime_channel_timeout', {
-            tournamentId,
-          });
-        }
-      });
-
+    );
+    const onVisibility = () => feed.onDocumentVisibility();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      mounted = false;
-      if (resyncRef.current) clearInterval(resyncRef.current);
-      resyncRef.current = null;
-      try {
-        masterBus.removeRegisteredChannel(`tournament-hud-${tournamentId}`);
-      } catch {
-        /* channel cleanup is best-effort */
-      }
-      try {
-        masterBus.removeRegisteredChannel(breakKey);
-      } catch {
-        /* refcounted: this releases our listener, not a sibling's subscription */
-      }
+      for (const stop of stops) stop();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [tournamentId]);
+  }, [scopeKey, readsField, live]);
 
-  // ── 1-second countdown tick (only while RUNNING) ──
+  // ── The one-second clock: only while on screen, and only a live event ──
   useEffect(() => {
-    if (tickRef.current) clearInterval(tickRef.current);
-    // `hidden` returns null below, so a hidden HUD ticking once a second was
-    // re-rendering nothing, on every open table (2026-08-25 audit).
-    if (hidden || !tournament || tournament.status !== 'RUNNING') return;
-    tickRef.current = setInterval(() => setTick((n) => (n + 1) % 3600), 1000);
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [hidden, tournament?.status, tournament?.id]);
+    const feed = feedRef.current;
+    // `hidden` returns null below, so a hidden HUD ticking once a second would
+    // re-render nothing, on every open table (2026-08-25 audit).
+    if (hidden || !live || !feed) return;
+    const clock = setInterval(() => {
+      if (documentHidden()) return;
+      feed.tick();
+      if (running) setTick((n) => (n + 1) % 3600);
+    }, TICK_MS);
+    return () => clearInterval(clock);
+  }, [scopeKey, readsField, hidden, live, running]);
 
-  // ── Derive players-remaining / avg-stack from live rows when not supplied ──
-  useEffect(() => {
-    if (!tournamentId) return;
-    if (playersRemaining !== undefined && averageStack !== undefined) return;
-    let mounted = true;
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('tournament_players')
-          .select('user_id, chips, status')
-          .eq('tournament_id', tournamentId)
-          .in('status', ['playing', 'registered']);
-        if (!error && mounted && Array.isArray(data)) {
-          const active = data as Array<{
-            user_id?: string;
-            chips?: number | null;
-            status?: string;
-          }>;
-          setDerivedRemaining(active.length);
-          const totalChips = active.reduce((s, r) => s + (r.chips || 0), 0);
-          setDerivedAvgStack(active.length ? Math.trunc(totalChips / active.length) : 0);
-          /* Rank = 1 + players with strictly more chips. Ties share the better
-             rank, which is how every tournament lobby already counts it. */
-          const heroRow = user?.id ? active.find((r) => r.user_id === user.id) : undefined;
-          if (heroRow) {
-            const heroChips = heroRow.chips || 0;
-            setDerivedRank(1 + active.filter((r) => (r.chips || 0) > heroChips).length);
-          } else {
-            setDerivedRank(null);
-          }
-        }
-      } catch {
-        /* optional enrichment — HUD renders fine without it */
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-    // Recompute occasionally as the level ticks over (cheap, and keeps it fresh).
-  }, [tournamentId, playersRemaining, averageStack, tournament?.current_level, user?.id]);
+  if (hidden || !row) return null;
 
-  if (hidden || !tournament) return null;
-
-  // Reference `tick` so the memo re-evaluates every second (countdown display).
-  void tick;
-
-  const levelState = tournamentService.getCurrentLevelState(tournament);
+  const nowMs = serverNow();
+  const levelState = tournamentService.getCurrentLevelState(row, nowMs);
   const cur = levelState.currentLevel;
   const next = levelState.nextLevel;
-  const isBreak = !!cur?.isBreak;
+  const pause = running ? hudPause(row, nowMs) : ({ kind: 'none' } as HudPause);
+  const paused = pause.kind !== 'none';
+  /** A break row written into the blind ladder itself. */
+  const ladderBreak = !!cur?.isBreak;
+  const isBreak = paused || ladderBreak;
   const remaining = levelState.timeRemainingSeconds;
+  const pauseSeconds =
+    pause.kind !== 'none' && pause.endsAtMs !== null
+      ? Math.max(0, (pause.endsAtMs - nowMs) / 1000)
+      : null;
 
+  const fieldNow = field && field.key === scopeKey ? field : null;
   const shownPlayers =
-    playersRemaining !== undefined ? playersRemaining : (derivedRemaining ?? undefined);
-  const shownAvg = averageStack !== undefined ? averageStack : (derivedAvgStack ?? undefined);
+    playersRemaining !== undefined ? playersRemaining : (fieldNow?.remaining ?? undefined);
+  const shownAvg = averageStack !== undefined ? averageStack : (fieldNow?.avgStack ?? undefined);
+  /** Dan 2026-08-30: "IT SHOULD ALSO SAY YOUR CURRENT RANK AFTER THE COUNTDOWN
+      CLOCK AND BEFORE HOW MANY ARE LEFT." Null while the hero holds no live
+      stack in this event (observer, eliminated). */
+  const shownRank = fieldNow?.rank ?? null;
 
   // Urgency color for the countdown (last 60s of a level).
   const timerColor = remaining <= 60 ? '#ff5252' : remaining <= 120 ? '#ffb74d' : '#4fc3f7';
+  const clockText = !running
+    ? '--:--'
+    : paused
+      ? pauseSeconds === null
+        ? 'Last Hand'
+        : fmtClock(pauseSeconds)
+      : fmtClock(remaining);
+  const clockColor = !running ? '#9aa7ae' : paused ? '#ffb74d' : timerColor;
 
-  /* ── REBUY / ADD-ON WINDOW BANNER (Dan 2026-08-30) ─────────────────────────
-     "WHEN ITS THE LAST LEVEL FOR REBUYS, OR THE ADD ON PERIOD IT SHOULD BE
-     SHOWN AND DISPLAYED IN THE LEVEL BAR."
-     Same arithmetic the engine runs (TournamentManagerBase): rebuys close
-     when the level index reaches late_reg_levels ?? rebuy_levels, so the LAST
-     level with rebuys is display level == that cap; the add-on window is the
-     addon_levels levels after it. Only shown on events that actually sell the
-     thing (a freezeout never wears either). */
-  const tRow = tournament as unknown as Record<string, unknown>;
-  const displayLevel = levelState.levelIndex + 1;
-  const rebuyCap = Number(tRow.late_reg_levels ?? tRow.rebuy_levels ?? 0);
-  const sellsRebuys =
-    Number(tRow.rebuy_cost ?? 0) > 0 ||
-    Number(tRow.rebuy_chips ?? 0) > 0 ||
-    tRow.is_reentry === true;
-  const sellsAddon = Number(tRow.addon_cost ?? 0) > 0 || Number(tRow.addon_chips ?? 0) > 0;
-  const addonWindow = Number(tRow.addon_levels ?? 1);
-  const purchaseWindowBanner =
-    tournament.status === 'RUNNING' && rebuyCap > 0
-      ? sellsRebuys && displayLevel === rebuyCap
-        ? 'Last Rebuy Level'
-        : sellsAddon && displayLevel > rebuyCap && displayLevel <= rebuyCap + addonWindow
-          ? 'Add-On Period'
-          : null
-      : null;
-
-  const windowBanner = [handForHand === true ? 'Hand For Hand' : null, purchaseWindowBanner]
+  const windowBanner = [
+    handForHand === true ? 'Hand For Hand' : null,
+    lateRegBanner(row, nowMs),
+    addOnWindowOpen(row, nowMs) ? 'Add-On Period' : null,
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -464,7 +909,7 @@ export function TournamentHUD({
           : undefined
       }
     >
-      {/* Rebuy / add-on window strip - full width, above the segments */}
+      {/* Hand-for-hand / late registration / add-on strip - full width, above the segments */}
       {windowBanner && (
         <div
           style={{
@@ -504,7 +949,8 @@ export function TournamentHUD({
         </span>
       </div>
 
-      {/* Blinds + ante */}
+      {/* Blinds + ante. A real break resumes on these, so they stay; a break
+          row in the ladder has none. */}
       <div
         style={{
           display: 'flex',
@@ -518,14 +964,14 @@ export function TournamentHUD({
           Blinds
         </span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>
-          {isBreak || !cur ? '-' : `${fmtChips(cur.smallBlind)} / ${fmtChips(cur.bigBlind)}`}
+          {ladderBreak || !cur ? '-' : `${fmtChips(cur.smallBlind)} / ${fmtChips(cur.bigBlind)}`}
         </span>
-        {!isBreak && (cur?.ante ?? 0) > 0 && (
+        {!ladderBreak && (cur?.ante ?? 0) > 0 && (
           <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {fmtChips(cur!.ante)}</span>
         )}
       </div>
 
-      {/* Countdown to next level */}
+      {/* Countdown to the next level, or to the end of the break */}
       <div
         style={{
           display: 'flex',
@@ -538,31 +984,31 @@ export function TournamentHUD({
         }}
       >
         <span style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}>
-          Next
+          {paused ? 'Resumes' : 'Next'}
         </span>
         <span
           style={{
-            fontSize: 18,
+            fontSize: paused && pauseSeconds === null ? 13 : 18,
             fontWeight: 700,
             fontVariantNumeric: 'tabular-nums',
-            color: tournament.status === 'RUNNING' ? timerColor : '#9aa7ae',
+            color: clockColor,
           }}
           /* Changes every second; announcing it is noise. The level and blinds
              beside it carry the information that actually matters. */
           aria-hidden="true"
         >
-          {tournament.status === 'RUNNING' ? fmtClock(remaining) : '--:--'}
+          {clockText}
         </span>
-        {next && !next.isBreak && (
+        {!paused && next && !next.isBreak && (
           <span style={{ fontSize: 9, opacity: 0.6 }}>
             {fmtChips(next.smallBlind)}/{fmtChips(next.bigBlind)}
           </span>
         )}
-        {next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>Break Next</span>}
+        {!paused && next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>Break Next</span>}
       </div>
 
       {/* Hero's live rank (Dan 2026-08-30: after the countdown, before Left) */}
-      {derivedRank !== null && (
+      {shownRank !== null && (
         <div
           style={{
             display: 'flex',
@@ -578,7 +1024,7 @@ export function TournamentHUD({
           >
             Rank
           </span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>{derivedRank}</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>{shownRank}</span>
         </div>
       )}
 

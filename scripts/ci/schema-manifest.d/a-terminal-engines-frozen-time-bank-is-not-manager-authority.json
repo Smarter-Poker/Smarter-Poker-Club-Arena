@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-terminal-engines-custody-is-not-manager-authority. Migration 20260926090846_a_terminal_engines_frozen_time_bank_is_not_manager_authority: the guarded, service-actor-only write of a terminal engine's stopped time-bank custody. Applied to production 2026-09-26 09:19Z through scripts/ci/apply-recorded-migration.mjs before the PR opened.",
+  "functions": ["fn_park_stopped_time_bank_custody"]
+}

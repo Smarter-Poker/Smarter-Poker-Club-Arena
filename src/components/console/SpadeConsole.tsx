@@ -65,6 +65,10 @@ export const SPADE_CONSOLE_ZONES = {
   titleBesidePill: { x: 100, y: 166, width: 470, height: 86 },
   subtitle: { x: 102, y: 262, width: 540, height: 42 },
   pill: { x: 673, y: 190, width: 197, height: 54 },
+  /** THE X (Dan 2026-09-23): the clear glass in the head's top-right corner,
+      above the pill slot and inside the rail - x 848-908, y 108-164 on top.png.
+      See `onClose` on SpadeConsole. */
+  close: { x: 848, y: 108, width: 60, height: 56 },
   /* Relative to bottom-plates.png (master y minus 700). */
   plateSecondary: { x: 100, y: 46, width: 381, height: 129 },
   platePrimary: { x: 520, y: 46, width: 381, height: 129 },
@@ -123,6 +127,10 @@ export const SHARK_CONSOLE_ZONES = {
   subtitle: { x: 70, y: 118, width: 440, height: 31 },
   /** The rounded slot at the right of the well, x 527-642 y 70-122. */
   pill: { x: 537, y: 79, width: 96, height: 36 },
+  /** THE X (Dan 2026-09-23): the sliver of glass between the pill slot and
+      the right rail, x 644-672 y 74-118. Narrow, so the glyph is small; the
+      hit area is padded to 44px by the stylesheet. */
+  close: { x: 642, y: 74, width: 32, height: 44 },
   /** The one blue plate's face, inside its chamfered rim. */
   plate: { x: 110, y: 18, width: 512, height: 76 },
 } as const;
@@ -158,6 +166,9 @@ export const RIVETED_CONSOLE_ZONES = {
   subtitle: { x: 88, y: 148, width: 350, height: 31 },
   /** The chrome capsule at the right of the well, x 455-645 y 85-145. */
   pill: { x: 472, y: 97, width: 156, height: 38 },
+  /** THE X (Dan 2026-09-23): the glass under the capsule's right end, above
+      the rail - x 604-648 y 150-186. */
+  close: { x: 604, y: 150, width: 44, height: 36 },
   /** The two bolted plates' faces, inside their rims. */
   plateSecondary: { x: 80, y: 82, width: 235, height: 98 },
   platePrimary: { x: 380, y: 82, width: 260, height: 98 },
@@ -196,10 +207,14 @@ export interface ConsoleHeadContent {
   eyebrow: boolean;
   subtitle: boolean;
   pill: boolean;
+  /** The painted X (Dan 2026-09-23). Absent on a caller that predates it. */
+  close?: boolean;
 }
 
 /** Only the head zones this content actually paints, keyed by what they hold. */
-export type ConsoleHeadLayout = Partial<Record<'eyebrow' | 'title' | 'subtitle' | 'pill', Zone>> & {
+export type ConsoleHeadLayout = Partial<
+  Record<'eyebrow' | 'title' | 'subtitle' | 'pill' | 'close', Zone>
+> & {
   title: Zone;
 };
 
@@ -209,6 +224,7 @@ interface HeadZoneTable {
   titleBesidePill: Zone;
   subtitle: Zone;
   pill: Zone;
+  close: Zone;
   /** Only where a head has to re-measure its lines to fit a third one. */
   eyebrowWithSubtitle?: Zone;
   titleWithSubtitle?: Zone;
@@ -238,11 +254,26 @@ export function consoleHeadZones(
   content: ConsoleHeadContent
 ): ConsoleHeadLayout {
   const zones = FAMILY[family].zones as HeadZoneTable;
+  /* THE X TAKES THE PILL'S SIDE OF THE HEAD WHERE IT HAS TO (2026-09-24).
+     On the shark and riveted masters the close zone sits in the right end of
+     the wide title band (shark: x 642-674 inside a title that runs to x 660;
+     riveted: y 150-186 under a title that runs to y 172, in x 604-643), so a
+     head with an X and no pill printed a long title into the glyph. Where
+     the X's rectangle meets the wide title band, the title takes the narrow
+     band exactly as it does beside a pill - those bands were measured clear
+     of the pill slot, and the X sits in or beside that slot. On the spade
+     master the X (x 848-908) is clear of the title (x 100-640) and the wide
+     band is kept, so no spade popup loses title room to an X it never
+     touches. Decided by the rectangles, not by family, so the next master
+     cannot get it wrong by omission. */
+  const wideTitle = content.subtitle ? (zones.titleWithSubtitle ?? zones.title) : zones.title;
+  const closeCrowdsTitle = Boolean(content.close) && intersects(zones.close, wideTitle);
+  const rightSideTaken = Boolean(content.pill) || closeCrowdsTitle;
   const title = content.subtitle
-    ? content.pill
+    ? rightSideTaken
       ? (zones.titleBesidePillWithSubtitle ?? zones.titleBesidePill)
       : (zones.titleWithSubtitle ?? zones.title)
-    : content.pill
+    : rightSideTaken
       ? zones.titleBesidePill
       : zones.title;
   const eyebrow = content.subtitle ? (zones.eyebrowWithSubtitle ?? zones.eyebrow) : zones.eyebrow;
@@ -251,7 +282,16 @@ export function consoleHeadZones(
     ...(content.eyebrow ? { eyebrow } : {}),
     ...(content.subtitle ? { subtitle: zones.subtitle } : {}),
     ...(content.pill ? { pill: zones.pill } : {}),
+    ...(content.close ? { close: zones.close } : {}),
   };
+}
+
+/** Whether two zones share any master pixels. */
+function intersects(a: Zone, b: Zone): boolean {
+  return (
+    Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
+    Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y)
+  );
 }
 
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
@@ -368,6 +408,7 @@ export function SpadeConsole({
   children,
   className = '',
   as: Tag = 'section',
+  onClose,
   ...rest
 }: {
   eyebrow?: string;
@@ -393,6 +434,20 @@ export function SpadeConsole({
   className?: string;
   as?: 'section' | 'div' | 'article';
   /**
+   * THE X IN THE TOP RIGHT CORNER (Dan 2026-09-23). "FOR THE BBJ, TABLE
+   * SETTINGS OR ANYTHING ELSE THAT POPS UP, THERE SHOULD ALWAYS BE AN 'X' IN
+   * THE TOP RIGHT CORNER TO 'CLOSE THE PAGE'. YOU SHOULD NEVER HAVE TO GO TO
+   * THE BOTTOM OF THE PAGE TO CLOSE IT."
+   *
+   * Given, the head prints a lit x in its `close` zone - measured clear glass
+   * in each family's top-right corner - and tapping it calls this. It is an
+   * addition, never a replacement: a surface keeps whatever Close plate or
+   * word it already has at the foot, so nothing a player learned moves. A
+   * page that is not a popup (a lobby panel, a landing page) passes nothing
+   * and prints nothing.
+   */
+  onClose?: () => void;
+  /**
    * DOM passthrough, NOT an escape hatch (2026-09-11). This was
    * `& Record<string, unknown>`, which accepted any prop at all: on
    * feat/diamond-games, ArenaAccessBoundary asked for `crest="diamond"` against
@@ -411,6 +466,7 @@ export function SpadeConsole({
     eyebrow: Boolean(eyebrow),
     subtitle: Boolean(subtitle),
     pill: Boolean(pill),
+    close: Boolean(onClose),
   });
   const onePlate = F.plates === 1;
   return (
@@ -453,6 +509,18 @@ export function SpadeConsole({
             className={`sc__pill sc-ink--${pillInk}`}
             style={zonePct(head.pill, W, TOP_H)}
           />
+        )}
+        {onClose && head.close && (
+          <button
+            type="button"
+            className="sc__close sc-ink--silver"
+            onClick={onClose}
+            aria-label="Close"
+            data-testid="sc-close"
+            style={zonePct(head.close, W, TOP_H)}
+          >
+            <span aria-hidden="true">{'\u00D7'}</span>
+          </button>
         )}
       </div>
       {children !== undefined && children !== null && <div className="sc__body">{children}</div>}

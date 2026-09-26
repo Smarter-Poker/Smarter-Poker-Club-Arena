@@ -275,6 +275,204 @@ async function confirmDeferredPeriodRequest(
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A TIMEOUT IS NOT A FAILURE: READ THE PERIOD'S DURABLE RECEIPT (2026-09-26)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The settler stopped advancing at 2026-09-22T10:37:05Z and stayed there. Every
+ * cycle submitted the same page, called fn_rakeback_recompute_periods for club
+ * 2a1132b9 week 2026-09-21 (46 players), and logged `supabase_timeout`. The
+ * engine client gives up at DB_TIMEOUT_MS (15 s); the function sets its own
+ * statement_timeout of 300 s and took ~71 s warm, ~127 s cold. So the SERVER
+ * finished, wrote the periods and COMMITTED - accounting_period_recompute_requests
+ * reached attempts=531 for that week - while the client counted every one of
+ * those commits as a failure and held the watermark. Nothing could ever
+ * converge: the retry repeats identical work against the identical budget.
+ * With the mark frozen, fn_process_weekly_accounting_scope raises
+ * weekly_rake_source_not_fully_accrued and the first weekly settlement fails.
+ *
+ * The hardening standard says it exactly: a timeout does not establish failure
+ * or cancellation; read the durable outcome before retrying. The function
+ * records its outcome in the same transaction as the period writes: it upserts
+ * the (club, week) request row first, then sets attempted_at=clock_timestamp(),
+ * attempts=attempts+1, last_result=<the receipt it returns> and
+ * status='pending' for a user-scoped ready result ('complete' only for a
+ * whole-period call, 'blocked' for a refusal). That row is visible if and only
+ * if the transaction committed.
+ *
+ * So on an outcome the client could not observe, the settler reads that row
+ * and accepts it only when ALL of these hold:
+ *   * attempted_at is at or after the moment THIS call was sent - an earlier
+ *     attempt's receipt is never mistaken for this one;
+ *   * status is 'pending', the state this user-scoped call writes on success
+ *     (a 'blocked' or 'complete' row was written by something else or refused);
+ *   * last_result passes the same canonical receipt check a direct response
+ *     must pass: accounting_version 2, this club and week, status 'ready' and
+ *     confirmed_players equal to the players this call submitted.
+ * Anything else - a failure receipt, a blocked request, a receipt that another
+ * writer has since cleared, no receipt at all - is a failure exactly as before
+ * and the watermark is held. A definite server error (a SQLSTATE or PostgREST
+ * code) rolled back and is not read back at all.
+ *
+ * The wait is bounded by the server's own budget: the transaction either
+ * commits or is cancelled by its 300 s statement_timeout, so after that plus a
+ * short allowance for commit and transport there is nothing left to wait for.
+ * It belongs to the original call (no timer, no sweep, no later repair) and a
+ * stop() wakes it immediately so shutdown is never held behind it.
+ *
+ * DB_TIMEOUT_MS is deliberately NOT raised: the client budget protects every
+ * other engine call, and a bigger number would only move the cliff.
+ */
+export const PERIOD_RECOMPUTE_SERVER_BUDGET_MS = 300_000;
+export const PERIOD_RECEIPT_READBACK_SLACK_MS = 15_000;
+export const PERIOD_RECEIPT_READBACK_INTERVAL_MS = 5_000;
+
+/** A SQLSTATE or PostgREST code means the server answered. Anything else - a
+ * client deadline, a dropped socket, a thrown transport error - did not. */
+export function periodRecomputeOutcomeIsUnknown(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return true;
+  const code = (error as { code?: unknown }).code;
+  return !(typeof code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(code));
+}
+
+/** PostgREST renders timestamptz with microseconds; Date.parse needs ISO ms. */
+function parseDbInstantMs(value: unknown): number {
+  if (typeof value !== 'string') return Number.NaN;
+  const iso = value
+    .trim()
+    .replace(' ', 'T')
+    .replace(/(\.\d{3})\d+/, '$1')
+    .replace(/([+-]\d{2})$/, '$1:00');
+  return Date.parse(iso);
+}
+
+export type PeriodReceiptVerdict =
+  | { verdict: 'not_yet'; observation: string }
+  | { verdict: 'confirmed'; written: number }
+  | { verdict: 'deferred'; requestId: string; reason: string }
+  | { verdict: 'refused'; reason: string };
+
+const REQUEST_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A DURABLE DEFERRAL IS A DEFERRAL, HOWEVER LONG IT TOOK TO ARRIVE (2026-09-26).
+ *
+ * While the settler is catching up, every page-scoped recompute of the open
+ * week is refused with cash_source_receipts_incomplete - the hands after this
+ * page have no sources yet - and the function records that refusal on its
+ * request row (status 'blocked', last_result = the receipt) in the same
+ * transaction. A direct response carrying exactly that receipt has always been
+ * accepted as a durable deferral (readPeriodRecomputeReceipt + the request row
+ * read back): the page advances and the weekly close recomputes the whole
+ * period later. The read-back refused the same receipt when the response was
+ * lost, so a call slower than DB_TIMEOUT_MS could never advance the cursor.
+ *
+ * Measured on production 2026-09-26: the blocked path took 11.2 s idle and
+ * 18.9-28.4 s under the 04:30 load against a 15 s client deadline, and the
+ * cursor held at 2026-09-22 18:29:21 from 04:19 onward, every cycle logging
+ * "durable receipt not confirmed: request is blocked".
+ *
+ * Accepted only when the row is fresh (the caller has already checked
+ * attempted_at against this call), carries a request id, and its receipt is
+ * the canonical deferral for exactly this club and week: version 2, status
+ * blocked, nothing written, a named reason. Anything else is still refused.
+ */
+function durableDeferralReason(
+  r: Record<string, unknown>,
+  expected: { club_id: string; period_start: string; period_end: string }
+): string | null {
+  if (typeof r.id !== 'string' || !REQUEST_ID_SHAPE.test(r.id)) return null;
+  const receipt = r.last_result;
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) return null;
+  const x = receipt as Record<string, unknown>;
+  if (
+    x.accounting_version !== 2 ||
+    x.status !== 'blocked' ||
+    x.written !== 0 ||
+    x.club_id !== expected.club_id ||
+    x.period_start !== expected.period_start ||
+    x.period_end !== expected.period_end ||
+    (x.error !== undefined && x.error !== null) ||
+    (x.failed !== undefined && x.failed !== 0) ||
+    typeof x.reason !== 'string' ||
+    x.reason.length === 0
+  )
+    return null;
+  return x.reason;
+}
+
+/**
+ * Judge one read of the durable request row against the call that started at
+ * `callStartedAtMs`. 'not_yet' means the row does not (yet) carry an attempt
+ * made after this call was sent; the caller keeps reading until the server's
+ * own deadline. 'refused' is final for this call.
+ */
+/**
+ * How many of this club-week's attributions the database itself just reported
+ * as lacking an accrued source, when that is the reason it refused. Null for
+ * any other shape: only this exact refusal can seed the proof below.
+ */
+export function incompleteSourceCount(receipt: unknown): number | null {
+  const r = Array.isArray(receipt) && receipt.length === 1 ? receipt[0] : receipt;
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const x = r as Record<string, unknown>;
+  if (
+    x.status !== 'blocked' ||
+    x.reason !== 'cash_source_receipts_incomplete' ||
+    typeof x.source_count !== 'number' ||
+    !Number.isSafeInteger(x.source_count) ||
+    x.source_count < 1
+  )
+    return null;
+  return x.source_count;
+}
+
+export function judgePeriodRecomputeReceipt(
+  row: unknown,
+  submitted: number,
+  expected: { club_id: string; period_start: string; period_end: string },
+  callStartedAtMs: number
+): PeriodReceiptVerdict {
+  if (!row || typeof row !== 'object' || Array.isArray(row))
+    return { verdict: 'not_yet', observation: 'no request row' };
+  const r = row as Record<string, unknown>;
+  if (
+    r.club_id !== expected.club_id ||
+    r.period_start !== expected.period_start ||
+    r.period_end !== expected.period_end
+  )
+    return { verdict: 'refused', reason: 'request row names a different club or week' };
+  const attemptedAtMs = parseDbInstantMs(r.attempted_at);
+  if (!Number.isFinite(attemptedAtMs) || attemptedAtMs < callStartedAtMs)
+    return {
+      verdict: 'not_yet',
+      observation: `latest attempt ${String(r.attempted_at)} predates this call`,
+    };
+  if (r.status === 'blocked') {
+    const reason = durableDeferralReason(r, expected);
+    return reason
+      ? { verdict: 'deferred', requestId: String(r.id), reason }
+      : {
+          verdict: 'refused',
+          reason:
+            'request is blocked, and its receipt is not a canonical deferral for this club and week',
+        };
+  }
+  if (r.status !== 'pending')
+    return {
+      verdict: 'refused',
+      reason: `request is ${String(r.status)}, not a ready user-scoped receipt`,
+    };
+  try {
+    const receipt = readPeriodRecomputeReceipt(r.last_result, submitted, expected);
+    if (receipt.deferred) return { verdict: 'refused', reason: 'durable receipt is a deferral' };
+    return { verdict: 'confirmed', written: receipt.written };
+  } catch {
+    return { verdict: 'refused', reason: 'durable receipt is not a ready receipt for this call' };
+  }
+}
+
+/**
  * PostgREST embeds filter values in a comma/parenthesis-delimited grammar, so a
  * value carrying a quote, comma or bracket would change the SHAPE of the
  * filter rather than its value. Both cursor components come from typed
@@ -393,6 +591,39 @@ export class RakebackSettlerService {
    * external caller could otherwise register work after an empty drain.
    */
   private acceptingSettlements = true;
+  /** Pending durable-receipt readbacks; stop() wakes them so shutdown never waits. */
+  private readonly readbackWakers = new Set<() => void>();
+  /**
+   * A REFUSAL THE DATABASE HAS ALREADY PROVEN IS NOT ASKED AGAIN (2026-09-26).
+   *
+   * While the settler is behind, every page-scoped recompute of the open week
+   * is refused with cash_source_receipts_incomplete: the hands after the page
+   * have no accrued source yet. fn_calculate_cash_rakeback_periods reads the
+   * whole week (every club's records, attributions, batches and sources) before
+   * it says so. Measured live 2026-09-26 06:59-07:35Z: 20-222 s per call, up to
+   * three club-weeks per page, so a page took 350-430 s and the drain fell to
+   * ~7,000 records/hour while spending database CPU on answers already known.
+   * The 60 s catch-up was re-arming every time; the pages were the cost.
+   *
+   * The refusal carries `source_count`: how many of this club's attributions in
+   * the week lack a matching accrued source. That number can only fall through
+   * an accrual, and the settler is the only writer that accrues a cash source
+   * (fn_credit_agent_commissions_batch and fn_retry_cash_accounting_sources,
+   * both called from this file; nothing else calls
+   * fn_process_cash_accounting_source). Each accrued source returns one credit,
+   * and one credit completes at most one attribution. So after the database
+   * reports N, a later page that has accrued K credits for the same club-week
+   * leaves at least N - K incomplete, and while that is >= 1 the call can only
+   * be refused again. It is not sent; the page advances exactly as it does on
+   * that refusal. New hands only add incomplete rows, which keeps the bound
+   * safe. The first page after a start, any other outcome, or an exhausted
+   * count sends the real call, so the page carrying a week's last record is
+   * always recomputed, and fn_prepare_accounting_week recomputes every club's
+   * whole period before any payer stage regardless.
+   */
+  private readonly openWeekIncomplete = new Map<string, number>();
+  /** Earned by a cycle that acknowledged a page; spent by one first-page retry. */
+  private stalledPageRetryAvailable = false;
 
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
@@ -503,6 +734,9 @@ export class RakebackSettlerService {
       this.thawUnsubscribe = null;
     }
     this.tickOwedFromFreeze = false;
+    // A durable-receipt readback in progress gives up now (acceptingSettlements
+    // is already false), holding its page for the next generation to replay.
+    for (const wake of [...this.readbackWakers]) wake();
 
     const drain = (async () => {
       await this.drainLifecycleJobs();
@@ -602,6 +836,88 @@ export class RakebackSettlerService {
     }
   }
 
+  /** Keep only a count the database itself reported for this exact refusal. */
+  private rememberIncompleteWeek(weekKey: string, count: number | null): void {
+    if (count === null) this.openWeekIncomplete.delete(weekKey);
+    else this.openWeekIncomplete.set(weekKey, count);
+  }
+
+  private pauseReadback(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const wake = () => {
+        clearTimeout(timer);
+        this.readbackWakers.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, ms);
+      this.readbackWakers.add(wake);
+    });
+  }
+
+  /**
+   * Read the durable outcome of a period recompute whose response the client
+   * never saw. See `judgePeriodRecomputeReceipt` for what counts; this only
+   * owns the bounded wait for the server's own transaction to finish.
+   */
+  private async readBackPeriodRecompute(
+    expected: { club_id: string; period_start: string; period_end: string },
+    submitted: number,
+    callStartedAtMs: number
+  ): Promise<
+    | {
+        confirmed: true;
+        written: number;
+        deferred?: { requestId: string; reason: string; sourceCount: number | null };
+      }
+    | { confirmed: false; reason: string }
+  > {
+    const deadline =
+      callStartedAtMs + PERIOD_RECOMPUTE_SERVER_BUDGET_MS + PERIOD_RECEIPT_READBACK_SLACK_MS;
+    let observation = 'no read completed';
+    for (;;) {
+      if (!this.acceptingSettlements)
+        return { confirmed: false, reason: `service stopping (${observation})` };
+      try {
+        const { data, error } = await supabase
+          .from('accounting_period_recompute_requests')
+          .select('id,club_id,period_start,period_end,status,attempted_at,attempts,last_result')
+          .eq('club_id', expected.club_id)
+          .eq('period_start', expected.period_start)
+          .eq('period_end', expected.period_end)
+          .maybeSingle();
+        if (error) {
+          observation = `request read failed: ${(error as { message?: string }).message ?? String(error)}`;
+        } else {
+          const verdict = judgePeriodRecomputeReceipt(data, submitted, expected, callStartedAtMs);
+          if (verdict.verdict === 'confirmed') return { confirmed: true, written: verdict.written };
+          if (verdict.verdict === 'deferred')
+            return {
+              confirmed: true,
+              written: 0,
+              deferred: {
+                requestId: verdict.requestId,
+                reason: verdict.reason,
+                sourceCount: incompleteSourceCount(
+                  (data as { last_result?: unknown } | null)?.last_result
+                ),
+              },
+            };
+          if (verdict.verdict === 'refused') return { confirmed: false, reason: verdict.reason };
+          observation = verdict.observation;
+        }
+      } catch (e) {
+        observation = `request read threw: ${(e as { message?: string })?.message ?? String(e)}`;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0)
+        return {
+          confirmed: false,
+          reason: `no receipt from this call by the server's own deadline (${observation})`,
+        };
+      await this.pauseReadback(Math.min(PERIOD_RECEIPT_READBACK_INTERVAL_MS, remaining));
+    }
+  }
+
   /** Thin wrapper around supabase.rpc returning {error} for cleaner control flow. */
   private async supabaseRpc(name: string, args: Record<string, unknown>) {
     try {
@@ -642,8 +958,51 @@ export class RakebackSettlerService {
         // after the last row of the previous one - an interruption anywhere in
         // the loop resumes correctly rather than replaying.
         let backlogRemains = false;
+        let pagesAcknowledged = 0;
         for (let batch = 1; ; batch++) {
           const result = await this._runSettlementInner();
+          if (result === 'more') pagesAcknowledged++;
+          /*
+           * PROGRESS FOLLOWED BY A HALT STILL LEAVES BACKLOG (2026-09-26).
+           * The catch-up used to arm only when the drain cap was hit, so a
+           * cycle that acknowledged pages and then halted on a later one slept
+           * the full 30-minute interval with the halted page - and everything
+           * behind it - still owed. That is the pacing that could not clear a
+           * week's backlog before its close. Re-arm the same bounded catch-up
+           * instead: one retry of the same page, and a cycle that halts on its
+           * FIRST page (no progress) still waits the interval, so a persistent
+           * failure never becomes a tight loop against the database.
+           */
+          if (result === 'halted' && pagesAcknowledged > 0) {
+            backlogRemains = true;
+            console.warn(
+              `[RakebackSettler] drain halted after ${pagesAcknowledged} acknowledged source page(s) - ` +
+                `backlog remains; resuming in ${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
+            );
+            break;
+          }
+          /*
+           * ONE RETRY AFTER A STALLED FIRST PAGE, AND ONLY ONE (2026-09-26).
+           * A page can halt with its work already durable: a credit chunk the
+           * client abandoned at DB_TIMEOUT_MS commits server-side, and the
+           * retry replays it in milliseconds and moves on. Measured live
+           * 09:12-09:14Z: a productive cycle (3 pages, 40 s each) was followed
+           * by a first-page 'Cash source batch failed' timeout, and the drain
+           * then idled for the full 30-minute interval. So the cycle right
+           * after a productive one earns ONE 60 s retry of a first-page halt.
+           * The allowance is spent by that retry and restored only by a cycle
+           * that acknowledges a page, so a persistent failure still falls back
+           * to the interval after a single extra attempt.
+           */
+          if (result === 'halted' && pagesAcknowledged === 0 && this.stalledPageRetryAvailable) {
+            this.stalledPageRetryAvailable = false;
+            backlogRemains = true;
+            console.warn(
+              `[RakebackSettler] drain halted on its first page right after a productive cycle - ` +
+                `one retry in ${CATCH_UP_DELAY_MS / 1000}s; a second stall waits the full interval`
+            );
+            break;
+          }
           if (result !== 'more') break;
           if (batch >= MAX_DRAIN_BATCHES) {
             backlogRemains = true;
@@ -655,6 +1014,8 @@ export class RakebackSettlerService {
             break;
           }
         }
+        if (pagesAcknowledged > 0) this.stalledPageRetryAvailable = true;
+        else if (!backlogRemains) this.stalledPageRetryAvailable = false;
         this.scheduleCatchUp(backlogRemains, generation);
         // One server coordinator owns the schedule, financial stages, invoices,
         // notices and retries. Its receipt is the completion authority.
@@ -1447,6 +1808,11 @@ export class RakebackSettlerService {
     const buckets = new Map<string, Bucket>();
     for (const source of sources) {
       for (const c of source.credits) {
+        // One credit completes at most one incomplete attribution; counting
+        // every credit, accrued or not, can only lower the bound.
+        const weekKey = `${c.club_id}|${c.period_start}`;
+        const known = this.openWeekIncomplete.get(weekKey);
+        if (known !== undefined) this.openWeekIncomplete.set(weekKey, known - 1);
         buckets.set(`${c.player_id}:${c.club_id}:${c.period_start}`, {
           user_id: c.player_id,
           club_id: c.club_id,
@@ -1534,31 +1900,79 @@ export class RakebackSettlerService {
       // tie-break) — then upserts while leaving paid weeks immutable. One call
       // per (club, week) instead of a truncated download.
       for (const g of groups.values()) {
+        const weekKey = `${g.club_id}|${g.period_start}`;
+        const stillIncomplete = this.openWeekIncomplete.get(weekKey);
+        if (stillIncomplete !== undefined && stillIncomplete >= 1) {
+          deferredPeriods++;
+          console.log(
+            `[RakebackSettler] period recompute for ${g.club_id} ${g.period_start} not sent: the database ` +
+              `reported this week's sources incomplete and at least ${stillIncomplete} still are, so it ` +
+              `could only be refused; the week stays queued`
+          );
+          continue;
+        }
+        this.openWeekIncomplete.delete(weekKey);
         const groupUserIds = [...buckets.values()]
           .filter((b) => b.club_id === g.club_id && b.period_start === g.period_start)
           .map((b) => b.user_id);
         for (let offset = 0; offset < groupUserIds.length; offset += PERIOD_USER_BATCH_SIZE) {
           const userIds = groupUserIds.slice(offset, offset + PERIOD_USER_BATCH_SIZE);
+          // Sent-at on this clock: a durable receipt older than this belongs
+          // to an earlier attempt and can never stand in for this call.
+          const callStartedAtMs = Date.now();
           try {
-            const { data, error } = await supabase.rpc('fn_rakeback_recompute_periods', {
-              p_club_id: g.club_id,
-              p_period_start: g.period_start,
-              p_period_end: g.period_end,
-              p_user_ids: userIds,
-            });
+            let response: { data: unknown; error: unknown };
+            try {
+              response = await supabase.rpc('fn_rakeback_recompute_periods', {
+                p_club_id: g.club_id,
+                p_period_start: g.period_start,
+                p_period_end: g.period_end,
+                p_user_ids: userIds,
+              });
+            } catch (thrown) {
+              response = { data: null, error: thrown ?? new Error('period recompute threw') };
+            }
+            const { data, error } = response;
             if (error) {
-              failures += userIds.length;
-              reportError(
-                new Error(
-                  `fn_rakeback_recompute_periods failed for ${g.club_id} ${g.period_start}: ${error.message}`
-                ),
-                'RakebackSettler.period_recompute'
-              );
+              const message = (error as { message?: string })?.message ?? String(error);
+              // Only an outcome the client could not observe is read back; a
+              // definite server error rolled its transaction back.
+              const readback = periodRecomputeOutcomeIsUnknown(error)
+                ? await this.readBackPeriodRecompute(g, userIds.length, callStartedAtMs)
+                : null;
+              if (readback?.confirmed && readback.deferred) {
+                // The same durable deferral a direct response would have
+                // carried; the weekly close recomputes the whole period.
+                deferredPeriods++;
+                this.rememberIncompleteWeek(weekKey, readback.deferred.sourceCount);
+                console.log(
+                  `[RakebackSettler] fn_rakeback_recompute_periods for ${g.club_id} ${g.period_start}: ` +
+                    `client saw "${message}" after ${Date.now() - callStartedAtMs}ms; this call's durable ` +
+                    `request ${readback.deferred.requestId} records a deferral (${readback.deferred.reason}) - accepted`
+                );
+              } else if (readback?.confirmed) {
+                upserts += readback.written;
+                console.log(
+                  `[RakebackSettler] fn_rakeback_recompute_periods for ${g.club_id} ${g.period_start}: ` +
+                    `client saw "${message}" after ${Date.now() - callStartedAtMs}ms; the durable receipt ` +
+                    `confirms ${userIds.length} player(s) committed by this call - accepted`
+                );
+              } else {
+                failures += userIds.length;
+                reportError(
+                  new Error(
+                    `fn_rakeback_recompute_periods failed for ${g.club_id} ${g.period_start}: ${message}` +
+                      (readback ? `; durable receipt not confirmed: ${readback.reason}` : '')
+                  ),
+                  'RakebackSettler.period_recompute'
+                );
+              }
             } else {
               const receipt = readPeriodRecomputeReceipt(data, userIds.length, g);
               if (receipt.deferred) {
                 await confirmDeferredPeriodRequest(receipt.deferred, g);
                 deferredPeriods++;
+                this.rememberIncompleteWeek(weekKey, incompleteSourceCount(data));
               } else {
                 upserts += receipt.written;
               }

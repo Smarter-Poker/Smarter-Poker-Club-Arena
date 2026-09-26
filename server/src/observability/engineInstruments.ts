@@ -1003,6 +1003,41 @@ for (const outcome of ['refused', 'unreadable', 'malformed']) {
   f06DrainedCustodyOutcomesTotal.inc(0, { outcome });
 }
 
+/**
+ * What the abandoned-generation door did when a generation asked it to decide
+ * a dead generation's reserved hand (tournament/abandonedGenerationDoor.ts).
+ * `aborted` and `replayed` freed the tables; `already_closed` found another
+ * receipt had; `refused` is a rule the door named, and the table stays
+ * blocked; `transient` found no answer. Before 2026-09-22 nothing asked, and
+ * a blocked table moved no series at all.
+ *
+ * `frozen` AND `unreadable` EXIST BECAUSE THEIR ABSENCE HID 526 WEDGED TABLES
+ * (2026-09-25). Five hours after the 15:29 cutover every one of the five
+ * labels above read 0, on a fleet holding 526 tables whose reserved permit
+ * named a generation that was no longer the lease holder - and 0 on every
+ * label is exactly what "there was nothing to decide" looks like. There was:
+ * the two ways an ask can end without ever reaching the door - the
+ * maintenance freeze outlasting the wait, and a table state that could not be
+ * read - both returned in silence. An ask that reached no answer must still
+ * produce a number (CLAUDE.md 10.86 rules 1 and 3), so these two say "asked,
+ * and could not tell" where nothing said anything at all.
+ */
+export const f06AbandonedGenerationClosuresTotal: Counter = alwaysOnRegistry.counter(
+  'poker_f06_abandoned_generation_closures_total',
+  'Abandoned-generation door answers, by outcome (labels: outcome=aborted|replayed|already_closed|refused|transient|frozen|unreadable)'
+);
+for (const outcome of [
+  'aborted',
+  'replayed',
+  'already_closed',
+  'refused',
+  'transient',
+  'frozen',
+  'unreadable',
+]) {
+  f06AbandonedGenerationClosuresTotal.inc(0, { outcome });
+}
+
 /** Prometheus lines for the always-on fleet registry. */
 /* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
    See observability/processMemory.ts for why these exist. Always-on, bounded

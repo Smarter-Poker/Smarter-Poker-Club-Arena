@@ -1444,6 +1444,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // the barrier, so chain it - the loop may deal only when BOTH the rest of
     // this method and every post-hand task are done reading this hand's
     // capture fields.
+    // KILL POT (kill-v1): the trigger is evaluated once, here, from this hand's
+    // authoritative settlement, and its record rides into the hand's own row.
+    this.settleKillPot();
     const priorBarrier = this.postHandTasksPromise;
     const postTasks = this.postHandTasks(players, persistenceGeneration).catch((err) => {
       this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
@@ -1585,6 +1588,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       communityCards2: [...this.currentHandCommunityCards2],
       communityCards3: [...this.currentHandCommunityCards3],
       bombPot: this.currentHandBombPot,
+      // KILL POT: this hand's kill_pot record (kill hand, next kill, cancellation).
+      killPot: this.currentHandKillRecord,
       ritExtraBoards: this.currentHandRitExtraBoards,
       ritBoards: this.currentHandRitBoards,
       startedAt: this.currentHandStartedAt,
@@ -1816,7 +1821,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   ? { hand_request_identity_v1: handRequestIdentity }
                   : {}),
                 ...(failureEvidence ? { leave_pending_diagnostic_v1: failureEvidence } : {}),
-              }
+              },
+              // ONE OPEN ALERT PER HAND PER STEP, not one per pass over it.
+              // The subject is the hand: a step that fails for hand #N is the
+              // same fact however many times this or a later engine generation
+              // re-reports it. See financialAlerts.raiseFinancialAlert.
+              `${this.tableId}:${snap.handNumber}`,
+              this.tableId
             );
           }
         } finally {
@@ -1970,6 +1981,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        `rake_records`, `rake_attributions` or `bbj_contributions`, so the
        booking and history land together under exactly this id. */
     const v_handId = randomUUID();
+    // KILL POT: a kill this hand triggers is keyed to the row it is written in.
+    const killPotRecord = this.killSchedule.bindTriggerHandId(
+      snap.handNumber,
+      v_handId,
+      snap.killPot
+    );
     // A response-body timeout may replay the exact RPC. Time is part of the
     // accepted-hand payload hash, so freeze it once; recomputing Date.now()
     // on retry turns a committed hand into a deterministic payload conflict.
@@ -2282,6 +2299,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // (trigger reason, ante, board count - spec §20).
             communityCards3: snap.communityCards3,
             bombPot: snap.bombPot,
+            // KILL POT (kill-v1): null on a hand that neither played, set nor
+            // cancelled a kill. The atomic insert names only real columns.
+            killPot: killPotRecord,
             // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
             // rit_board_N pseudo-actions in `actions` stay for old readers.
             ritBoards: snap.ritExtraBoards,
@@ -2453,7 +2473,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 hand_number: snap.handNumber,
                 error: message,
                 ...(semantic ? { hand_request_identity_v1: handRequestIdentity } : {}),
-              }
+              },
+              // Same hand, same subject key. Every engine generation that
+              // inherits this hand behind its causal barrier reports the same
+              // refusal; the operator needs it once.
+              `${this.tableId}:${snap.handNumber}`,
+              this.tableId
             );
           } catch (alertError) {
             reportError(alertError, `${alertCode}.alert_failed`, {
@@ -2825,10 +2850,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // A5 FIX (2026-08-08): the retries are exhausted, but the rake is
             // ALREADY out of the pot. Reporting an error and moving on destroyed
             // those chips — nothing on disk said they were owed. Queue the exact
-            // arguments so the FeeReconciler can re-drive them. Re-driving is
-            // safe: atomic_distribute_rake is gated on the hand
-            // (uq_rake_records_hand_id), so an entry that actually did land is a
-            // no-op rather than a double-bank.
+            // arguments so the owed fee is on disk. This is the protocol-1
+            // compatibility path (no verified lease, no envelope), which
+            // production refuses at fn_ca_commit_hand_settlement; since
+            // 2026-09-22 no engine timer re-drives the claim (FeeReconciler.ts).
             await queueUnbankedFee('rake', {
               tableId: this.tableId,
               clubId: this.tableInfo?.club_id,
@@ -3579,8 +3604,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.chipContinuity.forget(horse.user_id);
           // Round 57: clear FSM tracking on profit-target cashout too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-          // Round 64: same for TimeBankEngine.
-          this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+          // Round 64: same for TimeBankEngine, bank and metadata together.
+          this.forgetTimeBank(horse.user_id);
           // Round 66: same for StraddleEngine.
           this.straddleEngine.removePlayer(this.tableId, horse.user_id);
           this.preActionEngine.removePlayer(this.tableId, horse.user_id);
@@ -3735,7 +3760,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
       if (current && current.occupancy_id !== occupancyId) continue;
       this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.forgetTimeBank(userId);
       this.straddleEngine.removePlayer(this.tableId, userId);
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.leaveHeldByClock.delete(userId);
@@ -3772,7 +3797,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // Owed the moment the cash-out commits, so a later seat's timeout or a
         // rejected sibling read cannot take the teardown with it.
         (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId),
-        diagnostic?.departures
+        diagnostic?.departures,
+        // Lightning (2026-09-26): a seat deferred here is retried every pass.
+        (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
       ),
       this.tableInfo?.cluster_id
         ? pendingSeatMoves(this.tableId, diagnostic?.move_read)

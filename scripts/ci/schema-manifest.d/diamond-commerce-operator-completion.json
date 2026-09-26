@@ -1,0 +1,63 @@
+{
+  "_owner": "feat/diamond-commerce-operator-completion (CA-DIAMOND-COMMERCE-2026-09-22 R2, remaining scope). Declares supabase/migrations/20260924182605_diamond_commerce_catalog_terms_written_quotes_and_trial_reviews.sql, 20260924183529_diamond_commerce_staff_metrics.sql and 20260924183657_diamond_commerce_settled_earnings_coverage.sql. The owning task installs them in that order through Apply Merged Migration after merge and reads them back; the nightly schema-manifest refresh absorbs this fragment.",
+  "tables": ["ca_commerce_trial_reviews", "ca_commerce_written_quotes"],
+  "functions": [
+    "fn_ca_commerce_catalog",
+    "fn_ca_commerce_earnings_coverage",
+    "fn_ca_commerce_metrics",
+    "fn_ca_commerce_quote",
+    "fn_ca_commerce_trial_review_decide",
+    "fn_ca_commerce_trial_review_json",
+    "fn_ca_commerce_trial_review_request",
+    "fn_ca_commerce_trial_reviews",
+    "fn_ca_commerce_trial_waiver_snapshot",
+    "fn_ca_commerce_written_quote_decline",
+    "fn_ca_commerce_written_quote_json",
+    "fn_ca_commerce_written_quote_offer",
+    "fn_ca_commerce_written_quote_request",
+    "fn_ca_commerce_written_quote_withdraw",
+    "fn_ca_commerce_written_quotes"
+  ],
+  "columns": {
+    "ca_commerce_written_quotes": [
+      "created_at",
+      "decided_at",
+      "decided_by",
+      "id",
+      "offered_capacity",
+      "offered_diamonds",
+      "price_version_id",
+      "request_note",
+      "requested_by",
+      "requested_capacity",
+      "scope_id",
+      "scope_kind",
+      "sku",
+      "staff_note",
+      "state",
+      "valid_until"
+    ],
+    "ca_commerce_trial_reviews": [
+      "created_at",
+      "decided_at",
+      "decided_by",
+      "granted_trial_id",
+      "id",
+      "operator_id",
+      "requested_by",
+      "scope_id",
+      "scope_kind",
+      "staff_note",
+      "state",
+      "statement"
+    ],
+    "ca_commerce_trials": [
+      "terms_version",
+      "waiver_catalog_version",
+      "waiver_prices",
+      "waiver_reason"
+    ],
+    "ca_commerce_purchases": ["terms_version"],
+    "ca_commerce_products": ["private_scope_id", "private_scope_kind", "written_quote_id"]
+  }
+}

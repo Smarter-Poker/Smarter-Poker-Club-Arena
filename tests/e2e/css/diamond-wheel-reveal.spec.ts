@@ -47,7 +47,15 @@ for (const width of [320, 390, 1280]) {
       const receipt = await mountDiamondWheel(page, kind, width);
       const wheel = page.getByRole('img', { name: 'Diamond Wheel', exact: true });
       const secondary = page.getByRole('img', { name: 'Upgrade Wheel', exact: true });
-      await expect(page.locator('[data-painted-band="loading"]')).toHaveCount(0);
+      // Sixty-four painted bands each decode an atlas texture on a canvas
+      // before they mount as <image>. On a software-rendered CI runner that
+      // takes longer than the 5s an assertion gets by default (measured
+      // 2026-09-24: 64 -> 50 -> 46 -> 27 -> 4 still loading at the 5s mark),
+      // and the test was failing on decode speed, not on the reveal it pins.
+      // The decode wait carries its own budget, well inside the test's minute.
+      await expect(page.locator('[data-painted-band="loading"]')).toHaveCount(0, {
+        timeout: 30_000,
+      });
       await expect(page.locator('[data-painted-band="cached"]')).toHaveCount(64);
       await expect(secondary.locator('[data-slot]')).toHaveCount(8);
       await expect(secondary).toBeVisible();

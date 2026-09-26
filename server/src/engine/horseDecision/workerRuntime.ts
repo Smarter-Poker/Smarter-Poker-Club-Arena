@@ -19,6 +19,8 @@ import {
   journalHorseDiscardExecution,
   journalHorseRequestLifecycle,
   horseDecisionJournalConfigured,
+  horseDecisionJournalHealth,
+  type HorseJournalHealth,
 } from '../../services/HorseDecisionJournal.js';
 import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 import { validateHorseDiscardExecution } from '../../services/horseDecisionJournal/discard.js';
@@ -128,6 +130,8 @@ export interface HorseDecisionWorkerDependencies {
   restoreRng(state: number): void;
   governorScale(): number;
   workerReadiness(): HorseDecisionWorkerReadiness;
+  /** This thread's decision journal report, relayed by STATUS to /health. */
+  journalHealth?(): HorseJournalHealth | null;
   observeCompletedHand(request: ObserveCompletedHandRequest): void;
   noteDecision(scope: string, ms: number): void;
   noteFeature(feature: string): void;
@@ -229,6 +233,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   saveRng: saveFastRandom,
   restoreRng: restoreFastRandom,
   governorScale: () => equityGovernor.current(),
+  journalHealth: horseDecisionJournalHealth,
   workerReadiness: () => ({
     solverStores: {
       charts: gtoChartCount(),
@@ -1778,7 +1783,16 @@ export class HorseDecisionWorkerRuntime {
       generation: request.generation,
       fence: request.fence,
       ...this.deps.workerReadiness(),
+      horseJournal: this.journalHealth(),
     });
+  }
+
+  private journalHealth(): HorseJournalHealth | null {
+    try {
+      return this.deps.journalHealth?.() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private async shutdown(): Promise<void> {

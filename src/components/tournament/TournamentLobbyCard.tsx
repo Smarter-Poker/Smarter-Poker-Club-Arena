@@ -67,6 +67,7 @@ import { compactChips } from '../../utils/format';
 import { SPIN_MAX_MULTIPLIER } from '../lobby/lobbyEntries';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
+import { DAY_COMPLETE_LABEL } from '../../utils/multiDaySchedule';
 
 interface Tournament extends TournamentEntryWindowRow {
   format_contract?: unknown;
@@ -79,7 +80,8 @@ interface Tournament extends TournamentEntryWindowRow {
   maxPlayers: number | null;
   registeredPlayers: number;
   startsAt?: string;
-  status: 'registering' | 'running' | 'finished' | 'cancelled';
+  /** `bagged`: a multi-day event between days (live, entries closed). */
+  status: 'registering' | 'running' | 'bagged' | 'finished' | 'cancelled';
   blindStructure: string;
   structureFacts?: MttStructureDescription;
   gameType?: string;
@@ -137,6 +139,13 @@ interface TournamentLobbyCardProps {
    * and, if that fails too, to the refuses-to-guess branch below.
    */
   knownRegistration?: boolean | null;
+  /**
+   * Multi-day only, and only when the caller has read a sealed plan for this
+   * event with the capability available: "Day 1 Complete" and "Day 2 Starts
+   * Sat 12:00 PM CDT". Absent, the card prints nothing multi-day beyond the
+   * status pill.
+   */
+  stageNote?: { headline: string; next: string | null };
 }
 
 /** Under five minutes to the gun. Exported so it can be pinned by a test. */
@@ -215,6 +224,7 @@ function TournamentLobbyCardInner({
   tournament,
   onRegister,
   knownRegistration,
+  stageNote,
 }: TournamentLobbyCardProps) {
   const navigate = useAppNavigate();
   const { user } = useAuthUser();
@@ -430,6 +440,8 @@ function TournamentLobbyCardInner({
         return 'green';
       case 'running':
         return 'blue';
+      case 'bagged':
+        return 'gold';
       case 'cancelled':
         return 'red';
       default:
@@ -443,6 +455,8 @@ function TournamentLobbyCardInner({
         return 'Open';
       case 'running':
         return 'Running';
+      case 'bagged':
+        return DAY_COMPLETE_LABEL;
       case 'finished':
         return 'Completed';
       case 'cancelled':
@@ -656,6 +670,17 @@ function TournamentLobbyCardInner({
         handleRegister();
       },
     };
+  } else if (tournament.status === 'bagged') {
+    /* Multi-day, between days: nothing to register for and no table to watch.
+       The tournament screen carries the schedule and, for a player, their bag. */
+    primary = {
+      label: isRegistered ? 'Open Tournament' : 'View Schedule',
+      ink: 'white',
+      onClick: (e) => {
+        e.stopPropagation();
+        navigate(`/tournaments/${tournament.id}`);
+      },
+    };
   } else if (tournament.status === 'running') {
     /* Dan 2026-08-25 (binding): "when I click on a tournament that's
        RUNNING I should be able to click a button and watch."
@@ -846,6 +871,15 @@ function TournamentLobbyCardInner({
               </span>
             </div>
           )}
+
+        {tournament.status === 'bagged' && stageNote && (
+          <div className={`${styles.row} ${styles.rowStacked}`}>
+            <span className="sc-label sc-ink--blue">{stageNote.headline}</span>
+            <span className={`${styles.value} sc-ink--gold`}>
+              {stageNote.next ?? 'Next Day To Be Announced'}
+            </span>
+          </div>
+        )}
 
         {tournament.startsAt && tournament.status === 'registering' && countdown && (
           <div className={styles.row}>

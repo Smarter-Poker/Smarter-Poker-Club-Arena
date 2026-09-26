@@ -38,8 +38,15 @@ export interface HealthDeps {
    * nothing on /health to say so. Synchronous and cached: the publisher
    * answers its last STATS reply and asks the writer for a fresh one, so this
    * handler never waits on the journal worker. Optional here so tests inject
-   * it; the router's default reads the process-wide publisher. Null (no
-   * journal configured) leaves the body exactly as it was.
+   * it; the router's default reads horseDecisionJournalHealth(), which reports
+   * `disabled` without a journal directory.
+   *
+   * 2026-09-26: the publisher lives in the Horse decision worker thread, not
+   * in this one, so the default used to answer `starting` with every figure
+   * null whatever the journal was doing. It now answers the worker's own
+   * report, relayed by the worker's STATUS reply, with `reportAgeMs` saying
+   * how old that report is. A null from an injected source still leaves the
+   * body without the section.
    */
   horseJournal?: () => HorseJournalHealth | null;
 }

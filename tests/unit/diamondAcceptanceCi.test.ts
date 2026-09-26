@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE SEVENTEEN RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE TWENTY-THREE RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -52,6 +52,12 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-bomb-pot.py',
   'run-diamond-cash-admission.py',
   'run-diamond-cash-custody.py',
+  'run-diamond-club-commerce-admission.py',
+  'run-diamond-club-commerce-completion.py',
+  'run-diamond-club-commerce-earnings.py',
+  'run-diamond-club-commerce-metrics.py',
+  'run-diamond-club-commerce-recovery.py',
+  'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
   'run-diamond-controlled-play.py',
   'run-diamond-incident-resolution.py',
@@ -66,16 +72,22 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The four that stand up a cluster of their own. Declared in the wrapper and
+/* The ten that stand up a cluster of their own. Declared in the wrapper and
    repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
+  'run-diamond-club-commerce-admission.py',
+  'run-diamond-club-commerce-completion.py',
+  'run-diamond-club-commerce-earnings.py',
+  'run-diamond-club-commerce-metrics.py',
+  'run-diamond-club-commerce-recovery.py',
+  'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 17;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 4;
+const HOW_MANY_RUNNERS = 23;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 10;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -171,7 +183,7 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     const steps = job.steps.filter((s: { id?: string }) => s.id === 'diamond_sql_acceptance');
     expect(steps).toHaveLength(1);
     const step = steps[0];
-    expect(step.if).toBeUndefined();
+    expect(step.if).toMatch(/^matrix\.shard == [1-4]$/); // its accounting shard, nothing else
     expect(step['continue-on-error']).toBeUndefined();
     expect(step.env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(step['timeout-minutes']).toBeGreaterThanOrEqual(10);

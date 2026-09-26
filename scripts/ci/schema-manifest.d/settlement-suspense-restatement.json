@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/claude/settlement-suspense-restatement-20260926. Migration 20260926060005_settlement_suspense_is_restated_to_its_real_counterparties: journal-only restatement receipt tables and the owner-authorized one-off that zeroes settlement_suspense. Installed through the apply door after merge.",
+  "tables": ["ca_journal_restatements", "ca_journal_restatement_legs"],
+  "functions": [
+    "ca_journal_restatement_append_only",
+    "fn_ca_balance_table_fingerprint",
+    "fn_ca_restate_must_be_zero_account",
+    "fn_ca_restate_settlement_suspense_20260926"
+  ]
+}

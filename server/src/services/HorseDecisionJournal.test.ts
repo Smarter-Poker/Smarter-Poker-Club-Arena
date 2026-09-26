@@ -1272,7 +1272,7 @@ describe('/health reads the journal from the thread that runs it', () => {
     try {
       vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '');
       expect(horseDecisionJournalHealth()).toMatchObject({ mode: 'disabled' });
-      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/private/horse-journal');
+      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
       // This thread owns no publisher and nothing has reported yet.
       expect(horseDecisionJournalHealth()).toMatchObject({
         mode: 'starting',
@@ -1299,14 +1299,14 @@ describe('/health reads the journal from the thread that runs it', () => {
       });
       expect(typeof relayed.reportAgeMs).toBe('number');
       // A malformed report is ignored rather than shown.
-      relayHorseDecisionJournalHealth({ mode: 'fine', path: '/private/horse-journal' });
+      relayHorseDecisionJournalHealth({ mode: 'fine', path: '/unused-fixture-horse-journal' });
       relayHorseDecisionJournalHealth(null);
       expect(horseDecisionJournalHealth()!.mode).toBe('failed');
       // Only the finite field set crosses; free text never does.
       relayHorseDecisionJournalHealth({
         ...p.health(),
-        path: '/private/horse-journal',
-        lastFailureReason: 'ENOSPC /private/horse-journal',
+        path: '/unused-fixture-horse-journal',
+        lastFailureReason: 'ENOSPC /unused-fixture-horse-journal',
       });
       expect(horseDecisionJournalHealth()).not.toHaveProperty('path');
       expect(horseDecisionJournalHealth()!.lastFailureReason).toBeNull();

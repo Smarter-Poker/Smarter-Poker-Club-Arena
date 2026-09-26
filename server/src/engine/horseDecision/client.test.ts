@@ -1985,7 +1985,7 @@ describe('/health shows the journal the Horse worker owns, not an empty main-thr
   // the journal's own report across the thread boundary.
   it('relays the worker journal report from STATUS_RESULT to horseDecisionJournalHealth', async () => {
     vi.useFakeTimers();
-    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/private/horse-journal');
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
     try {
       const worker = new FakeWorker();
       const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });

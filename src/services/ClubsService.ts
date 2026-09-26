@@ -256,7 +256,9 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
       const { dataUrl, format } = await ClubCardGenerator.generateCard({
         logoUrl: logoUrl || (clubData.logoPreview as string),
         clubId: data.club_id,
-        clubName: safeName.toUpperCase(),
+        clubName: String(data.name || safeName)
+          .trim()
+          .toUpperCase(),
       });
 
       const cardBlob = await fetch(dataUrl).then((r) => r.blob());
@@ -271,11 +273,15 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
       if (!cardUploadError && cardUploadData) {
         const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(cardFileName);
         if (urlData?.publicUrl) {
-          await supabase
+          const { error: cardUpdateError } = await supabase
             .from('clubs')
             .update({ card_image_url: urlData.publicUrl })
             .eq('id', data.id);
-          data.card_image_url = urlData.publicUrl;
+          if (cardUpdateError) {
+            reportError(cardUpdateError, 'ClubsService.createClub.CardUrlUpdate');
+          } else {
+            data.card_image_url = urlData.publicUrl;
+          }
         }
       }
     } catch (cardErr) {

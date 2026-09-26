@@ -28,8 +28,26 @@ groups:
       # hand start) for 2 minutes. A healthy table under a 15s shot clock
       # cannot reach 2 minutes. This is the alert that would have fired on
       # 2026-08-15 at minute two instead of never.
+      #
+      # ── SECTION 13 RULE 6: BREAK-GUARDED, ADDED 2026-09-22 ──────────────
+      # This was the one rule in this file that never carried the guard
+      # every later rule below it does. The announced :55 break deliberately
+      # parks the whole fleet for up to ~5 minutes every hour, and a parked
+      # table has made no progress by definition - so poker_stalled_tables
+      # crossing 0 together, fleet-wide, is the SCHEDULED STOP, not a freeze
+      # bug. Measured against operational_alert_events 2026-09-13..2026-09-22:
+      # 351 deliveries, resolving near :53 at the full seated-table count (61
+      # on 2026-09-22) and re-firing near :03 on the thaw's residual lag (3) -
+      # once an hour, on the break's own clock. This is exactly the "pages
+      # hourly about a stop we scheduled" failure mode section 13 rule 6
+      # names, and every sibling rule in this file already carries the guard
+      # (EngineScrapeDown, EngineLivenessDead, EngineHandsStopped,
+      # EngineFleetThroughputCollapsed, PokerSettlementBlocked) - this one
+      # simply predates them and was never brought forward.
       - alert: PokerTablesFrozen
-        expr: poker_stalled_tables > 0
+        expr: |
+          poker_stalled_tables > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 1m
         labels:
           severity: critical

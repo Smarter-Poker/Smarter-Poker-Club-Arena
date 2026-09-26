@@ -602,11 +602,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (this.tableFSM.state === 'paused' && !this.isNextHandPaused()) {
           this.tableFSM.transition('running');
         }
+        /* THREE THINGS A PARKED PASS NOW DOES (remediation, 2026-09-25), all
+           inside passWhileDealingHalted and none of them a deal:
+             - it takes the leave sweep prepareNextHand launched above, so a
+               departure the database deferred (LIGHTNING_HAND_IN_PROGRESS) is
+               retried on the next pass instead of once per halt;
+             - it ACKNOWLEDGES the halt, once per `dealing_halted_at` value -
+               the conversion commit refuses until every leased table has;
+             - it lets an EMPTY table on a closed row end its engine. This
+               branch `continue`s before the idle branch's call, so a halted
+               table that emptied and closed used to keep its engine for ever.
+           And `consecutiveErrors` is reset: a completed parked pass is a
+           success. Without it the counter only ever climbed while halted -
+           each transient read failure was one more strike and no dealt hand
+           ever came to clear them - until hours into a conversion the table
+           was killed as dealing_loop_10_consecutive_errors. */
         if (this.dealingHaltLock) {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('paused');
           }
           this.setLoopPhase('cluster_dealing_halted');
+          await this.passWhileDealingHalted();
+          if (!this.lifecycleCanMutate()) return;
+          this.consecutiveErrors = 0;
           this.markProgress();
           await this.sleep(3000);
           continue;
@@ -816,24 +834,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               const cashedOutIds = await this.takePreparedLeavePending();
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
-              for (const { userId: leftUserId, occupancyId } of cashedOutIds) {
-                const current = this.seatedPlayers.find((sp) => sp.user_id === leftUserId);
-                if (current && current.occupancy_id !== occupancyId) continue;
-                this.disconnectEngine.unregisterPlayer(this.tableId, leftUserId);
-                this.forgetTimeBank(leftUserId);
-                this.straddleEngine.removePlayer(this.tableId, leftUserId);
-                this.preActionEngine.removePlayer(this.tableId, leftUserId);
-                this.leaveHeldByClock.delete(leftUserId);
-                this.chipContinuity.forget(leftUserId);
-              }
-              if (cashedOutIds.length > 0) {
-                this.seatedPlayers = this.seatedPlayers.filter(
-                  (sp) =>
-                    !cashedOutIds.some(
-                      (left) => left.userId === sp.user_id && left.occupancyId === sp.occupancy_id
-                    )
-                );
-              }
+              this.releaseDepartedSeats(cashedOutIds);
             })()
           );
         }
@@ -1048,6 +1049,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
         // A pause may arrive while the roster, rest or blind read is pending.
+        // (2026-09-25) This is also where the Cluster halt read with the
+        // roster, under the rest, is honoured - the freshest value this
+        // engine holds, checked with nothing awaited between it and the deal.
+        // No second read here on purpose: the two-second rest is law
+        // (the-next-hand-deals-two-seconds-after-completion), and a halt
+        // written inside it is made safe by the acknowledgement protocol - the
+        // commit waits until this table parks after the one hand it dealt.
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
@@ -1672,19 +1680,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          is itself making tick - and a player told their seat was safe and then
          emptied is the exact failure the wait loop's gate was written for.
 
-         ONE SWEEP PER HALT, AND NOTHING IS LOST. `takePreparedLeavePending` -
-         which does the per-player engine teardown (disconnect FSM, time bank,
-         straddle, pre-action) - sits BELOW the gate. So while the halt stands,
-         `preparedLeavePending` is never taken, `leaveSweepCanRace` is false on
-         every later pass and no second sweep runs; the roster was already
-         filtered here, and the teardown lands on the first pass after the halt
-         lifts. Pinned in AHaltedTableFinishesItsHandAndDealsNoOther.law.test.ts
-         so this decision cannot flip without someone saying so. */
+         UNDER A HALT, ONE SWEEP PER PASS WHILE SOMEBODY IS LEAVING
+         (2026-09-25). This used to be one sweep per halt: the teardown that
+         takes the prepared sweep sits below the gate, so while the halt stood
+         the prepared sweep was never taken and no second one could start. That
+         was harmless while a leave either completed or was refused by the stay
+         clock. It stopped being harmless when the database learned to refuse a
+         seat change with LIGHTNING_HAND_IN_PROGRESS: that leave is queued, and
+         on a Lightning Cluster the halt stands for as long as the Cluster is
+         Lightning, so "retry after the halt lifts" meant never. Now the halt
+         branch takes the prepared sweep and does the teardown
+         (passWhileDealingHalted -> completeQueuedLeavesWhileHalted), and a
+         halted table sweeps again on the next pass - but only while its roster
+         shows a `leave_pending` seat, so a halted table with nobody leaving
+         makes no extra request. The add-on precondition is not asked under a
+         halt: the add-on sweep sits below the gate and cannot run, so waiting
+         for it would hold the leave for the whole halt; and a leave settling
+         before a pending add-on is the order settlement itself uses (step 6
+         before step 8e). Pinned in
+         AHaltedTableFinishesItsHandAndDealsNoOther.law.test.ts. */
       const leaveSweepCanRace =
         !this.isTournamentTable() &&
-        !this.pendingAddOnSweepNeeded &&
-        this.pendingAddOns.size === 0 &&
-        this.preparedLeavePending === null;
+        this.preparedLeavePending === null &&
+        (this.dealingHaltLock
+          ? this.hasQueuedLeave()
+          : !this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0);
       let rawSweep: ReturnType<typeof processLeavePending> | null = null;
       let budgetedSweep: ReturnType<typeof processLeavePending> | null = null;
       if (leaveSweepCanRace) {
@@ -1772,6 +1792,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   /** A pre-allocated hand number older than this is discarded rather than dealt. */
   protected static readonly PREPARED_HAND_NUMBER_MAX_AGE_MS = 15_000;
 
+  /**
+   * Under a halt the sweep `prepareNextHand` launched is taken HERE, in the
+   * halt branch, rather than by the safety net below the gate, so the next
+   * parked pass may launch another (see the argument in prepareNextHand).
+   * The sweep already ran and was awaited inside prepareNextHand; this only
+   * collects its outcome and forgets what the departed players left behind.
+   */
+  protected override async completeQueuedLeavesWhileHalted(): Promise<void> {
+    if (this.preparedLeavePending === null) return;
+    let departed: Awaited<ReturnType<typeof processLeavePending>>;
+    try {
+      departed = await this.takePreparedLeavePending();
+    } catch (err) {
+      // The sweep ran past its step budget or its read failed. It is taken
+      // either way, so the next parked pass may launch a fresh one, which
+      // finds every seat still `leave_pending`. The same outcome the safety
+      // net below the gate has for the same failure, reported the same way.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.halted_leave_sweep_failed');
+      return;
+    }
+    if (!this.lifecycleCanMutate()) return;
+    this.releaseDepartedSeats(departed);
+    if (departed.length > 0) this.wakeClusterGame('seat_left');
+  }
+
   protected async takePreparedLeavePending(): ReturnType<typeof processLeavePending> {
     const prepared = this.preparedLeavePending;
     this.preparedLeavePending = null;
@@ -1846,13 +1891,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
         this.refreshRakeConfig()
       ),
+      /* THE HALT, READ ONCE PER HAND ON A CLUSTER TABLE (2026-09-25). In
+         parallel with the roster, so it costs the deal no latency, and on
+         DEALING_HALT_TTL_MS rather than the rule re-read's minute - the gap
+         in which a busy table went on starting hands after its Cluster had
+         halted it. A no-op for every table outside a Cluster. The result is
+         honoured by the isNextHandPaused() check that follows the rest, the
+         last thing before dealHand(), and again at the top of the next pass. */
+      this.withStepBudget(
+        'refresh_dealing_halt',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshDealingHalt()
+      ),
     ] as const;
     this.setLoopPhase('load_next_hand_inputs');
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
-    const [seats, rake] = await Promise.allSettled(reads);
+    const [seats, rake, halt] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
     if (rake.status === 'rejected') throw rake.reason;
+    if (halt.status === 'rejected') throw halt.reason;
     return seats.value;
   }
 

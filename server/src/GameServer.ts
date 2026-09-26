@@ -81,6 +81,8 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
+import { LightningSupervisor } from './lightning/LightningSupervisor.js';
+import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   HorseTopUpPass,
@@ -3029,6 +3031,17 @@ export class GameServer {
       return count ?? 0;
     },
   });
+  /**
+   * Lightning 2.0 (2026-09-25): the shadow-mode matcher workers. Leader-only,
+   * started and stopped beside the ClusterController, and DARK: it starts a
+   * worker only for a Cluster that is `cluster_mode = 'lightning'`, has
+   * Lightning enabled, and whose `fn_lightning_config` says worker_mode is not
+   * 'off' - none today. A worker in 'form' mode refuses to run until a
+   * dealing host exists. See src/lightning/LightningSupervisor.ts.
+   */
+  private lightningSupervisor = new LightningSupervisor({
+    presenceSource: () => this.lightningPresenceReports(),
+  });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
@@ -3631,6 +3644,9 @@ export class GameServer {
 
       // Slice 6: the cluster lifecycle, beside the fleet, on the leader only.
       this.clusterController.start();
+      // Lightning 2.0: the shadow matcher workers, beside the Cluster
+      // controller, behind the same leader gate. Dark until a Cluster qualifies.
+      this.lightningSupervisor.start();
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
@@ -3835,6 +3851,7 @@ export class GameServer {
       const stops: Array<[service: string, stop: () => Promise<void>]> = [
         ['HorseFleetManager', () => this.horseFleet.stop()],
         ['ClusterController', () => this.clusterController.stop()],
+        ['LightningSupervisor', () => this.lightningSupervisor.stop()],
         ['TournamentRecurringService', () => this.tournamentRecurring.stop()],
         ['ScheduledTournamentService', () => this.scheduledTournaments.stop()],
         ['HorseLifecycleManager', () => this.lifecycle.stop()],
@@ -10262,6 +10279,23 @@ export class GameServer {
       reportError(stopError, 'GameServer.terminal_table_engine_stop_cleanup_failed', { tableId });
     }
     return this.unregisterTableEngine(tableId, current);
+  }
+
+  /**
+   * Every running engine's Lightning presence report, for the supervisor's
+   * p_disconnected feed. Synchronous and read-only; an engine that throws is
+   * skipped, which the feed treats as "nobody here can vouch" (unknown) for
+   * the players the matcher names at that table - never as present.
+   */
+  private *lightningPresenceReports(): Iterable<PresenceTableReport> {
+    for (const engine of this.tableEngines.values()) {
+      try {
+        if (!engine.isRunning()) continue;
+        yield engine.lightningPresenceReport();
+      } catch (err) {
+        reportError(err, 'GameServer.lightning_presence_report_failed');
+      }
+    }
   }
 
   /**

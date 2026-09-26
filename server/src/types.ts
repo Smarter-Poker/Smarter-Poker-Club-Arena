@@ -357,6 +357,13 @@ export interface SeatedPlayer {
    * the limit could never mature. Written only by trg_stamp_sit_out_at.
    */
   sit_out_at?: string | null;
+  /**
+   * Persisted `table_seats.leave_pending` (2026-09-25): the player has asked
+   * to leave and the seat has not yet been cashed out. Read so a loop can
+   * retry a departure the database deferred (LIGHTNING_HAND_IN_PROGRESS)
+   * without a second query on every pass of a table where nobody is leaving.
+   */
+  leave_pending?: boolean;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
   /** Equipped avatar frame token for broadcast, e.g. `frame-gold`. */

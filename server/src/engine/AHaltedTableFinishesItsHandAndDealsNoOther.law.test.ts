@@ -57,6 +57,25 @@
  *      is the ENGINE's decision about a player who asked for nothing, does
  *      not. The argument lives in full beside the code.
  *
+ *   8. THE TABLE ACKNOWLEDGES, AND IT HEARS FAST (remediation, 2026-09-25).
+ *      The conversion commit refuses until every leased table has called
+ *      `fn_cash_table_observe_dealing_halt` from a halt gate with no hand in
+ *      progress - once per distinct `dealing_halted_at`, again for a new one,
+ *      and a failure (the function not deployed yet included) is retried on
+ *      the next parked pass and never deals. A cash Cluster table re-reads the
+ *      two halt columns every DEALING_HALT_TTL_MS (5s) - once per hand while
+ *      dealing, in parallel with the roster - and every other table keeps the
+ *      60-second rule re-read and nothing more.
+ *   9. A PARKED PASS IS A HEALTHY PASS. Both halt branches reach
+ *      `stopIfClusterTableClosed` (an EMPTY table on a closed row may end its
+ *      engine), the dealing branch resets `consecutiveErrors`, and
+ *      `releasePauseGate` relabels a table 'running' only when
+ *      `isNextHandPaused()` says nothing holds it - the halt included.
+ *  10. A LEAVE THE DATABASE DEFERS IS RETRIED EVERY PASS. A leave refused with
+ *      LIGHTNING_HAND_IN_PROGRESS stays `leave_pending`; a halted table sweeps
+ *      again on each pass while its roster shows a leaver, instead of once per
+ *      halt, and a quiet table sweeps above its own gate.
+ *
  * Source-text guards in the house style (see
  * ATableThatCannotDealHoldsNobodyForABlind.law.test.ts), plus the behavioural
  * half over a real engine object.
@@ -67,6 +86,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const maybeSingle = vi.fn();
 const selectSpy = vi.fn();
+const rpcSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('../services/supabase/client.js', () => {
   const from = (table: string) => ({
@@ -75,7 +95,7 @@ vi.mock('../services/supabase/client.js', () => {
       return { eq: () => ({ maybeSingle }) };
     },
   });
-  return { supabase: { from }, maintenanceSupabase: { from } };
+  return { supabase: { from, rpc: rpcSpy }, maintenanceSupabase: { from, rpc: rpcSpy } };
 });
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
@@ -146,6 +166,8 @@ const dispose = (e: any) => e.preciseTimer?.dispose?.();
 beforeEach(() => {
   maybeSingle.mockReset();
   selectSpy.mockReset();
+  rpcSpy.mockReset();
+  rpcSpy.mockResolvedValue({ data: '2026-09-21T15:16:19.000Z', error: null });
   // The club read that follows the table read in refreshRakeConfig.
   maybeSingle.mockResolvedValue({ data: null });
   loadTable.mockReset();
@@ -539,7 +561,227 @@ describe('a halted table finishes its hand and deals no other', () => {
     expect(gateAt).toBeLessThan(
       DEALING.indexOf('const cashedOutIds = await this.takePreparedLeavePending();')
     );
-    expect(DEALING).toMatch(/this\.preparedLeavePending === null;/);
+    // UNDER A HALT the sweep is re-armed every pass while somebody is leaving
+    // (2026-09-25): a leave the database deferred with LIGHTNING_HAND_IN_PROGRESS
+    // must not wait for a halt that, on a Lightning Cluster, never lifts. The
+    // halt branch takes the prepared sweep so the next pass may launch another;
+    // a halted table with no leaver launches none.
+    expect(DEALING).toMatch(
+      /this\.preparedLeavePending === null &&\s*\(this\.dealingHaltLock\s*\?\s*this\.hasQueuedLeave\(\)\s*:\s*!this\.pendingAddOnSweepNeeded && this\.pendingAddOns\.size === 0\)/
+    );
+    const take = DEALING.slice(
+      DEALING.indexOf('protected override async completeQueuedLeavesWhileHalted('),
+      DEALING.indexOf('protected async takePreparedLeavePending(')
+    );
+    expect(take).toMatch(/departed = await this\.takePreparedLeavePending\(\);/);
+    expect(take).toMatch(/this\.releaseDepartedSeats\(departed\);/);
+    expect(GATE).toMatch(/await this\.passWhileDealingHalted\(\);/);
+    // The quiet loop sweeps a queued leave ABOVE its own gate, for the same
+    // reason: it is the player's request, and a quiet halted table would
+    // otherwise hold it for the life of the conversion.
+    const QUIET = BASE.slice(
+      BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
+      BASE.indexOf("this.tableFSM.transition('seating');")
+    );
+    const quietSweep = QUIET.indexOf('await this.sweepQueuedLeaves();');
+    expect(quietSweep).toBeGreaterThan(-1);
+    expect(quietSweep).toBeLessThan(QUIET.indexOf('if (this.dealingHaltLock) {'));
+    const SWEEP = BASE.slice(
+      BASE.indexOf('protected async sweepQueuedLeaves('),
+      BASE.indexOf('protected isContinuityActive(')
+    );
+    expect(SWEEP, 'asked only when somebody is leaving').toMatch(/!this\.hasQueuedLeave\(\)/);
+    expect(SWEEP, 'CLAUDE.md 13 rule 5').toMatch(/isMaintenanceFrozen\(\)/);
+  });
+
+  it('a halted table acknowledges its halt once per value, never from inside a hand', async () => {
+    const e = engine();
+    e.applyDealingHaltFromRow(haltedRow);
+
+    // Mid-hand: nothing is acknowledged - the table is not parked.
+    e.handController = {} as never;
+    await e.observeDealingHalt();
+    expect(rpcSpy).not.toHaveBeenCalled();
+    e.handController = null;
+
+    await e.observeDealingHalt();
+    await e.observeDealingHalt();
+    expect(rpcSpy).toHaveBeenCalledTimes(1);
+    expect(rpcSpy).toHaveBeenCalledWith('fn_cash_table_observe_dealing_halt', {
+      p_table_id: e.tableId,
+    });
+    expect(e.dealingHaltObservedFor).toBe(haltedRow.dealing_halted_at);
+
+    // An abort and a new begin: a NEW value, owed a new acknowledgement.
+    e.applyDealingHaltFromRow({ ...haltedRow, dealing_halted_at: '2026-09-21T15:20:00.000Z' });
+    await e.observeDealingHalt();
+    expect(rpcSpy).toHaveBeenCalledTimes(2);
+
+    // Cleared: nothing owed, and the record of the old value is gone.
+    e.applyDealingHaltFromRow(liveRow);
+    expect(e.dealingHaltObservedFor).toBe(null);
+    await e.observeDealingHalt();
+    expect(rpcSpy).toHaveBeenCalledTimes(2);
+    dispose(e);
+  });
+
+  it('an acknowledgement that fails - the function not deployed yet included - is retried, and never lifts the halt', async () => {
+    const e = engine();
+    e.applyDealingHaltFromRow(haltedRow);
+    rpcSpy.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST202', message: 'Could not find the function' },
+    });
+    rpcSpy.mockRejectedValueOnce(new Error('fetch failed'));
+    // The database holds no halt for this table (cleared between our read and
+    // the call): nothing is recorded, and the next read releases the gate.
+    rpcSpy.mockResolvedValueOnce({ data: null, error: null });
+    await e.observeDealingHalt();
+    await e.observeDealingHalt();
+    await e.observeDealingHalt();
+    expect(e.dealingHaltObservedFor).toBe(null);
+    expect(e.dealingHaltLock, 'a failed acknowledgement never deals').toBe(true);
+    await e.observeDealingHalt();
+    expect(rpcSpy).toHaveBeenCalledTimes(4);
+    expect(e.dealingHaltObservedFor).toBe(haltedRow.dealing_halted_at);
+    dispose(e);
+  });
+
+  it('a cash Cluster table re-reads the halt columns alone, on the short clock; nobody else does', async () => {
+    const e = engine();
+    maybeSingle.mockResolvedValue({ data: haltedRow });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000_000);
+    await e.refreshDealingHalt();
+    const haltReads = () =>
+      selectSpy.mock.calls.filter(
+        (c) => c[0] === 'tables' && c[1] === 'dealing_halted_at, dealing_halted_reason'
+      );
+    expect(haltReads(), 'one select, two columns').toHaveLength(1);
+    expect(e.dealingHaltLock).toBe(true);
+    // Inside DEALING_HALT_TTL_MS: no second read.
+    now.mockReturnValue(10_004_000);
+    await e.refreshDealingHalt();
+    expect(haltReads()).toHaveLength(1);
+    // Past it: one more.
+    now.mockReturnValue(10_005_001);
+    await e.refreshDealingHalt();
+    expect(haltReads()).toHaveLength(2);
+    // A read that fails leaves a halted table halted.
+    now.mockReturnValue(10_020_000);
+    maybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'timeout' } });
+    await e.refreshDealingHalt();
+    expect(e.dealingHaltLock).toBe(true);
+    dispose(e);
+
+    // A cash table outside a Cluster, and a tournament table, make no request.
+    selectSpy.mockReset();
+    for (const info of [
+      { id: 'x', club_id: 'club', game_type: 'cash', cluster_id: null },
+      { id: 'y', club_id: 'club', game_type: 'tournament', tournament_id: 't-1', cluster_id: 'g' },
+    ]) {
+      const other = engine();
+      other.tableInfo = { ...info };
+      now.mockReturnValue(99_000_000);
+      await other.refreshDealingHalt();
+      dispose(other);
+    }
+    expect(selectSpy).not.toHaveBeenCalled();
+    now.mockRestore();
+  });
+
+  it('the dealing loop reads the halt with the roster and honours it right before the deal', () => {
+    // Read once per hand, in parallel with the roster (no latency), and the
+    // in-memory value checked after the rest with nothing awaited between the
+    // check and dealHand(). NO second read after the rest: the two-second rest
+    // is its own law (the-next-hand-deals-two-seconds-after-completion), and a
+    // halt written inside it is covered by the acknowledgement protocol.
+    const inputs = DEALING.slice(
+      DEALING.indexOf('protected async readNextHandInputs('),
+      DEALING.indexOf('protected refreshBlinds(')
+    );
+    expect(inputs).toMatch(/this\.refreshDealingHalt\(\)/);
+    const rest = DEALING.indexOf('await this.awaitNextHandRest();');
+    const check = DEALING.indexOf('if (this.isNextHandPaused()) {', rest);
+    const deal = DEALING.indexOf('await this.dealHand(activePlayers);');
+    expect(check).toBeGreaterThan(rest);
+    expect(deal).toBeGreaterThan(check);
+    expect(DEALING.slice(rest, deal)).not.toMatch(/refreshDealingHalt/);
+  });
+
+  it('both halt branches reach the closed-table check, and a parked pass clears the error streak', async () => {
+    // Source: the dealing gate and the quiet gate both run the parked pass,
+    // and the parked pass is what reaches stopIfClusterTableClosed.
+    expect(GATE).toMatch(/await this\.passWhileDealingHalted\(\);/);
+    expect(GATE).toMatch(/this\.consecutiveErrors = 0;/);
+    const LOOP = BASE.slice(
+      BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
+      BASE.indexOf("this.tableFSM.transition('seating');")
+    );
+    const quietGateAt = LOOP.indexOf('if (this.dealingHaltLock) {');
+    const QUIET_GATE = LOOP.slice(quietGateAt, LOOP.indexOf('continue;', quietGateAt));
+    expect(QUIET_GATE).toMatch(/await this\.passWhileDealingHalted\(\);/);
+    const PASS = BASE.slice(
+      BASE.indexOf('protected async passWhileDealingHalted('),
+      BASE.indexOf('protected async completeQueuedLeavesWhileHalted(')
+    );
+    expect(PASS).toMatch(/await this\.observeDealingHalt\(\);/);
+    expect(PASS).toMatch(/await this\.stopIfClusterTableClosed\(\)/);
+
+    // Behaviour: an EMPTY halted Cluster table whose row is closed ends its
+    // engine from the parked pass. It demands zero seats and moves no chip.
+    const e = engine();
+    e.applyDealingHaltFromRow(haltedRow);
+    e.seatedPlayers = [];
+    e.running = true;
+    e.isCurrentEngine = () => true;
+    e.lastClusterClosedCheckAt = 0;
+    maybeSingle.mockResolvedValueOnce({ data: { lifecycle: 'closed', status: 'closed' } });
+    const stop = vi.fn(async () => {
+      e.running = false;
+    });
+    e.stop = stop;
+    await e.passWhileDealingHalted();
+    expect(stop).toHaveBeenCalledTimes(1);
+    dispose(e);
+
+    // ...and a SEATED halted table is never stopped by it.
+    const seated = engine();
+    seated.applyDealingHaltFromRow(haltedRow);
+    seated.seatedPlayers = [{ user_id: 'u1', seat_number: 1, stack: 100 }];
+    seated.running = true;
+    seated.isCurrentEngine = () => true;
+    seated.stop = vi.fn();
+    await seated.passWhileDealingHalted();
+    expect(seated.stop).not.toHaveBeenCalled();
+    dispose(seated);
+  });
+
+  it('a pause lifting over a halted table does not relabel it running', () => {
+    // releasePauseGate() used to name two polled owners and miss the halt, so
+    // the hourly break lifting over a Cluster-halted table told every reader
+    // it was dealing while it sat at the halt gate.
+    const release = BASE.slice(
+      BASE.indexOf('private releasePauseGate(): void {'),
+      BASE.indexOf('private releasePendingPauseWait(): void {')
+    );
+    expect(release).toMatch(
+      /if \(this\.tableFSM\.state === 'paused' && !this\.isNextHandPaused\(\)\) \{/
+    );
+    const e = engine();
+    e.running = true;
+    e.tableFSM.transition('waiting');
+    e.tableFSM.transition('seating');
+    e.tableFSM.transition('running');
+    e.tableFSM.transition('paused');
+    e.applyDealingHaltFromRow(haltedRow);
+    e.pauseForMaintenance(300_000);
+    e.resumeFromMaintenance();
+    expect(e.tableFSM.state, 'the halt still holds the table').toBe('paused');
+    e.applyDealingHaltFromRow(liveRow);
+    e.pauseForMaintenance(300_000);
+    e.resumeFromMaintenance();
+    expect(e.tableFSM.state, 'with nothing holding it, the break lifts it').toBe('running');
+    dispose(e);
   });
 
   it('the latency the halt actually costs is written down where the owner lives', () => {
@@ -547,11 +789,15 @@ describe('a halted table finishes its hand and deals no other', () => {
       BASE.indexOf('A CLUSTER MAY STOP ITS TABLES DEALING WITHOUT CLOSING ONE OF THEM'),
       BASE.indexOf('protected dealingHaltLock: boolean = false;')
     );
-    // The value rides refreshRakeConfig's 60-second throttle. If that changes,
-    // this doc must change with it - a stated latency that has quietly stopped
-    // being true is worse than none.
+    // The value rides refreshRakeConfig's 60-second throttle for every table,
+    // and the dedicated halt poll's 5-second one for a cash Cluster table. If
+    // either changes, this doc must change with it - a stated latency that has
+    // quietly stopped being true is worse than none.
     expect(owner).toMatch(/RAKE_CONFIG_TTL_MS \(60s\)/);
     expect(owner).toMatch(/AT MOST 60 SECONDS/);
     expect(BASE).toMatch(/const RAKE_CONFIG_TTL_MS = 60_000;/);
+    expect(owner).toMatch(/DEALING_HALT_TTL_MS \(5s\)/);
+    expect(owner).toMatch(/AT MOST 5 SECONDS/);
+    expect(BASE).toMatch(/const DEALING_HALT_TTL_MS = 5_000;/);
   });
 });

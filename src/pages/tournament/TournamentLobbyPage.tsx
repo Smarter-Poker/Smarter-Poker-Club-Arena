@@ -44,6 +44,7 @@ import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 import { SpadeConsole } from '../../components/console/SpadeConsole';
 import { useTournamentStageViews } from '../../hooks/useTournamentStageView';
 import { dayCompleteLabel, nextDayStartsLabel } from '../../utils/multiDaySchedule';
+import { tournamentLobbyTimeGroup } from '../../utils/tournamentLobbyTimeGroup';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -760,34 +761,10 @@ export default function TournamentLobbyPage() {
       return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
     });
 
-  // Group tournaments by time window
-  const getTimeGroup = (startTime: string): { label: string; order: number } => {
-    const now = Date.now();
-    const start = new Date(startTime).getTime();
-    const diffMs = start - now;
-    const diffMins = diffMs / (1000 * 60);
-    const diffHours = diffMins / 60;
-
-    if (diffMs < 0) {
-      // Already started or completed
-      return { label: 'Now', order: 0 };
-    } else if (diffMins < 30) {
-      return { label: 'Starting Soon (< 30 Min)', order: 1 };
-    } else if (diffMins < 120) {
-      return { label: 'Next Hour (30 Min - 2 Hours)', order: 2 };
-    } else if (diffHours < 6) {
-      return { label: 'Later Today', order: 3 };
-    } else if (diffHours < 24) {
-      return { label: 'Tomorrow', order: 4 };
-    } else {
-      return { label: 'Coming Soon', order: 5 };
-    }
-  };
-
   const groupedTournaments = filteredTournaments
     .reduce(
       (acc, t) => {
-        const group = getTimeGroup(t.startTime);
+        const group = tournamentLobbyTimeGroup(t.startTime);
         const existing = acc.find((g) => g.label === group.label);
         if (existing) {
           existing.tournaments.push(t);

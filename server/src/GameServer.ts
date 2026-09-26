@@ -1615,6 +1615,16 @@ export class GameServer {
   }
 
   /**
+   * True while this table has a `scheduleDirectTableRecovery` backoff timer
+   * counting down. Discovery's spawn sweep checks this so it cannot re-admit
+   * a table whose own causal retry has not come due yet — see the kill-storm
+   * fix note where this is called.
+   */
+  private hasPendingDirectTableRecovery(tableId: string): boolean {
+    return this.directTableRecoveryTimers.has(tableId);
+  }
+
+  /**
    * Preserve one exact table's recovery obligation after a transient admission
    * failure. This is not a fleet scan: it is armed only by the failed causal
    * operation, names one durable table id, and disarms on success, closure, a
@@ -6657,6 +6667,38 @@ export class GameServer {
 
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
+
+          /**
+           * ENGINE KILL STORM FIX (2026-09-23): do not race the causal backoff.
+           *
+           * `performDirectTableEngineRecovery` deletes a failed table's map
+           * entry BEFORE it schedules `scheduleDirectTableRecovery`'s
+           * exponential backoff (250ms * 2^attempt, capped 15s). For the five
+           * seconds until this sweep runs again, that made no difference. But
+           * this sweep also re-reads `cash_tables_needing_engine` from
+           * scratch and, seeing the table's engine gone from `tableEngines`,
+           * treated it as a brand-new table needing one — spawning a second,
+           * unthrottled admission attempt that raced the backoff timer on
+           * every single sweep, forever, for any table whose start failure
+           * does not clear (e.g. `retained_hand_submission_pending`: a
+           * correct, intentional refusal to resume a hand with no proof row
+           * for its prior outcome — see checkCrashRecovery()). The backoff
+           * existed and was correctly computed; this loop just walked around
+           * it every 5 seconds, which is why three tables logged 150k+ kills
+           * over 4+ days (up to 324 in a single trailing 15-minute window)
+           * while `ClubArenaEngineKillStorm` fired exactly once and then
+           * stayed silent for the rest of the episode (engineAlerts.ts fires
+           * once per firing episode, by design — see its header).
+           *
+           * `directTableRecoveryTimers` already names every table with a
+           * backoff in flight (armed by `scheduleDirectTableRecovery`,
+           * disarmed by `clearDirectTableRecovery` on success/closure/
+           * shutdown). Respecting it here does not change what a table needs
+           * to resume, and does not touch `hand_submission_failures` or any
+           * financial state — it only stops this loop from re-admitting a
+           * table whose own retry is already counting down.
+           */
+          if (this.hasPendingDirectTableRecovery(row.table_id)) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
           startedThisSweep++;

@@ -53,6 +53,36 @@ hand of its club dealt in the last minute. The unchanged door then decides under
 the lock and the unchanged calculator runs when it finds nothing. Whole-period
 calls, `fn_prepare_accounting_week`, closed weeks and unknown clubs never wait.
 
+## What It Trades
+
+Not every miss was refused. At 13:38:17 the fall-through for 2a1132b9 found no
+unaccrued hand of the club in its own snapshot and wrote 18 interim period rows
+for the open week, after 61,743 ms under the lock (the client timed out; the
+durable receipt confirmed the write). With the wait, a busy club's page call
+almost always meets a newer hand within the 8 s bound and is refused cheaply,
+so interim rows for an OPEN week are written only in a quiet moment of at least
+8 s. For every state it reads, the function still returns exactly what the
+calculator would; what changes is which moments are read. Interim rows are
+rebuilt from source on every compute, and the whole-period recompute at the
+week close is untouched, so the certified week is unchanged. From 09-22 to
+13:19 on 09-26 no interim row was written at all (the last certificate for week
+09-21 is 2026-09-22 10:37), so this is not a loss against the days before.
+
+## Not Fixed Here
+
+- When the client times out, the settler reads the outcome back from the shared
+  `accounting_period_recompute_requests` row. A source-credit batch that
+  re-requests the same club-week in the meantime resets that row to `pending`
+  with an empty `last_result`, so the readback reports "not a ready receipt",
+  counts a failure and holds the cursor (13:21:46, 13:40:33). That is engine code
+  (`RakebackSettlerService.readBackPeriodRecompute`) and needs a cutover.
+- The full-week calculator itself: a page-scoped call still reads every cash
+  record of the week (260,037 on 09-26) and the club's whole attribution history
+  (342,471 rows for a0000000, 7.3 s of the 18.3 s measured for its first three
+  CTEs); `week_sources` is served by the coordinator index instead of the period
+  index (9.3 s). A covering index would need `CREATE INDEX CONCURRENTLY` on hot
+  tables and is left for a planned change.
+
 ## Proof (rolled back)
 
 - a0000000, 24 page players: blocked in 41.5 ms, waited 0, periods and

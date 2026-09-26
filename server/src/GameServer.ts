@@ -4928,11 +4928,14 @@ export class GameServer {
              See ServerTableEngineBase.maintenanceDurabilityReason. */
           'stopped_bank_custody_unwritten',
           'stopped_bank_custody_unreadable',
-          /* The bounded case of the raw stopped-custody reason, added
-             2026-09-25 when 154 terminal tournament engines on 778075b4 held
-             every break shut: custody that has outlived the gate no longer
-             holds the certificate, and is still published here so a rule can
-             read it. See MaintenanceBreak.unparkedTables. */
+          /* The bounded case for this class, exactly as `f06_preparation_stuck`
+             is for the other: a terminal engine's stopped bank that outlived
+             STOPPED_CUSTODY_GATE_MS and stopped holding every other table's
+             restart certificate shut. Zero-seeded for the same reason as the
+             rest - a rule must be able to fire the FIRST time this becomes the
+             reason. The retired name `stopped_bank_custody_unconfirmed` is
+             deliberately absent: the census no longer emits it (see
+             MaintenanceBreak.unparkedTables). */
           'stopped_bank_custody_stuck',
           'unknown',
         ];

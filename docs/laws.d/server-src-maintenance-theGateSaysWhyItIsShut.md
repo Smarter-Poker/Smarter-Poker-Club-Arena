@@ -29,3 +29,5 @@ counted under `stopped_bank_custody_stuck`, in the same stuck counter, and
 stops holding the certificate; a custody that clears drops its clock so a
 fresh custody gets the full gate; and the two classes keep separate clocks on
 the same table. Six cases.
+
+Corrected 2026-09-26 (#5267): past the bound the stopped-bank table is named `stopped_bank_custody_stuck` and STILL holds the certificate, with its own `stoppedCustodyStuckTables` counter; only the F06 class stops holding. Same six cases, same shared helper, bounds read from `UNPARKED_REASON_BOUNDS`.

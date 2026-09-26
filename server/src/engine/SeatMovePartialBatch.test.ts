@@ -82,6 +82,10 @@ function sourceEngine() {
   engine.depositPresenceForMove = vi.fn();
   engine.disconnectEngine = { unregisterPlayer: vi.fn() };
   engine.timeBankEngine = { removePlayer: vi.fn() };
+  // forgetTimeBank (2026-09-25) drops the bank and its metadata together.
+  engine.timeBankMeta = new Map([
+    [player, { initialSeconds: 40, baseSeconds: 40, dbConsumedSeconds: 0 }],
+  ]);
   engine.straddleEngine = { removePlayer: vi.fn() };
   engine.preActionEngine = { removePlayer: vi.fn() };
   engine.chipContinuity = { forget: vi.fn() };
@@ -172,6 +176,8 @@ describe('a later unknown transfer cannot erase earlier confirmed outcomes', () 
     expect(engine.seatedPlayers.map((p: { user_id: string }) => p.user_id)).toEqual([secondPlayer]);
     expect(engine.disconnectEngine.unregisterPlayer).toHaveBeenCalledTimes(1);
     expect(engine.disconnectEngine.unregisterPlayer).toHaveBeenCalledWith(table, player);
+    expect(engine.timeBankEngine.removePlayer).toHaveBeenCalledWith(table, player);
+    expect(engine.timeBankMeta.has(player)).toBe(false);
     expect(engine.hub.emitEvent).toHaveBeenCalledWith(
       table,
       expect.objectContaining({ type: 'seat_moved', user_id: player })

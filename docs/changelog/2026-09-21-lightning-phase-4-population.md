@@ -19,11 +19,11 @@ That law exists because three readers gave three answers to **one** question.
 This adds a different question with one answer, and the distinction had to be
 written down or the next reconciliation pass would helpfully merge them:
 
-- **The board count** answers *how many players are in this game*. It counts a
+- **The board count** answers _how many players are in this game_. It counts a
   sitting-out player, a busted player in their rebuy window and a player on
   their way out, because all three are in the game and the lobby must say so.
-- **The live eligible population** answers *how many players could Lightning
-  deal to right now*. It is the input to a threshold, so it counts only players
+- **The live eligible population** answers _how many players could Lightning
+  deal to right now_. It is the input to a threshold, so it counts only players
   who are economically active and currently able to be dealt in.
 
 `fn_cash_cluster_live_eligible` uses the census's own **table** predicate byte
@@ -153,3 +153,79 @@ restoring `fn_cash_cluster_lightning_state` from the `pg_get_functiondef` output
 taken before the apply, returns the prior behaviour exactly. No table, no
 column, no row. No money moved. Nothing reads the new numbers yet except the
 lobby, which gains two fields it can ignore.
+
+## Correction, 2026-09-25: the fourteenth `@live-proof` of `20260921064717` is now false, deliberately
+
+Written while shipping Lightning Phase 5
+(`20260921151618_lightning_phase_5_the_conversion_is_one_transaction_and_the_`).
+Migration files are immutable, so nothing above is edited; what follows is the
+record, in the same style this project used for the knowingly-superseded eighth
+proof of `20260920235343`.
+
+**The fourteenth `@live-proof` line of `20260921064717` is now false.** It reads
+
+```
+(SELECT (SELECT count(*) FROM regexp_matches(regexp_replace(
+   pg_get_functiondef('public.fn_cash_cluster_population(uuid,timestamp with time zone,integer)'::regprocedure),
+   '--[^' || chr(10) || ']*', '', 'g'),
+ E'tb.status IN \\(''waiting'', ''running'', ''active''\\) AND tb.lifecycle <> ''closed''', 'g')) = 5)
+```
+
+It asserts that the membership predicate occurs **exactly five times** in
+`fn_cash_cluster_population`. `20260921151618` substitutes every one of those five
+occurrences for `coalesce(tb.lifecycle, '') <> 'closed'`, so from the moment that
+migration applies the expression returns **0 = 5**, which is false.
+
+**The code is right and the proof was pinning a defect in place.** The predicate
+it counted decided Cluster membership using two **nullable** columns.
+`tables.status` carries a CHECK and is still nullable, because **a CHECK that
+evaluates to NULL PASSES**; `tables.lifecycle` was added by `20260904160500` as
+`text CHECK (lifecycle IN (...))` with no `NOT NULL` and no default. So on a board
+with either column NULL, `tb.status IN (...)` is NULL and `tb.lifecycle <> 'closed'`
+is NULL - neither is true - and the whole board was silently dropped from the
+count. Phase 5 reproduced the consequence on a throwaway backend: **a Cluster of
+21 converted, 18 entered the pool, and 3 players kept being dealt cash** at a
+board nobody had stopped, inside a Cluster that had become `LIGHTNING`, holding no
+pool session, with the tick and the balancer stood down so that nothing would ever
+come for them.
+
+This proof was doing exactly what it was written to do, and what it was written to
+do was hold that predicate still. A proof that pins a defect in place is still a
+proof; it is retired **out loud** rather than quietly reworded, because a proof
+edited into agreement with the code it was supposed to check is worse than no
+proof at all.
+
+**What replaces it.** `20260921151618` does not merely change the text; it
+re-cuts the function by asserted substitution and then proves the new shape from
+the catalogue and from the estate:
+
+- the anchor is asserted to occur **exactly five times** before any substitution
+  is made, so a body this migration has not read is refused rather than edited
+  blind - the count is preserved as a precondition even though the proof that
+  published it is retired;
+- after the `EXECUTE`, the live definition is re-read from `pg_get_functiondef`
+  and asserted to carry no `tb.status IN (`, to carry the coalesced predicate in
+  all five places, to have kept its delegation to
+  `fn_cash_cluster_live_eligible`, and not to have acquired `is_horse`;
+- two new `@live-proof` lines in `20260921151618` carry the new truth:
+  `... !~ 'tb\.status IN'` over `fn_cash_cluster_population`, and `... !~ 'status IN'`
+  over `fn_cash_cluster_live_eligible`;
+- and one more asserts the thing the old proof could not: that no Cluster in the
+  estate reports more `live_eligible` players than `seated_eligible` ones, which
+  is the only check that catches a repair applied to one reader and not the other.
+  Before Phase 5 repaired both, that is precisely what happened - `live_eligible:
+24` beside `seated_eligible: 18` on one board.
+
+**The line is latent rather than red**, for the same reason the `20260920235343`
+correction gives: `scripts/ci/check-migrations-are-live.mjs` decides
+cheapest-first and stops at step 1, the name match, which `20260921064717` passes
+because it is recorded in `supabase_migrations.schema_migrations` under its own
+slug. The proofs are evaluated only for a migration that steps 1 and 2 could not
+clear. It would fire on a replay into a database whose `schema_migrations` was not
+carried over - and on such a replay the honest answer is the one written here:
+superseded, on purpose, by `20260921151618`.
+
+The other twenty-three proofs of `20260921064717` are unaffected. In particular
+proof 8 - that `fn_cash_cluster_population`'s `live_eligible` is never distinct
+from `fn_cash_cluster_live_eligible(g.id)` - is not only still true but is the
+reason both functions had to move together.

@@ -66,6 +66,14 @@ export interface TournamentMetricsSnapshot {
   unpaidCompleted: number;
   /** Each RUNNING MTT is checked independently of cash games or other events. */
   stalledRunning: number;
+  /**
+   * The denominator stalledRunning never had (2026-09-26): RUNNING MTTs in the
+   * same eligible population - past startup grace, not on a break, not inside
+   * an add-on - that DID produce a hand in the window. null when the database
+   * function predates the column: "could not tell" is not zero, and a zero here
+   * would read as "the whole fleet stopped" (CLAUDE.md 10.86 rule 1).
+   */
+  progressingRunning: number | null;
   overdueBreaks: number;
   /** Epoch ms of the read that produced this. 0 = never succeeded. */
   collectedAt: number;
@@ -79,6 +87,7 @@ const EMPTY: TournamentMetricsSnapshot = {
   seatlessPhantoms: 0,
   unpaidCompleted: 0,
   stalledRunning: 0,
+  progressingRunning: null,
   overdueBreaks: 0,
   seatFirstWaiting: 0,
   collectedAt: 0,
@@ -195,6 +204,10 @@ export class TournamentMetrics {
         seatlessPhantoms: n(row.seatless_phantoms),
         unpaidCompleted: n(row.unpaid_completed),
         stalledRunning: n(eventProgress.stalled_running),
+        progressingRunning:
+          eventProgress.progressing_running === undefined
+            ? null
+            : n(eventProgress.progressing_running),
         overdueBreaks: n(eventProgress.overdue_breaks),
         seatFirstWaiting: n(row.seat_first_waiting),
         collectedAt: Date.now(),
@@ -304,6 +317,16 @@ export class TournamentMetrics {
       '# HELP poker_mtt_stalled_running RUNNING MTTs with no recent hand for their own event, excluding active breaks, add-ons and startup grace.',
       '# TYPE poker_mtt_stalled_running gauge',
       `poker_mtt_stalled_running ${s.stalledRunning}`,
+      // Published only when the database answered it. MttFleetNotDealing reads
+      // progressing / (progressing + stalled); an absent series leaves that rule
+      // silent rather than firing on an invented zero.
+      ...(s.progressingRunning === null
+        ? []
+        : [
+            '# HELP poker_mtt_progressing_running RUNNING MTTs in the same eligible population as poker_mtt_stalled_running that DID produce a hand for their own event in the window.',
+            '# TYPE poker_mtt_progressing_running gauge',
+            `poker_mtt_progressing_running ${s.progressingRunning}`,
+          ]),
       '# HELP poker_mtt_overdue_breaks MTTs still on break beyond their persisted break or add-on deadline and grace period.',
       '# TYPE poker_mtt_overdue_breaks gauge',
       `poker_mtt_overdue_breaks ${s.overdueBreaks}`,

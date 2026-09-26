@@ -18,6 +18,7 @@ import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import {
   TOURNAMENT_CONTEXT_INCOMPLETE,
   TOURNAMENT_CORE_DEPTHS,
+  TOURNAMENT_PREFLOP_ATLAS_DOMAIN,
   TOURNAMENT_PREFLOP_BRANCHES,
   TOURNAMENT_TABLE_SIZES,
   buildTournamentMState,
@@ -881,18 +882,23 @@ describe('Phase 6 exact position and action branches', () => {
 
 describe('Phase 6 total preflop atlas', () => {
   it('returns a baseline for every valid coordinate and a labeled fallback for impossible pairs', () => {
+    // The loop walks the machine-readable domain. It proves the lookup is total over the
+    // declared coordinates and labels impossible pairs; it does not validate numerical
+    // strategy, calibration, or whether a real betting history reaches a coordinate.
+    const domain = TOURNAMENT_PREFLOP_ATLAS_DOMAIN;
     let cells = 0;
     const invalid: string[] = [];
-    for (const tableSize of TOURNAMENT_TABLE_SIZES) {
-      const positions = tournamentPositionsForTable(tableSize);
+    for (const tableSize of domain.tableSizes) {
+      const positions = domain.positionsBySize[tableSize];
+      expect(positions).toBe(tournamentPositionsForTable(tableSize));
       for (const heroPosition of positions) {
         for (const raiserPosition of [
           null,
           ...positions.filter((position) => position !== heroPosition),
         ]) {
-          for (const anteType of ['none', 'per_player', 'big_blind'] as const) {
-            for (const branch of TOURNAMENT_PREFLOP_BRANCHES) {
-              for (const stackBB of TOURNAMENT_CORE_DEPTHS) {
+          for (const anteType of domain.anteTypes) {
+            for (const branch of domain.branches) {
+              for (const stackBB of domain.depth.anchorsBB) {
                 const policy = tournamentPreflopPolicy({
                   gameFamily: 'nlh',
                   contextStatus: 'complete',
@@ -924,6 +930,7 @@ describe('Phase 6 total preflop atlas', () => {
     expect(invalid).toEqual([]);
     // sum(2^2..10^2) valid hero/raiser pairs x 3 antes x 11 branches x 17 depths
     expect(cells).toBe(215_424);
+    expect(cells).toBe(domain.totalValidCoordinates);
 
     for (const tableSize of TOURNAMENT_TABLE_SIZES) {
       for (const heroPosition of tournamentPositionsForTable(tableSize)) {

@@ -152,3 +152,21 @@
     transform: rotate(360deg);
   }
 }
+
+/* A PHONE ON ITS SIDE (2026-09-26). At 812 x 375 a reveal as wide as it can
+   be is three screens tall, so its plates sat below the fold of a dialog that
+   scrolled. Sideways, the card is held to the width whose height fits the
+   screen, and the prize art gives up the most height, so the title, the
+   picture, the copy and the plates are one view. The Double Down offer keeps
+   its own width rule. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .dialog.dialog[role='dialog']:not(.offerDialog) {
+    width: min(580px, calc(100vw - 20px), calc((100dvh - 24px) * 0.98));
+  }
+  .prize {
+    width: 44%;
+  }
+  .continue {
+    margin: 4px auto;
+  }
+}

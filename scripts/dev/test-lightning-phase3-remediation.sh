@@ -1885,6 +1885,67 @@ REAPPLY
 # on the terminal because the last assertion is about five NOTICES, and a
 # NOTICE is the only evidence that the five substituting DO blocks took their
 # early return instead of patching an already-patched body.
+# EVERY @live-proof THE MIGRATION MAKES, EVALUATED ------------------------------
+# The migration ends its header with a block of `-- @live-proof:` lines: scalar
+# SQL expressions meant to be true of the database the file produces. They are
+# COMMENTS, so nothing in a psql run evaluates them, and three proofs in a later
+# Lightning phase shipped false in three separate rounds - every one of them the
+# proof drifting away from code that was right.
+#
+# Generated from the file under test rather than written by hand, for the same
+# reason this harness applies the three real migrations it sits on top of
+# rather than transcribing them: a hand-copied list is a second place for a
+# proof to drift,
+# and drift is the only thing this section exists to catch. The mechanism is
+# section 22 of scripts/dev/test-lightning-phase4-population.sh, copied exactly:
+# each expression is inlined as CODE rather than as a string literal, so nothing
+# in it needs escaping and a proof that no longer PARSES fails the run too.
+#
+# It runs AFTER the assertions and BEFORE the second application, so what it
+# reads is the catalogue and the estate the FIRST application left behind -
+# every board the fixture and the assertions opened still standing, every
+# Cluster's epoch row maintained by the trigger the migration installs.
+#
+# There is no quarantine here and there must not be one: every proof in the file
+# is evaluated and every one must be true.
+: > "$fixture/live-proofs.sql"
+printf '%s\n' 'CREATE TEMP TABLE lp (n integer, lineno integer, ok boolean);' \
+  >> "$fixture/live-proofs.sql"
+proof_n=0
+while IFS= read -r proof_line; do
+  proof_n=$((proof_n + 1))
+  proof_lineno=${proof_line%%:*}
+  proof_expr=${proof_line#*:}
+  proof_expr=${proof_expr#-- @live-proof: }
+  {
+    printf '%s%s%s%s%s' 'INSERT INTO lp VALUES (' "$proof_n" ', ' "$proof_lineno" ', coalesce(('
+    printf '%s%s\n' "$proof_expr" ')::boolean, false));'
+  } >> "$fixture/live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$migration")
+
+if [ "$proof_n" -lt 21 ]; then
+  echo "FAIL live-proof: only $proof_n @live-proof line(s) were found in $migration, so this section would prove almost nothing"
+  exit 1
+fi
+
+{
+  printf '%s\n' 'DO $lp$'
+  printf '%s\n' 'DECLARE v_bad text; v_n integer;'
+  printf '%s\n' 'BEGIN'
+  printf '%s%s%s\n' '  SELECT count(*)::integer INTO v_n FROM lp; IF v_n IS DISTINCT FROM ' "$proof_n" ' THEN'
+  printf '%s%s%s\n' "    RAISE EXCEPTION 'FAIL live-proof: % of the " "$proof_n" " proof expressions were evaluated', v_n;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' '  -- NON-VACUITY: a run in which every proof answered NULL would coalesce to'
+  printf '%s\n' '  -- false and fail below, and a run in which the table was empty fails above.'
+  printf '%s\n' "  SELECT string_agg('#' || n || ' (line ' || lineno || ' of the migration)', ', ' ORDER BY n) INTO v_bad"
+  printf '%s\n' '    FROM lp WHERE ok IS DISTINCT FROM true;'
+  printf '%s\n' '  IF v_bad IS NOT NULL THEN'
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL live-proof: the migration carries @live-proof % that is NOT true of the database it just produced', v_bad;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' 'END $lp$;'
+  printf '%s%s%s\n' "\\echo '  ok  EVERY LIVE PROOF  all " "$proof_n" " @live-proof expressions the migration carries in its own header were extracted from the file under test, inlined as code so that one which no longer PARSES is a failure too, and evaluated against the throwaway catalogue and the estate the first application left behind - and every single one of them is true, with no quarantine and no exception list'"
+} >> "$fixture/live-proofs.sql"
+
 set +e
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55546 -d postgres \
   -f "$root/scripts/dev/fixtures/lightning-phase3-remediation-schema.sql" \
@@ -1894,6 +1955,7 @@ set +e
   -f "$fixture/window.sql" \
   -f "$migration" \
   -f "$fixture/assertions.sql" \
+  -f "$fixture/live-proofs.sql" \
   -f "$migration" \
   -f "$fixture/reapply-assertions.sql" 2>&1 | tee "$fixture/psql.out"
 psql_status=${PIPESTATUS[0]}
@@ -1945,4 +2007,4 @@ if [ "${#front_count}" != 1 ] || [ "$front_count" -lt 1 ]; then
 fi
 echo "  ok  GUARD HEADCOUNT   the migration announced its own live-Main-1 count once per application and it was $front_count, so the read-back it ends with is a non-vacuity guard and not a production headcount"
 
-echo 'PASS: Lightning Phase 3 remediation, the front table is the main game and the epoch follows its game, 17 checks: the migration applies to a single-digit estate and announces its own single-digit live-Main-1 count rather than demanding a production headcount, its two-statement catch-up closes the stale open epoch row of a cluster whose epoch moved while nothing maintained the table and opens the one it is at instead of rolling back on 23505 while giving a cluster born in that window a genesis row carrying its own epoch mode and created_at and moving no cluster that needed no repair, a Cluster created by a bare INSERT and one created through the live create path each get exactly one genesis epoch row under started_by genesis with no ended_at and every cluster in the estate has an open epoch row at its own cluster_epoch, a forward bump ends the open epoch and opens the next under the mode the Cluster is in filing the reason ca.epoch_reason names or unstated when nobody set one while cash_cluster_epoch_current still holds, a move back to 0 from epoch 2 is refused by name with SQLSTATE 23514 leaving every epoch row and the cluster_epoch itself untouched while the forward bump past it is still taken, a cluster_mode change rewrites the OPEN epoch row and leaves the ENDED one reading the mode it ran under while an UPDATE touching neither column moves nothing, the front table is Main 1 over an older live feeder and the oldest live non-breaking table without one and a breaking table only when every table is breaking and never a role=main main_index=NULL row over the real Main 1 and NULL for a cluster whose only table has closed and never a closed or deleted row, the cluster writer names a cluster first live table after its game and still does so when the row beside it is CLOSED or DELETED while naming a table opened beside a LIVE one <game> Feeder, the lobby reports a feeder-first cluster one live feeder as front_table_id and tells the player on it they are in the main game with no seat change offered while an unseated caller still reads JSON null and an ordinary board answers false-lit and true-dark, the door refuses a request FROM the front table and TO it and a destination-less request with nowhere else to go on an ordinary board AND on a feeder-first one where no Main 1 predicate could have refused them while taking every one of those requests the moment a non-front table exists, the planner cancels a request listed from the table that is now the front with note now_on_main_one and returns the allowance and routes onto the only non-front table though the front is emptier and swaps with the non-front partner rather than the older request from the front, the break step names the other live table as its candidate though the front is thinner and names no candidate at all on a cluster whose one live table is the front, the planner and the tick each call fn_cash_cluster_front_table exactly once as a hoisted local that all four predicates then read while the lobby still calls it three times, that hoist reads the board the ROLES step left rather than the one it was handed and one planner read serves every request in a call that plans one move and cancels another, and the migration is idempotent on re-apply with all six bodies and the trigger definition byte-identical its catch-up adding and moving no epoch row each of its five substituting blocks announcing its early return exactly once and the re-created trigger still writing the genesis epoch of a Cluster born after it'
+echo 'PASS: Lightning Phase 3 remediation, the front table is the main game and the epoch follows its game, 18 checks: the migration applies to a single-digit estate and announces its own single-digit live-Main-1 count rather than demanding a production headcount, its two-statement catch-up closes the stale open epoch row of a cluster whose epoch moved while nothing maintained the table and opens the one it is at instead of rolling back on 23505 while giving a cluster born in that window a genesis row carrying its own epoch mode and created_at and moving no cluster that needed no repair, a Cluster created by a bare INSERT and one created through the live create path each get exactly one genesis epoch row under started_by genesis with no ended_at and every cluster in the estate has an open epoch row at its own cluster_epoch, a forward bump ends the open epoch and opens the next under the mode the Cluster is in filing the reason ca.epoch_reason names or unstated when nobody set one while cash_cluster_epoch_current still holds, a move back to 0 from epoch 2 is refused by name with SQLSTATE 23514 leaving every epoch row and the cluster_epoch itself untouched while the forward bump past it is still taken, a cluster_mode change rewrites the OPEN epoch row and leaves the ENDED one reading the mode it ran under while an UPDATE touching neither column moves nothing, the front table is Main 1 over an older live feeder and the oldest live non-breaking table without one and a breaking table only when every table is breaking and never a role=main main_index=NULL row over the real Main 1 and NULL for a cluster whose only table has closed and never a closed or deleted row, the cluster writer names a cluster first live table after its game and still does so when the row beside it is CLOSED or DELETED while naming a table opened beside a LIVE one <game> Feeder, the lobby reports a feeder-first cluster one live feeder as front_table_id and tells the player on it they are in the main game with no seat change offered while an unseated caller still reads JSON null and an ordinary board answers false-lit and true-dark, the door refuses a request FROM the front table and TO it and a destination-less request with nowhere else to go on an ordinary board AND on a feeder-first one where no Main 1 predicate could have refused them while taking every one of those requests the moment a non-front table exists, the planner cancels a request listed from the table that is now the front with note now_on_main_one and returns the allowance and routes onto the only non-front table though the front is emptier and swaps with the non-front partner rather than the older request from the front, the break step names the other live table as its candidate though the front is thinner and names no candidate at all on a cluster whose one live table is the front, the planner and the tick each call fn_cash_cluster_front_table exactly once as a hoisted local that all four predicates then read while the lobby still calls it three times, that hoist reads the board the ROLES step left rather than the one it was handed and one planner read serves every request in a call that plans one move and cancels another, every one of the twenty-one @live-proof expressions the migration carries in its own header extracted from the file under test and evaluated against the estate it produced with no quarantine and no exception list, and the migration is idempotent on re-apply with all six bodies and the trigger definition byte-identical its catch-up adding and moving no epoch row each of its five substituting blocks announcing its early return exactly once and the re-created trigger still writing the genesis epoch of a Cluster born after it'

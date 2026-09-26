@@ -218,8 +218,16 @@ describe('Leave Table overrides everything', () => {
   it('a swept leave tears down the same per-player state settlement does', () => {
     const at = DEALING.indexOf("'leave_pending'");
     const body = sliceEnclosingBlock(DEALING, "'leave_pending'");
-    expect(body).toMatch(/unregisterPlayer/);
-    expect(body).toMatch(/timeBankEngine\.removePlayer/);
-    expect(body).toMatch(/seatedPlayers = this\.seatedPlayers\.filter/);
+    // 2026-09-25 (Lightning halt remediation): the teardown moved into ONE
+    // helper, `releaseDepartedSeats`, so the halted dealing loop and the quiet
+    // loop's queued-leave sweep forget a leaver exactly as this sweep does.
+    // The pin follows it: the sweep calls the helper, and the helper does the
+    // whole teardown.
+    expect(body).toMatch(/this\.releaseDepartedSeats\(cashedOutIds\);/);
+    const helper = sliceMethod(BASE, 'protected releaseDepartedSeats(');
+    expect(helper).toMatch(/unregisterPlayer/);
+    // 2026-09-25: the bank and its metadata leave together.
+    expect(helper).toMatch(/forgetTimeBank/);
+    expect(helper).toMatch(/seatedPlayers = this\.seatedPlayers\.filter/);
   });
 });

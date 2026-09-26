@@ -13,17 +13,25 @@
  * is a wildcard to Vercel and no record sends `monitor` to cron-01, where
  * infra/monitoring/Caddyfile has always expected to serve it.
  *
+ * 2026-09-26: every one of those annotations now names a document under
+ * docs/runbooks/, and no rule points at monitor.smarter.poker any more.
+ *
  * This law holds the half that needs no network:
- *   - a runbook link into THIS repository must name a file that exists, and
+ *   - a runbook link into THIS repository must name a file that exists,
+ *   - no rule may point at a host this repository does not serve, and
  *   - the summary must not claim more than it checked.
- * The live fetch is check-alert-rules-match.mjs, which runs on the box.
+ * The live fetch is check-runbook-links.mjs, which runs after the deploy.
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ownRepoPath, declaredRunbookUrls } from '../scripts/ci/check-runbook-links.mjs';
+import {
+  ownRepoPath,
+  declaredRunbookUrls,
+  declaredRunbooks,
+} from '../scripts/ci/check-runbook-links.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MON = join(ROOT, 'infra', 'monitoring');
@@ -59,11 +67,32 @@ describe('a runbook link leads somewhere', () => {
     );
   });
 
+  it('every repo-relative runbook names a file that exists', () => {
+    const missing: string[] = [];
+    for (const [target, owners] of declaredRunbooks()) {
+      if (/^https?:\/\//.test(target)) continue;
+      if (!existsSync(join(ROOT, target))) missing.push(`${target} <- ${owners.join(', ')}`);
+    }
+    expect(missing, `runbook documents named by a rule but absent:\n${missing.join('\n')}`).toEqual(
+      []
+    );
+  });
+
+  it('no rule points at monitor.smarter.poker, a host nothing serves', () => {
+    // Measured 2026-09-18 and again 2026-09-26: every path under
+    // https://monitor.smarter.poker/runbooks/ answers 404 from Vercel's
+    // wildcard. Twenty-two rules pointed there; they now point at docs/runbooks/.
+    const dead = [...declaredRunbookUrls()]
+      .filter(([url]) => /^https?:\/\/monitor\.smarter\.poker\//.test(url))
+      .map(([url, owners]) => `${url} <- ${owners.join(', ')}`);
+    expect(dead).toEqual([]);
+  });
+
   it('finds the rule files it is supposed to be reading', () => {
     // A parser that silently matches nothing would make every assertion above
     // vacuous - the failure mode this repository has been bitten by twice.
-    const urls = declaredRunbookUrls();
-    expect(urls.size).toBeGreaterThan(5);
+    // It counts every runbook target: since 2026-09-26 almost none are http(s).
+    expect(declaredRunbooks().size).toBeGreaterThan(5);
     expect(readdirSync(MON).filter((n) => /\.ya?ml$/.test(n)).length).toBeGreaterThan(3);
   });
 

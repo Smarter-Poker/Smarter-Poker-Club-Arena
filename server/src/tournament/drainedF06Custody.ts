@@ -26,6 +26,35 @@ export interface DrainedF06Custody {
 }
 
 /**
+ * WHY A CUSTODY CAPTURE OR TRANSFER RETURNED NOTHING (2026-09-25).
+ *
+ * `captureDrainedF06Custody`, `captureMixedF06Custody` and
+ * `GameServer.transferDrainedF06Custody` each end in a dozen guards that all
+ * answered `null` or `false`. On production release 778075b4 seventeen
+ * managers that had lost their lease were quarantined and re-offered the same
+ * transfer every five seconds for hours, thousands of attempts each, and the
+ * log held not one line saying which guard refused: no
+ * `f06_drained_custody_unproven`, no mixed-custody prepare, nothing. A gate
+ * that can refuse for fifteen reasons must say which one (the rule
+ * `maintenanceDurabilityReason` already follows on the engine).
+ *
+ * `path` is the capture that refused. `refused` is one stable snake_case
+ * token per guard, never free text and never a player identity, so it can be
+ * counted and compared. `detail` is an optional second token that narrows a
+ * guard made of several conditions (which clause of `current()` went false).
+ */
+export interface F06CustodyRefusal {
+  readonly path: 'drained' | 'mixed' | 'transfer';
+  readonly refused: string;
+  readonly detail?: string;
+}
+
+/** One comparable key per distinct refusal, for once-per-reason reporting. */
+export function f06CustodyRefusalKey(refusal: F06CustodyRefusal): string {
+  return `${refusal.path}:${refusal.refused}${refusal.detail ? `:${refusal.detail}` : ''}`;
+}
+
+/**
  * WHY A DRAINED-CUSTODY READ WAS NOT PROVEN.
  *
  * `refused`   - the database answered, and its own refusal is named in `code`
@@ -155,6 +184,57 @@ export const readF06RecoveryAdmission = bindToProcessRoot(
       : read();
   }
 );
+
+/**
+ * WHO DECIDES A RESERVED HAND IS CHOSEN BEFORE ANYONE HOLDS THE EVENT
+ * (2026-09-26).
+ *
+ * `recoveryRequired` says only that some table of this event still carries a
+ * `reserved` F06 hand permit (fn_f06_assert_drained_manager_custody counts
+ * every reserved permit of the event, whatever generation reserved it). It
+ * does not say who will decide that hand, and the admission used to answer
+ * that as if it always had one answer: take custody-only recovery ownership
+ * and wait for "existing strict recovery". For a fresh process adopting a
+ * RUNNING event there is no strict recovery: no drained packet (that lives
+ * only in the process that stopped the original manager) and no durable mixed
+ * transfer. The only owner of a dead generation's reserved hand is the
+ * abandoned-generation door (tournament/abandonedGenerationDoor.ts), and the
+ * adoption asks it from inside `resume()` - downstream of the very gate that
+ * stopped `resume()` from running. The manager held its lease and heartbeat
+ * forever, built no dealer, and released no expired break. Measured on
+ * engine 778075b4 on 2026-09-26: 68 RUNNING events, 114 tables, adopted at
+ * 01:59-02:01 UTC and never dealt a hand in the hour that followed.
+ *
+ * So the owner is named here, from what the admission actually holds:
+ * - a mixed transfer (durable, or carried by the packet) keeps the strict
+ *   mixed recovery continuation it always had;
+ * - a drained in-process packet keeps strict ownership: its original engine
+ *   objects are the only ones that can attest their own permits;
+ * - a fresh `resume` admission with neither goes to `resume()`, which asks the
+ *   door BEFORE any dealer exists. A hand the door cannot decide leaves its
+ *   table exactly as blocked as before: the database still refuses a new hand
+ *   there (`hand_permit_unresolved`), and the table's own admission asks again.
+ * - anything else has no owner at all, and is refused rather than admitted.
+ */
+export type F06RecoveryDispositionOwner =
+  | 'none_required'
+  | 'mixed_transfer'
+  | 'drained_originals'
+  | 'abandoned_generation_door'
+  | 'no_owner';
+
+export function f06RecoveryDispositionOwner(admission: {
+  recoveryRequired: boolean;
+  hasDrainedPacket: boolean;
+  hasMixedTransfer: boolean;
+  mode: 'start' | 'resume' | 'stage_resume';
+}): F06RecoveryDispositionOwner {
+  if (!admission.recoveryRequired) return 'none_required';
+  if (admission.hasMixedTransfer) return 'mixed_transfer';
+  if (admission.hasDrainedPacket) return 'drained_originals';
+  if (admission.mode === 'resume') return 'abandoned_generation_door';
+  return 'no_owner';
+}
 
 /** Preserve the original journal admission, once, before selecting custody-only ownership. */
 export const prepareF06SuccessorAdmission = bindToProcessRoot(

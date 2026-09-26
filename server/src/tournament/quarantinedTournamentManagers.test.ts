@@ -138,6 +138,25 @@ describe('QuarantinedTournamentManagers', () => {
     expect(held.snapshot(1_000_000).map((row) => row.tournamentId)).toEqual(['older', 'younger']);
   });
 
+  it('the custody refusal survives a retry record and starts empty for a new owner', () => {
+    // The retry pass records the attempt BEFORE the transfer runs, with no
+    // refusal of its own; it must not blank what the previous transfer said.
+    const held = new QuarantinedTournamentManagers();
+    held.record('t1', 'stop_failed', 1_000, owner, 'mixed:nothing_to_transfer');
+    held.record('t1', 'retry', 2_000, owner);
+    expect(held.snapshot(3_000)[0]).toMatchObject({
+      custodyRefusal: 'mixed:nothing_to_transfer',
+      attempts: 2,
+    });
+    held.record('t1', 'stop_failed', 3_000, owner, 'transfer:packet_not_current');
+    expect(held.snapshot(3_000)[0].custodyRefusal).toBe('transfer:packet_not_current');
+    held.record('t1', 'stop_failed', 4_000, owner, null);
+    expect(held.snapshot(4_000)[0].custodyRefusal).toBeNull();
+    held.record('t1', 'stop_failed', 5_000, owner, 'mixed:successor_is_origin');
+    held.record('t1', 'stop_failed', 6_000, other);
+    expect(held.snapshot(6_000)[0]).toMatchObject({ custodyRefusal: null, attempts: 1 });
+  });
+
   it('the snapshot carries the age and the reason an operator needs', () => {
     const held = new QuarantinedTournamentManagers();
     held.record('t1', 'GameServer.tournament_lease_lost_stop_failed', 1_000, owner);

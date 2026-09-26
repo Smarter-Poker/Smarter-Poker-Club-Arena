@@ -8,6 +8,13 @@
  * These tests project the real road through the real camera, at phone and
  * desktop shapes and at every point along the road, so no future framing
  * change can turn it again.
+ *
+ * 2026-09-25: the pose changed (fov 22 at pitch 37 to fov 56 at pitch 19.5,
+ * nearer and lower) so the horizon, a skyline and the sky sit in the top
+ * quarter of the frame. The structural assertions below are untouched; the
+ * numbers that moved are the horizon's place in the frame, pinned at the end,
+ * and the depth of the road the far-edge assertions use (the slabs now run to
+ * z = -150 and the far edge checked is the far end of the traffic instead).
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
@@ -15,6 +22,7 @@ import {
   CROSSING_CAMERA,
   COLLISION_DELAY_MS,
   STREET_WIDTH,
+  TRAFFIC_Z,
   WALK_MS,
   aimCrossingCamera,
   collisionAt,
@@ -28,8 +36,14 @@ import {
 /** Phone portrait, phone landscape-ish, square, laptop and wide desktop scenes. */
 const ASPECTS = [393 / 520, 0.6, 1, 16 / 9, 1500 / 760, 2.4];
 const FOCI = [0, streetCenter(1), streetCenter(5), streetCenter(12)];
-/** The asphalt slabs are 19 deep, centred on the donkey's line (z = 0). */
-const FAR_EDGE_Z = -9.5;
+/**
+ * The far end of the lane traffic (TRAFFIC_Z.far, shared with the scene). The
+ * asphalt itself now runs to z = -150 and into the haze; this is the far
+ * line across the road that still has to print level and in frame.
+ */
+const FAR_EDGE_Z = TRAFFIC_Z.far;
+/** Where the horizon must print: the sky above it takes roughly the top quarter. */
+const HORIZON_BAND = { lowest: 0.55, highest: 0.8 } as const;
 /** The painted street signs lie on the road at this depth. */
 const SIGN_Z = 2.25;
 const aimed = (aspect: number, focus: number) => {
@@ -95,6 +109,19 @@ describe('the camera looks straight down the road', () => {
       }
     }
   );
+
+  it.each(ASPECTS)('puts the horizon in the top quarter of the frame at aspect %s', (aspect) => {
+    for (const focus of FOCI) {
+      const { camera, pose } = aimed(aspect, focus);
+      // A point on the ground at the far plane stands in for the horizon.
+      const horizon = onScreen(camera, pose.x, -pose.far);
+      expect(horizon.y).toBeGreaterThan(HORIZON_BAND.lowest);
+      expect(horizon.y).toBeLessThan(HORIZON_BAND.highest);
+      // The donkey stays below the centre and its sign above the bottom edge.
+      expect(onScreen(camera, focus, 0).y).toBeLessThan(0);
+      expect(onScreen(camera, focus, SIGN_Z).y).toBeGreaterThan(-0.72);
+    }
+  });
 
   it('is a pure function of the focus and the aspect', () => {
     expect(crossingCameraPose(streetCenter(3), 1.5)).toEqual(

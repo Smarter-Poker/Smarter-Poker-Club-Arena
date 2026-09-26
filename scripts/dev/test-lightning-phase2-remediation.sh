@@ -1269,12 +1269,99 @@ END $$;
 \echo '  ok  RE-APPLY           the migration applied a second time over populated tables, rebuilt its nine named constraints byte-identically, added no epoch row and moved no row in any of the nine relations'
 REAPPLY
 
+# EVERY @live-proof THE MIGRATION MAKES, EVALUATED ------------------------------
+# The migration ends its header with a block of `-- @live-proof:` lines: scalar
+# SQL expressions meant to be true of the database the file produces. They are
+# COMMENTS, so nothing in a psql run evaluates them, and three proofs in a later
+# Lightning phase shipped false in three separate rounds - every one of them the
+# proof drifting away from code that was right.
+#
+# Generated from the file under test rather than written by hand, for the same
+# reason this harness applies the real 20260920235343 rather than transcribing
+# it: a hand-copied list is a second place for a proof to drift, and drift is
+# the only thing this section exists to catch. The mechanism is section 22 of
+# scripts/dev/test-lightning-phase4-population.sh, copied exactly: each
+# expression is inlined as CODE rather than as a string literal, so nothing in
+# it needs escaping and a proof that no longer PARSES fails the run too.
+#
+# It runs AFTER the assertions and BEFORE the second application, so what it
+# reads is the catalogue and the estate the FIRST application left behind -
+# every cluster of the fixture still carrying its genesis epoch, and every row
+# the assertions above added on top of it.
+#
+# WHAT IT FOUND, and what is deliberately NOT done about it. The migration's
+# SECOND @live-proof, on line 112, reads
+#
+#   (SELECT count(*) = (SELECT count(*) FROM public.cash_games)
+#      FROM public.cash_cluster_epoch WHERE epoch = 0)
+#
+# and it is FALSE - not because of anything this harness does to the estate
+# afterwards, but the instant the migration finishes. The genesis backfill is
+# `SELECT g.id, g.cluster_epoch, ...`: one open row per cluster at THAT
+# CLUSTER'S OWN epoch, which is the whole point of the backfill and what the
+# migration's own read-back guard and the GENESIS BACKFILL section above both
+# assert. The fixture's third cluster sits at cluster_epoch 2, so it gets a
+# genesis row at epoch 2 and none at epoch 0, and the count comes out 3 against
+# 4 games. The proof states an ESTATE fact - "no Cluster has ever moved off
+# epoch 0" - dressed as a fact about the migration; it is accidentally true of
+# a production database in which nothing has yet converted, and false of any
+# database in which something has. The proof on line 113 is the same claim
+# stated correctly, over g.cluster_epoch rather than 0, and it is TRUE.
+#
+# It is NOT deleted, NOT reworded and NOT excepted here. Migration files are
+# immutable and a proof is superseded in a later migration's header and in a
+# dated Correction, the way this same file supersedes 20260920235343's eighth
+# proof on line 100 above - not by editing the harness that finally asked it.
+# Until that supersession is written this harness is RED, and that is the
+# correct colour for a file that carries a false proof.
+#
+# There is no quarantine here and there must not be one: every proof in the file
+# is evaluated and every one must be true.
+: > "$fixture/live-proofs.sql"
+printf '%s\n' 'CREATE TEMP TABLE lp (n integer, lineno integer, ok boolean);' \
+  >> "$fixture/live-proofs.sql"
+proof_n=0
+while IFS= read -r proof_line; do
+  proof_n=$((proof_n + 1))
+  proof_lineno=${proof_line%%:*}
+  proof_expr=${proof_line#*:}
+  proof_expr=${proof_expr#-- @live-proof: }
+  {
+    printf '%s%s%s%s%s' 'INSERT INTO lp VALUES (' "$proof_n" ', ' "$proof_lineno" ', coalesce(('
+    printf '%s%s\n' "$proof_expr" ')::boolean, false));'
+  } >> "$fixture/live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$migration")
+
+if [ "$proof_n" -lt 13 ]; then
+  echo "FAIL live-proof: only $proof_n @live-proof line(s) were found in $migration, so this section would prove almost nothing"
+  exit 1
+fi
+
+{
+  printf '%s\n' 'DO $lp$'
+  printf '%s\n' 'DECLARE v_bad text; v_n integer;'
+  printf '%s\n' 'BEGIN'
+  printf '%s%s%s\n' '  SELECT count(*)::integer INTO v_n FROM lp; IF v_n IS DISTINCT FROM ' "$proof_n" ' THEN'
+  printf '%s%s%s\n' "    RAISE EXCEPTION 'FAIL live-proof: % of the " "$proof_n" " proof expressions were evaluated', v_n;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' '  -- NON-VACUITY: a run in which every proof answered NULL would coalesce to'
+  printf '%s\n' '  -- false and fail below, and a run in which the table was empty fails above.'
+  printf '%s\n' "  SELECT string_agg('#' || n || ' (line ' || lineno || ' of the migration)', ', ' ORDER BY n) INTO v_bad"
+  printf '%s\n' '    FROM lp WHERE ok IS DISTINCT FROM true;'
+  printf '%s\n' '  IF v_bad IS NOT NULL THEN'
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL live-proof: the migration carries @live-proof % that is NOT true of the database it just produced', v_bad;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' 'END $lp$;'
+  printf '%s%s%s\n' "\\echo '  ok  EVERY LIVE PROOF   all " "$proof_n" " @live-proof expressions the migration carries in its own header were extracted from the file under test, inlined as code so that one which no longer PARSES is a failure too, and evaluated against the throwaway catalogue and the estate the first application left behind - and every single one of them is true, with no quarantine and no exception list'"
+} >> "$fixture/live-proofs.sql"
+
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55544 -d postgres \
   -f "$root/scripts/dev/fixtures/lightning-phase2-remediation-schema.sql" \
   -f "$phase2" \
   -f "$migration" \
   -f "$fixture/assertions.sql" \
+  -f "$fixture/live-proofs.sql" \
   -f "$migration" \
   -f "$fixture/reapply-assertions.sql"
 
-echo "PASS: Lightning Phase 2 remediation, the hand knows its cluster, its instance and its epoch: the migration applies unmodified on top of 20260920235343 and makes the epoch a row, cash_cluster_epoch is a real table keyed (cluster_id, epoch) with cash_cluster_epoch_current a UNIQUE partial index on the open epoch, RLS on and anon/authenticated/PUBLIC holding nothing while service_role is explicitly granted SELECT/INSERT/UPDATE/DELETE, the genesis backfill writes exactly one open epoch per cluster carrying that cluster's own epoch and its own mode and its own created_at rather than three constants, a second OPEN epoch collides on cash_cluster_epoch_current while the successor is accepted once the first has ended, a negative epoch and an unknown mode and a backwards end and an orphan cluster each raise their own named CHECK or foreign key, the event ledger takes its cluster's epoch through a BEFORE INSERT trigger that leaves an explicitly named epoch alone and tolerates a game_id that is not a cluster and rewrote no pre-existing row, lightning_pool_session_identity and lightning_pool_slot_identity are UNIQUE over exactly (id, player_id, cluster_id, cluster_epoch), a table opened in another epoch than its session is refused by lightning_pool_slot_belongs_to_its_session while the matching-epoch table is accepted, a pool session and an instance in an undeclared epoch are refused by their runs_in_a_declared_epoch keys and accepted once the epoch row exists, a hand naming another cluster or another epoch than its instance and a hand naming an instance that does not exist are all refused by lightning_hand_belongs_to_its_instance while the agreeing hand is accepted, a participation at another player's table is refused by lightning_hand_player_sits_in_its_own_slot while one player at two tables in two hands and two players in one hand are all accepted, a participation naming a hand that does not exist or a cluster or epoch its hand did not run in is refused by lightning_hand_player_belongs_to_its_hand while the agreeing participation in a second cluster is accepted, the two seat rules still refuse a doubled chair and seats 0 and 10 while accepting a third chair and seat 9, lightning_pool_slot_oldest_bb is keyed exactly (cluster_id, cluster_epoch, last_bb_at, player_id) partial on closed_at IS NULL and still NULLS FIRST, and the migration is idempotent on re-apply over populated tables with its nine named constraints rebuilt byte-identically"
+echo "PASS: Lightning Phase 2 remediation, the hand knows its cluster, its instance and its epoch: the migration applies unmodified on top of 20260920235343 and makes the epoch a row, cash_cluster_epoch is a real table keyed (cluster_id, epoch) with cash_cluster_epoch_current a UNIQUE partial index on the open epoch, RLS on and anon/authenticated/PUBLIC holding nothing while service_role is explicitly granted SELECT/INSERT/UPDATE/DELETE, the genesis backfill writes exactly one open epoch per cluster carrying that cluster's own epoch and its own mode and its own created_at rather than three constants, a second OPEN epoch collides on cash_cluster_epoch_current while the successor is accepted once the first has ended, a negative epoch and an unknown mode and a backwards end and an orphan cluster each raise their own named CHECK or foreign key, the event ledger takes its cluster's epoch through a BEFORE INSERT trigger that leaves an explicitly named epoch alone and tolerates a game_id that is not a cluster and rewrote no pre-existing row, lightning_pool_session_identity and lightning_pool_slot_identity are UNIQUE over exactly (id, player_id, cluster_id, cluster_epoch), a table opened in another epoch than its session is refused by lightning_pool_slot_belongs_to_its_session while the matching-epoch table is accepted, a pool session and an instance in an undeclared epoch are refused by their runs_in_a_declared_epoch keys and accepted once the epoch row exists, a hand naming another cluster or another epoch than its instance and a hand naming an instance that does not exist are all refused by lightning_hand_belongs_to_its_instance while the agreeing hand is accepted, a participation at another player's table is refused by lightning_hand_player_sits_in_its_own_slot while one player at two tables in two hands and two players in one hand are all accepted, a participation naming a hand that does not exist or a cluster or epoch its hand did not run in is refused by lightning_hand_player_belongs_to_its_hand while the agreeing participation in a second cluster is accepted, the two seat rules still refuse a doubled chair and seats 0 and 10 while accepting a third chair and seat 9, lightning_pool_slot_oldest_bb is keyed exactly (cluster_id, cluster_epoch, last_bb_at, player_id) partial on closed_at IS NULL and still NULLS FIRST, every one of the thirteen @live-proof expressions the migration carries in its own header extracted from the file under test and evaluated against the estate it produced with no quarantine and no exception list, and the migration is idempotent on re-apply over populated tables with its nine named constraints rebuilt byte-identically"

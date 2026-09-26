@@ -172,7 +172,24 @@ import {
   AbandonedGenerationRefusedError,
   abandonedPermitGeneration,
   closeAbandonedGeneration,
+  countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
+
+/**
+ * What one ask of the abandoned-generation door came to.
+ *
+ * `decided` - the door answered: the permit is closed (now, or by an earlier
+ * receipt this one replayed), so the tables can be read again.
+ * `refused`  - the door named a rule that asking again cannot pass. This
+ * manager does not ask about that generation twice.
+ * `undecided`- no answer reached the door or came back from it (the
+ * maintenance freeze outlasted the wait, a lane it would not hold, an
+ * unreadable reply). NOT the same as `refused`, and not the same as
+ * `decided`: it is the third outcome CLAUDE.md 10.86 rule 1 requires, and
+ * folding it into either of the others is what left 526 tables wedged
+ * through the 2026-09-25 cutover.
+ */
+type AbandonedGenerationAsk = 'decided' | 'refused' | 'undecided';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -233,6 +250,26 @@ interface TournamentLaunchCompleteResult {
   reason?: string;
   lease_generation?: string;
 }
+
+/**
+ * The clause `captureDrainedF06Originals` last refused on, per manager; absent
+ * after a capture that returned the originals. Kept beside the class, not on
+ * it, so the capture's body reads exactly the terms the release guard walks.
+ */
+const drainedF06OriginalsRefusals = new WeakMap<TournamentManagerBase, string>();
+
+/**
+ * The guard the last seat-move release certificate refused on, per manager;
+ * absent after a certificate that passed. Kept beside the class for the same
+ * reason as the map above: the certificate's body reads exactly the terms the
+ * stop diagnostic reports, and nothing else may write this.
+ *
+ * It is a DIAGNOSTIC, never authority. `resolveTournamentSeatMoveQuarantine`
+ * still returns the boolean that decides; this only says which clause produced
+ * it, because on 2026-09-25 three different clauses all reported themselves as
+ * `retained an unresolved seat-move UUID` and two of them are not a UUID.
+ */
+const seatMoveQuarantineRefusals = new WeakMap<TournamentManagerBase, string>();
 
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
@@ -295,32 +332,53 @@ export abstract class TournamentManagerBase {
     this.f06RecoveryOwnership = false;
   }
 
-  /** Positive completion of every exact stop, not merely loss of a registry slot. */
+  /**
+   * WHY THE STOPPED ORIGINALS CANNOT BE OFFERED FOR CUSTODY, or null when they
+   * can. Every condition is the one `captureDrainedF06Originals` always
+   * applied, in the same order, named on the way out (2026-09-25, see
+   * drainedF06Custody.ts F06CustodyRefusal). The walk lives in the capture
+   * and this reads its verdict, so the packet a capture returns and the reason
+   * an operator reads can never disagree.
+   */
+  protected drainedF06OriginalsRefusal(): string | null {
+    this.captureDrainedF06Originals();
+    return drainedF06OriginalsRefusals.get(this) ?? null;
+  }
+
+  /**
+   * Positive completion of every exact stop, not merely loss of a registry slot.
+   *
+   * Every term this reads is walked by name in the release guard's
+   * `drainWitness` (tests/a-race-that-touched-nothing-names-it-and-waits.law),
+   * which is why the refusal is recorded beside the class rather than on it:
+   * the body must read exactly the terms the guard diagnoses, no more.
+   */
   protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
-    const originals = this.drainedF06Originals;
-    if (
-      !originals ||
-      !this.stopFenceApplied ||
-      !this.tournamentLeaseAuthorityExpired ||
-      this.running ||
-      this.teardownPromise ||
-      this.lifecycleOperation ||
-      this.lifecycleJobs.size ||
-      this.tableEngineStartJobs.size ||
-      this.tableEngineRunJobs.size ||
-      this.eliminationSchedulerJobs.size ||
-      this.lifecycleTimeouts.size ||
-      this.lifecycleIntervals.size ||
-      this.tableEngines.size !== originals.length ||
-      originals.some(
-        ([id, engine]) =>
-          this.tableEngines.get(id) !== engine ||
-          engine.isRunning() ||
-          !engine.hasReleasedProcessOwnership() ||
-          engine.hasSettlementInFlight()
-      )
-    )
+    const refuse = (reason: string): null => {
+      drainedF06OriginalsRefusals.set(this, reason);
       return null;
+    };
+    const originals = this.drainedF06Originals;
+    if (!originals) return refuse('engine_stops_not_all_fulfilled');
+    if (!this.stopFenceApplied) return refuse('stop_fence_not_applied');
+    if (!this.tournamentLeaseAuthorityExpired) return refuse('lease_authority_not_expired');
+    if (this.running) return refuse('manager_running');
+    if (this.teardownPromise) return refuse('teardown_in_flight');
+    if (this.lifecycleOperation) return refuse('lifecycle_operation_in_flight');
+    if (this.lifecycleJobs.size) return refuse('lifecycle_jobs_pending');
+    if (this.tableEngineStartJobs.size) return refuse('engine_start_jobs_pending');
+    if (this.tableEngineRunJobs.size) return refuse('engine_run_jobs_pending');
+    if (this.eliminationSchedulerJobs.size) return refuse('elimination_jobs_pending');
+    if (this.lifecycleTimeouts.size) return refuse('lifecycle_timeouts_armed');
+    if (this.lifecycleIntervals.size) return refuse('lifecycle_intervals_armed');
+    if (this.tableEngines.size !== originals.length) return refuse('engine_registry_changed');
+    for (const [id, engine] of originals) {
+      if (this.tableEngines.get(id) !== engine) return refuse('original_not_registered');
+      if (engine.isRunning()) return refuse('engine_running');
+      if (!engine.hasReleasedProcessOwnership()) return refuse('engine_process_ownership_held');
+      if (engine.hasSettlementInFlight()) return refuse('engine_settlement_in_flight');
+    }
+    drainedF06OriginalsRefusals.delete(this);
     return originals;
   }
 
@@ -338,6 +396,8 @@ export abstract class TournamentManagerBase {
   private readonly tableEngineRecoveries = new WeakMap<ServerTableEngine, Promise<void>>();
   /** One causally-triggered retry per durable table; healthy tables arm none. */
   private readonly tableEngineRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The exact dead generation each booked retry names (null: a missing table to re-admit). */
+  private readonly tableEngineRecoveryExpected = new Map<string, ServerTableEngine | null>();
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
@@ -600,7 +660,33 @@ export abstract class TournamentManagerBase {
     context: Record<string, unknown> = {}
   ): Promise<void> {
     if (isNew) {
-      await raiseFinancialAlert(severity, source, message, context);
+      // THE SUBJECT KEY, AND THE REASON, BOTH GO WITH IT (2026-09-25).
+      //
+      // `isNew` above is in-memory state on THIS manager: one slot holding the
+      // last reason. It cannot survive a process restart, and two reasons that
+      // alternate are each "new" every time they come round, so it throttles a
+      // tight loop and nothing slower. That left 15,426 unresolved criticals on
+      // 1,003 tournaments that had all since completed and paid in full.
+      //
+      // The durable guard is in the database and keys on the subject, so the
+      // key names the tournament AND the reason: a genuinely different refusal
+      // still gets its own open alert, and the same one stops re-reporting
+      // whatever this process happens to remember.
+      //
+      // The reason also goes into the context. 14,388 of those 15,426 rows
+      // carried no error and no error_name at all - a critical money alert
+      // asserting `proven_refusal: true` while recording nothing about what
+      // was refused. See CLAUDE.md 10.86 rule 1.
+      const reasonForKey = this.lastFinishRefusalReason;
+      const subject = context.tournament_id ?? this.tournamentId;
+      await raiseFinancialAlert(
+        severity,
+        source,
+        message,
+        reasonForKey ? { ...context, refusal_reason: reasonForKey } : context,
+        `${String(subject)}:${reasonForKey ?? 'unknown'}`,
+        String(subject)
+      );
       return;
     }
     const reason = this.lastFinishRefusalReason;
@@ -1074,9 +1160,33 @@ export abstract class TournamentManagerBase {
       // A retired original can retain or replay F06 custody in both registries.
       // The exact admitted replay keeps its own barrier and outcome checks;
       // neither it nor an idle original needs a renewed gameplay proof.
+      //
+      // ONE ZOMBIE TABLE DOES NOT FENCE ITS TOURNAMENT (2026-09-25, release
+      // 778075b4). A dealer the zombie watchdog killed
+      // (GameServer: `fenceForEngineLeaseLoss('tournament_table_zombie', true)`)
+      // is fenced, stopped and cannot renew: its proof is expired by that
+      // fence, and `renewEngineLeaseProof` refuses an expired proof by
+      // design. Its stop was signalled to this manager by the same fence and
+      // is in flight here, in `tableEngineRecoveries`, or booked for a retry
+      // that names it (`tableEngineRecoveryExpected`). Until that stop
+      // completes it is not yet drained, so it fell through to the renewal
+      // below, refused, and this manager fenced EVERY sibling table for it.
+      // Single-table zombie kills at 19:54:05 and 20:15:20 UTC quarantined
+      // 17 managers with `tournament_lease_lost_stop_failed` and left 50
+      // tables idle for hours, while GameServer's comment at the kill
+      // promised the opposite ("its identity-CAS replacement preserves the
+      // tournament lease").
+      //
+      // A fenced dealer this manager is replacing is treated like a drained
+      // original: it needs no gameplay proof (it cannot mutate), ownership is
+      // still checked, and the manager's own lease is not lost for it. A
+      // fenced dealer NOBODY is replacing, and a live dealer that truly cannot
+      // renew, still fence the tournament exactly as before.
       if (
         engine.isTerminalDrainedForTournamentLease?.(tableId, authority) ||
-        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority)
+        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority) ||
+        (engine.isTerminalFencedForTournamentLease?.(tableId, authority) &&
+          this.isReplacingManagedTableEngine(tableId, engine))
       ) {
         if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
           this.fenceForTournamentLeaseLoss();
@@ -1091,6 +1201,22 @@ export abstract class TournamentManagerBase {
     }
     this.armTournamentLeaseExpiryTimer();
     return true;
+  }
+
+  /**
+   * True while this manager holds a replacement operation for this exact
+   * dealer generation (`tableEngineRecoveries`, one per object) or a booked
+   * retry that names it (`tableEngineRecoveryTimers` with
+   * `tableEngineRecoveryExpected`, armed by the failed attempt before the
+   * operation is released). Read-only; it starts nothing.
+   */
+  private isReplacingManagedTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    return (
+      this.tableEngines.get(tableId) === engine &&
+      (this.tableEngineRecoveries.has(engine) ||
+        (this.tableEngineRecoveryTimers.has(tableId) &&
+          this.tableEngineRecoveryExpected.get(tableId) === engine))
+    );
   }
 
   /** Read-time fence used after every heartbeat, including UNKNOWN results. */
@@ -1232,6 +1358,7 @@ export abstract class TournamentManagerBase {
     const timer = this.tableEngineRecoveryTimers.get(tableId);
     if (timer) this.clearLifecycleTimeout(timer);
     this.tableEngineRecoveryTimers.delete(tableId);
+    this.tableEngineRecoveryExpected.delete(tableId);
     if (resetAttempts) this.tableEngineRecoveryAttempts.delete(tableId);
   }
 
@@ -1240,6 +1367,7 @@ export abstract class TournamentManagerBase {
       this.clearLifecycleTimeout(timer);
     }
     this.tableEngineRecoveryTimers.clear();
+    this.tableEngineRecoveryExpected.clear();
     this.tableEngineRecoveryAttempts.clear();
   }
 
@@ -1362,6 +1490,7 @@ export abstract class TournamentManagerBase {
     timer = this.setLifecycleTimeout(async () => {
       if (this.tableEngineRecoveryTimers.get(tableId) !== timer) return;
       this.tableEngineRecoveryTimers.delete(tableId);
+      this.tableEngineRecoveryExpected.delete(tableId);
       if (!this.lifecycleIsCurrent(lifecycle)) {
         this.tableEngineRecoveryAttempts.delete(tableId);
         return;
@@ -1402,6 +1531,7 @@ export abstract class TournamentManagerBase {
       }
     }, delayMs);
     this.tableEngineRecoveryTimers.set(tableId, timer);
+    this.tableEngineRecoveryExpected.set(tableId, expected);
   }
 
   /** Admit a table retired after a failed start, after proving it is still live. */
@@ -1485,6 +1615,21 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * Name the clause one seat-move release certificate refused on, or clear the
+   * name when it certified. Called by the certificate itself, immediately
+   * before the clause it names is tested.
+   */
+  protected noteSeatMoveQuarantineRefusal(refusal: string | null): void {
+    if (refusal === null) seatMoveQuarantineRefusals.delete(this);
+    else seatMoveQuarantineRefusals.set(this, refusal);
+  }
+
+  /** Which clause the last seat-move release certificate refused on. */
+  seatMoveQuarantineRefusal(): string | null {
+    return seatMoveQuarantineRefusals.get(this) ?? null;
+  }
+
+  /**
    * Layer-three managers override this with exact UUID replay. Minimal test
    * harnesses have no seat-move ledger; they may proceed only when no concrete
    * engine reports a retained move boundary.
@@ -1493,7 +1638,9 @@ export abstract class TournamentManagerBase {
     _tableId: string | null,
     engine: ServerTableEngine | null
   ): Promise<boolean> {
-    return !engine?.hasClaimedTournamentMoveBoundary();
+    const claimed = engine?.hasClaimedTournamentMoveBoundary() === true;
+    this.noteSeatMoveQuarantineRefusal(claimed ? 'harness:claimed_move_boundary' : null);
+    return !claimed;
   }
 
   private async performManagedTableEngineRecovery(
@@ -1618,6 +1765,13 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  /**
+   * The database refused this table a hand because a table break names it as
+   * its source. Layer three owns the move boundary that break is waiting for;
+   * the base manager has no break authority and does nothing.
+   */
+  protected holdSourceForItsBreak(_tableId: string, _engine: ServerTableEngine): void {}
+
   /** A manager is not torn down until every table start it launched has settled. */
   protected async startParkedMovementEngine(
     _engine: ServerTableEngine,
@@ -1694,6 +1848,67 @@ export abstract class TournamentManagerBase {
         await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
         return;
       }
+      /**
+       * A DEAD GENERATION'S HAND IS DECIDED WHERE THE REFUSAL IS MET
+       * (2026-09-25).
+       *
+       * This is the line that has been refusing every wedged table, every
+       * fifteen seconds, for days: a reserved permit of a generation that is
+       * no longer the lease holder makes `blocked_reason` read
+       * `hand_permit_unresolved`, and `f06_engine_admission_unproven` is
+       * correct - the projection is genuinely unproven and nothing may deal on
+       * it. What was missing is that nothing here ever DECIDED the permit. The
+       * abandoned-generation door was asked once, during adoption, and
+       * `resumeLifecycle` runs exactly once per manager, so any adoption whose
+       * single ask ended without a decision left the table blocked for the
+       * whole life of that manager. On the 15:29 cutover that was 526 tables
+       * in 388 events, holding 2,061 seated players, and the door was never
+       * requested once.
+       *
+       * So ask it here, from the admission that is already being refused, and
+       * then refuse this attempt anyway: the next admission re-reads the state
+       * the door left and proves itself normally. This is not a sweep, a
+       * healer or a repair job (CLAUDE.md 10.12) - it is this table's own live
+       * path deciding the thing that blocks this table, at the moment it is
+       * blocked, through the platform's own idempotent door. The receipt is
+       * derived from (event, dead generation), so a second ask replays the
+       * first rather than minting anything; a rule the door names is asked
+       * once and never again by this manager; and an undecided answer is asked
+       * again no sooner than the cooldown, because the admission's own
+       * fifteen-second cadence must not become the door's.
+       */
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'hand_permit_unresolved'
+      ) {
+        const abandoned = abandonedPermitGeneration(
+          state,
+          this.tournamentId,
+          tableId,
+          leaseGeneration
+        );
+        if (abandoned) {
+          const last = this.abandonedGenerationAskedAt.get(abandoned);
+          const cooldown =
+            last?.ask === 'refused'
+              ? TournamentManagerBase.ABANDONED_GENERATION_REFUSED_COOLDOWN_MS
+              : TournamentManagerBase.ABANDONED_GENERATION_ADMISSION_COOLDOWN_MS;
+          if (last === undefined || Date.now() - last.at >= cooldown) {
+            this.abandonedGenerationAskedAt.set(abandoned, { at: Date.now(), ask: 'undecided' });
+            const ask = await this.decideAbandonedGeneration(
+              lifecycle,
+              abandoned,
+              [tableId],
+              leaseGeneration
+            );
+            this.abandonedGenerationAskedAt.set(abandoned, { at: Date.now(), ask });
+          }
+        }
+      }
       if (
         !current() ||
         error ||
@@ -1735,11 +1950,24 @@ export abstract class TournamentManagerBase {
           );
           const a = allocation as {
             ok?: boolean;
+            reason?: string | null;
             table_id?: string;
             lifecycle?: string;
             hand_number?: unknown;
             hand_number_high_water?: unknown;
           } | null;
+          /**
+           * A TABLE EXCLUDED BY ITS OWN BREAK WAITS FOR THE BREAK (2026-09-26).
+           * `source_excluded` is not an unproven allocation: it is the
+           * database saying a break row for this table exists and no hand may
+           * start here until that break is acknowledged or withdrawn. Asking
+           * again cannot change the answer. Name it, fence this dealer for
+           * the break, and wake the Manager so the break is claimed.
+           */
+          if (current() && !allocationError && a?.ok === false && a.reason === 'source_excluded') {
+            this.holdSourceForItsBreak(tableId, engine);
+            throw new Error('f06_source_excluded_by_break');
+          }
           if (
             !current() ||
             allocationError ||
@@ -1767,6 +1995,16 @@ export abstract class TournamentManagerBase {
           p_table_id: tableId,
         });
         const latest = refreshed.data as typeof state;
+        if (
+          current() &&
+          !refreshed.error &&
+          latest?.ok === true &&
+          latest.table_id === tableId &&
+          latest.blocked_reason === 'source_excluded'
+        ) {
+          this.holdSourceForItsBreak(tableId, engine);
+          throw new Error('f06_source_excluded_by_break');
+        }
         if (
           !current() ||
           refreshed.error ||
@@ -2078,6 +2316,11 @@ export abstract class TournamentManagerBase {
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
+      // A seat move or table break whose one-second probe missed is waiting
+      // for exactly this edge. Wake the sweep that claims it now, rather than
+      // leaving the claim to whichever redrive the shared scheduler reaches.
+      if (engine.awaitsTournamentMoveClaim())
+        this.requestEliminationSweep('tournament_move_parked');
       // A table parking is the edge the stage-end barrier waits for.
       if (this.stageEndPause) this.advanceStageEndBarrier();
     });
@@ -5587,10 +5830,15 @@ export abstract class TournamentManagerBase {
             p_lease_generation: leaseGeneration,
             p_table_id: tableId,
           });
-          if (!error) state = data;
+          if (error) countAbandonedGenerationOutcome('unreadable');
+          else state = data;
         } catch {
-          // Unread is not decided: the table's own admission reads it again
-          // and refuses exactly as it did before.
+          // Unread is not decided, and it is not nothing either. The table's
+          // own admission reads it again and now asks the door itself
+          // (startManagedTableEngine), so this is no longer the last chance -
+          // but it is still counted, because for three days a swallowed read
+          // was indistinguishable from a healthy table.
+          countAbandonedGenerationOutcome('unreadable');
         }
         const generation = abandonedPermitGeneration(
           state,
@@ -5615,18 +5863,53 @@ export abstract class TournamentManagerBase {
     this.assertLifecycleCurrent(lifecycle);
     let decided = false;
     for (const [generation, tables] of blocked) {
-      if (await this.decideAbandonedGeneration(lifecycle, generation, tables, leaseGeneration))
-        decided = true;
+      const ask = await this.decideAbandonedGeneration(
+        lifecycle,
+        generation,
+        tables,
+        leaseGeneration
+      );
+      if (ask === 'decided') decided = true;
     }
     return decided;
   }
+
+  /**
+   * When this manager last asked the door about each dead generation, and how
+   * that ask ended. Read ONLY by the table admission: the adoption is the
+   * door's caller of record and asks exactly as it always has.
+   */
+  private readonly abandonedGenerationAskedAt = new Map<
+    string,
+    { at: number; ask: AbandonedGenerationAsk }
+  >();
+  /**
+   * The soonest a table admission asks the door about the same dead generation
+   * again after an UNDECIDED answer. The admission itself retries every ~15 s
+   * and must keep doing so; the door is the expensive half, and an undecided
+   * answer is usually a freeze or a lane that a minute resolves.
+   */
+  static readonly ABANDONED_GENERATION_ADMISSION_COOLDOWN_MS = 60_000;
+  /**
+   * And after a rule the door NAMED. Longer, because asking again cannot pass
+   * until something outside this table changes - but NOT never.
+   *
+   * A permanent memo was written here first, and it was wrong. Measured on
+   * 2026-09-25, 44 of the 56 generations still wedged after the settlement are
+   * refused F06_ABANDONED_ROSTER_CHANGED: a `playing` registration at that
+   * table with no live chair. That is a defect somewhere else, and when it is
+   * repaired the door will accept these hands - so a manager that had written
+   * the generation off for the rest of its life would hold the table blocked
+   * for no reason at all. A rule is not a blip, and it is not a life sentence.
+   */
+  static readonly ABANDONED_GENERATION_REFUSED_COOLDOWN_MS = 10 * 60_000;
 
   private async decideAbandonedGeneration(
     lifecycle: TournamentLifecycleToken,
     generation: string,
     tables: readonly string[],
     leaseGeneration: string
-  ): Promise<boolean> {
+  ): Promise<AbandonedGenerationAsk> {
     let retainedFinished = false;
     let attempt = 0;
     for (;;) {
@@ -5653,11 +5936,17 @@ export abstract class TournamentManagerBase {
         }
         this.assertLifecycleCurrent(lifecycle);
         if (isMaintenanceFrozen()) {
+          // A FREEZE GIVE-UP IS A NUMBER (2026-09-25). This branch returned
+          // in silence, and it is the only exit from an ask that never
+          // reaches the door - so a fleet with 526 wedged tables read 0 on
+          // every label of the closures counter, which is exactly what a
+          // healthy fleet reads.
+          countAbandonedGenerationOutcome('frozen');
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
               `left a reserved hand on ${tables.length} table(s) - the maintenance freeze outlasted the wait`
           );
-          return false;
+          return 'undecided';
         }
       }
       attempt += 1;
@@ -5676,7 +5965,7 @@ export abstract class TournamentManagerBase {
           `[Tournament:${this.tournamentId.slice(0, 8)}] generation ${generation.slice(0, 8)} ` +
             `left a reserved hand on ${tables.length} table(s) - ${outcome}`
         );
-        return true;
+        return 'decided';
       } catch (error) {
         this.assertLifecycleCurrent(lifecycle);
         const refused = error instanceof AbandonedGenerationRefusedError ? error : null;
@@ -5708,9 +5997,10 @@ export abstract class TournamentManagerBase {
           });
           continue;
         }
-        // Whatever went wrong, adoption goes on: this table stays exactly as
-        // blocked as it was before this door existed, and the next adoption
-        // asks again.
+        // Whatever went wrong, the caller goes on: this table stays exactly
+        // as blocked as it was before this door existed. A rule the door
+        // named is final for this manager; anything else is undecided, and
+        // the table's own admission asks again.
         reportError(error, 'Tournament.abandoned_generation_refused', {
           tournamentId: this.tournamentId,
           generation,
@@ -5718,7 +6008,7 @@ export abstract class TournamentManagerBase {
           code: refused?.code ?? 'unexpected',
           refusal: refused?.refusal ?? 'unexpected',
         });
-        return false;
+        return refused?.refusal === 'definite' ? 'refused' : 'undecided';
       }
     }
   }
@@ -7093,6 +7383,21 @@ export abstract class TournamentManagerBase {
       this.drainedF06Originals = stopResults.every((result) => result.status === 'fulfilled')
         ? Object.freeze(engines.map(([id, engine]) => Object.freeze([id, engine] as const)))
         : null;
+      /* WRITE THE BANK DOWN BEFORE ASKING WHETHER IT IS RETAINED (2026-09-26).
+         A stopped engine that holds a frozen time bank not yet on disk made
+         this stop fail "retained time-bank custody" - 134,904 times in the
+         sixteen minutes before the 08:55Z restart - and the only other place
+         that bank gets written is the next break's announcement, up to an
+         hour away. Each engine now writes its own custody first, at the
+         process root and through the guarded database function, so the check
+         below reads a bank that is on disk rather than one that is waiting.
+         A refused or unknown write records nothing, and the check still
+         refuses exactly as it did. */
+      await Promise.allSettled(
+        engines.map(([, engine]) =>
+          Promise.resolve().then(() => engine.persistStoppedTimeBankCustody?.())
+        )
+      );
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];
@@ -7111,8 +7416,21 @@ export abstract class TournamentManagerBase {
       }
       try {
         if (!(await this.resolveTournamentSeatMoveQuarantine(null, null))) {
+          /* THE UUID THAT WAS NOT THERE (2026-09-25). This error read
+             `retained an unresolved seat-move UUID` for every refusal of the
+             manager-shutdown certificate, including the two that are not a
+             UUID at all. On release 778075b4 it fired 5,678 times in
+             twenty-five minutes across thirteen tournaments while
+             `Tournament.atomic_move_refused_or_unknown` - the ONLY event that
+             can put a UUID in the pending set - had not fired once in the
+             whole retained log. Nobody could tell, from the log, that there
+             was no move. The certificate names its clause now and this
+             reports that name. */
           stopFailures.push(
-            new Error(`Tournament ${this.tournamentId} retained an unresolved seat-move UUID`)
+            new Error(
+              `Tournament ${this.tournamentId} refused its seat-move release certificate: ` +
+                `${this.seatMoveQuarantineRefusal() ?? 'refusal_unnamed'}`
+            )
           );
         }
       } catch (error) {

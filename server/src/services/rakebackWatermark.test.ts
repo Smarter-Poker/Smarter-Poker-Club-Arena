@@ -70,6 +70,8 @@ interface Scenario {
   ledgerError?: { message: string };
   periodQueue?: Record<string, unknown> | null;
   periodQueueError?: { message: string };
+  /** Per-read view of the durable period request, for readback over time. */
+  periodQueueRead?: () => Record<string, unknown> | null;
   sourceReceipt?: unknown;
   sourceWork?: unknown;
   sourceReadError?: { message: string };
@@ -287,8 +289,10 @@ function install(s: Scenario) {
           error: s.sourceReadError ?? null,
         };
       }
-      if (rec.table === 'accounting_period_recompute_requests')
+      if (rec.table === 'accounting_period_recompute_requests') {
+        if (s.periodQueueRead) return { data: s.periodQueueRead(), error: null };
         return { data: s.periodQueue ?? null, error: s.periodQueueError ?? null };
+      }
       if (rec.table === 'rake_attributions') {
         const after = rec.ops.find(([n, a]) => n === 'gt' && a[0] === 'id')?.[1][1];
         return {
@@ -1121,5 +1125,428 @@ describe('cash source receipts protect the durable cursor', () => {
     );
     expect(await run()).toBe('halted');
     expect(settlerUpserts()).toHaveLength(0);
+  });
+});
+
+/**
+ * A TIMEOUT IS NOT A FAILURE (2026-09-26). fn_rakeback_recompute_periods for
+ * one live club-week ran ~71 s against a 15 s client: the server committed every
+ * time and the settler held its watermark every time (attempts=531). The client
+ * now reads the durable request row before deciding, and accepts ONLY a receipt
+ * written by this call - never an older one, never a refusal.
+ */
+describe('a timed-out period recompute reads its durable receipt', () => {
+  const T0 = Date.parse('2026-08-06T20:00:01.000Z');
+  /** When the fake server's transaction commits, relative to T0 (the live warm cost). */
+  const COMMIT_AT = T0 + 71_000;
+  const pgInstant = (ms: number) => new Date(ms).toISOString().replace('Z', '456+00:00');
+  const clubId = uid(55);
+  const credited = () => ({
+    ...row(1, 200),
+    hand_id: uid(77),
+    player_contributions: { [uid(42)]: 10 },
+  });
+  const week = pacificAccountingWeek(ts(200));
+  const readyReceipt = (players: number) => ({
+    written: players,
+    accounting_version: 2,
+    confirmed_players: players,
+    status: 'ready',
+    club_id: clubId,
+    period_start: week.periodStart,
+    period_end: week.periodEnd,
+  });
+  const requestRow = (over: Record<string, unknown>) => ({
+    club_id: clubId,
+    period_start: week.periodStart,
+    period_end: week.periodEnd,
+    status: 'pending',
+    attempts: 531,
+    attempted_at: pgInstant(T0 - 60_000),
+    last_result: {},
+    ...over,
+  });
+  const timeout = { message: 'Error: supabase_timeout', details: '', hint: '', code: '' };
+  let reads = 0;
+  const setup = (periodQueueRead: () => Record<string, unknown> | null) => {
+    reads = 0;
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [credited()],
+      ledger: [
+        {
+          id: uid(100),
+          hand_id: uid(77),
+          player_id: uid(42),
+          club_id: clubId,
+          rake_record_id: uid(1),
+          weighted_rake_credit: 1,
+        },
+      ],
+      periodQueueRead: () => {
+        reads++;
+        return periodQueueRead();
+      },
+    });
+  };
+  const recomputeTimesOut = (error: Record<string, unknown> | 'throw' = timeout) =>
+    mockRpc.mockImplementation(async (name, args) => {
+      if (name !== 'fn_rakeback_recompute_periods') return success(name, args);
+      if (error === 'throw') throw new Error('supabase_timeout');
+      return { data: null, error };
+    });
+  /** Step the fake clock so every readback pause and its microtasks run. */
+  const runFor = async (ms: number) => {
+    const settler = new RakebackSettlerService();
+    const outcome = (
+      settler as unknown as { _runSettlementInner(): Promise<string> }
+    )._runSettlementInner();
+    for (let t = 0; t < ms; t += 1_000) await vi.advanceTimersByTimeAsync(1_000);
+    return outcome;
+  };
+  const held = () => {
+    expect(settlerUpserts()).toHaveLength(0);
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(100),
+      high_water_mark_id: uid(0),
+    });
+    expect(
+      mockReportError.mock.calls.some(
+        ([, label]) => label === 'RakebackSettler.period_recompute_failures_hold_cursor'
+      )
+    ).toBe(true);
+  };
+  beforeEach(() => {
+    recorded.length = 0;
+    mockFrom.mockClear();
+    mockRpc.mockReset();
+    mockReportError.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(T0));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([['error', timeout] as const, ['throw', 'throw'] as const])(
+    'accepts the receipt this call committed after the client gave up (%s) and advances the watermark',
+    async (_kind, error) => {
+      setup(() =>
+        Date.now() < COMMIT_AT
+          ? requestRow({})
+          : requestRow({
+              attempted_at: pgInstant(COMMIT_AT),
+              attempts: 532,
+              last_result: readyReceipt(1),
+            })
+      );
+      recomputeTimesOut(error);
+      expect(await runFor(90_000)).toBe('more');
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: ts(200),
+        high_water_mark_id: uid(1),
+      });
+      expect(
+        mockReportError.mock.calls.some(([, label]) =>
+          String(label).startsWith('RakebackSettler.period_recompute')
+        )
+      ).toBe(false);
+      const readback = recorded.filter((r) => r.table === 'accounting_period_recompute_requests');
+      expect(readback.length).toBeGreaterThan(1);
+      for (const q of readback) {
+        expect(q.ops).toContainEqual(['eq', ['club_id', clubId]]);
+        expect(q.ops).toContainEqual(['eq', ['period_start', week.periodStart]]);
+        expect(q.ops).toContainEqual(['eq', ['period_end', week.periodEnd]]);
+      }
+    }
+  );
+
+  it("never mistakes an earlier attempt's ready receipt for this call, and holds the watermark", async () => {
+    // Exactly the live shape: the row says ready, from a call made before this one.
+    setup(() => requestRow({ attempted_at: pgInstant(T0 - 1), last_result: readyReceipt(1) }));
+    recomputeTimesOut();
+    expect(await runFor(330_000)).toBe('halted');
+    held();
+    const stopped = reads;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(reads, 'the readback is bounded by the server budget, not a loop').toBe(stopped);
+  });
+
+  it('holds the watermark when no receipt row exists by the server deadline', async () => {
+    setup(() => null);
+    recomputeTimesOut();
+    expect(await runFor(330_000)).toBe('halted');
+    held();
+  });
+
+  it.each([
+    [
+      'a blocked refusal',
+      {
+        status: 'blocked',
+        last_result: { ...readyReceipt(0), status: 'blocked', written: 0, reason: 'boom' },
+      },
+    ],
+    ['a receipt another writer cleared', { status: 'pending', last_result: {} }],
+    [
+      'a whole-period result from another caller',
+      { status: 'complete', last_result: readyReceipt(1) },
+    ],
+    ['a receipt for a different player count', { status: 'pending', last_result: readyReceipt(2) }],
+  ])('holds the watermark on a fresh but genuine failure receipt: %s', async (_label, over) => {
+    setup(() =>
+      Date.now() < COMMIT_AT
+        ? requestRow({})
+        : requestRow({ attempted_at: pgInstant(COMMIT_AT), ...over })
+    );
+    recomputeTimesOut();
+    expect(await runFor(90_000)).toBe('halted');
+    held();
+  });
+
+  it('accepts the deferral this call committed after the client gave up, and advances the source cursor', async () => {
+    // The live shape of 2026-09-26: the open week is incomplete behind the
+    // page, the blocked path outlives DB_TIMEOUT_MS, and the function records
+    // its deferral on the request row in the same transaction.
+    setup(() =>
+      Date.now() < COMMIT_AT
+        ? requestRow({})
+        : requestRow({
+            id: 'c0d4b8e2-2a6f-4c55-9b0e-6e8a2f1d9a31',
+            status: 'blocked',
+            attempted_at: pgInstant(COMMIT_AT),
+            last_result: {
+              ...readyReceipt(0),
+              status: 'blocked',
+              written: 0,
+              reason: 'cash_source_receipts_incomplete',
+              source_count: 316722,
+            },
+          })
+    );
+    recomputeTimesOut();
+    expect(await runFor(90_000)).toBe('more');
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(200),
+      high_water_mark_id: uid(1),
+    });
+    expect(
+      mockReportError.mock.calls.some(([, label]) =>
+        String(label).startsWith('RakebackSettler.period_recompute')
+      )
+    ).toBe(false);
+  });
+
+  it('does not read back a definite server error, which rolled back', async () => {
+    setup(() => requestRow({ attempted_at: pgInstant(COMMIT_AT), last_result: readyReceipt(1) }));
+    recomputeTimesOut({ message: 'canceling statement due to statement timeout', code: '57014' });
+    expect(await runFor(5_000)).toBe('halted');
+    expect(reads).toBe(0);
+    held();
+  });
+});
+
+describe('the catch-up re-arms while backlog remains', () => {
+  const drive = async (results: string[]) => {
+    const settler = new RakebackSettlerService();
+    const inner = vi.spyOn(settler as any, '_runSettlementInner');
+    for (const r of results) inner.mockResolvedValueOnce(r);
+    for (const method of [
+      'runWeeklyFinancialClose',
+      'runTournamentSentinel',
+      'runUnionTreasurySentinel',
+      'runUnionGovernanceSentinel',
+      'runUnionRakeRollupCatchup',
+      'runUnionEcoRecord',
+      'runTournamentChipConservation',
+    ] as const)
+      vi.spyOn(settler as any, method).mockResolvedValue(undefined);
+    const schedule = vi.spyOn(settler as any, 'scheduleCatchUp');
+    await settler.runSettlement();
+    return { inner, backlog: schedule.mock.calls.map(([backlog]) => backlog) };
+  };
+
+  it('arms after a cycle that made progress and then halted with the rest still owed', async () => {
+    const { inner, backlog } = await drive(['more', 'halted']);
+    expect(inner).toHaveBeenCalledTimes(2);
+    expect(backlog).toEqual([true]);
+  });
+
+  it('arms when the drain cap is reached', async () => {
+    const { backlog } = await drive(Array(MAX_DRAIN_BATCHES).fill('more'));
+    expect(backlog).toEqual([true]);
+  });
+
+  it('does not arm after a halt with no progress, so a persistent failure waits the interval', async () => {
+    expect((await drive(['halted'])).backlog).toEqual([false]);
+  });
+
+  it('does not arm once the range is empty', async () => {
+    expect((await drive(['more', 'idle'])).backlog).toEqual([false]);
+  });
+
+  /** Several cycles on ONE settler: the retry allowance lives across cycles. */
+  const cycles = async (perCycle: string[][]) => {
+    const settler = new RakebackSettlerService();
+    const inner = vi.spyOn(settler as any, '_runSettlementInner');
+    for (const r of perCycle.flat()) inner.mockResolvedValueOnce(r);
+    for (const method of [
+      'runWeeklyFinancialClose',
+      'runTournamentSentinel',
+      'runUnionTreasurySentinel',
+      'runUnionGovernanceSentinel',
+      'runUnionRakeRollupCatchup',
+      'runUnionEcoRecord',
+      'runTournamentChipConservation',
+    ] as const)
+      vi.spyOn(settler as any, method).mockResolvedValue(undefined);
+    const schedule = vi.spyOn(settler as any, 'scheduleCatchUp');
+    for (let i = 0; i < perCycle.length; i++) await settler.runSettlement();
+    return schedule.mock.calls.map(([backlog]) => backlog);
+  };
+
+  it('retries a first-page stall once, right after a productive cycle, then waits the interval', async () => {
+    expect(await cycles([['more', 'more', 'more'], ['halted'], ['halted']])).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it('a productive cycle that itself halted still earns the one retry', async () => {
+    expect(await cycles([['more', 'halted'], ['halted'], ['halted']])).toEqual([true, true, false]);
+  });
+
+  it('the allowance is restored only by a cycle that acknowledges a page', async () => {
+    expect(
+      await cycles([['more', 'more', 'more'], ['halted'], ['more', 'idle'], ['halted'], ['halted']])
+    ).toEqual([true, true, false, true, false]);
+  });
+
+  it('an idle cycle spends nothing and earns nothing', async () => {
+    expect(await cycles([['idle'], ['halted']])).toEqual([false, false]);
+  });
+});
+
+/**
+ * A REFUSAL THE DATABASE HAS ALREADY PROVEN IS NOT ASKED AGAIN (2026-09-26).
+ * While the settler is behind, fn_rakeback_recompute_periods for the open week
+ * reads the whole week (20-222 s live, up to three club-weeks a page) only to
+ * refuse with cash_source_receipts_incomplete. Its refusal counts the club-week's
+ * incomplete attributions; only the settler's own accruals can lower that, one
+ * per credit. While the remaining bound is >= 1 the call is not sent.
+ */
+describe('an open-week refusal the database already proved is not asked again', () => {
+  const clubId = uid(55);
+  const week = pacificAccountingWeek(ts(200));
+  const rec = (n: number, at: number) => ({
+    ...row(n, at),
+    hand_id: uid(70 + n),
+    player_contributions: { [uid(40 + n)]: 10 },
+  });
+  const ledger = [1, 2, 3].map((n) => ({
+    id: uid(100 + n),
+    hand_id: uid(70 + n),
+    player_id: uid(40 + n),
+    club_id: clubId,
+    rake_record_id: uid(n),
+    weighted_rake_credit: 1,
+  }));
+  const refusal = (sourceCount: number) => ({
+    accounting_version: 2,
+    club_id: clubId,
+    period_start: week.periodStart,
+    period_end: week.periodEnd,
+    written: 0,
+    status: 'blocked',
+    reason: 'cash_source_receipts_incomplete',
+    source_count: sourceCount,
+    request_id: uid(950),
+    requested_at: '2026-09-26T06:59:03.123456Z',
+    request_state: 'blocked',
+    request_recorded: true,
+  });
+  const setup = (answer: (call: number) => Record<string, unknown>) => {
+    const first = refusal(1);
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [rec(1, 200), rec(2, 300), rec(3, 400)],
+      ledger,
+      serverPageCap: 1,
+      periodQueue: { id: first.request_id, status: 'blocked', last_result: first },
+    });
+    let calls = 0;
+    mockRpc.mockImplementation(async (name, args) => {
+      if (name !== 'fn_rakeback_recompute_periods') return success(name, args);
+      const data = answer(calls++);
+      const queue = scenario.current.definition as Scenario;
+      if (data.status === 'blocked')
+        queue.periodQueue = { id: data.request_id, status: 'blocked', last_result: data };
+      return { data, error: null };
+    });
+  };
+  const recomputes = () =>
+    mockRpc.mock.calls.filter(([name]) => name === 'fn_rakeback_recompute_periods');
+  const run = (settler: RakebackSettlerService) =>
+    (settler as unknown as { _runSettlementInner(): Promise<string> })._runSettlementInner();
+  beforeEach(() => {
+    recorded.length = 0;
+    mockFrom.mockClear();
+    mockRpc.mockReset();
+    mockReportError.mockReset();
+  });
+
+  it('does not re-send a refusal the remaining bound still proves, and advances every page', async () => {
+    setup(() => refusal(345_525));
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(1);
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(400),
+      high_water_mark_id: uid(3),
+    });
+    expect(
+      mockReportError.mock.calls.some(([, label]) =>
+        String(label).includes('period_recompute_failures_hold_cursor')
+      )
+    ).toBe(false);
+  });
+
+  it('sends the real call once the accrued credits could have completed the week', async () => {
+    // One incomplete attribution reported; the next page accrues one credit.
+    setup(() => refusal(1));
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+
+  it('sends the real call after any other outcome', async () => {
+    setup((call) =>
+      call === 0
+        ? { ...refusal(345_525), reason: 'cash_earning_evidence_incomplete' }
+        : refusal(345_525)
+    );
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+
+  it('a fresh start asks the database again rather than trusting memory', async () => {
+    setup(() => refusal(345_525));
+    expect(await run(new RakebackSettlerService())).toBe('more');
+    expect(await run(new RakebackSettlerService())).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+
+  it.each([0, -1, 1.5, '9'])('does not remember a refusal whose count is %j', async (count) => {
+    setup(() => ({ ...refusal(1), source_count: count }));
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(2);
   });
 });

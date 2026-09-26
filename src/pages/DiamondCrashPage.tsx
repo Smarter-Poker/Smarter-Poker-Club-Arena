@@ -59,6 +59,7 @@ import { LoadingState } from '../components/common/EmptyState';
 import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
+import { useSceneBudget } from '../hooks/useSceneBudget';
 import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
 import {
   bonusTotal,
@@ -96,7 +97,6 @@ import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import { soundService } from '../services/SoundService';
 import FloorFeed from '../components/games/FloorFeed';
 import CrashPointsStrip from '../components/games/CrashPointsStrip';
 import { useGameFloor } from '../hooks/useGameFloor';
@@ -104,6 +104,12 @@ import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
+/**
+ * What the playfield prints above the chart held sideways: the day's line and
+ * the crash-points strip, with the stage's gaps. The chart is the rest of the
+ * console's scene budget (useSceneBudget).
+ */
+const CRASH_STAGE_CHROME_PX = 56;
 /**
  * The displayed hundredth from which Book The Win is offered: the same floor
  * crashSettle enforces, and the one the round was SEALED with. Contract 4 moved
@@ -126,6 +132,8 @@ const ROUND_UNREACHABLE =
 const AUTO_PAUSE_MS = 1500;
 /** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
 
+/** The cap as the hero prints it, two decimals always: 2500 -> "25.00x". */
+const capLabel = (cents: number) => `${(Math.max(0, cents) / 100).toFixed(2)}x`;
 const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
 
 /** A prize is an exact ledger amount, including all digits of large wins. */
@@ -255,6 +263,9 @@ function DiamondCrashGame() {
   // server will accept.
   cashoutOpensRef.current = round?.cashout_floor_cents ?? DEFAULT_CASHOUT_OPENS_CENTS;
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
+  // Held sideways, the chart takes the height the console leaves the scene,
+  // less the day's line and the crash-points strip printed above it.
+  const sceneBudget = useSceneBudget();
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
   /**
@@ -367,17 +378,15 @@ function DiamondCrashGame() {
       setRound(settled);
       const cashed = settled.status === 'cashed';
       setPhase(cashed ? 'cashed' : 'crashed');
+      /* THE FLIGHT IS HEARD FROM THE SCENE (2026-09-26). CrashCurve plays
+         the engine through the climb and each ending on the frame that shows
+         it: the booked sting (the gold fanfare at the cap) with a medium buzz,
+         or the crash burst with a strong one. The page used to sing the
+         cash-out and buzz here as well, which would now be every ending twice. */
       if (cashed) {
-        /* The cash-out sings at the multiplier it got, the same voice the
-           spin ladder uses for a multiplier result. A crash says nothing:
-           silence after a climb is the loudest thing this game has. */
-        soundService.playSpinMultiplierResult((settled.outcome?.cashout_cents ?? 100) / 100);
-        triggerHaptic('success');
         toast.success(
           `Cashed Out At ${multiplierLabel(settled.outcome?.cashout_cents ?? 100)} For ${chipsLabel(settled.outcome?.payout_chips ?? 0)} Chips`
         );
-      } else {
-        triggerHaptic('light');
       }
       setClientSeed(randomClientSeed());
       setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));
@@ -505,8 +514,8 @@ function DiamondCrashGame() {
   const bets = useMemo(() => state?.bets ?? [], [state]);
   const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet), [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
-  const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 100000;
-  const growthK = cfg?.growth_k ?? 0.12;
+  const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 2500;
+  const growthK = cfg?.growth_k ?? 0.1;
   const autoPresets = useMemo(
     () => AUTO_PRESETS.filter((t) => t === 0 || t <= capCents),
     [capCents]
@@ -712,7 +721,10 @@ function DiamondCrashGame() {
       setQuotedAmount(null);
       setStarting(true);
       setVerdict(null);
-      soundService.playSpinStart();
+      // Inside the tap: the one place an iOS switch haptic is granted. The
+      // sound is the scene's: its engine starts on the frame the flight does.
+      // (This played playSpinStart, whose idle engine bed was only ever closed
+      // by the wheel's own chase, so on this page it idled on under the flight.)
       triggerHaptic('medium');
       try {
         // An emptied "Your Client Seed" is not a decision the player made
@@ -1317,7 +1329,10 @@ function DiamondCrashGame() {
                 if (settledRound) setRevealedRoundId(settledRound.round_id);
               }}
               width={chartWidth}
-              height={Math.max(310, Math.min(620, Math.round(chartWidth * 0.64)))}
+              height={Math.min(
+                Math.max(310, Math.min(620, Math.round(chartWidth * 0.64))),
+                sceneBudget === null ? Infinity : Math.max(200, sceneBudget - CRASH_STAGE_CHROME_PX)
+              )}
             />
           </div>
           <div className={styles.readout} role="status">
@@ -1356,7 +1371,7 @@ function DiamondCrashGame() {
                   'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
                 )
               ) : (
-                `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`
+                `${promise ? `${promise} ` : ''}Every Round Is Capped At ${capLabel(capCents)}. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`
               )}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
@@ -1364,7 +1379,7 @@ function DiamondCrashGame() {
               <span className="sc-copy sc-ink--silver">
                 Would Have Crashed At {multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}.
                 {settledRound.outcome && settledRound.outcome.crash_cents > settledRound.cap_cents
-                  ? ` This Round Would Have Booked At Its ${multiplierLabel(settledRound.cap_cents)} Limit First.`
+                  ? ` It Would Have Booked At The ${capLabel(settledRound.cap_cents)} Max First.`
                   : ''}{' '}
                 {settledRound.fairness.server_seed && settledRound.outcome ? (
                   <SealedPrize
@@ -1539,8 +1554,9 @@ function DiamondCrashGame() {
             clubId={routeClubId ?? ''}
             clubUuid={clubUuid}
             awardId={settledRound.award_id ?? null}
-            // The page already sang the cash-out at its own multiplier, and a
-            // crash says nothing. Either way the receipt adds no chord.
+            // The scene already sounded the ending on the frame that showed it
+            // (the booked sting, the gold fanfare at the cap, or the crash
+            // explosion). Either way the receipt adds no chord.
             silent
             // A crash is not a win. The receipt says what it is.
             eyebrow={
@@ -1552,6 +1568,11 @@ function DiamondCrashGame() {
             }
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
+            // The receipt's own art: the jet at the multiplier it booked, or
+            // where it crashed on a round that was not cashed.
+            game="crash"
+            figure={finalCents === null ? null : finalCents / 100}
+            cap={settledRound.cap_cents / 100}
           />
         )}
     </div>

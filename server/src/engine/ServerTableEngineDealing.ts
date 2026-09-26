@@ -57,6 +57,7 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { secureRandomInt } from './CryptoRandom.js';
 import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
+import type { BlindSeats } from './deadButton.js';
 import {
   HAND_COMPLETION,
   handCompletionHoldMs,
@@ -86,6 +87,12 @@ function countAwardGroups(
   return Math.max(1, keys.size);
 }
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
+
+/** One pre-allocation's settled outcome: a number, an F06 failure, or nothing. */
+type PreparedHandNumberOutcome =
+  | { n: number; at: number; epoch: string | null; issuerEpoch?: number }
+  | { failure: unknown }
+  | null;
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -445,7 +452,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                closes is simply absent from the next loadSeatedPlayers. */
             if (!this.isTournamentTable()) {
               this.disconnectEngine.unregisterPlayer(this.tableId, id);
-              this.timeBankEngine.removePlayer(this.tableId, id);
+              this.forgetTimeBank(id);
               this.straddleEngine.removePlayer(this.tableId, id);
               this.preActionEngine.removePlayer(this.tableId, id);
               this.leaveHeldByClock.delete(id);
@@ -528,6 +535,100 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+
+        /* ═══ THE CLUSTER'S HALT (Lightning 2.0 Phase 5, 2026-09-21) ══════
+           `tables.dealing_halted_at` is set on every table of a Cluster while
+           it converts MUST_MOVE -> LIGHTNING and cleared if that conversion
+           aborts. It means one thing: finish the hand you are in and start no
+           other. See `dealingHaltLock` on the base class for the contract, for
+           why it is a polled lock rather than a pause-gate owner, and for the
+           60-second worst case on both the halt and the resume.
+
+           THE HAND IN THE AIR IS NEVER KILLED. This is the top of the
+           iteration: the loop cannot reach this line until `dealHand()` has
+           resolved and the settlement barrier above has drained. "Allow
+           already-started hands to resolve normally" is not a second check -
+           it is the position of this one.
+
+           IT SITS ABOVE THE SIT-OUT EVICTION DELIBERATELY. Almost everything
+           before this gate keeps the table's picture of itself current - the
+           roster, the moved presence, the horse heartbeats, and the throttled
+           row re-read inside prepareNextHand that is how the halt is lifted
+           again. The ONE exception is deliberate and is argued at length in
+           prepareNextHand: the `leave_pending` sweep, which is not a read. It
+           is a departure the PLAYER asked for, it is already uncounted by
+           every population query the conversion asks, and it stays above this
+           gate on purpose. Everything after the gate changes somebody's seat
+           or deals: the sit-out
+           eviction cashes a player out, `announcePendingSeatMoves` and the
+           idle sweeps move one between tables, and `dealHand` posts blinds. A
+           halted table does none of that. The start-up wait loop learned the
+           same lesson on 2026-09-01: a deliberately parked table that goes on
+           standing players up is a table telling its players their seat is
+           safe and then emptying it.
+
+           AND IT HOLDS NOBODY FOR A BLIND IT COULD HAVE RELEASED. The idle
+           branch's `releaseWaitersNoBlindCanReach` (see the law of that name)
+           fires only when letting everyone in actually STARTS the game.
+           Letting them in here starts nothing, because the table is halted -
+           they would simply be in, and would come in behind the blinds when
+           the halt lifts, which is the one thing Dan's entry rule forbids. The
+           holds stand, unbilled, for the length of the conversion.
+
+           `markProgress` because a pass of this branch has just re-read the
+           roster and the row, exactly as the short-handed branch below has -
+           and because a table halted while its FSM is still 'waiting' has no
+           'paused' state to show GameServer's zombie reaper, which would
+           otherwise condemn it at 180s and rebuild it into the same halt. */
+        /* AND A TABLE MUST NOT STAY LABELLED PAUSED ONCE THE HALT LIFTS
+           (2026-09-25). The gate below moves the FSM 'running' -> 'paused' so
+           that a halted table reads as quiet on purpose. Nothing ever moved it
+           back: `releasePauseGate()` is the only other writer of that edge,
+           and no owner in this process will ever release a POLLED lock. So a
+           Cluster whose conversion finished left its tables dealing normally
+           while every reader that asks `isPausedByDesign()` - the zombie
+           reaper, the turn watchdog, the drain's boundary test, /health - was
+           told for the rest of the process's life that the table was parked on
+           purpose. It dealt, so nobody would have seen it; the guards around
+           it were simply switched off. The hourly maintenance break washes it
+           away through `releasePauseGate`, which is getting lucky on a clock
+           rather than a fix (CLAUDE.md 10.11/10.12).
+
+           ABOVE the gate rather than in an `else` on it, so the gate itself
+           stays the narrow park-and-poll branch its law slices and reads.
+           Guarded on `isNextHandPaused()` rather than on the halt alone: that
+           predicate names every owner which forbids the next hand, so this
+           edge can only fire when nothing whatever is holding the table. */
+        if (this.tableFSM.state === 'paused' && !this.isNextHandPaused()) {
+          this.tableFSM.transition('running');
+        }
+        /* THREE THINGS A PARKED PASS NOW DOES (remediation, 2026-09-25), all
+           inside passWhileDealingHalted and none of them a deal:
+             - it takes the leave sweep prepareNextHand launched above, so a
+               departure the database deferred (LIGHTNING_HAND_IN_PROGRESS) is
+               retried on the next pass instead of once per halt;
+             - it ACKNOWLEDGES the halt, once per `dealing_halted_at` value -
+               the conversion commit refuses until every leased table has;
+             - it lets an EMPTY table on a closed row end its engine. This
+               branch `continue`s before the idle branch's call, so a halted
+               table that emptied and closed used to keep its engine for ever.
+           And `consecutiveErrors` is reset: a completed parked pass is a
+           success. Without it the counter only ever climbed while halted -
+           each transient read failure was one more strike and no dealt hand
+           ever came to clear them - until hours into a conversion the table
+           was killed as dealing_loop_10_consecutive_errors. */
+        if (this.dealingHaltLock) {
+          if (this.tableFSM.state === 'running') {
+            this.tableFSM.transition('paused');
+          }
+          this.setLoopPhase('cluster_dealing_halted');
+          await this.passWhileDealingHalted();
+          if (!this.lifecycleCanMutate()) return;
+          this.consecutiveErrors = 0;
+          this.markProgress();
+          await this.sleep(3000);
+          continue;
+        }
 
         // ── Dan 2026-08-21, BINDING: sit-out eviction ──
         // "IF A PLAYER IS SITTING OUT THEY MUST BE REMOVED AFTER THE BUTTON
@@ -733,24 +834,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               const cashedOutIds = await this.takePreparedLeavePending();
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
-              for (const { userId: leftUserId, occupancyId } of cashedOutIds) {
-                const current = this.seatedPlayers.find((sp) => sp.user_id === leftUserId);
-                if (current && current.occupancy_id !== occupancyId) continue;
-                this.disconnectEngine.unregisterPlayer(this.tableId, leftUserId);
-                this.timeBankEngine.removePlayer(this.tableId, leftUserId);
-                this.straddleEngine.removePlayer(this.tableId, leftUserId);
-                this.preActionEngine.removePlayer(this.tableId, leftUserId);
-                this.leaveHeldByClock.delete(leftUserId);
-                this.chipContinuity.forget(leftUserId);
-              }
-              if (cashedOutIds.length > 0) {
-                this.seatedPlayers = this.seatedPlayers.filter(
-                  (sp) =>
-                    !cashedOutIds.some(
-                      (left) => left.userId === sp.user_id && left.occupancyId === sp.occupancy_id
-                    )
-                );
-              }
+              this.releaseDepartedSeats(cashedOutIds);
             })()
           );
         }
@@ -965,10 +1049,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
         // A pause may arrive while the roster, rest or blind read is pending.
+        // (2026-09-25) This is also where the Cluster halt read with the
+        // roster, under the rest, is honoured - the freshest value this
+        // engine holds, checked with nothing awaited between it and the deal.
+        // No second read here on purpose: the two-second rest is law
+        // (the-next-hand-deals-two-seconds-after-completion), and a halt
+        // written inside it is made safe by the acknowledgement protocol - the
+        // commit waits until this table parks after the one hand it dealt.
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
-          if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
+          // The three POLLED owners have no gate to wait on. awaitPauseGate
+          // returns immediately when only one of them is raised, and this
+          // branch then `continue`s - a hot spin. The gate is for the owners
+          // that something in this process will release.
+          if (!this.adminPauseLock && !this.maintenanceLock && !this.dealingHaltLock)
+            await this.awaitPauseGate();
           if (!this.running) break;
           continue;
         }
@@ -1539,19 +1635,94 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async prepareNextHand(): Promise<SeatedPlayer[]> {
     const releaseSeatBoundary = await this.acquireSeatBoundary();
     try {
+      /* ═══ A LEAVE THE PLAYER ASKED FOR STILL HAPPENS UNDER A HALT ═════
+         (Lightning 2.0 Phase 5 remediation, 2026-09-25. JUDGED, NOT MISSED.)
+
+         `prepareNextHand` runs ABOVE the dealing loop's Cluster-halt gate, and
+         the sweep below stands a `leave_pending` seat up and cashes it out. An
+         audit called that a hole, and on the letter of the gate's own comment
+         it was one: that comment justifies the gate's position by saying
+         everything above it merely keeps the table's picture of itself
+         current, and this is not that. It writes `table_seats.left_at` and it
+         moves money.
+
+         IT STAYS ABOVE THE GATE. The halt stops what the ENGINE decides to do
+         to a seat. It does not stop what the PLAYER asked for.
+
+         WHY THAT IS SAFE AGAINST THE ABORT-ON-POPULATION-CHANGE PATH, which is
+         the only reason the population has to be stable at all. Every
+         population query the conversion asks carries
+         `coalesce(ts.leave_pending, false) = false`:
+         `fn_cash_cluster_live_eligible` (the verdict that opens the
+         conversion), the commit's re-ask of it, the pool-session INSERT, and
+         the stranded-player check that asks the same question from the other
+         side. The seat left the counted set the instant POST /leave wrote the
+         flag - which happens outside this engine, on the player's own action,
+         and which the halt neither does nor should gate. This sweep only turns
+         `leave_pending = true` into `left_at IS NOT NULL`: uncounted before,
+         uncounted after. It cannot move the number the commit re-asks, so it
+         cannot be what makes a conversion fall back to MUST_MOVE. Nor can it
+         trip LIGHTNING_CONVERSION_MOVED_MONEY: that assertion reads the chip
+         total twice INSIDE the commit's own transaction, over `left_at IS
+         NULL` seats only. "A mode change is a seating transition, not an
+         economic transaction" is a statement about what the CONVERSION does -
+         and it writes no `table_seats` row at all - not a freeze on players.
+
+         WHAT REFUSING IT WOULD COST. The player has pressed Leave and their
+         client is gone. Their seat is already uncounted, so holding it buys
+         the conversion nothing; all it does is strand that player's money at a
+         table for the length of a conversion with no bound on it, to protect a
+         number that cannot change.
+
+         THE CONTRAST, so the line is legible: the sit-out eviction BELOW the
+         gate IS stopped, because a sitting-out player has asked for nothing.
+         That cash-out is the engine's own decision, taken on a clock the halt
+         is itself making tick - and a player told their seat was safe and then
+         emptied is the exact failure the wait loop's gate was written for.
+
+         UNDER A HALT, ONE SWEEP PER PASS WHILE SOMEBODY IS LEAVING
+         (2026-09-25). This used to be one sweep per halt: the teardown that
+         takes the prepared sweep sits below the gate, so while the halt stood
+         the prepared sweep was never taken and no second one could start. That
+         was harmless while a leave either completed or was refused by the stay
+         clock. It stopped being harmless when the database learned to refuse a
+         seat change with LIGHTNING_HAND_IN_PROGRESS: that leave is queued, and
+         on a Lightning Cluster the halt stands for as long as the Cluster is
+         Lightning, so "retry after the halt lifts" meant never. Now the halt
+         branch takes the prepared sweep and does the teardown
+         (passWhileDealingHalted -> completeQueuedLeavesWhileHalted), and a
+         halted table sweeps again on the next pass - but only while a seated
+         occupancy has a leave the database deferred for a Lightning hand
+         (`shouldSweepQueuedLeaves`), plus one probe per halt when the roster
+         shows any `leave_pending` seat. A leave the stay clock holds keeps its
+         own release (releaseLeavesHeldByClock) and is not re-swept every pass,
+         and a halted table with nobody leaving makes no extra request. The
+         add-on precondition is not asked under a
+         halt: the add-on sweep sits below the gate and cannot run, so waiting
+         for it would hold the leave for the whole halt; and a leave settling
+         before a pending add-on is the order settlement itself uses (step 6
+         before step 8e). Pinned in
+         AHaltedTableFinishesItsHandAndDealsNoOther.law.test.ts. */
       const leaveSweepCanRace =
         !this.isTournamentTable() &&
-        !this.pendingAddOnSweepNeeded &&
-        this.pendingAddOns.size === 0 &&
-        this.preparedLeavePending === null;
+        this.preparedLeavePending === null &&
+        (this.dealingHaltLock
+          ? this.shouldSweepQueuedLeaves()
+          : !this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0);
       let rawSweep: ReturnType<typeof processLeavePending> | null = null;
       let budgetedSweep: ReturnType<typeof processLeavePending> | null = null;
       if (leaveSweepCanRace) {
+        if (this.dealingHaltLock) this.queuedLeaveProbeDone = true;
         rawSweep = processLeavePending(
           this.tableId,
           this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs, occupancyId) =>
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
+          (lockedUserId, stayRemainingMs, occupancyId) => {
+            this.lightningDeferredLeaves?.delete(lockedUserId);
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
+          },
+          undefined,
+          undefined,
+          (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
         );
         budgetedSweep = this.withStepBudget(
           'leave_pending',
@@ -1566,18 +1737,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const allocation = this.allocatorMeasurement
           ? this.allocatorMeasurement.job('preparation', issuerEpoch!, prepare)
           : prepare();
+        /* A FAILED ALLOCATION IS ONE ATTEMPT (2026-09-26). The failure
+           travels inside this preparation's own outcome and is taken by the
+           one deal attempt it belongs to. It used to be written to a field
+           that nothing but the Manager's retry sweep ever cleared, so a single
+           statement timeout behind the tournament's settlement lane
+           (production, 03:45 UTC, release 92d59cfb) was re-thrown on every
+           later deal attempt while the allocator was answering again: table
+           16de0024 sat 183 s until the zombie watchdog rebuilt it. An
+           allocation claims no hand - custody begins at fn_f06_begin_hand -
+           so the next preparation simply allocates fresh; a lost reply costs
+           at most a burned number. */
         this.preparedHandNumber = allocation
-          .then((n) => {
+          .then((n): PreparedHandNumberOutcome => {
             this.allocatorMeasurement?.assertAdmission(issuerEpoch!);
             return { n, at: Date.now(), epoch: this.f06AllocationEpoch, issuerEpoch };
           })
-          .catch((err: unknown) => {
-            if (this.hasF06Allocator()) this.preparedF06AllocationError = err;
+          .catch((err: unknown): PreparedHandNumberOutcome => {
+            const f06 = this.hasF06Allocator();
             console.warn(
-              `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
+              f06
+                ? `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; this deal attempt fails and the next one allocates fresh:`
+                : `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
               err instanceof Error ? err.message : err
             );
-            return null;
+            return f06 ? { failure: err ?? new Error('f06_allocation_unproven') } : null;
           });
       }
       // A failed sibling read or elapsed step budget does not cancel a
@@ -1606,12 +1790,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   private preparedLeavePending: ReturnType<typeof processLeavePending> | null = null;
-  private preparedHandNumber: Promise<{
-    n: number;
-    at: number;
-    epoch: string | null;
-    issuerEpoch?: number;
-  } | null> | null = null;
+  private preparedHandNumber: Promise<PreparedHandNumberOutcome> | null = null;
+  /** The failure of the last settled F06 preparation, taken by exactly one deal attempt. */
   private preparedF06AllocationError: unknown = null;
   private preparedHandNumberValue: {
     n: number;
@@ -1622,6 +1802,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   /** A pre-allocated hand number older than this is discarded rather than dealt. */
   protected static readonly PREPARED_HAND_NUMBER_MAX_AGE_MS = 15_000;
 
+  /**
+   * Under a halt the sweep `prepareNextHand` launched is taken HERE, in the
+   * halt branch, rather than by the safety net below the gate, so the next
+   * parked pass may launch another (see the argument in prepareNextHand).
+   * The sweep already ran and was awaited inside prepareNextHand; this only
+   * collects its outcome and forgets what the departed players left behind.
+   */
+  protected override async completeQueuedLeavesWhileHalted(): Promise<void> {
+    if (this.preparedLeavePending === null) return;
+    let departed: Awaited<ReturnType<typeof processLeavePending>>;
+    try {
+      departed = await this.takePreparedLeavePending();
+    } catch (err) {
+      // The sweep ran past its step budget or its read failed. It is taken
+      // either way, so the next parked pass may launch a fresh one, which
+      // finds every seat still `leave_pending`. The same outcome the safety
+      // net below the gate has for the same failure, reported the same way.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.halted_leave_sweep_failed');
+      return;
+    }
+    if (!this.lifecycleCanMutate()) return;
+    this.releaseDepartedSeats(departed);
+    if (departed.length > 0) this.wakeClusterGame('seat_left');
+  }
+
   protected async takePreparedLeavePending(): ReturnType<typeof processLeavePending> {
     const prepared = this.preparedLeavePending;
     this.preparedLeavePending = null;
@@ -1629,8 +1834,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return processLeavePending(
       this.tableId,
       this.tableInfo?.club_id || '',
-      (lockedUserId, stayRemainingMs, occupancyId) =>
-        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
+      (lockedUserId, stayRemainingMs, occupancyId) => {
+        this.lightningDeferredLeaves?.delete(lockedUserId);
+        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
+      },
+      undefined,
+      undefined,
+      (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
     );
   }
 
@@ -1639,53 +1849,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const pending = this.preparedHandNumber;
     this.preparedHandNumber = null;
     if (!pending) return;
-    const value = await pending;
-    if (value) this.allocatorMeasurement?.assertAdmission(value.issuerEpoch!);
-    this.preparedHandNumberValue = value;
-  }
-
-  getF06FailedAllocation(): { epoch: string; failure: unknown } | null {
-    return this.preparedF06AllocationError && this.f06AllocationEpoch
-      ? Object.freeze({ epoch: this.f06AllocationEpoch, failure: this.preparedF06AllocationError })
-      : null;
-  }
-  private f06AllocationRecoveryInFlight = false;
-  /** Explicit one-shot allocation recovery. Never a recovery for unknown BEGIN. */
-  async retryF06FailedAllocation(
-    expected: { epoch: string; failure: unknown },
-    ownerCurrent: () => boolean
-  ): Promise<void> {
-    const assertOriginal = () => {
-      if (
-        !this.running ||
-        !ownerCurrent() ||
-        !this.hasF06Allocator() ||
-        !this.preparedAllocationIsCurrent(expected.epoch) ||
-        this.preparedF06AllocationError !== expected.failure ||
-        !expected.failure ||
-        this.f06CurrentPermit ||
-        this.preparedHandNumber
-      )
-        throw new Error('f06_allocation_recovery_unproven');
-    };
-    assertOriginal();
-    if (this.f06AllocationRecoveryInFlight) throw new Error('f06_allocation_recovery_in_flight');
-    this.f06AllocationRecoveryInFlight = true;
-    try {
-      const issuerEpoch = this.allocatorMeasurement?.capture();
-      const number = await this.allocateGlobalHandNumber();
-      assertOriginal();
-      this.allocatorMeasurement?.assertAdmission(issuerEpoch!);
-      this.preparedHandNumberValue = {
-        n: number,
-        at: Date.now(),
-        epoch: expected.epoch,
-        issuerEpoch,
-      };
-      this.preparedF06AllocationError = null;
-    } finally {
-      this.f06AllocationRecoveryInFlight = false;
+    const outcome = await pending;
+    // Each settled preparation replaces the last one whole: a newer success
+    // is never vetoed by an older failure that no deal attempt took.
+    if (outcome && 'failure' in outcome) {
+      this.preparedHandNumberValue = null;
+      this.preparedF06AllocationError = outcome.failure;
+      return;
     }
+    if (outcome) this.allocatorMeasurement?.assertAdmission(outcome.issuerEpoch!);
+    this.preparedF06AllocationError = null;
+    this.preparedHandNumberValue = outcome;
   }
 
   protected override invalidatePreparedAllocatorValue(): void {
@@ -1696,7 +1870,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return this.preparedHandNumberValue ? 1 : 0;
   }
   protected takePreparedHandNumber(): number | null {
-    if (this.preparedF06AllocationError) throw this.preparedF06AllocationError;
+    // An F06 preparation that failed fails this one deal attempt, as it always
+    // has (no inline second allocation on the F06 path), and is then gone.
+    const failure = this.preparedF06AllocationError;
+    if (failure) {
+      this.preparedF06AllocationError = null;
+      throw failure;
+    }
     const prepared = this.preparedHandNumberValue;
     this.preparedHandNumberValue = null;
     if (!prepared) return null;
@@ -1726,13 +1906,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
         this.refreshRakeConfig()
       ),
+      /* THE HALT, READ ONCE PER HAND ON A CLUSTER TABLE (2026-09-25). In
+         parallel with the roster, so it costs the deal no latency, and on
+         DEALING_HALT_TTL_MS rather than the rule re-read's minute - the gap
+         in which a busy table went on starting hands after its Cluster had
+         halted it. A no-op for every table outside a Cluster. The result is
+         honoured by the isNextHandPaused() check that follows the rest, the
+         last thing before dealHand(), and again at the top of the next pass. */
+      this.withStepBudget(
+        'refresh_dealing_halt',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshDealingHalt()
+      ),
     ] as const;
     this.setLoopPhase('load_next_hand_inputs');
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
-    const [seats, rake] = await Promise.allSettled(reads);
+    const [seats, rake, halt] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
     if (rake.status === 'rejected') throw rake.reason;
+    if (halt.status === 'rejected') throw halt.reason;
     return seats.value;
   }
 
@@ -2144,6 +2337,38 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dealerSeat = headsUpSeat;
         }
       }
+      /**
+       * THE DEAD BUTTON RULE HOLDS AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30)
+       *
+       * The block above applied "the blinds advance and the button follows"
+       * only when the table had dropped to two. At three or more the button
+       * still walked to the next occupied seat, which is the moving-button
+       * convention, and a tournament is not played that way. Seats 1..6,
+       * button 2, small blind 3, big blind 4, seat 3 busts: the walk put the
+       * button on 4, so seat 4 posted the big blind and then held the button
+       * (no small blind), and seat 5 went from UTG straight to the big blind.
+       * When the BIG blind busted, seat 5 went small blind, then button, and
+       * never posted a big blind that orbit. When a balanced-in player took
+       * the empty seat between the button and the small blind, the walk
+       * handed them the button and seats 4 and 5 posted the small and the big
+       * blind twice running.
+       *
+       * tournamentDeadButtonSeats is the ONE definition of the rule, shared
+       * with every predictor in the base class: the big blind advances one
+       * live seat, the small blind is the seat that posted it last hand (dead
+       * if that seat emptied) and the button is the seat that held the small
+       * blind last hand (dead if that seat emptied). It stands down on the
+       * first hand, on a cash table (whose published rule IS the moving
+       * button) and heads-up, where the block above already holds. A drawn
+       * first button is hand one by definition, so the two never meet.
+       */
+      const deadButton: BlindSeats | null =
+        !drawnIsSeated && headsUpFirstButton === null
+          ? this.tournamentDeadButtonSeats(players)
+          : null;
+      if (deadButton) {
+        dealerSeat = deadButton.button;
+      }
       this.currentHandDealerSeat = dealerSeat;
       this.lastButtonSeat = dealerSeat;
       // Everyone dealt into THIS hand is a veteran from the NEXT one onward, so
@@ -2218,8 +2443,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // over the same `players` roster HandController is about to receive. Its
       // getNextActiveSeat filters `is_sitting_out`, and every player in this
       // roster is built with `is_sitting_out: false`, so the two walks agree.
-      const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
-      const bbSeat = this.getNextSeat(sbSeat, players);
+      //
+      // Under the tournament dead-button rule the seats are the rule's own
+      // (see `deadButton` above): the small blind can be DEAD - null here, no
+      // seat posts it - and the button can sit on an empty seat. HandController
+      // cannot derive either from the button, so the hand is TOLD its blind
+      // seats through `config.blindSeats` below rather than left to walk.
+      const sbSeat: number | null = deadButton
+        ? deadButton.smallBlind
+        : players.length === 2
+          ? dealerSeat
+          : this.getNextSeat(dealerSeat, players);
+      const sbSeatPosition = deadButton ? deadButton.smallBlindSeat : (sbSeat as number);
+      const bbSeat = deadButton ? deadButton.bigBlind : this.getNextSeat(sbSeat as number, players);
 
       // Bible V8 §4.4: Process straddles before hand starts
       let straddleResults: { seat: number; amount: number }[] = [];
@@ -2229,7 +2465,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         const seatOrder: Array<{ seat: number; playerId: string }> = [];
         let currentSeat = utgSeat;
-        for (let i = 0; i < players.length - 2; i++) {
+        // Exclude the blinds: two seats, or one when the small blind is dead.
+        const blindSeatCount = sbSeat === null ? 1 : 2;
+        for (let i = 0; i < players.length - blindSeatCount; i++) {
           // Exclude SB and BB
           const p = players.find((pl) => pl.seat_number === currentSeat);
           if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
@@ -2608,6 +2846,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
        */
       if (!bombPotConfig) {
         this.lastBigBlindSeat = bbSeat;
+        // The small blind SEAT, posted or dead: the next tournament button
+        // (tournamentDeadButtonSeats). Recorded on exactly the hands the big
+        // blind anchor is, for the same reason.
+        this.lastSmallBlindSeat = sbSeatPosition;
       }
 
       if (!this.isTournamentTable() && !bombPotConfig && players.length >= 2) {
@@ -2617,7 +2859,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, occupant.user_id, which);
         };
 
-        chargeBlind(sbSeat, 'sb');
+        if (sbSeat !== null) chargeBlind(sbSeat, 'sb');
         chargeBlind(bbSeat, 'bb');
 
         // The posted blinds are not the only blinds. Two other paths take money
@@ -2761,6 +3003,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
         // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
         bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
+        /**
+         * THE HAND IS TOLD ITS BLIND SEATS (2026-09-25, the dead button at
+         * every table size). Under the tournament rule the small blind can be
+         * dead and the button can sit on an empty seat, neither of which
+         * HandController's own walk from the button can express. On a cash
+         * table this stays undefined and the controller walks as it always
+         * has: the published cash rule is the moving button, and its entry
+         * hold-outs are built on that walk.
+         */
+        blindSeats: this.isTournamentTable() ? { smallBlind: sbSeat, bigBlind: bbSeat } : undefined,
         // RAKE-AUDIT 2026-07-24: tournament pots are NEVER raked and never pay a
         // BBJ fee — the house take for tournaments/SNGs is the 10% entry fee at
         // buy-in. Pre-fix the cash schedule (10% + cap) was deducted from every

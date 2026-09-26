@@ -41,7 +41,9 @@
  *   5. THE READER KEPT EVERYTHING IT ALREADY CARRIED. fn_cash_game_lobby
  *      embeds fn_cash_cluster_lightning_state, so a CREATE OR REPLACE that
  *      silently dropped a key would break the lobby and compile perfectly.
- *      The reader has now been re-cut three times; this matters more each time.
+ *      The reader has now been re-cut FOUR times - 20260921142954 re-cut it
+ *      again, to widen the verdict and to drop a level of planning - and this
+ *      matters more each time.
  *
  * And one rule about the PROOFS rather than the code. Three of this file's
  * @live-proof lines went false purely because the function body they read
@@ -192,6 +194,73 @@ const CENSUS_PREDICATE = (() => {
 const copiesIn = (s: string): number =>
   CENSUS_PREDICATE === '' ? -1 : normalise(s).split(CENSUS_PREDICATE).length - 1;
 
+/**
+ * THE THRESHOLD RULE AS IT STANDS, rather than the copy this file was written
+ * against. 20260921142954 re-cut fn_cash_cluster_lightning_thresholds, so the
+ * body the database executes is no longer the one in FILE, and a guard/cast pin
+ * that read FILE alone would be pinning a body nothing runs. So it reads
+ * whichever migration most recently writes the function out - the same
+ * mechanism CENSUS_PREDICATE uses to track the census rather than a copy of it.
+ * When the file under test IS the newest definer, the LIGHTNING_P4_MIGRATION
+ * override is honoured, so mutation testing still bites here.
+ */
+const LIVE_RULE = (() => {
+  const definer = fs
+    .readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .filter((f) =>
+      fs
+        .readFileSync(path.join(MIGRATIONS, f), 'utf8')
+        .includes('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_lightning_thresholds(')
+    )
+    .pop();
+  if (!definer) return '';
+  const text = definer === FILE ? SQL : fs.readFileSync(path.join(MIGRATIONS, definer), 'utf8');
+  return text.replace(/--[^\n]*/g, '');
+})();
+
+/** The identifier that holds the Lightning configuration object in a rule body. */
+const configIdent = (rule: string): string =>
+  rule.match(/([A-Za-z_]\w*)\s*:=\s*[\w.]+\s*->\s*'lightning'/)?.[1] ??
+  rule.match(/jsonb_typeof\(\s*([A-Za-z_]\w*)\s*\)\s*=\s*'object'/)?.[1] ??
+  '';
+
+/** A quoted pattern, or the pattern the named constant is initialised with. */
+const patternOf = (rule: string, operand: string): string =>
+  operand.startsWith("'")
+    ? operand
+    : (rule.match(
+        new RegExp(`${operand}\\s+(?:constant\\s+)?\\w+\\s*:=\\s*('(?:''|[^'])*')`)
+      )?.[1] ?? '');
+
+/**
+ * Every read of a configuration key out of the rule, with whatever operator is
+ * applied to it: a `~` match against a pattern, or a `::` coercion. That pair is
+ * where the Phase 4 blocker lived - a guard and a cast admitting different sets.
+ */
+const configReads = (
+  rule: string,
+  cfg: string
+): { key: string; op: string; before: string; pattern: string }[] =>
+  [
+    ...rule.matchAll(
+      new RegExp(
+        `\\(\\s*${cfg}\\s*->>\\s*'(\\w+)'\\s*\\)\\s*(::\\s*\\w+|~\\s*(?:'(?:''|[^'])*'|\\w+))?`,
+        'g'
+      )
+    ),
+  ].map((m) => {
+    const op = flat(m[2] ?? '');
+    const at = m.index ?? 0;
+    return {
+      key: m[1],
+      op,
+      before: rule.slice(Math.max(0, at - 10), at),
+      pattern: op.startsWith('~') ? patternOf(rule, op.replace(/^~\s*/, '')) : '',
+    };
+  });
+
 // ===========================================================================
 //  1. THE THRESHOLDS, IN ONE PLACE
 // ===========================================================================
@@ -323,8 +392,85 @@ describe('Phase 4: the thresholds are configuration, and the defaults live in on
         'IF coalesce(g.handedness, 9) <= 6 THEN v_on := 18; v_off := 12; ' +
         "ELSE v_on := 27; v_off := 18; END IF; v_source := 'default_after_invalid_config';"
     );
-    // The whole body, not merely the guard: nothing in here raises.
-    expect(THRESHOLDS).not.toContain('RAISE EXCEPTION');
+    // WHY THE ASSERTION THAT USED TO SIT HERE WAS WORSE THAN USELESS, AND WHAT
+    // REPLACED IT.
+    //
+    // It read `expect(THRESHOLDS).not.toContain('RAISE EXCEPTION')`, and it was
+    // green on every run of this suite while the live function raised 22P02 on
+    // a configuration an operator could legitimately write. It looked for a
+    // RAISE STATEMENT. The raise did not come from a statement. It came from a
+    // CAST: the body guarded the configuration with `jsonb_typeof(...) =
+    // 'number'` and then coerced it with `::integer`, and those two admit
+    // DIFFERENT SETS. The guard admits every JSON number; the cast accepts only
+    // int4; everything in the gap - 18.0, 18.5, 1e300, 2147483648 - raised
+    // 22P02 or 22003 from inside an expression, with no RAISE anywhere near it.
+    // 18.0 is the one that matters: jsonb preserves the trailing zero and
+    // to_jsonb(numeric) produces it. The error propagated up through
+    // fn_cash_cluster_lightning_state into fn_cash_game_lobby, which is
+    // SECURITY DEFINER, granted to authenticated and polled every five seconds
+    // while the modal is open. 20260921142954 is the repair.
+    //
+    // So the old line asserted the absence of the one spelling of "this can
+    // fail" that nobody had written, two lines below the spelling that was
+    // actually there. An absence assertion that cannot name the mechanism it
+    // refuses is a comment with an expect() around it, and this one stood in
+    // front of the defect for the whole of its life without seeing it.
+    //
+    // WHAT REPLACES IT CATCHES THE CLASS: A GUARD AND A CAST THAT ADMIT
+    // DIFFERENT SETS. It parses both out of whichever migration currently
+    // defines the rule and pins the PAIR rather than either half -
+    //
+    //   - every configuration key that is turned into a number must first be
+    //     matched against an ANCHORED pattern that BOUNDS THE DIGIT COUNT, so
+    //     the guard cannot admit a value int4 has no room for;
+    //   - that bound is at most nine digits, which is what makes it true;
+    //   - the pattern must admit the trailing-zero decimal form, because that
+    //     is the shape a serialiser produces and refusing an operator's
+    //     obviously correct intent is its own defect; and
+    //   - the coercion must therefore run through numeric and floor(), never a
+    //     bare ::integer, because ::integer refuses the '18.0' the guard has
+    //     just admitted.
+    //
+    // Pointed at 20260921064717's own body this fails on the first clause:
+    // neither key carries a `~` guard at all and both go straight to
+    // ::integer. That is the blocker, written down as an assertion.
+    expect(LIVE_RULE, 'no migration writes out the threshold rule').toBeTruthy();
+    const cfgIdent = configIdent(LIVE_RULE);
+    expect(cfgIdent, 'the rule no longer reads a configuration object at all').toBeTruthy();
+    const reads = configReads(LIVE_RULE, cfgIdent);
+    expect([...new Set(reads.map((r) => r.key))].sort()).toEqual(['off_threshold', 'on_threshold']);
+    for (const key of ['on_threshold', 'off_threshold']) {
+      const mine = reads.filter((r) => r.key === key);
+      const guards = mine.filter((r) => r.op.startsWith('~'));
+      const casts = mine.filter((r) => r.op.startsWith('::'));
+      expect(guards.length, `${key} is read with no textual guard at all`).toBeGreaterThan(0);
+      expect(casts.length, `${key} is never coerced, so this pin would be vacuous`).toBeGreaterThan(
+        0
+      );
+      for (const g of guards) {
+        expect(g.pattern, `${key}'s guard is not a pattern this test can read`).toBeTruthy();
+        expect(g.pattern, `${key}'s guard is not anchored at both ends`).toMatch(/^'\^.*\$'$/);
+        const bound = g.pattern.match(/\[0-9\]\{\d*,(\d+)\}/);
+        expect(bound, `${key}'s guard does not bound its digit count`).toBeTruthy();
+        expect(
+          Number(bound?.[1]),
+          `${key}'s guard admits more digits than int4 can hold`
+        ).toBeLessThanOrEqual(9);
+        expect(g.pattern, `${key}'s guard refuses the trailing-zero decimal form`).toContain(
+          '\\.0'
+        );
+      }
+      for (const c of casts) {
+        expect(c.op, `${key} is cast straight to integer, which is the blocker`).toBe('::numeric');
+        expect(c.before, `${key} is coerced without flooring`).toContain('floor(');
+      }
+    }
+    // Said once more without reference to how the guard is spelled, so a rule
+    // rewritten in a shape this parser cannot read still cannot reintroduce the
+    // bare cast by being unreadable.
+    expect(LIVE_RULE, 'a configuration value is cast straight to an integer type').not.toMatch(
+      new RegExp(`\\(\\s*${cfgIdent}\\s*->>\\s*'\\w+'\\s*\\)\\s*::\\s*int`)
+    );
     // A missing game is the same kind of refusal, for the same reason.
     expect(THRESHOLDS).toContain("RETURN jsonb_build_object('ok', false, 'reason', 'not_found');");
   });
@@ -713,7 +859,7 @@ describe('Phase 4: the Lightning reader gains the verdict and loses no field', (
     // answered "a reader nothing reads is a reader nothing constrains" - so a
     // CREATE OR REPLACE that silently dropped a key compiles, applies, passes
     // every other check in the file and breaks the lobby. This body has now
-    // been re-cut three times, which is three chances to lose one. The
+    // been re-cut four times, which is four chances to lose one. The
     // previous body is read out of the two migrations that wrote it rather
     // than transcribed here, so this keeps meaning what it says if either is
     // ever re-cut in turn.
@@ -822,6 +968,17 @@ describe('Phase 4: the Lightning reader gains the verdict and loses no field', (
     expect(OFF_ARM).not.toContain('>=');
     // ON is gated on enabled and OFF is not, deliberately: a disabled Cluster
     // must not be allowed INTO Lightning and must always be able to drain OUT.
+    //
+    // SUPERSEDED, AND STILL TRUE OF THIS FILE. 20260921142954 widened both
+    // filters by one state, to IN ('must_move', 'pending_on') and IN
+    // ('lightning', 'pending_off'), because the specification re-asks both
+    // questions in a PENDING state and a verdict that answered false there
+    // would abort every conversion at its own safety re-check. The exact
+    // strings below are still what THIS migration says, which is what this
+    // file exists to pin; the live body is pinned by
+    // tests/lightning-phase-4-remediation.test.ts. Left as an equality on
+    // purpose: an edit to 20260921064717 is a rewrite of history, and this is
+    // what refuses one.
     expect(flat(ON_ARM)).toContain(
       "g.lightning_enabled AND g.cluster_mode = 'must_move' AND coalesce(g.enabled, false)"
     );

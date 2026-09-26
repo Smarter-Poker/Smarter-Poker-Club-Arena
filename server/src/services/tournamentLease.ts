@@ -294,7 +294,7 @@ export async function claimTournamentLease(
 const retainedTournamentHeartbeats = new RetainedLeaseHeartbeatBatches<
   TournamentLeaseHeartbeatClaim,
   TournamentLeaseHeartbeatOutcome
->();
+>(() => tournamentLeaseMonotonicNow());
 
 export async function heartbeatTournaments(
   claims: TournamentLeaseHeartbeatClaim[],

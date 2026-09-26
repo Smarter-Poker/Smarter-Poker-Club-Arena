@@ -484,53 +484,36 @@ it('actual recovery rejects changed map during delayed reply and preserves origi
   expect(e.f06CurrentPermit).toBe(p);
 });
 
-it('actual allocation recovery is one-shot and cannot discard an unknown BEGIN', async () => {
+it('actual F06 allocation failure fails one deal attempt and is then gone', async () => {
   const e: any = Object.create(ServerTableEngineDealing.prototype);
-  const failure = new Error('allocation lost');
-  let calls = 0;
+  const failure = new Error('canceling statement due to statement timeout');
   Object.assign(e, {
-    running: true,
-    f06Allocator: async () => {
-      calls++;
-      return 1000002;
-    },
+    allocatorMeasurement: null,
+    f06Allocator: async () => 1000002,
     f06AllocationCurrent: () => true,
     f06AllocationEpoch: 'epoch',
-    f06CurrentPermit: null,
-    preparedHandNumber: null,
-    preparedF06AllocationError: failure,
-  });
-  const ticket = e.getF06FailedAllocation();
-  e.f06CurrentPermit = {};
-  await expect(e.retryF06FailedAllocation(ticket, () => true)).rejects.toThrow('unproven');
-  expect(calls).toBe(0);
-  e.f06CurrentPermit = null;
-  await e.retryF06FailedAllocation(ticket, () => true);
-  expect(calls).toBe(1);
-  expect(e.takePreparedHandNumber()).toBe(1000002);
-  expect(e.getF06FailedAllocation()).toBeNull();
-  await expect(e.retryF06FailedAllocation(ticket, () => true)).rejects.toThrow('unproven');
-});
-it('actual allocation recovery burns late success after ownership change', async () => {
-  const e: any = Object.create(ServerTableEngineDealing.prototype);
-  const failure = new Error('lost');
-  let current = true;
-  Object.assign(e, {
-    running: true,
-    f06Allocator: async () => {
-      current = false;
-      return 1000002;
-    },
-    f06AllocationCurrent: () => current,
-    f06AllocationEpoch: 'epoch',
-    f06CurrentPermit: null,
-    preparedHandNumber: null,
+    preparedHandNumber: Promise.resolve({ failure }),
     preparedHandNumberValue: null,
-    preparedF06AllocationError: failure,
+    preparedF06AllocationError: null,
   });
-  await expect(
-    e.retryF06FailedAllocation(e.getF06FailedAllocation(), () => current)
-  ).rejects.toThrow('unproven');
-  expect(e.preparedHandNumberValue).toBeNull();
-  expect(e.preparedF06AllocationError).toBe(failure);
+  await e.settlePreparedHandNumber();
+  expect(() => e.takePreparedHandNumber()).toThrow(failure.message);
+  expect(e.preparedF06AllocationError).toBeNull();
+  expect(e.takePreparedHandNumber()).toBeNull();
+});
+it('actual newer settled allocation replaces an older failure no attempt took', async () => {
+  const e: any = Object.create(ServerTableEngineDealing.prototype);
+  Object.assign(e, {
+    allocatorMeasurement: null,
+    f06Allocator: async () => 1000002,
+    f06AllocationCurrent: () => true,
+    f06AllocationEpoch: 'epoch',
+    preparedHandNumber: Promise.resolve({ failure: new Error('lost') }),
+    preparedHandNumberValue: null,
+    preparedF06AllocationError: null,
+  });
+  await e.settlePreparedHandNumber();
+  e.preparedHandNumber = Promise.resolve({ n: 1000002, at: Date.now(), epoch: 'epoch' });
+  await e.settlePreparedHandNumber();
+  expect(e.takePreparedHandNumber()).toBe(1000002);
 });

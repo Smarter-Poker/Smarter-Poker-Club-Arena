@@ -47,12 +47,39 @@ export interface RaiseFinancialAlertResult {
  * @param source   dotted subsystem identifier, e.g. 'ServerTableEngine.insurance_ledger_write_failed'
  * @param message  human-readable one-liner for the operator
  * @param context  structured payload — include every id needed to reconstruct the event by hand
+ * @param dedupeKey ONE OPEN ALERT PER THING THAT IS WRONG, not per pass over it.
+ *
+ * THE DEDUPE KEY WAS ARMED IN THE DATABASE AND UNREACHABLE FROM HERE
+ * (2026-09-25). `fn_raise_server_financial_alert` has taken `p_dedupe_key` and
+ * `p_entity_id` for as long as it has existed, and it implements exactly the
+ * rule its own comment states: a source that already has an UNRESOLVED row for
+ * this subject returns that row's id instead of inserting another. This wrapper
+ * never passed either parameter, so all 33 call sites that go through it could
+ * not reach the guard, and the only flood control left was the RPC's 60-per-
+ * minute RATE limit — which a refusal retried on a ~30-minute backoff never
+ * trips.
+ *
+ * Measured on production the day this was fixed: `Tournament.atomic_finish_refused`
+ * held 15,426 unresolved criticals across 1,003 tournaments (every one of which
+ * had since COMPLETED and paid its pool in full, 91,009.20). The five call sites
+ * that bypass this wrapper and call the RPC directly with `p_entity_id` -
+ * StableHandExecutor.checkBanks, HorseFleet.stableHandHeartbeat and friends -
+ * held ONE row each. Same estate, same day; the only difference was whether the
+ * subject key reached the door.
+ *
+ * Pass a key that names the THING, not the attempt: a tournament id plus the
+ * refusal reason, a table id plus a hand number. Omit it only for an alert that
+ * is genuinely one-per-occurrence.
+ * @param entityId optional subject id recorded alongside; also used as the
+ *                 dedupe key when `dedupeKey` is not given.
  */
 export async function raiseFinancialAlert(
   severity: FinancialAlertSeverity,
   source: string,
   message: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
+  dedupeKey?: string | null,
+  entityId?: string | null
 ): Promise<RaiseFinancialAlertResult> {
   try {
     const { data, error } = await supabase.rpc('fn_raise_server_financial_alert', {
@@ -60,6 +87,8 @@ export async function raiseFinancialAlert(
       p_source: source,
       p_message: message,
       p_context: context,
+      p_dedupe_key: dedupeKey ?? null,
+      p_entity_id: entityId ?? null,
     });
 
     if (error) {

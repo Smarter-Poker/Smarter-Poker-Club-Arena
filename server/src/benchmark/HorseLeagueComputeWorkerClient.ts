@@ -18,7 +18,7 @@ import {
   horseLeagueKernelStartTicksAreValid,
 } from './HorseLeagueProcessPriority.js';
 
-import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
+import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
 import { PHASE8_POLICY } from '../engine/HorseTournamentPostflop.js';
 import { horseDecisionSolverStoresAreValid } from '../engine/horseDecision/protocol.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';

@@ -21,19 +21,32 @@ import { tournamentEntryWindow } from '../../utils/tournamentEntryWindow';
 import { blindLevelMinutes, parseBlindStructure } from './tournamentFigures';
 import type { LobbyTournamentRow } from './lobbyEntries';
 
-/** Estimate the selected engine window, never the later of unrelated clocks. */
+/**
+ * When late registration closes: the level window's estimated end or the
+ * configured clock deadline, WHICHEVER COMES FIRST - the same rule as
+ * fn_tournament_late_registration_open. Never the later of the two.
+ */
 export function lateRegEndMs(t: LobbyTournamentRow): number | null {
   const window = tournamentEntryWindow(t);
-  if (window.mode === 'minutes') {
-    const begun = Date.parse(t.started_at ?? '');
-    return Number.isFinite(begun) ? begun + window.minutes * 60000 : null;
-  }
+  const begun = Date.parse(t.started_at ?? '');
+  const minutes = window.mode === 'closed' ? undefined : window.minutes;
+  const clock =
+    minutes !== undefined && minutes > 0 && Number.isFinite(begun) ? begun + minutes * 60000 : null;
+  if (window.mode === 'minutes') return clock;
   if (window.mode !== 'levels' || window.current >= window.cap) return null;
+  // An unreadable level clock is "could not tell", not the minute deadline:
+  // the level window may still close first.
+  const levels = levelWindowEndMs(t, window.cap, window.current);
+  if (levels === null) return null;
+  return clock === null ? levels : Math.min(levels, clock);
+}
+
+function levelWindowEndMs(t: LobbyTournamentRow, cap: number, current: number): number | null {
   const structure = parseBlindStructure(t.blind_structure);
   const levelBegun = Date.parse(t.level_started_at ?? '');
-  if (!structure || window.cap > structure.length || !Number.isFinite(levelBegun)) return null;
+  if (!structure || cap > structure.length || !Number.isFinite(levelBegun)) return null;
   let end = levelBegun;
-  for (let index = window.current; index < window.cap; index++) {
+  for (let index = current; index < cap; index++) {
     const minutes = blindLevelMinutes(structure, index + 1);
     if (!Number.isFinite(minutes) || minutes <= 0) return null;
     end += minutes * 60000;

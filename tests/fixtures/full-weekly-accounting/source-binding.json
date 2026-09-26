@@ -71,13 +71,13 @@
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-seed.sql": "94e09f38a3998784faca103bdfe4728207a9b0a8ca1ff22d430a4cc8e84a3192",
     "tests/fixtures/pnl-evidence/PROTECTED-QUALIFICATION.md": "dd27d25a6b7eaf3bf4cc36801c62ab4957107fb06b3e2abd510df7edd618247a",
     "tests/fixtures/pnl-evidence/captured-pnl-metadata.json": "149ebe07f1c16e8bf46c39aa9bb4befa6890b52c7acebaed54fad36b3483e20f",
-    "tests/fixtures/pnl-evidence/hooks-regression.sql": "009f4c31f8bcb3ac13f4393be218e4b83914f1cab3264b24c15046bc79e733d1",
+    "tests/fixtures/pnl-evidence/hooks-regression.sql": "b2d4beccd70092cfe81f07d5701cf1917d2c7335c8484d083ee83cc822cec486",
     "tests/fixtures/pnl-evidence/hooks-seed.sql": "e455f05f581a19f0eba11eaf93fdcc08db0230ce462d63338186bf31a7c00895",
     "tests/fixtures/pnl-evidence/legacy-pnl-core-preimage.sql": "63eedc0f466ab6a59167e610a5c90e67cf5702814ed224e1459a54a411245a46",
     "tests/fixtures/pnl-evidence/legacy-pnl-wrapper-preimages.sql": "2cf370e0a34dc62a7f853c7c50aa9f1530793bffa92e8145a4b4912002059ad0",
     "tests/fixtures/pnl-evidence/regression.sql": "1a616b4720ba86c84484e25635834ada1e48a2fc653c229444a3d5d05120ae3a",
     "tests/fixtures/pnl-evidence/schema.sql": "afb463545228af3ec9b8ff31c5af3ffdea595ff26d7e1cda358c7cf132e3485c",
-    "tests/fixtures/pnl-evidence/source-binding.json": "3e8c1fcc45b904a30a234f0254de29f9607eac7e37cbc232f95d4f3e59f9fbca",
+    "tests/fixtures/pnl-evidence/source-binding.json": "3ec67b9ff1c4173e0e93c28cd1e7e9012a301ec27bf43d821e4ac7f6547a7d12",
     "tests/fixtures/pnl-evidence/verify-wrapper-source-binding.py": "a5990f3c35e6cafb1b802720cc7936a291676f87ac19741052b3245a9548b76f",
     "tests/fixtures/accounting-alert-38644/README.md": "e2a82ec53562ce1ccb691751a5fa9006df80f44de4e1cd889bb578bbf4dc4c69",
     "tests/fixtures/accounting-alert-38644/caller-source-evidence.json": "361724903b7d95010424d92c40a09e21f216ecca21c4bab8c74407f8b3a0dc86",
@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "786785945a40cecd83afc5dfa2564320d257e267689a4e3508a2f610f4ad1266",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "ab8241b2b12c506e39118b7d33e02cbcf0836265e91e7d8d353100356827963c",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -325,7 +325,7 @@
     "tests/fixtures/union-weekly-basis/concurrency.py": "0c39241c365297ec24f472234428b11d36f93411bc2110fd8542cb673365a94e",
     "tests/fixtures/union-weekly-basis/accepted-document-relations.sql": "ff1493ba0e3dd7a3480029ab83dd522d29c03502d37ff05d74bc59dda20beaf3",
     "tests/fixtures/union-weekly-basis/captured-rake-dependencies.json": "30c0915a12676a85e720ffa2d8f56797e15d9de8217197f60bdc99a6de197ece",
-    "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
+    "tests/fixtures/union-weekly-basis/raked-regression.sql": "1d5bdfa1fdf03a78f206099522f329f1292586b5267a3c9bff7ff13becc2803d",
     "tests/fixtures/union-weekly-basis/captured-refund-dependencies.sql": "5332204d5d5c8edf070c199652acaaa4108e349c08207a84768d2c7a901dc42b",
     "tests/fixtures/union-weekly-basis/README.md": "b722e09f7a923872066f19efd819899045badb6b0cbae97dd09163b7486661bd",
     "tests/fixtures/union-weekly-basis/captured-payer-preimages.json": "fca603ec5e3ffe5ba00c718a6ccde6514e39e477b8e4deb7004635b1f4c762e9",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
+    "scripts/dev/test-union-weekly-basis.py": "72eb966f218808739e33aaa19d16788c093b74d49b437e1568f4c0c12fe7cfac",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "d38bc93fbeeca09e334fc5b44e165c7ffd386a90a10b23539489b36c2f49313f",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "150d9ad12b69aee1d25636d758ae69432c8bd4adac3c1d7decd4035973e2fb1a",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
+    "scripts/ci/classify-ci-changes.mjs": "b597bc7cf7de2376d2f914b4605c36583cdc2746c1ff08726453a5bbbeadee29",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "a458d41bc2bbcc2055967ea47fbd6f18f265569324e1924ca592b4a6b5361b98",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "fef153d98ac4d4babff15fe5533e08b7f8cdf30029314e230f5d5b0805c48e58",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
+    "tests/unit/fixtureNativeCi.test.ts": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "092c24e450585a9bd29ff24c880367430fb67bdb28bda8e92dc1ece61052b913",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "b1bc611802c412c1f3b4bd5ee0e7a65381f3d7a78c4e9a45bea387290cd5eecf",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "271d7354278a5ad2cb45f8a3484341db691627dccdfb792931eee37380d7c23b",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "4dfd9e2456c6bbecb340be6ce71a84ce95a78964fb9ad40ceb395908b42bbf7a",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -1835,6 +1835,48 @@
       "to": "65c60ceaa12b7db0390381e407cfa72c4bffd40ef1ec3fb2e53765e66be03075",
       "on": "2026-09-23",
       "why": "Cascade of the 2026-09-23 restamp of tests/unit/fixtureNativeCi.test.ts, scripts/ci/classify-ci-changes.mjs and .github/workflows/ci.yml for Cashier Phase 5 (cashier_statements_rebinding_20260923), re-based on main ce23acf886 after merging it into feat/cashier-phase5-statements. The manifest's fixed-input map re-pins those three files at their merged bytes (ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner) and records the pins it replaced under cashierStatementsIntegration.previousPins; the cash SQL and every immutable capture input it pins are unchanged."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "3d16e98e8539414f0b61840417be632d1b59f243d9527ae95b4bbea879e6355f",
+      "to": "b597bc7cf7de2376d2f914b4605c36583cdc2746c1ff08726453a5bbbeadee29",
+      "on": "2026-09-26",
+      "why": "Restamped 2026-09-26 (branch agent/fable-p7/mobile-spins-phase-7, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). The classifier's server lane now ignores exactly two browser-only Diamond screenshot/perf harnesses, scripts/dev/diamond-test-shots.mjs and scripts/dev/diamond-scene-perf.mjs, which nothing in accounting_postgres or the server shards invokes; every other scripts/dev/ path still admits the accounting job, and a harness changed beside any server-bound path still runs it (tests/unit/diamondGamesCiRouting.test.ts). No accounting component, SQL, fixture, limit or assertion changed."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
+      "to": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
+      "on": "2026-09-26",
+      "why": "Restamped 2026-09-26 (branch agent/fable-p7/mobile-spins-phase-7, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). accounting_postgres now runs as four matrix shards, so each accounting suite step carries exactly one condition, `matrix.shard == N`; the step assertions that required no `if:` now require that condition and nothing else (ONLY_ITS_SHARD), the BBJ, isolation-tool and weekly evidence `if:` strings gained their shard, and the Diamond playfield invocation is pinned at --retries=1 with a JSON report read by the flaky-case summary. Every suite, its command, environment and evidence are unchanged. No accounting component, SQL, fixture, limit or assertion changed."
+    },
+    {
+      "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+      "from": "cd06ea43200d58effaaa1a365ee960c3a34347e0edb58cb5096d83352943de62",
+      "to": "4dfd9e2456c6bbecb340be6ce71a84ce95a78964fb9ad40ceb395908b42bbf7a",
+      "on": "2026-09-26",
+      "why": "Cascade of the 2026-09-26 restamp of scripts/ci/classify-ci-changes.mjs and tests/unit/fixtureNativeCi.test.ts (accounting shards and Diamond harness routing, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). The nested binding re-pins the same reviewed bytes of the file(s) it lists and gains its own restamp_audit rows; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "10a99c4cd9a85e499bbb412fd9544a2e4bfcbe94f21e02533f29ac63885f397c",
+      "to": "fef153d98ac4d4babff15fe5533e08b7f8cdf30029314e230f5d5b0805c48e58",
+      "on": "2026-09-26",
+      "why": "Cascade of the 2026-09-26 restamp of scripts/ci/classify-ci-changes.mjs and tests/unit/fixtureNativeCi.test.ts (accounting shards and Diamond harness routing, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). The nested binding re-pins the same reviewed bytes of the file(s) it lists and gains its own restamp_audit rows; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "1dce3559523ec622d199ee3d5f8a8be529dd407ace15f7dc26632c9503197435",
+      "to": "b1bc611802c412c1f3b4bd5ee0e7a65381f3d7a78c4e9a45bea387290cd5eecf",
+      "on": "2026-09-26",
+      "why": "Cascade of the 2026-09-26 restamp of scripts/ci/classify-ci-changes.mjs and tests/unit/fixtureNativeCi.test.ts (accounting shards and Diamond harness routing, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). The nested binding re-pins the same reviewed bytes of the file(s) it lists and gains its own restamp_audit rows; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "scripts/qualification/cash-native-hosted.manifest.json",
+      "from": "(fixed-input pins)",
+      "to": "(fixed-input pins)",
+      "on": "2026-09-26",
+      "why": "Restamped 2026-09-26 with the accounting shards (docs/changelog/2026-09-26-ci-tells-the-truth-faster.md): this manifest's current fixed-input map pins .github/workflows/ci.yml, scripts/ci/classify-ci-changes.mjs and tests/unit/fixtureNativeCi.test.ts, and exactly those three current pins moved to the reviewed new bytes (ci.yml b15f5839 to the sharded workflow; classifier 3d16e98e; fixtureNativeCi d8d4891e). The historical ci.yml records inside the manifest are unchanged. scripts/ci/test_cash_native_pgcron.py passes 6 cases on the new pins."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -1973,5 +2015,33 @@
         "sha256": "65c60ceaa12b7db0390381e407cfa72c4bffd40ef1ec3fb2e53765e66be03075"
       }
     ]
+  },
+  "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
+
+  "weekly_rakeback_cost_successor_20260926": {
+    "migrations": [
+      "supabase/migrations/20260925205938_the_weekly_rakeback_gate_stops_proving_every_tournament_one_.sql"
+    ],
+    "prior_binding_sha256": "3845e4274f4b4c16199529e6baf6e7045bf8a38e9c49f47c6ef7136760734242",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
+        "sha256": "72eb966f218808739e33aaa19d16788c093b74d49b437e1568f4c0c12fe7cfac"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/raked-regression.sql",
+        "previous_sha256": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
+        "sha256": "1d5bdfa1fdf03a78f206099522f329f1292586b5267a3c9bff7ff13becc2803d"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "786785945a40cecd83afc5dfa2564320d257e267689a4e3508a2f610f4ad1266",
+        "sha256": "ab8241b2b12c506e39118b7d33e02cbcf0836265e91e7d8d353100356827963c"
+      }
+    ],
+    "added_repository_inputs": ["tests/fixtures/union-weekly-basis/rakeback-cost-predecessors.sql"],
+    "reason": "fn_rakeback_recompute_periods for one club-week cost about 71 s warm against the engine's 15 s client budget, so the settler discarded committed work every cycle and held its watermark. 20260925205938 makes fn_accounting_tournament_week_quality prove an event with no refund reversal in one set pass instead of calling fn_accounting_tournament_fee_net_plan per event, and makes fn_calculate_cash_rakeback_periods read its week once; eight CONCURRENTLY indexes precede its one transaction, which refuses unless the installed md5(prosrc) of both replaced functions and of net_plan is the body it was derived from. The union weekly basis cluster installs the rewritten bodies, installs production's exact predecessors beside them as fixture.predecessor_*, and period-coverage-regression requires identical answers from both. raked-regression's retained-house negative control now binds the rewritten clause; its meaning is unchanged.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py (LANG=en_US.UTF-8, no LC_ALL): exit 0, 80 PASS steps. period-coverage-regression: the rewrite and the pinned predecessors return identical gate verdicts, calculator receipts and certificates for all 40 club-weeks of the cluster (3 certified, 1 zero-entitlement certificate); a rolled-back fully refunded entry plus an ordinary fee prove ready under both, with net_plan called once under the rewrite (the refund only) and once per proved event under the predecessor; a disagreeing batch and a refunded source recorded as earned are refused identically; the page-drained book, the NULL-user completeness proof and the due coordinator at a simulated 2026-09-28T09:00Z all still pass. raked-regression: 22 PASS including the retained-house negative control on the rewritten clause."
   }
 }

@@ -56,6 +56,7 @@ vi.mock('./errorReporter.js', () => ({
 
 import {
   FLEET_POLICY_DEFAULTS,
+  HORSE_FLEET_DECISION_LANE_HOLD_MS,
   _resetFleetPolicyCacheForTests,
   applyBias,
   capBySeatedCount,
@@ -425,6 +426,84 @@ describe('withheldReason names every cause, in the contract order', () => {
     const p = policy({ schedule: [{ startHourUTC: 0, endHourUTC: 6 }] });
     expect(withheldReason(p, full)).toBe('outside_schedule');
     expect(withheldReason(p, { ...full, nowUTCHour: 3 })).toBeNull();
+  });
+
+  describe('the brain being behind (2026-09-26: 780-880 tables, lane 7.4-13.5 s behind)', () => {
+    it('holds at two seconds, and that is the whole number', () => {
+      expect(HORSE_FLEET_DECISION_LANE_HOLD_MS).toBe(2000);
+    });
+
+    it('seats while the oldest queued decision is younger than the hold', () => {
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: 0 })).toBeNull();
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: 80 })).toBeNull();
+      expect(
+        withheldReason(policy(), {
+          ...full,
+          decisionLaneWaitMs: HORSE_FLEET_DECISION_LANE_HOLD_MS - 1,
+        })
+      ).toBeNull();
+    });
+
+    it('withholds at the hold and above it', () => {
+      expect(
+        withheldReason(policy(), { ...full, decisionLaneWaitMs: HORSE_FLEET_DECISION_LANE_HOLD_MS })
+      ).toBe('brain_behind');
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: 5000 })).toBe('brain_behind');
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: 13_500 })).toBe(
+        'brain_behind'
+      );
+    });
+
+    it('ignores a wait the lane could not report', () => {
+      /* null is "no queue", undefined is a caller that never asked. Neither
+         is a measurement, so neither may withhold. NaN and Infinity are bad
+         data and bad data means no opinion. */
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: null })).toBeNull();
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: undefined })).toBeNull();
+      expect(withheldReason(policy(), { ...full, decisionLaneWaitMs: Number.NaN })).toBeNull();
+      expect(
+        withheldReason(policy(), { ...full, decisionLaneWaitMs: Number.POSITIVE_INFINITY })
+      ).toBeNull();
+      expect(withheldReason(policy(), full)).toBeNull();
+    });
+
+    it('withholds while the lane is not ready, whatever the queue says', () => {
+      for (const phase of ['starting', 'stopping', 'stopped', 'failed']) {
+        expect(withheldReason(policy(), { ...full, decisionLanePhase: phase })).toBe(
+          'brain_behind'
+        );
+        expect(
+          withheldReason(policy(), { ...full, decisionLanePhase: phase, decisionLaneWaitMs: 0 })
+        ).toBe('brain_behind');
+      }
+      expect(withheldReason(policy(), { ...full, decisionLanePhase: 'ready' })).toBeNull();
+      expect(
+        withheldReason(policy(), { ...full, decisionLanePhase: 'ready', decisionLaneWaitMs: 100 })
+      ).toBeNull();
+    });
+
+    it('loses to the kill switch and the pause, which are what the operator said', () => {
+      const behind = { ...full, decisionLaneWaitMs: 9000, decisionLanePhase: 'failed' };
+      expect(withheldReason(policy({ enabled: false }), behind)).toBe('fleet_disabled');
+      expect(withheldReason(policy({ pauseNewSeatings: true }), behind)).toBe('seating_paused');
+    });
+
+    it('wins over every cap and every later cause', () => {
+      const behind = { ...full, decisionLaneWaitMs: 5000 };
+      expect(withheldReason(policy({ maxHorses: 1 }), behind)).toBe('brain_behind');
+      expect(withheldReason(policy({ maxPerTable: 1 }), behind)).toBe('brain_behind');
+      expect(withheldReason(policy({ minHumansToSeat: 4 }), behind)).toBe('brain_behind');
+      expect(withheldReason(policy({ stakeBands: ['high'] }), behind)).toBe('brain_behind');
+      expect(withheldReason(policy({ variants: ['plo6'] }), behind)).toBe('brain_behind');
+      expect(
+        withheldReason(policy({ schedule: [{ startHourUTC: 0, endHourUTC: 6 }] }), behind)
+      ).toBe('brain_behind');
+    });
+
+    it('is not a policy row field, so the defaults are unchanged', () => {
+      expect('decisionLaneWaitMs' in FLEET_POLICY_DEFAULTS).toBe(false);
+      expect('decisionLanePhase' in FLEET_POLICY_DEFAULTS).toBe(false);
+    });
   });
 
   it('reports the FIRST cause, so an operator is told what they actually did', () => {

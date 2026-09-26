@@ -551,16 +551,43 @@ export class HandController {
     }
   }
 
+  /**
+   * The seats that post the blinds this hand. ONE derivation, read by
+   * postBlinds and by the preflop first-to-act branch of setNextPlayer, which
+   * used to be two copies of the same walk.
+   *
+   * THE DEAD BUTTON AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30): a
+   * tournament hand arrives with `config.blindSeats`, decided by the engine's
+   * rotation, and those seats are used as given. The small blind there can be
+   * DEAD (null: the seat that posted the big blind last hand has emptied, so
+   * nobody posts it, returned here as -1 so no seat matches) and the button
+   * can sit on an empty seat. Neither can be derived from the button, which
+   * is why the hand is told. Without it, the walk: heads-up the button IS the
+   * small blind, otherwise the small blind is the next active seat clockwise
+   * and the big blind the one after.
+   */
+  private blindSeatsForHand(): { sbSeat: number; bbSeat: number } {
+    const told = this.config.blindSeats;
+    if (told && Number.isFinite(told.bigBlind) && told.bigBlind > 0) {
+      const sbSeat =
+        told.smallBlind !== null && Number.isFinite(told.smallBlind) && told.smallBlind > 0
+          ? told.smallBlind
+          : -1;
+      return { sbSeat, bbSeat: told.bigBlind };
+    }
+    const isHeadsUp = this.getActivePlayers().length === 2;
+    const sbSeat = isHeadsUp
+      ? this.state.dealerSeat
+      : this.getNextActiveSeat(this.state.dealerSeat);
+    return { sbSeat, bbSeat: this.getNextActiveSeat(sbSeat) };
+  }
+
   private postBlinds(): void {
     const { smallBlind, bigBlind } = this.config;
     const activePlayers = this.getActivePlayers();
     if (activePlayers.length < 2) return;
 
-    const isHeadsUp = activePlayers.length === 2;
-    const sbSeat = isHeadsUp
-      ? this.state.dealerSeat
-      : this.getNextActiveSeat(this.state.dealerSeat);
-    const bbSeat = this.getNextActiveSeat(sbSeat);
+    const { sbSeat, bbSeat } = this.blindSeatsForHand();
 
     // Individual antes precede live blinds. A short ante is all-in for that
     // contribution only; the table-wide BBA below keeps its BB-first policy.
@@ -633,9 +660,11 @@ export class HandController {
 
     // Record the normal blind deficit once, before extra posts and straddles.
     // This changes only the pot-limit wager ceiling, never pot or eligibility.
+    // A DEAD small blind (sbSeat -1) is not a short post: no seat owes it, so
+    // it adds nothing to the ceiling.
+    const smallBlindDeficit = sbSeat > 0 ? smallBlind - (sbPlayer?.bet ?? 0) : 0;
     this.state.potLimitBlindAdjustment =
-      Math.round((smallBlind - (sbPlayer?.bet ?? 0) + (bigBlind - (bbPlayer?.bet ?? 0))) * 100) /
-      100;
+      Math.round((smallBlindDeficit + (bigBlind - (bbPlayer?.bet ?? 0))) * 100) / 100;
 
     // Bible V8 §4.2: Dead blinds — players returning from sit-out post SB+BB (SB is dead money)
     if (this.config.deadBlinds && this.config.deadBlinds.length > 0) {
@@ -3289,8 +3318,7 @@ export class HandController {
       if (isHeadsUp) {
         candidate = this.state.dealerSeat;
       } else {
-        const sbSeat = this.getNextActiveSeat(this.state.dealerSeat);
-        const bbSeat = this.getNextActiveSeat(sbSeat);
+        const { bbSeat } = this.blindSeatsForHand();
         // Bible V8 §4.4: If straddles are posted, first to act is left of last straddler
         if (this.config.straddles && this.config.straddles.length > 0) {
           const lastStraddleSeat = this.config.straddles[this.config.straddles.length - 1].seat;

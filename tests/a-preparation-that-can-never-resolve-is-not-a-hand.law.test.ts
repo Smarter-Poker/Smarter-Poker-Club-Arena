@@ -178,22 +178,26 @@ describe('3. the release gate asks the database, and fails closed', () => {
     );
   });
 
-  it('admits ONLY preparation reasons, by allow-list, and never cards in the air', () => {
+  it('admits ONLY bounded reasons, by allow-list, and never cards in the air', () => {
+    // 2026-09-25: the set gained the bounded stopped-bank class and was renamed
+    // to say what it now holds. Both preparation reasons are still in it; the
+    // raw stopped-bank reason is NOT (see the law test named for that day).
     expect(TRANSACTION).toContain(
-      'PREPARATION_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}'
+      'BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}'
     );
     // An allow-list, so an unrecognised reason refuses. A deny-list would let
     // every reason a future engine invents through by default.
-    expect(TRANSACTION).toContain(
-      'if not isinstance(k,str) or k not in PREPARATION_ONLY: raise SystemExit(1)'
-    );
+    expect(TRANSACTION).toContain('if not isinstance(k,str): raise SystemExit(1)');
+    expect(TRANSACTION).toContain('if k not in BOUNDED_ONLY: raise SystemExit(1)');
     // Assert the SET ITSELF, not a slice of the file: the surrounding prose
     // names the excluded reasons on purpose, and a text search would match it.
     const literal = TRANSACTION.slice(
-      TRANSACTION.indexOf('PREPARATION_ONLY={'),
-      TRANSACTION.indexOf('}', TRANSACTION.indexOf('PREPARATION_ONLY={')) + 1
+      TRANSACTION.indexOf('BOUNDED_ONLY={'),
+      TRANSACTION.indexOf('}', TRANSACTION.indexOf('BOUNDED_ONLY={')) + 1
     );
     const admitted = [...literal.matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]).sort();
+    // 2026-09-26 (#5267): stopped_bank_custody_stuck left the set again; past
+    // its bound it is a bank still not on disk, and it refuses.
     expect(admitted).toEqual(['f06_preparation_stuck', 'f06_preparation_unresolved']);
   });
 

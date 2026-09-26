@@ -324,7 +324,7 @@ describe('qualified adaptive observations', () => {
     expect(qualifyAdaptiveHand(h, NOW).observations).toEqual([]);
   });
 
-  it.each([undefined, null, 0, 2, 1.5])(
+  it.each([null, 0, 2, 1.5])(
     'rejects persisted actor-seat disagreement and excludes the dependent public line (%s)',
     (seat) => {
       const h = clone(hand({}, true));
@@ -337,6 +337,25 @@ describe('qualified adaptive observations', () => {
       expect(result.rejected.unavailable_public_line).toBeGreaterThan(0);
     }
   );
+  it('resolves an absent seat from the seat this userId provably acted from', () => {
+    // The committed snapshot RPC projects no seat column. The whole hand
+    // still qualifies exactly as the seat-carrying replay does.
+    const seated = hand({}, true),
+      h = clone(seated);
+    for (const action of h.actions!) delete action.seat;
+    expect(qualifyAdaptiveHand(h, NOW)).toEqual(qualifyAdaptiveHand(seated, NOW));
+    expect(qualifyAdaptiveHand(h, NOW).observations.length).toBeGreaterThan(1);
+  });
+  it("rejects an absent seat when the userId is another seat's actor", () => {
+    const h = clone(hand({}, true));
+    for (const action of h.actions!) delete action.seat;
+    // The first voluntary action now claims the other player's identity: one
+    // userId at two seats voids every ownership the hand could prove.
+    first(h).userId = ids[1];
+    const result = qualifyAdaptiveHand(h, NOW);
+    expect(result.observations).toEqual([]);
+    expect(result.rejected.unavailable_public_node).toBeGreaterThan(0);
+  });
   it.each([
     undefined,
     null,

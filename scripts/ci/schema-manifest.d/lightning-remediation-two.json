@@ -1,0 +1,38 @@
+{
+  "_owner": "agent/claude-lightning-p5r2/lightning/remediation-db - migrations 20260926072527 (a), 20260926072551 (b), 20260926072615 (c) and 20260926072638 (d) of Lightning remediation two",
+  "_comment": "Lightning Phases 5 and 9, remediation two. NOT YET APPLIED: every name below is a promise until the owner installs the four files 20260926072527, 20260926072551, 20260926072615 and 20260926072638, in that order, after 20260926023047. They are four transactions so that no one of them locks both tables and table_seats: A adds tables.dealing_halt_observed_at alone, B the two cash_cluster_events columns alone, C the body, D the table_seats triggers. THE SEAT IS THE ANCHOR: lightning_pool_session.anchor_seat_id (NOT NULL, indexed, one open session per anchor, deliberately no foreign key to the hot table table_seats; trg_table_seats_lightning_anchor_delete_guard refuses to delete a seat anchoring an OPEN session instead) is written by the conversion and by the new fn_lightning_pool_enter; fn_lightning_pool_stack returns the anchor seat's stack; two deferred constraint triggers on table_seats (trg_table_seats_lightning_pool_on_insert, trg_table_seats_lightning_pool_follows_seat, both calling fn_table_seats_lightning_pool_follows_seat) move a player into and out of the pool with the seat; trg_table_seats_lightning_anchor_guard (fn_table_seats_lightning_anchor_guard) refuses with PLT01 LIGHTNING_HAND_IN_PROGRESS any change to the anchor of a player in a live Lightning hand (fn_lightning_player_in_hand) except by that hand's settlement. A HALT IS A STOP ONLY ONCE SEEN: tables.dealing_halt_observed_at, stamped by fn_cash_table_observe_dealing_halt from the engine's halt gate; fn_cash_cluster_commit_lightning counts incomplete hand_state_snapshots instead of hand_history and waits for every member table with a live engine lease to observe its halt; fn_cash_cluster_open_table opens a table halted in a halted Cluster. fn_lightning_anchor_is_live_eligible is the population's seated predicate asked of one seat, used by the pool door, the formation filter and begin_dealing. fn_lightning_form_hand gains p_request_id (idempotent via lightning_hand.request_id, unique), locks anchor seats FOR SHARE, freezes the Cluster on an impossible state (PLT02, stack_invariant_failed, cluster_frozen, a critical alert through fn_raise_server_financial_alert) and retries only races; fn_cash_cluster_unfreeze is the operator's way back to must_move. begin_dealing re-checks the Cluster and the participants and abandons with a reason; slots_sync takes cash_games FOR UPDATE SKIP LOCKED and obeys the pass deadline; the tick stands down before locking; each stuck-conversion abort is isolated. cash_cluster_events gains event_version and request_id and the specification events; cash_cluster_conversion gains chips_at_begin and chips_at_commit; lightning_blind_ledger gains debt_since (kept by trg_lightning_blind_ledger_tracks_debt_since) which the P2 key now reads. DELETE is revoked from service_role on the seven lightning tables and cash_cluster_conversion. Re-cut functions are listed because the nightly refresh must find them carrying the new bodies.",
+  "functions": [
+    "fn_cash_cluster_unfreeze",
+    "fn_cash_table_observe_dealing_halt",
+    "fn_lightning_anchor_is_live_eligible",
+    "fn_lightning_pool_stack",
+    "fn_lightning_player_in_hand",
+    "fn_lightning_pool_enter",
+    "fn_lightning_blind_ledger_debt_since",
+    "fn_table_seats_lightning_anchor_guard",
+    "fn_table_seats_lightning_pool_follows_seat",
+    "fn_lightning_form_hand",
+    "fn_lightning_instance_begin_dealing",
+    "fn_lightning_hand_player_is_immutable",
+    "fn_lightning_hand_is_immutable",
+    "fn_lightning_blind_order",
+    "fn_lightning_pool_slots_sync",
+    "fn_lightning_instance_open",
+    "fn_lightning_instance_releases_its_reservations",
+    "fn_cash_cluster_commit_lightning",
+    "fn_cash_cluster_begin_pending_on",
+    "fn_cash_cluster_open_table",
+    "fn_cash_cluster_tick",
+    "fn_cash_clusters_tick_all",
+    "fn_cash_cluster_reap_stuck_conversions",
+    "fn_cash_cluster_epoch_follows_its_game"
+  ],
+  "columns": {
+    "tables": ["dealing_halt_observed_at"],
+    "lightning_pool_session": ["anchor_seat_id"],
+    "lightning_hand": ["request_id"],
+    "cash_cluster_conversion": ["chips_at_begin", "chips_at_commit"],
+    "lightning_blind_ledger": ["debt_since"],
+    "cash_cluster_events": ["event_version", "request_id"]
+  }
+}

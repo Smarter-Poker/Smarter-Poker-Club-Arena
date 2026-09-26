@@ -20,8 +20,12 @@ import {
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 import {
+  f06CustodyRefusalKey,
+  f06RecoveryDispositionOwner,
   prepareF06SuccessorAdmission,
   type DrainedF06Custody,
+  type F06CustodyRefusal,
+  type F06RecoveryDispositionOwner,
 } from './tournament/drainedF06Custody.js';
 /**
  * GameServer — server-side game orchestration.
@@ -50,12 +54,12 @@ import { AsyncResource } from 'node:async_hooks';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
+import { HorseDecisionAbortedError } from './engine/horseDecision/client.js';
 import {
-  HorseDecisionAbortedError,
   liveHorseDecisionWorkerStatus,
   startLiveHorseDecisionWorker,
   stopLiveHorseDecisionWorker,
-} from './engine/horseDecision/client.js';
+} from './engine/horseDecision/lane.js';
 import {
   EquityWorkerPoolAbortedError,
   equityWorkerPoolPreservesDealerLiveness,
@@ -77,6 +81,8 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
+import { LightningSupervisor } from './lightning/LightningSupervisor.js';
+import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   HorseTopUpPass,
@@ -893,6 +899,9 @@ export class GameServer {
             this.tournamentEngines.get(tournamentId) === captured.manager &&
             captured.manager.getTournamentLeaseGeneration() === captured.leaseGeneration
           ) {
+            // The database ANSWERED and named another holder, a stale row or
+            // none: this is the only way a heartbeat can say "lost".
+            (this.tournamentLeasesRefutedByDatabase ??= new WeakSet()).add(captured.manager);
             lostManagers.set(tournamentId, captured.manager);
           }
         }
@@ -909,8 +918,18 @@ export class GameServer {
             this.tournamentManagersJudgedLost.add(manager);
             if (!manager.stoodDownWithItsLeaseIntact()) {
               reportError(
-                new Error(`Tournament ${id} no longer proves its current lease generation`),
-                'GameServer.tournament_lease_lost'
+                new Error(
+                  this.tournamentLeasesRefutedByDatabase?.has(manager)
+                    ? `Tournament ${id} no longer proves its current lease generation: the database named another holder, a stale row or none`
+                    : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+                ),
+                'GameServer.tournament_lease_lost',
+                {
+                  tournamentId: id,
+                  verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
+                    ? 'refuted'
+                    : 'unproven',
+                }
               );
               this.tournamentResumeDistress++;
             }
@@ -1189,10 +1208,27 @@ export class GameServer {
       if (this.tournamentEngines.get(tournamentId) !== manager) continue;
       if (!this.tournamentManagersJudgedLost.has(manager)) {
         this.tournamentManagersJudgedLost.add(manager);
+        /* "I COULD NOT TELL" IS NOT "I LOST IT" (2026-09-26, CLAUDE.md 10.86).
+           A manager is fenced either way - an unproven generation must not
+           deal - but the report says which. Only a database answer naming
+           another holder, a stale row or none is a refutation; a proof that
+           simply ran out while no answer arrived is `unproven`. On
+           2026-09-26 04:45:26 every one of 338 reports read "lost" while
+           every lease row still named this instance and generation. */
         if (!manager.stoodDownWithItsLeaseIntact()) {
           reportError(
-            new Error(`Tournament ${tournamentId} no longer proves its current lease generation`),
-            'GameServer.tournament_lease_lost'
+            new Error(
+              this.tournamentLeasesRefutedByDatabase?.has(manager)
+                ? `Tournament ${tournamentId} no longer proves its current lease generation: the database named another holder, a stale row or none`
+                : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+            ),
+            'GameServer.tournament_lease_lost',
+            {
+              tournamentId,
+              verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
+                ? 'refuted'
+                : 'unproven',
+            }
           );
           this.tournamentResumeDistress++;
         }
@@ -1532,6 +1568,8 @@ export class GameServer {
    * performOwnedEngineLeaseProofRenewal.
    */
   private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
+  /** Managers a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
+  private tournamentLeasesRefutedByDatabase?: WeakSet<TournamentManager>;
   /** Discovery-launched resume admissions not yet settled, by launch time. */
   private tournamentResumesInFlight = new Map<string, number>();
   /**
@@ -1551,6 +1589,16 @@ export class GameServer {
   private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
   /** Bookkeeping that could not be recorded; never a reason to change a stop. */
   private tournamentQuarantineBookkeepingFailures?: number;
+  /**
+   * Why the last custody transfer for a manager was refused, by that exact
+   * manager. Read by the quarantine record so /health can say it, and
+   * compared by `noteF06CustodyRefusal` so a refusal that repeats every
+   * five seconds is logged once and a refusal that CHANGES is logged again.
+   * Before 2026-09-25 a refused transfer left no trace at all: seventeen
+   * quarantined managers, thousands of attempts each, zero log lines.
+   */
+  private tournamentCustodyRefusals?: WeakMap<TournamentManager, F06CustodyRefusal>;
+  private tournamentCustodyRefusalsReported?: WeakMap<TournamentManager, string>;
 
   /** Applies the C20 control law to this instance. Returns the new budget. */
   private adjustEngineStartBudget(distressed: boolean): number {
@@ -2105,8 +2153,15 @@ export class GameServer {
         try {
           const quarantine = (this.tournamentManagerQuarantine ??=
             new QuarantinedTournamentManagers());
+          const custodyRefusal = this.tournamentCustodyRefusals?.get(manager);
           if (this.tournamentEngines.get(tournamentId) === manager) {
-            quarantine.record(tournamentId, errorContext, Date.now(), manager);
+            quarantine.record(
+              tournamentId,
+              errorContext,
+              Date.now(),
+              manager,
+              custodyRefusal ? f06CustodyRefusalKey(custodyRefusal) : undefined
+            );
           } else {
             quarantine.forget(tournamentId);
           }
@@ -2142,13 +2197,60 @@ export class GameServer {
     return operation;
   }
 
+  /**
+   * A refused custody transfer names its reason, once per distinct reason per
+   * manager. The record is what the quarantine carries onto /health; the log
+   * line is deliberately not repeated on every retry of the same refusal,
+   * because the retry pass runs every five seconds and a line per attempt is
+   * how thousands of identical lines bury the one that changed.
+   */
+  private noteF06CustodyRefusal(
+    tournamentId: string,
+    manager: TournamentManager,
+    refusal: F06CustodyRefusal
+  ): false {
+    try {
+      (this.tournamentCustodyRefusals ??= new WeakMap()).set(manager, refusal);
+      const reported = (this.tournamentCustodyRefusalsReported ??= new WeakMap());
+      const key = f06CustodyRefusalKey(refusal);
+      if (reported.get(manager) !== key) {
+        reported.set(manager, key);
+        console.warn(
+          '[tournament-custody-refused]',
+          JSON.stringify({
+            tournamentId,
+            path: refusal.path,
+            refused: refusal.refused,
+            detail: refusal.detail ?? null,
+            priorAttempts:
+              this.tournamentManagerQuarantine
+                ?.snapshot(Date.now())
+                .find((row) => row.tournamentId === tournamentId)?.attempts ?? 0,
+          })
+        );
+      }
+    } catch {
+      // Naming the refusal must never change the refusal.
+      this.tournamentQuarantineBookkeepingFailures =
+        (this.tournamentQuarantineBookkeepingFailures ?? 0) + 1;
+    }
+    return false;
+  }
+
   /** All identities are checked before the first deletion; no await splits CAS. */
   private async transferDrainedF06Custody(
     tournamentId: string,
     manager: TournamentManager
   ): Promise<boolean> {
     this.drainedF06TournamentCustody ??= new Map();
-    if (this.drainedF06TournamentCustody.has(tournamentId)) return false;
+    const transferRefusal = (refused: string): F06CustodyRefusal =>
+      Object.freeze({ path: 'transfer', refused });
+    if (this.drainedF06TournamentCustody.has(tournamentId))
+      return this.noteF06CustodyRefusal(
+        tournamentId,
+        manager,
+        transferRefusal('custody_already_held')
+      );
     let packet = await manager.captureDrainedF06Custody();
     if (!packet) {
       const successor =
@@ -2159,12 +2261,7 @@ export class GameServer {
     }
     const completePhysicalMap = () => {
       if (!packet?.mixed) return true;
-      const global = [...this.tableEngines].filter(
-        ([, engine]) =>
-          engine.getEngineLeaseAuthority()?.scope === 'tournament' &&
-          (engine.getEngineLeaseAuthority() as { tournamentId?: string }).tournamentId ===
-            tournamentId
-      );
+      const global = this.tournamentEnginesOnFleet(tournamentId);
       return (
         global.length === packet.engines.length &&
         global.every(([id, engine]) =>
@@ -2172,21 +2269,36 @@ export class GameServer {
         )
       );
     };
-    if (
-      !packet ||
-      packet.manager !== manager ||
-      packet.tournamentId !== tournamentId ||
-      this.tournamentEngines.get(tournamentId) !== manager ||
-      this.drainedF06TournamentCustody.has(tournamentId) ||
-      !packet.current() ||
-      !completePhysicalMap() ||
-      packet.engines.some(
-        ([id, engine]) =>
-          this.tableEngines.get(id) !== engine ||
-          (!packet!.mixed && !this.tournamentRetirementCustody.admissionAllowed(id))
+    // Every identity check it always made, in the same order, each naming
+    // itself; the gate is derived from the name so the two cannot disagree.
+    if (!packet)
+      return this.noteF06CustodyRefusal(
+        tournamentId,
+        manager,
+        // A capture that returned null without naming why is itself a finding.
+        manager.lastF06CustodyRefusal?.() ?? transferRefusal('capture_refusal_unnamed')
+      );
+    const refusal = ((): F06CustodyRefusal | null => {
+      if (packet.manager !== manager) return transferRefusal('packet_manager_mismatch');
+      if (packet.tournamentId !== tournamentId)
+        return transferRefusal('packet_tournament_mismatch');
+      if (this.tournamentEngines.get(tournamentId) !== manager)
+        return transferRefusal('manager_not_registered');
+      if (this.drainedF06TournamentCustody.has(tournamentId))
+        return transferRefusal('custody_already_held');
+      if (!packet.current()) return transferRefusal('packet_not_current');
+      if (!completePhysicalMap()) return transferRefusal('physical_map_incomplete');
+      if (packet.engines.some(([id, engine]) => this.tableEngines.get(id) !== engine))
+        return transferRefusal('original_not_registered');
+      if (
+        packet.engines.some(
+          ([id]) => !packet.mixed && !this.tournamentRetirementCustody.admissionAllowed(id)
+        )
       )
-    )
-      return false;
+        return transferRefusal('retirement_admission_refused');
+      return null;
+    })();
+    if (refusal) return this.noteF06CustodyRefusal(tournamentId, manager, refusal);
     // Stage every original's exact bank acknowledgment before mutating any map.
     // The validated immutable receipt is already durable; a lost reply never
     // reaches this edge. The original capture remains available for successor CAS.
@@ -2207,7 +2319,13 @@ export class GameServer {
           );
         })
       : [];
-    if (bankReceipts.some((acknowledge) => acknowledge === null)) return false;
+    if (bankReceipts.some((acknowledge) => acknowledge === null))
+      return this.noteF06CustodyRefusal(
+        tournamentId,
+        manager,
+        transferRefusal('bank_receipt_not_prepared')
+      );
+    this.tournamentCustodyRefusals?.delete(manager);
     // Publish custody before removing any activation slot. Original local maps
     // remain intact; this is a handoff, never successful business teardown.
     this.drainedF06TournamentCustody.set(tournamentId, packet);
@@ -2234,16 +2352,46 @@ export class GameServer {
     return true;
   }
 
+  /**
+   * EVERY ENGINE OF ONE TOURNAMENT, READ FROM THE PROCESS ROOT (2026-09-26).
+   *
+   * Each tournament ServerTableEngine has every method bound to ITS OWN
+   * tournament's data authority (bindTournamentDataAuthorityMethods), and
+   * entering one authority while another manager's is active throws
+   * "Tournament data authority cannot be rebound inside another manager
+   * context". A scan of the whole fleet calls `getEngineLeaseAuthority()` on
+   * every engine, so from inside manager A it throws on the first engine that
+   * belongs to tournament B.
+   *
+   * That is exactly where `hasCompleteMixedF06PhysicalMap` ran: inside a
+   * TournamentManager's bound `staleness` check on the lease-lost retirement
+   * path. At 04:45:56Z on 2026-09-26 a lease loss on engine f1d956c3 sent every
+   * mixed-custody retirement into this throw, none of them could retire, and
+   * the fleet collapsed from ~550 hands/min to ~0 with 338 managers
+   * quarantined until the process was restarted.
+   *
+   * Reading which engines belong to a tournament is fleet-level bookkeeping,
+   * not one manager's data access, so it runs at the process root - the same
+   * boundary GameServer already uses for the maintenance thaw and the recovery
+   * window contract. Each engine then enters only its own authority, the
+   * caller's context is restored on return, and the predicate is unchanged.
+   */
+  private tournamentEnginesOnFleet(tournamentId: string): [string, ServerTableEngine][] {
+    return bindToProcessRoot(() =>
+      [...this.tableEngines].filter(([, engine]) => {
+        const authority = engine.getEngineLeaseAuthority();
+        return authority?.scope === 'tournament' && authority.tournamentId === tournamentId;
+      })
+    )();
+  }
+
   hasCompleteMixedF06PhysicalMap(
     tournamentId: string,
     manager: TournamentManager,
     originals: readonly (readonly [string, ServerTableEngine])[]
   ): boolean {
     const packet = this.drainedF06TournamentCustody?.get(tournamentId);
-    const global = [...this.tableEngines].filter(([, engine]) => {
-      const authority = engine.getEngineLeaseAuthority();
-      return authority?.scope === 'tournament' && authority.tournamentId === tournamentId;
-    });
+    const global = this.tournamentEnginesOnFleet(tournamentId);
     if (packet?.mixed && packet.manager === manager)
       return global.length === 0 && packet.engines === originals;
     return (
@@ -2320,6 +2468,25 @@ export class GameServer {
     errorContext: string
   ): void {
     if (manager.isF06RecoveryOwner?.() || this.tournamentManagerRetirementOperations.has(manager))
+      return;
+    /* A QUARANTINED STOP IS RETRIED ON ITS OWN SCHEDULE (2026-09-26).
+       Once a stop has failed, the quarantine owns when it is tried again:
+       10s, doubling, capped at 60s. Four discovery sweeps (completed cleanup,
+       seat-first stall, overstayed COMPLETING, never-dealt RUNNING) called
+       straight in here every ~5s pass with no regard for that schedule, so a
+       stop that could not succeed was re-run on every pass. On engine
+       209d1b45 that was 436 quarantined managers x one attempt every ~4.4s
+       (964 attempts in 71 minutes each) - about 100 futile fenced requests a
+       second, each throwing and logging a stack. It drove the main event loop
+       to p50 225ms / p99 601ms, which made lease renewals late, which lost
+       more leases, which quarantined more managers: a feedback loop that
+       collapsed the fleet within an hour of every restart. The quarantine's
+       own due-time retry still comes through here, and a manager the
+       quarantine does not hold is untouched. */
+    if (
+      errorContext !== QUARANTINED_MANAGER_STOP_RETRY &&
+      this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager
+    )
       return;
     this.launchDiscoveryJob(
       this.stopTournamentManagerIfOwned(tournamentId, manager, errorContext),
@@ -2540,6 +2707,7 @@ export class GameServer {
 
     const packet = this.drainedF06TournamentCustody?.get(tournamentId) ?? null;
     let recoveryRequired = false;
+    let dispositionOwner: F06RecoveryDispositionOwner = 'none_required';
     let mixedTerminalProof: unknown = null;
     if (mode === 'resume' || packet || durableMixed) {
       try {
@@ -2564,6 +2732,25 @@ export class GameServer {
         )
           throw new Error('f06_successor_admission_changed');
         recoveryRequired = state.recoveryRequired;
+        // Name who decides the reserved hand BEFORE anyone holds the event
+        // (see f06RecoveryDispositionOwner). An admission with no owner at
+        // all is refused here, inside this catch, so its lease is released.
+        dispositionOwner = f06RecoveryDispositionOwner({
+          recoveryRequired,
+          hasDrainedPacket: !!packet,
+          hasMixedTransfer: !!(durableMixed ?? packet?.mixed),
+          mode,
+        });
+        if (dispositionOwner === 'no_owner')
+          throw new Error('f06_recovery_disposition_owner_missing');
+        if (dispositionOwner === 'abandoned_generation_door') {
+          const pending = (state as { pendingTables?: readonly string[] }).pendingTables ?? [];
+          console.warn(
+            `[GameServer] tournament ${tournamentId.slice(0, 8)} is adopted with a reserved hand on ` +
+              `${pending.length} table(s) and no drained or mixed custody - resume() asks the ` +
+              `abandoned-generation door before any dealer is built`
+          );
+        }
         if (durableMixed || packet?.mixed) mixedTerminalProof = state.terminalProof;
         if (packet && !recoveryRequired) {
           // Terminal dispositions are monotonic. Retain the original objects,
@@ -2594,10 +2781,12 @@ export class GameServer {
     );
     this.tournamentEngines.set(tournamentId, manager);
     try {
-      if (recoveryRequired) {
+      if (dispositionOwner === 'drained_originals' || dispositionOwner === 'mixed_transfer') {
         manager.enterF06RecoveryOwnership();
         const transfer = durableMixed ?? packet?.mixed;
-        if (!transfer) return; // Existing strict recovery has its own disposition owner.
+        // A drained in-process packet: its original engine objects hold the
+        // live permits and are the only ones that can attest them.
+        if (!transfer) return;
         if (!mixedTerminalProof) throw new Error('f06_mixed_terminal_admission_missing');
         const canonical = transfer.canonical as { tables: { id: string }[] };
         if (!Array.isArray(canonical.tables)) throw new Error('f06_mixed_complete_map_missing');
@@ -2860,6 +3049,17 @@ export class GameServer {
       if (error) throw error;
       return count ?? 0;
     },
+  });
+  /**
+   * Lightning 2.0 (2026-09-25): the shadow-mode matcher workers. Leader-only,
+   * started and stopped beside the ClusterController, and DARK: it starts a
+   * worker only for a Cluster that is `cluster_mode = 'lightning'`, has
+   * Lightning enabled, and whose `fn_lightning_config` says worker_mode is not
+   * 'off' - none today. A worker in 'form' mode refuses to run until a
+   * dealing host exists. See src/lightning/LightningSupervisor.ts.
+   */
+  private lightningSupervisor = new LightningSupervisor({
+    presenceSource: () => this.lightningPresenceReports(),
   });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
@@ -3463,6 +3663,9 @@ export class GameServer {
 
       // Slice 6: the cluster lifecycle, beside the fleet, on the leader only.
       this.clusterController.start();
+      // Lightning 2.0: the shadow matcher workers, beside the Cluster
+      // controller, behind the same leader gate. Dark until a Cluster qualifies.
+      this.lightningSupervisor.start();
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
@@ -3667,6 +3870,7 @@ export class GameServer {
       const stops: Array<[service: string, stop: () => Promise<void>]> = [
         ['HorseFleetManager', () => this.horseFleet.stop()],
         ['ClusterController', () => this.clusterController.stop()],
+        ['LightningSupervisor', () => this.lightningSupervisor.stop()],
         ['TournamentRecurringService', () => this.tournamentRecurring.stop()],
         ['ScheduledTournamentService', () => this.scheduledTournaments.stop()],
         ['HorseLifecycleManager', () => this.lifecycle.stop()],
@@ -4787,7 +4991,7 @@ export class GameServer {
       // published so the next break answers that in one scrape. Labels are
       // the fixed reason set, zero-seeded, so a rule can read any of them
       // before it has ever been the reason.
-      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, unknown)',
+      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, stopped_bank_custody_stuck, unknown)',
       '# TYPE poker_maintenance_unparked_tables gauge',
       ...(() => {
         const counts = (this.maintenanceBreak.snapshot().unparkedReasons ?? {}) as Record<
@@ -4806,6 +5010,26 @@ export class GameServer {
              table's restart certificate shut. */
           'f06_preparation_unresolved',
           'f06_preparation_stuck',
+          /* The stopped-custody class, split into its two REFUSING outcomes on
+             2026-09-25. It used to publish one name, stopped_bank_custody_
+             unconfirmed, and it was never in this seed list at all - it only
+             ever reached /metrics through the dynamic extension below, so no
+             rule could read it before it had already wedged the fleet, which
+             is how 137 tables held 8 consecutive breaks shut unnoticed.
+             `unwritten` is a real bank not yet on disk; `unreadable` is an
+             accounting outcome this process cannot yet ask about. Both refuse.
+             See ServerTableEngineBase.maintenanceDurabilityReason. */
+          'stopped_bank_custody_unwritten',
+          'stopped_bank_custody_unreadable',
+          /* The bounded case for this class, exactly as `f06_preparation_stuck`
+             is for the other: a terminal engine's stopped bank that outlived
+             STOPPED_CUSTODY_GATE_MS and stopped holding every other table's
+             restart certificate shut. Zero-seeded for the same reason as the
+             rest - a rule must be able to fire the FIRST time this becomes the
+             reason. The retired name `stopped_bank_custody_unconfirmed` is
+             deliberately absent: the census no longer emits it (see
+             MaintenanceBreak.unparkedTables). */
+          'stopped_bank_custody_stuck',
           'unknown',
         ];
         for (const reason of Object.keys(counts)) {
@@ -10074,6 +10298,23 @@ export class GameServer {
       reportError(stopError, 'GameServer.terminal_table_engine_stop_cleanup_failed', { tableId });
     }
     return this.unregisterTableEngine(tableId, current);
+  }
+
+  /**
+   * Every running engine's Lightning presence report, for the supervisor's
+   * p_disconnected feed. Synchronous and read-only; an engine that throws is
+   * skipped, which the feed treats as "nobody here can vouch" (unknown) for
+   * the players the matcher names at that table - never as present.
+   */
+  private *lightningPresenceReports(): Iterable<PresenceTableReport> {
+    for (const engine of this.tableEngines.values()) {
+      try {
+        if (!engine.isRunning()) continue;
+        yield engine.lightningPresenceReport();
+      } catch (err) {
+        reportError(err, 'GameServer.lightning_presence_report_failed');
+      }
+    }
   }
 
   /**

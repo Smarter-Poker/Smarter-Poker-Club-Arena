@@ -9,6 +9,7 @@ import { triggerHaptic } from '../../services/HapticService';
 import DiamondWheelService, { type WheelBonusAward } from '../../services/DiamondWheelService';
 import { reportError } from '../../utils/errorReporter';
 import styles from '../wheel/WheelWinReveal.module.css';
+import { BonusReceiptArt, type BonusReceiptGame } from './BonusReceiptArt';
 
 /** Where an accumulated award is played, by the game it names. */
 export function bonusGameRoute(clubId: string, award: WheelBonusAward): string {
@@ -33,6 +34,9 @@ export default function BonusCompletion({
   eyebrow,
   silent,
   proof,
+  game,
+  figure,
+  cap,
 }: {
   /** The route's club id, used for navigation. */
   clubId: string;
@@ -52,6 +56,20 @@ export default function BonusCompletion({
    * press inside the five seconds this receipt lasts.
    */
   proof?: string;
+  /**
+   * The game that produced this receipt. With it, the picture is that game's
+   * own (BonusReceiptArt) instead of the chip stack; without it, the chip
+   * stack stays. Everything the receipt says and does is the same either way.
+   */
+  game?: BonusReceiptGame;
+  /**
+   * The one number the game is about, printed over its art: the booked (or
+   * crashed) multiplier for Crash, the street reached for Donkey Cross, the
+   * best bucket's multiplier for Plinko and the gems found for Mines.
+   */
+  figure?: number | null;
+  /** Crash: the round's own cap as a multiplier, so the crown goes to a round booked at it. */
+  cap?: number | null;
 }) {
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
@@ -143,7 +161,13 @@ export default function BonusCompletion({
         >
           <div className={styles.prize} aria-hidden="true">
             <div className={styles.rays} />
-            <WheelPrizeArt segment={{ kind: 'chips' }} className={styles.art} />
+            {game ? (
+              // A receipt with an eyebrow is a round that was not won: the
+              // same art, standing back.
+              <BonusReceiptArt game={game} figure={figure} cap={cap} dim={eyebrow !== undefined} />
+            ) : (
+              <WheelPrizeArt segment={{ kind: 'chips' }} className={styles.art} />
+            )}
           </div>
           <p className="sc-copy sc-copy--center" role="status">
             {`${chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} ${detail}`}

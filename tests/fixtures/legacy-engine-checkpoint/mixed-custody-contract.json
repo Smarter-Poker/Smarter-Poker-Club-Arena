@@ -95,10 +95,10 @@
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "1bc767e267e5b90534c601c39f2790a0",
+      "body_md5": "0cbea76808f835945a63f91f03e7d91c",
       "signature": "smarter_private.f06_assert_movement(uuid)",
       "volatility": "v",
-      "definition_md5": "7f10809c0e6ce2819c97c2ab53b95fba",
+      "definition_md5": "611ab479ccb52d5211145e8ffc0ec912",
       "security_definer": true
     },
     {
@@ -285,10 +285,10 @@
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "62d8d93f836f4edb633900f7da4ddc85",
+      "body_md5": "ce9c8da18aa4b596b62cc436fd22348d",
       "signature": "smarter_private.f06_retired_origin_transfer(uuid,uuid,jsonb,jsonb)",
       "volatility": "v",
-      "definition_md5": "c59a8710299a46b798facb7b5298ce2d",
+      "definition_md5": "61bd389d3c261ee6422a9e2336c58e89",
       "security_definer": true
     }
   ]

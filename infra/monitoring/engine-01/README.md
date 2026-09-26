@@ -22,7 +22,7 @@ same Caddy vhost that already reverse-proxies the game server.
 - Grafana: https://engine.smarter.poker/grafana/ (admin / see `/opt/smarter-poker-monitoring/.env` on engine-01)
 - Prometheus: https://engine.smarter.poker/prometheus/ (basic-auth: monitor / see `/opt/smarter-poker-monitoring/.auth`)
 - AlertManager: https://engine.smarter.poker/alertmanager/ (basic-auth: same)
-- Runbooks: https://engine.smarter.poker/runbooks/03-engine-down (public, served from /opt/Smarter-Poker-World-Hub/docs/runbooks/)
+- Runbooks: not served from this box. `https://engine.smarter.poker/runbooks/03-engine-down` answered 404 on 2026-09-26. Alert rules name repo-relative documents under `docs/runbooks/` in the Club Arena repository instead.
 
 ## Scrape targets (all UP as of 2026-04-20T07:52Z)
 

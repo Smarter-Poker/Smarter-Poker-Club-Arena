@@ -78,7 +78,12 @@ export async function diamondGamesFixture() {
     write: false,
     outdir: '/tmp/diamond-games-preview',
     format: 'iife',
-    define: { 'import.meta.env.DEV': 'false', 'import.meta.env.BASE_URL': '"/"' },
+    // The whole env object, as diamond-test-fixture.mjs defines it. The scenes
+    // now play their own sound (2026-09-26), and SoundService reaches
+    // vibrationGate -> appBase, which reads import.meta.env.VITE_NATIVE; with
+    // only two keys defined, `import.meta.env` itself was undefined in the iife
+    // and the whole preview threw before it mounted.
+    define: { 'import.meta.env': '{"DEV":false,"BASE_URL":"/"}' },
     external: ['/assets/*'],
     logLevel: 'silent',
   });

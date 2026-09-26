@@ -1821,7 +1821,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   ? { hand_request_identity_v1: handRequestIdentity }
                   : {}),
                 ...(failureEvidence ? { leave_pending_diagnostic_v1: failureEvidence } : {}),
-              }
+              },
+              // ONE OPEN ALERT PER HAND PER STEP, not one per pass over it.
+              // The subject is the hand: a step that fails for hand #N is the
+              // same fact however many times this or a later engine generation
+              // re-reports it. See financialAlerts.raiseFinancialAlert.
+              `${this.tableId}:${snap.handNumber}`,
+              this.tableId
             );
           }
         } finally {
@@ -2467,7 +2473,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 hand_number: snap.handNumber,
                 error: message,
                 ...(semantic ? { hand_request_identity_v1: handRequestIdentity } : {}),
-              }
+              },
+              // Same hand, same subject key. Every engine generation that
+              // inherits this hand behind its causal barrier reports the same
+              // refusal; the operator needs it once.
+              `${this.tableId}:${snap.handNumber}`,
+              this.tableId
             );
           } catch (alertError) {
             reportError(alertError, `${alertCode}.alert_failed`, {
@@ -3593,8 +3604,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.chipContinuity.forget(horse.user_id);
           // Round 57: clear FSM tracking on profit-target cashout too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-          // Round 64: same for TimeBankEngine.
-          this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+          // Round 64: same for TimeBankEngine, bank and metadata together.
+          this.forgetTimeBank(horse.user_id);
           // Round 66: same for StraddleEngine.
           this.straddleEngine.removePlayer(this.tableId, horse.user_id);
           this.preActionEngine.removePlayer(this.tableId, horse.user_id);
@@ -3749,7 +3760,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
       if (current && current.occupancy_id !== occupancyId) continue;
       this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.forgetTimeBank(userId);
       this.straddleEngine.removePlayer(this.tableId, userId);
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.leaveHeldByClock.delete(userId);
@@ -3786,7 +3797,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // Owed the moment the cash-out commits, so a later seat's timeout or a
         // rejected sibling read cannot take the teardown with it.
         (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId),
-        diagnostic?.departures
+        diagnostic?.departures,
+        // Lightning (2026-09-26): a seat deferred here is retried every pass.
+        (userId, occupancyId) => this.noteLightningDeferredLeave(userId, occupancyId)
       ),
       this.tableInfo?.cluster_id
         ? pendingSeatMoves(this.tableId, diagnostic?.move_read)

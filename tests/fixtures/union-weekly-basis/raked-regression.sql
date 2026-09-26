@@ -51,16 +51,22 @@ END $$;
 UPDATE fixture.native_clock SET at_time='2026-09-15 12:00Z';
 DO $$ DECLARE original text; accepted text; needle text; replacement text; result jsonb; BEGIN
  accepted:=pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure);
- needle:='OR NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=a.club_id AND c.is_union IS NOT TRUE)';
- replacement:='OR NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=a.club_id AND (c.is_union IS NOT TRUE
-       OR (c.is_union IS TRUE AND EXISTS(SELECT 1 FROM public.accounting_cash_rake_sources hs
-         JOIN public.accounting_cash_accrual_batches hb ON hb.rake_record_id=hs.rake_record_id
-         WHERE hs.rake_record_id=r.id AND hs.player_id=a.player_id AND hs.club_id=a.club_id
-          AND hs.union_id=scope_union AND (c.id=hs.union_id OR c.union_id=hs.union_id)
-          AND hs.earned_at=r.created_at AND hs.rake_credit=a.weighted_rake_credit AND hb.status=''accrued''
-          AND hs.contract->>''is_union_house''=''true'' AND hs.contract->>''attribution_id''=a.id::text
-          AND hs.contract->>''club_id''=a.club_id::text AND hs.contract->>''player_id''=a.player_id::text
-          AND hs.contract->>''union_id''=hs.union_id::text))))';
+ -- Since 2026-09-25 the accepting clause is written as its two exact halves,
+ -- NOT EXISTS(P OR Q) = NOT EXISTS(P) AND NOT EXISTS(Q), so the five-row clubs
+ -- table is a hashed membership test rather than a probe per attribution. The
+ -- control is unchanged in meaning: take the union-house acceptance away and
+ -- the original whole-hand guard alone must refuse the retained-house hand.
+ needle:='OR a.club_id NOT IN(SELECT c.id FROM public.clubs c WHERE c.is_union IS NOT TRUE)';
+ replacement:='OR (a.club_id NOT IN(SELECT c.id FROM public.clubs c WHERE c.is_union IS NOT TRUE)
+       AND NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=a.club_id AND c.is_union IS TRUE
+        AND EXISTS(SELECT 1 FROM public.accounting_cash_rake_sources hs
+          JOIN public.accounting_cash_accrual_batches hb ON hb.rake_record_id=hs.rake_record_id
+          WHERE hs.rake_record_id=r.id AND hs.player_id=a.player_id AND hs.club_id=a.club_id
+           AND hs.union_id=scope_union AND (c.id=hs.union_id OR c.union_id=hs.union_id)
+           AND hs.earned_at=r.created_at AND hs.rake_credit=a.weighted_rake_credit AND hb.status=''accrued''
+           AND hs.contract->>''is_union_house''=''true'' AND hs.contract->>''attribution_id''=a.id::text
+           AND hs.contract->>''club_id''=a.club_id::text AND hs.contract->>''player_id''=a.player_id::text
+           AND hs.contract->>''union_id''=hs.union_id::text)))';
  PERFORM fixture.assert(position(replacement IN accepted)>0,'Retained-house negative control binds the exact changed clause');
  EXECUTE replace(accepted,replacement,needle);
  result:=fn_calculate_cash_rakeback_periods(fixture.u(104),'2026-09-07','2026-09-13');

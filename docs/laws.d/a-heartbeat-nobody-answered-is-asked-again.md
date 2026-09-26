@@ -1,0 +1,3 @@
+# server/src/services/aHeartbeatNobodyAnsweredIsAskedAgain.law.test.ts
+
+A lease claim whose only heartbeat request has been in flight for a full renewal cadence is asked again on the next ordinary pass (at most three questions per claim at once, and a hedge never queues behind a dedicated-session statement that has not answered), so one request stuck in a saturated PostgREST pool can no longer lapse every tournament and table lease in the process while the database still names this instance and generation (2026-09-26 04:45:26, 338 managers). A lease the database answers as moved is still fenced, and when no question is answered nobody acts: the fleet lapses on its own deadline exactly as before.

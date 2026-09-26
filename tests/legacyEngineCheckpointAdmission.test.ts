@@ -334,8 +334,11 @@ fi
       'BREAK_REMAINING_MS="$(maintenance_certificate "$LEGACY_MIN_BREAK_REMAINING_MS")"',
       invoke
     );
-    const strictRead = transaction.indexOf(
-      'BREAK_REMAINING_MS="$(maintenance_certificate)"',
+    // The ordinary branch of the same read takes the ordinary ladder's locked
+    // rung (2026-09-25); it used to take the strict default and refuse the
+    // cutover it had just been admitted for.
+    const ordinaryRead = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate "$BREAK_LOCKED_MIN_BREAK_MS")"',
       invoke
     );
     const refusal = transaction.indexOf(
@@ -343,16 +346,16 @@ fi
       certificate
     );
     // The legacy reserve is handed over ONLY once the checkpoint was attempted;
-    // the other branch of the same read keeps the strict default.
+    // the other branch of the same read keeps its own, unrelated rung.
     const gate = transaction.lastIndexOf(
       'if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then',
       certificate
     );
     expect(gate).toBeGreaterThan(invoke);
     expect(gate).toBeLessThan(certificate);
-    expect(strictRead).toBeGreaterThan(certificate);
-    expect(strictRead).toBeLessThan(refusal);
-    expect(transaction.slice(gate, strictRead)).toContain('\n  else\n');
+    expect(ordinaryRead).toBeGreaterThan(certificate);
+    expect(ordinaryRead).toBeLessThan(refusal);
+    expect(transaction.slice(gate, ordinaryRead)).toContain('\n  else\n');
     // The refusal branch, bounded by its own closing `fi` rather than a byte
     // count (tests/unit/noFixedSizeSourceWindows.test.ts): the anchor is unique
     // in the transaction, and the branch ends where the shell says it does.

@@ -470,8 +470,14 @@ export default function DetailOverviewTab({
     if (t.is_xmtt) out.push({ label: 'XMTT', kind: 'default' });
     if (t.is_vip_only) out.push({ label: 'VIP Only', kind: 'default' });
     if (t.all_in_or_fold) out.push({ label: 'All-In Or Fold', kind: 'danger' });
-    if (t.big_blind_ante || (blindLevels || []).some((b) => (b?.ante || 0) > 0))
-      out.push({ label: 'BB Ante', kind: 'default' });
+    /* WHO PAYS THE ANTE IS THE COLUMN, NOT THE LADDER (2026-09-26). This used to
+       read `big_blind_ante || any level has an ante`, so every per-player ante
+       event - 78 live MTTs and satellites on 2026-09-26 - was tagged "BB Ante",
+       while the engine charges every seated player (HandController only fronts
+       the table's ante in the big blind when big_blind_ante is on). */
+    if (t.big_blind_ante) out.push({ label: 'BB Ante', kind: 'default' });
+    else if ((blindLevels || []).some((b) => (b?.ante || 0) > 0))
+      out.push({ label: 'Ante', kind: 'default' });
     if (t.accelerated_mtt) out.push({ label: 'Accelerated', kind: 'action' });
     if (t.bubble_protection) out.push({ label: 'Bubble Protection', kind: 'good' });
     if (t.final_table_deal_enabled && !isSatellite)

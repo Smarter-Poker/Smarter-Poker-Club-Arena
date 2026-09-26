@@ -1,0 +1,59 @@
+name: Operational alert addressing
+
+# Every operational alert must carry payload.target_task_id, or the fleet lane
+# that fixes it never sees it (2026-09-26: the smarter-poker-workers writers had
+# been recording unaddressed rows for days).
+#
+# It adds no timer (CLAUDE.md 10.85): the detection job rides the existing
+# hourly Production Integrity Audit through workflow_run. It checks the last
+# two hours, records one fleet-addressed incident (and later its recovery) in
+# the operational inbox through fn_record_operational_alert, never edits the
+# rows it reports, and exits 3 COULD NOT TELL when it cannot get an answer.
+# On pull requests touching this path it runs the decision-rule regression test.
+on:
+  workflow_run:
+    workflows: ['Production Integrity Audit']
+    types: [completed]
+  pull_request:
+    paths:
+      - scripts/ci/check-operational-alert-addressing.mjs
+      - scripts/ci/check-operational-alert-addressing.test.mjs
+      - .github/workflows/operational-alert-addressing.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operational-alert-addressing-${{ github.event_name == 'workflow_run' && 'live' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  decision-rules:
+    name: Unaddressed alerts fire one fleet incident and recover through the same route
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test scripts/ci/check-operational-alert-addressing.test.mjs
+
+  live-addressing:
+    name: No unaddressed operational alert in the last two hours
+    if: github.event_name == 'workflow_run'
+    needs: decision-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Record or recover the addressing incident
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/check-operational-alert-addressing.mjs

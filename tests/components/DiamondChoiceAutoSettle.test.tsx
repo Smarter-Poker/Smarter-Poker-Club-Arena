@@ -1509,6 +1509,34 @@ describe('the scene owns the sound and the buzz', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(soundService.playWin).not.toHaveBeenCalled();
   });
+
+  it('leaves a booked Mines win to the board, and the receipt does not sing it again', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.state
+      .mockResolvedValueOnce({
+        ...state,
+        open_round: { ...opened('mines'), game: 'mines', picked: [3] },
+      })
+      .mockResolvedValue(state);
+    backend.act.mockResolvedValue({
+      ...fixtures.receipts.mines,
+      status: 'cashed',
+      picked: [3],
+      payout_chips: 1.5,
+    });
+    render(<DiamondChoicePage game="mines" />);
+    await settle();
+    fireEvent.click(screen.getAllByRole('button', { name: /^Book/ })[0]);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Present Booking' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    // MinesGrid plays the booked sting and its buzz as the board shows the
+    // booking (DiamondGamesSound.test.tsx); the receipt adds no second chord.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalledWith('success');
+  });
 });
 
 /**

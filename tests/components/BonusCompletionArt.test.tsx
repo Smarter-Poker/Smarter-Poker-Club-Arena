@@ -167,6 +167,49 @@ describe('the bonus receipt shows the game that produced it', () => {
     expect(document.querySelector('[data-receipt-art="crash"]')).not.toHaveAttribute('data-crown');
   });
 
+  it('crowns a round booked at its own cap, not at a fixed 25x', () => {
+    const crowned = () =>
+      document.querySelector('[data-receipt-art="crash"]')!.hasAttribute('data-crown');
+    // A 20x round booked at its 20x max is the max.
+    render(<BonusReceiptArt game="crash" figure={20} cap={20} />);
+    expect(crowned()).toBe(true);
+    cleanup();
+    render(<BonusReceiptArt game="crash" figure={19.99} cap={20} />);
+    expect(crowned()).toBe(false);
+    cleanup();
+    // A higher cap: 25x booked on a 50x round is not its max.
+    render(<BonusReceiptArt game="crash" figure={25} cap={50} />);
+    expect(crowned()).toBe(false);
+    cleanup();
+    // The page hands the cap through the receipt.
+    render(
+      <BonusCompletion
+        clubId="shark-club"
+        chips={2}
+        detail="The Flight Crashed At 31.20x."
+        silent
+        game="crash"
+        figure={20}
+        cap={20}
+      />
+    );
+    expect(crowned()).toBe(true);
+  });
+
+  it('shows no gem beside "0 Gems Found": a first-pick loss gets one ghost outline', () => {
+    render(<BonusReceiptArt game="mines" figure={0} dim />);
+    const fan = document.querySelectorAll('[data-receipt-art="mines"] svg g[style*="--fan-angle"]');
+    expect(fan).toHaveLength(1);
+    expect(fan[0]).toHaveAttribute('data-empty', 'true');
+    cleanup();
+    render(<BonusReceiptArt game="mines" figure={3} />);
+    const three = document.querySelectorAll(
+      '[data-receipt-art="mines"] svg g[style*="--fan-angle"]'
+    );
+    expect(three).toHaveLength(3);
+    expect(three[0]).not.toHaveAttribute('data-empty');
+  });
+
   it('dresses a lost round down: the same art, dimmed, the figure out of gold', () => {
     render(
       <BonusCompletion

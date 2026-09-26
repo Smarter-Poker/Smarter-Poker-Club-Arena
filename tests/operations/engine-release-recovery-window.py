@@ -357,5 +357,27 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
         self.assertEqual(missed(waiting_since=opened - 600, remaining_ms='x', now=now), '0')
 
 
+    def test_no_window_while_the_certificate_refuses_the_engine_in_every_break(self):
+        # 209d1b45, 2026-09-26 07:37Z onward: 27 stopped-bank custodies past
+        # their bound. Whatever the reason, a window could admit nobody.
+        for options in ({'maintenance_extra': {'stoppedCustodyStuckTables': 27,
+                                               'breaksSinceRestartCertified': 1}},
+                        {'urgent': True, 'maintenance_extra': {'stoppedCustodyStuckTables': 1}},
+                        {'missed': True, 'maintenance_extra': {'stoppedCustodyStuckTables': 27}}):
+            with self.subTest(options=options):
+                result, events = invoke(calls=3, advance=30, **options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+                self.assertEqual(result.stdout.count('admit nobody'), 1)
+        # Cleared custody (0) or an engine that does not report it asks as before.
+        for maintenance in ({'stoppedCustodyStuckTables': 0, 'breaksSinceRestartCertified': 1},
+                            {'stoppedCustodyStuckTables': True, 'breaksSinceRestartCertified': 1},
+                            {'breaksSinceRestartCertified': 1}):
+            with self.subTest(maintenance=maintenance):
+                result, events = invoke(maintenance_extra=maintenance)
+                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
+                                          'REQUEST', 'UNLOCK'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -76,6 +76,7 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
   it('asks the seal only after a reason and the newest-release check, under the engine lock', () => {
     const request = between(policy, 'request_recovery_window() {', '\n}');
     const order = [
+      'stoppedCustodyStuckTables',
       'recovery_window_reason "$health"',
       "acquire_engine_lock 'one recovery announcement'",
       'source_target_is_current',

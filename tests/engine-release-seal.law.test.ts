@@ -138,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 22 tests');
+  expect(result.stderr).toContain('Ran 23 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {

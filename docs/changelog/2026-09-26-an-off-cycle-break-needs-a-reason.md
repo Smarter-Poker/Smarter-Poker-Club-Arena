@@ -97,3 +97,15 @@ was admitted in it. 209d1b45 was dealing normally (liveness ok, 27 managers
 quarantined by 07:45Z), while the 04:45Z wedge fixed by #5298 quarantined 338.
 The quarantine threshold is now 100: a quarantine count is a reason to pause
 every table only when it is wedge-sized.
+
+## No Window The Certificate Will Refuse
+
+From 07:37Z 209d1b45 reported 27 `stopped_bank_custody_stuck` tables
+(`tournament_lease_lost_stop_failed`: "retained time-bank custody"). The
+certificate refuses that class in every break, with no serving-release
+exception since #5288, so neither the 07:37Z window nor the 07:55 scheduled
+break could admit a release. While `/health` reports
+`maintenance.stoppedCustodyStuckTables` above 0, no release asks for an
+off-cycle window for any reason: it would pause every table and admit nobody.
+The count is the engine's own last census, so the first break that finds the
+custody cleared makes windows possible again.

@@ -40,10 +40,23 @@ const browser = await chromium.launch({
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 const shot = async (page, width, phase) => {
+  // Frame the scene, not the fixture chrome: a click on a console plate can
+  // scroll the page past the board on a phone.
+  const scene = page
+    .locator('canvas, [aria-label="Diamond Mines Board"], [data-motion="keep"]')
+    .first();
+  await scene.evaluate((el) => el.scrollIntoView({ block: 'start' })).catch(() => {});
   const path = resolve(outDir, `${game}-${width}-${phase}.png`);
   await page.screenshot({ path, fullPage: false });
   console.log(path);
+  // And the scene alone, at full resolution, for a close review.
+  if (process.env.SCENE_SHOTS !== '0')
+    await scene
+      .screenshot({ path: resolve(outDir, `${game}-${width}-${phase}-scene.png`) })
+      .catch(() => {});
 };
+/** Mines: turn tiles over in this order (MINE_TILES=13,7,19), stopping at a mine. */
+const mineTiles = (process.env.MINE_TILES ?? '13,7').split(',').map(Number);
 for (const [width, height, dsf] of [
   [393, 852, 2],
   [1280, 820, 1],
@@ -53,6 +66,8 @@ for (const [width, height, dsf] of [
     deviceScaleFactor: dsf,
     isMobile: width < 768,
     hasTouch: width < 768,
+    // REDUCED=1 captures the reduced-motion presentation.
+    reducedMotion: process.env.REDUCED === '1' ? 'reduce' : 'no-preference',
   });
   const page = await context.newPage();
   page.on('pageerror', (e) => console.log('pageerror', e.message));
@@ -68,6 +83,16 @@ for (const [width, height, dsf] of [
   if (await start.count()) {
     await start.click();
     await page.waitForTimeout(openMs);
+    if (game === 'mines') {
+      await shot(page, width, 'open-idle');
+      for (const tile of mineTiles) {
+        const button = page.getByRole('button', { name: `Tile ${tile}`, exact: true });
+        if (!(await button.isEnabled().catch(() => false))) break;
+        await button.click();
+        await page.waitForTimeout(900);
+        if (await page.getByRole('button', { name: /, Mine$/ }).count()) break;
+      }
+    }
     await shot(page, width, 'open');
     if (game === 'crash' && flyToCrash) {
       // The fixture crashes on its own once the clock passes the sealed point:

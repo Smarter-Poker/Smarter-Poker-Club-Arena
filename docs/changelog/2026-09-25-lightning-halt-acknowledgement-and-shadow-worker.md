@@ -36,3 +36,10 @@ worker only for a Cluster with `cluster_mode = 'lightning'`, `lightning_enabled`
 - `server/src/engine/DealingHaltAcknowledgement.test.ts` (real dealing loop and start())
 - `server/src/engine/LightningHandInProgressIsNotNow.test.ts`
 - `server/src/lightning/LightningShadowWorker.test.ts`
+
+## Verifier Fixes (2026-09-26)
+
+- Halt reads are numbered before they are sent; stale answers and reads sent before the
+  acknowledgement cannot release an acknowledged halt.
+- The 5 s halt poll runs only while halted or when the Cluster has `lightning_enabled`; otherwise 60 s.
+- Only Lightning-deferred leaves are retried every pass; stay-clock holds keep their own release.

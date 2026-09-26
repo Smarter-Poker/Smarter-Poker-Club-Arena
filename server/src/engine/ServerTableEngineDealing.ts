@@ -1717,7 +1717,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.tableId,
           this.tableInfo?.club_id || '',
           (lockedUserId, stayRemainingMs, occupancyId) => {
-            this.lightningDeferredLeaves.delete(lockedUserId);
+            this.lightningDeferredLeaves?.delete(lockedUserId);
             this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
           },
           undefined,
@@ -1835,7 +1835,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.tableId,
       this.tableInfo?.club_id || '',
       (lockedUserId, stayRemainingMs, occupancyId) => {
-        this.lightningDeferredLeaves.delete(lockedUserId);
+        this.lightningDeferredLeaves?.delete(lockedUserId);
         this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
       },
       undefined,

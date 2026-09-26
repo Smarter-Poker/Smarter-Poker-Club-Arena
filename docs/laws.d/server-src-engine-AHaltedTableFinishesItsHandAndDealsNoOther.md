@@ -91,3 +91,14 @@ the prepared sweep and releases the departed seats), while a quiet table runs
 `sweepQueuedLeaves` above its own gate. A deferred seat is never reported as departed, and
 every retry is the same occupancy-keyed one-transaction cash-out, so the leave is neither
 dropped nor paid twice.
+
+VERIFIER FIXES, 2026-09-26. Every read that carries the halt columns (`start()`'s loadTable,
+the rule re-read, the halt poll) takes a number from `beginDealingHaltRead()` before it is
+sent; `applyDealingHaltFromRow` ignores an answer older than one already applied, and a read
+sent before the acknowledgement can never release the halt it acknowledged, so a step budget
+abandoning a slow rule read cannot let a late, pre-halt answer lift an acknowledged halt. The
+5-second poll is earned: it runs only while the table is halted or its Cluster has
+`lightning_enabled` (read in the same select through `cash_games!cluster_id`); any other
+Cluster table polls once a minute. The every-pass leave retry covers only seats deferred by
+LIGHTNING_HAND_IN_PROGRESS (tracked in memory, found after a restart by one probe per halt or
+engine start); a leave the stay clock holds keeps its own release.

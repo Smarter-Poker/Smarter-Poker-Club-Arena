@@ -4215,7 +4215,7 @@ export abstract class ServerTableEngineBase {
     const original = occupancyId;
     // The stay clock holds this leave now; its own release retries it, not
     // the every-pass Lightning retry.
-    this.lightningDeferredLeaves.delete(userId);
+    this.lightningDeferredLeaves?.delete(userId);
     if (!original || current?.occupancy_id !== original) return;
     this.leaveHeldByClock.set(userId, original);
     this.chipContinuity.noteRefusal(userId, stayRemainingMs);
@@ -5269,7 +5269,7 @@ export abstract class ServerTableEngineBase {
    * own release (`releaseLeavesHeldByClock`), and sweeping it every pass would
    * only ask the database a question whose answer is already known.
    */
-  protected readonly lightningDeferredLeaves = new Map<string, string>();
+  protected lightningDeferredLeaves = new Map<string, string>();
   /**
    * Whether this halt (or, outside a halt, this engine) has already swept the
    * `leave_pending` seats once. The one probe is what finds a Lightning
@@ -5279,6 +5279,9 @@ export abstract class ServerTableEngineBase {
   protected queuedLeaveProbeDone = false;
 
   protected noteLightningDeferredLeave(userId: string, occupancyId: string): void {
+    // Tolerates an engine built with `Object.create(ServerTableEngine.prototype)`,
+    // the harness several tests use, where no field initialiser has run.
+    if (!(this.lightningDeferredLeaves instanceof Map)) this.lightningDeferredLeaves = new Map();
     this.lightningDeferredLeaves.set(userId, occupancyId);
   }
 
@@ -5289,9 +5292,10 @@ export abstract class ServerTableEngineBase {
    * Deferrals for occupancies no longer seated are forgotten here.
    */
   protected shouldSweepQueuedLeaves(): boolean {
+    if (!(this.lightningDeferredLeaves instanceof Map)) this.lightningDeferredLeaves = new Map();
     for (const [userId, occupancyId] of [...this.lightningDeferredLeaves]) {
       const seat = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seat || seat.occupancy_id !== occupancyId) this.lightningDeferredLeaves.delete(userId);
+      if (!seat || seat.occupancy_id !== occupancyId) this.lightningDeferredLeaves?.delete(userId);
     }
     if (this.lightningDeferredLeaves.size > 0) return true;
     return !this.queuedLeaveProbeDone && this.seatedPlayers.some((p) => p.leave_pending === true);
@@ -5314,7 +5318,7 @@ export abstract class ServerTableEngineBase {
       this.preActionEngine.removePlayer(this.tableId, leftUserId);
       this.leaveHeldByClock.delete(leftUserId);
       this.chipContinuity.forget(leftUserId);
-      this.lightningDeferredLeaves.delete(leftUserId);
+      this.lightningDeferredLeaves?.delete(leftUserId);
     }
     if (departed.length > 0) {
       this.seatedPlayers = this.seatedPlayers.filter(
@@ -5364,7 +5368,7 @@ export abstract class ServerTableEngineBase {
         this.tableInfo?.club_id || '',
         (lockedUserId, stayRemainingMs, occupancyId) => {
           // Now the stay clock's to release, not this sweep's.
-          this.lightningDeferredLeaves.delete(lockedUserId);
+          this.lightningDeferredLeaves?.delete(lockedUserId);
           this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
         },
         undefined,

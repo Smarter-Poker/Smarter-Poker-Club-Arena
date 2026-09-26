@@ -375,7 +375,7 @@ let reclaimableHeartbeats = 0;
 const retainedTableHeartbeats = new RetainedLeaseHeartbeatBatches<
   TableLeaseHeartbeatClaim,
   TableLeaseHeartbeatOutcome
->();
+>(() => tableLeaseMonotonicNow());
 
 export async function heartbeatTables(
   claims: TableLeaseHeartbeatClaim[],

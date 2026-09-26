@@ -897,6 +897,9 @@ export class GameServer {
             this.tournamentEngines.get(tournamentId) === captured.manager &&
             captured.manager.getTournamentLeaseGeneration() === captured.leaseGeneration
           ) {
+            // The database ANSWERED and named another holder, a stale row or
+            // none: this is the only way a heartbeat can say "lost".
+            (this.tournamentLeasesRefutedByDatabase ??= new WeakSet()).add(captured.manager);
             lostManagers.set(tournamentId, captured.manager);
           }
         }
@@ -912,9 +915,15 @@ export class GameServer {
           if (!this.tournamentManagersJudgedLost.has(manager)) {
             this.tournamentManagersJudgedLost.add(manager);
             if (!manager.stoodDownWithItsLeaseIntact()) {
+              const refuted = !!this.tournamentLeasesRefutedByDatabase?.has(manager);
               reportError(
-                new Error(`Tournament ${id} no longer proves its current lease generation`),
-                'GameServer.tournament_lease_lost'
+                new Error(
+                  refuted
+                    ? `Tournament ${id} no longer proves its current lease generation: the database named another holder, a stale row or none`
+                    : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+                ),
+                'GameServer.tournament_lease_lost',
+                { tournamentId: id, verdict: refuted ? 'refuted' : 'unproven' }
               );
               this.tournamentResumeDistress++;
             }
@@ -1194,9 +1203,22 @@ export class GameServer {
       if (!this.tournamentManagersJudgedLost.has(manager)) {
         this.tournamentManagersJudgedLost.add(manager);
         if (!manager.stoodDownWithItsLeaseIntact()) {
+          /* "I COULD NOT TELL" IS NOT "I LOST IT" (2026-09-26, CLAUDE.md 10.86).
+             A manager is fenced either way - an unproven generation must not
+             deal - but the report says which. Only a database answer naming
+             another holder, a stale row or none is a refutation; a proof that
+             simply ran out while no answer arrived is `unproven`. On
+             2026-09-26 04:45:26 every one of 338 reports read "lost" while
+             every lease row still named this instance and generation. */
+          const refuted = !!this.tournamentLeasesRefutedByDatabase?.has(manager);
           reportError(
-            new Error(`Tournament ${tournamentId} no longer proves its current lease generation`),
-            'GameServer.tournament_lease_lost'
+            new Error(
+              refuted
+                ? `Tournament ${tournamentId} no longer proves its current lease generation: the database named another holder, a stale row or none`
+                : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+            ),
+            'GameServer.tournament_lease_lost',
+            { tournamentId, verdict: refuted ? 'refuted' : 'unproven' }
           );
           this.tournamentResumeDistress++;
         }
@@ -1536,6 +1558,8 @@ export class GameServer {
    * performOwnedEngineLeaseProofRenewal.
    */
   private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
+  /** Managers a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
+  private tournamentLeasesRefutedByDatabase?: WeakSet<TournamentManager>;
   /** Discovery-launched resume admissions not yet settled, by launch time. */
   private tournamentResumesInFlight = new Map<string, number>();
   /**

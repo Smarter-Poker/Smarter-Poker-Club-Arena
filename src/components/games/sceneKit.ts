@@ -163,7 +163,6 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
     renderer,
     scene,
     camera,
-    governor,
     /** Resize the canvas, keeping the governor's pixel ratio. */
     setSize(nextWidth: number, nextHeight: number) {
       size = { width: nextWidth, height: nextHeight };

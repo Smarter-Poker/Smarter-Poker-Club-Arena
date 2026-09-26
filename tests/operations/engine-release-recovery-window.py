@@ -251,8 +251,10 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                 self.assertIn('reason: engine-degraded ' + sign, result.stdout)
 
     def test_healthy_signals_are_not_degradation(self):
+        # 27 quarantined managers is what a normally dealing 209d1b45 carried on
+        # 2026-09-26; its 07:37Z window, spent on 16 of them, shipped nothing.
         result, events = invoke(eligible=False, health_extra={
-            'liveness': 'ok', 'wholeFleetStalled': False, 'tournamentManagersQuarantined': 2},
+            'liveness': 'ok', 'wholeFleetStalled': False, 'tournamentManagersQuarantined': 27},
             maintenance_extra={'breaksSinceRestartCertified': 0})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'UNLOCK'])
@@ -353,6 +355,28 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
         # "0ms remaining" is read after a break ends and says nothing about it.
         self.assertEqual(missed(waiting_since=opened - 600, remaining_ms=0, now=now), '0')
         self.assertEqual(missed(waiting_since=opened - 600, remaining_ms='x', now=now), '0')
+
+
+    def test_no_window_while_the_certificate_refuses_the_engine_in_every_break(self):
+        # 209d1b45, 2026-09-26 07:37Z onward: 27 stopped-bank custodies past
+        # their bound. Whatever the reason, a window could admit nobody.
+        for options in ({'maintenance_extra': {'stoppedCustodyStuckTables': 27,
+                                               'breaksSinceRestartCertified': 1}},
+                        {'urgent': True, 'maintenance_extra': {'stoppedCustodyStuckTables': 1}},
+                        {'missed': True, 'maintenance_extra': {'stoppedCustodyStuckTables': 27}}):
+            with self.subTest(options=options):
+                result, events = invoke(calls=3, advance=30, **options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+                self.assertEqual(result.stdout.count('admit nobody'), 1)
+        # Cleared custody (0) or an engine that does not report it asks as before.
+        for maintenance in ({'stoppedCustodyStuckTables': 0, 'breaksSinceRestartCertified': 1},
+                            {'stoppedCustodyStuckTables': True, 'breaksSinceRestartCertified': 1},
+                            {'breaksSinceRestartCertified': 1}):
+            with self.subTest(maintenance=maintenance):
+                result, events = invoke(maintenance_extra=maintenance)
+                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
+                                          'REQUEST', 'UNLOCK'])
 
 
 if __name__ == '__main__':

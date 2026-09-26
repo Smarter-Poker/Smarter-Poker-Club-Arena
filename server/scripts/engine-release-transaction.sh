@@ -832,8 +832,15 @@ RECOVERY_ADMISSION_MISSED=0
 RECOVERY_NEXT_EVALUATION=0
 RECOVERY_DEFER_SECONDS=60
 RECOVERY_DEFERRED_TO=''
+RECOVERY_REFUSED_STUCK=0
 RECOVERY_UNCERTIFIED_BREAKS=1
-RECOVERY_QUARANTINED_MANAGERS=10
+# Calibrated on production, 2026-09-26: 209d1b45 dealt normally (liveness ok,
+# certificate opening at :55) with 16-27 managers quarantined after
+# tournament_lease_lost_stop_failed, and the first release to read 16 as
+# "degraded" spent the 07:37Z window on it and shipped nothing. The 04:45Z
+# wedge that took hands/min to ~0 (#5298) quarantined 338. A quarantine count
+# is only a reason to pause every table when it is wedge-sized.
+RECOVERY_QUARANTINED_MANAGERS=100
 RECOVERY_URGENT_TRAILER='Engine-Release: urgent'
 
 # A certificate this release could not use counts as a missed scheduled
@@ -917,7 +924,7 @@ newer_release_in_flight() {
 }
 
 request_recovery_window() {
-  local health minute now stamp outcome reason cause_key desired newer
+  local health minute now stamp outcome reason cause_key desired newer stuck
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
   now="$(date +%s)"
@@ -931,6 +938,29 @@ import json,sys
 d=json.load(sys.stdin); m=d.get("maintenance") or {}
 raise SystemExit(0 if d.get("running") is True and m.get("active") is False and m.get("recoveryWindowReady") is True and m.get("recoveryWindowProtocol")=="engine-recovery-window-v1" else 1)
 ' || return 0
+  # A WINDOW THE CERTIFICATE WILL REFUSE BUYS NOTHING (2026-09-26). The
+  # certificate refuses stopped_bank_custody_stuck in every break, by design
+  # and with no serving-release exception (#5288). While the engine reports
+  # such tables, an off-cycle window parks every table for seven minutes and
+  # cannot admit anyone, whatever the reason for asking. Measured: 209d1b45
+  # reported 27 of them from 07:37Z (tournament_lease_lost_stop_failed,
+  # "retained time-bank custody"), and neither the 07:37Z window nor the 07:55
+  # break could open. The count is the engine's own last census; when a break
+  # finds the custody cleared it drops to 0 and windows are possible again.
+  stuck="$(printf '%s' "$health" | python3 -c '
+import json, sys
+m = json.load(sys.stdin).get("maintenance") or {}
+v = m.get("stoppedCustodyStuckTables")
+print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
+' 2>/dev/null)" || stuck=0
+  if [ "$stuck" != 0 ]; then
+    RECOVERY_NEXT_EVALUATION=$(( now + RECOVERY_DEFER_SECONDS ))
+    if [ "$RECOVERY_REFUSED_STUCK" != "$stuck" ]; then
+      RECOVERY_REFUSED_STUCK="$stuck"
+      echo "[engine-release-transaction] the serving engine reports $stuck stopped-bank custody table(s) past their bound; the certificate refuses them in every break, so an off-cycle window would pause every table and admit nobody. Not asking."
+    fi
+    return 0
+  fi
   if [ "$RECOVERY_ADMISSION_MISSED" = 1 ]; then
     # A release that shipped since this one began waiting shipped in a break
     # this one also saw: that break worked, and was not this one's to miss.

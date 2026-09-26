@@ -1385,3 +1385,126 @@ describe('the catch-up re-arms while backlog remains', () => {
     expect((await drive(['more', 'idle'])).backlog).toEqual([false]);
   });
 });
+
+/**
+ * A REFUSAL THE DATABASE HAS ALREADY PROVEN IS NOT ASKED AGAIN (2026-09-26).
+ * While the settler is behind, fn_rakeback_recompute_periods for the open week
+ * reads the whole week (20-222 s live, up to three club-weeks a page) only to
+ * refuse with cash_source_receipts_incomplete. Its refusal counts the club-week's
+ * incomplete attributions; only the settler's own accruals can lower that, one
+ * per credit. While the remaining bound is >= 1 the call is not sent.
+ */
+describe('an open-week refusal the database already proved is not asked again', () => {
+  const clubId = uid(55);
+  const week = pacificAccountingWeek(ts(200));
+  const rec = (n: number, at: number) => ({
+    ...row(n, at),
+    hand_id: uid(70 + n),
+    player_contributions: { [uid(40 + n)]: 10 },
+  });
+  const ledger = [1, 2, 3].map((n) => ({
+    id: uid(100 + n),
+    hand_id: uid(70 + n),
+    player_id: uid(40 + n),
+    club_id: clubId,
+    rake_record_id: uid(n),
+    weighted_rake_credit: 1,
+  }));
+  const refusal = (sourceCount: number) => ({
+    accounting_version: 2,
+    club_id: clubId,
+    period_start: week.periodStart,
+    period_end: week.periodEnd,
+    written: 0,
+    status: 'blocked',
+    reason: 'cash_source_receipts_incomplete',
+    source_count: sourceCount,
+    request_id: uid(950),
+    requested_at: '2026-09-26T06:59:03.123456Z',
+    request_state: 'blocked',
+    request_recorded: true,
+  });
+  const setup = (answer: (call: number) => Record<string, unknown>) => {
+    const first = refusal(1);
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [rec(1, 200), rec(2, 300), rec(3, 400)],
+      ledger,
+      serverPageCap: 1,
+      periodQueue: { id: first.request_id, status: 'blocked', last_result: first },
+    });
+    let calls = 0;
+    mockRpc.mockImplementation(async (name, args) => {
+      if (name !== 'fn_rakeback_recompute_periods') return success(name, args);
+      const data = answer(calls++);
+      const queue = scenario.current.definition as Scenario;
+      if (data.status === 'blocked')
+        queue.periodQueue = { id: data.request_id, status: 'blocked', last_result: data };
+      return { data, error: null };
+    });
+  };
+  const recomputes = () =>
+    mockRpc.mock.calls.filter(([name]) => name === 'fn_rakeback_recompute_periods');
+  const run = (settler: RakebackSettlerService) =>
+    (settler as unknown as { _runSettlementInner(): Promise<string> })._runSettlementInner();
+  beforeEach(() => {
+    recorded.length = 0;
+    mockFrom.mockClear();
+    mockRpc.mockReset();
+    mockReportError.mockReset();
+  });
+
+  it('does not re-send a refusal the remaining bound still proves, and advances every page', async () => {
+    setup(() => refusal(345_525));
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(1);
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(400),
+      high_water_mark_id: uid(3),
+    });
+    expect(
+      mockReportError.mock.calls.some(([, label]) =>
+        String(label).includes('period_recompute_failures_hold_cursor')
+      )
+    ).toBe(false);
+  });
+
+  it('sends the real call once the accrued credits could have completed the week', async () => {
+    // One incomplete attribution reported; the next page accrues one credit.
+    setup(() => refusal(1));
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+
+  it('sends the real call after any other outcome', async () => {
+    setup((call) =>
+      call === 0
+        ? { ...refusal(345_525), reason: 'cash_earning_evidence_incomplete' }
+        : refusal(345_525)
+    );
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+
+  it('a fresh start asks the database again rather than trusting memory', async () => {
+    setup(() => refusal(345_525));
+    expect(await run(new RakebackSettlerService())).toBe('more');
+    expect(await run(new RakebackSettlerService())).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+
+  it.each([0, -1, 1.5, '9'])('does not remember a refusal whose count is %j', async (count) => {
+    setup(() => ({ ...refusal(1), source_count: count }));
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    expect(await run(settler)).toBe('more');
+    expect(recomputes()).toHaveLength(2);
+  });
+});

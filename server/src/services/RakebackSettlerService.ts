@@ -407,6 +407,26 @@ function durableDeferralReason(
  * made after this call was sent; the caller keeps reading until the server's
  * own deadline. 'refused' is final for this call.
  */
+/**
+ * How many of this club-week's attributions the database itself just reported
+ * as lacking an accrued source, when that is the reason it refused. Null for
+ * any other shape: only this exact refusal can seed the proof below.
+ */
+export function incompleteSourceCount(receipt: unknown): number | null {
+  const r = Array.isArray(receipt) && receipt.length === 1 ? receipt[0] : receipt;
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const x = r as Record<string, unknown>;
+  if (
+    x.status !== 'blocked' ||
+    x.reason !== 'cash_source_receipts_incomplete' ||
+    typeof x.source_count !== 'number' ||
+    !Number.isSafeInteger(x.source_count) ||
+    x.source_count < 1
+  )
+    return null;
+  return x.source_count;
+}
+
 export function judgePeriodRecomputeReceipt(
   row: unknown,
   submitted: number,
@@ -573,6 +593,35 @@ export class RakebackSettlerService {
   private acceptingSettlements = true;
   /** Pending durable-receipt readbacks; stop() wakes them so shutdown never waits. */
   private readonly readbackWakers = new Set<() => void>();
+  /**
+   * A REFUSAL THE DATABASE HAS ALREADY PROVEN IS NOT ASKED AGAIN (2026-09-26).
+   *
+   * While the settler is behind, every page-scoped recompute of the open week
+   * is refused with cash_source_receipts_incomplete: the hands after the page
+   * have no accrued source yet. fn_calculate_cash_rakeback_periods reads the
+   * whole week (every club's records, attributions, batches and sources) before
+   * it says so. Measured live 2026-09-26 06:59-07:35Z: 20-222 s per call, up to
+   * three club-weeks per page, so a page took 350-430 s and the drain fell to
+   * ~7,000 records/hour while spending database CPU on answers already known.
+   * The 60 s catch-up was re-arming every time; the pages were the cost.
+   *
+   * The refusal carries `source_count`: how many of this club's attributions in
+   * the week lack a matching accrued source. That number can only fall through
+   * an accrual, and the settler is the only writer that accrues a cash source
+   * (fn_credit_agent_commissions_batch and fn_retry_cash_accounting_sources,
+   * both called from this file; nothing else calls
+   * fn_process_cash_accounting_source). Each accrued source returns one credit,
+   * and one credit completes at most one attribution. So after the database
+   * reports N, a later page that has accrued K credits for the same club-week
+   * leaves at least N - K incomplete, and while that is >= 1 the call can only
+   * be refused again. It is not sent; the page advances exactly as it does on
+   * that refusal. New hands only add incomplete rows, which keeps the bound
+   * safe. The first page after a start, any other outcome, or an exhausted
+   * count sends the real call, so the page carrying a week's last record is
+   * always recomputed, and fn_prepare_accounting_week recomputes every club's
+   * whole period before any payer stage regardless.
+   */
+  private readonly openWeekIncomplete = new Map<string, number>();
 
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
@@ -785,6 +834,12 @@ export class RakebackSettlerService {
     }
   }
 
+  /** Keep only a count the database itself reported for this exact refusal. */
+  private rememberIncompleteWeek(weekKey: string, count: number | null): void {
+    if (count === null) this.openWeekIncomplete.delete(weekKey);
+    else this.openWeekIncomplete.set(weekKey, count);
+  }
+
   private pauseReadback(ms: number): Promise<void> {
     return new Promise((resolve) => {
       const wake = () => {
@@ -807,7 +862,11 @@ export class RakebackSettlerService {
     submitted: number,
     callStartedAtMs: number
   ): Promise<
-    | { confirmed: true; written: number; deferred?: { requestId: string; reason: string } }
+    | {
+        confirmed: true;
+        written: number;
+        deferred?: { requestId: string; reason: string; sourceCount: number | null };
+      }
     | { confirmed: false; reason: string }
   > {
     const deadline =
@@ -833,7 +892,13 @@ export class RakebackSettlerService {
             return {
               confirmed: true,
               written: 0,
-              deferred: { requestId: verdict.requestId, reason: verdict.reason },
+              deferred: {
+                requestId: verdict.requestId,
+                reason: verdict.reason,
+                sourceCount: incompleteSourceCount(
+                  (data as { last_result?: unknown } | null)?.last_result
+                ),
+              },
             };
           if (verdict.verdict === 'refused') return { confirmed: false, reason: verdict.reason };
           observation = verdict.observation;
@@ -1717,6 +1782,11 @@ export class RakebackSettlerService {
     const buckets = new Map<string, Bucket>();
     for (const source of sources) {
       for (const c of source.credits) {
+        // One credit completes at most one incomplete attribution; counting
+        // every credit, accrued or not, can only lower the bound.
+        const weekKey = `${c.club_id}|${c.period_start}`;
+        const known = this.openWeekIncomplete.get(weekKey);
+        if (known !== undefined) this.openWeekIncomplete.set(weekKey, known - 1);
         buckets.set(`${c.player_id}:${c.club_id}:${c.period_start}`, {
           user_id: c.player_id,
           club_id: c.club_id,
@@ -1804,6 +1874,18 @@ export class RakebackSettlerService {
       // tie-break) — then upserts while leaving paid weeks immutable. One call
       // per (club, week) instead of a truncated download.
       for (const g of groups.values()) {
+        const weekKey = `${g.club_id}|${g.period_start}`;
+        const stillIncomplete = this.openWeekIncomplete.get(weekKey);
+        if (stillIncomplete !== undefined && stillIncomplete >= 1) {
+          deferredPeriods++;
+          console.log(
+            `[RakebackSettler] period recompute for ${g.club_id} ${g.period_start} not sent: the database ` +
+              `reported this week's sources incomplete and at least ${stillIncomplete} still are, so it ` +
+              `could only be refused; the week stays queued`
+          );
+          continue;
+        }
+        this.openWeekIncomplete.delete(weekKey);
         const groupUserIds = [...buckets.values()]
           .filter((b) => b.club_id === g.club_id && b.period_start === g.period_start)
           .map((b) => b.user_id);
@@ -1836,6 +1918,7 @@ export class RakebackSettlerService {
                 // The same durable deferral a direct response would have
                 // carried; the weekly close recomputes the whole period.
                 deferredPeriods++;
+                this.rememberIncompleteWeek(weekKey, readback.deferred.sourceCount);
                 console.log(
                   `[RakebackSettler] fn_rakeback_recompute_periods for ${g.club_id} ${g.period_start}: ` +
                     `client saw "${message}" after ${Date.now() - callStartedAtMs}ms; this call's durable ` +
@@ -1863,6 +1946,7 @@ export class RakebackSettlerService {
               if (receipt.deferred) {
                 await confirmDeferredPeriodRequest(receipt.deferred, g);
                 deferredPeriods++;
+                this.rememberIncompleteWeek(weekKey, incompleteSourceCount(data));
               } else {
                 upserts += receipt.written;
               }

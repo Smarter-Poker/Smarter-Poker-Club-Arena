@@ -1,0 +1,5 @@
+{
+  "_owner": "claude/alerts-three-cash-tables-permanent-crash-loop-void-door",
+  "tables": ["smarter_private.hand_submission_voids"],
+  "functions": ["fn_ca_void_unsettled_cash_submission", "fn_ca_stuck_cash_hand_submission_check"]
+}

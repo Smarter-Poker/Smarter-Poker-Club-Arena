@@ -1,19 +1,24 @@
 # Seven Open Money Items, Closed With Receipts
 
+> Items 5 and 6 below were corrected the same day by `20260926131554` and
+> `20260926131530`: both gave horses a worse deal than a human would have had,
+> which CLAUDE.md 10.5 and 10.9 rule 3 forbid. See
+> `2026-09-26-a-players-overpay-is-the-houses-and-a-skipped-week-stays-owed.md`.
+
 2026-09-26. Every decision below was made under CLAUDE.md 10.9, delegated by
 Dan for these items on 2026-09-26. Each migration re-proves its facts against
 production before it writes, was run first as a rolled-back probe
 (`ca.money7_probe = on`), and was then applied once.
 
-| # | Item | Outcome | Chips moved |
-|---|------|---------|-------------|
-| 1 | Mystery-bounty make-good (ruling 2026-09-11) | Paid, 7 obligations, 5 horse players | 76.90, DSS treasury to players |
-| 2 | PKO 3f19bd70 structure shortfall 1,355.00 | Closed by disposition, not paid | 0 |
-| 3 | Satellite seat into a PKO | No path exists since #4296; pinned by a PG17 probe | 0 |
-| 4 | Ledger replay drift -234.10 | Detector defect, fixed; 4 alerts explained to the cent | 0 |
-| 5 | Rakeback week of 2026-09-14 | Closed by disposition, not paid | 0 |
-| 6 | 32 prize obligations paid twice | Real, 1,001.00, all horses; recovered | 1,001.00, players to union bank |
-| 7 | Confirmed-noise alert classes | Re-proved and closed | 0 |
+| #   | Item                                         | Outcome                                                                | Chips moved                                    |
+| --- | -------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | Mystery-bounty make-good (ruling 2026-09-11) | Paid, 7 obligations, 5 horse players                                   | 76.90, DSS treasury to players                 |
+| 2   | PKO 3f19bd70 structure shortfall 1,355.00    | Closed by disposition, not paid                                        | 0                                              |
+| 3   | Satellite seat into a PKO                    | No path exists since #4296; pinned by a PG17 probe                     | 0                                              |
+| 4   | Ledger replay drift -234.10                  | Detector defect, fixed; 4 alerts explained to the cent                 | 0                                              |
+| 5   | Rakeback week of 2026-09-14                  | Closed by disposition, not paid (VOIDED: stays owed, see below)        | 0                                              |
+| 6   | 32 prize obligations paid twice              | Real, 1,001.00, all horses; recovered (REVERSED: the house absorbs it) | 1,001.00, players to union bank, then returned |
+| 7   | Confirmed-noise alert classes                | Re-proved and closed                                                   | 0                                              |
 
 ## 1. The Mystery-Bounty Make-Good
 
@@ -30,13 +35,13 @@ obligation: an approved `ca_manual_adjustments` row carrying the paragraph,
 trigger skipped (the `fn_club_bank_send` shape), the treasury debit, and
 `fn_credit_and_log` under the key `ruling-make-good:<obligation id>`.
 
-| Player | Obligations | Paid | Journal legs |
-|--------|-------------|------|--------------|
-| reedyarrow `fb7da841` | 2 | 27.50 | `152393ee` 19.00, `9002b227` 8.50 |
-| thornemontrose `bc43a03f` | 1 | 26.00 | `a637fad4` |
-| sageivorson `5e35105f` | 2 | 12.00 | `c3dc1550`, `c7b7e9c1` |
-| oakesoakhurst `2b36fe05` | 1 | 6.00 | `c03f9ddf` |
-| thorneziegler `86e42f5e` | 1 | 5.40 | `f21b789c` |
+| Player                    | Obligations | Paid  | Journal legs                      |
+| ------------------------- | ----------- | ----- | --------------------------------- |
+| reedyarrow `fb7da841`     | 2           | 27.50 | `152393ee` 19.00, `9002b227` 8.50 |
+| thornemontrose `bc43a03f` | 1           | 26.00 | `a637fad4`                        |
+| sageivorson `5e35105f`    | 2           | 12.00 | `c3dc1550`, `c7b7e9c1`            |
+| oakesoakhurst `2b36fe05`  | 1           | 6.00  | `c03f9ddf`                        |
+| thorneziegler `86e42f5e`  | 1           | 5.40  | `f21b789c`                        |
 
 Treasury 964,496.98 to 964,420.08 (-76.90). Seven journal legs,
 `club_treasury -> player_wallet`, category `settlement`, totalling 76.90, and

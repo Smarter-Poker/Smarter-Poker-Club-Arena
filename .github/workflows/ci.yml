@@ -1412,6 +1412,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-must-be-zero-balance-detector.py
+      - name: Settlement suspense is restated to zero through the correction authority, journal only
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-settlement-suspense-restatement.py
       - name: The satellite seat preimage guard accepts the installed seat authority and refuses a broken contract
         if: matrix.shard == 4
         env:

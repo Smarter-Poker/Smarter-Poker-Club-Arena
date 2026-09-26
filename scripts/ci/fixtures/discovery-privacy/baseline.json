@@ -1,0 +1,1984 @@
+{
+  "capturedAt": "2026-09-26T21:52:00Z",
+  "note": "Read-only production schema definitions; no production rows. Geography is modeled only in this isolated privacy fixture; spatial math is unchanged by the migration.",
+  "views": [
+    {
+      "observed_at": "2026-09-26 21:43:17.956819+00",
+      "matviewname": "mv_active_poker_locations",
+      "definition": " SELECT 'venue'::text AS source,\n    pv.id::text AS entity_id,\n    pv.name,\n    pv.slug,\n    COALESCE(pv.venue_type, 'poker_room'::text) AS venue_type,\n    pv.city,\n    pv.state,\n    pv.country::text AS country,\n    COALESCE(pv.lat, pv.latitude)::numeric AS lat,\n    COALESCE(pv.lng, pv.longitude)::numeric AS lng,\n    st_setsrid(st_makepoint(COALESCE(pv.lng, pv.longitude)::double precision, COALESCE(pv.lat, pv.latitude)::double precision), 4326)::geography AS location_geog,\n    COALESCE(pv.profile_photo_url, pv.cover_photo_url, pv.logo_url) AS photo_url,\n    pv.tagline,\n    pv.trust_score::numeric AS activity_score,\n    COALESCE(pv.has_tournaments, false) AS has_tournaments,\n    COALESCE(pv.is_claimed, false) AS is_verified,\n    pv.poker_tables,\n    array_to_string(pv.stakes_cash, ', '::text) AS stakes_cash,\n    array_to_string(pv.games_offered, ', '::text) AS games_offered,\n    NULL::integer AS member_count,\n    NULL::integer AS games_hosted,\n    NULL::boolean AS is_private,\n    now() AS refreshed_at\n   FROM poker_venues pv\n  WHERE COALESCE(pv.is_active, true) = true AND COALESCE(pv.is_suppressed, false) = false AND COALESCE(pv.lat, pv.latitude) IS NOT NULL AND COALESCE(pv.lng, pv.longitude) IS NOT NULL AND pv.name IS NOT NULL AND pv.state IS NOT NULL\nUNION ALL\n SELECT 'home_group'::text AS source,\n    grp.id::text AS entity_id,\n    grp.name,\n    sp.slug,\n    'home_game'::text AS venue_type,\n    grp.city,\n    grp.state,\n    'US'::text AS country,\n    grp.latitude::numeric AS lat,\n    grp.longitude::numeric AS lng,\n    grp.location_geog,\n    grp.profile_photo_url AS photo_url,\n    grp.tagline,\n    COALESCE(grp.games_hosted, 0)::numeric * 2.0 + COALESCE(grp.member_count, 0)::numeric * 0.5 + GREATEST(0::numeric, 30::numeric - EXTRACT(day FROM now() - grp.last_activity_at)) AS activity_score,\n    (EXISTS ( SELECT 1\n           FROM commander_home_games g\n          WHERE g.group_id = grp.id AND g.format = 'tournament'::text AND g.scheduled_date >= CURRENT_DATE AND (g.status = ANY (ARRAY['scheduled'::text, 'confirmed'::text])))) AS has_tournaments,\n    grp.profile_photo_url IS NOT NULL AND grp.last_activity_at > (now() - '30 days'::interval) AS is_verified,\n    NULL::integer AS poker_tables,\n    grp.default_stakes AS stakes_cash,\n    grp.default_game_type AS games_offered,\n    grp.member_count,\n    grp.games_hosted,\n    grp.is_private,\n    now() AS refreshed_at\n   FROM commander_home_groups grp\n     LEFT JOIN social_pages sp ON sp.linked_entity_type = 'home_group'::text AND sp.linked_entity_id = grp.id::text\n  WHERE grp.is_active = true AND NOT grp.is_private AND grp.profile_photo_url IS NOT NULL AND grp.last_activity_at > (now() - '45 days'::interval) AND grp.location_geog IS NOT NULL;",
+      "anon_select": true,
+      "authenticated_select": true
+    },
+    {
+      "observed_at": "2026-09-26 21:43:18.014+00",
+      "matviewname": "mv_home_groups_trending",
+      "definition": " SELECT id AS group_id,\n    name,\n    city,\n    state,\n    is_private,\n    profile_photo_url,\n    tags,\n    location_geog,\n    COALESCE(member_count, 0) AS member_count,\n    COALESCE(games_hosted, 0) AS games_hosted,\n    COALESCE(view_count, 0) AS view_count,\n    COALESCE(share_click_count, 0) AS share_click_count,\n    COALESCE(( SELECT count(*) AS count\n           FROM commander_home_rsvps r\n             JOIN commander_home_games hg ON hg.id = r.game_id\n          WHERE hg.group_id = g.id AND r.response = 'yes'::text AND r.responded_at > (now() - '30 days'::interval)), 0::bigint) AS recent_rsvps_30d,\n    (COALESCE(( SELECT count(*) AS count\n           FROM commander_home_rsvps r\n             JOIN commander_home_games hg ON hg.id = r.game_id\n          WHERE hg.group_id = g.id AND r.response = 'yes'::text AND r.responded_at > (now() - '30 days'::interval)), 0::bigint) * 10)::numeric + COALESCE(view_count, 0)::numeric * 0.1 + (COALESCE(share_click_count, 0) * 2)::numeric + COALESCE(member_count, 0)::numeric * 0.5 AS trending_score,\n    last_activity_at\n   FROM commander_home_groups g\n  WHERE is_active = true AND is_private = false AND profile_photo_url IS NOT NULL AND last_activity_at > (now() - '45 days'::interval)\n  ORDER BY ((COALESCE(( SELECT count(*) AS count\n           FROM commander_home_rsvps r\n             JOIN commander_home_games hg ON hg.id = r.game_id\n          WHERE hg.group_id = g.id AND r.response = 'yes'::text AND r.responded_at > (now() - '30 days'::interval)), 0::bigint) * 10)::numeric + COALESCE(view_count, 0)::numeric * 0.1 + (COALESCE(share_click_count, 0) * 2)::numeric + COALESCE(member_count, 0)::numeric * 0.5) DESC;",
+      "anon_select": true,
+      "authenticated_select": true
+    }
+  ],
+  "functions": [
+    {
+      "nspname": "public",
+      "proname": "get_smarter_poker_pulse",
+      "args": "",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_smarter_poker_pulse()\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'cron'\nAS $function$\nDECLARE\n    v_pulse jsonb;\nBEGIN\n    SELECT jsonb_build_object(\n        'generated_at', NOW(),\n        'home_games', jsonb_build_object(\n            'groups_total', (SELECT COUNT(*) FROM commander_home_groups WHERE is_active),\n            'groups_public', (SELECT COUNT(*) FROM commander_home_groups\n                              WHERE is_active AND NOT is_private\n                                AND profile_photo_url IS NOT NULL),\n            'groups_private', (SELECT COUNT(*) FROM commander_home_groups\n                               WHERE is_active AND is_private),\n            'groups_stale', (SELECT COUNT(*) FROM commander_home_groups\n                             WHERE is_active\n                               AND last_activity_at < NOW() - INTERVAL '45 days'),\n            'members_total', (SELECT COUNT(*) FROM commander_home_members WHERE status = 'approved'),\n            'members_new_30d', (SELECT COUNT(*) FROM commander_home_members\n                                WHERE created_at > NOW() - INTERVAL '30 days'),\n            'games_scheduled_next_7d', (SELECT COUNT(*) FROM commander_home_games\n                                         WHERE status IN ('scheduled','confirmed')\n                                           AND scheduled_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7),\n            'games_completed_all_time', (SELECT COUNT(*) FROM commander_home_games WHERE status='completed'),\n            'games_completed_30d', (SELECT COUNT(*) FROM commander_home_games\n                                     WHERE status='completed'\n                                       AND updated_at > NOW() - INTERVAL '30 days'),\n            'rsvps_yes_30d', (SELECT COUNT(*) FROM commander_home_rsvps\n                               WHERE response='yes'\n                                 AND responded_at > NOW() - INTERVAL '30 days'),\n            'checkins_30d', (SELECT COUNT(*) FROM commander_home_rsvps\n                              WHERE checked_in_at > NOW() - INTERVAL '30 days'),\n            'flake_rate_30d_pct', (\n                SELECT CASE\n                    WHEN COUNT(*) FILTER (WHERE response='yes') = 0 THEN 0\n                    ELSE ROUND(100.0 * COUNT(*) FILTER (WHERE flaked=true)::numeric\n                               / NULLIF(COUNT(*) FILTER (WHERE response='yes'), 0), 1)\n                END\n                FROM commander_home_rsvps\n                WHERE responded_at > NOW() - INTERVAL '30 days'\n            )\n        ),\n        'discovery', jsonb_build_object(\n            'active_poker_locations_total', (SELECT COUNT(*) FROM mv_active_poker_locations),\n            'by_source', (SELECT jsonb_object_agg(source, cnt)\n                           FROM (SELECT source, COUNT(*) AS cnt\n                                   FROM mv_active_poker_locations GROUP BY source) t),\n            'top_states', (\n                SELECT jsonb_agg(jsonb_build_object('state', state, 'count', cnt))\n                  FROM (SELECT state, COUNT(*) AS cnt\n                          FROM mv_active_poker_locations\n                         WHERE state IS NOT NULL\n                         GROUP BY state\n                         ORDER BY cnt DESC\n                         LIMIT 10) t\n            ),\n            'last_refresh', (SELECT MAX(refreshed_at) FROM mv_active_poker_locations)\n        ),\n        'content', jsonb_build_object(\n            'venues_total', (SELECT COUNT(*) FROM poker_venues WHERE COALESCE(is_active,true)),\n            'venues_claimed', (SELECT COUNT(*) FROM poker_venues WHERE is_claimed = true),\n            'venue_tournaments_active', (SELECT COUNT(*) FROM venue_daily_tournaments\n                                          WHERE COALESCE(is_active, true)\n                                            AND NOT COALESCE(is_suppressed, false)),\n            'venue_tournaments_suppressed', (SELECT COUNT(*) FROM venue_daily_tournaments\n                                              WHERE is_suppressed = true)\n        ),\n        'system_health', jsonb_build_object(\n            -- Fixed: parenthesize the OR on jobname patterns\n            'cron_jobs_active', (SELECT COUNT(*) FROM cron.job\n                                  WHERE active = true\n                                    AND (jobname LIKE 'home%' OR jobname LIKE 'pnm%')),\n            'cron_failures_24h', (\n                SELECT COALESCE(SUM(failures_24h), 0)\n                  FROM v_system_health_cron\n            ),\n            'latest_snapshot_week', (SELECT MAX(week_start)\n                                      FROM commander_home_group_weekly_snapshots),\n            'total_weekly_snapshots', (SELECT COUNT(*) FROM commander_home_group_weekly_snapshots)\n        )\n    ) INTO v_pulse;\n    RETURN v_pulse;\nEND;\n$function$\n"
+    },
+    {
+      "nspname": "public",
+      "proname": "get_public_smarter_poker_metrics",
+      "args": "",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_public_smarter_poker_metrics()\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    RETURN jsonb_build_object(\n        'generated_at', NOW(),\n        'platform', jsonb_build_object(\n            'total_poker_locations', (SELECT COUNT(*) FROM mv_active_poker_locations),\n            'states_covered', (SELECT COUNT(DISTINCT state) \n                                 FROM mv_active_poker_locations \n                                 WHERE state IS NOT NULL),\n            'cities_covered', (SELECT COUNT(DISTINCT city) \n                                 FROM mv_active_poker_locations \n                                 WHERE city IS NOT NULL)\n        ),\n        'venues', jsonb_build_object(\n            'total_poker_rooms', (SELECT COUNT(*) FROM poker_venues \n                                    WHERE COALESCE(is_active, true) \n                                      AND NOT COALESCE(is_suppressed, false)),\n            'tournaments_today', (\n                SELECT COUNT(*) FROM venue_daily_tournaments \n                 WHERE COALESCE(is_active, true) \n                   AND NOT COALESCE(is_suppressed, false)\n                   AND (\n                     (is_recurring AND lower(day_of_week) = lower(to_char(CURRENT_DATE, 'FMDay')))\n                     OR event_date = CURRENT_DATE\n                   )\n            ),\n            'tournaments_this_week', (\n                SELECT COUNT(*) FROM venue_daily_tournaments \n                 WHERE COALESCE(is_active, true) \n                   AND NOT COALESCE(is_suppressed, false)\n                   AND (\n                     is_recurring\n                     OR (event_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7)\n                   )\n            )\n        ),\n        'home_games', jsonb_build_object(\n            'public_groups', (SELECT COUNT(*) FROM commander_home_groups \n                                WHERE is_active AND NOT is_private \n                                  AND profile_photo_url IS NOT NULL),\n            'total_members', (SELECT COUNT(*) FROM commander_home_members WHERE status='approved'),\n            'games_scheduled_ahead', (SELECT COUNT(*) FROM commander_home_games \n                                       WHERE status IN ('scheduled','confirmed')\n                                         AND scheduled_date >= CURRENT_DATE),\n            'games_completed_lifetime', (SELECT COUNT(*) FROM commander_home_games \n                                          WHERE status = 'completed')\n        )\n    );\nEND; $function$\n"
+    },
+    {
+      "nspname": "public",
+      "proname": "fn_refresh_active_poker_locations",
+      "args": "",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_refresh_active_poker_locations()\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE v_count bigint; v_duration interval; v_started timestamptz;\nBEGIN\n    v_started := clock_timestamp();\n    REFRESH MATERIALIZED VIEW CONCURRENTLY mv_active_poker_locations;\n    v_duration := clock_timestamp() - v_started;\n    SELECT COUNT(*) INTO v_count FROM mv_active_poker_locations;\n    RETURN jsonb_build_object(\n        'success', true, \n        'row_count', v_count,\n        'duration_ms', EXTRACT(milliseconds FROM v_duration)\n    );\nEND; $function$\n"
+    },
+    {
+      "nspname": "public",
+      "proname": "get_poker_locations_by_state",
+      "args": "p_state text, p_limit integer",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_poker_locations_by_state(p_state text, p_limit integer DEFAULT 100)\n RETURNS TABLE(source text, entity_id text, name text, slug text, venue_type text, city text, lat numeric, lng numeric, photo_url text, tagline text, activity_score numeric, has_tournaments boolean, is_verified boolean, poker_tables integer, stakes_cash text, games_offered text, member_count integer, games_hosted integer)\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\n    SELECT \n        source, entity_id, name, slug, venue_type,\n        city, lat, lng,\n        photo_url, tagline, activity_score,\n        has_tournaments, is_verified,\n        poker_tables, stakes_cash, games_offered,\n        member_count, games_hosted\n    FROM mv_active_poker_locations\n    WHERE state = p_state\n    ORDER BY activity_score DESC NULLS LAST, name\n    LIMIT GREATEST(1, LEAST(p_limit, 500));\n$function$\n"
+    },
+    {
+      "nspname": "public",
+      "proname": "fn_refresh_trending_home_groups",
+      "args": "",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_refresh_trending_home_groups()\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    REFRESH MATERIALIZED VIEW CONCURRENTLY mv_home_groups_trending;\nEND;\n$function$\n"
+    },
+    {
+      "nspname": "public",
+      "proname": "get_trending_home_groups",
+      "args": "p_limit integer, p_near_lat numeric, p_near_lng numeric, p_radius_miles integer",
+      "definition": "CREATE OR REPLACE FUNCTION public.get_trending_home_groups(p_limit integer DEFAULT 12, p_near_lat numeric DEFAULT NULL::numeric, p_near_lng numeric DEFAULT NULL::numeric, p_radius_miles integer DEFAULT NULL::integer)\n RETURNS TABLE(group_id uuid, name text, city text, state text, profile_photo_url text, is_private boolean, member_count integer, recent_rsvps_30d bigint, trending_score numeric, distance_miles numeric, tags text[])\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n    v_point geography;\nBEGIN\n    IF p_near_lat IS NOT NULL AND p_near_lng IS NOT NULL THEN\n        v_point := ST_SetSRID(ST_MakePoint(p_near_lng, p_near_lat), 4326)::geography;\n    END IF;\n\n    RETURN QUERY\n    SELECT \n        mv.group_id, mv.name, mv.city, mv.state, mv.profile_photo_url, \n        mv.is_private, mv.member_count, mv.recent_rsvps_30d, mv.trending_score,\n        CASE WHEN v_point IS NOT NULL AND mv.location_geog IS NOT NULL\n             THEN ROUND((ST_Distance(mv.location_geog, v_point) / 1609.344)::numeric, 1)\n             ELSE NULL END AS distance_miles,\n        mv.tags\n      FROM mv_home_groups_trending mv\n     WHERE (v_point IS NULL OR p_radius_miles IS NULL OR mv.location_geog IS NULL\n            OR ST_DWithin(mv.location_geog, v_point, p_radius_miles * 1609.344))\n     ORDER BY mv.trending_score DESC\n     LIMIT GREATEST(1, LEAST(p_limit, 50));\nEND;\n$function$\n"
+    }
+  ],
+  "columns": [
+    {
+      "relname": "commander_home_games",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "group_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "host_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "title",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "description",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "game_type",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "stakes",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "buyin_min",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "buyin_max",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "scheduled_date",
+      "type": "date"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "start_time",
+      "type": "time without time zone"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "end_time",
+      "type": "time without time zone"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "address",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "address_visible_to",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "location_notes",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "max_players",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "min_players",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "rsvp_yes",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "rsvp_maybe",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "rsvp_no",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "waitlist_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "status",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "allow_guests",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "guest_limit",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "food_drinks",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "special_rules",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "settings",
+      "type": "jsonb"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "created_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "updated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "schedule_days",
+      "type": "text[]"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "social_page_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "approximate_lat",
+      "type": "double precision"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "approximate_lng",
+      "type": "double precision"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "neighborhood",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "format",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "cover_photo_url",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "cancelled_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "cancelled_by",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "cancellation_reason",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "rsvp_closes_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "rsvps_closed",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "notes_for_attendees",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "timezone",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "starting_stack",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_games",
+      "attname": "structure",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "group_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "week_start",
+      "type": "date"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "member_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "new_members",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "games_scheduled",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "games_completed",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "games_cancelled",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "total_rsvp_yes",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "total_checked_in",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "flake_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "post_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "view_count_delta",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "share_count_delta",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_group_weekly_snapshots",
+      "attname": "captured_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "name",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "description",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "owner_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "club_code",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "invite_code",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "qr_code_url",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "is_private",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "requires_approval",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "city",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "state",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "zip_code",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "latitude",
+      "type": "numeric(10,8)"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "longitude",
+      "type": "numeric(11,8)"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "default_game_type",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "default_stakes",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "typical_buyin_min",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "typical_buyin_max",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "max_players",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "typical_day",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "typical_time",
+      "type": "time without time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "frequency",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "member_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "games_hosted",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "settings",
+      "type": "jsonb"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "is_active",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "created_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "updated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "cover_photo_url",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "profile_photo_url",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "tagline",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "last_activity_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "inactivity_warning_sent_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "inactivity_hidden_sent_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "visibility_override_until",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "tags",
+      "type": "text[]"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "share_click_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "view_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "promoted_to_club_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "promotion_requested_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "promotion_approved_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "messenger_conversation_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "search_vector",
+      "type": "tsvector"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "auto_generate_games",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "auto_generate_weeks_ahead",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "auto_ban_after_flakes",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "is_21_plus",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "is_charity",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "charity_beneficiary",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "smoking_policy",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "quality_score",
+      "type": "numeric"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "vitality_score",
+      "type": "numeric"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "vitality_refreshed_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "timezone",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "vouch_count",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "contact_phone",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "website_url",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_groups",
+      "attname": "location_geog",
+      "type": "geography(Point,4326)"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "group_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "user_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "role",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "status",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "games_attended",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "games_hosted",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "last_attended",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "can_host",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "notifications_enabled",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "notify_announcements",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "notify_new_games",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "notify_game_reminders",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "notify_rsvp_updates",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "invited_by",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "joined_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "created_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "pending_nudge_sent_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "last_read_posts_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "is_regular",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "flake_strikes",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "host_private_note",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "probation_until",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "display_name",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "phone",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "added_by_user_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "is_roster_only",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "last_strike_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "banned_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "banned_by",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_members",
+      "attname": "ban_reason",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "game_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "user_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "response",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "bringing_guests",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "guest_names",
+      "type": "text[]"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "message",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "is_confirmed",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "seat_number",
+      "type": "integer"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "responded_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "updated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "checked_in_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "checked_in_by",
+      "type": "uuid"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "flaked",
+      "type": "boolean"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "final_result_note",
+      "type": "text"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "reminder_6h_sent_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "reminder_1h_sent_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "review_prompt_sent_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "commander_home_rsvps",
+      "attname": "rsvp_reason",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "id",
+      "type": "integer"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "name",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "venue_type",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "city",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "state",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "phone",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "website",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "games_offered",
+      "type": "text[]"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "stakes_cash",
+      "type": "text[]"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "poker_tables",
+      "type": "integer"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "trust_score",
+      "type": "real"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "is_featured",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "lat",
+      "type": "numeric(10,8)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "lng",
+      "type": "numeric(11,8)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "address",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "country",
+      "type": "character varying(2)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "hours_weekday",
+      "type": "character varying(50)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "hours_weekend",
+      "type": "character varying(50)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "is_active",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "email",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "tournament_schedule",
+      "type": "jsonb"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "last_verified_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "latitude",
+      "type": "numeric(10,8)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "longitude",
+      "type": "numeric(11,8)"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "pokeratlas_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "pokeratlas_slug",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_source",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "last_scraped",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_status",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "captain_enabled",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "captain_tier",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "captain_activated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "commission_type",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "accepts_home_games",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "auto_text_enabled",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "waitlist_settings",
+      "type": "jsonb"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "tournament_settings",
+      "type": "jsonb"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "staff_pin_required",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "primary_contact_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "cover_photo_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "profile_photo_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "tagline",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "about",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "follower_count",
+      "type": "integer"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "social_links",
+      "type": "jsonb"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "slug",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "has_tournaments",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "poker_atlas_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "hours",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "last_scraped_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "commander_enabled",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "commander_tier",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "commander_activated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "source",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "is_claimed",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "claimed_by",
+      "type": "uuid"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "claimed_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "social_hub_page_id",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "social_hub_page_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "registration_completed_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "onboarding_step",
+      "type": "integer"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "data_quality",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_html_hash",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_timestamp",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_confidence",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "scrape_batch_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "logo_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "schedule_scrape_url",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "schedule_last_scraped_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "is_suppressed",
+      "type": "boolean"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "home_group_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "commander_home_table_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "search_vector",
+      "type": "tsvector"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "timezone",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "zip",
+      "type": "text"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "source_priority",
+      "type": "integer"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "location_integrity_revision",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "canonical_venue_id",
+      "type": "integer"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "retired_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "retired_by",
+      "type": "uuid"
+    },
+    {
+      "relname": "poker_venues",
+      "attname": "retired_reason",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "owner_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "page_type",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "name",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "slug",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "description",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "avatar_url",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "cover_url",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "category",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "website",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "contact_email",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "phone",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "location_city",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "location_state",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "location_country",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "linked_venue_id",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "linked_entity_type",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "linked_entity_id",
+      "type": "text"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "follower_count",
+      "type": "integer"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "post_count",
+      "type": "integer"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "member_count",
+      "type": "integer"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "is_verified",
+      "type": "boolean"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "is_public",
+      "type": "boolean"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "allow_member_posts",
+      "type": "boolean"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "require_post_approval",
+      "type": "boolean"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "metadata",
+      "type": "jsonb"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "created_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "updated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "view_count",
+      "type": "integer"
+    },
+    {
+      "relname": "social_pages",
+      "attname": "avg_rating",
+      "type": "numeric(3,2)"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "id",
+      "type": "uuid"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "venue_id",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "venue_name",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "day_of_week",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "start_time",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "tournament_name",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "buy_in",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "rebuy_addon",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "starting_stack",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "blind_levels",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "guaranteed",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "game_type",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "format",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "source_url",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "last_scraped",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "is_active",
+      "type": "boolean"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "created_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "updated_at",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "data_quality",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_html_hash",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_timestamp",
+      "type": "timestamp with time zone"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_confidence",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_batch_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "event_date",
+      "type": "date"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "late_registration",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "notes",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "max_entries",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "level_duration_minutes",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "bounty_amount",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "satellite_to",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "min_players_to_run",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "registration_opens",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "online_registration_url",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "structure_sheet_url",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "number_of_levels",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "payout_levels",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "age_requirement",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "timezone",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "is_special_event",
+      "type": "boolean"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "series_name",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "series_event_number",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_completeness_score",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "best_scrape_url",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_fail_count",
+      "type": "integer"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "flags",
+      "type": "jsonb"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "human_verified",
+      "type": "boolean"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "is_recurring",
+      "type": "boolean"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "parent_tournament_id",
+      "type": "uuid"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "is_suppressed",
+      "type": "boolean"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "scrape_source",
+      "type": "text"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "pnm_verified_morning_evidence",
+      "type": "boolean"
+    },
+    {
+      "relname": "venue_daily_tournaments",
+      "attname": "pnm_reader_static_servable",
+      "type": "boolean"
+    }
+  ],
+  "hashes": {
+    "views": [
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "anon=rxtm/postgres",
+          "authenticated=rxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "md5": "51f5fd54a12e57735c7070ea712875dd",
+        "name": "mv_home_groups_trending",
+        "columns": [
+          {
+            "name": "group_id",
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "type": "text"
+          },
+          {
+            "name": "is_private",
+            "type": "boolean"
+          },
+          {
+            "name": "profile_photo_url",
+            "type": "text"
+          },
+          {
+            "name": "tags",
+            "type": "text[]"
+          },
+          {
+            "name": "location_geog",
+            "type": "geography(Point,4326)"
+          },
+          {
+            "name": "member_count",
+            "type": "integer"
+          },
+          {
+            "name": "games_hosted",
+            "type": "integer"
+          },
+          {
+            "name": "view_count",
+            "type": "integer"
+          },
+          {
+            "name": "share_click_count",
+            "type": "integer"
+          },
+          {
+            "name": "recent_rsvps_30d",
+            "type": "bigint"
+          },
+          {
+            "name": "trending_score",
+            "type": "numeric"
+          },
+          {
+            "name": "last_activity_at",
+            "type": "timestamp with time zone"
+          }
+        ]
+      },
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "anon=rxtm/postgres",
+          "authenticated=rxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "md5": "3893fbda45383b36f4554b24838d945b",
+        "name": "mv_active_poker_locations",
+        "columns": [
+          {
+            "name": "source",
+            "type": "text"
+          },
+          {
+            "name": "entity_id",
+            "type": "text"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "slug",
+            "type": "text"
+          },
+          {
+            "name": "venue_type",
+            "type": "text"
+          },
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "type": "text"
+          },
+          {
+            "name": "country",
+            "type": "text"
+          },
+          {
+            "name": "lat",
+            "type": "numeric"
+          },
+          {
+            "name": "lng",
+            "type": "numeric"
+          },
+          {
+            "name": "location_geog",
+            "type": "geography"
+          },
+          {
+            "name": "photo_url",
+            "type": "text"
+          },
+          {
+            "name": "tagline",
+            "type": "text"
+          },
+          {
+            "name": "activity_score",
+            "type": "numeric"
+          },
+          {
+            "name": "has_tournaments",
+            "type": "boolean"
+          },
+          {
+            "name": "is_verified",
+            "type": "boolean"
+          },
+          {
+            "name": "poker_tables",
+            "type": "integer"
+          },
+          {
+            "name": "stakes_cash",
+            "type": "text"
+          },
+          {
+            "name": "games_offered",
+            "type": "text"
+          },
+          {
+            "name": "member_count",
+            "type": "integer"
+          },
+          {
+            "name": "games_hosted",
+            "type": "integer"
+          },
+          {
+            "name": "is_private",
+            "type": "boolean"
+          },
+          {
+            "name": "refreshed_at",
+            "type": "timestamp with time zone"
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "md5": "3daba6277f32a06e59c5c5bf384a5764",
+        "signature": "fn_refresh_trending_home_groups()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_refresh_trending_home_groups()\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    REFRESH MATERIALIZED VIEW CONCURRENTLY mv_home_groups_trending;\nEND;\n$function$\n"
+      },
+      {
+        "md5": "6511c67b59a2acf38b9244bf55f71879",
+        "signature": "fn_refresh_active_poker_locations()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_refresh_active_poker_locations()\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE v_count bigint; v_duration interval; v_started timestamptz;\nBEGIN\n    v_started := clock_timestamp();\n    REFRESH MATERIALIZED VIEW CONCURRENTLY mv_active_poker_locations;\n    v_duration := clock_timestamp() - v_started;\n    SELECT COUNT(*) INTO v_count FROM mv_active_poker_locations;\n    RETURN jsonb_build_object(\n        'success', true, \n        'row_count', v_count,\n        'duration_ms', EXTRACT(milliseconds FROM v_duration)\n    );\nEND; $function$\n"
+      }
+    ]
+  },
+  "privileges": [
+    {
+      "proname": "edit_home_group",
+      "args": "p_group_id uuid, p_caller_user_id uuid, p_updates jsonb",
+      "prosecdef": true,
+      "proconfig": ["search_path=public"],
+      "owner": "postgres",
+      "anon_execute": false,
+      "authenticated_execute": true,
+      "service_execute": true
+    },
+    {
+      "proname": "fn_refresh_active_poker_locations",
+      "args": "",
+      "prosecdef": false,
+      "proconfig": ["search_path=public"],
+      "owner": "postgres",
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    {
+      "proname": "fn_refresh_trending_home_groups",
+      "args": "",
+      "prosecdef": false,
+      "proconfig": ["search_path=public"],
+      "owner": "postgres",
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    {
+      "proname": "get_poker_locations_by_state",
+      "args": "p_state text, p_limit integer",
+      "prosecdef": false,
+      "proconfig": ["search_path=public"],
+      "owner": "postgres",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true
+    },
+    {
+      "proname": "get_public_smarter_poker_metrics",
+      "args": "",
+      "prosecdef": false,
+      "proconfig": ["search_path=public"],
+      "owner": "postgres",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true
+    },
+    {
+      "proname": "get_smarter_poker_pulse",
+      "args": "",
+      "prosecdef": false,
+      "proconfig": ["search_path=public, cron"],
+      "owner": "postgres",
+      "anon_execute": false,
+      "authenticated_execute": true,
+      "service_execute": true
+    },
+    {
+      "proname": "get_trending_home_groups",
+      "args": "p_limit integer, p_near_lat numeric, p_near_lng numeric, p_radius_miles integer",
+      "prosecdef": false,
+      "proconfig": ["search_path=public, extensions"],
+      "owner": "postgres",
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_execute": true
+    }
+  ]
+}

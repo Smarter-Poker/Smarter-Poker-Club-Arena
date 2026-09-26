@@ -86,6 +86,33 @@ try:
   sql+='ALTER FUNCTION '+signature+' OWNER TO '+row['owner']+';\n'
  run(sql,'exact-installed-weekly-predecessors')
  run(next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text(),'weekly-qualified-source')
+ # The 2026-09-25 cost rewrite of the two functions the weekly close depends on.
+ # Only STEP 2's function bodies are taken: STEP 1 is eight CREATE INDEX
+ # CONCURRENTLY statements against production-sized ledgers, and 2.1 asserts they
+ # exist - neither is a statement about behaviour, and a native fixture holding a
+ # handful of rows has nothing to index. What IS a statement about behaviour is
+ # that these exact bodies close the same week, with the same certificates for
+ # the same payees, which is what every regression below now qualifies.
+ # The one authority the rewrite's set pass reaches that this cluster's
+ # 2026-09-14 catalog predates: the mixed-cutover Spin proof, which the
+ # installed fn_accounting_tournament_fee_net_plan consults before it calls a
+ # legacy_unverified batch bad. Its maintained candidate is taken here rather
+ # than migration 20260918085836, whose preconditions assert production md5s
+ # that a native cluster cannot carry.
+ spin=(root/'tests/fixtures/spin-mixed-cutover/proof-authority.sql').read_text()
+ # Same exclusion the captured contracts above use, for the same reason: the
+ # immutability triggers belong to the Spin qualification's own fixture and
+ # their function is not part of this cluster. What is needed here is the
+ # relation and the proof predicate, so the rewritten gate can ASK it.
+ spin=re.sub(r'CREATE TRIGGER[\s\S]*?;\n','',spin)
+ run('SET check_function_bodies=off;\n'+spin,'mixed-cutover-spin-proof-authority')
+ # The exact production bodies the rewrite replaces, installed beside it as
+ # fixture.predecessor_* so period-coverage-regression.sql can require the
+ # rewrite to answer every club-week exactly as they do.
+ run((root/'tests/fixtures/union-weekly-basis/rakeback-cost-predecessors.sql').read_text(),'rakeback-cost-predecessors')
+ rewrite=next((root/'supabase/migrations').glob('20260925205938*.sql')).read_text()
+ rewrite=rewrite[rewrite.index('CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_week_quality'):rewrite.rindex('COMMIT;')]
+ run('SET check_function_bodies=off;\n'+rewrite,'weekly-rakeback-cost-rewrite')
  # The club settlement floor bounds standalone discovery. Its own preimage
  # assertions name this exact installed base, so it is applied here, while the
  # predecessors are still pristine. Its fixture runs last, below.

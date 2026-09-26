@@ -109,6 +109,20 @@ describe('the two retired events are voided money-neutral', () => {
       " SET statement_timeout TO '10s'\n SET lock_timeout TO '5s'\nAS $function$"
     );
     expect(SQL).not.toMatch(/break_window_migration_override/);
+    // The lane is taken with try-locks only, never by queueing, and before the void runs.
+    const lane = SQL.indexOf('DO $lane$');
+    const voidAt = SQL.indexOf('DO $void$');
+    expect(lane).toBeGreaterThan(0);
+    expect(lane).toBeLessThan(voidAt);
+    expect(SQL.slice(lane, voidAt)).toContain(
+      "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1', 0));"
+    );
+    expect(SQL.slice(voidAt, voidAt + 600)).toContain(
+      "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:hand-settlement-barrier:v1', 0));"
+    );
+    expect(SQL.slice(lane, voidAt)).toContain("SET LOCAL statement_timeout = '10s';");
+    const outsideDoor = SQL.replace(DOOR, '');
+    expect(outsideDoor).not.toMatch(/pg_advisory_xact_lock\(/);
   });
 
   it('is one guarded transaction with explicit service_role grants and private receipts', () => {

@@ -41,9 +41,13 @@ nothing is destroyed.
 - `f06_source_guard` is opened only for these two events, and only inside
   the transaction that holds the void's uncompleted claim. It is then
   restored byte for byte to the live body (`be484837`).
-- The void holds the settlement lane like every terminal authority, so the
-  migration carries `lock_timeout 5s` and `statement_timeout 10s`. A busy
-  lane refuses cleanly and never stalls the fleet (the 09:33 collapse).
+- The void holds the settlement lane like every terminal authority. The
+  migration takes it only when it is free: `pg_try_advisory_xact_lock` in
+  50 ms steps (up to 20 s for G, then 3 s for the hand-settlement barrier),
+  never queueing behind the fleet. The void's statement is then capped at
+  10 s. A lane that never frees refuses cleanly with nothing written (the
+  09:33 collapse). Two earlier applies with a queueing wait (2 s, 5 s) were
+  refused that way at 13:44 and 14:15 UTC, with nothing written.
 
 ## Measured after apply
 

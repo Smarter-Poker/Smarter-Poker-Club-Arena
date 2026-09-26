@@ -112,6 +112,9 @@
 -- The first apply (13:44 UTC, lock_timeout 2s) was refused exactly that way
 -- after 2.6 s waiting for the lane behind in-flight hand settlements, with
 -- nothing written; a finish waits for the same lane with no timeout at all.
+-- The second (14:15 UTC, lock_timeout 5s) was refused the same way after
+-- 5.7 s: single rebuy calls were holding G shared for up to 30 s. The lane is
+-- now taken only when it is free, without queueing (see THE LANE below).
 --
 -- Proved rolled back (2026-09-26 09:32 UTC, this exact function and guard in
 -- one transaction, SET CONSTRAINTS ALL IMMEDIATE, ROLLBACK): both CANCELLED
@@ -745,9 +748,39 @@ REVOKE ALL ON FUNCTION smarter_private.f06_void_retired_mixed_custody_event(uuid
 GRANT EXECUTE ON FUNCTION smarter_private.f06_void_retired_mixed_custody_event(uuid, text)
   TO service_role;
 
+-- THE LANE IS TAKEN ONLY WHEN IT IS FREE (2026-09-26 14:25 UTC). Waiting for
+-- it queues every later hand settlement and rebuy behind this transaction,
+-- and after the 14:15 thaw single rebuys held G shared for up to 30 s. So G
+-- and then the hand-settlement barrier are taken with pg_try_advisory_xact_lock
+-- (which never queues) in 50 ms steps: up to 20 s for G, then at most 3 s for
+-- the barrier while G is held. A lane that never frees refuses the whole
+-- transaction with nothing written. Once both are held, the void's own
+-- fn_ca_lock_settlement_lane_global() re-enters them immediately, and its
+-- statement is capped at 10 s, so the lane is held at most ~13 s.
+SET LOCAL statement_timeout = '25s';
+DO $lane$
+BEGIN
+  FOR i IN 1..400 LOOP
+    EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1', 0));
+    IF i = 400 THEN
+      RAISE EXCEPTION 'F06_VOID_SETTLEMENT_LANE_NEVER_FREE' USING ERRCODE = '55P03';
+    END IF;
+    PERFORM pg_sleep(0.05);
+  END LOOP;
+END
+$lane$;
+SET LOCAL statement_timeout = '10s';
+
 DO $void$
 DECLARE r jsonb;
 BEGIN
+  FOR i IN 1..60 LOOP
+    EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:hand-settlement-barrier:v1', 0));
+    IF i = 60 THEN
+      RAISE EXCEPTION 'F06_VOID_SETTLEMENT_BARRIER_NEVER_FREE' USING ERRCODE = '55P03';
+    END IF;
+    PERFORM pg_sleep(0.05);
+  END LOOP;
   PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'smarter_private.f06_source_guard()'::regprocedure
                   AND md5(p.prosrc) = '77a6d6505ecb318845d280176881e0f0') THEN

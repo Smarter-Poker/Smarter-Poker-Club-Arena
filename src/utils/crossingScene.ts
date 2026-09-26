@@ -135,34 +135,54 @@ export function streetState(street: number, step: number, phase: CrossingPhase):
  * view is centred ahead of the donkey by moving the camera and its target
  * together, which frames the road ahead without ever turning the camera.
  *
- * A longer lens from further back (22 degrees at 26.5, where it was 38 at
- * 13.7) keeps everything from the street signs to the far edge in frame while
- * the outer streets fan far less. A narrow scene backs the camera off until the
- * donkey's street and the next one fit; a wide scene keeps the distance, keeps
- * the donkey at most a street and a half from the left edge, and shows the
- * road ahead of it. The fog is measured from the target, so the haze on the
- * road is what it always was at any distance.
+ * THE HORIZON IS IN THE FRAME (Dan, 2026-09-25: a sky, a skyline and lamp
+ * posts, with the road kept straight). The 22 degree lens pitched 37 degrees
+ * down saw ground alone, from about z = +6 to z = -12, with the horizon some
+ * 26 degrees above the top edge. Any camera that shows both the horizon and
+ * the road at the donkey's feet needs a vertical field at least as wide as
+ * the angle between them, so the lens is now 56 degrees pitched 19.5 down and
+ * stands 4.5 above the road, 8.6 behind the donkey's line, aimed at a point
+ * 4.3 past it. The horizon prints two thirds of the way from the centre to
+ * the top edge; the sky and the city beyond the highway take the top quarter,
+ * the donkey stands a third of the way down from the centre, and the street
+ * signs at z = 2.25 stay above the strip. The donkey is the same size as
+ * before because the camera is nearer by the same factor the lens is wider
+ * (26.5 x tan 11 = 9.7 x tan 28); the signs keep their height on screen
+ * because they are nearer still. The bottom edge now shows z = +4.4, so the
+ * car that comes to every street enters from below the frame and is in view
+ * before the point where a safe street and a hit part company (z = 4.5).
+ * Still no yaw and no roll: a line across the road prints horizontal.
+ *
+ * A narrow scene backs the camera off until the donkey's street and the next
+ * one fit at the donkey's own line (nearer than the target, so that line is
+ * where the width is measured); a wide scene keeps the distance, keeps the
+ * donkey at most a street and a half from the left edge, and shows the road
+ * ahead of it. The haze is measured from the camera along the view: it starts
+ * a little past the donkey's street and is complete just short of the city's
+ * foot, so the road runs into it and the far asphalt never shows its grain at
+ * a grazing angle. The city itself takes no fog; it stands in its own haze
+ * strip against the glow at the horizon.
  */
 export const CROSSING_CAMERA = {
   /** Vertical field of view, in degrees. */
-  fov: 22,
+  fov: 56,
   /** How far below the horizon the camera looks, in degrees. */
-  pitch: 37,
+  pitch: 19.5,
   /** Camera to target on any scene wide enough to show `minGroundWidth` from here. */
-  distance: 26.5,
-  /** The road depth the view is centred on, just beyond the donkey's line (z = 0). */
-  targetZ: -1,
-  /** Road, in world units across, that every scene shows at the target depth. */
+  distance: 13.6,
+  /** The road depth the view is centred on, past the donkey's line (z = 0). */
+  targetZ: -4.3,
+  /** Road, in world units across, that every scene shows at the donkey's line. */
   minGroundWidth: 9.4,
   /** Where across the view the donkey stands: a third in, the road ahead to its right. */
   donkeyAcross: 0.32,
   /** On a wide scene the donkey stays this close to the left edge (a street and a half). */
   maxBehind: 4.2,
   /** The haze starts this far past the target and is complete this far past it. */
-  fogFrom: 8.3,
-  fogTo: 51.3,
-  /** Nothing the scene draws is further than this past the target. */
-  depthPastTarget: 70,
+  fogFrom: 10,
+  fogTo: 120,
+  /** Nothing the scene draws is further than this past the target: the sky dome is at 420. */
+  depthPastTarget: 600,
 } as const;
 
 export interface CrossingCameraPose {
@@ -183,11 +203,13 @@ export function crossingCameraPose(focus: number, aspect: number): CrossingCamer
   const c = CROSSING_CAMERA;
   const tanHalf = Math.tan((c.fov * Math.PI) / 360);
   const ratio = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
-  const distance = Math.max(c.distance, c.minGroundWidth / (2 * tanHalf * ratio));
-  const groundWidth = 2 * distance * tanHalf * ratio;
+  const pitch = (c.pitch * Math.PI) / 180;
+  // The donkey's line (z = 0) lies this much nearer than the target along the view.
+  const nearer = -c.targetZ * Math.cos(pitch);
+  const distance = Math.max(c.distance, c.minGroundWidth / (2 * tanHalf * ratio) + nearer);
+  const groundWidth = 2 * (distance - nearer) * tanHalf * ratio;
   const behind = Math.min(c.donkeyAcross * groundWidth, c.maxBehind);
   const x = focus - behind + groundWidth / 2;
-  const pitch = (c.pitch * Math.PI) / 180;
   return {
     x,
     position: [x, distance * Math.sin(pitch), c.targetZ + distance * Math.cos(pitch)],

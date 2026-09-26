@@ -172,6 +172,104 @@ describe('a merged migration must be live', () => {
     ]);
   });
 
+  /**
+   * THE PROOF IS A LINE THAT STARTS WITH THE MARKER, NOT A LINE THAT MENTIONS
+   * IT. The unanchored reader harvested prose: 20260925204249 and
+   * 20260925215731 each explain the convention in their headers with a
+   * sentence that quotes "-- @live-proof:" mid-line, and the tail of that
+   * sentence came back as a proof. The check runs every proof in the window as
+   * ONE UNION ALL query, so one harvested sentence is a syntax error that takes
+   * every proof down with it. The anchor is the one every Lightning harness
+   * extracts with - grep -n -- '^-- @live-proof: ' - so an indented marker is
+   * NOT a proof to either of them.
+   */
+  it('a proof is a line that begins with the marker, never prose that quotes it', () => {
+    const sql = [
+      '-- Every `-- @live-proof:` is a claim that an expression is true of the database.',
+      '-- A header may say @live-proof: in passing, and that is not a proof either.',
+      '  -- @live-proof: (SELECT 1) = 2',
+      '\t-- @live-proof: (SELECT 1) = 3',
+      '--@live-proof: (SELECT 1) = 4',
+      '-- @LIVE-PROOF: (SELECT 1) = 5',
+      'SELECT 1; -- @live-proof: (SELECT 1) = 6',
+      '-- @live-proof: (SELECT 1) = 1',
+    ].join('\n');
+    expect(declaredProofs(sql)).toEqual(['(SELECT 1) = 1']);
+  });
+
+  it('the prose that broke the replay is still in the files, and is not harvested', () => {
+    // Non-vacuity: each file really does quote the marker mid-line, so a
+    // reader that harvested prose would be caught on real input, not only on
+    // the synthetic lines above.
+    for (const [file, prose] of [
+      [
+        '20260925204249_lightning_phase_5_remediation_the_halt_is_a_standing_bar.sql',
+        'is a claim that an expression',
+      ],
+      [
+        '20260925215731_lightning_phase_9_the_hand_formation_barrier_is_atomic_and_t.sql',
+        'is a parenthesised SELECT',
+      ],
+    ] as const) {
+      const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+      const quoting = sql
+        .split('\n')
+        .filter((l) => l.includes('@live-proof:') && !l.startsWith('-- @live-proof: '));
+      expect(quoting.length, file).toBeGreaterThan(0);
+      expect(
+        quoting.some((l) => l.includes(prose)),
+        file
+      ).toBe(true);
+      const proofs = declaredProofs(sql);
+      expect(
+        proofs.filter((p) => p.includes(prose)),
+        file
+      ).toEqual([]);
+      // Nothing harvested starts with the backtick that closes the quoted marker.
+      expect(
+        proofs.filter((p) => p.startsWith('`')),
+        file
+      ).toEqual([]);
+    }
+  });
+
+  it('every real proof in every Lightning migration is harvested, and nothing else', () => {
+    const lightning = migrations().filter((f) => f.includes('_lightning_'));
+    let total = 0;
+    let withProofs = 0;
+    for (const file of lightning) {
+      const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+      // The same lines `grep -c '^-- @live-proof:'` counts.
+      const raw = sql.split('\n').filter((l) => /^-- @live-proof:/.test(l));
+      const proofs = declaredProofs(sql);
+      expect(proofs.length, file).toBe(raw.length);
+      expect(proofs, file).toEqual(raw.map((l) => l.slice('-- @live-proof:'.length).trim()));
+      total += proofs.length;
+      if (proofs.length > 0) withProofs++;
+    }
+    // A floor, so an empty directory or a renamed convention cannot pass this.
+    expect(lightning.length).toBeGreaterThanOrEqual(10);
+    expect(withProofs).toBeGreaterThanOrEqual(8);
+    expect(total).toBeGreaterThanOrEqual(150);
+  });
+
+  it('one proof the database rejects does not silence every other file', () => {
+    // A proof about a migration that is not live names what is not there yet,
+    // so it is the proof most likely to be REJECTED ("function ... does not
+    // exist") rather than answered false. Batched as one UNION ALL, that one
+    // rejection was COULD NOT ASK for the whole window. Measured 2026-09-25
+    // against production: 20260926023047's regprocedure casts took down the
+    // answers of four other files with it.
+    expect(SRC).toMatch(/union all/);
+    expect(SRC).toMatch(/err\.status === 1 && refused/);
+    expect(SRC).toContain('rejected: ');
+    // A connection that fails is still not a verdict.
+    expect(SRC.match(/die\(String\(err\.message\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // And the error that is printed does not carry the connection string,
+    // which execFileSync puts in its message because it is psql's argv[1].
+    expect(SRC.match(/split\(url\)\.join\('<database url>'\)/g)?.length ?? 0).toBe(2);
+  });
+
   it('the negative control: neither existing check asks this question', () => {
     const prOnly = read(PR_ONLY);
     // It scopes itself to the branch's own diff, which is why a migration that

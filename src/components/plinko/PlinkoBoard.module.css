@@ -30,7 +30,12 @@
   background:
     radial-gradient(70% 60% at 50% 40%, rgb(24 119 242 / 16%), transparent 65%),
     linear-gradient(180deg, #0a1424 0%, #070b10 100%);
-  box-shadow: 0 0 0 1px rgb(154 165 179 / 28%) inset;
+  /* The house hairline, and the machine's soft blue underglow spilling onto
+     the page below it (the scene draws the same glow inside the cabinet). */
+  box-shadow:
+    0 0 0 1px rgb(154 165 179 / 28%) inset,
+    0 22px 36px -18px rgb(24 119 242 / 45%),
+    0 0 28px rgb(24 119 242 / 10%);
 }
 
 .payouts {

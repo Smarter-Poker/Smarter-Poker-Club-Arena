@@ -1900,8 +1900,19 @@ export class MaintenanceBreak {
   private f06UnresolvedSince: Map<string, number> = new Map();
   private f06StuckAnnounced: Set<string> = new Set();
   private f06StuckTableCount = 0;
+  /* The stopped-bank class keeps its own per-table clock. It is the same bound
+     (F06_UNRESOLVED_GATE_MS) and the same clearing rule; only the clock is
+     separate, because a table can hold one class without the other and neither
+     may inherit the other's age. */
+  private stoppedBankUnconfirmedSince: Map<string, number> = new Map();
+  private stoppedBankStuckAnnounced: Set<string> = new Set();
 
-  /** Tables whose F06 preparation has outlived the gate, for /health. */
+  /**
+   * Tables whose blocker has outlived the gate, for /health: an F06
+   * preparation or, since 2026-09-25, unconfirmed stopped-bank custody. One
+   * counter, because it answers one question - how many tables stopped
+   * holding the certificate shut by age rather than by resolving.
+   */
   f06StuckTables(): number {
     return this.f06StuckTableCount;
   }
@@ -1919,18 +1930,60 @@ export class MaintenanceBreak {
    *         stops deciding whether every other table may be restarted.
    */
   private f06PreparationHoldsGate(tableId: string): boolean {
-    const since = this.f06UnresolvedSince.get(tableId) ?? this.now();
-    this.f06UnresolvedSince.set(tableId, since);
-    const heldForMs = this.now() - since;
+    return this.holdsGateWithinBound(
+      this.f06UnresolvedSince,
+      this.f06StuckAnnounced,
+      tableId,
+      'an unresolved F06 preparation',
+      'Its engine needs replacing; the permit is process-local and only that clears it.'
+    );
+  }
+
+  /**
+   * Has this table's unconfirmed stopped-bank custody stayed inside the bound?
+   *
+   * THE SAME BOUND, APPLIED TO THE THIRD BLOCKER CLASS (2026-09-25). See the
+   * comment on the stopped-bank branch of `unparkedTables()` for the
+   * measurement. One bound, one clearing rule, one helper; a separate clock
+   * only because the classes are independent per table.
+   */
+  private stoppedBankCustodyHoldsGate(tableId: string): boolean {
+    return this.holdsGateWithinBound(
+      this.stoppedBankUnconfirmedSince,
+      this.stoppedBankStuckAnnounced,
+      tableId,
+      'unconfirmed stopped time-bank custody',
+      'It is a terminal engine that deals no hands; the chips are in the database and only ' +
+        'replacing the process retires the in-memory mirror it is holding.'
+    );
+  }
+
+  /**
+   * One clock, one bound, one announcement, for every bounded blocker class.
+   * The clock starts when the condition is first OBSERVED (the break can only
+   * measure what it has seen) and is cleared by `unparkedTables()` the moment
+   * the condition disappears, so a table that recovers and later blocks again
+   * gets the full gate.
+   */
+  private holdsGateWithinBound(
+    since: Map<string, number>,
+    announced: Set<string>,
+    tableId: string,
+    condition: string,
+    remedy: string
+  ): boolean {
+    const first = since.get(tableId) ?? this.now();
+    since.set(tableId, first);
+    const heldForMs = this.now() - first;
     if (heldForMs <= MaintenanceBreak.F06_UNRESOLVED_GATE_MS) return true;
-    if (!this.f06StuckAnnounced.has(tableId)) {
-      this.f06StuckAnnounced.add(tableId);
+    if (!announced.has(tableId)) {
+      announced.add(tableId);
       console.error(
-        `[MaintenanceBreak] table ${tableId} has held an unresolved F06 preparation for ` +
+        `[MaintenanceBreak] table ${tableId} has held ${condition} for ` +
           `${Math.round(heldForMs / 1000)}s, past the ${Math.round(
             MaintenanceBreak.F06_UNRESOLVED_GATE_MS / 1000
           )}s gate. It no longer holds the platform's restart certificate shut. ` +
-          `Its engine needs replacing; the permit is process-local and only that clears it.`
+          remedy
       );
     }
     return false;
@@ -1940,6 +1993,7 @@ export class MaintenanceBreak {
     const out: string[] = [];
     const reasons: Record<string, number> = {};
     const seenUnresolved = new Set<string>();
+    const seenStoppedBank = new Set<string>();
     let stuck = 0;
     const count = (reason: string) => {
       reasons[reason] = (reasons[reason] ?? 0) + 1;
@@ -1968,9 +2022,40 @@ export class MaintenanceBreak {
     }
     for (const [tableId, engine] of this.deps.engines()) {
       try {
+        /* THE SAME BOUND, APPLIED TO THE THIRD BLOCKER CLASS (2026-09-25).
+           This branch counted stopped_bank_custody_unconfirmed with no bound
+           at all, and on 2026-09-25 it was the one holding the platform: engine
+           778075b4 had 20 tournament managers quarantined after lease loss,
+           their STOPPED tournament engines answered
+           hasUnretiredStoppedTimeBankCustody() true for ever (the root cause is
+           fixed engine-side in #5254, which this process was not running), and
+           /health showed readyForRestart false, unparkedTables 154,
+           unparkedReasons { f06_preparation_stuck: 13,
+           stopped_bank_custody_unconfirmed: 154 } at EVERY break. Every
+           auto-deploy-hetzner run since 15:59 UTC waited for a certificate that
+           could not open, including the run carrying the fix. The felt was
+           healthy; only the restart was impossible.
+
+           The reason is raised only by a TERMINAL tournament engine (the first
+           clause of hasUnretiredStoppedTimeBankCustody), which deals no hands.
+           What a restart discards is the in-memory time-bank mirror of seats
+           that already stopped; the chips live in the database. That is the
+           class the legacy checkpoint guard already calls DISPOSED: the live
+           value is already gone and no refusal can bring it back. Holding the
+           process past the bound does not make the custody more confirmed; it
+           only guarantees that the replacement which WOULD retire it can never
+           run. So: same bound, same clearing rule, same shape of reason string
+           (`_stuck`), and the table is still named, counted, published and
+           alertable. Nothing else about custody changes. */
         if (engine.hasUnretiredStoppedTimeBankCustody?.()) {
-          out.push(tableId);
-          count('stopped_bank_custody_unconfirmed');
+          seenStoppedBank.add(tableId);
+          if (this.stoppedBankCustodyHoldsGate(tableId)) {
+            out.push(tableId);
+            count('stopped_bank_custody_unconfirmed');
+            continue;
+          }
+          stuck += 1;
+          count('stopped_bank_custody_stuck');
           continue;
         }
         if (engine.hasUnresolvedF06Preparation?.()) {
@@ -2010,6 +2095,11 @@ export class MaintenanceBreak {
       if (seenUnresolved.has(tableId)) continue;
       this.f06UnresolvedSince.delete(tableId);
       this.f06StuckAnnounced.delete(tableId);
+    }
+    for (const tableId of [...this.stoppedBankUnconfirmedSince.keys()]) {
+      if (seenStoppedBank.has(tableId)) continue;
+      this.stoppedBankUnconfirmedSince.delete(tableId);
+      this.stoppedBankStuckAnnounced.delete(tableId);
     }
     this.f06StuckTableCount = stuck;
     this.unparkedReasonCounts = reasons;

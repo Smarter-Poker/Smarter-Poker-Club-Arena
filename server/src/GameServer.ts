@@ -4874,7 +4874,7 @@ export class GameServer {
       // published so the next break answers that in one scrape. Labels are
       // the fixed reason set, zero-seeded, so a rule can read any of them
       // before it has ever been the reason.
-      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, unknown)',
+      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, stopped_bank_custody_stuck, unknown)',
       '# TYPE poker_maintenance_unparked_tables gauge',
       ...(() => {
         const counts = (this.maintenanceBreak.snapshot().unparkedReasons ?? {}) as Record<
@@ -4904,6 +4904,12 @@ export class GameServer {
              See ServerTableEngineBase.maintenanceDurabilityReason. */
           'stopped_bank_custody_unwritten',
           'stopped_bank_custody_unreadable',
+          /* The bounded case of the raw stopped-custody reason, added
+             2026-09-25 when 154 terminal tournament engines on 778075b4 held
+             every break shut: custody that has outlived the gate no longer
+             holds the certificate, and is still published here so a rule can
+             read it. See MaintenanceBreak.unparkedTables. */
+          'stopped_bank_custody_stuck',
           'unknown',
         ];
         for (const reason of Object.keys(counts)) {

@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 const migration = readFileSync(
   resolve(
     __dirname,
-    '../../supabase/migrations/20260926071711_certification_cleanup_removes_accounting_invoice_deliveries_.sql'
+    '../../supabase/migrations/20260926072127_certification_cleanup_removes_accounting_invoice_deliveries_.sql'
   ),
   'utf8'
 );

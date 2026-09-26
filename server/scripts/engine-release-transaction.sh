@@ -833,7 +833,13 @@ RECOVERY_NEXT_EVALUATION=0
 RECOVERY_DEFER_SECONDS=60
 RECOVERY_DEFERRED_TO=''
 RECOVERY_UNCERTIFIED_BREAKS=1
-RECOVERY_QUARANTINED_MANAGERS=10
+# Calibrated on production, 2026-09-26: 209d1b45 dealt normally (liveness ok,
+# certificate opening at :55) with 16-27 managers quarantined after
+# tournament_lease_lost_stop_failed, and the first release to read 16 as
+# "degraded" spent the 07:37Z window on it and shipped nothing. The 04:45Z
+# wedge that took hands/min to ~0 (#5298) quarantined 338. A quarantine count
+# is only a reason to pause every table when it is wedge-sized.
+RECOVERY_QUARANTINED_MANAGERS=100
 RECOVERY_URGENT_TRAILER='Engine-Release: urgent'
 
 # A certificate this release could not use counts as a missed scheduled

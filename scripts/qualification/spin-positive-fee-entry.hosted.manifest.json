@@ -8,8 +8,8 @@
       "sha256": "a9e1aee8289be8d4fffb89ad33a5b3d0ab11c4a2afb3b02d2d803439e667835d"
     },
     "scripts/qualification/spin-positive-fee-entry-oracle.py": {
-      "bytes": 47098,
-      "sha256": "7cce48c16acfdb7b681569d5361b7fe8dd8bbfed3a5af49fed7c473846adb2b9"
+      "bytes": 47949,
+      "sha256": "efcff21d3e26b543642818ac7cdfeb31eef0e54c41482c3ed278d836881763a9"
     },
     "scripts/qualification/spin-mixed-positive-fee-entry.sql": {
       "bytes": 51515,

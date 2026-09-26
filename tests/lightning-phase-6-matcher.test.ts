@@ -152,10 +152,19 @@ describe('the transaction and its shape', () => {
     expect(count(BIZ, /^COMMIT;$/gm)).toBe(1);
     expect(BIZ.trimEnd().endsWith('COMMIT;')).toBe(true);
   });
-  it('sets an eight-second lock_timeout before its first DDL', () => {
-    const lt = CODE.indexOf("SET LOCAL lock_timeout = '8s';");
-    expect(lt).toBeGreaterThan(CODE.indexOf('BEGIN;'));
-    expect(lt).toBeLessThan(CODE.search(/^ALTER TABLE/m));
+  it("right after BEGIN takes the tick's lock order, reservations then slots, under a three-second wait", () => {
+    const begin = CODE.indexOf('BEGIN;');
+    const lt = CODE.indexOf("SET LOCAL lock_timeout = '3s';");
+    const res = CODE.indexOf(
+      'LOCK TABLE public.lightning_reservation IN SHARE ROW EXCLUSIVE MODE;'
+    );
+    const slot = CODE.indexOf('LOCK TABLE public.lightning_pool_slot IN ACCESS EXCLUSIVE MODE;');
+    expect(lt).toBeGreaterThan(begin);
+    expect(res).toBeGreaterThan(lt);
+    expect(slot).toBeGreaterThan(res);
+    expect(slot).toBeLessThan(CODE.search(/^ALTER TABLE/m));
+    expect(BIZ.slice(begin + 6, lt).trim()).toBe('');
+    expect(CODE).not.toContain("lock_timeout = '8s'");
   });
   it('adds one column per ALTER TABLE', () => {
     for (const m of BIZ.matchAll(/^ALTER TABLE[^;]*;/gm)) {
@@ -193,6 +202,8 @@ describe('the transaction and its shape', () => {
         'fn_lightning_player_legality',
         'fn_lightning_pool_slot_idle_since_starts_at_open',
         'fn_lightning_reservation_end_marks_the_slot_idle',
+        'fn_lightning_diversity_assign',
+        'fn_cash_cluster_matcher_pass_prune',
       ].sort()
     );
     expect(CODE).not.toMatch(/EXECUTE\s+(v_new|replace\()/);
@@ -228,6 +239,9 @@ describe('the contract the engine worker is built against', () => {
       'multi_table_limit',
       'admission_batch_hands',
       'max_replans',
+      'cluster_row_wait_ms',
+      'pass_record_retention_hours',
+      'pass_record_prune_batch',
       'first_entry_rule',
       'position_fairness',
       'invalid',
@@ -332,6 +346,7 @@ describe('the planner writes nothing and reads no magic number', () => {
       'fn_lightning_group_sizes',
       'fn_lightning_config',
       'fn_lightning_config_number',
+      'fn_lightning_diversity_assign',
     ]) {
       expect(fn(name).biz, name).not.toMatch(
         /\b(INSERT INTO|UPDATE public\.|DELETE FROM|TRUNCATE)\b/
@@ -375,10 +390,23 @@ describe('P1 to P6', () => {
       'row_number() OVER (ORDER BY sl.idle_since, ps.entered_at, cps.opened_at, bo.player_id) AS p4'
     );
   });
-  it('P5: only by pool-size band, zero in thin and tiny, and never changes a group size', () => {
+  it('P5: only by pool-size band, zero in thin and tiny, never changes a group size, and penalises a repeated full table', () => {
+    const d = fn('fn_lightning_diversity_assign');
+    expect(d.attrs).toMatch(/^jsonb LANGUAGE plpgsql IMMUTABLE/);
     expect(plan.body).toContain('ELSE 0 END;');
-    expect(plan.body).toContain('IF NOT (v_w * (v_def_pen - v_best_pen) >= 1) THEN');
-    expect(plan.body).toContain('v_capleft[v_best] := v_capleft[v_best] - 1;');
+    expect(plan.body).toContain(
+      'v_assign := public.fn_lightning_diversity_assign(v_grp, v_rest, v_capleft, v_enc, v_recent_sets, v_w);'
+    );
+    expect(d.body).toContain('IF NOT (p_weight * (v_def_pen - v_best_pen) >= 1) THEN');
+    expect(d.body).toContain('v_cap[v_best] := v_cap[v_best] - 1;');
+    expect(d.body).toContain('IF v_sets ? v_key THEN');
+    for (const k of [
+      'unique_opponents',
+      'new_opponents_per_hand',
+      'repeat_pair_rate',
+      'repeat_opponent_rate',
+    ])
+      expect(plan.body, k).toContain(`'${k}', `);
     expect(fn('fn_lightning_config').body).toContain("'diversity_weight_thin', 0,");
   });
   it('P3: orders only the non-blind seats, from the button backward', () => {
@@ -387,9 +415,20 @@ describe('P1 to P6', () => {
   });
   it('the writer holds the Cluster before it forms, forms through the barrier and stops on a freeze', () => {
     const w = fn('fn_lightning_match_and_form');
-    const lock = w.body.indexOf('FOR UPDATE SKIP LOCKED');
-    expect(lock).toBeGreaterThan(0);
-    expect(lock).toBeLessThan(w.body.indexOf('public.fn_lightning_form_hand('));
+    const adv = w.body.indexOf(
+      "pg_try_advisory_xact_lock(hashtextextended('lightning_matcher:' || p_cluster_id::text, 0))"
+    );
+    const row = w.body.indexOf(
+      'PERFORM 1 FROM public.cash_games cg WHERE cg.id = p_cluster_id FOR UPDATE;'
+    );
+    expect(adv).toBeGreaterThan(0);
+    expect(row).toBeGreaterThan(adv);
+    expect(row).toBeLessThan(w.body.indexOf('public.fn_lightning_form_hand('));
+    expect(w.body).toContain(
+      "PERFORM set_config('lock_timeout', (v_cfg ->> 'cluster_row_wait_ms') || 'ms', true);"
+    );
+    expect(w.body).toContain("v_skip := 'cluster_row_busy';");
+    expect(w.body).not.toContain('SKIP LOCKED');
     expect(w.body).toContain(
       "v_req := md5(p_request_id::text || '/matcher_group/' || v_ordinal)::uuid;"
     );
@@ -400,6 +439,19 @@ describe('P1 to P6', () => {
     expect(count(w.body, /'matcher_pass'/g)).toBe(1);
     expect(w.body).toContain('INSERT INTO public.cash_cluster_matcher_pass');
     expect(w.body).toContain("v_group_now := v_now + (v_ordinal - 1) * interval '1 microsecond';");
+  });
+  it('the writer records a pass only when something happened, and prunes the record through the one definer', () => {
+    const w = fn('fn_lightning_match_and_form');
+    expect(flat(w.body)).toContain(
+      "v_record := v_formed > 0 OR jsonb_array_length(v_retries) > 0 OR v_frozen OR v_last IS NULL OR (v_last ->> 'stopped_reason') IS DISTINCT FROM (v_result ->> 'stopped_reason') OR (v_last -> 'states') IS DISTINCT FROM (v_result -> 'states') OR (v_last -> 'reasons') IS DISTINCT FROM (v_result -> 'reasons');"
+    );
+    const rec = w.body.lastIndexOf('IF v_record THEN');
+    expect(w.body.indexOf("'matcher_pass'")).toBeGreaterThan(rec);
+    expect(w.body).toContain('public.fn_cash_cluster_matcher_pass_prune(');
+    const p = fn('fn_cash_cluster_matcher_pass_prune');
+    expect(p.attrs).toMatch(/SECURITY DEFINER/);
+    expect(p.body).toContain('WHERE o.cluster_id = p_cluster_id AND o.started_at < p_before');
+    expect(p.body).toContain('LIMIT LEAST(p_limit, 10000)');
   });
 });
 
@@ -413,7 +465,11 @@ describe('idle_since', () => {
     expect(nn).toBeGreaterThan(fill);
     expect(CODE).toContain('CHECK (idle_since >= opened_at)');
   });
-  it('starts at opened_at and moves forward only when a reservation is released or expires', () => {
+  it('starts at opened_at and moves forward only when a reservation of a DEALT hand ends', () => {
+    expect(fn('fn_lightning_reservation_end_marks_the_slot_idle').body).toContain(
+      'WHERE i.id = NEW.lightning_instance_id AND i.started_at IS NOT NULL'
+    );
+    expect(CODE).toContain('AND i.started_at IS NOT NULL),');
     expect(fn('fn_lightning_pool_slot_idle_since_starts_at_open').body).toContain(
       'NEW.idle_since := GREATEST(coalesce(NEW.idle_since, NEW.opened_at), NEW.opened_at);'
     );
@@ -437,9 +493,10 @@ describe('the laws', () => {
   it('Law 10.5: no code in the file mentions is_horse or horse_id', () => {
     expect(BIZ).not.toMatch(/is_horse|horse_id/);
   });
-  it('no function runs as its owner, and every one pins its search_path', () => {
+  it('no function runs as its owner but the pass-record prune, and every one pins its search_path', () => {
     for (const f of FUNCTIONS) {
-      expect(f.attrs, f.name).not.toMatch(/SECURITY DEFINER/);
+      if (f.name !== 'fn_cash_cluster_matcher_pass_prune')
+        expect(f.attrs, f.name).not.toMatch(/SECURITY DEFINER/);
       expect(f.attrs, f.name).toMatch(/SET search_path TO 'public', 'pg_temp'/);
     }
   });
@@ -495,13 +552,13 @@ describe('the live proofs', () => {
 });
 
 describe('the wiring', () => {
-  it('the harness applies the real chain through this file twice on its own port and counts twenty sections', () => {
+  it('the harness applies the real chain through this file twice on its own port and counts twenty-two sections', () => {
     expect(HARNESS).toContain('port=${LIGHTNING_P6_PORT:-55552}');
     expect(HARNESS).toContain(FILE);
     for (const f of REMEDIATION_TWO) expect(HARNESS).toContain(f);
     expect(HARNESS).toContain('-f "$r2a" -f "$r2b" -f "$r2c" -f "$r2d" -f "$p6_fixture"');
     expect(count(HARNESS, /-f "\$mine"/g)).toBe(2);
-    expect(HARNESS).toContain('if [ "$oks" != 20 ]; then');
+    expect(HARNESS).toContain('if [ "$oks" != 22 ]; then');
     expect(HARNESS).toContain('rounds=${LIGHTNING_P6_SIM_ROUNDS:-1000}');
   });
   it('the fixture copies the platform readers it stands in for and reads no horse', () => {

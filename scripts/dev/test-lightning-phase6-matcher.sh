@@ -161,9 +161,17 @@ BEGIN
   END IF;
   PERFORM pg_sleep(0.02);
   PERFORM public.fx6_complete((v_r ->> 'instance_id')::uuid);
+  -- And six others formed and abandoned before they were dealt: released,
+  -- but never dealt, so the backfill must leave their place in the queue.
+  v_r := public.fxr_form(v_g, ARRAY(SELECT c FROM unnest(public.fx9_candidates(v_g)) c WHERE NOT (c = ANY (v_players)) LIMIT 6));
+  IF (v_r ->> 'formed')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 00: the pre-migration second hand did not form: %', v_r;
+  END IF;
+  PERFORM pg_sleep(0.02);
+  PERFORM public.fn_lightning_instance_abandon((v_r ->> 'instance_id')::uuid, 'fx6: abandoned before dealing');
   INSERT INTO harness.m6 (k, game, j) VALUES ('pre', v_g, to_jsonb(v_players));
 END $$;
-\echo '  ok  00 THE CATCHERS CATCH  fx6_after shows a statement''s effect and undoes it and names a failure by class, fxr_try catches, the second backend answers, nothing of the file exists yet, and a converted Cluster has one completed hand for the backfill to read'
+\echo '  ok  00 THE CATCHERS CATCH  fx6_after shows a statement''s effect and undoes it and names a failure by class, fxr_try catches, the second backend answers, nothing of the file exists yet, and a converted Cluster has one completed hand and one formation abandoned before dealing for the backfill to read'
 ASSERT
 
 # THE PREDECESSOR PROOFS, BEFORE AND AFTER THE FILE, over one estate.
@@ -272,7 +280,7 @@ BEGIN
   -- refuse during the freeze, the planner's P0 is the only new reader, and
   -- nothing the recovery path runs asks it.
   IF (SELECT array_agg(p.proname::text ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname ~ '^fn_lightning_'
+       WHERE n.nspname = 'public' AND p.prokind = 'f' AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_cash_cluster_matcher_pass_prune')
          AND regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') ~ 'fn_platform_frozen')
      IS DISTINCT FROM ARRAY['fn_lightning_form_hand', 'fn_lightning_instance_begin_dealing', 'fn_lightning_instance_open',
                             'fn_lightning_player_legality', 'fn_lightning_pool_slot_open', 'fn_lightning_pool_slots_sync'] THEN
@@ -294,11 +302,17 @@ BEGIN
                       ELSE sl.opened_at END)
      OR (SELECT count(*) FROM public.lightning_pool_slot sl
           WHERE sl.cluster_id = v_g AND sl.closed_at IS NULL AND sl.idle_since > sl.opened_at) IS DISTINCT FROM 6::bigint THEN
-    RAISE EXCEPTION 'FAIL 01: the backfill did not set idle_since from the released reservations';
+    RAISE EXCEPTION 'FAIL 01: the backfill did not set idle_since from the released reservations of the dealt hand only';
+  END IF;
+  -- The abandoned formation's six were released too, and kept opened_at.
+  IF (SELECT count(DISTINCT r.player_id) FROM public.lightning_reservation r
+        JOIN public.lightning_instance i ON i.id = r.lightning_instance_id
+       WHERE r.cluster_id = v_g AND r.state = 'released' AND i.started_at IS NULL) IS DISTINCT FROM 6::bigint THEN
+    RAISE EXCEPTION 'FAIL 01: the fixture did not leave six released, never-dealt reservations, so the backfill proof is vacuous';
   END IF;
 END $$;
 SELECT count(*) AS proof_count FROM harness.lp6 WHERE phase = 'before' \gset
-\echo '  ok  01 NOTHING BEFORE IT IS FALSIFIED BUT THE SUPERSEDED  of the' :proof_count '@live-proof expressions of the sixteen Lightning files before it, every one evaluates exactly as it did the moment before it was applied except p9#3 and p9r#12 (exact lists of the fn_lightning_ readers of fn_platform_frozen), which turn false because the planner''s P0 reads the freeze, and whose intent holds as containment - the five writers and fn_lightning_player_legality are exactly the readers; and its backfill set idle_since from the six released reservations of the completed hand and from opened_at for the twelve others'
+\echo '  ok  01 NOTHING BEFORE IT IS FALSIFIED BUT THE SUPERSEDED  of the' :proof_count '@live-proof expressions of the sixteen Lightning files before it, every one evaluates exactly as it did the moment before it was applied except p9#3 and p9r#12 (exact lists of the fn_lightning_ readers of fn_platform_frozen), which turn false because the planner''s P0 reads the freeze, and whose intent holds as containment - the five writers and fn_lightning_player_legality are exactly the readers; and its backfill set idle_since from the six released reservations of the dealt hand, and from opened_at for the twelve others - six of them released from a formation abandoned before it was dealt'
 
 -- 02 THE CONFIGURATION ---------------------------------------------------------
 DO $$
@@ -319,7 +333,8 @@ BEGIN
                   'recent_opponent_window_hands', 'recent_opponent_window_seconds', 'diversity_thin_min',
                   'diversity_medium_min', 'diversity_large_min', 'diversity_weight_large', 'diversity_weight_medium',
                   'diversity_weight_thin', 'diversity_weight_tiny', 'multi_table_limit', 'admission_batch_hands',
-                  'max_replans', 'first_entry_rule', 'position_fairness', 'on_threshold', 'off_threshold', 'invalid'];
+                  'max_replans', 'cluster_row_wait_ms', 'pass_record_retention_hours', 'pass_record_prune_batch',
+                  'first_entry_rule', 'position_fairness', 'on_threshold', 'off_threshold', 'invalid'];
   IF NOT (c ?& v_keys) THEN
     RAISE EXCEPTION 'FAIL 02: a tunable has no key: %', (SELECT array_agg(k) FROM unnest(v_keys) k WHERE NOT c ? k);
   END IF;
@@ -378,11 +393,22 @@ BEGIN
   IF (c -> 'invalid' -> 0 ->> 'key') IS DISTINCT FROM 'lightning' OR (c ->> 'instance_max') IS DISTINCT FROM '6' THEN
     RAISE EXCEPTION 'FAIL 02: a non-object lightning block was not reported and defaulted: %', c;
   END IF;
-  IF (public.fn_lightning_config(gen_random_uuid()) ->> 'ok')::boolean IS DISTINCT FROM false THEN
-    RAISE EXCEPTION 'FAIL 02: a missing Cluster was answered as if it existed';
+  c := public.fn_lightning_config(gen_random_uuid());
+  IF (c ->> 'ok')::boolean IS DISTINCT FROM false OR (c ->> 'reason') IS DISTINCT FROM 'not_found'
+     OR (c ->> 'worker_mode', c ->> 'pass_interval_ms', c ->> 'pass_time_budget_ms', c ->> 'keepalive_interval_ms', c ->> 'instance_max')
+        IS DISTINCT FROM ('off', '1000', '750', '5000', '6') OR NOT (c ?& v_keys) THEN
+    RAISE EXCEPTION 'FAIL 02: a missing Cluster was not answered ok false with every key at its default (worker off): %', c;
+  END IF;
+  -- THE FLOOR OF TWO: a minimum of one, or none, is clamped to two and reported.
+  PERFORM public.fx6_reset(v6, '{"instance_min": 1}');
+  c := public.fn_lightning_config(v6);
+  IF (c ->> 'instance_min') IS DISTINCT FROM '2'
+     OR (c -> 'invalid' -> 0 ->> 'key', c -> 'invalid' -> 0 ->> 'reason', c -> 'invalid' -> 0 ->> 'used')
+        IS DISTINCT FROM ('instance_min', 'out_of_range_clamped', '2') THEN
+    RAISE EXCEPTION 'FAIL 02: an instance_min of 1 was not clamped to 2 and reported: %', c;
   END IF;
 END $$;
-\echo '  ok  02 THE CONFIGURATION  every tunable has a key and a default (6-max 2/6/6 and bands 12/18/36, 9-max 2/9/9 and 18/27/54, worker off, version m1); every override is honoured; a wrong type falls back to the default, an out-of-range value is clamped, bands out of order are reset and a thin weight is zero by rule, each listed under invalid and nothing else is; the bands follow the population''s own threshold reader; a non-object block and a missing Cluster are answered'
+\echo '  ok  02 THE CONFIGURATION  every tunable has a key and a default (6-max 2/6/6 and bands 12/18/36, 9-max 2/9/9 and 18/27/54, worker off, version m1); every override is honoured; a wrong type falls back to the default, an out-of-range value is clamped, bands out of order are reset and a thin weight is zero by rule, each listed under invalid and nothing else is; the bands follow the population''s own threshold reader; a minimum of one is clamped to two and reported; a non-object block is reported; a missing Cluster answers ok false with every key at its default, worker off'
 
 -- 03 P0: EVERY REASON, ONE FACT AWAY FROM LEGAL, FOR A HUMAN AND A HORSE --------
 DO $$
@@ -672,6 +698,13 @@ BEGIN
       END IF;
     END LOOP;
   END LOOP;
+  -- THE FLOOR IS TWO WHATEVER THE CALLER ASKS: minimum 0, 1 or 2.
+  IF EXISTS (SELECT 1 FROM generate_series(0, 60) nn, generate_series(0, 2) mm, generate_series(2, 9) xx,
+                           unnest(public.fn_lightning_group_sizes(nn, mm, xx, xx)) z WHERE z < 2)
+     OR public.fn_lightning_group_sizes(1, 0, 6, 6) IS DISTINCT FROM ARRAY[]::integer[]
+     OR public.fn_lightning_group_sizes(1, 1, 6, 6) IS DISTINCT FROM ARRAY[]::integer[] THEN
+    RAISE EXCEPTION 'FAIL 05: a minimum below two produced a group of one';
+  END IF;
   IF public.fn_lightning_group_sizes(13, 2, 6, 6) IS DISTINCT FROM ARRAY[5,4,4]
      OR public.fn_lightning_group_sizes(7, 2, 6, 6) IS DISTINCT FROM ARRAY[4,3]
      OR public.fn_lightning_group_sizes(19, 2, 9, 9) IS DISTINCT FROM ARRAY[7,6,6]
@@ -681,7 +714,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL 05: a documented example is wrong';
   END IF;
 END $$;
-\echo '  ok  05 P1 GROUP SIZES  for every legal count 0 to 60 at 6-max, 9-max and four other configurations: never a group of one or outside [min, max], sizes within one of each other and larger first, nobody left over whenever a split exists and no split seats more when none does, the fewest instances at the average closest to the target; at the defaults every count from 2 is fully seated in ceil(n/max) hands (13 -> 5/4/4, 7 -> 4/3, 19 at 9-max -> 7/6/6), and a minimum of 4 over 7 seats 6'
+\echo '  ok  05 P1 GROUP SIZES  for every legal count 0 to 60 at 6-max, 9-max and four other configurations: never a group of one or outside [min, max], sizes within one of each other and larger first, nobody left over whenever a split exists and no split seats more when none does, the fewest instances at the average closest to the target; at the defaults every count from 2 is fully seated in ceil(n/max) hands (13 -> 5/4/4, 7 -> 4/3, 19 at 9-max -> 7/6/6), a minimum of 4 over 7 seats 6, and a minimum of 0 or 1 still never yields a group below two for any count 0 to 60 at any size'
 
 -- 06 P2: THE BARRIER AGREES WITH EVERY PLANNED BIG BLIND ------------------------------
 DO $$
@@ -859,8 +892,62 @@ BEGIN
   END IF;
   INSERT INTO harness.m6 (k, game, t) VALUES ('D', v_d, round(v_score_on / 10, 4)::text || ' against ' || round(v_score_off / 10, 4)::text);
 END $$;
+-- 08 (CONTINUED): A REPEATED FULL TABLE, AND THE DIVERSITY MEASURES.
+DO $$
+DECLARE b1 uuid := gen_random_uuid(); s1 uuid := gen_random_uuid(); b2 uuid := gen_random_uuid();
+        s2 uuid := gen_random_uuid(); r1 uuid := gen_random_uuid(); v_enc jsonb; v_set jsonb; v_both jsonb; r jsonb;
+        v_d uuid; v_t timestamptz := clock_timestamp(); p jsonb; grp jsonb; v_members uuid[]; v_last integer; v_n integer;
+BEGIN
+  -- r1 has met each of the four blinds once, so every group costs it two
+  -- pair encounters; only the table r1 would complete differs.
+  SELECT jsonb_object_agg(LEAST(r1, x)::text || '/' || GREATEST(r1, x)::text, 1) INTO v_enc FROM unnest(ARRAY[b1, s1, b2, s2]) x;
+  v_set := jsonb_build_object((SELECT string_agg(x::text, ',' ORDER BY x) FROM unnest(ARRAY[b1, s1, r1]) x), true);
+  v_both := v_set || jsonb_build_object((SELECT string_agg(x::text, ',' ORDER BY x) FROM unnest(ARRAY[b2, s2, r1]) x), true);
+  r := public.fn_lightning_diversity_assign(jsonb_build_array(jsonb_build_array(b1, s1), jsonb_build_array(b2, s2)), ARRAY[r1], ARRAY[1, 1], v_enc, v_set, 1);
+  IF r -> 'moved' IS DISTINCT FROM '[0, 1]'::jsonb OR NOT ((r -> 'groups' -> 1) @> to_jsonb(ARRAY[r1])) THEN
+    RAISE EXCEPTION 'FAIL 08: a player completing a recently repeated full table was not moved to the other group: %', r;
+  END IF;
+  IF (public.fn_lightning_diversity_assign(jsonb_build_array(jsonb_build_array(b1, s1), jsonb_build_array(b2, s2)), ARRAY[r1], ARRAY[1, 1], v_enc, '{}'::jsonb, 1) -> 'moved')
+       IS DISTINCT FROM '[0, 0]'::jsonb
+     OR (public.fn_lightning_diversity_assign(jsonb_build_array(jsonb_build_array(b1, s1), jsonb_build_array(b2, s2)), ARRAY[r1], ARRAY[1, 1], v_enc, v_set, 0) -> 'moved')
+       IS DISTINCT FROM '[0, 0]'::jsonb
+     OR (public.fn_lightning_diversity_assign(jsonb_build_array(jsonb_build_array(b1, s1), jsonb_build_array(b2, s2)), ARRAY[r1], ARRAY[1, 1], v_enc, v_both, 1) -> 'moved')
+       IS DISTINCT FROM '[0, 0]'::jsonb THEN
+    RAISE EXCEPTION 'FAIL 08: the full-table penalty moved a player with no repeated table, at weight zero, or when both tables repeat';
+  END IF;
+  -- THE MEASURES, on a real plan of the large pool: consistent with each
+  -- other, and the immediate-repeat rate recomputed from lightning_hand_player.
+  SELECT game INTO v_d FROM harness.m6 WHERE k = 'D';
+  p := public.fn_lightning_match(v_d, v_t, NULL, NULL);
+  FOR grp IN SELECT x FROM jsonb_array_elements(p -> 'groups') x LOOP
+    v_n := jsonb_array_length(grp -> 'players');
+    IF ((grp -> 'keys' -> 'p5' ->> 'unique_opponents')::integer
+          IS DISTINCT FROM (grp -> 'keys' -> 'p5' ->> 'pairs')::integer - (grp -> 'keys' -> 'p5' ->> 'repeat_pairs')::integer)
+       OR ((grp -> 'keys' -> 'p5' ->> 'new_opponents_per_hand')::numeric
+          IS DISTINCT FROM round(2 * (grp -> 'keys' -> 'p5' ->> 'unique_opponents')::numeric / v_n, 4))
+       OR ((grp -> 'keys' -> 'p5' ->> 'repeat_pair_rate')::numeric
+          IS DISTINCT FROM round((grp -> 'keys' -> 'p5' ->> 'repeat_pairs')::numeric / (grp -> 'keys' -> 'p5' ->> 'pairs')::numeric, 4))
+       OR NOT ((grp -> 'keys' -> 'p5' ->> 'repeat_opponent_rate')::numeric BETWEEN 0 AND 1) THEN
+      RAISE EXCEPTION 'FAIL 08: the diversity measures of a group disagree with each other: %', grp -> 'keys' -> 'p5';
+    END IF;
+  END LOOP;
+  grp := p -> 'groups' -> 0;
+  v_members := ARRAY(SELECT x::uuid FROM jsonb_array_elements_text(grp -> 'players') x);
+  v_n := cardinality(v_members);
+  WITH last AS (
+    SELECT DISTINCT ON (hp.player_id) hp.player_id, hp.hand_id
+      FROM public.lightning_hand_player hp JOIN public.lightning_hand h ON h.hand_id = hp.hand_id
+     WHERE h.cluster_id = v_d AND h.formed_at <= v_t AND hp.player_id = ANY (v_members)
+     ORDER BY hp.player_id, h.formed_at DESC, h.hand_id)
+  SELECT count(*)::integer INTO v_last
+    FROM last l JOIN public.lightning_hand_player o ON o.hand_id = l.hand_id AND o.player_id <> l.player_id
+   WHERE o.player_id = ANY (v_members);
+  IF (grp -> 'keys' -> 'p5' ->> 'repeat_opponent_rate')::numeric IS DISTINCT FROM round(v_last::numeric / (v_n * (v_n - 1)), 4) THEN
+    RAISE EXCEPTION 'FAIL 08: repeat_opponent_rate % is not the % immediate repeats recounted from the hands', grp -> 'keys' -> 'p5' ->> 'repeat_opponent_rate', v_last;
+  END IF;
+END $$;
 SELECT t AS p5_scores FROM harness.m6 WHERE k = 'D' \gset
-\echo '  ok  08 P5 OPPONENT DIVERSITY  in a large pool of fifty P5 keeps every size, every big blind and everyone seated, moves players only among those seated in the same pass, and strictly reduces repeated pairs; half the weight moves no more; the same pool read as thin forms exactly the P4 plan and seats all fifty; over ten further passes the mean pool_diversity_score with P5 on beats its P5-off twin:' :p5_scores
+\echo '  ok  08 P5 OPPONENT DIVERSITY  in a large pool of fifty P5 keeps every size, every big blind and everyone seated, moves players only among those seated in the same pass, and strictly reduces repeated pairs; half the weight moves no more; the same pool read as thin forms exactly the P4 plan and seats all fifty; over ten further passes the mean pool_diversity_score with P5 on beats its P5-off twin:' :p5_scores '; a player who would complete a recently repeated full table is moved when the pair penalty ties, and not when no table repeats, at weight zero, or when both do; every group carries unique_opponents, new_opponents_per_hand, repeat_pair_rate and repeat_opponent_rate, consistent with each other and the last recounted from the hands'
 
 -- 09 P3: ORDER ONLY, NEVER MEMBERSHIP OR BLINDS ------------------------------------------
 DO $$
@@ -1085,10 +1172,30 @@ BEGIN
   v_t := clock_timestamp();
   r := public.fn_lightning_match_and_form(v_c, clock_timestamp(), NULL, NULL, gen_random_uuid());
   IF (r ->> 'reason') IS DISTINCT FROM 'pass_in_progress' OR (r ->> 'formed')::integer IS DISTINCT FROM 0
-     OR clock_timestamp() - v_t > interval '1 second' THEN
-    RAISE EXCEPTION 'FAIL 12: a pass during another pass did not answer pass_in_progress at once: % after %', r, clock_timestamp() - v_t;
+     OR (r ->> 'recorded')::boolean IS DISTINCT FROM true OR clock_timestamp() - v_t > interval '1 second' THEN
+    RAISE EXCEPTION 'FAIL 12: a pass during another pass did not answer pass_in_progress at once, recorded as news: % after %', r, clock_timestamp() - v_t;
+  END IF;
+  -- The same skip again is not news, and is not recorded.
+  r := public.fn_lightning_match_and_form(v_c, clock_timestamp(), NULL, NULL, gen_random_uuid());
+  IF (r ->> 'reason') IS DISTINCT FROM 'pass_in_progress' OR (r ->> 'recorded')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 12: a repeated pass_in_progress was recorded again: %', r;
   END IF;
   PERFORM public.fxr_other('COMMIT');
+  -- A ROW LOCK THAT IS NOT A PASS - the tick, a conversion - is waited for
+  -- briefly and answered cluster_row_busy, never pass_in_progress.
+  PERFORM public.fxr_other('BEGIN');
+  IF public.fxr_other_ask(format('SELECT id::text FROM public.cash_games WHERE id = %L FOR UPDATE', v_c)) IS DISTINCT FROM v_c::text THEN
+    RAISE EXCEPTION 'FAIL 12: the other backend could not hold the Cluster row';
+  END IF;
+  v_t := clock_timestamp();
+  r := public.fn_lightning_match_and_form(v_c, clock_timestamp(), NULL, NULL, gen_random_uuid());
+  IF (r ->> 'reason') IS DISTINCT FROM 'cluster_row_busy' OR (r ->> 'formed')::integer IS DISTINCT FROM 0
+     OR (r ->> 'recorded')::boolean IS DISTINCT FROM true
+     OR clock_timestamp() - v_t < interval '150 milliseconds' OR clock_timestamp() - v_t > interval '1 second' THEN
+    RAISE EXCEPTION 'FAIL 12: a held Cluster row did not answer cluster_row_busy after the short wait: % after %', r, clock_timestamp() - v_t;
+  END IF;
+  INSERT INTO harness.m6 (k, t) VALUES ('busy_ms', round(extract(epoch FROM clock_timestamp() - v_t) * 1000)::text);
+  PERFORM public.fxr_other('ROLLBACK');
   -- After it commits, a pass sees everyone in hand and forms nothing.
   r := public.fn_lightning_match_and_form(v_c, clock_timestamp(), NULL, NULL, gen_random_uuid());
   IF (r ->> 'formed')::integer IS DISTINCT FROM 0 OR (r -> 'reasons' ->> 'IN_HAND')::integer IS DISTINCT FROM 18 THEN
@@ -1104,7 +1211,8 @@ BEGIN
   INSERT INTO harness.m6 (k, game) VALUES ('RACE', public.fx6_cluster('RACE', 6, 28, 2));
   PERFORM public.fx6_set((SELECT game FROM harness.m6 WHERE k = 'RACE'), '{"worker_mode": "form"}');
 END $$;
-\echo '  ok  12a CONCURRENCY IN ONE PROCESS  a pass while another backend''s pass holds the Cluster answers pass_in_progress at once and forms nothing; once that pass commits the next sees all eighteen IN_HAND; nobody holds two reservations'
+SELECT t AS busy_ms FROM harness.m6 WHERE k = 'busy_ms' \gset
+\echo '  ok  12a CONCURRENCY IN ONE PROCESS  a pass while another backend''s pass holds the Cluster''s advisory lock answers pass_in_progress at once and forms nothing, recorded once as news and not again; a Cluster row held by something that is not a pass answers cluster_row_busy after' :busy_ms 'ms; once the other pass commits the next sees all eighteen IN_HAND; nobody holds two reservations'
 
 -- 13 LAW 10.5: A HORSE IS MATCHED EXACTLY AS A HUMAN ---------------------------------------
 DO $$
@@ -1163,6 +1271,136 @@ BEGIN
   END IF;
 END $$;
 \echo '  ok  14 SPEC PHASE 4 ACCEPTANCE  6-max 17 remains must-move and 18 converts, after which one matcher pass forms three hands of six; 9-max 26 remains must-move and 27 converts, after which one pass forms three hands of nine'
+
+-- 19 IDLE_SINCE: ONLY A HAND THAT WAS DEALT MOVES A PLAYER'S QUEUE PLACE ---------------
+DO $$
+DECLARE v_i uuid; v_r jsonb; v_players uuid[]; v_before text; v_after text; v_inst uuid; w jsonb; v_p uuid;
+BEGIN
+  v_i := public.fx6_cluster('IDLE', 6, 16, 2);
+  -- A formation abandoned before it is dealt: released, idle_since unchanged.
+  v_players := public.fx9_candidates(v_i, 6);
+  SELECT string_agg(sl.idle_since::text, ',' ORDER BY sl.player_id) INTO v_before
+    FROM public.lightning_pool_slot sl WHERE sl.cluster_id = v_i AND sl.closed_at IS NULL AND sl.player_id = ANY (v_players);
+  v_r := public.fxr_form(v_i, v_players);
+  PERFORM pg_sleep(0.01);
+  PERFORM public.fn_lightning_instance_abandon((v_r ->> 'instance_id')::uuid, 'fx6: never dealt');
+  SELECT string_agg(sl.idle_since::text, ',' ORDER BY sl.player_id) INTO v_after
+    FROM public.lightning_pool_slot sl WHERE sl.cluster_id = v_i AND sl.closed_at IS NULL AND sl.player_id = ANY (v_players);
+  IF v_after IS DISTINCT FROM v_before
+     OR (SELECT count(*) FROM public.lightning_reservation WHERE lightning_instance_id = (v_r ->> 'instance_id')::uuid AND state = 'released') <> 6 THEN
+    RAISE EXCEPTION 'FAIL 19: a formation abandoned before dealing moved its players'' queue place, or released nobody';
+  END IF;
+  -- A pending claim the reaper expires: unchanged.
+  v_p := v_players[1];
+  w := harness.who(v_i, v_p);
+  v_before := (SELECT idle_since::text FROM public.lightning_pool_slot WHERE id = (w ->> 'slot')::uuid);
+  v_inst := (public.fn_lightning_instance_open(v_i) ->> 'instance_id')::uuid;
+  INSERT INTO public.lightning_reservation (cluster_id, cluster_epoch, player_id, pool_slot_id, lightning_instance_id, seat_number, state, created_at, expires_at)
+  VALUES (v_i, (w ->> 'epoch')::integer, v_p, (w ->> 'slot')::uuid, v_inst, 1, 'pending', clock_timestamp() - interval '1 minute', clock_timestamp() - interval '1 second');
+  PERFORM public.fn_lightning_reap_formations(clock_timestamp());
+  IF (SELECT state FROM public.lightning_reservation WHERE lightning_instance_id = v_inst AND player_id = v_p) IS DISTINCT FROM 'expired'
+     OR (SELECT idle_since::text FROM public.lightning_pool_slot WHERE id = (w ->> 'slot')::uuid) IS DISTINCT FROM v_before THEN
+    RAISE EXCEPTION 'FAIL 19: an expired claim moved the player''s queue place, or did not expire';
+  END IF;
+  PERFORM public.fn_lightning_instance_abandon(v_inst, 'fx6: the empty instance');
+  -- THE TWINS: dealt then abandoned mid-hand, and dealt then completed - both move it forward.
+  v_r := public.fxr_form(v_i, v_players);
+  PERFORM public.fn_lightning_instance_begin_dealing((v_r ->> 'instance_id')::uuid);
+  PERFORM pg_sleep(0.01);
+  PERFORM public.fn_lightning_instance_abandon((v_r ->> 'instance_id')::uuid, 'fx6: voided mid-hand');
+  IF EXISTS (SELECT 1 FROM public.lightning_pool_slot sl
+              WHERE sl.cluster_id = v_i AND sl.closed_at IS NULL AND sl.player_id = ANY (v_players)
+                AND sl.idle_since IS DISTINCT FROM (SELECT r.resolved_at FROM public.lightning_reservation r
+                                                     WHERE r.lightning_instance_id = (v_r ->> 'instance_id')::uuid AND r.player_id = sl.player_id)) THEN
+    RAISE EXCEPTION 'FAIL 19: a hand abandoned after it was dealt did not move its players to the back of the queue';
+  END IF;
+  v_r := public.fxr_form(v_i, v_players);
+  PERFORM pg_sleep(0.01);
+  PERFORM public.fx6_complete((v_r ->> 'instance_id')::uuid);
+  IF EXISTS (SELECT 1 FROM public.lightning_pool_slot sl
+              WHERE sl.cluster_id = v_i AND sl.closed_at IS NULL AND sl.player_id = ANY (v_players)
+                AND sl.idle_since IS DISTINCT FROM (SELECT r.resolved_at FROM public.lightning_reservation r
+                                                     WHERE r.lightning_instance_id = (v_r ->> 'instance_id')::uuid AND r.player_id = sl.player_id)) THEN
+    RAISE EXCEPTION 'FAIL 19: a completed hand did not move its players to the back of the queue';
+  END IF;
+END $$;
+\echo '  ok  19 IDLE_SINCE KEEPS THE PLACE OF A HAND NEVER DEALT  a formation abandoned before dealing releases its six and leaves every idle_since where it was, as does a pending claim the reaper expires; the same six dealt and then voided, and dealt and then completed, each go to the back of the queue at their release'
+
+-- 20 A PASS IS RECORDED ONLY WHEN SOMETHING HAPPENED; THE RECORD IS PRUNED ----------------
+DO $$
+DECLARE v_q uuid; v_x uuid; r jsonb; v_req uuid; v_rows bigint; v_events bigint; v_w uuid; v_left bigint; v_err text; v_oldest uuid[];
+BEGIN
+  v_q := public.fx6_cluster('REC', 6, 16, 2);
+  PERFORM public.fx6_set(v_q, '{"worker_mode": "form"}');
+  SELECT ps.player_id INTO v_x FROM public.lightning_pool_session ps WHERE ps.cluster_id = v_q AND ps.exited_at IS NULL ORDER BY ps.player_id LIMIT 1;
+  -- A pass that forms: recorded.
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), NULL, NULL, gen_random_uuid());
+  IF (r ->> 'formed')::integer <> 3 OR (r ->> 'recorded')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 20: a forming pass was not recorded: %', r;
+  END IF;
+  -- Everyone now in hand: a new diagnosis, recorded although nothing formed.
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), NULL, NULL, gen_random_uuid());
+  IF (r ->> 'formed')::integer <> 0 OR (r ->> 'recorded')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 20: a changed diagnosis was not recorded: %', r;
+  END IF;
+  v_rows := (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q);
+  v_events := (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_q AND kind = 'matcher_pass');
+  -- The same again: not news, nothing written - and its request id is not
+  -- remembered, so the same request simply runs again.
+  v_req := gen_random_uuid();
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), NULL, NULL, v_req);
+  IF (r ->> 'recorded')::boolean IS DISTINCT FROM false OR (r ->> 'formed')::integer <> 0
+     OR (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q) <> v_rows
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_q AND kind = 'matcher_pass') <> v_events THEN
+    RAISE EXCEPTION 'FAIL 20: an unchanged empty pass wrote a record or an event: %', r;
+  END IF;
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), NULL, NULL, v_req);
+  IF (r ->> 'replayed')::boolean IS DISTINCT FROM false OR (r ->> 'recorded')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 20: an unrecorded pass''s request id was replayed rather than run: %', r;
+  END IF;
+  -- One player reported disconnected: the counts change, so it is news.
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), ARRAY[v_x], NULL, gen_random_uuid());
+  IF (r ->> 'recorded')::boolean IS DISTINCT FROM true OR (r -> 'reasons' ->> 'DISCONNECTED')::integer IS DISTINCT FROM 1
+     OR (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q) <> v_rows + 1 THEN
+    RAISE EXCEPTION 'FAIL 20: a changed diagnosis with nothing formed was not recorded: %', r;
+  END IF;
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), ARRAY[v_x], NULL, gen_random_uuid());
+  IF (r ->> 'recorded')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'FAIL 20: the same disconnected diagnosis was recorded twice';
+  END IF;
+  -- RETENTION: five of this Cluster's records and one of another's aged past
+  -- a one-hour retention; each recorded pass prunes at most two of this
+  -- Cluster's, oldest first, and never another Cluster's.
+  SELECT game INTO v_w FROM harness.m6 WHERE k = 'W';
+  PERFORM public.fx6_set(v_q, '{"pass_record_retention_hours": 1, "pass_record_prune_batch": 2}');
+  INSERT INTO public.cash_cluster_matcher_pass (request_id, cluster_id, cluster_epoch, matcher_version, started_at, finished_at, hands_formed, result)
+  SELECT gen_random_uuid(), c, 1, 'm1', clock_timestamp() - interval '2 hours' - (i * interval '1 minute'),
+         clock_timestamp() - interval '2 hours' - (i * interval '1 minute'), 0, '{"fx6": "aged"}'::jsonb
+    FROM (SELECT v_q AS c, i FROM generate_series(1, 5) i UNION ALL SELECT v_w, 1) z;
+  v_oldest := ARRAY(SELECT request_id FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q AND result ->> 'fx6' = 'aged'
+                     ORDER BY started_at, request_id LIMIT 2);
+  r := public.fn_lightning_match_and_form(v_q, clock_timestamp(), NULL, NULL, gen_random_uuid());
+  v_left := (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q AND result ->> 'fx6' = 'aged');
+  IF (r ->> 'recorded')::boolean IS DISTINCT FROM true OR (r ->> 'pruned')::integer IS DISTINCT FROM 2 OR v_left <> 3
+     OR (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_w AND result ->> 'fx6' = 'aged') <> 1
+     OR EXISTS (SELECT 1 FROM public.cash_cluster_matcher_pass WHERE request_id = ANY (v_oldest)) THEN
+    RAISE EXCEPTION 'FAIL 20: a recorded pass did not prune exactly the two oldest aged records of its own Cluster: % left %', r, v_left;
+  END IF;
+  -- service_role may not delete a record itself; only the prune can.
+  SET LOCAL ROLE service_role;
+  BEGIN
+    DELETE FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q;
+    v_err := 'no error';
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_err := SQLSTATE;
+  END;
+  RESET ROLE;
+  IF v_err IS DISTINCT FROM '42501' THEN
+    RAISE EXCEPTION 'FAIL 20: service_role deleted pass records directly: %', v_err;
+  END IF;
+  INSERT INTO harness.m6 (k, n) VALUES ('rec_rows', (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_q));
+END $$;
+\echo '  ok  20 A PASS IS RECORDED ONLY WHEN SOMETHING HAPPENED  a forming pass and a pass whose diagnosis changed are recorded (event and row); the same empty pass again writes nothing and its request id simply runs again; a disconnect that changes the counts is recorded once and not twice; with a one-hour retention and a batch of two, a recorded pass prunes exactly the two oldest aged records of its own Cluster and none of another; service_role cannot delete a record except through the prune'
 ASSERT
 
 # ===========================================================================
@@ -1399,7 +1637,8 @@ BEGIN
                            'public.fn_lightning_match_and_form(uuid,timestamp with time zone,uuid[],integer,uuid)',
                            'public.fn_lightning_config_number(jsonb,text,numeric,numeric,numeric,boolean)',
                            'public.fn_lightning_pool_slot_idle_since_starts_at_open()',
-                           'public.fn_lightning_reservation_end_marks_the_slot_idle()'] LOOP
+                           'public.fn_lightning_reservation_end_marks_the_slot_idle()',
+                           'public.fn_lightning_diversity_assign(jsonb,uuid[],integer[],jsonb,jsonb,numeric)'] LOOP
     IF NOT has_function_privilege('service_role', f::regprocedure, 'EXECUTE')
        OR has_function_privilege('anon', f::regprocedure, 'EXECUTE')
        OR has_function_privilege('authenticated', f::regprocedure, 'EXECUTE')
@@ -1407,6 +1646,13 @@ BEGIN
       RAISE EXCEPTION 'FAIL 17: % is not executable by service_role alone, or is a definer', f;
     END IF;
   END LOOP;
+  -- THE ONE DEFINER: the pass-record prune, service_role only.
+  IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure)
+     OR NOT has_function_privilege('service_role', 'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure, 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure, 'EXECUTE')
+     OR has_function_privilege('anon', 'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL 17: the prune is not a definer executable by service_role alone';
+  END IF;
   IF has_table_privilege('authenticated', 'public.cash_cluster_matcher_pass', 'SELECT')
      OR has_table_privilege('service_role', 'public.cash_cluster_matcher_pass', 'DELETE')
      OR NOT has_table_privilege('service_role', 'public.cash_cluster_matcher_pass', 'INSERT') THEN
@@ -1435,12 +1681,12 @@ BEGIN
     RAISE EXCEPTION 'FAIL 17: authenticated was not refused: %', v_refused;
   END IF;
 END $$;
-\echo '  ok  17 SERVICE ROLE ONLY  every function of the file is executable by service_role and by no browser role, none is SECURITY DEFINER, the pass record is readable and insertable by service_role only and never deletable; service_role plans as itself, and authenticated is refused with 42501'
+\echo '  ok  17 SERVICE ROLE ONLY  every function of the file is executable by service_role and by no browser role, none is SECURITY DEFINER but the pass-record prune, the pass record is readable and insertable by service_role only and never deletable; service_role plans as itself, and authenticated is refused with 42501'
 ASSERT
 cat > "$fixture/precapture.sql" <<'ASSERT'
 CREATE TABLE harness.cap AS
 SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
-  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname ~ '^fn_lightning_'
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_cash_cluster_matcher_pass_prune')
 UNION ALL
 SELECT 'trg:' || t.tgrelid::regclass || '.' || t.tgname, md5(pg_get_triggerdef(t.oid) || t.tgenabled::text)
   FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgrelid IN ('public.lightning_pool_slot'::regclass, 'public.lightning_reservation'::regclass,
@@ -1470,7 +1716,7 @@ BEGIN
   SELECT string_agg(coalesce(a.what, b.what), ', ') INTO v_bad
     FROM harness.cap a FULL JOIN (
       SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
-        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname ~ '^fn_lightning_'
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_cash_cluster_matcher_pass_prune')
       UNION ALL
       SELECT 'trg:' || t.tgrelid::regclass || '.' || t.tgname, md5(pg_get_triggerdef(t.oid) || t.tgenabled::text)
         FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgrelid IN ('public.lightning_pool_slot'::regclass, 'public.lightning_reservation'::regclass,
@@ -1555,11 +1801,11 @@ if [ "$status" != 0 ]; then
   exit 1
 fi
 
-# TWENTY SECTIONS REPORTED, counted rather than eyeballed: a section deleted
+# TWENTY-TWO SECTIONS REPORTED, counted rather than eyeballed: a section deleted
 # during a refactor would not make psql fail, and the PASS line would still print.
 oks=$(grep -c -E '^  ok  [0-9]{2}[ab]? ' "$fixture/psql.out" || true)
-if [ "$oks" != 20 ]; then
-  echo "FAIL: $oks of the 20 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 22 ]; then
+  echo "FAIL: $oks of the 22 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phases 6 and 7, 20 sections: every predecessor proof evaluates exactly as before the file except the two superseded exact lists of freeze readers, whose intent holds as containment, and the idle_since backfill read the released reservations; the configuration defaults, honours overrides and reports and replaces bad values, with bands from the population's own thresholds; every P0 reason is one fact from legal for a human and a horse alike, reusing the platform's restriction, responsible-gaming, anchor, stack, in-hand and freeze checks; every open-pool player is diagnosed exactly once in every state; group sizes seat everyone from 2 to 60 at 6-max and 9-max in the fewest instances; the barrier forms every planned group with the planned blinds; P4 queues by idle_since, entry, join and id; P5 cuts repeats in a large pool and changes nothing in a thin one; P3 moves only the non-blind order, each seat to whoever held it least; the plan is deterministic; the writer is dark by default, idempotent on its request id, re-plans a race, stops frozen at once and is bounded; no two passes reserve anybody twice, in one process or two; horses are matched identically; Phase 4 acceptance forms 3 hands of 6 and of 9; ${rounds} rounds each of 18, 25 and 50 players keep every big-blind and small-blind count within one, every button within two and every big-blind gap within ceil(n/k), and under churn every player's big blinds stay within two of the burden they were legal for; every @live-proof holds, service_role alone may call it, and the file is re-appliable"
+echo "PASS: Lightning Phases 6 and 7, 22 sections: every predecessor proof evaluates exactly as before the file except the two superseded exact lists of freeze readers, whose intent holds as containment, and the idle_since backfill read the released reservations; the configuration defaults, honours overrides and reports and replaces bad values, with bands from the population's own thresholds; every P0 reason is one fact from legal for a human and a horse alike, reusing the platform's restriction, responsible-gaming, anchor, stack, in-hand and freeze checks; every open-pool player is diagnosed exactly once in every state; group sizes seat everyone from 2 to 60 at 6-max and 9-max in the fewest instances; the barrier forms every planned group with the planned blinds; P4 queues by idle_since, entry, join and id; P5 cuts repeated pairs and repeated full tables in a large pool, reports the diversity measures and changes nothing in a thin one; P3 moves only the non-blind order, each seat to whoever held it least; the plan is deterministic; the writer is dark by default, idempotent on its request id, re-plans a race, stops frozen at once and is bounded; a concurrent pass is pass_in_progress and a row held by anything else is cluster_row_busy; no two passes reserve anybody twice, in one process or two; only a hand that was dealt moves a queue place; a pass is recorded only when something happened and the record is pruned to its retention; horses are matched identically; Phase 4 acceptance forms 3 hands of 6 and of 9; ${rounds} rounds each of 18, 25 and 50 players keep every big-blind and small-blind count within one, every button within two and every big-blind gap within ceil(n/k), and under churn every player's big blinds stay within two of the burden they were legal for; every @live-proof holds, service_role alone may call it, and the file is re-appliable"

@@ -69,10 +69,16 @@
 --      P5 only among the players seated THIS pass (all equally served, so
 --         P4-equivalent): each is placed, in P4 order, in the group with the
 --         fewest recent encounters, but moved from the group plain P4 order
---         would give only when weight x (encounters saved) >= 1. The weight
---         is by pool-size band (large 1, medium 0.5, thin 0, tiny 0), so a
---         thin or tiny pool is formed exactly as P4 alone forms it, and a
---         move never changes a group's size, so no hand is ever starved.
+--         would give only when weight x (penalty saved) >= 1. The penalty
+--         is recent pair encounters, plus one per pair when the player would
+--         complete a full table that sat together recently
+--         (fn_lightning_diversity_assign, pure). The weight is by pool-size
+--         band (large 1, medium 0.5, thin 0, tiny 0), so a thin or tiny pool
+--         is formed exactly as P4 alone forms it, and a move never changes a
+--         group's size, so no hand is ever starved. Each group's keys carry
+--         the specification's diversity measures (unique_opponents,
+--         new_opponents_per_hand, repeat_pair_rate, repeat_opponent_rate,
+--         repeat_full_table).
 --      P3 advisory and last: inside a formed group it only orders the
 --         non-blind seats - from the button backward, each seat to the member
 --         who has held that position least (lightning_blind_ledger btn, co,
@@ -85,30 +91,42 @@
 --    WAITING_FOR_FORMATION, WAITING_FOR_RECONNECT or BLOCKED_WITH_REASON.
 --
 -- 5. public.fn_lightning_match_and_form(cluster, now, disconnected,
---    max_hands, request_id) - the writer. Takes the Cluster row FOR UPDATE
---    SKIP LOCKED (a concurrent pass answers pass_in_progress and waits for
---    nothing), plans, forms each group through fn_lightning_form_hand with
+--    max_hands, request_id) - the writer. Takes a transaction advisory lock
+--    per Cluster (a concurrent pass answers pass_in_progress and waits for
+--    nothing), then the Cluster row, waiting at most cluster_row_wait_ms for
+--    anything else that holds it (the tick, a conversion) before answering
+--    cluster_row_busy; plans, forms each group through fn_lightning_form_hand with
 --    that group's big blind, a request id derived from the pass's and a
 --    formation time one microsecond after the previous group's (so the big
 --    blinds of one pass queue in the order they were chosen and P2 is a
 --    strict rotation rather than a re-sort by player_id), re-plans
 --    after a retryable refusal (bounded by max_replans), stops at once on
 --    formation_invariant_failed, and is bounded by max_hands, the admission
---    batch and a time budget. One matcher_assignment event per hand and one
---    matcher_pass event per pass (counts per state and reason, never a row
---    per player), both carrying matcher_version and request_id; the pass is
---    recorded in public.cash_cluster_matcher_pass under its request id, and a
---    retried request id answers with the recorded pass and forms nothing.
+--    batch and a time budget. One matcher_assignment event per hand. A pass
+--    is RECORDED - one matcher_pass event (counts per state and reason, never
+--    a row per player) and one public.cash_cluster_matcher_pass row, both
+--    with matcher_version and request_id - only when something happened: a
+--    hand formed, a race was retried, a refusal, a freeze, a different
+--    ending, or diagnosis counts that differ from the Cluster's last recorded
+--    pass. A pass that formed nothing and saw what the last one saw is safe
+--    to run again and writes nothing (an idle Cluster at one pass a second
+--    writes nothing all day). A retried request id of a recorded pass answers
+--    with it and forms nothing. Recording also prunes that Cluster's pass
+--    records past pass_record_retention_hours, pass_record_prune_batch at a
+--    time, through fn_cash_cluster_matcher_pass_prune, the file's one SECURITY
+--    DEFINER (service_role holds no DELETE on the table).
 --
 -- 6. lightning_pool_slot.idle_since (P4's first key): NOT NULL, the slot's
 --    opened_at when it opens (a BEFORE INSERT trigger, because a column
 --    default cannot name another column), and moved forward - never back -
---    to the resolution time whenever one of the slot's reservations is
---    released or expires (an AFTER UPDATE trigger on lightning_reservation).
---    A trigger rather than an edit of the release trigger's body because the
---    reaper's expiry is a second road back to the pool that the release
---    trigger never sees; one trigger on the row that records the end covers
---    both, and any future road, without touching an existing function.
+--    to the resolution time when a reservation on a hand that was DEALT
+--    (its instance has started_at) is released (an AFTER UPDATE trigger on
+--    lightning_reservation). A formation abandoned before dealing, and a
+--    pending claim the reaper expired, dealt nobody anything, so they leave
+--    every player's queue place where it was. A trigger rather than an edit
+--    of the release trigger's body: one trigger on the row that records the
+--    end covers every road back to the pool without touching an existing
+--    function.
 --
 -- 7. lightning_reservation_active_by_player: the multi-table count asks for a
 --    player's live reservations in every OTHER Cluster, which no existing
@@ -123,6 +141,17 @@
 -- settling, then complete) releases the reservations, and the release now
 -- also stamps idle_since.
 --
+-- WHAT P0 DOES NOT YET COVER, AND WHERE IT READS THE CLOCK. Responsible
+-- gaming covers self-exclusion and cooling-off (fn_rg_require_not_excluded);
+-- stake, session and loss limits and breaks are spec Phase 16 (no cash path
+-- enforces responsible_gaming_limits.daily_loss_limit or
+-- session_time_limit_minutes today). MULTI_TABLE_LIMIT caps a player's live
+-- Lightning hands across Clusters, not per platform (multi-table is spec
+-- Phase 11), and two Clusters forming at the same instant can each admit the
+-- player once, so it can be exceeded by one. p_now stamps the plan and bounds
+-- the P5 window; fn_platform_frozen, fn_ca_player_restricted and
+-- fn_rg_require_not_excluded take no time and read the clock.
+--
 -- LAW 10.5. Nothing here reads is_horse or horse_id. A horse is matched,
 -- blinded, queued and diversified exactly as a human is.
 --
@@ -134,17 +163,28 @@
 -- @live-proof: (SELECT p.provolatile = 'i' AND NOT p.prosecdef AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND public.fn_lightning_group_sizes(13, 2, 6, 6) = ARRAY[5,4,4] AND public.fn_lightning_group_sizes(1, 2, 6, 6) = '{}'::integer[] AND public.fn_lightning_group_sizes(18, 2, 6, 6) = ARRAY[6,6,6] FROM pg_proc p WHERE p.oid = 'public.fn_lightning_group_sizes(integer,integer,integer,integer)'::regprocedure)
 -- @live-proof: (SELECT p.provolatile = 's' AND NOT p.prosecdef AND p.prorettype = 'jsonb'::regtype AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND pg_get_functiondef(p.oid) ~ 'fn_lightning_match_plan\(p_cluster_id, p_now, p_disconnected, p_matcher_version, NULL\)' FROM pg_proc p WHERE p.oid = 'public.fn_lightning_match(uuid,timestamp with time zone,uuid[],text)'::regprocedure)
 -- @live-proof: (SELECT p.provolatile = 's' AND NOT p.prosecdef AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND s ~ 'fn_lightning_blind_order\(p_cluster_id, v_epoch' AND s ~ 'fn_lightning_player_legality\(p_cluster_id, v_now, p_disconnected\)' AND s ~ 'fn_lightning_group_sizes\(' AND s ~ '''WAITING_FOR_RECONNECT''' AND s ~ '''BLOCKED_WITH_REASON''' AND s !~ 'INSERT INTO' AND s !~ 'UPDATE public' FROM pg_proc p, LATERAL (SELECT regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') AS s) q WHERE p.oid = 'public.fn_lightning_match_plan(uuid,timestamp with time zone,uuid[],text,integer)'::regprocedure)
--- @live-proof: (SELECT p.provolatile = 'v' AND NOT p.prosecdef AND p.prorettype = 'jsonb'::regtype AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND s ~ 'FOR UPDATE SKIP LOCKED' AND s ~ 'public\.fn_lightning_form_hand\(' AND s ~ '''matcher_assignment''' AND s ~ '''matcher_pass''' AND s ~ 'formation_invariant_failed' AND s ~ 'cash_cluster_matcher_pass' FROM pg_proc p, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE p.oid = 'public.fn_lightning_match_and_form(uuid,timestamp with time zone,uuid[],integer,uuid)'::regprocedure)
+-- @live-proof: (SELECT p.provolatile = 'v' AND NOT p.prosecdef AND p.prorettype = 'jsonb'::regtype AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND s ~ 'pg_try_advisory_xact_lock' AND s ~ '''cluster_row_busy''' AND s ~ 'fn_cash_cluster_matcher_pass_prune\(' AND s ~ 'public\.fn_lightning_form_hand\(' AND s ~ '''matcher_assignment''' AND s ~ '''matcher_pass''' AND s ~ 'formation_invariant_failed' AND s ~ 'cash_cluster_matcher_pass' FROM pg_proc p, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE p.oid = 'public.fn_lightning_match_and_form(uuid,timestamp with time zone,uuid[],integer,uuid)'::regprocedure)
 -- @live-proof: (SELECT a.attnotnull AND a.atttypid = 'timestamptz'::regtype FROM pg_attribute a WHERE a.attrelid = 'public.lightning_pool_slot'::regclass AND a.attname = 'idle_since' AND NOT a.attisdropped) AND EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conrelid = 'public.lightning_pool_slot'::regclass AND c.conname = 'lightning_pool_slot_idle_since_follows_open' AND c.convalidated)
 -- @live-proof: (SELECT t.tgenabled = 'O' AND (t.tgtype::integer & 2) <> 0 AND (t.tgtype::integer & 4) <> 0 AND t.tgfoid = 'public.fn_lightning_pool_slot_idle_since_starts_at_open()'::regprocedure FROM pg_trigger t WHERE t.tgrelid = 'public.lightning_pool_slot'::regclass AND t.tgname = 'trg_matcher_slot_idle_since_starts_at_open')
 -- @live-proof: (SELECT t.tgenabled = 'O' AND (t.tgtype::integer & 2) = 0 AND (t.tgtype::integer & 16) <> 0 AND t.tgqual IS NOT NULL AND t.tgfoid = 'public.fn_lightning_reservation_end_marks_the_slot_idle()'::regprocedure AND pg_get_triggerdef(t.oid) ~ 'released' AND pg_get_triggerdef(t.oid) ~ 'expired' FROM pg_trigger t WHERE t.tgrelid = 'public.lightning_reservation'::regclass AND t.tgname = 'trg_matcher_reservation_end_marks_the_slot_idle')
 -- @live-proof: (SELECT pg_get_expr(i.indpred, i.indrelid) ~ 'pending' AND pg_get_expr(i.indpred, i.indrelid) ~ 'committed' AND pg_get_indexdef(i.indexrelid) ~ '\(player_id\)' FROM pg_index i WHERE i.indexrelid = 'public.lightning_reservation_active_by_player'::regclass)
 -- @live-proof: (SELECT c.relrowsecurity AND has_table_privilege('service_role', c.oid, 'SELECT') AND has_table_privilege('service_role', c.oid, 'INSERT') AND NOT has_table_privilege('service_role', c.oid, 'DELETE') AND NOT has_table_privilege('service_role', c.oid, 'UPDATE') AND NOT has_table_privilege('anon', c.oid, 'SELECT') AND NOT has_table_privilege('authenticated', c.oid, 'SELECT') FROM pg_class c WHERE c.oid = 'public.cash_cluster_matcher_pass'::regclass)
--- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname IN ('fn_lightning_config', 'fn_lightning_config_number', 'fn_lightning_player_legality', 'fn_lightning_group_sizes', 'fn_lightning_match_plan', 'fn_lightning_match', 'fn_lightning_match_and_form', 'fn_lightning_pool_slot_idle_since_starts_at_open', 'fn_lightning_reservation_end_marks_the_slot_idle') AND (p.prosecdef OR pg_get_functiondef(p.oid) ~ 'is_horse' OR pg_get_functiondef(p.oid) ~ 'horse_id')))
+-- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname IN ('fn_lightning_config', 'fn_lightning_config_number', 'fn_lightning_player_legality', 'fn_lightning_group_sizes', 'fn_lightning_match_plan', 'fn_lightning_match', 'fn_lightning_match_and_form', 'fn_lightning_pool_slot_idle_since_starts_at_open', 'fn_lightning_reservation_end_marks_the_slot_idle', 'fn_lightning_diversity_assign') AND (p.prosecdef OR pg_get_functiondef(p.oid) ~ 'is_horse' OR pg_get_functiondef(p.oid) ~ 'horse_id')))
+
+-- @live-proof: (SELECT p.provolatile = 'i' AND NOT p.prosecdef AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') FROM pg_proc p WHERE p.oid = 'public.fn_lightning_diversity_assign(jsonb,uuid[],integer[],jsonb,jsonb,numeric)'::regprocedure)
+-- @live-proof: (SELECT p.prosecdef AND p.prorettype = 'integer'::regtype AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND pg_get_functiondef(p.oid) ~ 'o\.cluster_id = p_cluster_id AND o\.started_at < p_before' FROM pg_proc p WHERE p.oid = 'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure)
+-- @live-proof: (SELECT pg_get_functiondef(p.oid) ~ 'i\.started_at IS NOT NULL' FROM pg_proc p WHERE p.oid = 'public.fn_lightning_reservation_end_marks_the_slot_idle()'::regprocedure)
+-- @live-proof: (SELECT (public.fn_lightning_config(NULL) ->> 'worker_mode') = 'off' AND (public.fn_lightning_config(NULL) ->> 'ok')::boolean = false AND (public.fn_lightning_config(NULL) ->> 'cluster_row_wait_ms') IS NOT NULL)
 
 BEGIN;
 
-SET LOCAL lock_timeout = '8s';
+-- THE LOCK ORDER OF fn_cash_clusters_tick_all, taken first and all at once:
+-- the tick updates lightning_reservation and then reads lightning_pool_slot,
+-- so this file takes them in that order before it touches either, and waits
+-- no longer than three seconds for either.
+SET LOCAL lock_timeout = '3s';
+LOCK TABLE public.lightning_reservation IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.lightning_pool_slot IN ACCESS EXCLUSIVE MODE;
 
 -- ===========================================================================
 -- SECTION 1. P4'S FIRST KEY: WHEN DID THIS TABLE LAST BECOME IDLE?
@@ -155,13 +195,17 @@ SET LOCAL lock_timeout = '8s';
 ALTER TABLE public.lightning_pool_slot ADD COLUMN IF NOT EXISTS idle_since timestamptz;
 
 -- THE BACKFILL, for an estate that already has slots: the later of the open
--- and the last time one of the slot's reservations ended.
+-- and the last time the slot came back from a hand that was DEALT. A hand
+-- abandoned before it was dealt, and a claim that expired, never took the
+-- player out of the queue, so neither moves their place in it.
 UPDATE public.lightning_pool_slot sl
    SET idle_since = GREATEST(sl.opened_at,
                              coalesce((SELECT max(r.resolved_at)
                                          FROM public.lightning_reservation r
+                                         JOIN public.lightning_instance i ON i.id = r.lightning_instance_id
                                         WHERE r.pool_slot_id = sl.id
-                                          AND r.state IN ('released', 'expired')),
+                                          AND r.state IN ('released', 'expired')
+                                          AND i.started_at IS NOT NULL),
                                       sl.opened_at))
  WHERE sl.idle_since IS NULL;
 
@@ -180,7 +224,7 @@ END
 $idle_check$;
 
 COMMENT ON COLUMN public.lightning_pool_slot.idle_since IS
-  'P4 queue fairness, first key: when this table last became free to be dealt in. The slot''s opened_at when it opens (trg_matcher_slot_idle_since_starts_at_open) and moved forward to resolved_at whenever one of its reservations is released or expires (trg_matcher_reservation_end_marks_the_slot_idle). Never moves backward and never precedes opened_at.';
+  'P4 queue fairness, first key: when this table last came back from a hand it was dealt. The slot''s opened_at when it opens (trg_matcher_slot_idle_since_starts_at_open) and moved forward to resolved_at when a reservation on a DEALT instance (started_at set) is released (trg_matcher_reservation_end_marks_the_slot_idle); a formation abandoned before dealing or an expired claim leaves it where it was. Never moves backward and never precedes opened_at.';
 
 CREATE OR REPLACE FUNCTION public.fn_lightning_pool_slot_idle_since_starts_at_open()
 RETURNS trigger
@@ -201,9 +245,15 @@ LANGUAGE plpgsql
 SET search_path TO 'public', 'pg_temp'
 AS $fn$
 BEGIN
-  -- Released by an instance reaching complete or abandoned (the release
-  -- trigger), or expired by the reaper: either way the player is back in the
-  -- pool from resolved_at, and P4 queues them from then. Forward only.
+  -- ONLY A HAND THAT WAS DEALT sends a player to the back of the queue: an
+  -- instance with started_at (begin_dealing stamped it) that completed, was
+  -- abandoned mid-hand, or - Phase 8 - released a fast fold. A formation
+  -- abandoned before it was dealt, and a pending claim the reaper expired,
+  -- dealt the player nothing, so they keep their P4 place. Forward only.
+  IF NOT EXISTS (SELECT 1 FROM public.lightning_instance i
+                  WHERE i.id = NEW.lightning_instance_id AND i.started_at IS NOT NULL) THEN
+    RETURN NULL;
+  END IF;
   UPDATE public.lightning_pool_slot sl
      SET idle_since = GREATEST(sl.idle_since, coalesce(NEW.resolved_at, clock_timestamp()))
    WHERE sl.id = NEW.pool_slot_id
@@ -360,14 +410,18 @@ DECLARE
   v_mtl      integer;
   v_batch    integer;
   v_replans  integer;
+  v_found    boolean;
+  v_row_wait integer;
+  v_keep_h   integer;
+  v_prune    integer;
 BEGIN
   SELECT cg.id, cg.handedness, cg.ruleset_snapshot INTO g
     FROM public.cash_games cg WHERE cg.id = p_cluster_id;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_found', 'cluster_id', p_cluster_id);
-  END IF;
+  -- AN UNKNOWN CLUSTER still answers every key, at its default, with ok
+  -- false: a client that reads only worker_mode reads 'off'.
+  v_found := FOUND;
 
-  v_cfg := g.ruleset_snapshot -> 'lightning';
+  v_cfg := CASE WHEN v_found THEN g.ruleset_snapshot -> 'lightning' END;
   IF v_cfg IS NULL OR jsonb_typeof(v_cfg) = 'null' THEN
     v_cfg := '{}'::jsonb;
   ELSIF jsonb_typeof(v_cfg) <> 'object' THEN
@@ -376,7 +430,11 @@ BEGIN
   END IF;
 
   -- THE POPULATION'S OWN THRESHOLD READER, not a second copy of its rule.
-  v_thr := public.fn_cash_cluster_lightning_thresholds(g.id);
+  IF v_found THEN
+    v_thr := public.fn_cash_cluster_lightning_thresholds(g.id);
+  ELSE
+    v_thr := public.fn_cash_cluster_lightning_thresholds_probe(NULL, 6);
+  END IF;
   v_on  := (v_thr ->> 'on')::integer;
   v_off := (v_thr ->> 'off')::integer;
   v_size := LEAST(GREATEST(coalesce(g.handedness, 6), 2), 9);
@@ -500,10 +558,21 @@ BEGIN
   v_batch := (r ->> 'value')::integer; IF r ? 'invalid' THEN v_inv := v_inv || (r -> 'invalid'); END IF;
   r := public.fn_lightning_config_number(v_cfg, 'max_replans', 3, 0, 20, true);
   v_replans := (r ->> 'value')::integer; IF r ? 'invalid' THEN v_inv := v_inv || (r -> 'invalid'); END IF;
+  -- How long a pass waits for the Cluster row that something other than a
+  -- pass holds (the tick, a conversion) before answering cluster_row_busy.
+  r := public.fn_lightning_config_number(v_cfg, 'cluster_row_wait_ms', 200, 10, 2000, true);
+  v_row_wait := (r ->> 'value')::integer; IF r ? 'invalid' THEN v_inv := v_inv || (r -> 'invalid'); END IF;
+  -- The pass record's retention, pruned by the writer a bounded batch at a time.
+  r := public.fn_lightning_config_number(v_cfg, 'pass_record_retention_hours', 168, 1, 8760, true);
+  v_keep_h := (r ->> 'value')::integer; IF r ? 'invalid' THEN v_inv := v_inv || (r -> 'invalid'); END IF;
+  r := public.fn_lightning_config_number(v_cfg, 'pass_record_prune_batch', 100, 1, 10000, true);
+  v_prune := (r ->> 'value')::integer; IF r ? 'invalid' THEN v_inv := v_inv || (r -> 'invalid'); END IF;
 
-  RETURN jsonb_build_object(
-    'ok', true,
-    'cluster_id', g.id,
+  RETURN CASE WHEN v_found THEN '{}'::jsonb
+              ELSE jsonb_build_object('reason', 'not_found') END
+    || jsonb_build_object(
+    'ok', v_found,
+    'cluster_id', p_cluster_id,
     'handedness', g.handedness,
     'matcher_version', v_version,
     'worker_mode', v_mode,
@@ -528,6 +597,9 @@ BEGIN
     'multi_table_limit', v_mtl,
     'admission_batch_hands', v_batch,
     'max_replans', v_replans,
+    'cluster_row_wait_ms', v_row_wait,
+    'pass_record_retention_hours', v_keep_h,
+    'pass_record_prune_batch', v_prune,
     'first_entry_rule', v_rule,
     'position_fairness', v_p3,
     'on_threshold', v_on,
@@ -731,6 +803,97 @@ $fn$;
 -- SECTION 6. THE PLANNER. Reads everything, writes nothing.
 -- ===========================================================================
 
+-- P5, PURE: the assignment of the non-blind seated players to groups, given
+-- the groups as they start (big and small blind), the players in P4 order,
+-- each group's remaining seats, the pair encounters, the recent full-table
+-- compositions and the band's weight. Each player goes to the first group
+-- with room unless weight x (penalty there - least penalty elsewhere) >= 1.
+-- The penalty of a group is the player's encounters with its members, plus,
+-- when the player would take its last seat and the table it completes sat
+-- together in the window, one more encounter for every pair at that table.
+-- Moving a player never changes a group's size, and with weight 0 (thin and
+-- tiny pools) every player takes the first group with room: plain P4.
+CREATE OR REPLACE FUNCTION public.fn_lightning_diversity_assign(
+  p_groups      jsonb,
+  p_rest        uuid[],
+  p_capacity    integer[],
+  p_encounters  jsonb,
+  p_recent_sets jsonb,
+  p_weight      numeric)
+RETURNS jsonb
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path TO 'public', 'pg_temp'
+AS $fn$
+DECLARE
+  v_grp      jsonb := coalesce(p_groups, '[]'::jsonb);
+  v_g        integer := jsonb_array_length(coalesce(p_groups, '[]'::jsonb));
+  v_cap      integer[] := coalesce(p_capacity, ARRAY[]::integer[]);
+  v_enc      jsonb := coalesce(p_encounters, '{}'::jsonb);
+  v_sets     jsonb := coalesce(p_recent_sets, '{}'::jsonb);
+  v_moved    integer[];
+  v_active   boolean;
+  v_default  integer;
+  v_best     integer;
+  v_def_pen  integer;
+  v_best_pen integer;
+  v_pen      integer;
+  v_key      text;
+  pen        record;
+  p          uuid;
+  j          integer;
+BEGIN
+  v_moved := CASE WHEN v_g > 0 THEN array_fill(0, ARRAY[v_g]) ELSE ARRAY[]::integer[] END;
+  v_active := coalesce(p_weight, 0) > 0 AND (v_enc <> '{}'::jsonb OR v_sets <> '{}'::jsonb);
+  FOREACH p IN ARRAY coalesce(p_rest, ARRAY[]::uuid[]) LOOP
+    v_default := NULL;
+    FOR j IN 1 .. v_g LOOP
+      IF v_cap[j] > 0 THEN v_default := j; EXIT; END IF;
+    END LOOP;
+    IF v_default IS NULL THEN
+      RAISE EXCEPTION 'fn_lightning_diversity_assign: % players for fewer seats', cardinality(p_rest);
+    END IF;
+    v_best := v_default;
+    IF v_active THEN
+      v_def_pen := NULL;
+      v_best_pen := NULL;
+      FOR pen IN
+        SELECT t.j::integer AS j, jsonb_array_length(t.arr) AS size,
+               coalesce(sum(coalesce((v_enc ->> (LEAST(p, m.pid::uuid)::text || '/' || GREATEST(p, m.pid::uuid)::text))::integer, 0)), 0)::integer AS n
+          FROM jsonb_array_elements(v_grp) WITH ORDINALITY t(arr, j)
+          CROSS JOIN LATERAL jsonb_array_elements_text(t.arr) m(pid)
+         GROUP BY t.j, t.arr
+         ORDER BY t.j
+      LOOP
+        IF v_cap[pen.j] > 0 THEN
+          v_pen := pen.n;
+          IF v_cap[pen.j] = 1 AND v_sets <> '{}'::jsonb THEN
+            SELECT string_agg(z.x::text, ',' ORDER BY z.x) INTO v_key
+              FROM (SELECT m.pid::uuid AS x FROM jsonb_array_elements_text(v_grp -> (pen.j - 1)) m(pid)
+                    UNION ALL SELECT p) z;
+            IF v_sets ? v_key THEN
+              v_pen := v_pen + ((pen.size + 1) * pen.size) / 2;
+            END IF;
+          END IF;
+          IF pen.j = v_default THEN v_def_pen := v_pen; END IF;
+          IF v_best_pen IS NULL OR v_pen < v_best_pen THEN
+            v_best_pen := v_pen;
+            v_best := pen.j;
+          END IF;
+        END IF;
+      END LOOP;
+      IF NOT (p_weight * (v_def_pen - v_best_pen) >= 1) THEN
+        v_best := v_default;
+      END IF;
+    END IF;
+    v_grp := jsonb_set(v_grp, ARRAY[(v_best - 1)::text], (v_grp -> (v_best - 1)) || to_jsonb(p));
+    v_cap[v_best] := v_cap[v_best] - 1;
+    IF v_best <> v_default THEN v_moved[v_best] := v_moved[v_best] + 1; END IF;
+  END LOOP;
+  RETURN jsonb_build_object('groups', v_grp, 'moved', to_jsonb(v_moved));
+END
+$fn$;
+
 CREATE OR REPLACE FUNCTION public.fn_lightning_match_plan(
   p_cluster_id      uuid,
   p_now             timestamp with time zone,
@@ -779,12 +942,9 @@ DECLARE
   v_grp       jsonb;
   v_capleft   integer[];
   v_moved     integer[];
-  v_default   integer;
-  v_best      integer;
-  v_best_pen  integer;
-  v_def_pen   integer;
-  pen         record;
-  p           uuid;
+  v_assign    jsonb;
+  v_last      jsonb := '{}'::jsonb;
+  v_glast     integer;
   j           integer;
   v_members   uuid[];
   v_bb        uuid;
@@ -923,8 +1083,13 @@ BEGIN
        ORDER BY h.formed_at DESC, h.hand_id
        LIMIT v_win_h
     ), hp AS (
-      SELECT hp.hand_id, hp.player_id
-        FROM recent JOIN public.lightning_hand_player hp ON hp.hand_id = recent.hand_id
+      SELECT hp.hand_id, hp.player_id, h.formed_at
+        FROM recent
+        JOIN public.lightning_hand h ON h.hand_id = recent.hand_id
+        JOIN public.lightning_hand_player hp ON hp.hand_id = recent.hand_id
+    ), last_hand AS (
+      SELECT DISTINCT ON (hp.player_id) hp.player_id, hp.hand_id
+        FROM hp ORDER BY hp.player_id, hp.formed_at DESC, hp.hand_id
     )
     SELECT coalesce((SELECT jsonb_object_agg(q.pair, q.n)
                        FROM (SELECT a.player_id::text || '/' || b.player_id::text AS pair, count(*)::integer AS n
@@ -933,8 +1098,12 @@ BEGIN
                               GROUP BY a.player_id, b.player_id) q), '{}'::jsonb),
            coalesce((SELECT jsonb_object_agg(s.members, true)
                        FROM (SELECT DISTINCT string_agg(hp.player_id::text, ',' ORDER BY hp.player_id) AS members
-                               FROM hp GROUP BY hp.hand_id) s), '{}'::jsonb)
-      INTO v_enc, v_recent_sets;
+                               FROM hp GROUP BY hp.hand_id) s), '{}'::jsonb),
+           -- Ordered pairs a/b: b sat in a's most recent hand (an immediate repeat).
+           coalesce((SELECT jsonb_object_agg(l.player_id::text || '/' || o.player_id::text, true)
+                       FROM last_hand l JOIN hp o ON o.hand_id = l.hand_id AND o.player_id <> l.player_id
+                      WHERE l.player_id = ANY (v_bbs || v_rest)), '{}'::jsonb)
+      INTO v_enc, v_recent_sets, v_last;
   END IF;
 
   -- P2 FOR THE SMALL BLIND: of the players seated this pass, the next g in
@@ -950,49 +1119,17 @@ BEGIN
 
   -- THE ASSIGNMENT. Each group starts with its big and small blinds; each
   -- other seated player, in P4 order, goes to the first group with room
-  -- (plain P4) unless P5 saves weight x encounters >= 1 elsewhere.
+  -- (plain P4) unless P5 saves weight x (encounters, and a repeated full
+  -- table) >= 1 elsewhere: fn_lightning_diversity_assign, pure.
   v_grp := '[]'::jsonb;
   v_capleft := ARRAY[]::integer[];
-  v_moved := ARRAY[]::integer[];
   FOR j IN 1 .. v_g LOOP
     v_grp := v_grp || jsonb_build_array(jsonb_build_array(v_bbs[j], v_sbs[j]));
     v_capleft := v_capleft || (v_sizes[j] - 2);
-    v_moved := v_moved || 0;
   END LOOP;
-
-  FOREACH p IN ARRAY coalesce(v_rest, ARRAY[]::uuid[]) LOOP
-    v_default := NULL;
-    FOR j IN 1 .. v_g LOOP
-      IF v_capleft[j] > 0 THEN v_default := j; EXIT; END IF;
-    END LOOP;
-    v_best := v_default;
-    IF v_w > 0 AND v_enc <> '{}'::jsonb THEN
-      v_def_pen := NULL;
-      v_best_pen := NULL;
-      FOR pen IN
-        SELECT t.j::integer AS j,
-               coalesce(sum(coalesce((v_enc ->> (LEAST(p, m.pid::uuid)::text || '/' || GREATEST(p, m.pid::uuid)::text))::integer, 0)), 0)::integer AS n
-          FROM jsonb_array_elements(v_grp) WITH ORDINALITY t(arr, j)
-          CROSS JOIN LATERAL jsonb_array_elements_text(t.arr) m(pid)
-         GROUP BY t.j
-         ORDER BY t.j
-      LOOP
-        IF v_capleft[pen.j] > 0 THEN
-          IF pen.j = v_default THEN v_def_pen := pen.n; END IF;
-          IF v_best_pen IS NULL OR pen.n < v_best_pen THEN
-            v_best_pen := pen.n;
-            v_best := pen.j;
-          END IF;
-        END IF;
-      END LOOP;
-      IF NOT (v_w * (v_def_pen - v_best_pen) >= 1) THEN
-        v_best := v_default;
-      END IF;
-    END IF;
-    v_grp := jsonb_set(v_grp, ARRAY[(v_best - 1)::text], (v_grp -> (v_best - 1)) || to_jsonb(p));
-    v_capleft[v_best] := v_capleft[v_best] - 1;
-    IF v_best <> v_default THEN v_moved[v_best] := v_moved[v_best] + 1; END IF;
-  END LOOP;
+  v_assign := public.fn_lightning_diversity_assign(v_grp, v_rest, v_capleft, v_enc, v_recent_sets, v_w);
+  v_grp := v_assign -> 'groups';
+  v_moved := ARRAY(SELECT x::integer FROM jsonb_array_elements_text(v_assign -> 'moved') WITH ORDINALITY t(x, o) ORDER BY o);
 
   -- EACH GROUP: P3's advisory order of the non-blind seats, and the evidence.
   FOR j IN 1 .. v_g LOOP
@@ -1029,6 +1166,9 @@ BEGIN
            coalesce(sum(coalesce((v_enc ->> (a.m::text || '/' || b.m::text))::integer, 0)), 0)::integer
       INTO v_gpairs, v_grepeat, v_genc
       FROM unnest(v_members) a(m) JOIN unnest(v_members) b(m) ON a.m < b.m;
+    SELECT count(*)::integer INTO v_glast
+      FROM unnest(v_members) a(m) JOIN unnest(v_members) b(m) ON a.m <> b.m
+     WHERE v_last ? (a.m::text || '/' || b.m::text);
     v_pairs := v_pairs + v_gpairs;
     v_repeat_pairs := v_repeat_pairs + v_grepeat;
     v_matched := v_matched || v_members;
@@ -1055,7 +1195,19 @@ BEGIN
         'p5', jsonb_build_object('band', v_band, 'weight', v_w, 'pairs', v_gpairs,
                                  'repeat_pairs', v_grepeat, 'pair_encounters', v_genc,
                                  'moved_here', v_moved[j],
-                                 'repeat_full_table', v_recent_sets ? (SELECT string_agg(m::text, ',' ORDER BY m) FROM unnest(v_members) m)),
+                                 'repeat_full_table', v_recent_sets ? (SELECT string_agg(m::text, ',' ORDER BY m) FROM unnest(v_members) m),
+                                 -- The specification's diversity measures, for this hand:
+                                 -- pairings in it nobody met in the window, those per player,
+                                 -- the share of pairings that are repeats, and the share of
+                                 -- (player, opponent) pairs where the opponent sat in the
+                                 -- player's most recent hand.
+                                 'unique_opponents', v_gpairs - v_grepeat,
+                                 'new_opponents_per_hand', CASE WHEN cardinality(v_members) = 0 THEN 0
+                                   ELSE round(2 * (v_gpairs - v_grepeat)::numeric / cardinality(v_members), 4) END,
+                                 'repeat_pair_rate', CASE WHEN v_gpairs = 0 THEN 0
+                                   ELSE round(v_grepeat::numeric / v_gpairs, 4) END,
+                                 'repeat_opponent_rate', CASE WHEN cardinality(v_members) < 2 THEN 0
+                                   ELSE round(v_glast::numeric / (cardinality(v_members) * (cardinality(v_members) - 1)), 4) END),
         'p6', jsonb_build_object('new_instance', true, 'merged_into_committed_hand', false))));
   END LOOP;
 
@@ -1108,6 +1260,38 @@ AS $fn$
   SELECT public.fn_lightning_match_plan(p_cluster_id, p_now, p_disconnected, p_matcher_version, NULL);
 $fn$;
 
+-- THE PASS RECORD'S RETENTION. service_role holds no DELETE on
+-- cash_cluster_matcher_pass (it is append only), so the writer prunes through
+-- this one function, which runs as its owner and can delete nothing but one
+-- Cluster's rows older than the configured retention, at most p_limit of them
+-- per call. SECURITY DEFINER for exactly that reason; executable by
+-- service_role only. Called by fn_lightning_match_and_form each time it
+-- records a pass, so the table stays bounded without a scheduled job.
+CREATE OR REPLACE FUNCTION public.fn_cash_cluster_matcher_pass_prune(
+  p_cluster_id uuid,
+  p_before     timestamp with time zone,
+  p_limit      integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $fn$
+DECLARE
+  v_n integer;
+BEGIN
+  IF p_cluster_id IS NULL OR p_before IS NULL OR coalesce(p_limit, 0) < 1 THEN
+    RETURN 0;
+  END IF;
+  DELETE FROM public.cash_cluster_matcher_pass mp
+   WHERE mp.request_id IN (SELECT o.request_id FROM public.cash_cluster_matcher_pass o
+                            WHERE o.cluster_id = p_cluster_id AND o.started_at < p_before
+                            ORDER BY o.started_at, o.request_id
+                            LIMIT LEAST(p_limit, 10000));
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
+END
+$fn$;
+
 -- ===========================================================================
 -- SECTION 7. THE WRITER. Plans, forms through the barrier, records.
 -- ===========================================================================
@@ -1147,7 +1331,11 @@ DECLARE
   v_stopped   text;
   v_frozen    boolean := false;
   v_result    jsonb;
-  v_locked    boolean;
+  v_skip      text;
+  v_saved_lt  text;
+  v_last      jsonb;
+  v_record    boolean;
+  v_pruned    integer := 0;
 BEGIN
   IF p_cluster_id IS NULL OR p_request_id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'formed', 0, 'reason', 'cluster_and_request_id_required');
@@ -1175,13 +1363,47 @@ BEGIN
                               'worker_mode', v_cfg ->> 'worker_mode', 'cluster_id', p_cluster_id);
   END IF;
 
-  -- ONE PASS PER CLUSTER AT A TIME, and a second one waits for nothing. The
-  -- barrier takes this same row FOR UPDATE first, so the lock order is
-  -- unchanged: the Cluster, then the anchors, then the slots.
-  SELECT true INTO v_locked FROM public.cash_games cg WHERE cg.id = p_cluster_id FOR UPDATE SKIP LOCKED;
-  IF NOT coalesce(v_locked, false) THEN
-    RETURN jsonb_build_object('ok', true, 'formed', 0, 'skipped', true, 'reason', 'pass_in_progress',
-                              'cluster_id', p_cluster_id, 'request_id', p_request_id);
+  -- ONE PASS PER CLUSTER AT A TIME: a transaction advisory lock on the
+  -- Cluster, so a second pass answers pass_in_progress and waits for nothing.
+  -- Only THEN the Cluster row, which the barrier takes FOR UPDATE first (the
+  -- lock order is unchanged: the Cluster, then the anchors, then the slots) -
+  -- and which the tick and a conversion also update. Anything else holding
+  -- it is waited for cluster_row_wait_ms, not mistaken for a pass: a row that
+  -- stays busy answers cluster_row_busy.
+  IF NOT pg_try_advisory_xact_lock(hashtextextended('lightning_matcher:' || p_cluster_id::text, 0)) THEN
+    v_skip := 'pass_in_progress';
+  ELSE
+    v_saved_lt := current_setting('lock_timeout');
+    PERFORM set_config('lock_timeout', (v_cfg ->> 'cluster_row_wait_ms') || 'ms', true);
+    BEGIN
+      PERFORM 1 FROM public.cash_games cg WHERE cg.id = p_cluster_id FOR UPDATE;
+    EXCEPTION WHEN lock_not_available THEN
+      v_skip := 'cluster_row_busy';
+    END;
+    PERFORM set_config('lock_timeout', v_saved_lt, true);
+  END IF;
+  IF v_skip IS NOT NULL THEN
+    v_result := jsonb_build_object('ok', true, 'formed', 0, 'skipped', true, 'reason', v_skip,
+                                   'stopped_reason', v_skip, 'cluster_id', p_cluster_id,
+                                   'request_id', p_request_id, 'matcher_version', v_cfg ->> 'matcher_version');
+    -- A SKIP IS RECORDED ONLY WHEN IT IS NEWS: when the Cluster's last
+    -- recorded pass did not end the same way. In the pass record only, under
+    -- an id derived from the request (so a retry of the same request still
+    -- runs): an event's key to cash_games would wait on the very row lock
+    -- that caused the skip.
+    SELECT mp.result INTO v_last FROM public.cash_cluster_matcher_pass mp
+     WHERE mp.cluster_id = p_cluster_id ORDER BY mp.started_at DESC, mp.request_id DESC LIMIT 1;
+    v_record := (v_last ->> 'stopped_reason') IS DISTINCT FROM v_skip;
+    v_result := v_result || jsonb_build_object('recorded', v_record);
+    IF v_record THEN
+      INSERT INTO public.cash_cluster_matcher_pass
+        (request_id, cluster_id, cluster_epoch, matcher_version, started_at, finished_at, hands_formed, result)
+      VALUES (md5(p_request_id::text || '/skipped')::uuid, p_cluster_id,
+              coalesce((SELECT cg.cluster_epoch FROM public.cash_games cg WHERE cg.id = p_cluster_id), 0),
+              v_cfg ->> 'matcher_version', v_started, clock_timestamp(), 0, v_result)
+      ON CONFLICT (request_id) DO NOTHING;
+    END IF;
+    RETURN v_result;
   END IF;
   -- The same request may have finished while this one waited for nothing.
   SELECT mp.cluster_id, mp.result INTO v_prev
@@ -1317,20 +1539,45 @@ BEGIN
     'pool_diversity_score', v_first -> 'pool_diversity_score',
     'duration_ms', round(extract(epoch FROM clock_timestamp() - v_started) * 1000, 1));
 
-  INSERT INTO public.cash_cluster_events (game_id, kind, payload, cluster_epoch, request_id)
-  VALUES (p_cluster_id, 'matcher_pass', v_result || jsonb_build_object('at', v_now), v_epoch, p_request_id);
+  -- A PASS IS RECORDED ONLY WHEN SOMETHING HAPPENED: a hand formed, a race was
+  -- retried, a refusal or a freeze, a different ending, or a diagnosis whose
+  -- counts per state or per reason differ from the Cluster's last recorded
+  -- pass. A pass that formed nothing and saw what the last one saw is safe to
+  -- run again, so it needs no idempotency row and writes nothing: at one pass
+  -- a second, an idle Cluster writes nothing all day.
+  SELECT mp.result INTO v_last FROM public.cash_cluster_matcher_pass mp
+   WHERE mp.cluster_id = p_cluster_id ORDER BY mp.started_at DESC, mp.request_id DESC LIMIT 1;
+  v_record := v_formed > 0 OR jsonb_array_length(v_retries) > 0 OR v_frozen
+              OR v_last IS NULL
+              OR (v_last ->> 'stopped_reason') IS DISTINCT FROM (v_result ->> 'stopped_reason')
+              OR (v_last -> 'states') IS DISTINCT FROM (v_result -> 'states')
+              OR (v_last -> 'reasons') IS DISTINCT FROM (v_result -> 'reasons');
+  IF v_record THEN
+    -- RETENTION, in the writer: this Cluster's pass records older than the
+    -- configured age, a bounded batch at a time, through the one function
+    -- that may delete them.
+    v_pruned := public.fn_cash_cluster_matcher_pass_prune(
+      p_cluster_id, clock_timestamp() - make_interval(hours => (v_cfg ->> 'pass_record_retention_hours')::integer),
+      (v_cfg ->> 'pass_record_prune_batch')::integer);
+  END IF;
+  v_result := v_result || jsonb_build_object('recorded', v_record, 'pruned', v_pruned);
+  IF v_record THEN
+    INSERT INTO public.cash_cluster_events (game_id, kind, payload, cluster_epoch, request_id)
+    VALUES (p_cluster_id, 'matcher_pass', v_result || jsonb_build_object('at', v_now), v_epoch, p_request_id);
 
-  INSERT INTO public.cash_cluster_matcher_pass
-    (request_id, cluster_id, cluster_epoch, matcher_version, started_at, finished_at, hands_formed, result)
-  VALUES (p_request_id, p_cluster_id, v_epoch, v_version, v_started, clock_timestamp(), v_formed, v_result)
-  ON CONFLICT (request_id) DO NOTHING;
+    INSERT INTO public.cash_cluster_matcher_pass
+      (request_id, cluster_id, cluster_epoch, matcher_version, started_at, finished_at, hands_formed, result)
+    VALUES (p_request_id, p_cluster_id, v_epoch, v_version, v_started, clock_timestamp(), v_formed, v_result)
+    ON CONFLICT (request_id) DO NOTHING;
+  END IF;
 
   RETURN v_result;
 END
 $fn$;
 
 -- ===========================================================================
--- SECTION 8. GRANTS AND COMMENTS. service_role only; none SECURITY DEFINER:
+-- SECTION 8. GRANTS AND COMMENTS. service_role only; none SECURITY DEFINER
+-- but the pass-record prune (above: service_role holds no DELETE there):
 -- every table these read is readable by service_role, and
 -- fn_ca_player_restricted, the one definer they call, is granted to it.
 -- ===========================================================================
@@ -1345,6 +1592,10 @@ REVOKE ALL ON FUNCTION public.fn_lightning_group_sizes(integer, integer, integer
 GRANT EXECUTE ON FUNCTION public.fn_lightning_group_sizes(integer, integer, integer, integer) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_lightning_match_plan(uuid, timestamp with time zone, uuid[], text, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_lightning_match_plan(uuid, timestamp with time zone, uuid[], text, integer) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_lightning_diversity_assign(jsonb, uuid[], integer[], jsonb, jsonb, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_lightning_diversity_assign(jsonb, uuid[], integer[], jsonb, jsonb, numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_cluster_matcher_pass_prune(uuid, timestamp with time zone, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_matcher_pass_prune(uuid, timestamp with time zone, integer) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_lightning_match(uuid, timestamp with time zone, uuid[], text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_lightning_match(uuid, timestamp with time zone, uuid[], text) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_lightning_match_and_form(uuid, timestamp with time zone, uuid[], integer, uuid) FROM PUBLIC, anon, authenticated;
@@ -1367,11 +1618,15 @@ COMMENT ON FUNCTION public.fn_lightning_match_plan(uuid, timestamp with time zon
 COMMENT ON FUNCTION public.fn_lightning_match(uuid, timestamp with time zone, uuid[], text) IS
   'The Lightning matcher (spec Phase 6), lexicographic P0 to P6. STABLE, writes nothing, deterministic for a snapshot. Returns {matcher_version, generated_at, legal_count, groups: [{players, bb, keys}], diagnosis: [{player_id, state, reason_code}], pool_diversity_score}. players is the order to hand the barrier: big blind, small blind, then seat 3 onward with the button last.';
 COMMENT ON FUNCTION public.fn_lightning_match_and_form(uuid, timestamp with time zone, uuid[], integer, uuid) IS
-  'One Lightning matcher pass that forms hands: only when worker_mode is form; the Cluster row FOR UPDATE SKIP LOCKED (pass_in_progress otherwise); plans with fn_lightning_match_plan, forms each group through fn_lightning_form_hand with its big blind and a request id derived from p_request_id, re-plans after a retryable refusal up to max_replans, stops at once when the barrier freezes the Cluster, bounded by p_max_hands, admission_batch_hands and pass_time_budget_ms. Writes matcher_assignment per hand and matcher_pass per pass to cash_cluster_events and the pass to cash_cluster_matcher_pass; a retried request id is answered from there.';
+  'One Lightning matcher pass that forms hands: only when worker_mode is form; a transaction advisory lock per Cluster (pass_in_progress otherwise), then the Cluster row waited for cluster_row_wait_ms (cluster_row_busy otherwise); plans with fn_lightning_match_plan, forms each group through fn_lightning_form_hand with its big blind and a request id derived from p_request_id, re-plans after a retryable refusal up to max_replans, stops at once when the barrier freezes the Cluster, bounded by p_max_hands, admission_batch_hands and pass_time_budget_ms. Writes matcher_assignment per hand, and records a pass (matcher_pass event and cash_cluster_matcher_pass row, pruned to the configured retention) only when something happened or the diagnosis changed; a retried request id of a recorded pass is answered from there.';
+COMMENT ON FUNCTION public.fn_lightning_diversity_assign(jsonb, uuid[], integer[], jsonb, jsonb, numeric) IS
+  'Matcher P5, pure: places the non-blind seated players (in P4 order) into the groups, each in the first with room unless weight x (penalty there - least penalty elsewhere) >= 1; the penalty is pair encounters plus, for the player taking a group''s last seat when that full table sat together recently, one more per pair. Never changes a group size; weight 0 is plain P4.';
+COMMENT ON FUNCTION public.fn_cash_cluster_matcher_pass_prune(uuid, timestamp with time zone, integer) IS
+  'Retention for cash_cluster_matcher_pass: deletes at most p_limit of one Cluster''s pass records older than p_before, oldest first. SECURITY DEFINER because service_role holds no DELETE on the table; executable by service_role only; called by fn_lightning_match_and_form whenever it records a pass.';
 COMMENT ON FUNCTION public.fn_lightning_pool_slot_idle_since_starts_at_open() IS
   'BEFORE INSERT on lightning_pool_slot: idle_since starts at opened_at (a column default cannot name another column).';
 COMMENT ON FUNCTION public.fn_lightning_reservation_end_marks_the_slot_idle() IS
-  'AFTER UPDATE OF state on lightning_reservation, when a pending or committed reservation is released or expires: moves its open slot''s idle_since forward to resolved_at. Covers the release trigger and the reaper''s expiry alike.';
+  'AFTER UPDATE OF state on lightning_reservation, when a pending or committed reservation is released or expires: moves its open slot''s idle_since forward to resolved_at, but only when the reservation''s instance was dealt (started_at set). A never-dealt formation or an expired claim keeps the player''s queue place.';
 
 -- ===========================================================================
 -- SECTION 9. THE READ-BACK. What the catalogue now says, not what this file
@@ -1397,7 +1652,7 @@ BEGIN
     ('the pass record is append only for service_role', has_table_privilege('service_role', 'public.cash_cluster_matcher_pass', 'INSERT')
         AND NOT has_table_privilege('service_role', 'public.cash_cluster_matcher_pass', 'UPDATE')
         AND NOT has_table_privilege('service_role', 'public.cash_cluster_matcher_pass', 'DELETE')),
-    ('the seven functions', (SELECT count(*) = 7 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    ('the nine functions', (SELECT count(*) = 9 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public' AND p.prokind = 'f'
           AND p.oid IN ('public.fn_lightning_config_number(jsonb,text,numeric,numeric,numeric,boolean)'::regprocedure,
                         'public.fn_lightning_config(uuid)'::regprocedure,
@@ -1405,21 +1660,30 @@ BEGIN
                         'public.fn_lightning_group_sizes(integer,integer,integer,integer)'::regprocedure,
                         'public.fn_lightning_match_plan(uuid,timestamp with time zone,uuid[],text,integer)'::regprocedure,
                         'public.fn_lightning_match(uuid,timestamp with time zone,uuid[],text)'::regprocedure,
-                        'public.fn_lightning_match_and_form(uuid,timestamp with time zone,uuid[],integer,uuid)'::regprocedure))),
+                        'public.fn_lightning_match_and_form(uuid,timestamp with time zone,uuid[],integer,uuid)'::regprocedure,
+                        'public.fn_lightning_diversity_assign(jsonb,uuid[],integer[],jsonb,jsonb,numeric)'::regprocedure,
+                        'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure))),
+    ('the prune is the one definer, and service_role alone may call it', (SELECT p.prosecdef
+        AND has_function_privilege('service_role', p.oid, 'EXECUTE')
+        AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+        AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE')
+        FROM pg_proc p WHERE p.oid = 'public.fn_cash_cluster_matcher_pass_prune(uuid,timestamp with time zone,integer)'::regprocedure)),
     ('no new function is a definer, mentions a horse, or is executable by a browser role', NOT EXISTS (
         SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.prokind = 'f'
            AND p.proname IN ('fn_lightning_config_number', 'fn_lightning_config', 'fn_lightning_player_legality',
                              'fn_lightning_group_sizes', 'fn_lightning_match_plan', 'fn_lightning_match',
                              'fn_lightning_match_and_form', 'fn_lightning_pool_slot_idle_since_starts_at_open',
-                             'fn_lightning_reservation_end_marks_the_slot_idle')
+                             'fn_lightning_reservation_end_marks_the_slot_idle', 'fn_lightning_diversity_assign')
            AND (p.prosecdef OR pg_get_functiondef(p.oid) ~ 'is_horse' OR pg_get_functiondef(p.oid) ~ 'horse_id'
                 OR has_function_privilege('anon', p.oid, 'EXECUTE')
                 OR has_function_privilege('authenticated', p.oid, 'EXECUTE')
                 OR NOT has_function_privilege('service_role', p.oid, 'EXECUTE')))),
     ('the sizes are the documented ones', public.fn_lightning_group_sizes(13, 2, 6, 6) = ARRAY[5,4,4]
         AND public.fn_lightning_group_sizes(7, 4, 6, 6) = ARRAY[6]
-        AND public.fn_lightning_group_sizes(27, 2, 9, 9) = ARRAY[9,9,9])
+        AND public.fn_lightning_group_sizes(27, 2, 9, 9) = ARRAY[9,9,9]
+        AND NOT EXISTS (SELECT 1 FROM generate_series(0, 60) n, generate_series(0, 2) m,
+                                      unnest(public.fn_lightning_group_sizes(n, m, 6, 6)) x WHERE x < 2))
   ) q(what, ok) WHERE q.ok IS DISTINCT FROM true;
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'LIGHTNING_PHASE_6_READBACK: the catalogue does not carry: %', v_bad;

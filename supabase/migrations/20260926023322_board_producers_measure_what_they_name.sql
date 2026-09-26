@@ -255,4 +255,13 @@ $function$;
 REVOKE ALL ON FUNCTION public.fn_tournament_progress_metrics(integer, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_tournament_progress_metrics(integer, integer) TO service_role;
 
+-- Operator telemetry: the live ACL on all three is postgres + service_role, and
+-- CREATE OR REPLACE keeps it; stated here so the file says what production has.
+REVOKE ALL ON FUNCTION public.fn_tournament_chip_conservation_check(numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_chip_conservation_check(numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_absent_tournament_players(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_absent_tournament_players(integer) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_tables_that_cannot_deal(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_tables_that_cannot_deal(integer) TO service_role;
+
 COMMIT;

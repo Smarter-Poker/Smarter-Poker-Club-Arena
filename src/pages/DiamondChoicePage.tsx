@@ -54,7 +54,6 @@ import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import { soundService } from '../services/SoundService';
 import '../components/console/SpadeConsole.css';
 import styles from './diamondGames.module.css';
 
@@ -539,11 +538,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         handedToScene = true;
       }
       setRound(next);
-      // Mines turns its tile over on this answer, so its buzz belongs here. A
-      // crossing's does not: the donkey is still in the road, and a buzz now
-      // would give the result away three quarters of a second before the car
-      // reaches it. The scene fires the crossing's beats instead.
-      if (game !== 'crossing') triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
+      // No buzz here for either game (2026-09-26). The crossing's would give
+      // the result away before the car reaches the donkey, and Mines now turns
+      // its tile over with its own chime or blast and its own buzz, on the
+      // render that shows it (MinesGrid). One event, one buzz.
       // THE ANSWER IS THE ROUND. fn_choice_act returns the whole round, and an
       // open street needs nothing else: the budget, the ticket, the completion
       // id and the entry quote the page holds are the ones this move was made
@@ -1026,27 +1024,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           }}
           // The scene reached the beat it was holding: the console prints the
           // confirmed round from here on.
-          onMoment={(moment, street) => {
+          onMoment={() => {
             setPrinted(null);
             setPendingAction(null);
-            // THE BEATS ARE THE SCENE'S. It is the only thing that knows where
-            // the donkey is, so what the player hears and feels lands with
-            // what they see. Both services honour the player's own sound and
-            // vibration switches; the explicit buzz keeps the street's beat
-            // when the sound is muted, and vibrationGate coalesces it with the
-            // tick's own within 60 ms.
-            if (moment === 'landed') {
-              soundService.playSpinTick();
-              triggerHaptic('light');
-            } else if (moment === 'hit') {
-              // Crash's rule, which this game now shares: a loss says nothing.
-              triggerHaptic('heavy');
-            } else {
-              soundService.playSpinMultiplierResult(
-                (ladder?.[Math.min(Math.max(street, 1), ladder.length) - 1] ?? 100) / 100
-              );
-              triggerHaptic('success');
-            }
+            // THE BEATS ARE THE SCENE'S, AND SO ARE THEIR SOUNDS (2026-09-26).
+            // The scene is the only thing that knows where the donkey is, so it
+            // plays each beat's sound and buzz itself, on the frame that shows
+            // it (ChoiceScene's commit): the landing tick, the hit's horn and
+            // impact, the booked sting. The page used to play them here as
+            // well; one owner means no beat is ever heard twice.
           }}
           // Nothing is looking at the road: the Double Down offer stands over
           // an idle scene, or the receipt stands over a finished one. Never on

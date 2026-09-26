@@ -97,7 +97,6 @@ import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import { soundService } from '../services/SoundService';
 import FloorFeed from '../components/games/FloorFeed';
 import CrashPointsStrip from '../components/games/CrashPointsStrip';
 import { useGameFloor } from '../hooks/useGameFloor';
@@ -379,17 +378,15 @@ function DiamondCrashGame() {
       setRound(settled);
       const cashed = settled.status === 'cashed';
       setPhase(cashed ? 'cashed' : 'crashed');
+      /* THE FLIGHT IS HEARD FROM THE SCENE (2026-09-26). CrashCurve plays
+         the engine through the climb and each ending on the frame that shows
+         it: the booked sting (the gold fanfare at the cap) with a medium buzz,
+         or the crash burst with a strong one. The page used to sing the
+         cash-out and buzz here as well, which would now be every ending twice. */
       if (cashed) {
-        /* The cash-out sings at the multiplier it got, the same voice the
-           spin ladder uses for a multiplier result. A crash says nothing:
-           silence after a climb is the loudest thing this game has. */
-        soundService.playSpinMultiplierResult((settled.outcome?.cashout_cents ?? 100) / 100);
-        triggerHaptic('success');
         toast.success(
           `Cashed Out At ${multiplierLabel(settled.outcome?.cashout_cents ?? 100)} For ${chipsLabel(settled.outcome?.payout_chips ?? 0)} Chips`
         );
-      } else {
-        triggerHaptic('light');
       }
       setClientSeed(randomClientSeed());
       setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));
@@ -724,7 +721,10 @@ function DiamondCrashGame() {
       setQuotedAmount(null);
       setStarting(true);
       setVerdict(null);
-      soundService.playSpinStart();
+      // Inside the tap: the one place an iOS switch haptic is granted. The
+      // sound is the scene's: its engine starts on the frame the flight does.
+      // (This played playSpinStart, whose idle engine bed was only ever closed
+      // by the wheel's own chase, so on this page it idled on under the flight.)
       triggerHaptic('medium');
       try {
         // An emptied "Your Client Seed" is not a decision the player made

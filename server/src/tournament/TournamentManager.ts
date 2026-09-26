@@ -2,6 +2,7 @@ import {
   custodyJSON,
   immutableCustody,
   prepareMixedF06Transfer,
+  readMixedF06PresenceEvidence,
   retainMixedF06Intent,
   completeMixedF06Transfer,
   type MixedF06Transfer,
@@ -1948,13 +1949,10 @@ export class TournamentManager extends TournamentManagerEliminations {
         );
       const initial = physical();
       if (initial.some((value) => value === null)) return refuse('physical_identity_unreadable');
-      const { data: presence, error: presenceError } = await supabase
-        .from('engine_presence_parked')
-        .select('*')
-        .in(
-          'table_id',
-          engines.map(([id]) => id)
-        );
+      // At the process root: see readMixedF06PresenceEvidence.
+      const { data: presence, error: presenceError } = await readMixedF06PresenceEvidence(
+        engines.map(([id]) => id)
+      );
       if (
         presenceError ||
         !presence ||

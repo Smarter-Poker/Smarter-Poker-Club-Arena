@@ -172,9 +172,10 @@ describe('the manager-shutdown seat-move certificate', () => {
     expect(manager.seatMoveQuarantineRefusal()).toBeNull();
   });
 
-  it('leaves the recovery branch refusing for its own retained source', async () => {
+  it('leaves the recovery branch refusing for its own retained source with a claimed park', async () => {
     const { manager, engine } = harness();
     expect(manager.retainTournamentBreakSource(BREAK_ID, SOURCE_ID, engine)).toBe(true);
+    engine.hasClaimedTournamentMoveBoundary.mockReturnValue(true);
 
     await expect(manager.resolveTournamentSeatMoveQuarantine(SOURCE_ID, engine)).resolves.toBe(
       false
@@ -182,6 +183,22 @@ describe('the manager-shutdown seat-move certificate', () => {
 
     expect(manager.seatMoveQuarantineRefusal()).toBe('recovery:break_source_retained');
     expect(engine.releaseTournamentMovePause).not.toHaveBeenCalled();
+    expect(manager.retainedTournamentBreakSources.get(SOURCE_ID)?.engine).toBe(engine);
+  });
+
+  // 2026-09-26: a retained source whose park was never claimed holds no move
+  // decision; recovery releases it so the killed engine can be replaced
+  // (anUnclaimedBreakSourceIsRebuilt.law.test.ts).
+  it('lets recovery replace a retained source whose park was never claimed', async () => {
+    const { manager, engine } = harness();
+    expect(manager.retainTournamentBreakSource(BREAK_ID, SOURCE_ID, engine)).toBe(true);
+
+    await expect(manager.resolveTournamentSeatMoveQuarantine(SOURCE_ID, engine)).resolves.toBe(
+      true
+    );
+
+    expect(manager.seatMoveQuarantineRefusal()).toBeNull();
+    expect(manager.retainedTournamentBreakSources.has(SOURCE_ID)).toBe(false);
   });
 });
 

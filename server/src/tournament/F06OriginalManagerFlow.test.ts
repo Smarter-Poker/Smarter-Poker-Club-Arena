@@ -403,9 +403,11 @@ it('committed ACK with lost response releases only retained proven absence', asy
 it('capacity delay preserves original no-start evidence and reservation for later placement', async () => {
   const f = await fixture();
   f.manager.eligibleBreakDestinations.mockResolvedValueOnce([]);
-  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow(
-    'placement remains pending'
-  );
+  // Two tables are open, so the wait is pending, not an error and not the
+  // last-table continuation (aFullFieldIsNotTheLastTable.law.test.ts).
+  await expect(f.manager.recoverF06OriginalAdmissions()).resolves.toBeUndefined();
+  expect(f.calls.some((c) => c.name === 'fn_f06_continue_no_start_last_table')).toBe(false);
+  expect(f.state()).toMatchObject({ state: 'park_requested', members: [] });
   expect(f.engine.getF06RetainedPermit()).toBeNull();
   expect(f.server.tableEngines.get(source)).toBe(f.engine);
   expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
@@ -899,6 +901,10 @@ it('a replacement Manager admission cannot reconstruct an unresolved original pe
 async function lastTableFixture() {
   const f = await fixture();
   f.manager.eligibleBreakDestinations.mockResolvedValue([]);
+  // The last table is the event's only open table (2026-09-26: a source whose
+  // roster merely does not fit elsewhere is not; aFullFieldIsNotTheLastTable).
+  const tables: any = supabase.from('tables');
+  tables.or = async () => ({ data: [{ id: source }], error: null });
   const fresh: any = new ServerTableEngine(source);
   vi.spyOn(fresh, 'start').mockImplementation(async () => {
     fresh.running = true;

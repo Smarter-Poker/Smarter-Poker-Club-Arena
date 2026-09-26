@@ -542,13 +542,78 @@ const ZERO_SHIFTS: PolicyShiftSet = { open: 0, jam: 0, call: 0, threeBet: 0, fou
 const VELOCITY_URGENCY_ROUNDING = 10 ** VELOCITY_URGENCY_ROUNDING_DECIMALS;
 const SHIFT_ROUNDING = 10 ** SHIFT_ROUNDING_DECIMALS;
 
-function velocityUrgency(m: TournamentMState | undefined): number {
+/**
+ * Velocity urgency exactly as the lookup applies and records it: M per minute
+ * over the divisor, clamped to [0, 1] and rounded to three decimals. Exported
+ * so the receipt validator recomputes the same number instead of keeping its
+ * own copy of the divisor and rounding.
+ */
+export function tournamentVelocityUrgency(velocityMPerMinute: number | undefined): number {
   return (
     Math.round(
-      clamp((m?.velocityMPerMinute ?? 0) / VELOCITY_URGENCY_DIVISOR_M_PER_MINUTE, 0, 1) *
+      clamp((velocityMPerMinute ?? 0) / VELOCITY_URGENCY_DIVISOR_M_PER_MINUTE, 0, 1) *
         VELOCITY_URGENCY_ROUNDING
     ) / VELOCITY_URGENCY_ROUNDING
   );
+}
+
+function velocityUrgency(m: TournamentMState | undefined): number {
+  return tournamentVelocityUrgency(m?.velocityMPerMinute);
+}
+
+/**
+ * Whether a (size, hero, raiser-or-none) triple is a coordinate of the atlas:
+ * an integer size inside the domain, hero on that size's ring, and the raiser
+ * either absent or a different seat on the same ring. The lookup and the
+ * receipt validator both ask this one function.
+ */
+export function tournamentCoordinateIsValid(
+  tableSize: number,
+  heroPosition: TournamentPosition,
+  raiserPosition: TournamentPosition | null
+): boolean {
+  if (!Number.isSafeInteger(tableSize)) return false;
+  const allowedPositions = POSITION_BY_CLOCKWISE_INDEX[tableSize];
+  if (!allowedPositions) return false;
+  return (
+    allowedPositions.includes(heroPosition) &&
+    (raiserPosition === null ||
+      (raiserPosition !== heroPosition && allowedPositions.includes(raiserPosition)))
+  );
+}
+
+export interface TournamentPreflopCellParts {
+  gameFamily: TournamentGameFamily;
+  source: TournamentAtlasSource;
+  /** The raw size as supplied; an invalid coordinate records it verbatim. */
+  tableSize: number;
+  validCoordinate: boolean;
+  heroPosition: TournamentPosition;
+  raiserPosition: TournamentPosition | null;
+  anteType: TournamentAnteType;
+  branch: TournamentPreflopBranch;
+  depth: TournamentDepthBracket;
+  velocityUrgency: number;
+}
+
+/**
+ * The exact cell string the lookup emits. The receipt validator rebuilds the
+ * cell through this same function, so the format has one owner and a receipt
+ * whose cell disagrees with its coordinate is refused rather than parsed.
+ */
+export function tournamentPreflopCell(parts: TournamentPreflopCellParts): string {
+  return [
+    TOURNAMENT_PREFLOP_CELL_PREFIX,
+    parts.gameFamily,
+    parts.source,
+    parts.validCoordinate ? parts.tableSize : `invalid-${String(parts.tableSize)}`,
+    parts.heroPosition,
+    parts.raiserPosition ?? 'NONE',
+    parts.anteType,
+    parts.branch,
+    `${parts.depth.lower}-${parts.depth.upper}@${parts.depth.weight}`,
+    `velocity=${parts.velocityUrgency}`,
+  ].join(':');
 }
 
 function anchorShifts(input: TournamentPreflopPolicyInput, depth: number): PolicyShiftSet {
@@ -640,14 +705,11 @@ export function tournamentPreflopPolicy(
   const rawTableSize = Number(input.tableSize);
   const tableSize = clamp(Math.floor(rawTableSize || 0), PLAYERS_MIN, PLAYERS_MAX);
   const depth = interpolateTournamentDepth(input.stackBB);
-  const allowedPositions = POSITION_BY_CLOCKWISE_INDEX[tableSize] ?? [];
-  const validCoordinate =
-    Number.isSafeInteger(rawTableSize) &&
-    rawTableSize === tableSize &&
-    allowedPositions.includes(input.heroPosition) &&
-    (input.raiserPosition === null ||
-      (input.raiserPosition !== input.heroPosition &&
-        allowedPositions.includes(input.raiserPosition)));
+  const validCoordinate = tournamentCoordinateIsValid(
+    rawTableSize,
+    input.heroPosition,
+    input.raiserPosition
+  );
   const supported = input.gameFamily === 'nlh';
   const complete = input.contextStatus === 'complete';
   const baseline = supported && complete && validCoordinate;
@@ -668,18 +730,18 @@ export function tournamentPreflopPolicy(
       : !complete
         ? 'incomplete_context'
         : null;
-  const cell = [
-    TOURNAMENT_PREFLOP_CELL_PREFIX,
-    input.gameFamily,
+  const cell = tournamentPreflopCell({
+    gameFamily: input.gameFamily,
     source,
-    validCoordinate ? tableSize : `invalid-${String(input.tableSize)}`,
-    input.heroPosition,
-    input.raiserPosition ?? 'NONE',
-    input.anteType,
-    input.branch,
-    `${depth.lower}-${depth.upper}@${depth.weight}`,
-    `velocity=${velocityUrgency(input.m)}`,
-  ].join(':');
+    tableSize: validCoordinate ? tableSize : input.tableSize,
+    validCoordinate,
+    heroPosition: input.heroPosition,
+    raiserPosition: input.raiserPosition,
+    anteType: input.anteType,
+    branch: input.branch,
+    depth,
+    velocityUrgency: velocityUrgency(input.m),
+  });
 
   return {
     schemaVersion: 1,

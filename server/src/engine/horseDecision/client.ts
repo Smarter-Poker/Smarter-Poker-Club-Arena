@@ -7,7 +7,7 @@ import {
   type HorsePlanBatchBinding,
   type HorsePlanRetirementReason,
 } from '../HorsePlanHandIdentity.js';
-import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution.js';
+import { horsePhase6AttributionMismatch } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
 import { noteFire } from '../BrainTelemetry.js';
@@ -1080,11 +1080,18 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
         return;
       }
-      if (
-        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant) ||
-        !horsePhase6AttributionMatchesSnapshot(message.decision, active.request)
-      ) {
+      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));
+        return;
+      }
+      // A Phase 6 receipt whose declared coordinate disagrees with the
+      // coordinate recomputed from the request is refused by name, never
+      // silently accepted or silently dropped.
+      const phase6Mismatch = horsePhase6AttributionMismatch(message.decision, active.request);
+      if (phase6Mismatch !== null) {
+        this.fail(
+          new Error(`horse decision worker returned invalid policy receipt: ${phase6Mismatch}`)
+        );
         return;
       }
       const witness = createHorseExecutionWitness(active.request, message.decision, {

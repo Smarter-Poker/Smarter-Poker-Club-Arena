@@ -9,12 +9,18 @@ import {
   type HorseTournamentDecisionProvenance,
 } from './HorseTournamentContextProvenance.js';
 import {
+  TOURNAMENT_ANTE_TYPES,
+  TOURNAMENT_CONTEXT_STATUSES,
+  TOURNAMENT_FALLBACK_PRECEDENCE,
+  TOURNAMENT_GAME_FAMILIES,
   TOURNAMENT_PREFLOP_ATLAS_REVISION,
   TOURNAMENT_POSITIONS,
   TOURNAMENT_PREFLOP_BRANCHES,
   interpolateTournamentDepth,
-  tournamentPositionsForTable,
+  tournamentCoordinateIsValid,
   tournamentPositionForSeat,
+  tournamentPreflopCell,
+  tournamentVelocityUrgency,
   classifyTournamentPreflopBranch,
   tournamentMZone,
   type TournamentPreflopPolicy,
@@ -92,6 +98,15 @@ const routes = [
   'intent_engine',
 ];
 const actions = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'];
+// The receipt validator reads the atlas domain it validates against; it keeps
+// no second copy of the families, statuses, ante types or fallback names.
+const gameFamilies: readonly string[] = [
+  ...TOURNAMENT_GAME_FAMILIES.supported,
+  ...TOURNAMENT_GAME_FAMILIES.labeled,
+];
+const contextStatuses: readonly string[] = TOURNAMENT_CONTEXT_STATUSES;
+const anteTypes: readonly string[] = TOURNAMENT_ANTE_TYPES;
+const fallbackReasons: readonly (string | null)[] = [null, ...TOURNAMENT_FALLBACK_PRECEDENCE];
 const obj = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 const exact = (v: unknown, keys: string[]): v is Record<string, unknown> =>
@@ -274,15 +289,15 @@ export function horsePhase6AttributionIsValid(value: unknown): value is HorsePha
           'stackBB',
           'mVelocityMPerMinute',
         ]) ||
-        !['nlh', 'omaha', 'other'].includes(c.gameFamily) ||
-        !['complete', 'incomplete', 'warming', 'stale'].includes(c.contextStatus) ||
+        !gameFamilies.includes(c.gameFamily) ||
+        !contextStatuses.includes(c.contextStatus) ||
         !finite(c.tableSize) ||
         !finite(c.stackBB) ||
         c.stackBB < 0 ||
         !finite(c.mVelocityMPerMinute) ||
         !TOURNAMENT_POSITIONS.includes(c.heroPosition) ||
         !(c.raiserPosition === null || TOURNAMENT_POSITIONS.includes(c.raiserPosition)) ||
-        !['none', 'per_player', 'big_blind'].includes(c.anteType) ||
+        !anteTypes.includes(c.anteType) ||
         !TOURNAMENT_PREFLOP_BRANCHES.includes(c.branch) ||
         !exact(p, [
           'schemaVersion',
@@ -298,26 +313,21 @@ export function horsePhase6AttributionIsValid(value: unknown): value is HorsePha
         p.cell.length > 512 ||
         p.branch !== c.branch ||
         !['deterministic_baseline', 'labeled_fallback'].includes(p.source) ||
-        ![null, 'unsupported_variant', 'incomplete_context', 'invalid_coordinate'].includes(
-          p.fallbackReason
-        ) ||
+        !fallbackReasons.includes(p.fallbackReason) ||
         (p.source === 'deterministic_baseline') !== (p.fallbackReason === null) ||
         !exact(p.depth, ['lower', 'upper', 'weight']) ||
         !exact(p.shifts, ['open', 'jam', 'call', 'threeBet', 'fourBet']) ||
         Object.values(p.shifts).some((x) => !finite(x) || Math.abs(x) > 1)
       )
         return false;
-      const positions = tournamentPositionsForTable(c.tableSize);
-      const validCoordinate =
-        Number.isSafeInteger(c.tableSize) &&
-        c.tableSize >= 2 &&
-        c.tableSize <= 10 &&
-        positions.includes(c.heroPosition) &&
-        (c.raiserPosition === null ||
-          (c.raiserPosition !== c.heroPosition && positions.includes(c.raiserPosition)));
+      const validCoordinate = tournamentCoordinateIsValid(
+        c.tableSize,
+        c.heroPosition,
+        c.raiserPosition
+      );
       const expectedFallback = !validCoordinate
         ? 'invalid_coordinate'
-        : c.gameFamily !== 'nlh'
+        : !(TOURNAMENT_GAME_FAMILIES.supported as readonly string[]).includes(c.gameFamily)
           ? 'unsupported_variant'
           : c.contextStatus !== 'complete'
             ? 'incomplete_context'
@@ -331,21 +341,20 @@ export function horsePhase6AttributionIsValid(value: unknown): value is HorsePha
         (p.source === 'labeled_fallback' && Object.values(p.shifts).some((x) => x !== 0))
       )
         return false;
-      // Cell is the exact source format, not a parsed string used as authority.
-      const velocity =
-        Math.round(Math.max(0, Math.min(1, c.mVelocityMPerMinute / 2)) * 1000) / 1000;
-      const cell = [
-        'phase6-v1',
-        c.gameFamily,
-        p.source,
-        p.fallbackReason === 'invalid_coordinate' ? `invalid-${String(c.tableSize)}` : c.tableSize,
-        c.heroPosition,
-        c.raiserPosition ?? 'NONE',
-        c.anteType,
-        c.branch,
-        `${depth.lower}-${depth.upper}@${depth.weight}`,
-        `velocity=${velocity}`,
-      ].join(':');
+      // Cell is the exact source format, rebuilt by the atlas's own builder,
+      // not a parsed string used as authority.
+      const cell = tournamentPreflopCell({
+        gameFamily: c.gameFamily,
+        source: p.source,
+        tableSize: c.tableSize,
+        validCoordinate: p.fallbackReason !== 'invalid_coordinate',
+        heroPosition: c.heroPosition,
+        raiserPosition: c.raiserPosition,
+        anteType: c.anteType,
+        branch: c.branch,
+        depth,
+        velocityUrgency: tournamentVelocityUrgency(c.mVelocityMPerMinute),
+      });
       if (
         p.cell !== cell ||
         !r.inputSource.tournamentMode ||
@@ -562,35 +571,67 @@ function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapsho
     )
   );
 }
+/** Every way a returned receipt can disagree with the snapshot it claims to
+ * describe. A refusal always carries one of these names; nothing is refused
+ * silently and nothing mismatched is accepted. */
+export type Phase6AttributionMismatch =
+  | 'provenance_snapshot'
+  | 'attribution_missing'
+  | 'receipt_invalid'
+  | 'fallback_lineage'
+  | 'reference_owner'
+  | 'version_provenance'
+  | 'route_gate'
+  | 'reference_shape'
+  | 'stage_or_schema'
+  | 'context_status'
+  | 'm_velocity'
+  | 'm_unavailable_claim'
+  | 'm_missing'
+  | 'coordinate_table_size'
+  | 'coordinate_hero_position'
+  | 'coordinate_raiser_position'
+  | 'coordinate_stack_bb'
+  | 'coordinate_branch'
+  | 'coordinate_game_family'
+  | 'coordinate_ante_type'
+  | 'reference_graph'
+  | 'reference_transition'
+  | 'exception';
+
 /** Structural/source-input binding only. This does not rerun a mixed strategy
- * or certify each shift's economic correctness or final causal influence. */
-export function horsePhase6AttributionMatchesSnapshot(
+ * or certify each shift's economic correctness or final causal influence.
+ * Returns null when the receipt matches the snapshot, otherwise the first
+ * named reason it does not. The declared lookup coordinate is recomputed from
+ * the public snapshot and every axis that disagrees is refused by name. */
+export function horsePhase6AttributionMismatch(
   decision: HorseDecision,
   snapshot: Phase6Snapshot
-): boolean {
+): Phase6AttributionMismatch | null {
   try {
     const s = snapshot.gameState;
     const provenance = s.tournament?.contextProvenance;
-    if (!horseTournamentProvenanceMatchesSnapshot(snapshot)) return false;
+    if (!horseTournamentProvenanceMatchesSnapshot(snapshot)) return 'provenance_snapshot';
     const r = decision.tournamentPreflopAttribution;
     if (r === undefined)
-      return (
-        provenance === undefined ||
+      return provenance === undefined ||
         s.stage !== 'preflop' ||
         decision.policyFallback === 'brain_exception'
-      );
-    if (!horsePhase6AttributionIsValid(r) || decision.policyFallback !== undefined) return false;
+        ? null
+        : 'attribution_missing';
+    if (!horsePhase6AttributionIsValid(r)) return 'receipt_invalid';
+    if (decision.policyFallback !== undefined) return 'fallback_lineage';
     const usesIntentReference = snapshot.opts?.v7Preflop ?? snapshot.opts?.v7 !== false;
-    if ((r.route === 'legacy_preflop') === usesIntentReference) return false;
+    if ((r.route === 'legacy_preflop') === usesIntentReference) return 'reference_owner';
     if (
       provenance === undefined
         ? r.version !== 'horse-phase6-attribution-v1'
         : r.version !== 'horse-phase6-attribution-v2' ||
           !samePhase6Provenance(r.inputSource.tournamentContext, provenance)
     )
-      return false;
-    if (!necessaryReferenceRouteGates(r.route, snapshot) || !referenceReturnShape(r, snapshot))
-      return false;
+      return 'version_provenance';
+    if (!necessaryReferenceRouteGates(r.route, snapshot)) return 'route_gate';
+    if (!referenceReturnShape(r, snapshot)) return 'reference_shape';
     if (
       s.stage !== 'preflop' ||
       r.inputSource.stateSchemaVersion !== (s.stateSchemaVersion ?? null) ||
@@ -598,16 +639,21 @@ export function horsePhase6AttributionMatchesSnapshot(
       r.inputSource.tournamentMode !==
         (s.gameMode ? s.gameMode === 'tournament' : s.tournament != null || (s.bigBlind ?? 0) >= 10)
     )
-      return false;
+      return 'stage_or_schema';
     if (
       r.lookup &&
-      (r.lookup.coordinate.contextStatus !== (s.tournament?.contextStatus ?? 'incomplete') ||
-        r.lookup.coordinate.mVelocityMPerMinute !== (s.tournament?.m?.velocityMPerMinute ?? 0))
+      r.lookup.coordinate.contextStatus !== (s.tournament?.contextStatus ?? 'incomplete')
     )
-      return false;
-    if (!r.lookup && r.reason === 'm_unavailable' && !!s.tournament?.m) return false;
+      return 'context_status';
+    if (
+      r.lookup &&
+      r.lookup.coordinate.mVelocityMPerMinute !== (s.tournament?.m?.velocityMPerMinute ?? 0)
+    )
+      return 'm_velocity';
+    if (!r.lookup && r.reason === 'm_unavailable' && !!s.tournament?.m)
+      return 'm_unavailable_claim';
     if (r.lookup) {
-      if (!s.tournament?.m) return false;
+      if (!s.tournament?.m) return 'm_missing';
       const hero = snapshot.player,
         options = snapshot.opts ?? {},
         c = r.lookup.coordinate;
@@ -701,18 +747,17 @@ export function horsePhase6AttributionMatchesSnapshot(
       });
       const { omaha, short, holes, fixed } = sourceVariantFacts(s);
       const family = omaha ? 'omaha' : !short && holes === 2 && !fixed ? 'nlh' : 'other';
-      if (
-        c.tableSize !== (s.tournament.playersAtTable ?? seats.length) ||
-        c.heroPosition !== heroPosition ||
-        c.raiserPosition !== raiserPosition ||
-        c.stackBB !== depth ||
-        c.branch !== branch ||
-        c.gameFamily !== family ||
-        c.anteType !==
-          (s.tournament.anteType ??
-            (s.bigBlindAnte === true ? 'big_blind' : (s.ante ?? 0) > 0 ? 'per_player' : 'none'))
-      )
-        return false;
+      const anteType =
+        s.tournament.anteType ??
+        (s.bigBlindAnte === true ? 'big_blind' : (s.ante ?? 0) > 0 ? 'per_player' : 'none');
+      if (c.tableSize !== (s.tournament.playersAtTable ?? seats.length))
+        return 'coordinate_table_size';
+      if (c.heroPosition !== heroPosition) return 'coordinate_hero_position';
+      if (c.raiserPosition !== raiserPosition) return 'coordinate_raiser_position';
+      if (c.stackBB !== depth) return 'coordinate_stack_bb';
+      if (c.branch !== branch) return 'coordinate_branch';
+      if (c.gameFamily !== family) return 'coordinate_game_family';
+      if (c.anteType !== anteType) return 'coordinate_ante_type';
     }
     // New producer receipts are attached immediately before graph.finish. A
     // missing reference graph is not a legacy receipt when attribution exists.
@@ -729,12 +774,20 @@ export function horsePhase6AttributionMatchesSnapshot(
       first.elapsedMs < 0 ||
       !exact(first.after, ['action', 'amount'])
     )
-      return false;
-    return (
-      first.after.action === r.referenceProposal.action &&
+      return 'reference_graph';
+    return first.after.action === r.referenceProposal.action &&
       first.after.amount === r.referenceProposal.amount
-    );
+      ? null
+      : 'reference_transition';
   } catch {
-    return false;
+    return 'exception';
   }
+}
+/** Boolean form of `horsePhase6AttributionMismatch` for callers that only
+ * need to know whether the receipt binds to the snapshot. */
+export function horsePhase6AttributionMatchesSnapshot(
+  decision: HorseDecision,
+  snapshot: Phase6Snapshot
+): boolean {
+  return horsePhase6AttributionMismatch(decision, snapshot) === null;
 }

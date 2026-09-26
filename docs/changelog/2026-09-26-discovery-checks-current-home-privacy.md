@@ -41,12 +41,15 @@ snapshot remains consistent; a new snapshot hides the committed private group
 immediately without refreshing the cache. It does not promise to revoke data
 already delivered to a client or change PostgreSQL snapshot semantics.
 
-Installation is a single bounded transaction with source hashes and dependency
-checks. Apply once through the existing database route after the current DDL
-maintenance guard permits it, then read back history, view security options,
-private-schema privileges, refresh definitions, preserved RPC contracts and
-public counts. The parent task owns production installation; source merge alone
-is not installation evidence. Rollback testing covers an aborted installation;
+Installation was coordinated once by the parent task at 2026-09-26T22:07:06Z,
+recorded as provider version `20260926220706`. The 8,998 SQL bytes have SHA256
+`c5578927b0e6cab23338a1e646be99b73e9a427e68ea0009fc93b3919f62800c`.
+Readback confirmed both view security options, denied private-schema browser
+USAGE/CREATE, preserved cache/index identities, all four unchanged read RPC
+contracts, the two qualified refresh functions, unchanged cron commands and
+491 public venue rows with zero cached home groups. The migration filename was
+aligned to the installed version without changing or replaying its SQL.
+Rollback testing covers an aborted installation;
 do not restore the old exposed-cache design after a successful privacy fix.
 
 The signed-in September 26 settings showed only `public` and `graphql_public`

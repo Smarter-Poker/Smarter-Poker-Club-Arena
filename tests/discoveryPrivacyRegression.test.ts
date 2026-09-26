@@ -6,7 +6,7 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const migration = read(
-  'supabase/migrations/20260926214908_public_discovery_reads_current_privacy_before_cached_locatio.sql'
+  'supabase/migrations/20260926220706_public_discovery_reads_current_privacy_before_cached_locatio.sql'
 );
 const fixture = JSON.parse(read('scripts/ci/fixtures/discovery-privacy/baseline.json'));
 

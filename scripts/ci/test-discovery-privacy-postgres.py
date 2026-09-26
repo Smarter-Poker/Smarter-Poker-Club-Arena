@@ -16,7 +16,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/discovery-privacy'
-MIGRATION = ROOT / 'supabase/migrations/20260926214908_public_discovery_reads_current_privacy_before_cached_locatio.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260926220706_public_discovery_reads_current_privacy_before_cached_locatio.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))

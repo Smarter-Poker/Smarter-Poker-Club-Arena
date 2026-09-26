@@ -146,6 +146,15 @@ file's trailing newline, so `printf '%s' "$(cat f)" | md5` equals
 | 20260926131530 | 691a2a5a62d47afbf709d21ba91f2f72 |
 | 20260926131554 | b714098e00c6e8ee153fb49ff94b27f4 |
 
+PR #5337 (money-d) merged first and landed six of these files with an added
+`-- @live-proof:` line each, so main no longer held the bytes production ran.
+This PR restores the six to production's exact bytes (the md5 column above) and
+exempts verified recordings from the `@live-proof` rule instead, because a
+recording that has been edited is no longer a recording; its liveness is its
+`schema_migrations` row, which `check-migrations-are-live.mjs` reads first.
+`tests/a-ruling-make-good-and-a-bot-duplicate-move-through-one-journal-leg.law.test.ts`
+now labels the 3f19bd70 closure it pins as history reopened by `131420`.
+
 Recording is not endorsement. `check-definer-authorization`,
 `check-money-trigger-declared` and `check-no-new-band-aids` all pass on these
 files as ordinary migrations, so no `recorded-migrations.manifest.json` row was

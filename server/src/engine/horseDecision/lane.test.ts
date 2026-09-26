@@ -105,7 +105,17 @@ const observation = (table: string, hand: number) => ({
 });
 
 describe('horseDecisionWorkerCount', () => {
-  it('defaults by physical cores at two threads each: one worker below three cores, two from there', () => {
+  it('runs two workers on a two-core host only where they yield to the main loop', () => {
+    expect(horseDecisionWorkerCount({ cores: 4, canYield: true })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 3, canYield: true })).toBe(1);
+    expect(horseDecisionWorkerCount({ cores: 2, canYield: true })).toBe(1);
+    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 4, canYield: false })).toBe(1);
+    expect(horseDecisionWorkerCount({ requested: '3', cores: 4, canYield: true })).toBe(2);
+    expect(horseDecisionWorkerCount({ requested: '1', cores: 4, canYield: true })).toBe(1);
+  });
+
+  it('defaults by physical cores at two threads each where a worker cannot yield', () => {
     expect(DEFAULT_HORSE_DECISION_WORKERS).toBe(2);
     // engine-01: four logical CPUs on two EPYC Milan cores. One worker.
     expect(horseDecisionWorkerCount({ cores: 4 })).toBe(1);

@@ -649,6 +649,13 @@ if not window: raise SystemExit(1)
 # Record that missed opportunity separately from permission to cut over. Only
 # this durable health observation qualifies; missing/unreadable health does not.
 if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):
+    # Below the budget is not the only fact. On 2026-09-26 five breaks logged
+    # only "below the 260000ms budget" while 630 stopped-custody tables held
+    # the certificate shut from the first second of every countdown, and the
+    # stall read as a timing fault. Name the shut certificate on stderr; the
+    # verdict on stdout and the exit code are unchanged.
+    if not (m.get("readyForRestart") is True and m.get("unparkedTables")==0):
+        sys.stderr.write("[engine-release-transaction] the restart certificate is also shut: unparkedTables=%r unparkedReasons=%r\n" % (m.get("unparkedTables"), m.get("unparkedReasons")))
     print(remaining)
     raise SystemExit(2)
 ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)

@@ -1,104 +1,49 @@
--- 20260926091455_a_bystander_seated_after_a_finished_hand_does_not_hold_its_s.sql
+-- 20260926131050_the_abandoned_generation_door_reads_the_last_hand_by_when_it.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
 --
 -- ===========================================================================
---  A BYSTANDER SEATED AFTER A FINISHED HAND DOES NOT HOLD ITS SETTLEMENT
+--  THE ABANDONED-GENERATION DOOR READS THE LAST HAND BY WHEN IT WAS PLAYED
 -- ===========================================================================
 --
--- What was wrong
--- --------------
--- Event 8ec7e81d ($100 Freeroll 6:00 PM, 67 entrants, every one a horse) has
--- five of its eight tables frozen since 2026-09-18 23:08. They all belong to
--- dead lease generation 7c88dac4 (instance 1-3846b8bb), and the abandoned-
--- generation door refuses that generation as a whole with
--- F06_ABANDONED_HAND_HAS_A_RETAINED_SUBMISSION because of one table:
+-- This replaces 20260926091455 (PR #5321), which merged but can never apply:
+-- its pre-image pins fn_ca_resume_hand_submission at 1aa58a5d, and
+-- 20260926091630 (PR #5320, applied 2026-09-26) had already moved that body
+-- to 828edb10. Both PRs fixed the same refusal for event 8ec7e81d (a chair
+-- taken after a retained hand's deal); #5320's clause is live and is kept.
+-- The file of 20260926091455 is deleted in the same pull request.
 --
---   table c1ee060b, hand 12976717, submission 3a095f5f (permit 1713a446)
---   * played to the end 23:07:43-23:08:06 and retained 23:08:14 by the
---     original (request hash 4431b78a...fc0f): 8 players dealt in, rake 0,
---     bbj 0, inflow 0. Result: seat 7 (4ef643c1) +75 (14936 -> 15011),
---     seat 1 (0c7ad36f) -50 (21095 -> 21045), seat 9 (7508c26e) -25
---     (4005 -> 3980). The other five chairs are unchanged. Net 0.
---   * never committed: no hand_atomic_commits, no hand_history, no handoff,
---     no failure row. Every chair still holds its stack_before exactly.
---   * 22 seconds after it was retained, at 23:08:36.700, a late registrant
---     (3ec4fbbc, lubbockpreston) sat in seat 3 with a fresh 5,000-chip
---     registration. It is in no p_stacks row, not in the hand row's players
---     and has no hole card: it was never in the hand.
+-- What #5321 carried that is NOT live, and is the whole of this migration:
 --
--- The engine already does the right thing: when the door names a retained
--- submission it asks fn_ca_resume_hand_submission to finish it through the
--- successor handoff, then asks the door again. The handoff refused with
--- HAND_SUBMISSION_HANDOFF_STATE_CHANGED on every ask, because it required the
--- count of live chairs at the table (9) to equal the hand's stack rows (8).
--- That clause exists to prove no later hand consumed the starting state; a
--- chair that sat down after the hand finished consumed nothing.
+--   public.fn_f06_abort_abandoned_generation read the event's last dealt hand
+--   ORDER BY created_at. A finished hand its successor commits late from a
+--   retained submission (fn_ca_resume_hand_submission) is WRITTEN now but was
+--   PLAYED when it ended, with the blinds of that time. The door, asked again
+--   right after the handoff, takes that hand as the event's last dealt level
+--   and turns the clock back on every table that has dealt since. For
+--   8ec7e81d (hand 12976717, played 2026-09-18 23:07-23:08 at level 0 blinds,
+--   event at level 3 on 2026-09-26 13:08 UTC) that is a reset to level 0.
+--   The hand is now ordered by when it was played:
+--   COALESCE(ended_at, created_at), then created_at.
 --
--- What changes
--- ------------
--- 1. public.fn_ca_resume_hand_submission: a live chair is left out of that
---    count only when EVERY clause holds (a bystander):
---      * the table belongs to a tournament;
---      * the chair joined after the submission was retained AND after the
---        hand row's ended_at;
---      * it is in no p_stacks row (neither the seat nor the player), not a
---        hand-row player, and holds no hole card for the hand;
---      * it holds chips (> 0) and exactly its own playing registration's
---        chips at this table and seat.
---    Nothing that protects a participant is changed: every p_stacks row must
---    still match its live chair by seat id, player, joined_at and
---    stack_before; seat ids stay distinct; no commit, history or later permit
---    may exist; the claim, lease, freeze and commit core are unchanged. The
---    hand row must carry a players array and a valid ended_at, or the handoff
---    refuses as before.
+-- The installed body is byte for byte the one #5321 reviewed (md5 adeba11b,
+-- pinned by its law test); nothing else in the door changes. Read 2026-09-26
+-- 13:10 UTC: the live door is f7424f0f (20260926075505) and the live handoff
+-- is 828edb10 (20260926091630). Cost of the new ORDER BY: an index scan of
+-- idx_hand_history_tournament_created for the one event plus a top-N sort,
+-- measured 180 ms on the largest retained event (5a387a75).
 --
--- 2. public.fn_f06_abort_abandoned_generation: the level clock read the
---    event's last dealt hand ORDER BY created_at. A hand committed late by
---    its successor is written now with the blinds it was played at on
---    09-18, so the door, asked again right after the handoff, would have
---    turned 8ec7e81d back from level 2 (40/80 ante 10, dealing today) to
---    level 0 (25/50). Proved in the rolled-back probe below. The hand is
---    now ordered by when it was played: COALESCE(ended_at, created_at).
---    Nothing else in the door changes.
+-- No money moves. The door still credits 0 and every other clause is as it
+-- was. Law: tests/a-bystander-seated-after-a-finished-hand-does-not-hold-its-settlement.law.test.ts
 --
--- Five tests (CLAUDE.md 10.9):
---   1. Read, not assumed: the rows above, 2026-09-26 09:00-09:15 UTC.
---   2. Nobody paid twice: the handoff claim is one-time
---      (hand_submission_handoffs PK) and the commit core is idempotent on
---      the submission id; this migration touches neither.
---   3. Nothing clawed back: the hand is settled exactly as played (+75, -50,
---      -25, net 0, rake 0); the bystander's 5,000 is not touched.
---   4. Proved rolled back (2026-09-26 09:13 UTC, this exact resume body as a
---      pg_temp function, then the live door, one transaction, ROLLBACK):
---      resume -> success, atomic_hand_commit, permit 1713a446 'accepted'
---      with evidence 3a095f5f, one hand_history row; chairs 21045 / 5050 /
---      5000 (bystander, unchanged) / 14950 / 5114 / 4925 / 15011 / 4925 /
---      3980, registrations equal. The door then accepted generation 7c88dac4:
---      hands_aborted 4 (the four preflop tables), credit 0 - and, with the
---      old ordering, level to_level 0 from 2 (the defect fixed in 2).
---   5. The paragraph: docs/changelog/2026-09-26-a-bystander-seated-after-a-finished-hand-does-not-hold-its-settlement.md
---
--- Every player here is a horse; nothing treats them differently for it
--- (CLAUDE.md 10.5).
+-- @live-proof: (SELECT pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure) LIKE '%ORDER BY COALESCE(hh.ended_at, hh.created_at) DESC, hh.created_at DESC LIMIT 1;%')
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 
 DO $pre$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p
-     WHERE p.oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure
-       AND md5(p.prosrc) = '1aa58a5d89009ae97ddb2e18462a7ec3'
-       AND pg_get_userbyid(p.proowner) = 'postgres'
-       AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
-       AND p.proconfig::text = '{"search_path=pg_catalog, public"}'
-       AND p.prosecdef
-       AND p.provolatile = 'v') THEN
-    RAISE EXCEPTION 'PREIMAGE: fn_ca_resume_hand_submission is not the definition read 2026-09-26';
-  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
      WHERE p.oid = 'public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure
@@ -110,190 +55,15 @@ BEGIN
        AND p.provolatile = 'v') THEN
     RAISE EXCEPTION 'PREIMAGE: fn_f06_abort_abandoned_generation is not the definition of 20260926075505';
   END IF;
+  -- The handoff this door follows is #5320's (20260926091630), not #5321's.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure
+       AND md5(p.prosrc) = '828edb105fa8d69f089430d7945f5fb9') THEN
+    RAISE EXCEPTION 'PREIMAGE: fn_ca_resume_hand_submission is not the definition of 20260926091630';
+  END IF;
 END
 $pre$;
-
-CREATE OR REPLACE FUNCTION public.fn_ca_resume_hand_submission(p_table_id uuid, p_instance_id text, p_lease_generation uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'pg_catalog', 'public'
-AS $function$
-DECLARE s smarter_private.hand_submissions; h smarter_private.f06_hand_permits;
- a public.hand_atomic_commits; q jsonb; r jsonb; post jsonb; finished jsonb;
- tour uuid; locked_tour uuid; holder text; generation uuid; protocol integer; beat timestamptz;
- users uuid[]; code text; message text; claimed boolean:=false; evidence text;
-BEGIN
- IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'HAND_SUBMISSION_ENGINE_ONLY' USING ERRCODE='42501'; END IF;
- SELECT j.* INTO s FROM smarter_private.hand_submissions j
- LEFT JOIN public.hand_atomic_commits c ON c.table_id=j.table_id AND c.hand_number=j.hand_number
- LEFT JOIN smarter_private.f06_hand_permits p ON p.table_id=j.table_id AND p.hand_number=j.hand_number
- WHERE j.table_id=p_table_id AND (c.hand_id IS DISTINCT FROM j.submission_id OR c.post_commit_completed_at IS NULL
-   OR c.post_commit_result->>'ok' IS DISTINCT FROM 'true' OR p.state='reserved')
- ORDER BY j.hand_number LIMIT 1;
- IF NOT FOUND THEN RETURN jsonb_build_object('found',false); END IF;
- -- This is startup continuation, not an in-flight original settlement. Keep
- -- both financial handoff and accepted postcommit behind the existing freeze
- -- boundary, before any lease or lifecycle lane. Refusal spends no claim.
- IF NOT pg_try_advisory_xact_lock_shared(530090,1) THEN
-  RAISE EXCEPTION 'HAND_SUBMISSION_MAINTENANCE_BUSY' USING ERRCODE='55P03'; END IF;
- IF public.fn_platform_frozen() THEN
-  RAISE EXCEPTION 'HAND_SUBMISSION_PLATFORM_FROZEN' USING ERRCODE='55000'; END IF;
- SELECT tournament_id INTO tour FROM public.tables WHERE id=p_table_id;
- IF NOT FOUND THEN RAISE EXCEPTION 'HAND_SUBMISSION_TABLE_MISSING' USING ERRCODE='55000'; END IF;
- IF tour IS NOT NULL THEN
-  SELECT array_agg((x->>'user_id')::uuid ORDER BY x->>'user_id') INTO users FROM jsonb_array_elements(s.request->'p_stacks') x;
-  PERFORM smarter_private.f06_prefix(tour,p_lease_generation,users,ARRAY[p_table_id]);
-  SELECT instance_id,lease_generation,protocol_version,heartbeat_at INTO holder,generation,protocol,beat
-   FROM public.engine_tournament_leases WHERE tournament_id=tour FOR KEY SHARE;
- ELSE
-  SELECT instance_id,lease_generation,protocol_version,heartbeat_at INTO holder,generation,protocol,beat
-   FROM public.engine_table_leases WHERE table_id=p_table_id FOR KEY SHARE;
-  PERFORM public.fn_ca_share_settlement_lane_for_table(p_table_id);
-  PERFORM pg_advisory_xact_lock(hashtextextended('hand:submission:'||s.table_id::text||':'||s.hand_number::text,0));
-  PERFORM 1 FROM public.tables WHERE id=p_table_id FOR UPDATE;
-  PERFORM 1 FROM public.table_seats WHERE table_id=p_table_id ORDER BY id FOR UPDATE;
- END IF;
- IF holder IS DISTINCT FROM p_instance_id OR generation IS DISTINCT FROM p_lease_generation OR protocol IS DISTINCT FROM 2
- OR beat IS NULL OR beat<clock_timestamp()-make_interval(secs=>public.fn_engine_lease_stale_seconds()) THEN
-  RAISE EXCEPTION 'HAND_SUBMISSION_LEASE_UNPROVEN' USING ERRCODE='55000'; END IF;
- SELECT tournament_id INTO locked_tour FROM public.tables WHERE id=p_table_id;
- IF locked_tour IS DISTINCT FROM tour THEN RAISE EXCEPTION 'HAND_SUBMISSION_SCOPE_CHANGED' USING ERRCODE='55000'; END IF;
- PERFORM pg_advisory_xact_lock(hashtextextended('hand:submission:'||s.table_id::text||':'||s.hand_number::text,0));
- SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE table_id=s.table_id AND hand_number=s.hand_number;
- IF tour IS NOT NULL THEN
-  IF h.permit_id IS NULL OR h.tournament_id IS DISTINCT FROM tour OR h.generation IS DISTINCT FROM s.lease_generation
-   OR h.state NOT IN('reserved','accepted') THEN RAISE EXCEPTION 'HAND_SUBMISSION_ORIGINAL_PERMIT_REQUIRED' USING ERRCODE='55000'; END IF;
-  IF NOT pg_try_advisory_xact_lock(hashtextextended('f06:hand:'||h.permit_id::text,0)) THEN
-   RAISE EXCEPTION 'F06_HAND_DISPATCH_BUSY' USING ERRCODE='40001'; END IF;
- END IF;
- SELECT * INTO a FROM public.hand_atomic_commits WHERE table_id=s.table_id AND hand_number=s.hand_number;
- IF FOUND THEN
-  IF a.hand_id IS DISTINCT FROM s.submission_id OR a.post_commit_payload IS NULL THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_ACCEPTANCE_UNPROVEN' USING ERRCODE='55000'; END IF;
-  r:=a.stack_result||jsonb_build_object('success',true,'atomic_hand_commit',true,'history_id',a.hand_id,
-    'commit_hash',a.payload_hash,'post_commit_obligations',true,'post_commit_payload_hash',a.post_commit_payload_hash);
- ELSE
-  IF EXISTS(SELECT 1 FROM smarter_private.hand_submission_handoffs WHERE submission_id=s.submission_id) THEN
-   RETURN jsonb_build_object('found',true,'completed',false,'submission_id',s.submission_id,'reason','successor_financial_claim_spent'); END IF;
-  -- The original generation owns its own door; it is never its own successor.
-  IF s.lease_generation=p_lease_generation THEN
-   RETURN jsonb_build_object('found',true,'completed',false,'submission_id',s.submission_id,'reason','original_failure_or_handoff_unproven'); END IF;
-  -- A canonical failure row is one proof that the original cannot settle this
-  -- hand. The other is read here: the scope lease holds this caller's
-  -- generation, not the original's, and this transaction has held that row
-  -- FOR KEY SHARE since it was verified, so no takeover or release can move
-  -- it until this transaction ends. Every settlement of this hand holds this
-  -- hand's submission lock (taken above) from before its own lease check to
-  -- its end, and the atomic receipt read under that lock found nothing. So the
-  -- original never settled this hand, cannot settle it while its generation is
-  -- not the lease, and if it ever holds the lease again it can only replay the
-  -- payload-identical receipt this one handoff writes.
-  IF generation IS DISTINCT FROM p_lease_generation OR generation IS NOT DISTINCT FROM s.lease_generation THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_LEASE_UNPROVEN' USING ERRCODE='55000'; END IF;
-  evidence:=CASE WHEN EXISTS(SELECT 1 FROM smarter_private.hand_submission_failures f
-   WHERE f.submission_id=s.submission_id AND f.request_hash=s.request_hash)
-   THEN 'canonical_failure' ELSE 'superseded_generation' END;
-  -- The original exact generations and before-stacks must still occupy the
-  -- whole table. No later hand/permit may have consumed this starting state.
-  q:=s.request;
-  IF NOT EXISTS(SELECT 1 FROM public.tables WHERE id=s.table_id
-      AND NOT COALESCE(is_deleted,false) AND lower(status) IN ('waiting','running')
-      -- Cash tables are 'live'; a tournament table keeps NULL until it closes.
-      AND (lifecycle='live' OR (tour IS NOT NULL AND lifecycle IS NULL)))
-   OR (tour IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id=tour AND upper(status)='RUNNING')) THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_TABLE_NOT_ADMITTED' USING ERRCODE='55000'; END IF;
-  IF jsonb_array_length(q->'p_stacks')=0 OR
-   (SELECT count(*) FROM public.table_seats b WHERE b.table_id=s.table_id AND b.left_at IS NULL
-     -- A BYSTANDER IS NOT A PARTICIPANT (2026-09-26). A tournament chair that
-     -- sat down after this hand was finished and retained was never dealt in:
-     -- it is in no p_stacks row, no hand-row player and no hole card, and it
-     -- holds exactly its own playing registration's chips, untouched. It is
-     -- not counted; every chair the hand names is still proved below.
-     AND NOT (tour IS NOT NULL
-       AND b.joined_at > s.retained_at
-       AND b.joined_at > (q->'p_hand_row'->>'ended_at')::timestamptz
-       AND b.stack > 0
-       AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(q->'p_stacks') x
-                       WHERE x->>'seat_id'=b.id::text OR x->>'user_id'=b.user_id::text)
-       AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(q->'p_hand_row'->'players') x
-                       WHERE x->>'userId'=b.user_id::text)
-       AND NOT EXISTS(SELECT 1 FROM public.table_hole_cards c
-                       WHERE c.table_id=s.table_id AND c.hand_number=s.hand_number AND c.user_id=b.user_id)
-       AND EXISTS(SELECT 1 FROM public.tournament_players tp
-                   WHERE tp.tournament_id=tour AND tp.user_id=b.user_id AND tp.table_id=b.table_id
-                     AND tp.seat_number=b.seat_number AND tp.status='playing' AND tp.chips=b.stack)))
-     <>jsonb_array_length(q->'p_stacks')
-   OR jsonb_typeof(q->'p_hand_row'->'players') IS DISTINCT FROM 'array'
-   OR NOT COALESCE(pg_input_is_valid(q->'p_hand_row'->>'ended_at','timestamptz'),false)
-   OR (SELECT count(DISTINCT x->>'seat_id') FROM jsonb_array_elements(q->'p_stacks') x)<>jsonb_array_length(q->'p_stacks')
-   OR EXISTS(SELECT 1 FROM jsonb_array_elements(q->'p_stacks') x WHERE NOT EXISTS(
-     SELECT 1 FROM public.table_seats seat WHERE seat.table_id=s.table_id AND seat.id=(x->>'seat_id')::uuid
-       AND seat.user_id=(x->>'user_id')::uuid AND seat.joined_at=(x->>'seat_joined_at')::timestamptz
-       AND seat.left_at IS NULL AND seat.stack=(x->>'stack_before')::numeric))
-   OR EXISTS(SELECT 1 FROM public.hand_atomic_commits WHERE table_id=s.table_id AND hand_number>=s.hand_number)
-   OR EXISTS(SELECT 1 FROM public.hand_history WHERE table_id=s.table_id AND hand_number>=s.hand_number)
-   OR EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits WHERE table_id=s.table_id AND hand_number>s.hand_number) THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_HANDOFF_STATE_CHANGED' USING ERRCODE='55000'; END IF;
-  -- A wait for another lane may outlast the heartbeat or cross the existing
-  -- announced freeze clock. Recheck immediately before the irreversible claim.
-  IF public.fn_platform_frozen() THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_PLATFORM_FROZEN' USING ERRCODE='55000'; END IF;
-  IF tour IS NULL THEN
-   SELECT heartbeat_at INTO beat FROM public.engine_table_leases WHERE table_id=s.table_id;
-  ELSE
-   SELECT heartbeat_at INTO beat FROM public.engine_tournament_leases WHERE tournament_id=tour;
-  END IF;
-  IF beat IS NULL OR beat<clock_timestamp()-make_interval(secs=>public.fn_engine_lease_stale_seconds()) THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_LEASE_UNPROVEN' USING ERRCODE='55000'; END IF;
-  INSERT INTO smarter_private.hand_submission_handoffs(submission_id,original_generation,instance_id,lease_generation,request_hash,transaction_id)
-   VALUES(s.submission_id,s.lease_generation,p_instance_id,p_lease_generation,s.request_hash,txid_current());
-  claimed:=true;
-  BEGIN
-   INSERT INTO smarter_private.hand_submission_dispatch VALUES(txid_current(),s.submission_id,s.request_hash,p_instance_id,p_lease_generation);
-   r:=public.fn_ca_commit_hand_settlement(s.table_id,s.hand_number,q->'p_stacks',
-    (q->>'p_rake')::numeric,(q->>'p_bbj')::numeric,q->>'p_ref',(q->>'p_inflow')::numeric,
-    q->'p_hand_row',q->'p_units',p_instance_id,p_lease_generation,q->'p_post_commit_obligations');
-  EXCEPTION WHEN OTHERS THEN
-   GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,message=MESSAGE_TEXT;
-   r:=jsonb_build_object('success',false,'atomic_hand_commit',false,'reason','successor_authority_refused','sqlstate',code,'error',message);
-  END;
-  -- A lock/freeze/lease admission refusal is not the one financial attempt.
-  -- Raise outside the caught subtransaction so its claim also rolls back.
-  IF r->>'success' IS DISTINCT FROM 'true' AND (
-    r->>'sqlstate' IN ('55P03','40001','40P01')
-    OR r->>'reason' IN ('hand_lease_lost','hand_lease_stale','hand_lease_scope_changed','invalid_hand_lease_authority')
-    OR (r->>'sqlstate'='42501' AND r->>'error'='F06_LEASE_FENCED')
-    OR public.fn_platform_frozen()) THEN
-   RAISE EXCEPTION 'HAND_SUBMISSION_ADMISSION_CHANGED: %',r USING ERRCODE='40001';
-  END IF;
-  DELETE FROM smarter_private.hand_submission_dispatch WHERE transaction_id=txid_current() AND submission_id=s.submission_id;
-  INSERT INTO smarter_private.hand_submission_handoff_results VALUES(s.submission_id,r||jsonb_build_object('handoff_evidence',evidence));
-  IF r->>'success' IS DISTINCT FROM 'true' OR r->>'atomic_hand_commit' IS DISTINCT FROM 'true' THEN
-   RETURN jsonb_build_object('found',true,'completed',false,'submission_id',s.submission_id,'reason','successor_financial_refused','outcome',r); END IF;
- END IF;
- r:=smarter_private.acknowledge_hand_submission(s.submission_id,r);
- -- A later current owner may replay this branch after acknowledgment loss.
- -- It never spends or recreates the one-time financial claim.
- BEGIN
-  post:=public.fn_ca_process_hand_post_commit_obligations(s.submission_id);
-  IF post->>'ok' IS DISTINCT FROM 'true' OR NOT EXISTS(SELECT 1 FROM public.hand_atomic_commits
-    WHERE table_id=s.table_id AND hand_number=s.hand_number AND hand_id=s.submission_id
-    AND post_commit_completed_at IS NOT NULL AND post_commit_result->>'ok'='true') THEN
-   RETURN r||jsonb_build_object('found',true,'completed',false,'reason','accepted_postcommit_pending'); END IF;
-  IF tour IS NOT NULL THEN
-   finished:=public.fn_f06_finish_hand(tour,p_lease_generation,h.permit_id,'accepted',s.submission_id);
-   IF finished->>'ok' IS DISTINCT FROM 'true' OR finished->>'state' IS DISTINCT FROM 'accepted'
-    OR finished->>'evidence_id' IS DISTINCT FROM s.submission_id::text THEN
-    RAISE EXCEPTION 'HAND_SUBMISSION_PERMIT_COMPLETION_UNPROVEN' USING ERRCODE='55000'; END IF;
-  END IF;
- EXCEPTION WHEN OTHERS THEN
-  GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,message=MESSAGE_TEXT;
-  RETURN r||jsonb_build_object('found',true,'completed',false,'reason','accepted_postcommit_pending','sqlstate',code,'error',message);
- END;
- RETURN r||jsonb_build_object('found',true,'completed',true,'hand_number',s.hand_number::text,
-   'financial_handoff',claimed,'permit_id',h.permit_id,'post_commit_completed',true);
-END $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_f06_abort_abandoned_generation(p_tournament_id uuid, p_generation uuid, p_receipt_id uuid, p_reason text, p_release_current_lease boolean DEFAULT false)
  RETURNS jsonb
@@ -848,10 +618,6 @@ BEGIN
 END
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_ca_resume_hand_submission(uuid, text, uuid)
-  FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_ca_resume_hand_submission(uuid, text, uuid)
-  TO service_role;
 REVOKE ALL ON FUNCTION public.fn_f06_abort_abandoned_generation(uuid, uuid, uuid, text, boolean)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_f06_abort_abandoned_generation(uuid, uuid, uuid, text, boolean)
@@ -859,17 +625,6 @@ GRANT EXECUTE ON FUNCTION public.fn_f06_abort_abandoned_generation(uuid, uuid, u
 
 DO $post$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p
-     WHERE p.oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure
-       AND md5(p.prosrc) = '3961a92c0e6e65eb601f5f34bcd1f7fd'
-       AND pg_get_userbyid(p.proowner) = 'postgres'
-       AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
-       AND p.proconfig::text = '{"search_path=pg_catalog, public"}'
-       AND p.prosecdef
-       AND p.provolatile = 'v') THEN
-    RAISE EXCEPTION 'POSTIMAGE: fn_ca_resume_hand_submission is not the bystander definition with its owner, grants and settings';
-  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
      WHERE p.oid = 'public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure
@@ -881,13 +636,14 @@ BEGIN
        AND p.provolatile = 'v') THEN
     RAISE EXCEPTION 'POSTIMAGE: fn_f06_abort_abandoned_generation is not the play-time definition with its owner, grants and settings';
   END IF;
-  IF has_function_privilege('anon', 'public.fn_ca_resume_hand_submission(uuid,text,uuid)', 'EXECUTE')
-     OR has_function_privilege('authenticated', 'public.fn_ca_resume_hand_submission(uuid,text,uuid)', 'EXECUTE')
-     OR NOT has_function_privilege('service_role', 'public.fn_ca_resume_hand_submission(uuid,text,uuid)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)', 'EXECUTE')
+  IF has_function_privilege('anon', 'public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)', 'EXECUTE') THEN
     RAISE EXCEPTION 'POSTIMAGE: grants are not service_role only';
+  END IF;
+  IF (SELECT md5(prosrc) FROM pg_proc
+       WHERE oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure) <> '828edb105fa8d69f089430d7945f5fb9' THEN
+    RAISE EXCEPTION 'POSTIMAGE: the handoff changed';
   END IF;
 END
 $post$;

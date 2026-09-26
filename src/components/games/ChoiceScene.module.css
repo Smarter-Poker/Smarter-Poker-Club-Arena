@@ -5,12 +5,21 @@
   min-width: 0;
   overflow: hidden;
   border-radius: 10px;
-  /* Under the canvas before its first frame: the night road's own tones and
-     the house hairline, so a slow phone shows a frame, not a black hole. The
-     canvas is transparent until it is drawn on. */
+  /* Under the canvas before its first frame: the night sky down to its haze
+     at the horizon (a sixth of the way down, where the scene's own horizon
+     prints), then the road's tones, so a slow phone shows a frame, not a
+     black hole. The canvas is transparent until it is drawn on. */
   background:
-    radial-gradient(90% 55% at 50% 60%, rgb(255 231 194 / 7%), transparent 70%),
-    linear-gradient(180deg, #06101f 0%, #0b0f14 40%, #050607 100%);
+    radial-gradient(90% 40% at 50% 66%, rgb(255 231 194 / 7%), transparent 70%),
+    linear-gradient(
+      180deg,
+      #050607 0%,
+      #071120 9%,
+      #0f2446 17%,
+      #101a28 24%,
+      #0b0f14 55%,
+      #050607 100%
+    );
   box-shadow:
     0 0 0 1px rgb(154 165 179 / 30%) inset,
     0 1px 0 rgb(255 255 255 / 6%) inset;
@@ -22,7 +31,9 @@
 }
 /* The frame: a soft vignette and a darker foot, so the plates and the strip
    sit on the road instead of floating over it, and the lit streets read as
-   the bright part of the picture. Above the canvas, below every plate. */
+   the bright part of the picture. The head of the frame is the sky now, so
+   it is only lightly darkened, and only above the skyline. Above the canvas,
+   below every plate. */
 .scene::after {
   content: '';
   position: absolute;
@@ -31,7 +42,7 @@
   pointer-events: none;
   background:
     radial-gradient(120% 90% at 50% 45%, rgb(5 6 7 / 0%) 55%, rgb(5 6 7 / 46%) 100%),
-    linear-gradient(180deg, rgb(5 6 7 / 34%) 0%, rgb(5 6 7 / 0%) 22%),
+    linear-gradient(180deg, rgb(5 6 7 / 24%) 0%, rgb(5 6 7 / 0%) 12%),
     linear-gradient(0deg, rgb(5 6 7 / 62%) 0%, rgb(5 6 7 / 0%) 26%);
 }
 /* #SMARTERCASINOREALISM: the overlays are machined plates, not glass pills.

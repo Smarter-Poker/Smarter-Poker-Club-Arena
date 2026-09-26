@@ -2,46 +2,52 @@ import { useEffect, useId, useState } from 'react';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { gameChips } from '../../utils/bonusGameBudget';
 import styles from './MinesGrid.module.css';
+/**
+ * The gem and the mine a tile turns over. The geometry is the original art; the
+ * palette is the house one (2026-09-25): the gem is cut from light blue
+ * (#45adff), royal blue (#1877f2) and chrome white, and the mine is a gunmetal
+ * body on chrome spikes whose only colour is its bust-red fuse tip.
+ */
 export function GemArt({ mine = false }: { mine?: boolean }) {
   const id = useId().replace(/:/g, '');
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true" className={styles.gem}>
       <defs>
         <linearGradient id={`${id}a`} x1="0" y1="0" x2=".8" y2="1">
-          <stop stopColor={mine ? '#728493' : '#f1ffff'} />
-          <stop offset=".42" stopColor={mine ? '#28384b' : '#8ee9ff'} />
-          <stop offset="1" stopColor={mine ? '#050910' : '#1a72c7'} />
+          <stop stopColor="#f4f7fb" />
+          <stop offset=".42" stopColor="#45adff" />
+          <stop offset="1" stopColor="#1877f2" />
         </linearGradient>
         <radialGradient id={`${id}b`} cx=".35" cy=".25">
-          <stop stopColor="#92a9bb" />
-          <stop offset=".4" stopColor="#344557" />
-          <stop offset="1" stopColor="#050911" />
+          <stop stopColor="#b8c3cd" />
+          <stop offset=".38" stopColor="#3a4756" />
+          <stop offset="1" stopColor="#0b1017" />
         </radialGradient>
       </defs>
       {mine ? (
         <g>
-          <g stroke="#9bb4c8" strokeWidth="5" strokeLinecap="round">
+          <g stroke="#7f8c9b" strokeWidth="5" strokeLinecap="round">
             {[0, 45, 90, 135].map((a) => (
               <path key={a} d="M50 13V87" transform={`rotate(${a} 50 50)`} />
             ))}
           </g>
-          <circle cx="50" cy="50" r="29" fill={`url(#${id}b)`} stroke="#7b91a6" />
-          <path d="M31 38Q37 25 51 26" fill="none" stroke="#d6e7f3" strokeWidth="3" opacity=".7" />
-          <circle cx="54" cy="40" r="8" fill="#f96146" />
-          <circle cx="52" cy="38" r="3" fill="#ffedd0" />
+          <circle cx="50" cy="50" r="29" fill={`url(#${id}b)`} stroke="#9aa5b3" />
+          <path d="M31 38Q37 25 51 26" fill="none" stroke="#e4e7ec" strokeWidth="3" opacity=".7" />
+          <circle cx="54" cy="40" r="8" fill="#ff5b6e" />
+          <circle cx="52" cy="38" r="3" fill="#ffd2d8" />
         </g>
       ) : (
-        <g stroke="#caf5ff" strokeWidth=".8" strokeLinejoin="round">
+        <g stroke="#e4e7ec" strokeWidth=".8" strokeLinejoin="round">
           <path d="M11 35L28 16H72L89 35L50 87Z" fill={`url(#${id}a)`} />
-          <path d="M11 35H89L50 87Z" fill="#239bd9" />
-          <path d="M11 35L34 37L50 87Z" fill="#64dcff" />
-          <path d="M34 37H65L50 87Z" fill="#d6faff" />
-          <path d="M65 37L89 35L50 87Z" fill="#2384c8" />
-          <path d="M28 16L34 37L11 35Z" fill="#99ebff" />
-          <path d="M28 16L50 16L34 37Z" fill="#f4ffff" />
-          <path d="M50 16L65 37H34Z" fill="#a5ecff" />
-          <path d="M50 16H72L65 37Z" fill="#f4ffff" />
-          <path d="M72 16L89 35L65 37Z" fill="#64c9f3" />
+          <path d="M11 35H89L50 87Z" fill="#1877f2" />
+          <path d="M11 35L34 37L50 87Z" fill="#45adff" />
+          <path d="M34 37H65L50 87Z" fill="#bfe6ff" />
+          <path d="M65 37L89 35L50 87Z" fill="#1466d6" />
+          <path d="M28 16L34 37L11 35Z" fill="#8ecfff" />
+          <path d="M28 16L50 16L34 37Z" fill="#f4f7fb" />
+          <path d="M50 16L65 37H34Z" fill="#a9dcff" />
+          <path d="M50 16H72L65 37Z" fill="#f4f7fb" />
+          <path d="M72 16L89 35L65 37Z" fill="#6bbcff" />
           <path d="M20 22L22 14L24 22L32 24L24 26L22 34L20 26L12 24Z" fill="white" stroke="none" />
         </g>
       )}
@@ -160,6 +166,8 @@ export default function MinesGrid({
         aria-label="Diamond Mines Board"
         data-motion="keep"
         data-terminal={terminal}
+        // Before the first pick the board runs its attract: a slow light sweep.
+        data-attract={!terminal && picked.length === 0 ? 'true' : undefined}
         style={
           terminal
             ? {

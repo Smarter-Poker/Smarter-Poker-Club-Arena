@@ -17,6 +17,7 @@ import type {
   PineappleDiscardSnapshot,
 } from './protocol.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
+import { decisionWorkersCanYield } from './workerPriority.js';
 
 /**
  * THE DECISION LANE IS SHARDED BY TABLE (2026-09-26).
@@ -95,9 +96,17 @@ import type { HorseDiscardExecutionObservation } from '../../services/horseDecis
  * the host has three physical cores (six logical), two from there, never
  * more than two by default. HORSE_DECISION_WORKERS raises it explicitly for
  * an operator who knows the host, still capped by availableParallelism() - 2
- * (one context for the main loop, one for an equity worker). On engine-01
- * that is one worker until the floor is capped to what two cores can think
- * for, or the engine moves to a larger host.
+ * (one context for the main loop, one for an equity worker).
+ *
+ * THE SECOND WORKER ON A TWO-CORE HOST IS ADMITTED ONLY WHERE IT YIELDS
+ * (2026-09-26, later). What the 08:19Z storm measured was not the database
+ * (heartbeat_tournament_leases_v4: 47 ms mean, 4.6 s max through it) but the
+ * main thread losing the CPU to two best-effort threads. workerPriority.ts
+ * now has every decision worker lower itself to nice 10 on Linux before it
+ * loads a solver store, so the kernel hands the main loop the core whenever
+ * both want it. On such a platform a two-core host runs two workers again:
+ * the horses think, and the lease renewal pass is never the thread that
+ * waits. Anywhere the worker cannot yield, the physical-core rule stands.
  */
 export const HORSE_DECISION_WORKERS_ENV = 'HORSE_DECISION_WORKERS';
 export const DEFAULT_HORSE_DECISION_WORKERS = 2;
@@ -109,13 +118,18 @@ export const ASSUMED_THREADS_PER_CORE = 2;
 export function horseDecisionWorkerCount(input: {
   requested?: string | number | null | undefined;
   cores: number;
+  /** Whether a worker can lower its own thread priority (workerPriority.ts). */
+  canYield?: boolean;
 }): number {
   const logical = Number.isSafeInteger(input.cores) && input.cores > 0 ? input.cores : 1;
   // An explicit request may use every logical CPU but the main loop's and one
-  // equity worker's; the default leaves a whole physical core for them.
+  // equity worker's; the default leaves a whole physical core for them unless
+  // the workers yield, in which case two share what the main loop leaves.
   const explicitCapacity = Math.max(1, logical - 2);
   const physical = Math.max(1, Math.floor(logical / ASSUMED_THREADS_PER_CORE));
-  const defaultCount = Math.max(1, Math.min(DEFAULT_HORSE_DECISION_WORKERS, physical - 1));
+  const defaultCount = input.canYield
+    ? Math.max(1, Math.min(DEFAULT_HORSE_DECISION_WORKERS, explicitCapacity))
+    : Math.max(1, Math.min(DEFAULT_HORSE_DECISION_WORKERS, physical - 1));
   const raw =
     typeof input.requested === 'number'
       ? input.requested
@@ -219,6 +233,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     const count = horseDecisionWorkerCount({
       requested: options.workers ?? process.env[HORSE_DECISION_WORKERS_ENV],
       cores: availableParallelism(),
+      canYield: decisionWorkersCanYield(),
     });
     const clientOptions: LiveHorseDecisionWorkerClientOptions = { ...options };
     delete (clientOptions as LiveHorseDecisionLaneOptions).workers;

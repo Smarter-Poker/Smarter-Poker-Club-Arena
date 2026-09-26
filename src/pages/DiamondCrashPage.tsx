@@ -59,6 +59,7 @@ import { LoadingState } from '../components/common/EmptyState';
 import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
+import { useSceneBudget } from '../hooks/useSceneBudget';
 import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
 import {
   bonusTotal,
@@ -103,6 +104,12 @@ import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
+/**
+ * What the playfield prints above the chart held sideways: the day's line and
+ * the crash-points strip, with the stage's gaps. The chart is the rest of the
+ * console's scene budget (useSceneBudget).
+ */
+const CRASH_STAGE_CHROME_PX = 56;
 /**
  * The displayed hundredth from which Book The Win is offered: the same floor
  * crashSettle enforces, and the one the round was SEALED with. Contract 4 moved
@@ -256,6 +263,9 @@ function DiamondCrashGame() {
   // server will accept.
   cashoutOpensRef.current = round?.cashout_floor_cents ?? DEFAULT_CASHOUT_OPENS_CENTS;
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
+  // Held sideways, the chart takes the height the console leaves the scene,
+  // less the day's line and the crash-points strip printed above it.
+  const sceneBudget = useSceneBudget();
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
   /**
@@ -1319,7 +1329,10 @@ function DiamondCrashGame() {
                 if (settledRound) setRevealedRoundId(settledRound.round_id);
               }}
               width={chartWidth}
-              height={Math.max(310, Math.min(620, Math.round(chartWidth * 0.64)))}
+              height={Math.min(
+                Math.max(310, Math.min(620, Math.round(chartWidth * 0.64))),
+                sceneBudget === null ? Infinity : Math.max(200, sceneBudget - CRASH_STAGE_CHROME_PX)
+              )}
             />
           </div>
           <div className={styles.readout} role="status">
@@ -1554,6 +1567,10 @@ function DiamondCrashGame() {
             }
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
+            // The receipt's own art: the jet at the multiplier it booked, or
+            // where it crashed on a round that was not cashed.
+            game="crash"
+            figure={finalCents === null ? null : finalCents / 100}
           />
         )}
     </div>

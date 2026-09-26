@@ -429,6 +429,44 @@
     padding: 4px 5px;
   }
 }
+/* A PHONE ON ITS SIDE (2026-09-26). The console is one screen tall and the
+   scene takes the height it leaves (--scene-budget, GameConsole.module.css),
+   so the road, its plates and the street strip all sit inside that screen.
+   The scene is then only as wide as a phone held upright, so the plates take
+   their phone places too: the wide layout's top-right route plate landed on
+   the readout at this width. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .scene {
+    height: max(220px, var(--scene-budget, 64dvh));
+  }
+  .caption {
+    top: 10px;
+    padding: 6px 12px;
+  }
+  .readout {
+    top: 44px;
+    padding: 6px 10px;
+  }
+  .readoutValue {
+    font-size: 19px;
+  }
+  .route {
+    top: auto;
+    right: auto;
+    bottom: 64px;
+    left: 50%;
+    padding: 7px 12px 8px;
+    transform: translateX(-50%);
+    animation-name: route-in;
+  }
+  .routeValue {
+    font-size: 16px;
+  }
+  .street {
+    min-width: 48px;
+    padding: 4px 5px;
+  }
+}
 /* Motion collapses; the bust, the value and every street's multiplier still read. */
 @media (prefers-reduced-motion: reduce) {
   .bust,

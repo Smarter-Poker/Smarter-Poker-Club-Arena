@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { SHORT_LANDSCAPE_QUERY } from '../../hooks/useSceneBudget';
 import type { DeckBay } from '../console/DeckConsole';
 import type { PlateButtonProps, ConsoleInk } from '../console/SpadeConsole';
 import styles from './GameConsole.module.css';
@@ -46,6 +47,26 @@ export function GameConsole({
    * the page's own guard. Native disabled still says "there is nothing here to
    * press", which is a plate worth leaving.
    */
+  /**
+   * A PHONE ON ITS SIDE IS A GAME SCREEN (2026-09-26). Held sideways, the
+   * console is exactly one screen tall (GameConsole.module.css), and the page
+   * chrome above it - the back link - would push its plates under the fold by
+   * its own height. So the console brings itself to the top of the screen
+   * when the page opens sideways and whenever the phone turns onto its side.
+   * The back link is one small scroll up. Nothing else moves, and upright
+   * nothing happens at all.
+   */
+  const consoleRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia(SHORT_LANDSCAPE_QUERY);
+    const frame = () => {
+      if (query.matches) consoleRef.current?.scrollIntoView?.({ block: 'start' });
+    };
+    frame();
+    query.addEventListener?.('change', frame);
+    return () => query.removeEventListener?.('change', frame);
+  }, []);
   const action = (button: PlateButtonProps | undefined, main = false) => {
     if (!button) return null;
     const { label, ink, buttonRef, onClick, ...rest } = button;
@@ -68,7 +89,12 @@ export function GameConsole({
     );
   };
   return (
-    <section className={styles.console} aria-labelledby={titleId} data-game-console>
+    <section
+      ref={consoleRef}
+      className={styles.console}
+      aria-labelledby={titleId}
+      data-game-console
+    >
       <header className={styles.header}>
         <h1 id={titleId}>{title}</h1>
         <span className={styles.status}>{pill}</span>

@@ -527,6 +527,29 @@ export class TournamentManager extends TournamentManagerEliminations {
     await engine.start();
   }
 
+  /**
+   * The database refused this dealer a hand because this table is the source
+   * of a break (`source_excluded`). Fence it for that break with the same
+   * owner the break claims, so it parks at the next gate and stays parked
+   * until the break is acknowledged or withdrawn, and wake discovery so the
+   * break is claimed. No hand is admitted and nothing is retried here.
+   */
+  protected override holdSourceForItsBreak(tableId: string, engine: ServerTableEngine): void {
+    if (
+      !this.running ||
+      this.tableEngines.get(tableId) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(tableId, engine)
+    )
+      return;
+    void engine.parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0, true).catch((error) =>
+      reportError(error, 'Tournament.break_source_hold_failed', {
+        tournamentId: this.tournamentId,
+        tableId,
+      })
+    );
+    this.requestEliminationSweep('f06_source_excluded');
+  }
+
   private rememberTournamentBreak(state: TournamentTableBreakState): void {
     if (state.state === 'acknowledged') {
       this.durableTournamentBreaks.delete(state.break_id);
@@ -750,9 +773,12 @@ export class TournamentManager extends TournamentManagerEliminations {
         !this.retainTournamentBreakSource(state.break_id, state.source_table_id, engine)
       )
         return null;
+      // The durable park row is the claim this pause waits for; only the
+      // break's acknowledgement or withdrawal releases it, never an expiry.
       const parked = await engine.parkForTournamentMove(
         this.tournamentMoveBoundaryOwner,
-        TournamentManager.MOVE_BOUNDARY_PROBE_MS
+        TournamentManager.MOVE_BOUNDARY_PROBE_MS,
+        true
       );
       if (
         !this.eliminationMutationAllowed() ||

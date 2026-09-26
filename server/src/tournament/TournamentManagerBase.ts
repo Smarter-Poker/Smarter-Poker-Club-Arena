@@ -1765,6 +1765,13 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  /**
+   * The database refused this table a hand because a table break names it as
+   * its source. Layer three owns the move boundary that break is waiting for;
+   * the base manager has no break authority and does nothing.
+   */
+  protected holdSourceForItsBreak(_tableId: string, _engine: ServerTableEngine): void {}
+
   /** A manager is not torn down until every table start it launched has settled. */
   protected async startParkedMovementEngine(
     _engine: ServerTableEngine,
@@ -1943,11 +1950,24 @@ export abstract class TournamentManagerBase {
           );
           const a = allocation as {
             ok?: boolean;
+            reason?: string | null;
             table_id?: string;
             lifecycle?: string;
             hand_number?: unknown;
             hand_number_high_water?: unknown;
           } | null;
+          /**
+           * A TABLE EXCLUDED BY ITS OWN BREAK WAITS FOR THE BREAK (2026-09-26).
+           * `source_excluded` is not an unproven allocation: it is the
+           * database saying a break row for this table exists and no hand may
+           * start here until that break is acknowledged or withdrawn. Asking
+           * again cannot change the answer. Name it, fence this dealer for
+           * the break, and wake the Manager so the break is claimed.
+           */
+          if (current() && !allocationError && a?.ok === false && a.reason === 'source_excluded') {
+            this.holdSourceForItsBreak(tableId, engine);
+            throw new Error('f06_source_excluded_by_break');
+          }
           if (
             !current() ||
             allocationError ||
@@ -1975,6 +1995,16 @@ export abstract class TournamentManagerBase {
           p_table_id: tableId,
         });
         const latest = refreshed.data as typeof state;
+        if (
+          current() &&
+          !refreshed.error &&
+          latest?.ok === true &&
+          latest.table_id === tableId &&
+          latest.blocked_reason === 'source_excluded'
+        ) {
+          this.holdSourceForItsBreak(tableId, engine);
+          throw new Error('f06_source_excluded_by_break');
+        }
         if (
           !current() ||
           refreshed.error ||
@@ -2286,6 +2316,11 @@ export abstract class TournamentManagerBase {
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
+      // A seat move or table break whose one-second probe missed is waiting
+      // for exactly this edge. Wake the sweep that claims it now, rather than
+      // leaving the claim to whichever redrive the shared scheduler reaches.
+      if (engine.awaitsTournamentMoveClaim())
+        this.requestEliminationSweep('tournament_move_parked');
       // A table parking is the edge the stage-end barrier waits for.
       if (this.stageEndPause) this.advanceStageEndBarrier();
     });

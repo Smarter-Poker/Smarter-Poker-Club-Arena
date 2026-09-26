@@ -1017,20 +1017,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       // An excluded source/lost park reply is recovered through durable discovery.
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      return;
     }
-    const ticket = engine.getF06FailedAllocation?.();
-    if (!ticket) return;
-    const table = await this.tableBreakRpc().tableState(tableId);
-    if (!current() || !table.ok || table.excluded) return;
-    // Lease owns the epoch-to-admitted-lifecycle binding and verifies the
-    // allocator response against that original lifecycle before publishing it.
-    // A failed allocation can burn a number; no BEGIN identity is discarded.
-    await engine.retryF06FailedAllocation(
-      ticket,
-      () => current() && this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId)
-    );
-    if (!current()) throw new Error('F06 allocation recovery owner changed');
+    // A failed hand-number allocation is not recovered here (2026-09-26). It
+    // claims no hand and discards no BEGIN identity - at most it burns a
+    // number - so it fails the one deal attempt it belonged to and the
+    // dealer's next preparation allocates fresh. This sweep used to be the
+    // only thing that cleared it, one table per pass, which left a table
+    // re-throwing one statement timeout until its turn came round.
   }
 
   private bindStoppedOriginalBreak(state: TournamentTableBreakState): boolean {

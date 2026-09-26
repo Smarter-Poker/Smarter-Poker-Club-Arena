@@ -91,6 +91,28 @@ export function isTerminalReplayDisagreement(error: unknown): boolean {
   return TERMINAL_DISAGREEMENT_PATTERN.test(errorMessage(error));
 }
 
+/**
+ * The database itself answered this request with an error: a PostgreSQL
+ * SQLSTATE, or a PostgREST code raised before the statement ran. PostgREST
+ * commits a request's transaction only when the statement succeeds, so an
+ * answer like this is the database stating that THIS attempt rolled back.
+ *
+ * A transport failure is not such an answer. The engine client's own deadline
+ * ('supabase_timeout'), a reset socket or a gateway page carries no SQLSTATE,
+ * and the statement may still be running and may still commit.
+ *
+ * Measured 2026-09-26 02:30 UTC: 85c5885a's five completion attempts and its
+ * resolver were each refused with 55P03 (lock timeout, 8 s on authenticator)
+ * while the platform finish lane was held. Not one of them could have
+ * committed, yet the event was reported "outcome unknown" and its manager
+ * fenced every table engine; it completed on its own an hour later.
+ */
+export function databaseStatedRollback(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(code);
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (typeof value === 'string') {
     try {
@@ -312,6 +334,11 @@ export async function requestTournamentTerminalReceipt(
     : null;
   let lastFailure = 'terminal settlement returned no receipt';
   let attemptedWrites = 0;
+  // Attempts whose outcome the database did not state: a lost response, or a
+  // success whose receipt could not be verified. Only these can have committed.
+  let unprovenAttempts = 0;
+  // The resolver's own failure, when the database stated it (a SQLSTATE).
+  let resolverRolledBack = false;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (legacyDeal) {
@@ -355,6 +382,7 @@ export async function requestTournamentTerminalReceipt(
           observedWinnerId
         );
         if (receipt && proposalIdentityIsExact(data)) return receipt;
+        unprovenAttempts++;
         lastFailure = 'terminal settlement returned an invalid stored receipt';
       } else {
         if (isTerminalReplayDisagreement(error)) {
@@ -366,11 +394,13 @@ export async function requestTournamentTerminalReceipt(
             errorMessage(error)
           );
         }
+        if (!databaseStatedRollback(error)) unprovenAttempts++;
         lastFailure = errorMessage(error);
         if (isDeterministicSettlementRefusal(error, tournamentId)) break;
       }
     } catch (error) {
       if (error instanceof TerminalSettlementDisagreementError) throw error;
+      unprovenAttempts++;
       lastFailure = errorMessage(error);
     }
 
@@ -398,6 +428,7 @@ export async function requestTournamentTerminalReceipt(
           errorMessage(error)
         );
       }
+      resolverRolledBack = databaseStatedRollback(error);
       lastFailure = `${lastFailure}; serialized outcome check failed: ${errorMessage(error)}`;
     } else {
       const outcome = record(data);
@@ -440,6 +471,19 @@ export async function requestTournamentTerminalReceipt(
       throw error;
     }
     lastFailure = `${lastFailure}; status check failed: ${errorMessage(error)}`;
+  }
+
+  // The resolver was itself refused by the database (the finish lane was held
+  // past lock_timeout), and every write attempt before it was answered by the
+  // database with a rollback. No attempt of this request is still running and
+  // none committed, so this is a refusal the caller may retry: the terminal
+  // authority is idempotent, and a retry that meets a receipt committed by
+  // anyone else adopts it. A lost response anywhere, or a resolver that
+  // answered with something this request cannot accept, stays unknown.
+  if (attemptedWrites > 0 && unprovenAttempts === 0 && resolverRolledBack) {
+    throw new TerminalSettlementRefusedError(
+      `${lastFailure}; all ${attemptedWrites} attempt(s) were rolled back by the database, so none committed`
+    );
   }
 
   throw new TerminalSettlementOutcomeUnknownError(

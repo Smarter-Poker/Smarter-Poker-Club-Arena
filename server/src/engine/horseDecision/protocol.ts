@@ -25,6 +25,7 @@ import type { HorseMindDecisionEffect, ReadScope } from '../HorseMind.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
 import type { Card, HorseDecision, HorseStyle, SeatPlayer } from '../../types.js';
 import type { solverPolicyArtifactStatus } from '../../gto/SolverPolicyArtifactLoader.js';
+import type { HorseJournalHealth } from '../../services/HorseDecisionJournal.js';
 
 export interface HorseDecisionFence {
   generation: number;
@@ -397,6 +398,10 @@ export interface HorseDecisionWorkerStatusResult extends HorseDecisionFence {
   solverStores: HorseDecisionWorkerReady['solverStores'];
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'];
   governor: GovernorSnapshot;
+  /** The decision journal's own report. Its publisher lives in this worker, so
+   * this reply is how /health on the main thread learns what it is doing.
+   * Diagnostics only: a missing or malformed report never fails the worker. */
+  horseJournal?: HorseJournalHealth | null;
 }
 
 export interface PineappleDiscardResult extends HorseDecisionFence {

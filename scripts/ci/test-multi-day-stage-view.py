@@ -167,7 +167,7 @@ def run_all(c, capability):
     c.psql(STANDINS)
     c.psql((MIG / CANDIDATE).read_text())
     c.psql((MIG / CANDIDATE).read_text(), error='MULTI_DAY_VIEW_NAME_TAKEN')
-    proofs = re.findall(r'--\s*@live-proof:\s*(.+?)\s*$', (MIG / CANDIDATE).read_text(), re.M)
+    proofs = re.findall(r'^-- @live-proof: (.+?)\s*$', (MIG / CANDIDATE).read_text(), re.M)
     assert proofs
     for proof in proofs:
         assert c.val('SELECT (%s)::text' % proof) == 'true', proof

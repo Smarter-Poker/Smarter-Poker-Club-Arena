@@ -135,7 +135,12 @@ describe('a satellite seat into a running target is dealt in', () => {
     // takes the canonical lane and reaches the terminal seat gate. A byte hash
     // there refused the first install for an unrelated re-declaration.
     expect(SQL).toContain("p.proname = 'fn_seat_late_registrant'");
-    expect(SQL).toContain("pg_get_function_identity_arguments(p.oid) = 'uuid, uuid'");
+    // Pinned by argument TYPES. The identity-arguments string carries the
+    // parameter names, so comparing it to 'uuid, uuid' matched no function at
+    // all and refused the migration against production's own authority.
+    // scripts/ci/test-satellite-seat-preimage.py runs the guard in PostgreSQL.
+    expect(SQL).toContain("oidvectortypes(p.proargtypes) = 'uuid, uuid'");
+    expect(SQL).not.toMatch(/pg_get_function_identity_arguments\([^)]*\)\s*=\s*'uuid, uuid'/);
     expect(SQL).toContain('p.prosecdef');
     expect(SQL).toContain("pg_get_userbyid(p.proowner) = 'postgres'");
     expect(SQL).toContain("p.prosrc LIKE '%fn_ca_lock_tournament_seat_acquisition(%'");

@@ -11,7 +11,10 @@ import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
 import { noteFire } from '../BrainTelemetry.js';
-import { horseDecisionJournalConfigured } from '../../services/HorseDecisionJournal.js';
+import {
+  horseDecisionJournalConfigured,
+  relayHorseDecisionJournalHealth,
+} from '../../services/HorseDecisionJournal.js';
 import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 import { isHorseLifecycleRequest } from '../../services/horseDecisionJournal/lifecycle.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
@@ -1172,6 +1175,9 @@ export class LiveHorseDecisionWorkerClient {
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = this.lastCompletedAt;
+      // The journal publisher runs in this worker; /health runs here. Without
+      // this relay /health answered `starting` for a journal that had failed.
+      relayHorseDecisionJournalHealth(message.horseJournal);
     }
     if (!active.settled) {
       active.settled = true;

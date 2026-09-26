@@ -2217,6 +2217,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'private host-local journal capture, queue admission, exact disk acknowledgement or explicit gap; enqueued is not durable, recorded is not complete coverage, full replay or a GTO verdict',
     'Phase15'
   ),
+  // 2026-09-26: a named archive quota pauses capture instead of ending it.
+  // These three keep paused-at-quota apart from failed (capture_unavailable).
+  receipt(
+    'phase15_journal_capture_paused_capacity',
+    'HorseDecisionJournalPublisher.record',
+    'a capture offered while the journal is paused at a named archive quota (archive_bytes, archive_segments, archive_catalog_capacity, archive_storage_capacity); the record is still queued within the same bound, and the same call also counts enqueued or queue_capacity; paused is not failed, and capture_unavailable still counts a journal that stopped for good',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_journal_capacity_paused',
+    'HorseDecisionJournalPublisher.pause',
+    'the writer refused an append at a named archive quota and capture paused with its queue kept; the writer is probed read-only once a minute; not a failure, not a deletion and not a retry',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_journal_capacity_resumed',
+    'HorseDecisionJournalPublisher.capacityAnswer',
+    'a capacity probe found room and capture resumed; the kept queue is replayed with the same event identities and digests, so a record already held is replayed, never written twice',
+    'Phase15'
+  ),
   receipt(
     'phase15_discard_capture_unavailable',
     'LiveHorseDecisionWorkerClient.observeDiscardExecution',

@@ -410,6 +410,30 @@ it('process replacement retains source recovery gate after terminal hand adoptio
   expect(maintenance.unparkedTables()).toEqual([id(3)]);
   expect(maintenance.unparkedReasonCounts).toEqual({ f06_preparation_unresolved: 1 });
 });
+it('a replacement that holds a durable mixed transfer keeps strict recovery and never falls through to the door', async () => {
+  // 2026-09-26: a fresh adoption with a reserved hand and NO custody now goes
+  // to resume(), where the abandoned-generation door decides it. A durable
+  // mixed transfer is custody: its own continuation owns it, exactly as before.
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  const replacement = server();
+  mocks.rpc.mockImplementation(async (name, a) =>
+    name === 'fn_f06_find_mixed_manager_custody'
+      ? { error: null, data: { ok: true, tournament_id: id(1), receipt: transfer.receipt } }
+      : mixedResponse(name, a)
+  );
+  const resume = vi.spyOn(TournamentManager.prototype, 'resume');
+  await replacement.performTournamentManagerAdmission(id(1), 'resume', 'replacement', 1);
+  const owner = replacement.tournamentEngines.get(id(1));
+  managers.push(owner);
+  expect(owner.isF06RecoveryOwner()).toBe(true);
+  expect(resume).not.toHaveBeenCalled();
+  const asked = mocks.rpc.mock.calls.map(([name]) => name);
+  expect(asked).not.toContain('fn_f06_hand_number_state');
+  expect(asked).not.toContain('fn_f06_abort_abandoned_generation');
+  expect(replacement.finishTournamentManagerAdmission).not.toHaveBeenCalled();
+});
 it('missing receipt discovery is unknown and never starts a claim', async () => {
   const replacement = server();
   mocks.rpc.mockResolvedValue({ error: { message: 'unavailable' }, data: null });

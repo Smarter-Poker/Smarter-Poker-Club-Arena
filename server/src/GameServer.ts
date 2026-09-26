@@ -915,15 +915,19 @@ export class GameServer {
           if (!this.tournamentManagersJudgedLost.has(manager)) {
             this.tournamentManagersJudgedLost.add(manager);
             if (!manager.stoodDownWithItsLeaseIntact()) {
-              const refuted = !!this.tournamentLeasesRefutedByDatabase?.has(manager);
               reportError(
                 new Error(
-                  refuted
+                  this.tournamentLeasesRefutedByDatabase?.has(manager)
                     ? `Tournament ${id} no longer proves its current lease generation: the database named another holder, a stale row or none`
                     : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
                 ),
                 'GameServer.tournament_lease_lost',
-                { tournamentId: id, verdict: refuted ? 'refuted' : 'unproven' }
+                {
+                  tournamentId: id,
+                  verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
+                    ? 'refuted'
+                    : 'unproven',
+                }
               );
               this.tournamentResumeDistress++;
             }
@@ -1202,23 +1206,27 @@ export class GameServer {
       if (this.tournamentEngines.get(tournamentId) !== manager) continue;
       if (!this.tournamentManagersJudgedLost.has(manager)) {
         this.tournamentManagersJudgedLost.add(manager);
+        /* "I COULD NOT TELL" IS NOT "I LOST IT" (2026-09-26, CLAUDE.md 10.86).
+           A manager is fenced either way - an unproven generation must not
+           deal - but the report says which. Only a database answer naming
+           another holder, a stale row or none is a refutation; a proof that
+           simply ran out while no answer arrived is `unproven`. On
+           2026-09-26 04:45:26 every one of 338 reports read "lost" while
+           every lease row still named this instance and generation. */
         if (!manager.stoodDownWithItsLeaseIntact()) {
-          /* "I COULD NOT TELL" IS NOT "I LOST IT" (2026-09-26, CLAUDE.md 10.86).
-             A manager is fenced either way - an unproven generation must not
-             deal - but the report says which. Only a database answer naming
-             another holder, a stale row or none is a refutation; a proof that
-             simply ran out while no answer arrived is `unproven`. On
-             2026-09-26 04:45:26 every one of 338 reports read "lost" while
-             every lease row still named this instance and generation. */
-          const refuted = !!this.tournamentLeasesRefutedByDatabase?.has(manager);
           reportError(
             new Error(
-              refuted
+              this.tournamentLeasesRefutedByDatabase?.has(manager)
                 ? `Tournament ${tournamentId} no longer proves its current lease generation: the database named another holder, a stale row or none`
                 : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
             ),
             'GameServer.tournament_lease_lost',
-            { tournamentId, verdict: refuted ? 'refuted' : 'unproven' }
+            {
+              tournamentId,
+              verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
+                ? 'refuted'
+                : 'unproven',
+            }
           );
           this.tournamentResumeDistress++;
         }

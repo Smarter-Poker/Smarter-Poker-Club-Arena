@@ -94,15 +94,23 @@ jobs:
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
           restore-keys: dist-media-v1-${{ runner.os }}-
 
-      # A throwaway validation bundle, exactly as the CSS Beat E2E job builds
-      # it (without that job's two test-harness routes, which this page does
-      # not use). Nothing here is published.
-      - name: Build this commit
+      # A throwaway bundle for the fixture page. Nothing here is published, so
+      # it runs build:ci's asset, bundle and fixture steps and deliberately not
+      # its provenance stamp: stamp-build-provenance.mjs accepts a PR validation
+      # identity only from ci.yml (GITHUB_WORKFLOW_REF), and a second workflow
+      # must not be able to mint one. Prerender, sitemap and the protected-
+      # features copy are publishing concerns the fixture page does not read.
+      - name: Build the fixture page
         env:
-          CA_BUILD_PURPOSE: ci-validation
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_ANON_KEY: footer-probe-ci
-        run: npm run build:ci
+        run: |
+          node scripts/generate-webp-media.mjs
+          node scripts/generate-customization-thumbnails.mjs
+          npx vite build
+          node scripts/build-diamond-test.mjs
+          node scripts/self-host-fonts.mjs
+          test -f dist/diamond-test.html
 
       - name: Serve the fixture page
         run: |

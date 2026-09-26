@@ -349,7 +349,57 @@ function parseDbInstantMs(value: unknown): number {
 export type PeriodReceiptVerdict =
   | { verdict: 'not_yet'; observation: string }
   | { verdict: 'confirmed'; written: number }
+  | { verdict: 'deferred'; requestId: string; reason: string }
   | { verdict: 'refused'; reason: string };
+
+const REQUEST_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A DURABLE DEFERRAL IS A DEFERRAL, HOWEVER LONG IT TOOK TO ARRIVE (2026-09-26).
+ *
+ * While the settler is catching up, every page-scoped recompute of the open
+ * week is refused with cash_source_receipts_incomplete - the hands after this
+ * page have no sources yet - and the function records that refusal on its
+ * request row (status 'blocked', last_result = the receipt) in the same
+ * transaction. A direct response carrying exactly that receipt has always been
+ * accepted as a durable deferral (readPeriodRecomputeReceipt + the request row
+ * read back): the page advances and the weekly close recomputes the whole
+ * period later. The read-back refused the same receipt when the response was
+ * lost, so a call slower than DB_TIMEOUT_MS could never advance the cursor.
+ *
+ * Measured on production 2026-09-26: the blocked path took 11.2 s idle and
+ * 18.9-28.4 s under the 04:30 load against a 15 s client deadline, and the
+ * cursor held at 2026-09-22 18:29:21 from 04:19 onward, every cycle logging
+ * "durable receipt not confirmed: request is blocked".
+ *
+ * Accepted only when the row is fresh (the caller has already checked
+ * attempted_at against this call), carries a request id, and its receipt is
+ * the canonical deferral for exactly this club and week: version 2, status
+ * blocked, nothing written, a named reason. Anything else is still refused.
+ */
+function durableDeferralReason(
+  r: Record<string, unknown>,
+  expected: { club_id: string; period_start: string; period_end: string }
+): string | null {
+  if (typeof r.id !== 'string' || !REQUEST_ID_SHAPE.test(r.id)) return null;
+  const receipt = r.last_result;
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) return null;
+  const x = receipt as Record<string, unknown>;
+  if (
+    x.accounting_version !== 2 ||
+    x.status !== 'blocked' ||
+    x.written !== 0 ||
+    x.club_id !== expected.club_id ||
+    x.period_start !== expected.period_start ||
+    x.period_end !== expected.period_end ||
+    (x.error !== undefined && x.error !== null) ||
+    (x.failed !== undefined && x.failed !== 0) ||
+    typeof x.reason !== 'string' ||
+    x.reason.length === 0
+  )
+    return null;
+  return x.reason;
+}
 
 /**
  * Judge one read of the durable request row against the call that started at
@@ -378,6 +428,16 @@ export function judgePeriodRecomputeReceipt(
       verdict: 'not_yet',
       observation: `latest attempt ${String(r.attempted_at)} predates this call`,
     };
+  if (r.status === 'blocked') {
+    const reason = durableDeferralReason(r, expected);
+    return reason
+      ? { verdict: 'deferred', requestId: String(r.id), reason }
+      : {
+          verdict: 'refused',
+          reason:
+            'request is blocked, and its receipt is not a canonical deferral for this club and week',
+        };
+  }
   if (r.status !== 'pending')
     return {
       verdict: 'refused',
@@ -746,7 +806,10 @@ export class RakebackSettlerService {
     expected: { club_id: string; period_start: string; period_end: string },
     submitted: number,
     callStartedAtMs: number
-  ): Promise<{ confirmed: true; written: number } | { confirmed: false; reason: string }> {
+  ): Promise<
+    | { confirmed: true; written: number; deferred?: { requestId: string; reason: string } }
+    | { confirmed: false; reason: string }
+  > {
     const deadline =
       callStartedAtMs + PERIOD_RECOMPUTE_SERVER_BUDGET_MS + PERIOD_RECEIPT_READBACK_SLACK_MS;
     let observation = 'no read completed';
@@ -756,7 +819,7 @@ export class RakebackSettlerService {
       try {
         const { data, error } = await supabase
           .from('accounting_period_recompute_requests')
-          .select('club_id,period_start,period_end,status,attempted_at,attempts,last_result')
+          .select('id,club_id,period_start,period_end,status,attempted_at,attempts,last_result')
           .eq('club_id', expected.club_id)
           .eq('period_start', expected.period_start)
           .eq('period_end', expected.period_end)
@@ -766,6 +829,12 @@ export class RakebackSettlerService {
         } else {
           const verdict = judgePeriodRecomputeReceipt(data, submitted, expected, callStartedAtMs);
           if (verdict.verdict === 'confirmed') return { confirmed: true, written: verdict.written };
+          if (verdict.verdict === 'deferred')
+            return {
+              confirmed: true,
+              written: 0,
+              deferred: { requestId: verdict.requestId, reason: verdict.reason },
+            };
           if (verdict.verdict === 'refused') return { confirmed: false, reason: verdict.reason };
           observation = verdict.observation;
         }
@@ -1763,7 +1832,16 @@ export class RakebackSettlerService {
               const readback = periodRecomputeOutcomeIsUnknown(error)
                 ? await this.readBackPeriodRecompute(g, userIds.length, callStartedAtMs)
                 : null;
-              if (readback?.confirmed) {
+              if (readback?.confirmed && readback.deferred) {
+                // The same durable deferral a direct response would have
+                // carried; the weekly close recomputes the whole period.
+                deferredPeriods++;
+                console.log(
+                  `[RakebackSettler] fn_rakeback_recompute_periods for ${g.club_id} ${g.period_start}: ` +
+                    `client saw "${message}" after ${Date.now() - callStartedAtMs}ms; this call's durable ` +
+                    `request ${readback.deferred.requestId} records a deferral (${readback.deferred.reason}) - accepted`
+                );
+              } else if (readback?.confirmed) {
                 upserts += readback.written;
                 console.log(
                   `[RakebackSettler] fn_rakeback_recompute_periods for ${g.club_id} ${g.period_start}: ` +

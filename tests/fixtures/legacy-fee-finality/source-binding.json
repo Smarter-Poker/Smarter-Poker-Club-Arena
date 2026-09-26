@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "b597bc7cf7de2376d2f914b4605c36583cdc2746c1ff08726453a5bbbeadee29",
+    "scripts/ci/classify-ci-changes.mjs": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -110,6 +110,13 @@
       "to": "b597bc7cf7de2376d2f914b4605c36583cdc2746c1ff08726453a5bbbeadee29",
       "on": "2026-09-26",
       "why": "Restamped 2026-09-26 (branch agent/fable-p7/mobile-spins-phase-7, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). The classifier's server lane now ignores exactly two browser-only Diamond screenshot/perf harnesses, scripts/dev/diamond-test-shots.mjs and scripts/dev/diamond-scene-perf.mjs, which nothing in accounting_postgres or the server shards invokes; every other scripts/dev/ path still admits the accounting job, and a harness changed beside any server-bound path still runs it (tests/unit/diamondGamesCiRouting.test.ts). No accounting component, SQL, fixture, limit or assertion changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "b597bc7cf7de2376d2f914b4605c36583cdc2746c1ff08726453a5bbbeadee29",
+      "to": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
+      "on": "2026-09-26",
+      "why": "Adds the paid-terminal qualifier and fixture directory to the existing Spin accounting selector; no lane is narrowed or removed. PR5350; no financial component, captured definition, limit or existing assertion changed."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."

@@ -103,10 +103,10 @@ describe('the two retired events are voided money-neutral', () => {
 
   it('never waits while it holds the settlement lane', () => {
     expect(DOOR.indexOf('fn_ca_lock_settlement_lane_global()')).toBeGreaterThan(0);
-    expect(SQL).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(SQL).toContain("SET LOCAL lock_timeout = '5s';");
     expect(SQL).toContain("SET LOCAL statement_timeout = '10s';");
     expect(SQL).toContain(
-      " SET statement_timeout TO '10s'\n SET lock_timeout TO '2s'\nAS $function$"
+      " SET statement_timeout TO '10s'\n SET lock_timeout TO '5s'\nAS $function$"
     );
     expect(SQL).not.toMatch(/break_window_migration_override/);
   });

@@ -42,7 +42,7 @@ nothing is destroyed.
   the transaction that holds the void's uncompleted claim. It is then
   restored byte for byte to the live body (`be484837`).
 - The void holds the settlement lane like every terminal authority, so the
-  migration carries `lock_timeout 2s` and `statement_timeout 10s`. A busy
+  migration carries `lock_timeout 5s` and `statement_timeout 10s`. A busy
   lane refuses cleanly and never stalls the fleet (the 09:33 collapse).
 
 ## Measured after apply

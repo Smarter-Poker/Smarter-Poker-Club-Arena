@@ -14,8 +14,8 @@
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
-    ".prettierignore": "9786a63914be31e342f7bd030c7e31648d02d9c06b53636db5cf083494e08fd3",
-    "tests/unit/fixtureNativeCi.test.ts": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
+    ".prettierignore": "e4c51f104e19181a85e69f8e2eacadac7ea3196392cae16cea3b79c1f9dbc7a4",
+    "tests/unit/fixtureNativeCi.test.ts": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -46,6 +46,20 @@
       "to": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
       "on": "2026-09-26",
       "why": "Restamped 2026-09-26 (branch agent/fable-p7/mobile-spins-phase-7, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). accounting_postgres now runs as four matrix shards, so each accounting suite step carries exactly one condition, `matrix.shard == N`; the step assertions that required no `if:` now require that condition and nothing else (ONLY_ITS_SHARD), the BBJ, isolation-tool and weekly evidence `if:` strings gained their shard, and the Diamond playfield invocation is pinned at --retries=1 with a JSON report read by the flaky-case summary. Every suite, its command, environment and evidence are unchanged. No accounting component, SQL, fixture, limit or assertion changed."
+    },
+    {
+      "file": ".prettierignore",
+      "from": "9786a63914be31e342f7bd030c7e31648d02d9c06b53636db5cf083494e08fd3",
+      "to": "e4c51f104e19181a85e69f8e2eacadac7ea3196392cae16cea3b79c1f9dbc7a4",
+      "on": "2026-09-26",
+      "why": "Adds only exact captured paid-terminal inputs and the qualification seal to formatting exclusions, preserving their lossless bytes. PR5350; no financial component, captured definition, limit or existing assertion changed."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
+      "to": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+      "on": "2026-09-26",
+      "why": "Adds the seven paid-terminal input paths to routing assertions and verifies captured rules against the actual engine Spin rule manifest; existing sharding and assertions are preserved. PR5350; no financial component, captured definition, limit or existing assertion changed."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."

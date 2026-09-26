@@ -115,6 +115,8 @@ function sceneParts() {
     textures,
     /** The unit sphere every sculpted part is scaled from. */
     ball: own(new THREE.SphereGeometry(1, 24, 16)),
+    /** A coarse unit sphere for the dots: cat's eyes and rooftop beacons, never more than a few pixels. */
+    pebble: own(new THREE.SphereGeometry(1, 8, 6)),
     material(color: number, metalness = 0.7, roughness = 0.24) {
       return kit.keep(
         new THREE.MeshPhysicalMaterial({
@@ -267,7 +269,10 @@ function asphaltTextures(kit: SceneParts, anisotropy: number) {
       // Two octaves of tiling noise: patches of older and newer surface.
       const mottle =
         tiledNoise(u, v, 5) * 0.55 + tiledNoise(u, v, 19) * 0.3 + tiledNoise(u, v, 61) * 0.15 - 0.5;
-      const wobble = 0.018 * Math.sin(v * Math.PI * 6 + u * 9);
+      // A barely-there wander in the tracks. It was 0.018 when the camera
+      // looked down at 37 degrees; at the horizon pose the far road is seen at
+      // a grazing angle, where a larger wander prints as ripples across it.
+      const wobble = 0.004 * Math.sin(v * Math.PI * 6 + u * 9);
       const track = Math.min(
         1,
         Math.exp(-(((u - 0.26 + wobble) / 0.075) ** 2)) +
@@ -302,9 +307,22 @@ function asphaltTextures(kit: SceneParts, anisotropy: number) {
   };
   return { map: tiled(color, true), roughnessMap: tiled(rough, false) };
 }
-/** The road runs this far either side of the donkey's line, and past both shoulders. */
-const ROAD_Z = { near: 14, far: -34 } as const;
+/**
+ * The road runs this far either side of the donkey's line, and past both
+ * shoulders. With the horizon in frame (2026-09-25) the asphalt runs into the
+ * haze: it ends 150 past the donkey's line, where the fog is already complete,
+ * at the foot of the city; the dark land carries the haze on from there. The
+ * dashes and the cat's eyes stop sooner, where they are already under a pixel
+ * wide; the lane traffic turns round at TRAFFIC_Z.far, where a car is a few
+ * pixels and a sixth hazed, and a car within five units of that end is scaled
+ * toward nothing so it recedes rather than pops.
+ */
+const ROAD_Z = { near: 14, far: -150 } as const;
 const ROAD_X = { left: -18, right: 60 } as const;
+const MARKINGS_FAR = -120;
+const EYES_FAR = -62;
+const TRAFFIC_Z = { near: 12, far: -40 } as const;
+const TRAFFIC_LAP = TRAFFIC_Z.near - TRAFFIC_Z.far;
 /** The x where each column of the road starts: the left pavement, sixteen streets, the right pavement. */
 /** The streets the scene builds: the starting shoulder and fifteen lanes. */
 const SIGN_SLOTS = 16;
@@ -381,10 +399,421 @@ function markingsGeometry(kit: SceneParts) {
     parts.push(flatStrip(x, ROAD_Z.far, ROAD_Z.near, 0.14, 0.012));
   for (let i = 1; i < SIGN_SLOTS - 1; i++) {
     const x = streetCenter(i) + STREET_WIDTH / 2;
-    for (let z = ROAD_Z.far + 1; z < ROAD_Z.near; z += 4)
+    for (let z = MARKINGS_FAR + 1; z < ROAD_Z.near; z += 4)
       parts.push(flatStrip(x, z, z + 1.8, 0.11, 0.012));
   }
   return mergedFlat(kit, parts);
+}
+
+/**
+ * THE HORIZON (2026-09-25). The camera looks 19.5 degrees down the road now,
+ * not 37 (CROSSING_CAMERA), and the top quarter of the frame is what lies past
+ * the far end of the highway: a sky, a city and the haze between. All of it is
+ * built once here and none of it moves. The fog is the one colour the sky
+ * wears at the horizon, so the road, the land and the sky meet in the same
+ * navy with no seam between them.
+ */
+const SKY = {
+  /** The haze at the horizon, which is also the fog colour: one value, or the ground would show a seam. */
+  haze: 0x0f2446,
+  /**
+   * Up from the horizon, in degrees: the royal glow fading through deep navy
+   * to obsidian. The camera sees about eight and a half degrees above the
+   * horizon, so the whole ramp is spent inside that band and the top edge of
+   * the frame is already night.
+   */
+  stops: [
+    [0, 0x0f2446],
+    [1.5, 0x0d2142],
+    [4, 0x0a1832],
+    [7, 0x07101f],
+    [10, 0x050911],
+    [90, 0x050607],
+  ],
+  radius: 420,
+  stars: 190,
+  /** The stars sit where the fixed camera can see them: this far round either side, and this band up. */
+  starAzimuth: 70,
+  starElevation: [2.2, 11] as const,
+} as const;
+/**
+ * The city: a near row of blocks and a far row of towers, both in the haze.
+ * The camera stands about five above the road, so a block's height above that
+ * is what rises over the horizon; the tallest tower tops out near five
+ * degrees, half way up the band of sky, so there is always night above it.
+ */
+const CITY = {
+  front: -140,
+  back: -186,
+  fromX: -240,
+  toX: 300,
+  /** Front row: lowest, and how much taller the tallest are. */
+  frontHeight: [7, 11] as const,
+  backHeight: [10, 14] as const,
+  /** The haze strip that stands in front of the city's foot. */
+  hazeZ: -134,
+  hazeHeight: 9,
+} as const;
+/** One repeat of the window texture covers this much building, across and up. */
+const WINDOW_SPAN = { across: 9.2, up: 17.6 } as const;
+/** The lamp posts: on the median beside every painted pool, a cobra head over the pool's street. */
+const POST = { z: -4.2, height: 5.6, arm: 1.5 } as const;
+/**
+ * The idle attract: the two lamps that flicker, and the beats of the donkey's
+ * ear flick and weight shift, in milliseconds at normal animation speed.
+ */
+const IDLE = {
+  flickering: [1, 4] as const,
+  earEvery: 3400,
+  earMs: 260,
+  shiftEvery: 5200,
+  shiftMs: 900,
+} as const;
+
+/**
+ * The sky: one dome, coloured at its vertices by elevation. Unfogged, drawn
+ * first, never culled. Its triangles are wound to face inward and its colours
+ * carry an alpha of one, so it is drawn by the very same program as the haze
+ * strip (a front-faced, vertex-coloured, unfogged basic material): one program
+ * fewer to compile when the scene mounts.
+ */
+function skyDome(kit: SceneParts) {
+  const geometry = kit.own(new THREE.SphereGeometry(SKY.radius, 36, 180));
+  const index = geometry.getIndex()!;
+  for (let i = 0; i < index.count; i += 3) {
+    const b = index.getX(i + 1);
+    index.setX(i + 1, index.getX(i + 2));
+    index.setX(i + 2, b);
+  }
+  const position = geometry.getAttribute('position');
+  const colors = new Float32Array(position.count * 4);
+  const stops = SKY.stops.map(([degrees, hex]) => ({ degrees, color: new THREE.Color(hex) }));
+  const tint = new THREE.Color();
+  for (let i = 0; i < position.count; i++) {
+    const elevation =
+      (Math.asin(Math.max(-1, Math.min(1, position.getY(i) / SKY.radius))) * 180) / Math.PI;
+    let k = 0;
+    while (k < stops.length - 2 && elevation > stops[k + 1].degrees) k++;
+    const a = stops[k],
+      b = stops[k + 1];
+    const t = clamp01((elevation - a.degrees) / (b.degrees - a.degrees));
+    tint.lerpColors(a.color, b.color, t * t * (3 - 2 * t));
+    colors.set([tint.r, tint.g, tint.b, 1], i * 4);
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+  const dome = new THREE.Mesh(
+    geometry,
+    kit.keep(
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        fog: false,
+        depthWrite: false,
+      })
+    )
+  );
+  dome.renderOrder = -2;
+  dome.frustumCulled = false;
+  return dome;
+}
+/**
+ * A sparse starfield on the inside of the dome: static points, only in the
+ * part of the sky the fixed camera can see, thinner low down where the haze
+ * is and none behind the glow at the horizon itself. Seeded, never random.
+ */
+function starfield(kit: SceneParts, disc: THREE.Texture) {
+  const n = SKY.stars,
+    r = SKY.radius * 0.96;
+  const position = new Float32Array(n * 3),
+    color = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const azimuth = ((hash2(i, 1) * 2 - 1) * SKY.starAzimuth * Math.PI) / 180;
+    const [low, high] = SKY.starElevation;
+    const elevation = ((low + (high - low) * Math.pow(hash2(i, 2), 0.6)) * Math.PI) / 180;
+    position.set(
+      [
+        r * Math.cos(elevation) * Math.sin(azimuth),
+        r * Math.sin(elevation),
+        -r * Math.cos(elevation) * Math.cos(azimuth),
+      ],
+      i * 3
+    );
+    const bright = 0.3 + 0.7 * Math.pow(hash2(i, 3), 2.4);
+    const warm = hash2(i, 4) < 0.3;
+    color.set([bright * (warm ? 1 : 0.85), bright * (warm ? 0.95 : 0.92), bright], i * 3);
+  }
+  const geometry = kit.own(new THREE.BufferGeometry());
+  geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  const stars = new THREE.Points(
+    geometry,
+    kit.keep(
+      new THREE.PointsMaterial({
+        size: 2.2,
+        sizeAttenuation: false,
+        map: disc,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      })
+    )
+  );
+  stars.renderOrder = -1;
+  stars.frustumCulled = false;
+  return stars;
+}
+/**
+ * THE WINDOWS, GENERATED ONCE, AND THE WALLS BETWEEN THEM: eight columns and sixteen floors per repeat,
+ * most dark, some warm white at their own brightness, a few royal blue. Pure
+ * arithmetic on the seeded hash, no canvas, so it is the same city on every
+ * mount and under every test double. Mipmapped, because at the city's
+ * distance a window is a pixel or less and should average, not shimmer.
+ */
+function windowsTexture(kit: SceneParts) {
+  const size = 256,
+    cols = 8,
+    rows = 16;
+  const cw = size / cols,
+    ch = size / rows;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const col = Math.floor(x / cw),
+        row = Math.floor(y / ch);
+      const px = x - col * cw,
+        py = y - row * ch;
+      const pane = px >= 10 && px < 22 && py >= 5 && py < 11;
+      const r = hash2(col + 3, row + 5);
+      const i = (y * size + x) * 4;
+      // The wall between the windows is the building's own night colour: the
+      // city is drawn unlit, so this texture is all of its colour.
+      let red = 12,
+        green = 16,
+        blue = 24;
+      if (pane && r < 0.15) {
+        const b = 0.4 + 0.6 * hash2(col + 17, row + 29);
+        red = 255 * b;
+        green = 226 * b;
+        blue = 184 * b;
+      } else if (pane && r < 0.19) {
+        red = 62;
+        green = 156;
+        blue = 230;
+      }
+      data[i] = red;
+      data[i + 1] = green;
+      data[i + 2] = blue;
+      data[i + 3] = 255;
+    }
+  const texture = new THREE.DataTexture(data, size, size);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return kit.texture(texture);
+}
+/**
+ * THE CITY, ONE MESH. About a hundred dark blocks in two rows along the far
+ * side of the highway, each its own width, depth and height, merged into one
+ * geometry with its window texture scaled per building so a window is always
+ * the same size and offset per building so no two light the same panes. The
+ * tallest carry a beacon: one instanced draw of red and blue dots. The fog
+ * is complete well before the city (the road has to vanish into it), so the
+ * city takes no fog of its own: it stands as a dark silhouette against the
+ * glow at the horizon, and one gradient strip of the haze colour in front of
+ * its foot (hazeStrip) sinks both rows into the haze. Everything here is
+ * behind the end of the traffic, so it never stands in front of the road or
+ * a sign.
+ */
+function skyline(kit: SceneParts, windows: THREE.Texture) {
+  const parts: THREE.BufferGeometry[] = [];
+  const tops: [number, number, number][] = [];
+  let id = 0;
+  for (const row of [0, 1]) {
+    let x = CITY.fromX - 40 * row;
+    while (x < CITY.toX + 40 * row) {
+      const w = 5 + 9 * hash2(id, 11),
+        d = 6 + 8 * hash2(id, 12);
+      const tall = Math.pow(hash2(id, 13), 1.7);
+      const [lowest, taller] = row ? CITY.backHeight : CITY.frontHeight;
+      const h = lowest + taller * tall;
+      const z = (row ? CITY.back : CITY.front) - hash2(id, 14) * 8;
+      const block = new THREE.BoxGeometry(w, h, d);
+      block.translate(x + w / 2, h / 2, z);
+      // Faces come px, nx, py, ny, pz, nz, four corners each; the x faces span
+      // the depth and the z faces the width. The top and bottom are never seen.
+      const uv = block.getAttribute('uv') as THREE.BufferAttribute;
+      const ox = Math.floor(hash2(id, 15) * 8) / 8,
+        oy = Math.floor(hash2(id, 16) * 16) / 16;
+      for (let v = 0; v < uv.count; v++) {
+        const face = Math.floor(v / 4);
+        const across = face < 2 ? d : w;
+        uv.setXY(
+          v,
+          ox + (uv.getX(v) * across) / WINDOW_SPAN.across,
+          oy + (uv.getY(v) * h) / WINDOW_SPAN.up
+        );
+      }
+      // Unlit, so the shading is painted on: the faces turned across the view
+      // a little darker than the ones facing it, the far row a little hazier.
+      const shade = new Float32Array(uv.count * 3);
+      for (let v = 0; v < uv.count; v++) {
+        const k = (Math.floor(v / 4) < 2 ? 0.6 : 1) * (row ? 0.85 : 1);
+        shade.set([k, k, k], v * 3);
+      }
+      block.setAttribute('color', new THREE.BufferAttribute(shade, 3));
+      parts.push(block);
+      if (h > lowest + taller * 0.55 && hash2(id, 17) < 0.7) tops.push([x + w / 2, h + 0.3, z]);
+      x += w + 1.5 + 8 * hash2(id, 18);
+      id++;
+    }
+  }
+  const city = new THREE.Mesh(
+    mergedFlat(kit, parts),
+    kit.keep(
+      // Unlit and unfogged: a basic program is a fraction of a lit one to
+      // compile, and no light in this scene reaches the city anyway.
+      new THREE.MeshBasicMaterial({
+        map: windows,
+        vertexColors: true,
+        fog: false,
+      })
+    )
+  );
+  // A little over one, so a lit window still reads bright through the tone
+  // mapping; the walls stay near black.
+  (city.material as THREE.MeshBasicMaterial).color.setScalar(1.4);
+  city.frustumCulled = false;
+  const beacons = new THREE.InstancedMesh(
+    kit.pebble,
+    kit.keep(new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false })),
+    Math.max(1, tops.length)
+  );
+  const at = new THREE.Matrix4(),
+    tint = new THREE.Color();
+  tops.forEach(([x, y, z], i) => {
+    at.makeScale(0.5, 0.5, 0.5);
+    at.setPosition(x, y, z);
+    beacons.setMatrixAt(i, at);
+    beacons.setColorAt(i, tint.setHex(i % 3 ? 0xff5b6e : 0x45adff));
+  });
+  if (!tops.length) beacons.setMatrixAt(0, at.makeScale(0, 0, 0));
+  beacons.instanceMatrix.needsUpdate = true;
+  beacons.frustumCulled = false;
+  return { city, beacons, haze: hazeStrip(kit) };
+}
+/**
+ * THE HAZE AT THE CITY'S FOOT: one wide quad standing across the view just in
+ * front of the city, the fog colour at the ground fading to nothing a few
+ * storeys up, so the blocks rise out of the same navy the road runs into.
+ * Vertex colour with alpha, unlit, unfogged, drawn after the city.
+ */
+function hazeStrip(kit: SceneParts) {
+  const width = CITY.toX - CITY.fromX + 200;
+  const geometry = kit.own(
+    new THREE.PlaneGeometry(width, CITY.hazeHeight, 1, 4).translate(
+      (CITY.toX + CITY.fromX) / 2,
+      CITY.hazeHeight / 2 - 0.5,
+      CITY.hazeZ
+    )
+  );
+  const position = geometry.getAttribute('position');
+  const colors = new Float32Array(position.count * 4);
+  const haze = new THREE.Color(SKY.haze);
+  for (let i = 0; i < position.count; i++) {
+    const up = clamp01((position.getY(i) + 0.5) / CITY.hazeHeight);
+    colors.set([haze.r, haze.g, haze.b, 0.92 * (1 - up) ** 1.6], i * 4);
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+  const strip = new THREE.Mesh(
+    geometry,
+    kit.keep(
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        depthWrite: false,
+        fog: false,
+      })
+    )
+  );
+  strip.frustumCulled = false;
+  return strip;
+}
+/**
+ * THE LAMP POSTS, THREE DRAWS. A post on the median beside every painted
+ * pool, its arm reaching over the pool's street: one instanced draw for the
+ * poles and arms (lit steel), one for the heads (a flat warm light that fog
+ * dims but no lamp shades), and one for the glow at each head, an additive
+ * disc tilted to face the camera's fixed pitch. Geometry and emissive only:
+ * the real SpotLight budget (three lights, one caster) is untouched. The
+ * heads and glows carry an instance colour each, which is how one lamp
+ * flickers on its own in the idle attract.
+ */
+function lampPosts(kit: SceneParts, disc: THREE.Texture) {
+  const streets = Array.from({ length: Math.floor((SIGN_SLOTS - 1) / 2) }, (_, i) => 2 + i * 2);
+  const pole = new THREE.CylinderGeometry(0.07, 0.1, POST.height, 8).translate(
+    0,
+    POST.height / 2,
+    0
+  );
+  const arm = new THREE.BoxGeometry(POST.arm, 0.1, 0.1).translate(
+    -POST.arm / 2 + 0.05,
+    POST.height - 0.05,
+    0
+  );
+  const poles = new THREE.InstancedMesh(
+    mergedFlat(kit, [pole, arm]),
+    kit.keep(new THREE.MeshStandardMaterial({ color: 0x9aa5b3, metalness: 0.8, roughness: 0.34 })),
+    streets.length
+  );
+  const heads = new THREE.InstancedMesh(
+    kit.own(new THREE.BoxGeometry(0.62, 0.14, 0.3)),
+    kit.keep(new THREE.MeshBasicMaterial({ color: 0xffe9c8 })),
+    streets.length
+  );
+  const glows = new THREE.InstancedMesh(
+    kit.own(new THREE.PlaneGeometry(1, 1).rotateX((-CROSSING_CAMERA.pitch * Math.PI) / 180)),
+    kit.keep(
+      new THREE.MeshBasicMaterial({
+        map: disc,
+        color: 0xffd7a3,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        // Nearer than the fog starts; unfogged, the glows share the painted
+        // pools' program.
+        fog: false,
+      })
+    ),
+    streets.length
+  );
+  const at = new THREE.Matrix4(),
+    white = new THREE.Color(0xffffff);
+  streets.forEach((street, i) => {
+    const x = streetCenter(street) + STREET_WIDTH / 2;
+    at.makeTranslation(x, 0, POST.z);
+    poles.setMatrixAt(i, at);
+    at.makeTranslation(x - POST.arm + 0.2, POST.height - 0.12, POST.z);
+    heads.setMatrixAt(i, at);
+    at.makeScale(3.4, 3.4, 1);
+    at.setPosition(x - POST.arm + 0.2, POST.height - 0.2, POST.z + 0.25);
+    glows.setMatrixAt(i, at);
+    heads.setColorAt(i, white);
+    glows.setColorAt(i, white);
+  });
+  for (const mesh of [poles, heads, glows]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.frustumCulled = false;
+  }
+  // The poles take the key light's shadow like the cars do, which also lets
+  // them share the program the cars' plain standard parts already compile.
+  poles.receiveShadow = true;
+  return { poles, heads, glows };
 }
 /** A flat quad in a car's own space, coloured at its vertices. */
 function glowQuad(x: number, z: number, w: number, d: number, hex: number, y = 0.02) {
@@ -529,13 +958,21 @@ function donkey(kit: SceneParts) {
   sphere(kit, animal, coat, 0.49, 1.27, 0, 0.25, 0.51, 0.26).rotation.z = -0.35;
   sphere(kit, animal, coat, 0.68, 1.66, 0, 0.35, 0.3, 0.28);
   sphere(kit, animal, pale, 0.96, 1.52, 0, 0.28, 0.21, 0.255);
+  // The ears are groups like the legs, pivoted at their base, so the idle
+  // attract can flick one; the parts inside each are merged as the body's are.
+  const ears: THREE.Group[] = [];
   for (const z of [-0.215, 0.215]) {
     sphere(kit, animal, eye, 0.83, 1.74, z, 0.064, 0.076, 0.034);
     sphere(kit, animal, pale, 0.84, 1.77, z * 1.1, 0.018, 0.019, 0.014);
     sphere(kit, animal, dark, 1.16, 1.55, z * 0.75, 0.035, 0.023, 0.03);
-    const ear = sphere(kit, animal, coat, 0.53, 2.05, z * 0.65, 0.095, 0.4, 0.105);
-    ear.rotation.z = 0.13;
-    sphere(kit, animal, pale, 0.56, 2.09, z * 0.65, 0.045, 0.26, 0.108).rotation.z = 0.13;
+    const ear = new THREE.Group();
+    ear.position.set(0.53, 1.68, z * 0.65);
+    ear.name = `ear-${ears.length}`;
+    sphere(kit, ear, coat, 0, 0.37, 0, 0.095, 0.4, 0.105).rotation.z = 0.13;
+    sphere(kit, ear, pale, 0.03, 0.41, 0, 0.045, 0.26, 0.108).rotation.z = 0.13;
+    mergeParts(kit, ear);
+    animal.add(ear);
+    ears.push(ear);
   }
   for (let i = 0; i < 7; i++)
     sphere(kit, animal, dark, 0.3 + i * 0.045, 1.33 + i * 0.078, 0, 0.07, 0.095, 0.14);
@@ -548,7 +985,7 @@ function donkey(kit: SceneParts) {
   animal.traverse((obj) => {
     if (obj instanceof THREE.Mesh) obj.castShadow = true;
   });
-  return { animal, legs };
+  return { animal, legs, ears };
 }
 
 export default function ChoiceScene(props: Props) {
@@ -610,8 +1047,8 @@ const laneCar = (street: number, n: number) => (street - 1) * 2 + n;
  * threat rather than its paint. Gold on this road belongs to the prizes.
  */
 const IMPACT_PAINT = 0x0f1114;
-/** The sky, the haze and the ground bounce: one obsidian, and the blue rim
- *  light is the only coloured light on the road. */
+/** The clear colour under the sky dome: one obsidian, and the blue rim light
+ *  is the only coloured light on the road. The haze itself is SKY.haze. */
 const NIGHT = 0x05070a;
 /** The impact glint, in milliseconds, against the 525 ms fall it is timed on. */
 const GLINT = 120 / 525;
@@ -769,9 +1206,14 @@ function CrossingScene(props: Props) {
     const kit = sceneParts();
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(NIGHT);
-    const fog = new THREE.Fog(NIGHT, 22, 65);
+    // The fog is the sky's own colour at the horizon (SKY.haze), so the far
+    // road, the land and the dome meet in one navy with no seam.
+    const fog = new THREE.Fog(SKY.haze, 22, 65);
     scene.fog = fog;
-    const camera = new THREE.PerspectiveCamera(CROSSING_CAMERA.fov, 1, 0.1, 100);
+    // Nothing is within half a unit of a camera that stands 4.5 above the
+    // road; a near plane there keeps the depth buffer fine enough for the
+    // paint and the signs on asphalt that now runs 300 deep.
+    const camera = new THREE.PerspectiveCamera(CROSSING_CAMERA.fov, 1, 0.5, 100);
     const pmrem = new THREE.PMREMGenerator(renderer),
       room = new RoomEnvironment(),
       environment = pmrem.fromScene(room, 0.04);
@@ -809,6 +1251,20 @@ function CrossingScene(props: Props) {
     scene.add(lamp, lamp.target);
     const anisotropy = renderer.capabilities?.getMaxAnisotropy?.() ?? 1;
     const disc = softDisc(kit);
+    // Past the end of the highway: the sky, its stars, the dark land the road
+    // runs through, the city in the haze and, nearer, the lamp posts. Built
+    // once; nothing here is touched again except two lamps in the idle attract.
+    scene.add(skyDome(kit), starfield(kit, disc));
+    const land = new THREE.Mesh(
+      kit.own(new THREE.PlaneGeometry(1200, 620).rotateX(-Math.PI / 2).translate(30, -0.04, -280)),
+      kit.keep(new THREE.MeshBasicMaterial({ color: 0x04070c }))
+    );
+    land.frustumCulled = false;
+    scene.add(land);
+    const distant = skyline(kit, windowsTexture(kit));
+    scene.add(distant.city, distant.beacons, distant.haze);
+    const posts = lampPosts(kit, disc);
+    scene.add(posts.poles, posts.heads, posts.glows);
     const asphaltMaps = asphaltTextures(kit, Math.min(8, anisotropy));
     // Wet charcoal: a high roughness that the worn tracks lower, under a light
     // clearcoat, so lamps and headlights lie on the road as soft streaks.
@@ -884,9 +1340,9 @@ function CrossingScene(props: Props) {
         gold: false,
       })),
     ];
-    const eyeRows = Math.floor((ROAD_Z.near - ROAD_Z.far) / 4);
+    const eyeRows = Math.floor((ROAD_Z.near - EYES_FAR) / 4);
     const eyes = new THREE.InstancedMesh(
-      kit.ball,
+      kit.pebble,
       kit.keep(new THREE.MeshBasicMaterial({ color: 0xffffff })),
       eyeLines.length * eyeRows
     );
@@ -896,7 +1352,7 @@ function CrossingScene(props: Props) {
     for (const line of eyeLines)
       for (let r = 0; r < eyeRows; r++) {
         eyeAt.makeScale(0.07, 0.03, 0.1);
-        eyeAt.setPosition(line.x, 0.02, ROAD_Z.far + 3 + r * 4);
+        eyeAt.setPosition(line.x, 0.02, EYES_FAR + 3 + r * 4);
         eyes.setMatrixAt(eye, eyeAt);
         eyes.setColorAt(eye++, eyeTint.setHex(line.gold ? 0xffd700 : 0x9fdcff));
       }
@@ -924,6 +1380,9 @@ function CrossingScene(props: Props) {
       eyeAt.makeScale(7, 1, 11);
       eyeAt.setPosition(streetCenter(2 + i * 2), 0.018, -1.2);
       pools.setMatrixAt(i, eyeAt);
+      // A plain white instance colour: it changes nothing on screen, and it
+      // lets the pools share one program with the lamp glows above them.
+      pools.setColorAt(i, eyeTint.setHex(0xffffff));
     }
     pools.instanceMatrix.needsUpdate = true;
     pools.frustumCulled = false;
@@ -1455,6 +1914,9 @@ function CrossingScene(props: Props) {
     };
     /** The street the ghost of a booked win has reached, or -1 with no ghost on the road. */
     let ghostAt = -1;
+    /** The level each flickering lamp was last set to, so an unchanged lamp costs nothing. */
+    const lampLevel = IDLE.flickering.map(() => 1);
+    const lampTint = new THREE.Color();
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       const reduced = reducedRef.current;
@@ -1546,6 +2008,44 @@ function CrossingScene(props: Props) {
       animal.legs.forEach((leg, i) => {
         leg.rotation.z = walk < 1 ? Math.sin(walk * Math.PI * 4 + (i % 2) * Math.PI) * 0.5 : 0;
       });
+      /**
+       * THE IDLE ATTRACT. Before the first street the traffic already flows;
+       * the donkey flicks an ear every few seconds and shifts its weight
+       * between times, and two of the lamps flicker, very slightly, now and
+       * then. Every beat is measured against the animation speed, and none of
+       * it happens under reduced motion (the scene then draws only on change).
+       * Nothing is allocated: two rotations, one position, and an instance
+       * colour rewritten only when a lamp's level actually changes.
+       */
+      const attract = seen.phase === 'idle' && p.phase === 'idle' && !reduced;
+      const beat = attract ? now / speed : 0;
+      const flick = (beat % IDLE.earEvery) / IDLE.earMs;
+      const flicking = Math.floor(beat / IDLE.earEvery) % 2;
+      animal.ears.forEach((ear, i) => {
+        ear.rotation.x =
+          attract && i === flicking && flick < 1
+            ? Math.sin(flick * Math.PI) * 0.6 * (i ? 1 : -1)
+            : 0;
+      });
+      const shift = ((beat + 1900) % IDLE.shiftEvery) / IDLE.shiftMs;
+      if (attract && shift < 1) {
+        const settle = Math.sin(shift * Math.PI);
+        animal.animal.rotation.x = 0.06 * settle;
+        animal.animal.position.x += 0.04 * settle;
+        animal.animal.position.y -= 0.012 * settle;
+      }
+      for (let k = 0; k < IDLE.flickering.length; k++) {
+        const lampIndex = IDLE.flickering[k];
+        const episode = attract && hash2(lampIndex * 13 + 1, Math.floor(beat / 3000)) < 0.45;
+        const level = episode ? 0.74 + 0.26 * hash2(lampIndex, Math.floor(beat / 55)) : 1;
+        if (level === lampLevel[k]) continue;
+        lampLevel[k] = level;
+        lampTint.setScalar(level);
+        posts.heads.setColorAt(lampIndex, lampTint);
+        posts.glows.setColorAt(lampIndex, lampTint);
+        if (posts.heads.instanceColor) posts.heads.instanceColor.needsUpdate = true;
+        if (posts.glows.instanceColor) posts.glows.instanceColor.needsUpdate = true;
+      }
       // The ghost walks the rest of the route once the win is shown as booked,
       // and the streets light gold behind it as it reaches them.
       const roadEnd = p.roadEnd ?? null;
@@ -1604,20 +2104,25 @@ function CrossingScene(props: Props) {
           ) &&
           !(walk < 1 && i === step - 1) &&
           i !== crashStreet;
-        // Traffic runs faster and thicker the further down the road it is.
-        const period = 530 - 210 * hazard;
+        // Traffic runs faster and thicker the further down the road it is. The
+        // lap is the visible road, TRAFFIC_Z.far to near; a car within five
+        // units of the far end is scaled toward nothing, so it recedes into the
+        // haze rather than popping in or out of it.
+        const period = 330 - 130 * hazard;
         carTurn.setFromAxisAngle(up, i % 2 ? 0 : Math.PI);
         for (let n = 0; n < 2; n++) {
           const shown = open && (n === 0 || hazardBand(hazard) >= 2);
           if (shown) {
-            carPos.set(
-              streetCenter(i),
-              0,
-              reduced
-                ? 7 - n * 6
-                : (((((now / period) * (i % 2 ? 1 : -1) + i * 3.13 + n * 11) % 22) + 22) % 22) - 11
-            );
-            carAt.compose(carPos, carTurn, carScale.set(1, 1, 1));
+            const z = reduced
+              ? -3 - n * 12
+              : (((((now / period) * (i % 2 ? 1 : -1) + i * 3.13 + n * (TRAFFIC_LAP / 2)) %
+                  TRAFFIC_LAP) +
+                  TRAFFIC_LAP) %
+                  TRAFFIC_LAP) +
+                TRAFFIC_Z.far;
+            const near = Math.min(1, (z - TRAFFIC_Z.far) / 5);
+            carPos.set(streetCenter(i), 0, z);
+            carAt.compose(carPos, carTurn, carScale.set(near, near, near));
           }
           traffic[0].setMatrixAt(laneCar(i, n), shown ? carAt : hidden);
         }

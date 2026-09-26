@@ -239,7 +239,9 @@ class LegacyHorseJournalStore {
     } catch (e) {
       try {
         this.db.exec('ROLLBACK');
-      } catch {}
+      } catch {
+        /* a failed read transaction has nothing left to roll back */
+      }
       throw e;
     }
   }
@@ -262,13 +264,26 @@ const CATALOG_PAGES = HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES / CATALOG_PAGE_BYTES;
 const CATALOG_PAGES_PER_RECORD = 4;
 const CATALOG_MARGIN_PAGES = 64;
 const CATALOG_OVERFLOW_BYTES = CATALOG_PAGE_BYTES - 4;
+/** THE ARCHIVE IS A RING (2026-09-26). Published segments the ring may retire
+ * inside one append. Retirement runs in the reservation transaction, so it is
+ * bounded to keep an append well inside the publisher's five-second progress
+ * fence; an archive further over its allocation than this converges over the
+ * following appends. Steady state retires one or two segments per batch. */
+const RING_RETIRE_LIMIT = 1024;
+/** Files whose catalog rows are gone are unlinked after that commit, at most
+ * this many per pass. A death between the two leaves their names in
+ * archive_retired, finished at the next open or append, never by a timer. */
+const RING_UNLINK_LIMIT = 4096;
+type RingRefusal = 'archive_bytes' | 'archive_segments' | 'archive_catalog_capacity';
 const SHA = /^[0-9a-f]{64}$/;
 const digest = (bytes: Uint8Array | string): string =>
   createHash('sha256').update(bytes).digest('hex');
 const rollback = (db: Database): void => {
   try {
     db.exec('ROLLBACK');
-  } catch {}
+  } catch {
+    /* no open transaction, or SQLite rolled it back itself */
+  }
 };
 function privatePath(path: string, directory = false): Stats {
   const s = lstatSync(path);
@@ -396,6 +411,8 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
   private legacyStamp: string | undefined;
   private catalogPath: string | undefined;
   private appliedCatalogPages: number | undefined;
+  /** One log line per writer lifetime, the first time the ring retires. */
+  private ringAnnounced = false;
   constructor(
     directory: string,
     limits: {
@@ -493,7 +510,11 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           CREATE INDEX IF NOT EXISTS archive_hand ON archive_events(hand_key,producer_id,sequence);
           CREATE TABLE IF NOT EXISTS archive_pending(id INTEGER PRIMARY KEY CHECK(id IN(1,2)), sha TEXT NOT NULL,
             compressed_sha TEXT NOT NULL, bytes INTEGER NOT NULL, decoded_bytes INTEGER NOT NULL,
-            records INTEGER NOT NULL, compressed BLOB NOT NULL) STRICT;`);
+            records INTEGER NOT NULL, compressed BLOB NOT NULL) STRICT;
+          CREATE TABLE IF NOT EXISTS archive_retired(sha TEXT PRIMARY KEY, bytes INTEGER NOT NULL) STRICT;
+          CREATE TABLE IF NOT EXISTS archive_ring(id INTEGER PRIMARY KEY CHECK(id=1), retired_segments INTEGER NOT NULL,
+            retired_records INTEGER NOT NULL, retired_bytes INTEGER NOT NULL, last_retired_at_ms INTEGER NOT NULL) STRICT;
+          INSERT OR IGNORE INTO archive_ring VALUES(1,0,0,0,0);`);
         db.prepare('INSERT OR IGNORE INTO archive_meta VALUES(1,?,0,0,0,?,?)').run(
           identity.sha256,
           archive.maxBytes,
@@ -516,7 +537,10 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         identity.sha256
       )
         throw Error('Horse archive legacy identity changed');
-      if (!this.archiveReadOnly) this.finishPending();
+      if (!this.archiveReadOnly) {
+        this.finishRetired();
+        this.finishPending();
+      }
     } catch (e) {
       if (this.catalog) {
         rollback(this.catalog);
@@ -685,6 +709,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     const captured = records.map((r) => JSON.parse(horseJournalJson(r)) as HorseJournalRecord);
     if (captured.reduce((n, r) => n + Buffer.byteLength(horseJournalJson(r)), 0) > DECODE_BYTES)
       throw Error('Horse journal batch exceeds bounds');
+    this.finishRetired();
     this.finishPending();
     const db = this.catalog!;
     db.exec('BEGIN IMMEDIATE');
@@ -751,10 +776,26 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       )
         throw Error('Horse archive writer allocation changed');
       const bytes = segments.reduce((n, s) => n + s.bytes, 0);
-      const quota = this.archiveQuotaRefusal(usage, bytes, segments.length, fresh.length);
-      if (quota === 'archive_bytes') throw Error('horse_archive_byte_capacity');
-      if (quota === 'archive_segments') throw Error('horse_archive_segment_capacity');
-      if (fresh.length) this.assertCatalogCapacity(fresh.length, segments);
+      // The ring makes room here, inside the reservation transaction, before
+      // anything is written: the oldest published segments are retired until
+      // this batch fits every named quota. Only when nothing published is left
+      // to retire does a quota still refuse, by name, and the publisher pauses.
+      const quota = this.makeRoom(bytes, segments, fresh.length);
+      if (quota) {
+        // Whatever the ring retired stays retired: the refusal is this batch's
+        // only. A rolled-back retirement would repeat, unchanged, at every
+        // probe of a catalog ceiling, which frees pages only as whole leaves
+        // empty; committed, each attempt brings that room nearer.
+        db.exec('COMMIT');
+        this.finishRetired();
+        throw Error(
+          quota === 'archive_bytes'
+            ? 'horse_archive_byte_capacity'
+            : quota === 'archive_segments'
+              ? 'horse_archive_segment_capacity'
+              : 'horse_archive_catalog_capacity'
+        );
+      }
       segments.forEach((s, i) =>
         db
           .prepare('INSERT INTO archive_pending VALUES(?,?,?,?,?,?,?)')
@@ -777,16 +818,151 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       rollback(db);
       throw e;
     }
+    this.finishRetired();
     this.finishPending();
     return outcomes;
   }
-  /** Refuse, by name, a batch the catalog cannot index, while the reservation
-   * transaction holds the write lock and has written nothing. Page counts are
-   * read here rather than remembered: a test or an operator connection can
-   * lower the ceiling, and the freelist changes with every completed batch.
-   * An unlimited connection (max_page_count 0) never refuses on this ground. */
-  private assertCatalogCapacity(records: number, segments: readonly Segment[]): void {
-    if (!this.catalogHasRoom(records, segments)) throw Error('horse_archive_catalog_capacity');
+  /** The ring. Runs inside the reservation transaction with nothing written
+   * yet. While a named archive quota (bytes, segments and records, or catalog
+   * pages) would refuse this batch, the oldest PUBLISHED segment is retired,
+   * oldest first, until the batch fits. Only rows of archive_segments are
+   * candidates: a reserved batch in archive_pending has not been published and
+   * is never touched, so when nothing published remains the same named refusal
+   * comes back and the publisher pauses on it. A batch that could not fit an
+   * empty archive is refused before anything is retired. The filesystem's free
+   * space is not a ring quota: the archive retires within its own allocation,
+   * never to make room for whatever else filled the disk. Page counts are read
+   * on every pass rather than remembered: an operator connection can lower the
+   * catalog ceiling, and the freelist changes with every retirement. */
+  private makeRoom(bytes: number, segments: readonly Segment[], fresh: number): RingRefusal | null {
+    if (!fresh) return null;
+    const db = this.catalog!;
+    const empty = this.archiveQuotaRefusal(
+      { bytes: 0, segments: 0, records: 0 },
+      bytes,
+      segments.length,
+      fresh
+    );
+    if (empty) return empty;
+    for (let retired = 0; ; retired++) {
+      const usage = db.prepare('SELECT * FROM archive_meta WHERE id=1').get()!;
+      const refusal: RingRefusal | null =
+        this.archiveQuotaRefusal(usage, bytes, segments.length, fresh) ??
+        (this.catalogHasRoom(fresh, segments) ? null : 'archive_catalog_capacity');
+      if (!refusal || retired >= RING_RETIRE_LIMIT) return refusal;
+      const oldest = db
+        .prepare(
+          'SELECT sha,compressed_sha,bytes,decoded_bytes,records FROM archive_segments ORDER BY rowid LIMIT 1'
+        )
+        .get();
+      if (!oldest) return refusal;
+      this.retireSegment(oldest);
+    }
+  }
+  /** Retire one published segment inside the caller's transaction: its index
+   * rows, its catalog row and its usage leave together, and its file name is
+   * kept in archive_retired so the unlink after COMMIT is finished by the next
+   * open or append if this process dies in between. The rows of the oldest
+   * segment are the lowest rowids in archive_events, because each batch is
+   * indexed in one transaction in ordinal order; that is checked by count
+   * before the delete (there is no index on segment_sha, and building one on
+   * a four-million-row catalog at open would outlast the writer's start
+   * fence). A segment indexed any other way is deleted by event identity from
+   * its own published file instead, and a mismatch on either path is the same
+   * index corruption every reader refuses. */
+  private retireSegment(row: Record<string, SQLOutputValue>): void {
+    const db = this.catalog!;
+    const sha = String(row.sha),
+      records = Number(row.records),
+      bytes = Number(row.bytes);
+    if (
+      !SHA.test(sha) ||
+      !Number.isSafeInteger(records) ||
+      records < 1 ||
+      records > 16 ||
+      !Number.isSafeInteger(bytes) ||
+      bytes < 1
+    )
+      throw Error('Horse archive segment corruption');
+    const first = Number(db.prepare('SELECT min(rowid) AS n FROM archive_events').get()!.n);
+    const contiguous =
+      Number.isSafeInteger(first) &&
+      Number(
+        db
+          .prepare(
+            'SELECT count(*) AS n FROM archive_events WHERE rowid>=? AND rowid<? AND segment_sha=?'
+          )
+          .get(first, first + records, sha)!.n
+      ) === records;
+    let deleted = 0;
+    if (contiguous)
+      deleted = Number(
+        db
+          .prepare('DELETE FROM archive_events WHERE rowid>=? AND rowid<? AND segment_sha=?')
+          .run(first, first + records, sha).changes
+      );
+    else
+      for (const record of this.readSegment(row).records)
+        deleted += Number(
+          db
+            .prepare('DELETE FROM archive_events WHERE event_id=? AND segment_sha=?')
+            .run(record.eventId, sha).changes
+        );
+    if (deleted !== records) throw Error('Horse archive index corruption');
+    db.prepare('DELETE FROM archive_segments WHERE sha=?').run(sha);
+    db.prepare('INSERT OR REPLACE INTO archive_retired VALUES(?,?)').run(sha, bytes);
+    db.prepare(
+      'UPDATE archive_meta SET bytes=bytes-?,segments=segments-1,records=records-? WHERE id=1'
+    ).run(bytes, records);
+    db.prepare(
+      'UPDATE archive_ring SET retired_segments=retired_segments+1,retired_records=retired_records+?,retired_bytes=retired_bytes+?,last_retired_at_ms=? WHERE id=1'
+    ).run(records, bytes, Date.now());
+    if (!this.ringAnnounced) {
+      this.ringAnnounced = true;
+      // Counts only; no paths, digests or record bodies.
+      console.warn(
+        '[HorseDecisionJournal] archive ring retired its oldest published segment so capture keeps running'
+      );
+    }
+  }
+  /** Unlink the files of segments whose catalog rows were retired by a
+   * committed transaction, then forget their names. Runs at open and on every
+   * append, bounded; a missing file is already gone and is not an error. */
+  private finishRetired(): void {
+    const db = this.catalog!;
+    const rows = db
+      .prepare('SELECT sha FROM archive_retired ORDER BY rowid LIMIT ?')
+      .all(RING_UNLINK_LIMIT);
+    if (!rows.length) return;
+    const dir = join(this.archive!.directory, 'segments');
+    for (const row of rows) {
+      const sha = String(row.sha);
+      if (!SHA.test(sha)) throw Error('Horse archive segment corruption');
+      try {
+        unlinkSync(join(dir, sha + '.ndjson.gz'));
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+      }
+    }
+    syncDirectory(dir);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const row of rows)
+        db.prepare('DELETE FROM archive_retired WHERE sha=?').run(String(row.sha));
+      db.exec('COMMIT');
+    } catch (e) {
+      rollback(db);
+      throw e;
+    }
+  }
+  /** Whether the ring could make room for this batch by retiring published
+   * segments: the batch fits an empty archive and at least one published
+   * segment exists. Shared by the probe, so a paused publisher is told there
+   * is room exactly when the next append would retire to make it. */
+  private ringCanMakeRoom(bytes: number, segments: number, fresh: number): boolean {
+    if (this.archiveQuotaRefusal({ bytes: 0, segments: 0, records: 0 }, bytes, segments, fresh))
+      return false;
+    return Boolean(this.catalog!.prepare('SELECT 1 AS n FROM archive_segments LIMIT 1').get());
   }
   /** The byte and segment/record quotas, shared by the writer and the probe so
    * the two cannot disagree. A batch with nothing new reserves nothing. */
@@ -860,15 +1036,19 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       throw Error('Horse archive usage corruption');
     const segments = segmentsFor(captured);
     const bytes = segments.reduce((n, s) => n + s.bytes, 0);
-    const quota = this.archiveQuotaRefusal(usage, bytes, segments.length, captured.length);
-    if (quota) return quota;
     const pending = Number(
       db.prepare('SELECT coalesce(sum(records),0) AS n FROM archive_pending').get()!.n
     );
     if (!Number.isSafeInteger(pending) || pending < 0)
       throw Error('Horse archive pending exceeds bounds');
-    if (!this.catalogHasRoom(captured.length + pending, segments))
-      return 'archive_catalog_capacity';
+    // A ring quota answers room when the append would retire published
+    // segments to make it; a reserved (unpublished) batch is never room.
+    const quota: RingRefusal | null =
+      this.archiveQuotaRefusal(usage, bytes, segments.length, captured.length) ??
+      (this.catalogHasRoom(captured.length + pending, segments)
+        ? null
+        : 'archive_catalog_capacity');
+    if (quota && !this.ringCanMakeRoom(bytes, segments.length, captured.length)) return quota;
     // ENOSPC and a full disk under SQLite: the segment file, the catalog pages
     // and their rollback copy must all fit in what the filesystem will give us.
     const fs = statfsSync(this.archive.directory);
@@ -938,7 +1118,20 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       decodedBytes += Number(meta.decoded_bytes);
       if (!Number.isSafeInteger(decodedBytes) || decodedBytes > 32 * 1024 * 1024)
         throw Error('Horse journal archive read exceeds decode bounds');
-      const segment = this.readSegment(meta);
+      let segment: Segment;
+      try {
+        segment = this.readSegment(meta);
+      } catch (e) {
+        // The ring may have retired this segment between the snapshot and the
+        // file read. Its records are then missing, as any retired record is;
+        // a file that is gone while its catalog row remains is corruption.
+        if (
+          (e as NodeJS.ErrnoException).code === 'ENOENT' &&
+          !db.prepare('SELECT 1 AS n FROM archive_segments WHERE sha=?').get(String(meta.sha))
+        )
+          continue;
+        throw e;
+      }
       for (const row of rows) {
         const record = segment.records[Number(row.ordinal)];
         if (
@@ -970,6 +1163,12 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       segments: number;
       records: number;
       pendingSegments: number;
+      /** Segments whose file and index rows are committed: the ring's
+       * candidates. segments minus pendingSegments. */
+      publishedSegments: number;
+      /** Retired by the ring since the catalog was created. */
+      retiredSegments: number;
+      retiredRecords: number;
       catalogBytes: number;
       maxRowid: number;
       maxBytes: number;
@@ -1000,13 +1199,26 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           Number(usage.max_segments) > 500000
         )
           throw Error('Horse archive usage corruption');
+        const pendingSegments = Number(
+          this.catalog.prepare('SELECT count(*) AS n FROM archive_pending').get()!.n
+        );
+        // A catalog written before the ring existed has no archive_ring row
+        // until a writer opens it; a read-only observer then reports zero.
+        const ring = this.catalog
+          .prepare("SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='archive_ring'")
+          .get()
+          ? this.catalog
+              .prepare('SELECT retired_segments,retired_records FROM archive_ring WHERE id=1')
+              .get()
+          : undefined;
         archive = {
           compressedBytes: Number(usage.bytes),
           segments: Number(usage.segments),
           records: Number(usage.records),
-          pendingSegments: Number(
-            this.catalog.prepare('SELECT count(*) AS n FROM archive_pending').get()!.n
-          ),
+          pendingSegments,
+          publishedSegments: Math.max(0, Number(usage.segments) - pendingSegments),
+          retiredSegments: Number(ring?.retired_segments ?? 0),
+          retiredRecords: Number(ring?.retired_records ?? 0),
           catalogBytes:
             Number(this.catalog.prepare('PRAGMA page_count').get()!.page_count) *
             CATALOG_PAGE_BYTES,

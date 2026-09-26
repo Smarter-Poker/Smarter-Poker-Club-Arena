@@ -20,6 +20,8 @@ import { RESTART_MAX_MINUTES } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { freeBuyConfig } from '../utils/freeBuy';
+// A line of its own: tests/law/FreerollsAreFreeBuy.law.test.ts pins the line above verbatim.
+import { isFreeBuyEvent } from '../utils/freeBuy';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
 import { TOURNAMENT_CREATE_ERRORS, startTimeIsPast } from './tournamentCreationRules';
 import {
@@ -50,6 +52,94 @@ export {
   type TournamentGameVariant,
 } from '../config/tournamentVariants';
 
+/**
+ * THE TWO AXES OF AN MTT (2026-09-20). How a player may come back after
+ * busting (the lifecycle) and how the prize money is shaped (the prize style)
+ * are separate decisions, and each has its own control on the form. Until now
+ * the form had one slider that switched rebuys AND re-entries on together, and
+ * one boolean that could only say "knockout bounty or not".
+ *
+ * Every value maps to a key the service and the database already accept:
+ * `isRebuy` / `isReentry` / `maxRebuys` / `maxReentries` for the lifecycle, and
+ * `type` plus `bountyConfig.bountyType` for the prize style. The prize styles
+ * are exactly the bounty formats TournamentType carries.
+ */
+export type MttEntryRules = 'freezeout' | 'rebuy' | 'reentry';
+export type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
+
+export const MTT_ENTRY_RULES: readonly { value: MttEntryRules; label: string }[] = [
+  { value: 'freezeout', label: 'Freezeout' },
+  { value: 'rebuy', label: 'Rebuy' },
+  { value: 'reentry', label: 'Re-Entry' },
+];
+
+export const MTT_PRIZE_STYLES: readonly { value: MttPrizeStyle; label: string }[] = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'bounty', label: 'Bounty' },
+  { value: 'progressive_bounty', label: 'Progressive Bounty' },
+  { value: 'mystery_bounty', label: 'Mystery Bounty' },
+];
+
+const BOUNTY_TYPE_FOR_STYLE = {
+  bounty: 'fixed',
+  progressive_bounty: 'progressive',
+  mystery_bounty: 'mystery',
+} as const;
+
+const isMttEntryRules = (v: unknown): v is MttEntryRules =>
+  MTT_ENTRY_RULES.some((rule) => rule.value === v);
+const isMttPrizeStyle = (v: unknown): v is MttPrizeStyle =>
+  MTT_PRIZE_STYLES.some((style) => style.value === v);
+
+/**
+ * What the Entry Rules control should show for a draft or template saved
+ * before the control existed. Those carried only the rebuy count, and the
+ * engine treats an event with both flags set as a rebuy event
+ * (`is_reentry && !is_rebuy ? 'reentry' : 'rebuy'`), so a count above zero
+ * reads as Rebuy and zero as Freezeout.
+ */
+export function entryRulesForDraft(draft: {
+  entryRules?: unknown;
+  numberOfRebuysReentries?: unknown;
+}): MttEntryRules {
+  if (isMttEntryRules(draft.entryRules)) return draft.entryRules;
+  return Number(draft.numberOfRebuysReentries) > 0 ? 'rebuy' : 'freezeout';
+}
+
+/** The Prize Style a pre-2026-09-20 draft meant: its KO Bounty switch. */
+export function prizeStyleForDraft(draft: {
+  prizeStyle?: unknown;
+  koBounty?: unknown;
+}): MttPrizeStyle {
+  if (isMttPrizeStyle(draft.prizeStyle)) return draft.prizeStyle;
+  return draft.koBounty === true ? 'bounty' : 'regular';
+}
+
+/**
+ * A REBUY OR RE-ENTRY EVENT NEEDS LATE REGISTRATION TO CLOSE (2026-09-20).
+ * Rebuys and re-entries close with late registration, and the engine and
+ * process_tournament_rebuy both read a cap of 0 as NO cap at all
+ * (`NULLIF(..., 0)`), so a 0 late registration level would leave rebuys open
+ * for the whole event: not what Rebuy or Re-Entry promises. The club
+ * tournament modal refuses the same pair. A Free Buy runs its own window and
+ * is not asked. Returns the message to show, or null when the pair is fine.
+ */
+export const MTT_ENTRY_WINDOW_REQUIRED =
+  'Late Registration Must Be At Least 1 Level When Rebuys Or Re-Entries Are On';
+
+export function mttEntryWindowProblem(config: {
+  gameMode: TournamentFormInput['gameMode'];
+  buyIn: number;
+  entryRules?: unknown;
+  lateRegistrationLevel: number;
+}): string | null {
+  if (config.gameMode !== 'mtt') return null;
+  if (config.entryRules !== 'rebuy' && config.entryRules !== 'reentry') return null;
+  const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
+  if (isFreeBuyEvent({ buyIn, type: 'mtt' })) return null;
+  return Number(config.lateRegistrationLevel) >= 1 ? null : MTT_ENTRY_WINDOW_REQUIRED;
+}
+
 /** The subset of the create-table form a tournament actually uses. */
 export interface TournamentFormInput {
   name: string;
@@ -68,6 +158,13 @@ export interface TournamentFormInput {
   numberOfRebuysReentries: number;
   addOnMultiplier: number;
   koBounty: boolean;
+  /**
+   * The lifecycle axis. Absent on a draft saved before 2026-09-20, which keeps
+   * its exact old mapping (a rebuy count above zero set both flags).
+   */
+  entryRules?: MttEntryRules;
+  /** The prize axis. Absent on an older draft, which falls back to `koBounty`. */
+  prizeStyle?: MttPrizeStyle;
   startTime: string;
 
   // ── PokerBros parity (2026-08-22). Optional so restored drafts and older
@@ -249,6 +346,36 @@ export function buildTournamentConfig(
       ? Math.round(config.customAddOnCost!)
       : split.total;
 
+  // FREEROLLS ARE FREE BUY. Asked once up front, because the lifecycle, the
+  // add-on break and the prize style below all depend on it. The rule's own
+  // keys are still spread LAST in the object below, where they have to win.
+  const isFreeBuy =
+    freeBuyConfig({
+      buyIn: split.total,
+      type: isSpins ? 'spin' : isSng ? 'sng' : 'mtt',
+      startingStack: config.startingChips,
+    }).freeBuy === true;
+
+  /* THE LIFECYCLE AXIS. An explicit Entry Rules choice sets exactly one flag.
+     A draft with no choice keeps the mapping it was saved under, so restoring
+     an old template never produces a different event than it did before. */
+  const explicitRules = isMttEntryRules(config.entryRules) ? config.entryRules : null;
+  const legacyRebuys = config.numberOfRebuysReentries > 0;
+  const isRebuy = isMtt && (explicitRules ? explicitRules === 'rebuy' : legacyRebuys);
+  const isReentry = isMtt && (explicitRules ? explicitRules === 'reentry' : legacyRebuys);
+  // A chosen Rebuy or Re-Entry event allows at least one; the form's slider
+  // starts at 1 for the same reason.
+  const entryCap = clampInt(config.numberOfRebuysReentries, explicitRules ? 1 : 0, 100);
+  const freeBuyCap = legacyRebuys ? clampInt(config.numberOfRebuysReentries, 0, 100) : undefined;
+
+  /* THE PRIZE AXIS, read independently of the lifecycle. Only an MTT has one:
+     an SNG or a Spin has no bounty control. A satellite pays seats, so it
+     cannot also pay bounties (buildRpcConfig refuses the pair), and a freeroll
+     has no buy-in for a bounty to be cut from (the database refuses a bounty
+     event with no bounty amount), so both read as Regular. */
+  const prizeStyle: MttPrizeStyle =
+    isMtt && !isSatellite && !isFreeBuy ? prizeStyleForDraft(config) : 'regular';
+
   return {
     name: config.name.trim() || 'Tournament',
     type: isSpins
@@ -257,9 +384,9 @@ export function buildTournamentConfig(
         ? 'sng'
         : isSatellite
           ? 'satellite'
-          : config.koBounty
-            ? 'bounty'
-            : 'mtt',
+          : prizeStyle === 'regular'
+            ? 'mtt'
+            : prizeStyle,
     buyIn: split.total,
     // The house cut, floored to cents, at the rate THIS format pays: 10% on an
     // MTT, 5% on a two-seat duel, nothing on a Spin. It is recomputed
@@ -277,8 +404,8 @@ export function buildTournamentConfig(
     // start_time has passed and the minimum field is present. An SNG ignores
     // it (it starts when full). A past time was refused above.
     startTime,
-    isRebuy: isMtt && config.numberOfRebuysReentries > 0,
-    isReentry: isMtt && config.numberOfRebuysReentries > 0,
+    isRebuy,
+    isReentry,
     rebuyCost,
     rebuyChips: config.startingChips,
     addOnAvailable: isMtt && config.addOnMultiplier > 0,
@@ -305,8 +432,11 @@ export function buildTournamentConfig(
     // Half the buy-in as the head, floored to a whole number so the bounty can
     // never be a decimal and can never exceed the prize half of the split.
     bountyConfig:
-      !isSatellite && config.koBounty
-        ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
+      prizeStyle !== 'regular'
+        ? {
+            bountyType: BOUNTY_TYPE_FOR_STYLE[prizeStyle],
+            baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)),
+          }
         : undefined,
     satelliteTarget: isSatellite
       ? {
@@ -320,7 +450,11 @@ export function buildTournamentConfig(
     isPrivate: config.isPrivate ?? false,
     isVipOnly: config.isVipOnly ?? false,
     shortDescription: config.shortDescription?.trim() || undefined,
-    banChat: config.banChat ?? false,
+    /* MTT CHAT IS BANNED BY DEFAULT (owner requirement, 2026-09-20). Every
+       MTT-family event built here (regular, bounty, satellite) is created with
+       chat off whatever the draft carried; the form shows the rule locked On.
+       An SNG or a Spin keeps its own switch. */
+    banChat: isMtt ? true : (config.banChat ?? false),
     allInOrFold: config.allInOrFold ?? false,
     labelAsNew: config.labelAsNew ?? false,
     hideClubName: config.hideClubName ?? false,
@@ -354,18 +488,23 @@ export function buildTournamentConfig(
     authorizedToRegister: config.authorizedToRegister ?? false,
     synchronizedBreaks: config.synchronizedBreaks ?? true,
     acceleratedMtt: isMtt ? (config.acceleratedMtt ?? false) : false,
-    maxRebuys:
-      isMtt && config.numberOfRebuysReentries > 0
-        ? clampInt(config.numberOfRebuysReentries, 0, 100)
-        : undefined,
-    maxReentries:
-      isMtt && config.numberOfRebuysReentries > 0
-        ? clampInt(config.numberOfRebuysReentries, 0, 100)
-        : undefined,
-    addonBreakMinutes:
-      isMtt && config.addOnMultiplier > 0
+    // A Free Buy switches both flags on by rule, so its cap is the slider's
+    // count exactly as before, whatever Entry Rules held when the buy-in hit 0.
+    maxRebuys: isFreeBuy ? freeBuyCap : isRebuy ? entryCap : undefined,
+    maxReentries: isFreeBuy ? freeBuyCap : isReentry ? entryCap : undefined,
+    /* THE ADD-ON BREAK LENGTH IS ONLY REAL ON A FREE BUY (2026-09-20). The
+       engine opens a paid event's add-on window for exactly 60 seconds
+       (TournamentManagerBase: `requestedStartMs + 60_000`); only a Free Buy's
+       from-the-start window adds `addon_break_minutes` to its length. So a
+       paid MTT sends 1, exactly as the club modal does, and the slider that
+       promised up to ten minutes is gone from the paid form. */
+    addonBreakMinutes: isMtt
+      ? isFreeBuy
         ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 10)
-        : undefined,
+        : config.addOnMultiplier > 0
+          ? 1
+          : undefined
+      : undefined,
     earlyBirdEnabled: isMtt ? (config.earlyBirdRegistration ?? false) : false,
     earlyBirdChips:
       isMtt && config.earlyBirdRegistration

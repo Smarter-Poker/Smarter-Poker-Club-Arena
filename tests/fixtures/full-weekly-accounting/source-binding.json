@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "b46761ee7a119ee4a2dff7a1a784cff9f22642bce612ace5d853f56b1d4af475",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -2051,6 +2051,21 @@
       }
     ]
   },
+  "create_club_satellite_read_ratchet_rebinding_20260926": {
+    "base_commit": "4ee8d3010ed798c0d148cc8fc7fcd5c701869ded",
+    "source_pull_request": 5141,
+    "source_branch": "agent/cowork/feat/create-club-console-phase2",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "404f519db8361bd1db4ff7d8324a451de0516093ac2b98224695f8d03efe9561",
+        "sha256": "b46761ee7a119ee4a2dff7a1a784cff9f22642bce612ace5d853f56b1d4af475"
+      }
+    ],
+    "reason": "Create Club Phase 2 lowers the discarded-error baseline for src/components/club/CreateTournamentModal.tsx from 1 to 0. This is a strict ratchet tightening: the satellite-target query now binds and reports its error and tells the owner that targets could not load instead of falsely presenting No Upcoming Tournaments. The file moves from BASELINE to AUDITED_ZERO so any future discarded read fails the suite. No assertion is removed or weakened, no other baseline row changes, and no accounting component, captured catalog, financial fixture or production object is changed.",
+    "verification": "The replacement sha256 is the exact hashlib-compatible sha256 of tests/unit/discardedErrorReadRatchet.test.ts in this pull request after the reviewed one-row tightening. python3 scripts/ci/verify-source-bindings.py re-read all repository and fixture pins from disk and accepted the complete tree. The full local pre-push suite also passed 456 files and 6092 tests before this metadata-only binding refresh; no production data was read or changed by the restamp."
+  },
+
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
 
   "weekly_rakeback_cost_successor_20260926": {

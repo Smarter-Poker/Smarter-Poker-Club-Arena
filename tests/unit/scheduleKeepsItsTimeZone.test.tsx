@@ -107,7 +107,9 @@ describe('the schedule UI names the zone its times are in', () => {
   });
 
   it('every word of a summary is capitalised, and a zone id prints without underscores', () => {
-    expect(describeSchedule([0, 1, 2, 3, 4, 5, 6], [], 60, null)).toBe('Every Day - Every 60 Min');
+    expect(describeSchedule([0, 1, 2, 3, 4, 5, 6], [], 60, null)).toBe(
+      'Every Day, Every 60 Minutes'
+    );
     expect(
       describeSchedule([1, 3], ['18:00', '21:30'], null, 'America/Argentina/Buenos_Aires')
     ).toBe('Mon, Wed At 18:00, 21:30 America/Argentina/Buenos Aires');
@@ -196,7 +198,7 @@ describe('a schedule is written with a zone only once the engine reads zones', (
     fireEvent.change(screen.getByPlaceholderText('E.G. Saturday Night Turbo'), {
       target: { value: 'Friday 8 PM' },
     });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Repeats Weekly' }));
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'weekly' } });
     expect(screen.getByTestId('repeats-weekly-local-time')).toHaveTextContent(
       'Every Saturday At 01:00 UTC'
     );

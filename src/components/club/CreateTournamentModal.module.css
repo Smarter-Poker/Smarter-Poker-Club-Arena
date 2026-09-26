@@ -1,12 +1,26 @@
 .modalOverlay {
+  /* The painted foot stays OUTSIDE the scroll region: the console is as tall
+     as the space above the persistent club footer, its body scrolls, and the
+     Create / Cancel plates never leave the viewport. */
+  --ctm-top: 8px;
+  --ctm-clear: calc(env(safe-area-inset-bottom, 0px) + 120px);
+  --ctm-space: calc(100vh - var(--ctm-top) - var(--ctm-clear));
+
   position: fixed;
   inset: 0;
   z-index: 2147483000;
   display: grid;
   place-items: start center;
-  padding: 8px 0;
-  overflow-y: auto;
+  padding: var(--ctm-top) 0 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
   background: rgb(0 0 0 / 92%);
+}
+
+@supports (height: 100dvh) {
+  .modalOverlay {
+    --ctm-space: calc(100dvh - var(--ctm-top) - var(--ctm-clear));
+  }
 }
 
 .modal {
@@ -24,7 +38,51 @@
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 120px);
+  padding: 0 0 var(--ctm-clear);
+}
+
+/* The head and the plates are 62.5% of the console's width between them, so a
+   full-width console on a wide, short screen leaves no body to scroll. The
+   standard lets a surface NARROW --sc-max, never raise it: the console is
+   sized from the height it has, which keeps about half of that height for the
+   form at every viewport. Two classes, because SpadeConsole.css is loaded
+   after this sheet and its own `.sc` rule would otherwise win the tie. */
+.form > .consoleShell {
+  --sc-max: min(1000px, max(320px, calc(var(--ctm-space) * 0.8)));
+  height: var(--ctm-space);
+}
+
+.form > .consoleShell > :global(.sc__head),
+.form > .consoleShell > :global(.sc__foot) {
+  flex: 0 0 auto;
+}
+
+/* The body reaches one pixel under the foot (the kit's seam overlap), so a
+   control scrolled to the edge keeps the body's own bottom padding clear of
+   the plates, the same air the end of the form has. */
+.form > .consoleShell > :global(.sc__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: calc(3cqw + 1px);
+}
+
+/* A phone on its side has no room for a fixed head, a fixed foot and a form.
+   There the whole console scrolls inside the overlay again, narrowed so the
+   plates and the last control still share the screen at the end of it. */
+@media (max-height: 560px) {
+  .modalOverlay {
+    overflow-y: auto;
+    scroll-padding-block: 12px;
+  }
+  .form > .consoleShell {
+    --sc-max: min(1000px, max(320px, calc(var(--ctm-space) + var(--ctm-clear))));
+    height: auto;
+  }
+  .form > .consoleShell > :global(.sc__body) {
+    overflow-y: visible;
+  }
 }
 
 .formGroup {
@@ -34,7 +92,7 @@
 .sectionLabel {
   display: block;
   margin-bottom: 7px;
-  color: #aeb9c3;
+  color: #e4e7ec;
   font:
     700 11px/1.25 'Roboto Condensed',
     sans-serif;
@@ -49,15 +107,40 @@
   min-height: 44px;
   box-sizing: border-box;
   padding: 10px 12px;
-  border: 1px solid rgb(94 116 134 / 52%);
+  border: 1px solid rgb(154 165 179 / 56%);
   color: #f4f7fb;
   background-color: #05080c;
   font-size: 16px;
 }
+.required {
+  color: #ff5b6e;
+}
+/* metallic-popups.css paints every dialog field's border with !important, so
+   an inline borderColor never showed. The refusal ink has to outrank it. */
+.input.invalid,
+.formGroup input.invalid {
+  border-color: #ff5b6e !important;
+}
+.errorText,
+.validationSummary {
+  color: #ff5b6e;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.errorText {
+  margin: 6px 0 0;
+}
+.validationSummary {
+  padding: 4px 0;
+}
+.validationSummary p {
+  margin: 4px 0;
+  color: inherit;
+}
 .input:focus,
 .select:focus,
 .formGroup input:focus {
-  outline: 3px solid #8fd4ff;
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 .row {
@@ -76,11 +159,16 @@
 .calendarSelect {
   color-scheme: dark;
 }
+/* Engraved rules above and below: a black line with the glass's own 8% light
+   under it. Nothing is drawn around the rule. */
 .readOnlyRule,
 .lockedRule {
   min-height: 44px;
   padding: 11px 0;
-  border-block: 1px solid rgb(94 116 134 / 36%);
+  border-block: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
   color: #e4e7ec;
 }
 .lockedRule {
@@ -90,47 +178,14 @@
   margin: 4px 0 18px;
 }
 .lockedRule span {
-  color: #8795a2;
+  color: #9aa5b3;
 }
-/* The refusals under the form (visual acceptance 2026-09-24). The red is set
-   on the block, but every <p> is recoloured by the global `p` rule and the
-   popup muting rule, so each refusal printed in the same grey as the helper
-   copy and did not read as a refusal. The lines take the block's ink. */
-.validationSummary p {
-  color: inherit;
-}
-
 .helperText {
   display: block;
   margin-top: 6px;
-  color: #73818e;
+  color: #9aa5b3;
   font-size: 12px;
   line-height: 1.4;
-}
-.choiceGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  margin: 10px 0;
-  border-block: 1px solid rgb(94 116 134 / 36%);
-}
-.choiceGrid button {
-  appearance: none;
-  min-height: 44px;
-  border: 0;
-  border-inline-end: 1px solid rgb(94 116 134 / 30%);
-  color: #9eabb6;
-  background: transparent;
-  font:
-    800 11px/1 'Roboto Condensed',
-    sans-serif;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.choiceGrid button.selected {
-  color: #45adff;
-  border-bottom: 2px solid #45adff;
-  text-shadow: 0 0 10px rgb(69 173 255 / 55%);
 }
 .toggleLabel {
   display: flex !important;
@@ -139,38 +194,137 @@
   min-height: 44px;
   padding-block: 7px;
   margin: 0 !important;
-  border-bottom: 1px solid rgb(94 116 134 / 26%);
-  color: #d3dbe2 !important;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec !important;
   cursor: pointer;
 }
-.checkbox {
-  width: 18px !important;
-  min-height: 18px !important;
-  accent-color: #45adff;
+/* The labeled On / Off switch is the create-table Toggle, unchanged: its
+   track, thumb and On / Off inks come from its own stylesheet, which
+   controls.tsx imports wherever it renders. Only the row it sits in and its
+   label's type are set here, because that label style is scoped to the
+   create-table page. */
+.toggleRow {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+.toggleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+}
+.toggleRow :global(.config-toggle) {
+  gap: 12px;
+  min-height: 44px;
+  padding: 7px 0;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+}
+.toggleRow :global(.toggle-label) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #e4e7ec;
+  font:
+    700 13px/1.25 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Figures print as rows on the glass: lit label left, silver value right, an
+   engraved rule between. No card. */
+.splitRows {
+  margin-top: 10px;
+}
+.splitRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font:
+    700 13px/1.25 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.splitRow span {
+  color: #45adff;
+}
+.splitRow strong {
+  color: #e4e7ec;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.splitRowShort span,
+.splitRowShort strong {
+  color: #ff5b6e;
+}
+.engravedTop {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+/* A lit word on the glass, not a drawn button. metallic-popups.css bevels
+   every dialog button with !important, so its chassis is switched off
+   longhand by longhand. */
+.modal .litWord.litWord {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #45adff !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font:
+    800 13px/1.25 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-shadow: 0 0 10px rgb(69 173 255 / 55%);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.modal .litWord.litWord:active {
+  color: #f4f7fb !important;
+}
+.modal .litWord.litWord:focus-visible {
+  outline: 3px solid #45adff;
+  outline-offset: 2px;
 }
 .sectionDivider {
   margin: 18px 0;
   padding-block: 16px;
-  border-block: 1px solid rgb(94 116 134 / 32%);
+  border-block: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
 }
 .sectionLabel {
   color: #45adff;
 }
 @media (max-width: 600px) {
   .modalOverlay {
-    padding: 0;
+    --ctm-top: 0px;
   }
   .row {
     flex-direction: column;
     gap: 0;
   }
   .formatAxes,
-  .choiceGrid {
+  .toggleGrid {
     grid-template-columns: 1fr;
-  }
-  .choiceGrid button {
-    border-inline-end: 0;
-    border-bottom: 1px solid rgb(94 116 134 / 25%);
   }
 }
 @media (forced-colors: active) {
@@ -178,7 +332,6 @@
   .select,
   .formGroup input,
   .formGroup select,
-  .choiceGrid,
   .toggleLabel,
   .sectionDivider {
     border-color: CanvasText;

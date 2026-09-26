@@ -70,6 +70,7 @@ import {
   canSeeClubBank,
   clubLobbyWalletRows,
   clubWalletRows,
+  spinsWalletRowVisible,
   type WalletRowKey,
 } from './walletRows';
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
@@ -1498,13 +1499,13 @@ export default function DynamicWallet({
                 // A funded/configured reserve is a wallet even while Spins is
                 // temporarily inactive. Hiding it made real club money vanish
                 // from the owner's wallet panel.
-                spinsActive: spins.state !== null,
+                spinsActive: spinsWalletRowVisible(spins.state),
                 chipWallet: hasChipWallet,
               })
             : clubLobbyWalletRows(rowRole, { chipWallet: hasChipWallet })
           : clubWalletRows(rowRole, {
               standalone: !isClubInUnion,
-              spinsActive: spins.state !== null,
+              spinsActive: spinsWalletRowVisible(spins.state),
               chipWallet: hasChipWallet,
             })
         ).map((k) => CLUB_ROW_BY_KEY[k]);

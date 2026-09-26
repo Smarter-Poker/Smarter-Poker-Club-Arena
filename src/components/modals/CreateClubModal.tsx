@@ -32,6 +32,21 @@
  * name-availability debounce, the eligibility sequence guard, the logo
  * optimiser, the close confirmation, the focus trap, the Escape owner and
  * every track() call below are the ones that were here.
+ *
+ * ── HARDENED 2026-09-22 (Create A Club, Phase 2) ────────────────────────────
+ * - The scroll region is the console's OWN body, between the head and the
+ *   painted foot, so CLOSE and CREATE CLUB never scroll off the screen, and the
+ *   console narrows by height (the stylesheet shows the arithmetic) so a laptop
+ *   or a landscape phone still has a usable body.
+ * - The draft is filed per account. The old unscoped draft has no owner, so it
+ *   is removed, never adopted by whoever signs in next.
+ * - Closing with unsaved work asks through the kit's ConfirmModal on the spade
+ *   console, never the browser's native dialog.
+ * - The success toast names the club the SERVER returned: a retry after a lost
+ *   response replays the same request id and gets the ORIGINAL club back.
+ * - The two launch settings are switches that say On or Off, and the agreement
+ *   wears the kit's tick well (Dan 2026-09-15: a person agreeing to something
+ *   has to SEE the box they are ticking).
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -43,6 +58,10 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
 import { SpadeConsole } from '../console/SpadeConsole';
+// The tick well and the inks printed below are kit classes, so this file loads
+// the kit sheet it depends on (tests/unit/classNamesResolve.test.ts).
+import '../console/SpadeConsole.css';
+import { ConfirmModal } from '../common/ConfirmModal';
 import styles from './CreateClubModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -53,6 +72,15 @@ import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { uuid } from '../../utils/uuid';
 
 const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
+
+/**
+ * A DRAFT BELONGS TO ONE ACCOUNT. The key used to be the bare literal above, so
+ * a second account signing in on the same browser was handed the first
+ * account's club name, description and creation request id. The literal stays
+ * as the prefix; the signed-in user id scopes it. The bare key is legacy: it
+ * carries no owner, so it is never adopted, only removed.
+ */
+const createDraftKeyFor = (userId: string) => `${CREATE_DRAFT_KEY}:${userId}`;
 
 export const DEFAULT_CLUB_LOGOS = [
   { id: 'spade', name: 'Spade Society', file: 'club-logos/preset-01.webp' },
@@ -87,15 +115,10 @@ const NAME_STATUS_INK = {
   error: 'sc-ink--gold',
 } as const;
 
-/**
- * What the allowance line says, derived entirely from the server preflight
- * (fn_get_club_creation_eligibility): its cap, its count and its reason. The
- * modal holds no number of its own, so it cannot disagree with the create.
- */
+/** The server preflight owns both the membership cap and the rollout gate. */
 function allowanceLine(allowance: ClubCreationEligibility): {
   text: string;
   ink: string;
-  /** The popup for a refused Create press, or null when creation is allowed. */
   refusal: string | null;
 } {
   if (allowance.reason === 'creation_unavailable' || allowance.creationOpen === false) {
@@ -163,20 +186,76 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const [allowanceRetry, setAllowanceRetry] = useState(0);
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  /** The account whose draft the form holds. Nothing is saved until it is known. */
+  const [draftHydratedFor, setDraftHydratedFor] = useState<string | null>(null);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const trapRef = useFocusTrap(isOpen);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creationRequestIdRef = useRef<string>(uuid());
   const eligibilitySequenceRef = useRef(0);
+  const formOwnerRef = useRef<string | null>(null);
+  const hasTypedRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setAllowance(null);
     setAllowanceError(false);
-    setDraftRestored(false);
     ClubEntryTrustService.track('create', 'opened', { outcome: 'viewed' });
+    setVisibleFormElements([]);
+    const timers = [0, 1, 2, 3, 4].map((i) =>
+      setTimeout(() => {
+        setVisibleFormElements((prev) => [...prev, true]);
+      }, i * 80)
+    );
+    return () => timers.forEach((t) => clearTimeout(t));
+  }, [isOpen]);
+
+  // A guard left open when the page closed must not flash up on the next open.
+  useEffect(() => {
+    if (!isOpen) setCloseConfirmOpen(false);
+  }, [isOpen]);
+
+  useEffect(() => {
+    hasTypedRef.current = Boolean(clubName || description);
+  }, [clubName, description]);
+
+  // Draft restore, keyed to the signed-in account (see createDraftKeyFor).
+  useEffect(() => {
+    if (!isOpen) return;
+    setDraftRestored(false);
     try {
-      const saved = window.localStorage.getItem(CREATE_DRAFT_KEY);
+      // The unscoped legacy draft has no owner. Never adopt it: remove it.
+      window.localStorage.removeItem(CREATE_DRAFT_KEY);
+    } catch (error) {
+      reportError(error, 'CreateClubModal.RemoveLegacyDraft');
+    }
+    const userId = user?.id;
+    if (!userId) {
+      setDraftHydratedFor(null);
+      return;
+    }
+    const previousOwner = formOwnerRef.current;
+    formOwnerRef.current = userId;
+    if (previousOwner && previousOwner !== userId) {
+      // This component stays mounted while closed, so another account's text
+      // and request id can still be in memory. None of it crosses accounts.
+      setClubName('');
+      setDescription('');
+      setIsPublic(true);
+      setRequiresApproval(false);
+      setLogoPreview(defaultLogoUrl(DEFAULT_LOGO.file));
+      setSelectedPresetId(DEFAULT_LOGO.id);
+      setHasAgreed(false);
+      creationRequestIdRef.current = uuid();
+    } else if (!previousOwner && hasTypedRef.current) {
+      // The account resolved after typing began: what is on screen is this
+      // user's work and becomes the draft. A stored draft must not overwrite it.
+      setDraftHydratedFor(userId);
+      return;
+    }
+    try {
+      const saved = window.localStorage.getItem(createDraftKeyFor(userId));
       if (saved) {
         const draft = JSON.parse(saved) as {
           name?: string;
@@ -206,17 +285,15 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     } catch (error) {
       reportError(error, 'CreateClubModal.RestoreDraft');
     }
-    setVisibleFormElements([]);
-    const timers = [0, 1, 2, 3, 4].map((i) =>
-      setTimeout(() => {
-        setVisibleFormElements((prev) => [...prev, true]);
-      }, i * 80)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [isOpen]);
+    setDraftHydratedFor(userId);
+  }, [isOpen, user?.id]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    // Nothing is written until this account's own draft has been read, so one
+    // account's text can never be filed under another account's key.
+    const userId = user?.id;
+    if (!isOpen || !userId || draftHydratedFor !== userId) return;
+    const draftKey = createDraftKeyFor(userId);
     const draft = {
       name: clubName,
       description,
@@ -226,13 +303,21 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       requestId: creationRequestIdRef.current,
     };
     try {
-      if (clubName || description)
-        window.localStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(draft));
-      else window.localStorage.removeItem(CREATE_DRAFT_KEY);
+      if (clubName || description) window.localStorage.setItem(draftKey, JSON.stringify(draft));
+      else window.localStorage.removeItem(draftKey);
     } catch (error) {
       reportError(error, 'CreateClubModal.SaveDraft');
     }
-  }, [clubName, description, isPublic, requiresApproval, selectedPresetId, isOpen]);
+  }, [
+    clubName,
+    description,
+    isPublic,
+    requiresApproval,
+    selectedPresetId,
+    isOpen,
+    user?.id,
+    draftHydratedFor,
+  ]);
 
   useEffect(() => {
     if (!isOpen || clubName.trim().length < 3) {
@@ -353,7 +438,14 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       if (!isMounted.current) return;
 
       haptic.success();
-      toast.success(`Club "${clubName}" created successfully!`);
+      /* THE SERVER NAMES THE CLUB, NOT THE TEXT BOX. A retry after a lost
+         response replays the same request id, and the server answers with the
+         ORIGINAL club even when the name was edited in between. The toast, like
+         the id handed to onSuccess below, comes from that answer. */
+      const createdName = typeof clubData.name === 'string' ? clubData.name.trim() : '';
+      toast.success(
+        createdName ? `Club "${createdName}" created successfully!` : 'Club created successfully!'
+      );
 
       setClubName('');
       setDescription('');
@@ -361,7 +453,11 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       setSelectedPresetId(DEFAULT_LOGO.id);
       setHasAgreed(false);
       setDraftRestored(false);
-      window.localStorage.removeItem(CREATE_DRAFT_KEY);
+      try {
+        window.localStorage.removeItem(createDraftKeyFor(user.id));
+      } catch (storageError) {
+        reportError(storageError, 'CreateClubModal.ClearDraft');
+      }
       creationRequestIdRef.current = uuid();
       ClubEntryTrustService.track('create', 'completed', {
         outcome: 'succeeded',
@@ -389,17 +485,31 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
   // A built-in placeholder is the pristine default, not unsaved work.
   const hasDraft = Boolean(clubName.trim() || description.trim() || selectedPresetId === null);
+  // What the guard can promise: text and settings are filed per account once
+  // that account is known; an uploaded logo is never part of the draft.
+  const draftIsSaved = Boolean(
+    user?.id && draftHydratedFor === user.id && (clubName || description)
+  );
   const requestClose = useCallback(() => {
     if (isCreating) return;
-    if (
-      hasDraft &&
-      !window.confirm('Close Create Club? Your Text Settings Will Remain Saved As A Draft.')
-    )
+    if (hasDraft) {
+      // Unsaved work asks first, on the kit's console, never a native dialog.
+      setCloseConfirmOpen(true);
       return;
+    }
     ClubEntryTrustService.track('create', 'closed', { outcome: 'cancelled' });
     onClose();
   }, [hasDraft, isCreating, onClose]);
-  useDialogEscape(isOpen, requestClose);
+  const dismissCloseConfirm = useCallback(() => setCloseConfirmOpen(false), []);
+  const confirmClose = useCallback(() => {
+    setCloseConfirmOpen(false);
+    if (isCreating) return;
+    ClubEntryTrustService.track('create', 'closed', { outcome: 'cancelled' });
+    onClose();
+  }, [isCreating, onClose]);
+  // While the guard is up it owns Escape, and Escape cancels it, exactly as it
+  // cancelled the native dialog it replaces.
+  useDialogEscape(isOpen, requestClose, closeConfirmOpen);
 
   if (!isOpen) return null;
 
@@ -419,249 +529,295 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     allowance?.canCreate === true;
   const allowanceStatus = allowance ? allowanceLine(allowance) : null;
 
+  const closeGuardMessage = !draftIsSaved
+    ? 'Nothing On This Page Has Been Saved As A Draft Yet.'
+    : selectedPresetId
+      ? 'Your Club Name, Description, Crest And Launch Settings Stay Saved As A Draft On This Device.'
+      : 'Your Club Name, Description And Launch Settings Stay Saved As A Draft On This Device. A Custom Logo Is Not Part Of The Draft.';
+
   return (
-    <div className={styles.overlay} onClick={requestClose}>
-      <div
-        ref={trapRef}
-        className={styles.modalContainer}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-club-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.scrollBody}>
-          <SpadeConsole
-            onClose={requestClose}
-            as="div"
-            className={styles.console}
-            eyebrow="Club Arena"
-            title="Create A Club"
-            titleId="create-club-title"
-            pill={draftRestored ? 'Draft Restored' : 'New Club'}
-            pillInk={draftRestored ? 'gold' : 'blue'}
-            plates={{
-              secondary: {
-                label: 'Close',
-                onClick: () => {
-                  haptic.light();
-                  requestClose();
+    <>
+      <div className={styles.overlay} onClick={requestClose}>
+        {/* While the close guard is up, the focus trap holds the guard instead
+            (the ref moves), so Tab can neither leave it nor fall back here. */}
+        <div
+          ref={closeConfirmOpen ? undefined : trapRef}
+          className={styles.modalContainer}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-club-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={styles.stage}>
+            <SpadeConsole
+              as="div"
+              className={styles.console}
+              onClose={isCreating ? undefined : requestClose}
+              eyebrow="Club Arena"
+              title="Create A Club"
+              titleId="create-club-title"
+              pill={draftRestored ? 'Draft Restored' : 'New Club'}
+              pillInk={draftRestored ? 'gold' : 'blue'}
+              plates={{
+                secondary: {
+                  label: 'Close',
+                  // The in-flight guard, made visible: nothing closes mid-create.
+                  disabled: isCreating,
+                  onClick: () => {
+                    haptic.light();
+                    requestClose();
+                  },
                 },
-              },
-              primary: {
-                label: isCreating ? 'Creating Club' : 'Create Club',
-                ink: 'white',
-                'aria-label': 'Create Club',
-                disabled: !canCreate,
-                onClick: () => {
-                  haptic.medium();
-                  handleCreate();
+                primary: {
+                  label: isCreating ? 'Creating Club' : 'Create Club',
+                  ink: 'white',
+                  'aria-label': 'Create Club',
+                  disabled: !canCreate,
+                  onClick: () => {
+                    haptic.medium();
+                    handleCreate();
+                  },
                 },
-              },
-            }}
-          >
-            <p className={`sc-copy sc-copy--center ${styles.copy}`}>
-              Name Your Room, Establish Its Identity, And Open The Doors.
-            </p>
-
-            {/* ── The name, in a groove cut into the glass ─────────────── */}
-            <div className={styles.field} style={revealStyle(0)}>
-              <label className="sc-label sc-ink--blue" htmlFor="new-club-name">
-                Club Name
-              </label>
-              <input
-                id="new-club-name"
-                type="text"
-                className={styles.input}
-                placeholder="E.G. River Room"
-                value={clubName}
-                onChange={(e) => setClubName(e.target.value)}
-                maxLength={30}
-                autoComplete="off"
-              />
-            </div>
-
-            <div className={styles.field} style={revealStyle(1)}>
-              <label className="sc-label sc-ink--blue" htmlFor="new-club-description">
-                Description (Optional)
-              </label>
-              <textarea
-                id="new-club-description"
-                className={styles.textarea}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                maxLength={180}
-                placeholder="What Kind Of Room Are You Building?"
-              />
-            </div>
-
-            {/* ── The crest vault: rows on the glass, never a grid of tiles ── */}
-            <div className={styles.section} style={revealStyle(2)}>
-              <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
-                Club Crest Vault
-              </span>
-              <p className={`sc-copy ${styles.copy}`}>
-                Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A Custom
-                Logo At Any Time.
-              </p>
-
-              <div className={styles.crestList} role="radiogroup" aria-label="Default Club Logos">
-                {DEFAULT_CLUB_LOGOS.map((logo) => {
-                  const selected = selectedPresetId === logo.id;
-                  return (
-                    <button
-                      key={logo.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-label={logo.name}
-                      className={styles.crestRow}
-                      onClick={() => handlePresetSelect(logo)}
-                    >
-                      <img
-                        src={defaultLogoUrl(logo.file)}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        className={styles.crestArt}
-                      />
-                      <span
-                        className={`${styles.crestName} ${
-                          selected ? 'sc-ink--silver' : 'sc-ink--muted'
-                        }`}
-                      >
-                        {logo.name}
-                      </span>
-                      <span
-                        className={`sc-label ${styles.crestState} ${
-                          selected ? 'sc-ink--green' : 'sc-ink--muted'
-                        }`}
-                      >
-                        {selected ? 'Selected' : 'Choose'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                className={`${styles.word} ${isOptimizingLogo ? 'sc-ink--muted' : 'sc-ink--blue'}`}
-                disabled={isOptimizingLogo}
-                onClick={() => {
-                  haptic.medium();
-                  fileInputRef.current?.click();
-                }}
-              >
-                {isOptimizingLogo ? 'Optimizing Logo' : 'Upload A Custom Logo'}
-              </button>
-              <span className={`sc-label sc-ink--muted ${styles.hint}`}>
-                {selectedPresetId
-                  ? 'PNG, JPG Or WEBP, 5MB Maximum'
-                  : 'Custom Logo Selected, PNG, JPG Or WEBP, 5MB Maximum'}
-              </span>
-
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className={styles.hiddenInput}
-                onChange={handleFileSelect}
-              />
-            </div>
-
-            {/* ── Launch Settings: rows that read On or Off ─────────────── */}
-            <div className={styles.section} style={revealStyle(3)}>
-              <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
-                Launch Settings
-              </span>
-              <div className={styles.toggleList}>
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={isPublic}
-                  className={styles.toggleRow}
-                  onClick={() => {
-                    haptic.selection();
-                    setIsPublic((on) => !on);
-                  }}
-                >
-                  <span className={`${styles.toggleName} sc-ink--silver`}>
-                    Discoverable In Club Arena
-                  </span>
-                  <span
-                    className={`sc-label ${styles.toggleState} ${
-                      isPublic ? 'sc-ink--green' : 'sc-ink--muted'
-                    }`}
-                  >
-                    {isPublic ? 'On' : 'Off'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={requiresApproval}
-                  className={styles.toggleRow}
-                  onClick={() => {
-                    haptic.selection();
-                    setRequiresApproval((on) => !on);
-                  }}
-                >
-                  <span className={`${styles.toggleName} sc-ink--silver`}>
-                    Review Join Requests
-                  </span>
-                  <span
-                    className={`sc-label ${styles.toggleState} ${
-                      requiresApproval ? 'sc-ink--green' : 'sc-ink--muted'
-                    }`}
-                  >
-                    {requiresApproval ? 'On' : 'Off'}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {/* ── The terms: a checkbox to assistive technology, a lit word
-                   to everybody else. The art paints no tick box. ────────── */}
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={hasAgreed}
-              className={`${styles.terms} ${hasAgreed ? 'sc-ink--green' : 'sc-ink--muted'}`}
-              style={revealStyle(4)}
-              onClick={() => {
-                haptic.selection();
-                setHasAgreed((agreed) => !agreed);
               }}
             >
-              I Confirm I Can Manage This Club And Accept The Club Arena Terms.
-            </button>
-          </SpadeConsole>
-        </div>
+              {/* The console's own body is the scroll region: the head above it
+                and the painted plates below it never move. */}
+              <div className={styles.scrollBody}>
+                <p className={`sc-copy sc-copy--center ${styles.copy}`}>
+                  Name Your Room, Establish Its Identity, And Open The Doors.
+                </p>
 
-        {/* Locked above the home indicator: the allowance and the name check
+                {/* ── The name, in a groove cut into the glass ─────────────── */}
+                <div className={styles.field} style={revealStyle(0)}>
+                  <label className="sc-label sc-ink--blue" htmlFor="new-club-name">
+                    Club Name
+                  </label>
+                  <input
+                    id="new-club-name"
+                    type="text"
+                    className={styles.input}
+                    placeholder="Name Your Club"
+                    value={clubName}
+                    onChange={(e) => setClubName(e.target.value)}
+                    maxLength={30}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className={styles.field} style={revealStyle(1)}>
+                  <label className="sc-label sc-ink--blue" htmlFor="new-club-description">
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    id="new-club-description"
+                    className={styles.textarea}
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    maxLength={180}
+                    placeholder="What Kind Of Room Are You Building?"
+                  />
+                </div>
+
+                {/* ── The crest vault: rows on the glass, never a grid of tiles ── */}
+                <div className={styles.section} style={revealStyle(2)}>
+                  <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
+                    Club Crest Vault
+                  </span>
+                  <p className={`sc-copy ${styles.copy}`}>
+                    Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A
+                    Custom Logo At Any Time.
+                  </p>
+
+                  <div
+                    className={styles.crestList}
+                    role="radiogroup"
+                    aria-label="Default Club Logos"
+                  >
+                    {DEFAULT_CLUB_LOGOS.map((logo) => {
+                      const selected = selectedPresetId === logo.id;
+                      return (
+                        <button
+                          key={logo.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          aria-label={logo.name}
+                          className={styles.crestRow}
+                          onClick={() => handlePresetSelect(logo)}
+                        >
+                          <img
+                            src={defaultLogoUrl(logo.file)}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            className={styles.crestArt}
+                          />
+                          <span
+                            className={`${styles.crestName} ${
+                              selected ? 'sc-ink--silver' : 'sc-ink--muted'
+                            }`}
+                          >
+                            {logo.name}
+                          </span>
+                          <span
+                            className={`sc-label ${styles.crestState} ${
+                              selected ? 'sc-ink--green' : 'sc-ink--muted'
+                            }`}
+                          >
+                            {selected ? 'Selected' : 'Choose'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    className={`${styles.word} ${isOptimizingLogo ? 'sc-ink--muted' : 'sc-ink--blue'}`}
+                    disabled={isOptimizingLogo}
+                    onClick={() => {
+                      haptic.medium();
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    {isOptimizingLogo ? 'Optimizing Logo' : 'Upload A Custom Logo'}
+                  </button>
+                  <span className={`sc-label sc-ink--muted ${styles.hint}`}>
+                    {selectedPresetId
+                      ? 'PNG, JPG Or WEBP, 5MB Maximum'
+                      : 'Custom Logo Selected, PNG, JPG Or WEBP, 5MB Maximum'}
+                  </span>
+
+                  {/* Hidden file input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className={styles.hiddenInput}
+                    onChange={handleFileSelect}
+                  />
+                </div>
+
+                {/* ── Launch Settings: switches that read On or Off. The word is
+                   what the eye reads; aria-checked is what a screen reader
+                   announces, so the word is hidden from it. ─────────────── */}
+                <div className={styles.section} style={revealStyle(3)}>
+                  <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
+                    Launch Settings
+                  </span>
+                  <div className={styles.toggleList}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isPublic}
+                      className={styles.toggleRow}
+                      onClick={() => {
+                        haptic.selection();
+                        setIsPublic((on) => !on);
+                      }}
+                    >
+                      <span className={`${styles.toggleName} sc-ink--silver`}>
+                        Discoverable In Club Arena
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={`sc-label ${styles.toggleState} ${
+                          isPublic ? 'sc-ink--green' : 'sc-ink--muted'
+                        }`}
+                      >
+                        {isPublic ? 'On' : 'Off'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={requiresApproval}
+                      className={styles.toggleRow}
+                      onClick={() => {
+                        haptic.selection();
+                        setRequiresApproval((on) => !on);
+                      }}
+                    >
+                      <span className={`${styles.toggleName} sc-ink--silver`}>
+                        Review Join Requests
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={`sc-label ${styles.toggleState} ${
+                          requiresApproval ? 'sc-ink--green' : 'sc-ink--muted'
+                        }`}
+                      >
+                        {requiresApproval ? 'On' : 'Off'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── The terms: a checkbox to assistive technology AND to the eye.
+                   The master paints no tick box, so the kit cuts one into the
+                   glass (sc-check, SpadeConsole.css). Dan 2026-09-15: "there
+                   needs to be an area for the box check to the I Agree part." */}
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={hasAgreed}
+                  className={`${styles.terms} sc-check ${
+                    hasAgreed ? 'sc-check--on sc-ink--green' : 'sc-ink--muted'
+                  }`}
+                  style={revealStyle(4)}
+                  onClick={() => {
+                    haptic.selection();
+                    setHasAgreed((agreed) => !agreed);
+                  }}
+                >
+                  <span className="sc-check__box" aria-hidden="true" />
+                  <span>I Confirm I Can Manage This Club And Accept The Club Arena Terms.</span>
+                </button>
+              </div>
+            </SpadeConsole>
+          </div>
+
+          {/* Locked above the home indicator: the allowance and the name check
             can never scroll out of sight while the name is being typed. */}
-        <footer className={styles.pageFooter}>
-          <p className={`sc-label ${styles.status}`} aria-live="polite">
-            {allowanceStatus ? (
-              <span className={allowanceStatus.ink}>{allowanceStatus.text}</span>
-            ) : allowanceError ? (
-              <button
-                type="button"
-                className={`${styles.word} sc-ink--gold`}
-                onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
-              >
-                Allowance Check Failed, Retry
-              </button>
-            ) : (
-              <span className="sc-ink--muted">Verifying Club Allowance</span>
-            )}
-            {nameStatus !== 'idle' && (
-              <span className={NAME_STATUS_INK[nameStatus]}>{NAME_STATUS_TEXT[nameStatus]}</span>
-            )}
-          </p>
-        </footer>
+          <footer className={styles.pageFooter}>
+            <p className={`sc-label ${styles.status}`} aria-live="polite">
+              {allowanceStatus ? (
+                <span className={allowanceStatus.ink}>{allowanceStatus.text}</span>
+              ) : allowanceError ? (
+                <button
+                  type="button"
+                  className={`${styles.word} sc-ink--gold`}
+                  onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
+                >
+                  Allowance Check Failed, Retry
+                </button>
+              ) : (
+                <span className="sc-ink--muted">Verifying Club Allowance</span>
+              )}
+              {nameStatus !== 'idle' && (
+                <span className={NAME_STATUS_INK[nameStatus]}>{NAME_STATUS_TEXT[nameStatus]}</span>
+              )}
+            </p>
+          </footer>
+        </div>
       </div>
-    </div>
+
+      {/* The close guard: the kit's own two-plate confirm on the spade
+          console. A sibling of the page, never inside its backdrop, so a tap on
+          the guard's backdrop cancels the guard instead of asking again. */}
+      {closeConfirmOpen && (
+        <div ref={trapRef}>
+          <ConfirmModal
+            isOpen
+            title="Close Create Club?"
+            message={closeGuardMessage}
+            confirmText="Close Now"
+            cancelText="Keep Editing"
+            onConfirm={confirmClose}
+            onCancel={dismissCloseConfirm}
+          />
+        </div>
+      )}
+    </>
   );
 }

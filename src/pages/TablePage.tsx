@@ -113,7 +113,11 @@ import { withClubContext } from '../utils/clubScopedPath';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
-import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
+import {
+  accessRefusalFromClose,
+  isStillWakeableTableRow,
+  shouldRecoverMissedHandStartPresentation,
+} from '../services/EngineStateClient';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
@@ -2202,6 +2206,7 @@ function LiveTablePage({
     lastError: engineLastError,
     lastUserEvent: engineLastUserEvent,
     requestSnapshot: requestEngineSnapshot,
+    reconnectNow: reconnectEngineNow,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
     /* The break's end, from the database, handed to the reconnect ladder so it
@@ -3779,6 +3784,10 @@ function LiveTablePage({
   // tick, which would reset the consecutive-close counter every second.
   const maintenanceBreakRef = useRef(maintenanceBreak);
   maintenanceBreakRef.current = maintenanceBreak;
+  // Same reason, for the row check below: the table this page is on NOW, read
+  // after an await, without putting tableId in the effect's dependencies.
+  const notFoundTableIdRef = useRef(tableId);
+  notFoundTableIdRef.current = tableId;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3811,15 +3820,52 @@ function LiveTablePage({
             tableClosedToastShownRef.current = false;
             return;
           }
+          /* ASK THE ROW BEFORE WRITING THE OBITUARY (2026-09-20). Three 4404s
+             say the ENGINE has no game for this table; they say nothing about
+             whether the table is closed. A table created seconds ago is absent
+             from the engine until its first viewer wakes it, and a host who
+             tapped Start was told "This Table Is No Longer Running" about a
+             row that was still status 'waiting' and not deleted.
+
+             Same read shape as loadTableInfo below (bound error, maybeSingle),
+             judged by the engine's own wake rule (isStillWakeableTableRow
+             mirrors server/src/services/onDemandTableWake.ts). A row the
+             engine WILL wake gets another attempt now instead of a toast, and
+             the counter starts again so a table that really does close later
+             is still announced. A read that fails, or a row that is gone,
+             closed, deleted or a tournament's, is today's behaviour exactly. */
+          const askedFor = notFoundTableIdRef.current;
+          if (askedFor) {
+            const { data: tableRow, error: tableRowError } = await supabase
+              .from('tables')
+              .select('id, tournament_id, status, game_type, is_deleted')
+              .eq('id', askedFor)
+              .maybeSingle();
+            // The player moved to another table during the read: this verdict
+            // belongs to neither. Release the slot and say nothing.
+            if (notFoundTableIdRef.current !== askedFor) {
+              tableClosedToastShownRef.current = false;
+              return;
+            }
+            if (tableRowError) {
+              reportError(tableRowError, 'TablePage.not_found_row_check');
+            } else if (isStillWakeableTableRow(tableRow)) {
+              notFoundCountRef.current = 0;
+              tableClosedToastShownRef.current = false;
+              reconnectEngineNow();
+              return;
+            }
+          }
           heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
         })();
       }
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-    // refreshMaintenanceBreak is a stable useCallback, so this still runs once
-    // per error rather than on every break countdown tick.
-  }, [engineLastError, refreshMaintenanceBreak]);
+    // refreshMaintenanceBreak and reconnectEngineNow are stable useCallbacks,
+    // so this still runs once per error rather than on every break countdown
+    // tick.
+  }, [engineLastError, refreshMaintenanceBreak, reconnectEngineNow]);
   /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
      Why this flag has to exist at all: `auth_failed` is a status the client
      passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401
@@ -3861,6 +3907,13 @@ function LiveTablePage({
   useEffect(() => {
     if (engineWsStatus === 'auth_failed') setEngineRefusedAuth(true);
   }, [engineWsStatus]);
+  /* 2026-09-20: WHY the engine will not show this viewer the table, for the
+     banner. 'access_refused' is terminal for the reconnect ladder, so the
+     close that produced it is still the last error when this is read. */
+  const engineAccessRefusal =
+    engineWsStatus === 'access_refused'
+      ? accessRefusalFromClose(engineLastError?.code, engineLastError?.reason)
+      : null;
 
   useEffect(() => {
     if (engineWsStatus === 'connected') {
@@ -23520,6 +23573,7 @@ function LiveTablePage({
                   status={engineWsStatus}
                   isActive={isActive}
                   authRefused={engineRefusedAuth}
+                  accessRefusal={engineAccessRefusal}
                   /* A dealt hand number proves the felt is showing real state,
                      which silences 'connecting' — see the prop's own doc. */
                   hasLiveState={(tableState.handNumber ?? 0) > 0}

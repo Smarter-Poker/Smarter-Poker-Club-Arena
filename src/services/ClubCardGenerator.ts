@@ -5,7 +5,8 @@
  * Generates club/union cards by:
  * 1. Drawing a dark metallic background with CSS-like gradients
  * 2. Drawing the ID plate zone at top
- * 3. Fitting the user's logo/AI image into the center viewport
+ * 3. Fitting the club's logo (a curated preset crest or the owner's uploaded
+ *    image) into the center viewport
  * 4. Drawing the name plate zone
  * 5. Drawing the stats bar with stat labels (MEMBERS, LEVEL, ACTIVE)
  * Returns as data URL
@@ -110,7 +111,6 @@ export class ClubCardGenerator {
     ctx.strokeRect(1.5, 1.5, CARD_WIDTH - 3, CARD_HEIGHT - 3);
   }
 
-
   /**
    * Zone 2: Viewport background (recessed dark area)
    */
@@ -162,6 +162,4 @@ export class ClubCardGenerator {
       img.src = logoUrl;
     });
   }
-
-
 }

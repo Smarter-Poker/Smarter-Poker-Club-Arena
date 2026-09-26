@@ -352,9 +352,16 @@ export default async function globalSetup(config: FullConfig) {
     // fixture club, which made all eight lobby assertions time out without
     // ever reaching the UI they claim to test. Use the public Join Club flow
     // once and prove the lobby is reachable before sharing this storageState.
-    observation.stage('membership');
-    await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
-    await dismissClubEntryMessage(page);
+    if (process.env.E2E_NEW_CLUB_CERT === '1') {
+      // The Create A Club production certificate must begin with a genuinely
+      // empty account. Joining the shared fixture here would prove creation for
+      // an existing member, not the first-run promise the certificate owns.
+      console.log('[global-setup] preserving the isolated account with zero club memberships.');
+    } else {
+      observation.stage('membership');
+      await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
+      await dismissClubEntryMessage(page);
+    }
 
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');

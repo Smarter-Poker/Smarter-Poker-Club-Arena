@@ -9,8 +9,30 @@ export interface HorseJournalArchiveOptions {
 
 // Separate durable archive allocation; the original 64 MiB journal remains
 // unchanged. These bound compressed files independently of the catalog's
-// 6 GiB physical ceiling and each 4 MiB decoded batch. No quota grants
-// permission to delete records or describe an incomplete window as complete.
+// 6 GiB physical ceiling and each 4 MiB decoded batch.
+//
+// THE ALLOCATION IS A RING (2026-09-26). Until then a full allocation paused
+// capture for good: on 2026-09-25 19:34 UTC the production archive reached
+// 500,000 segments (4,139,804 records, 6.48 GB compressed, 8.3 days of play,
+// 9.7 GB on disk with the catalog) and no Horse decision was journaled again.
+// Now, once a batch would exceed the segment, record, byte or catalog quota,
+// the writer retires the oldest PUBLISHED segments, oldest first, inside the
+// same reservation transaction until the batch fits, and capture continues.
+// A reserved batch that has not been published is never retired, so only
+// unpublished segments can ever hold capture at a quota; the filesystem's own
+// free space is not a ring quota and still pauses capture, by name, because
+// the archive retires within its allocation and not for whatever else filled
+// the disk. No quota describes an incomplete window as complete: a retired
+// record is a missing record to every reader.
+//
+// HORSE_DECISION_JOURNAL_ARCHIVE_MAX_SEGMENTS is the ring's length and the
+// one knob that sizes the retained window. Default 500,000 segments (the
+// ceiling too: the catalog is sized for 8,000,000 records), which on the
+// engine host is about eight days of capture in about 10 GB, on a 75 GB disk
+// that had 21 GB free with the archive full. Lowering it retires the excess
+// over the following appends; raising it past the ceiling is refused.
+// HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES (default 8 GiB compressed) is the
+// byte bound of the same ring.
 export const HORSE_JOURNAL_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024;
 export const HORSE_JOURNAL_ARCHIVE_SEGMENTS = 500_000;
 // The writer refuses a batch once the archive holds maxSegments * 16 records.

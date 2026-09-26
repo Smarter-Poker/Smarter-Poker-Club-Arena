@@ -11,7 +11,11 @@ on:
       - public/club-logos/**
       - scripts/ci/certify-club-create.mjs
       - src/components/modals/CreateClubModal.tsx
+      - src/pages/HomePage.tsx
       - src/services/ClubsService.ts
+      - tests/e2e/global-setup.ts
+      - tests/e2e/production-create-club.spec.ts
+      - scripts/ci/production-e2e-account.mjs
       - supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql
 
 permissions:
@@ -30,6 +34,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
       - name: Certify Authenticated Club Creation And Cleanup
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -37,3 +42,41 @@ jobs:
           VITE_SUPABASE_ANON_KEY: sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx
           CLUB_CREATE_CERT_ASSET_URL: https://smarter.poker/hub/club-arena/club-logos/preset-19.webp
         run: node scripts/ci/certify-club-create.mjs
+      - name: Provision A Brand-New Player
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+      - name: Create A Club Through The Published User Interface
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          E2E_NEW_CLUB_CERT: '1'
+          E2E_REQUIRE_AUTH: '1'
+          PLAYWRIGHT_WORKERS: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx
+        run: npx playwright test tests/e2e/production-create-club.spec.ts --project=chromium --workers=1
+      - name: Retire The Created Club
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs retire-create-clubs
+      - name: Delete The Reserved Player
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup
+      - name: Upload Create Club Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-club-production-evidence
+          path: |
+            test-results/create-club-ready-mobile.png
+            test-results/create-club-opened-mobile.png
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14

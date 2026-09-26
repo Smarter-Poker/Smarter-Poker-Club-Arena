@@ -902,6 +902,81 @@ export async function getTableState(tableId: string): Promise<Record<string, unk
   }
 }
 
+/**
+ * The engine's two verdicts on a VIEWER of a table (server/src/handlers/state.ts
+ * answers GET /state with 403 and one of these codes). The same two the
+ * multiplexed socket carries as `subscription refused: <CODE>`
+ * (MUX_ACCESS_REFUSAL_CODES in services/EngineSocketMux, pinned equal by
+ * tests/a-wake-refusal-is-not-a-slow-engine.test.ts). Declared here rather than
+ * imported so this entry-chunk module takes no new static import.
+ */
+export const TABLE_VIEW_REFUSAL_CODES = [
+  'CLUB_MEMBERSHIP_REQUIRED',
+  'OBSERVERS_RESTRICTED',
+] as const;
+export type TableViewRefusal = (typeof TABLE_VIEW_REFUSAL_CODES)[number];
+
+/** What one wake read learned: the engine is up, it refused this viewer, or neither yet. */
+export type TableWakeResult =
+  | { status: 'awake'; state: Record<string, unknown> }
+  | { status: 'refused'; code: TableViewRefusal }
+  | { status: 'not_awake' };
+
+/**
+ * ═══ A WAKE THAT CAN TELL "NOT YET" FROM "NOT YOU" (2026-09-22) ═══════════
+ *
+ * The same authenticated GET /state/:id as getTableState - the read that
+ * provisions a created table's engine on first demand
+ * (GameServer.ensureCashTableEngine) - for the one caller that has to act on
+ * WHY it failed: Start in the New Cash Game flow.
+ *
+ * getTableState answers null for a 403, a 404, a 503 and a dropped request
+ * alike, so a union operator who may CREATE a game but may not WATCH its table
+ * was retried for four seconds and then told "The Table Is Still Starting", a
+ * sentence no amount of waiting makes true. Here a 403 carrying one of the
+ * engine's two access codes is a verdict; everything else - including a 403
+ * without a code this client knows - is "not awake yet", which is exactly what
+ * getTableState's null meant. Never throws.
+ *
+ * A sibling rather than a change to getTableState, so that no other caller
+ * (TableWebSocket's resync, anything reaching it through the default export)
+ * sees a different answer.
+ */
+export async function wakeTable(tableId: string): Promise<TableWakeResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await engineFetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
+    if (response.ok) {
+      const state: unknown = await response.json();
+      return state && typeof state === 'object'
+        ? { status: 'awake', state: state as Record<string, unknown> }
+        : { status: 'not_awake' };
+    }
+    if (response.status === 403) {
+      const code = await viewRefusalOf(response);
+      if (code) return { status: 'refused', code };
+    }
+    return { status: 'not_awake' };
+  } catch (err: unknown) {
+    reportError(err, 'GameServerAPI.wakeTable');
+    return { status: 'not_awake' };
+  }
+}
+
+/** The access code a 403 body names, if it is one of the engine's two. */
+async function viewRefusalOf(response: Response): Promise<TableViewRefusal | null> {
+  try {
+    const body = (await response.json()) as { code?: unknown } | null;
+    const code = body && typeof body === 'object' ? body.code : null;
+    return (TABLE_VIEW_REFUSAL_CODES as readonly unknown[]).includes(code)
+      ? (code as TableViewRefusal)
+      : null;
+  } catch {
+    // An unreadable body is not a verdict; the caller treats it as not awake.
+    return null;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADVANCED FEATURES — RIT, Insurance, Show Hand
 // ═══════════════════════════════════════════════════════════════════════════════

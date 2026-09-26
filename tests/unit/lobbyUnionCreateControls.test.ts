@@ -26,7 +26,16 @@ const creationActions = readFileSync(
 
 describe('club lobby creation controls', () => {
   it('shows creation only to authorized standalone clubs', () => {
-    expect(page).toContain('const canCreateClubGames = noticeEditable && !unionManagedClub');
+    /* Phase 2 (2026-09-20): this pinned `noticeEditable && !unionManagedClub`,
+       where unionManagedClub was Boolean(is_union || union_id || lookup). An
+       unresolved or errored lookup is `undefined`, which that read as "not a
+       union" and showed staff the create controls of a union_clubs-only club.
+       The gate now fails closed on a three-state scope. */
+    expect(page).toContain(
+      "const canCreateClubGames = noticeEditable && clubUnionScope === 'standalone'"
+    );
+    expect(page).toContain('const clubUnionScope = resolveClubUnionScope(club, unionIdForCreate)');
+    expect(page).not.toContain('Boolean(club.is_union || club.union_id || unionIdForCreate)');
     expect(page).toContain('canCreateClubGames && (');
     expect(page).toContain('GameCreationActions');
     expect(gameCreationGuard).toContain('fetchGameCreationAccess');

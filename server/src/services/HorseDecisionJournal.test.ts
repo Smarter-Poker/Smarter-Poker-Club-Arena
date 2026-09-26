@@ -75,7 +75,9 @@ afterEach(() => {
   for (const s of stores.splice(0))
     try {
       s.close();
-    } catch {}
+    } catch {
+      /* already closed by the test */
+    }
   for (const f of folders.splice(0)) rmSync(f, { recursive: true, force: true });
   vi.useRealTimers();
 });
@@ -589,21 +591,37 @@ describe('bounded immutable Horse archive custody', () => {
       );
     expect(a.readHand(record().handKey)).toEqual([record(), record(2)]);
   });
-  it.each(['maxBytes', 'maxSegments'] as const)(
-    'reserves %s atomically and never deletes earlier custody',
-    (key) => {
-      const dir = folder(),
-        s = store(dir, { archive: options(dir, { [key]: key === 'maxBytes' ? 1 : 1 }) });
-      if (key === 'maxSegments') s.append(record());
-      expect(() => s.append(record(2))).toThrow(
-        key === 'maxBytes' ? 'byte_capacity' : 'segment_capacity'
-      );
-      expect(s.storageStats().archive).toMatchObject({
-        records: key === 'maxBytes' ? 0 : 1,
-        pendingSegments: 0,
-      });
-    }
-  );
+  it('refuses a batch that could not fit an empty archive without retiring anything', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxBytes: 1 }) });
+    expect(() => s.append(record())).toThrow('byte_capacity');
+    expect(s.storageStats().archive).toMatchObject({
+      records: 0,
+      segments: 0,
+      pendingSegments: 0,
+      retiredSegments: 0,
+    });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual([]);
+  });
+  it('at the segment quota the ring retires the oldest published segment and records the batch', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxSegments: 1 }) });
+    expect(s.append(record())).toBe('recorded');
+    const [first] = readdirSync(join(dir, 'archive', 'segments'));
+    expect(s.append(record(2))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2)]);
+    expect(s.storageStats().archive).toMatchObject({
+      records: 1,
+      segments: 1,
+      publishedSegments: 1,
+      pendingSegments: 0,
+      retiredSegments: 1,
+      retiredRecords: 1,
+    });
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(files).toHaveLength(1);
+    expect(files).not.toContain(first);
+  });
   it('retains a reserved batch after index failure and recovers exact bytes once at reopen', () => {
     const dir = folder(),
       s = store(dir, { archive: options(dir) }),
@@ -709,6 +727,11 @@ describe('bounded immutable Horse archive custody', () => {
     // Fewer free pages than one batch's documented margin, as a real writer
     // connection would see them; no fake SQLite error and no trigger.
     writer.exec(`PRAGMA max_page_count=${pages + 8};`);
+    // A replayed-only batch reserves nothing, so it is not refused and the
+    // ring retires nothing for it.
+    expect(s.appendBatch([record()])).toEqual(['replayed']);
+    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
     let capacityError: unknown;
     try {
       s.appendBatch([record(2), record(3)]);
@@ -717,17 +740,27 @@ describe('bounded immutable Horse archive custody', () => {
     }
     expect(capacityError).toMatchObject({ message: 'horse_archive_catalog_capacity' });
     expect(horseJournalCapacityReason(capacityError)).toBe('archive_catalog_capacity');
-    // Nothing was reserved: no pending row, no usage charge, no staged file,
-    // and the hand reads exactly what it read before.
-    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
-    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
-    expect(s.readHand(record().handKey)).toEqual([record()]);
-    expect(s.append(record())).toBe('replayed');
-    // A replayed-only batch reserves nothing, so it is not refused.
-    expect(() => s.appendBatch([record()])).not.toThrow();
+    // Nothing was reserved: no pending row, no usage charge for the batch, no
+    // staged file. The ring retired the one published segment trying to make
+    // room, and that retirement is kept (2026-09-26): its rows, usage and
+    // file are gone together, and the hand reads it as missing.
+    expect(s.storageStats().archive).toEqual({
+      ...before,
+      compressedBytes: 0,
+      segments: 0,
+      publishedSegments: 0,
+      records: 0,
+      retiredSegments: 1,
+      retiredRecords: 1,
+      pendingSegments: 0,
+      maxRowid: 0,
+      catalogBytes: s.storageStats().archive!.catalogBytes,
+    });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual([]);
+    expect(s.readHand(record().handKey)).toEqual([]);
     writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
     expect(s.appendBatch([record(2), record(3)])).toEqual(['recorded', 'recorded']);
-    expect(s.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3)]);
   });
   it('recovers publication interrupted between hard-link creation and staging unlink', () => {
     const dir = folder(),
@@ -923,10 +956,13 @@ describe('the capacity probe asks the writer, read-only, whether a quota has roo
     expect(s.appendBatch([record(1)])).toEqual(['recorded']);
     const before = s.storageStats();
     const files = readdirSync(join(dir, 'archive', 'segments'));
-    expect(s.capacityRefusal([record(2)])).toBe('archive_segments');
+    // At the segment quota with a published segment to retire, the probe says
+    // room, because that is what the next append will make; it retires nothing.
+    expect(s.capacityRefusal([record(2)])).toBeNull();
     expect(s.storageStats()).toEqual(before);
     expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
-    expect(() => s.appendBatch([record(2)])).toThrow('horse_archive_segment_capacity');
+    expect(s.appendBatch([record(2)])).toEqual(['recorded']);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).not.toEqual(files);
     const small = folder(),
       tiny = store(small, { archive: archiveOptions(small, { maxBytes: 1 }) });
     expect(tiny.capacityRefusal([record(1)])).toBe('archive_bytes');
@@ -936,18 +972,34 @@ describe('the capacity probe asks the writer, read-only, whether a quota has roo
   it('sees catalog room return and the writer then accepts the same batch', () => {
     const dir = folder(),
       s = store(dir, { archive: archiveOptions(dir) });
-    expect(s.append(record())).toBe('recorded');
     const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
     const pages = Number(writer.prepare('PRAGMA page_count').get()!.page_count),
-      before = s.storageStats().archive!;
+      empty = s.storageStats().archive!;
+    // Nothing published: the catalog ceiling refuses by name and nothing changes.
     writer.exec(`PRAGMA max_page_count=${pages + 8};`);
     expect(s.capacityRefusal([record(2), record(3)])).toBe('archive_catalog_capacity');
     expect(() => s.appendBatch([record(2), record(3)])).toThrow('horse_archive_catalog_capacity');
-    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
+    expect(s.storageStats().archive).toEqual({ ...empty, pendingSegments: 0 });
+    writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
+    expect(s.append(record())).toBe('recorded');
+    // With a published segment the probe says room, the append retires it and,
+    // when the ceiling still refuses, keeps that retirement and refuses by
+    // name: the next attempt starts nearer to room, never from the same place.
+    const held = Number(writer.prepare('PRAGMA page_count').get()!.page_count);
+    writer.exec(`PRAGMA max_page_count=${held + 8};`);
+    expect(s.capacityRefusal([record(2), record(3)])).toBeNull();
+    expect(() => s.appendBatch([record(2), record(3)])).toThrow('horse_archive_catalog_capacity');
+    expect(s.storageStats().archive).toMatchObject({
+      records: 0,
+      segments: 0,
+      pendingSegments: 0,
+      retiredSegments: 1,
+    });
+    expect(s.capacityRefusal([record(2), record(3)])).toBe('archive_catalog_capacity');
     writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
     expect(s.capacityRefusal([record(2), record(3)])).toBeNull();
     expect(s.appendBatch([record(2), record(3)])).toEqual(['recorded', 'recorded']);
-    expect(s.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3)]);
   });
   it('the actual dedicated worker answers a probe without writing', async () => {
     const dir = folder();
@@ -974,14 +1026,15 @@ describe('the capacity probe asks the writer, read-only, whether a quota has roo
         room: true,
       });
       expect(await ask({ type: 'APPEND', records: [record(1)] })).toMatchObject({ type: 'ACK' });
-      expect(await ask({ type: 'APPEND', records: [record(2)] })).toEqual({
-        type: 'UNAVAILABLE',
-        reason: 'archive_segments',
-      });
+      // At the quota the probe answers room and the append retires the oldest
+      // published segment: capture continues through the real writer.
       expect(await ask({ type: 'PROBE', records: [record(2)] })).toEqual({
         type: 'CAPACITY',
-        room: false,
-        reason: 'archive_segments',
+        room: true,
+      });
+      expect(await ask({ type: 'APPEND', records: [record(2)] })).toMatchObject({
+        type: 'ACK',
+        receipts: [{ eventId: record(2).eventId, status: 'recorded' }],
       });
       // A malformed probe is answered "no room", never a failure of the writer.
       expect(await ask({ type: 'PROBE', records: [{ bogus: true }] })).toEqual({
@@ -989,10 +1042,217 @@ describe('the capacity probe asks the writer, read-only, whether a quota has roo
         room: false,
       });
       const stats = await ask({ type: 'STATS' });
-      expect(stats.stats.archive).toMatchObject({ records: 1, segments: 1, pendingSegments: 0 });
+      expect(stats.stats.archive).toMatchObject({
+        records: 1,
+        segments: 1,
+        pendingSegments: 0,
+        publishedSegments: 1,
+        retiredSegments: 1,
+      });
       expect(await ask({ type: 'STOP' })).toEqual({ type: 'STOPPED' });
     } finally {
       await worker.terminate();
+    }
+  });
+});
+
+describe('the archive is a ring: the oldest published segments make room, unpublished ones never do', () => {
+  const options = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  const catalog = (dir: string) =>
+    new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  const segmentFiles = (dir: string) => readdirSync(join(dir, 'archive', 'segments')).sort();
+  it('retires oldest first and only as many as the batch needs; the file, the rows and the usage leave together', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxSegments: 3 }) });
+    const three: string[] = [];
+    for (const n of [1, 2, 3]) {
+      expect(s.append(record(n))).toBe('recorded');
+      three.push(segmentFiles(dir).find((f) => !three.includes(f))!);
+    }
+    expect(s.append(record(4))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3), record(4)]);
+    expect(s.appendBatch([record(5), record(6)])).toEqual(['recorded', 'recorded']);
+    expect(s.readHand(record().handKey)).toEqual([record(3), record(4), record(5), record(6)]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 3,
+      publishedSegments: 3,
+      pendingSegments: 0,
+      records: 4,
+      retiredSegments: 2,
+      retiredRecords: 2,
+    });
+    const now = segmentFiles(dir);
+    expect(now).toHaveLength(3);
+    expect(now).not.toContain(three[0]);
+    expect(now).not.toContain(three[1]);
+    expect(now).toContain(three[2]);
+    const native = catalog(dir);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_segments').get()!.n).toBe(3);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_events').get()!.n).toBe(4);
+    const usage = native.prepare('SELECT bytes FROM archive_meta WHERE id=1').get()!;
+    expect(usage.bytes).toBe(
+      native.prepare('SELECT sum(bytes) AS n FROM archive_segments').get()!.n
+    );
+    native.close();
+  });
+  it('the byte quota is the same ring: the oldest published segment goes when a new one needs its bytes', () => {
+    const sizing = folder(),
+      probe = store(sizing, { archive: options(sizing) });
+    probe.append(record(1));
+    probe.append(record(2));
+    const maxBytes = probe.storageStats().archive!.compressedBytes;
+    probe.close();
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxBytes }) });
+    expect(s.append(record(1))).toBe('recorded');
+    expect(s.append(record(2))).toBe('recorded');
+    expect(s.append(record(3, { a: 1 }))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3, { a: 1 })]);
+    expect(s.storageStats().archive).toMatchObject({ segments: 2, retiredSegments: 1 });
+    expect(s.storageStats().archive!.compressedBytes).toBeLessThanOrEqual(maxBytes);
+  });
+  it('never retires a reserved batch that was not published; only unpublished segments hold the quota', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxSegments: 1 }) }),
+      native = catalog(dir);
+    native.exec(
+      "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+    );
+    expect(() => s.append(record(1))).toThrow('synthetic interruption');
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 1,
+      publishedSegments: 0,
+      pendingSegments: 1,
+      retiredSegments: 0,
+    });
+    // The probe: nothing published can be retired, so the quota stands by name.
+    expect(s.capacityRefusal([record(2)])).toBe('archive_segments');
+    // The append: the reserved batch is completed first, never retired, and
+    // while it cannot be completed nothing is retired either.
+    expect(() => s.append(record(2))).toThrow('synthetic interruption');
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 1,
+      pendingSegments: 1,
+      retiredSegments: 0,
+    });
+    expect(native.prepare('SELECT count(*) AS n FROM archive_pending').get()!.n).toBe(1);
+    native.exec('DROP TRIGGER fail_index');
+    native.close();
+    // Once published it is the oldest published segment, and the ring may retire it.
+    expect(s.append(record(2))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2)]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 1,
+      publishedSegments: 1,
+      pendingSegments: 0,
+      retiredSegments: 1,
+    });
+  });
+  it('a lowered ring retires its excess over the following appends and keeps the newest', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir, { maxSegments: 5 }) });
+    for (const n of [1, 2, 3, 4, 5]) a.append(record(n));
+    a.close();
+    const b = store(dir, { archive: options(dir, { maxSegments: 2 }) });
+    expect(b.append(record(6))).toBe('recorded');
+    expect(b.readHand(record().handKey)).toEqual([record(5), record(6)]);
+    expect(b.storageStats().archive).toMatchObject({
+      segments: 2,
+      maxSegments: 2,
+      retiredSegments: 4,
+    });
+    expect(segmentFiles(dir)).toHaveLength(2);
+  });
+  it('a file whose rows were retired before the process died is unlinked at the next open', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir) });
+    a.append(record(1));
+    a.close();
+    const sha = 'f'.repeat(64),
+      orphan = join(dir, 'archive', 'segments', sha + '.ndjson.gz');
+    writeFileSync(orphan, gzipSync(Buffer.from('retired\n')), { mode: 0o600 });
+    const native = catalog(dir);
+    native.prepare('INSERT INTO archive_retired VALUES(?,?)').run(sha, 1);
+    native.close();
+    const b = store(dir, { archive: options(dir) });
+    expect(segmentFiles(dir)).not.toContain(sha + '.ndjson.gz');
+    expect(catalog(dir).prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(b.readHand(record().handKey)).toEqual([record(1)]);
+  });
+  it('a segment retired between a reader snapshot and its file read is missing, not corruption', () => {
+    const dir = folder(),
+      w = store(dir, { archive: options(dir, { maxSegments: 1 }) });
+    w.append(record(1));
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    const proto = HorseDecisionJournalStore.prototype as unknown as {
+      readSegment: (row: unknown) => unknown;
+    };
+    const original = proto.readSegment;
+    const spy = vi.spyOn(proto, 'readSegment').mockImplementationOnce(function (
+      this: unknown,
+      row: unknown
+    ) {
+      // The writer retires the snapshotted segment before the reader opens it.
+      spy.mockRestore();
+      w.append(record(2));
+      return original.call(this, row);
+    });
+    expect(r.readHand(record().handKey)).toEqual([]);
+    expect(r.readHand(record().handKey)).toEqual([record(2)]);
+  });
+  it('a read-only observer of a catalog that has not been opened by a ring writer reports zero retired', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir) });
+    a.append(record(1));
+    a.close();
+    const native = catalog(dir);
+    native.exec('DROP TABLE archive_ring; DROP TABLE archive_retired;');
+    native.close();
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    expect(r.storageStats().archive).toMatchObject({
+      publishedSegments: 1,
+      retiredSegments: 0,
+      retiredRecords: 0,
+    });
+  });
+  it('/health says whether capture runs and why, with the ring counts', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      expect(p.health()).toMatchObject({
+        segments: 1,
+        maxSegments: 100,
+        publishedSegments: 1,
+        pendingSegments: 0,
+        retiredSegments: 4,
+        retiredRecords: 12,
+        compressedBytes: 10,
+        maxBytes: 1024,
+        capture:
+          'running: the archive is a ring of 100 segments; the oldest published segment is retired when a new one needs its room; retained=1 published=1 unpublished=0 retired=4',
+      });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment left to retire (only unpublished segments remain); asks again every minute; retained=1 published=1 unpublished=0 retired=4'
+      );
+      w.emit({ type: 'CAPACITY', room: false, reason: 'archive_storage_capacity' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute; retained=1 published=1 unpublished=0 retired=4'
+      );
+      void p.stop();
+    } finally {
+      warn.mockRestore();
     }
   });
 });
@@ -1013,6 +1273,9 @@ const STATS_ARCHIVE = {
   segments: 1,
   records: 3,
   pendingSegments: 0,
+  publishedSegments: 1,
+  retiredSegments: 4,
+  retiredRecords: 12,
   catalogBytes: 40960,
   maxRowid: 3,
   maxBytes: 1024,
@@ -1310,6 +1573,13 @@ describe('/health reads the journal from the thread that runs it', () => {
       });
       expect(horseDecisionJournalHealth()).not.toHaveProperty('path');
       expect(horseDecisionJournalHealth()!.lastFailureReason).toBeNull();
+      // The capture sentence is rebuilt on this thread from the finite fields,
+      // never copied from the report.
+      relayHorseDecisionJournalHealth({ ...p.health(), capture: 'running: /unused-fixture-path' });
+      expect(horseDecisionJournalHealth()!.capture).toBe(p.health().capture);
+      expect(horseDecisionJournalHealth()!.capture).toMatch(
+        /^not running: capture stopped for good at ack_mismatch/
+      );
       await p.stop();
     } finally {
       warn.mockRestore();
@@ -1353,12 +1623,20 @@ describe('the journal says why it stopped and shows itself to /health', () => {
       appliedMaxCatalogBytes: null,
       maxCatalogBytes: null,
       catalogBytes: null,
+      segments: null,
+      maxSegments: null,
+      publishedSegments: null,
       pendingSegments: null,
+      retiredSegments: null,
+      retiredRecords: null,
+      compressedBytes: null,
+      maxBytes: null,
       records: null,
       maxRecords: null,
       maxRowid: null,
       statsAgeMs: null,
       reportAgeMs: null,
+      capture: 'not running yet: the writer has not said READY',
     });
     // A writer that is not ready is not asked.
     expect(w.sent).toEqual([]);

@@ -239,7 +239,11 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
         `Membership Limit Reached: You Belong To ${cap} Of ${cap} Clubs. Leave A Club Before Creating Another.`
       );
     }
-    if (createError?.code === 'P0001' && /temporarily unavailable/i.test(message)) {
+    if (
+      (createError?.code === 'P0001' && /temporarily unavailable/i.test(message)) ||
+      createError?.code === '55006' ||
+      /PLATFORM_FROZEN|scheduled maintenance break/i.test(message)
+    ) {
       throw new Error('Club Creation Is Temporarily Unavailable. Please Try Again Soon.');
     }
     throw new Error('Club Could Not Be Created. Your Details Are Still Here. Please Try Again.');

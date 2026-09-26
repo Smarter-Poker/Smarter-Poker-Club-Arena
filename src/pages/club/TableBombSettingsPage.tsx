@@ -31,7 +31,7 @@
  * clamp, rounding rule and pinned literal is kept; only the paint changed.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
@@ -71,6 +71,70 @@ const MODES: Array<{ value: TriggerMode; label: string; hint: string }> = [
   { value: 'bomb_pot_only', label: 'Bomb Pots Only', hint: 'Every Hand Is A Bomb Pot' },
 ];
 
+/* ── THE HAND INTERVAL IS A WHOLE NUMBER FROM 1 TO 200 ─────────────────────
+   The field's only check used to be `Math.max(1, Number(v) || 1)`: no
+   rounding and no ceiling (`max={200}` on a number input is a hint the browser
+   shows, not a limit it enforces on typed text). fn_update_table_bomb_settings
+   reads the value with `(p_settings ->> 'bomb_pot_frequency')::int`, and a
+   text-to-int cast RAISES on "2.5", so a host who typed a half step got
+   "Could Not Save These Settings" with no clue which field was at fault; one
+   who typed 99999 saved a table whose bomb effectively never comes.
+
+   One function decides what the field means, and the change handler, the blur
+   handler, the row that was loaded and the save all go through it, so the
+   number on screen, the sentence under it and the number sent are the same. */
+const BOMB_HAND_INTERVAL_MIN = 1;
+const BOMB_HAND_INTERVAL_MAX = 200;
+
+function isReadableNumber(raw: string): boolean {
+  const text = raw.trim();
+  return text !== '' && Number.isFinite(Number(text));
+}
+
+/** Whatever was typed, as the whole number of hands the table will use. */
+function clampBombHandInterval(raw: string | number): number {
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+  if (!Number.isFinite(n)) return BOMB_HAND_INTERVAL_MIN;
+  return Math.min(BOMB_HAND_INTERVAL_MAX, Math.max(BOMB_HAND_INTERVAL_MIN, Math.round(n)));
+}
+
+/** 1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st, 112th. */
+function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  const last = n % 10;
+  return `${n}${last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th'}`;
+}
+
+/**
+ * What the interval MEANS, in the engine's own terms. BombPotScheduler's
+ * noteHandStart runs once per hand, before it is dealt, and counts that hand
+ * (`handsSinceBomb++`); the hand on which the count reaches the frequency is
+ * the bomb, and the count resets to zero when the bomb is dealt. So N = 10 is
+ * nine ordinary hands and then a bomb: every 10th hand. N = 1 is a bomb on
+ * every hand. (A due bomb still waits for the "Needs" player count below,
+ * which has its own row and its own words.)
+ */
+function bombHandIntervalSentence(n: number): string {
+  const hands = clampBombHandInterval(n);
+  return hands === 1 ? 'Every Hand Is A Bomb Pot' : `Every ${ordinal(hands)} Hand Is A Bomb Pot`;
+}
+
+/**
+ * Why the number in force is not the number that was typed, or null when it
+ * is. Said inline, under the field, at the moment it happens.
+ */
+function bombHandIntervalRefusal(raw: string): string | null {
+  if (!isReadableNumber(raw)) return 'Enter A Whole Number From 1 To 200';
+  const n = Number(raw.trim());
+  if (n < BOMB_HAND_INTERVAL_MIN) return 'The Fewest Is 1 Hand, So This Is Set To 1';
+  if (n > BOMB_HAND_INTERVAL_MAX) return 'The Most Is 200 Hands, So This Is Set To 200';
+  if (!Number.isInteger(n)) {
+    return `Hands Are Whole Numbers, So This Is Set To ${clampBombHandInterval(n)}`;
+  }
+  return null;
+}
+
 const VARIANTS = [
   { value: '', label: 'Same As Table' },
   { value: 'nlh', label: 'NLH' },
@@ -89,6 +153,13 @@ export default function TableBombSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* What is IN the interval box, which while a host is typing is not always a
+     legal value ("", "2.", "0"). `draft.frequency` is always the legal whole
+     number that text means; the box snaps to it on blur. The refusal says why
+     the two differ, and stays after the snap so the snap is never silent. */
+  const [frequencyText, setFrequencyText] = useState('');
+  const [frequencyRefusal, setFrequencyRefusal] = useState<string | null>(null);
+  const frequencyHintId = useId();
 
   useEffect(() => {
     if (!tableId) return;
@@ -113,6 +184,12 @@ export default function TableBombSettingsPage() {
       }
       const r = data as unknown as Record<string, unknown>;
       setTableName(String(r.name ?? ''));
+      // A row saved before the ceiling existed may hold more than 200. Show
+      // what this page will save, and say why it is not what was stored.
+      const storedFrequency = Number(r.bomb_pot_frequency ?? 0) || 10;
+      const loadedFrequency = clampBombHandInterval(storedFrequency);
+      setFrequencyText(String(loadedFrequency));
+      setFrequencyRefusal(bombHandIntervalRefusal(String(storedFrequency)));
       setDraft({
         enabled: r.bomb_pot_enabled === true,
         mode: (['every_n_hands', 'once_per_orbit', 'timed', 'bomb_pot_only'] as const).includes(
@@ -120,7 +197,7 @@ export default function TableBombSettingsPage() {
         )
           ? (r.bomb_pot_trigger_mode as TriggerMode)
           : 'every_n_hands',
-        frequency: Number(r.bomb_pot_frequency ?? 0) || 10,
+        frequency: loadedFrequency,
         intervalMinutes:
           Math.max(1, Math.round(Number(r.bomb_pot_interval_seconds ?? 0) / 60)) || 15,
         boards: Number(r.bomb_pot_board_count ?? 1) || 1,
@@ -150,7 +227,8 @@ export default function TableBombSettingsPage() {
       p_settings: {
         bomb_pot_enabled: draft.enabled,
         bomb_pot_trigger_mode: draft.mode,
-        bomb_pot_frequency: draft.frequency,
+        // Never the raw text: `::int` in the RPC raises on "2.5".
+        bomb_pot_frequency: clampBombHandInterval(draft.frequency),
         bomb_pot_interval_seconds: Math.round(draft.intervalMinutes * 60),
         bomb_pot_board_count: draft.boards,
         bomb_pot_min_players: draft.minPlayers,
@@ -311,20 +389,67 @@ export default function TableBombSettingsPage() {
             </div>
 
             {draft.mode === 'every_n_hands' && (
-              <label className={styles.field}>
-                <span className={`${styles.label} sc-ink--blue`}>Bomb Pot Hand Interval</span>
-                <span className={styles.control}>
-                  <input
-                    type="number"
-                    className={styles.input}
-                    min={1}
-                    max={200}
-                    value={draft.frequency}
-                    onChange={(e) => set('frequency', Math.max(1, Number(e.target.value) || 1))}
-                  />
-                  <span className={`${styles.suffix} sc-ink--muted`}>Hands</span>
-                </span>
-              </label>
+              <div className={styles.intervalGroup}>
+                <label className={styles.field}>
+                  <span className={`${styles.label} sc-ink--blue`}>Bomb Pot Hand Interval</span>
+                  <span className={styles.control}>
+                    {/* A text box with the numeric keypad, not type="number":
+                        a number input reports "" for a half-typed value, so the
+                        page could not tell an empty box from a decimal in
+                        progress and had nothing true to say about either. */}
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={8}
+                      className={styles.input}
+                      value={frequencyText}
+                      aria-invalid={
+                        frequencyRefusal !== null &&
+                        frequencyText.trim() !== String(draft.frequency)
+                          ? true
+                          : undefined
+                      }
+                      aria-describedby={frequencyHintId}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setFrequencyText(raw);
+                        setFrequencyRefusal(bombHandIntervalRefusal(raw));
+                        // An empty or unreadable box changes nothing: the table
+                        // keeps the last whole number until a new one is typed.
+                        // (Clearing the box used to mean 1, a bomb on every hand.)
+                        if (isReadableNumber(raw)) set('frequency', clampBombHandInterval(raw));
+                      }}
+                      onBlur={() => {
+                        // Snap the box to the number the table will use. A
+                        // correction stays to explain the snap; "enter a
+                        // number" does not, because the old value is back.
+                        if (!isReadableNumber(frequencyText)) setFrequencyRefusal(null);
+                        setFrequencyText(String(draft.frequency));
+                      }}
+                    />
+                    <span className={`${styles.suffix} sc-ink--muted`}>Hands</span>
+                  </span>
+                </label>
+                <div id={frequencyHintId} className={styles.hint}>
+                  <p className={`sc-copy ${styles.sentence}`} data-testid="bomb-interval-sentence">
+                    {bombHandIntervalSentence(draft.frequency)}
+                  </p>
+                  {frequencyRefusal && (
+                    <p
+                      className={`sc-copy ${styles.refusal} ${
+                        frequencyText.trim() !== String(draft.frequency)
+                          ? 'sc-ink--red'
+                          : 'sc-ink--muted'
+                      }`}
+                      role="alert"
+                      data-testid="bomb-interval-refusal"
+                    >
+                      {frequencyRefusal}
+                    </p>
+                  )}
+                </div>
+              </div>
             )}
 
             {draft.mode === 'timed' && (

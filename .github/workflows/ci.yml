@@ -1473,6 +1473,7 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-formation.sh
       - name: Lightning remediation two anchors the pool to the seat, guards it in hand and waits for the engine to see the halt
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-remediation-two.sh

@@ -646,6 +646,31 @@ export class RakebackSettlerService {
 
   private launchSettlement(generation: number, context: string): void {
     if (!this.lifecycleIsCurrent(generation)) return;
+    /**
+     * EVERY LAUNCH WAITS OUT THE FREEZE, NOT ONLY THE INTERVAL'S (2026-09-26).
+     *
+     * The interval tick already held itself for the thaw (2026-09-21, below).
+     * The startup run and the 60 s catch-up did not. An engine restart lands
+     * INSIDE the break by design (the new engine boots at ~:56 and adopts the
+     * persisted break), so its startup run met the database freeze on its
+     * first cash-source batch, halted with no page acknowledged, armed no
+     * catch-up, and the settler sat idle until the next interval tick.
+     * Measured 2026-09-26: restart 13:56:26 with 213 s of break left,
+     * "Cash source batch failed" at 13:56:56, cursor still 2026-09-26
+     * 13:52:12 at 14:03:53 while rake_records kept arriving - a full thirty
+     * minutes lost to one boot. A catch-up armed at :54 lands in the freeze
+     * the same way. The held run is recorded as the one tick the thaw owes and
+     * paid there, exactly like the interval's.
+     */
+    if (isMaintenanceFrozen()) {
+      if (!this.tickOwedFromFreeze) {
+        this.tickOwedFromFreeze = true;
+        console.log(
+          `[RakebackSettler] maintenance freeze is on - holding ${context} and running it at the thaw`
+        );
+      }
+      return;
+    }
     void this.trackLifecycleJob(this.runSettlement()).catch((e: any) =>
       reportError(new Error(e?.message || JSON.stringify(e) || String(e)), context)
     );
@@ -670,10 +695,13 @@ export class RakebackSettlerService {
     this.acceptingSettlements = true;
     const generation = ++this.lifecycleGeneration;
     console.log(`[RakebackSettler] Starting (interval: ${SETTLEMENT_INTERVAL_MS / 60000}m)`);
-    // Run once immediately on startup, then every 30 min
-    this.launchSettlement(generation, 'RakebackSettler.startup_run');
+    // The thaw subscription comes first: a startup inside the break is held
+    // by launchSettlement and must find the listener that will pay it.
     this.tickOwedFromFreeze = false;
     this.thawUnsubscribe = onMaintenanceThaw(() => this.payTickOwedFromFreeze(generation));
+    // Run once immediately on startup (or at the thaw, when started inside the
+    // break), then every 30 min
+    this.launchSettlement(generation, 'RakebackSettler.startup_run');
     this.intervalHandle = setInterval(() => {
       // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
       // rakeback - chip movement by definition. A 30-minute cadence loses

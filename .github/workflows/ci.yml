@@ -1477,6 +1477,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-remediation-two.sh
+      - name: Lightning Phases 6 and 7 match every legal hand, explain every idle player and rotate the blinds fairly
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase6-matcher.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:

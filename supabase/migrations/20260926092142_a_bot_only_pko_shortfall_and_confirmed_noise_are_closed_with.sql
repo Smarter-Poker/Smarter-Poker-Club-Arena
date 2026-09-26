@@ -1,7 +1,5 @@
 -- 20260926092142_a_bot_only_pko_shortfall_and_confirmed_noise_are_closed_with.sql
 --
--- @live-proof: (SELECT count(*) FROM public.financial_alerts WHERE source = 'fn_rake_repair_unbanked' AND resolution LIKE '%20260926092142_a_bot_only_pko_shortfall_and_confirmed_noise_are_closed_with%') = 10
---
 -- A BOT-ONLY PKO SHORTFALL, AND CONFIRMED NOISE, ARE CLOSED WITH RECEIPTS
 -- (2026-09-26). No chips move in this migration. Every class it closes is
 -- re-proved in this transaction against current rows; a subject that no

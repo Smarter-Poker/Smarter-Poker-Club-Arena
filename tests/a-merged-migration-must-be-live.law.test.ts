@@ -57,6 +57,7 @@ import path from 'node:path';
 // regex of its own: a guard that disagrees with the thing it guards is worse
 // than no guard.
 import { declaredObjects, declaredProofs, code } from '../scripts/ci/check-migrations-are-live.mjs';
+import { classifyMigration } from '../scripts/ci/recording-only.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS = path.join(ROOT, 'supabase', 'migrations');
@@ -294,6 +295,13 @@ describe('a merged migration must be live', () => {
       const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
       if (declaredObjects(sql).length > 0) continue;
       if (declaredProofs(sql).length > 0) continue;
+      // A verified RECORDING (scripts/ci/recording-only.mjs: a manifest row whose
+      // md5 is the file's bytes, which check-recorded-migrations-evidence.mjs
+      // proves is what production's schema_migrations holds) cannot be edited to
+      // add a proof line - that would stop it being a recording. Its liveness is
+      // its history row, which check-migrations-are-live.mjs reads first.
+      // 'unknown' (manifest unreadable) is never treated as recorded.
+      if (classifyMigration(`supabase/migrations/${file}`).state === 'recorded') continue;
       offenders.push(file);
     }
     expect(

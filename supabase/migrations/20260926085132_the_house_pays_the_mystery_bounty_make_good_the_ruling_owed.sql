@@ -1,7 +1,5 @@
 -- 20260926085132_the_house_pays_the_mystery_bounty_make_good_the_ruling_owed.sql
 --
--- @live-proof: (SELECT count(*) FROM public.financial_alerts WHERE source = 'ruling.mystery_bounty_obligation_retired_owed_unfunded' AND context ? 'make_good' AND (context->>'funded')::boolean IS TRUE) = 7
---
 -- THE HOUSE PAYS THE MYSTERY-BOUNTY MAKE-GOOD THE RULING OWED (2026-09-26)
 --
 -- DECISION (CLAUDE.md 10.9, delegated by Dan for this item on 2026-09-26):

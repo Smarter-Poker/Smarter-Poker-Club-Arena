@@ -1,7 +1,5 @@
 -- 20260926131554_the_week_of_2026_09_14_rakeback_stays_owed_on_the_calculator.sql
 --
--- @live-proof: (SELECT count(*) FROM public.accounting_deferred_obligations WHERE period_start = '2026-09-14 07:00:00+00' AND position('SUPERSEDED 2026-09-26 (migration 20260926131554_the_week_of_2026_09_14_rakeback_stays_owed_on_the_calculator' IN reason) > 0) = 2
---
 -- THE WEEK OF 2026-09-14 RAKEBACK STAYS OWED ON THE CALCULATOR'S BASIS, AND
 -- THE FLOORED WEEK'S ACCOUNTING RETRIES ARE CLOSED (2026-09-26)
 --

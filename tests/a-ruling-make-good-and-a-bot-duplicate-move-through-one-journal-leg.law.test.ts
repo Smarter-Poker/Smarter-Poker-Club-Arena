@@ -78,8 +78,8 @@ describe('the duplicate prize reversal (history, superseded by 20260926131530)',
   });
 });
 
-describe('dispositions that pay nothing', () => {
-  it('the bot-only PKO shortfall is closed only while its field is all horses and no knockout evidence exists', () => {
+describe('dispositions that paid nothing (history: both reversed by Dan on 2026-09-26)', () => {
+  it('the PKO 3f19bd70 closure as applied (history, reopened as owed by 20260926131420)', () => {
     expect(PKO).toContain('the fields are no longer 66 and 155 horses');
     expect(PKO).toContain('knockout evidence exists after all - attribute it instead of closing');
     expect(PKO).toContain('the recurrence guard is not in place');

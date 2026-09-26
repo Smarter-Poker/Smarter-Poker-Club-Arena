@@ -10,6 +10,7 @@
  */
 
 import { supabase } from './client.js';
+import { bindToProcessRoot } from './dataActorContext.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX 137: Hand State Snapshots for Crash Recovery (Bible V8 §7.17, §9.2)
@@ -254,6 +255,89 @@ export async function savePresenceAtPark(params: {
     return false;
   }
 }
+
+/**
+ * THE OUTCOME OF WRITING A TERMINAL ENGINE'S STOPPED CUSTODY (2026-09-26).
+ *
+ * Three answers, never two (CLAUDE.md 10.86 rule 1): `parked` - the database
+ * wrote exactly this custody; `refused` - the database answered and named why
+ * it would not (newer state exists, or a transfer holds this row as evidence),
+ * so nothing was written and nothing must be written over it; `unknown` - no
+ * answer, so nothing may be assumed either way.
+ */
+export type StoppedCustodyParkOutcome =
+  | { status: 'parked' }
+  | { status: 'refused'; reason: string }
+  | { status: 'unknown'; reason: string };
+
+/**
+ * WRITE A TERMINAL ENGINE'S FROZEN TIME BANK AS THE PROCESS (2026-09-26).
+ *
+ * `savePresenceAtPark` is an unconditional upsert sent with whatever data
+ * authority the caller is running under. A terminal tournament engine runs
+ * under its manager's lease generation, and once that lease is gone
+ * `fn_smarter_data_api_pre_request` fences every request it sends. On
+ * 2026-09-26 that refused all 698 stopped-custody writes in the last sixteen
+ * minutes before the restart (`TOURNAMENT_MANAGER_FENCED: lease generation is
+ * no longer current`), the banks never reached disk, and 134,904 manager stops
+ * failed "retained time-bank custody".
+ *
+ * A bank balance frozen at a known hand number is not the manager's data to
+ * exercise authority over; it is what the process is holding. So this runs at
+ * the process root (the `service` actor), and the database function it calls
+ * writes only when the write cannot clobber newer state - no hand dealt after
+ * `handNumber`, no newer park, no F06 mixed transfer holding the row as its
+ * evidence - and otherwise refuses by name.
+ */
+export const parkStoppedTimeBankCustody = bindToProcessRoot(
+  async (params: {
+    tableId: string;
+    tournamentId: string;
+    generation: string | null;
+    handNumber: number;
+    parkedAt: string;
+    disconnectStates: Record<string, DisconnectStateEntry>;
+    timeBanks: Record<string, ParkedTimeBank>;
+    engineInstance: string;
+  }): Promise<StoppedCustodyParkOutcome> => {
+    try {
+      const { data, error } = await supabase.rpc('fn_park_stopped_time_bank_custody', {
+        p_table_id: params.tableId,
+        p_tournament_id: params.tournamentId,
+        p_generation: params.generation,
+        p_hand_number: params.handNumber,
+        p_parked_at: params.parkedAt,
+        p_disconnect_states: params.disconnectStates,
+        p_players: params.timeBanks,
+        p_engine_instance: params.engineInstance,
+      });
+      if (error) {
+        console.warn(`[parkStoppedTimeBankCustody] ${params.tableId}: ${error.message}`);
+        return { status: 'unknown', reason: error.message };
+      }
+      const reply = data as {
+        ok?: unknown;
+        refused?: unknown;
+        table_id?: unknown;
+        hand_number?: unknown;
+      } | null;
+      if (
+        reply?.ok === true &&
+        reply.table_id === params.tableId &&
+        Number(reply.hand_number) === params.handNumber
+      )
+        return { status: 'parked' };
+      if (reply?.ok === false && typeof reply.refused === 'string') {
+        console.warn(`[parkStoppedTimeBankCustody] ${params.tableId}: refused (${reply.refused})`);
+        return { status: 'refused', reason: reply.refused };
+      }
+      return { status: 'unknown', reason: 'malformed_reply' };
+    } catch (e) {
+      console.warn(`[parkStoppedTimeBankCustody] Exception:`, e);
+      return { status: 'unknown', reason: String((e as Error)?.message ?? e) };
+    }
+  }
+);
 
 /**
  * The presence FSM a table parked with, if it parked recently. Null when

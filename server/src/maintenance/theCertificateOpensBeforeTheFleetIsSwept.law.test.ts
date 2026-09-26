@@ -198,10 +198,14 @@ describe('the certificate opens before the fleet is swept', () => {
     const body = fn.slice(0, fn.indexOf('\n  protected async persistPresenceForRestart('));
 
     // It writes the custody's OWN banks at the custody's OWN hand number -
-    // the shape loadTimeBanksFromPark(tableId, handCount) reads back.
-    expect(body).toContain('savePresenceAtPark(');
+    // the shape loadTimeBanksFromPark(tableId, handCount) reads back. Since
+    // 2026-09-26 it goes out at the process root through the guarded
+    // fn_park_stopped_time_bank_custody, never as the (possibly fenced)
+    // manager's unconditional upsert: aTerminalBankIsNotManagerAuthority.
+    expect(body).toContain('parkStoppedTimeBankCustody(');
+    expect(body).not.toContain('savePresenceAtPark(');
     expect(body).toContain('handNumber: custody.handNumber');
-    expect(body).toContain('timeBanks: banks');
+    expect(body).toContain('timeBanks: structuredClone(custody.banks)');
 
     // Never while an accounting outcome is unknown: a debit we cannot confirm
     // must not be frozen into a snapshot.
@@ -209,9 +213,11 @@ describe('the certificate opens before the fleet is swept', () => {
     expect(body).toContain('this.timeBankAccountingPending.size');
     // Never over a live engine's newer row - the upsert is keyed on table_id.
     expect(body).toContain('ServerTableEngineBase.liveEngines.has(this.tableId)');
-    // A refused write records NO acknowledgement, so the gate stays shut, and
-    // it falls through so nothing that used to be written stops being written.
-    expect(body).toContain('if (!saved) return false;');
+    // A refused or unknown write records NO acknowledgement, so the gate
+    // stays shut; and it does not fall through to the ordinary upsert, which
+    // would write a null bank snapshot over the newer state the database
+    // just protected (2026-09-26).
+    expect(body).toContain("if (outcome.status !== 'parked') return true;");
     // And it runs before the ordinary live-engine park path.
     const persist = src.slice(src.indexOf('protected async persistPresenceForRestart('));
     const guardAt = persist.indexOf('this.shouldPersistStoppedCustody()');

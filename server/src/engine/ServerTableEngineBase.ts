@@ -121,9 +121,11 @@ import {
   getActiveHandSnapshotFull,
   resumeRetainedHandSubmission,
   savePresenceAtPark,
+  parkStoppedTimeBankCustody,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
   type ParkedTimeBank,
+  type StoppedCustodyParkOutcome,
   supabase,
   atomicCashout,
   processLeavePending,
@@ -6978,13 +6980,16 @@ export abstract class ServerTableEngineBase {
    * a bank we could not persist is still a bank at stake (CLAUDE.md 10.86,
    * fail closed).
    *
-   * Called ONLY from the `'announced'` path, which is the only path a terminal
-   * engine can reach. STRICTLY ADDITIVE: it returns true, owning this park,
-   * only when it has actually written the custody down and acknowledged it.
-   * Every other answer is false and falls through to the behaviour this file
-   * already had, so nothing that used to be written stops being written. A
-   * decline therefore records no acknowledgement and the restart gate stays
-   * shut - a bank we could not persist is still a bank at stake (10.86).
+   * Called from the `'announced'` path, which is the only park path a
+   * terminal engine can reach, and (2026-09-26) from the owning manager's
+   * stop through `persistStoppedTimeBankCustody`, on the same serialized
+   * presence-save chain. A decline here (no custody, an unknown debit, a
+   * live engine for this table) falls through to the behaviour this file
+   * already had. Once the write is attempted it owns this park: only a
+   * confirmed write records the acknowledgement, and a refused or unknown one
+   * leaves the restart gate shut - a bank we could not persist is still a
+   * bank at stake (10.86). See persistStoppedCustodyForRestart for why it no
+   * longer falls through after an attempt.
    */
   private shouldPersistStoppedCustody(): boolean {
     const custody = this.stoppedTimeBankCustody;
@@ -7010,25 +7015,97 @@ export abstract class ServerTableEngineBase {
     return Number.isSafeInteger(custody.handNumber) && custody.handNumber >= 0;
   }
 
+  /**
+   * THE WRITE GOES OUT AS THE PROCESS, AND IT CANNOT CLOBBER (2026-09-26).
+   *
+   * This used to be `savePresenceAtPark` - an unconditional upsert sent with
+   * this engine's own data authority, which is its tournament manager's lease
+   * generation. The engines that hold stopped custody are exactly the ones
+   * whose manager has just lost that lease, and the database fences every
+   * request of a lease that is no longer current. On 2026-09-26 all 698 of
+   * these writes in the sixteen minutes before the 08:55Z restart came back
+   * `TOURNAMENT_MANAGER_FENCED`, `/health` showed 572 unwritten and 27 stuck,
+   * the certificate stayed shut, and every stop of those managers failed
+   * "retained time-bank custody" until the engine was restarted by hand.
+   *
+   * `parkStoppedTimeBankCustody` runs at the process root and calls
+   * `fn_park_stopped_time_bank_custody`, which writes the custody only when
+   * it cannot overwrite newer state and otherwise names its refusal. The
+   * acknowledgement is recorded only for `parked`. Neither a refusal nor an
+   * unknown answer falls through to the ordinary announcement: that upsert
+   * writes `time_bank_snapshot: null` over whatever the row holds, so after a
+   * refusal it would erase exactly the newer state the database just
+   * protected, and after an unknown answer it could erase this very custody.
+   * The custody already carries this table's presence, so a terminal engine
+   * has nothing else to announce.
+   */
   private async persistStoppedCustodyForRestart(generation: number): Promise<boolean> {
     const custody = this.stoppedTimeBankCustody;
     if (!custody) return false;
-    const banks = structuredClone(custody.banks) as Record<string, ParkedTimeBank>;
-    const saved = await savePresenceAtPark({
+    const tournamentId = this.engineLeaseTournamentId ?? this.tableInfo?.tournament_id ?? null;
+    if (!tournamentId) return false;
+    const outcome = await parkStoppedTimeBankCustody({
       tableId: this.tableId,
-      disconnectStates: structuredClone(custody.disconnectStates),
-      engineInstance: `${INSTANCE_ID}:stopped_custody`,
+      tournamentId,
+      generation: this.engineLeaseGeneration,
       handNumber: custody.handNumber,
-      timeBanks: banks,
+      parkedAt: new Date().toISOString(),
+      disconnectStates: structuredClone(custody.disconnectStates),
+      timeBanks: structuredClone(custody.banks) as Record<string, ParkedTimeBank>,
+      engineInstance: `${INSTANCE_ID}:stopped_custody`,
     });
+    this.stoppedCustodyParkOutcome = outcome;
     if (generation !== this.maintenanceCheckpointGeneration) return true;
     if (this.stoppedTimeBankCustody !== custody) return true;
-    if (!saved) return false;
+    if (outcome.status !== 'parked') return true;
     this.acknowledgedTimeBankPark = {
       handNumber: custody.handNumber,
       banks: this.timeBankCustodyFingerprint(custody.banks),
     };
     return true;
+  }
+
+  /** The last answer a stopped-custody write got; diagnostics and tests only. */
+  private stoppedCustodyParkOutcome: StoppedCustodyParkOutcome | null = null;
+
+  /**
+   * A MANAGER'S STOP WRITES THE BANK DOWN BEFORE IT ASKS WHETHER IT IS
+   * RETAINED (2026-09-26).
+   *
+   * The announcement is the only other place a terminal engine writes its
+   * custody, and it comes once an hour. A tournament manager whose lease was
+   * lost at :56 used to fail its stop "retained time-bank custody" every
+   * retry for the next hour - quarantined, its tables stalled - even though
+   * the one thing that stop was waiting for was a write this engine could
+   * make at once. The owning manager's stop calls this after every engine has
+   * stopped and before it reads `hasUnretiredStoppedTimeBankCustody()`.
+   *
+   * It is the announcement's write, serialized on the same presence-save
+   * chain and gated by the same `shouldPersistStoppedCustody()`, so it never
+   * runs beside another presence save for this table, never with an unknown
+   * debit, never over a live engine for this table, and records its
+   * acknowledgement only when the database confirms the custody is on disk.
+   */
+  async persistStoppedTimeBankCustody(): Promise<void> {
+    if (!this.shouldPersistStoppedCustody()) return;
+    this.presenceSavePending++;
+    const generation = this.maintenanceCheckpointGeneration;
+    const previous = this.presenceSave ?? Promise.resolve();
+    let finish!: () => void;
+    this.presenceSave = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    await previous;
+    try {
+      if (generation !== this.maintenanceCheckpointGeneration) return;
+      if (!this.shouldPersistStoppedCustody()) return;
+      await this.persistStoppedCustodyForRestart(generation);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.stopped_custody_persist');
+    } finally {
+      this.presenceSavePending--;
+      finish();
+    }
   }
 
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {

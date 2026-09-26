@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
@@ -17,7 +17,6 @@ const headerData = vi.hoisted(() => ({
   notificationCount: 0,
   unreadMessages: 0,
   loadOnce: vi.fn(),
-  refreshAppearance: vi.fn().mockResolvedValue(undefined),
   setAvatarUrl: vi.fn(),
   setUnreadMessages: vi.fn(),
   clearUnreadNotifications: vi.fn().mockResolvedValue(true),
@@ -25,7 +24,7 @@ const headerData = vi.hoisted(() => ({
 }));
 
 vi.mock('@/stores/useHeaderDataStore', () => ({
-  useHeaderDataStore: Object.assign(() => headerData, { getState: () => headerData }),
+  useHeaderDataStore: () => headerData,
 }));
 
 vi.mock('@/hooks/useAuthUser', () => ({
@@ -42,21 +41,12 @@ vi.mock('@/core/MasterBus', () => ({
   },
 }));
 
-const appearanceChannel = vi.hoisted(() => ({ options: null as any }));
-vi.mock('@/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: (options: unknown) => {
-    appearanceChannel.options = options;
-  },
-}));
-
 vi.mock('@/hooks/useMasterBusSubscription', () => ({
   useMasterBusSubscription: vi.fn(),
 }));
 
 describe('GlobalHeader Component', () => {
   beforeEach(() => {
-    appearanceChannel.options = null;
-    headerData.refreshAppearance.mockClear();
     headerData.avatarUrl = '/avatars/test-user.png';
     headerData.notificationCount = 0;
     headerData.unreadMessages = 0;
@@ -77,30 +67,6 @@ describe('GlobalHeader Component', () => {
       <GlobalHeader />
     </MemoryRouter>
   );
-
-  it('owns one private profile channel and rereads only its own appearance signal', () => {
-    render(header());
-    expect(appearanceChannel.options).toMatchObject({
-      channelName: 'profile-appearance:test-user-123',
-      private: true,
-      event: 'appearance_changed',
-    });
-    act(() => appearanceChannel.options.onPayload({ payload: { user_id: 'someone-else' } }));
-    expect(headerData.refreshAppearance).not.toHaveBeenCalled();
-    act(() => appearanceChannel.options.onPayload({ payload: { user_id: 'test-user-123' } }));
-    expect(headerData.refreshAppearance).toHaveBeenCalledTimes(1);
-    act(() => appearanceChannel.options.onSubscriptionStatus('SUBSCRIBED'));
-    expect(headerData.refreshAppearance).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not claim the primary channel from an in-table header copy', () => {
-    render(
-      <MemoryRouter>
-        <GlobalHeader inTab={{ openHub: vi.fn() } as any} />
-      </MemoryRouter>
-    );
-    expect(appearanceChannel.options.channelName).toBeNull();
-  });
 
   it('loads a retina-sized JPEG while preserving the existing portrait slot', () => {
     headerData.avatarUrl = photo;

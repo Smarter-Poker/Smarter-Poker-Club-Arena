@@ -23,12 +23,15 @@ describe('appearance invalidation stays separate from high-write profile data', 
     expect(migration).not.toMatch(/FOR (INSERT|ALL)|DISABLE ROW LEVEL|GRANT.*TO authenticated/i);
     expect(migration).toContain('FROM PUBLIC, anon, authenticated');
   });
-  it('wires the header to the same signal and authoritative refresh, once per primary header', () => {
-    const header = read('src/components/navigation/GlobalHeader.tsx');
-    expect(header).toContain('!inTab && authUser?.id ? `profile-appearance:${authUser.id}`');
-    expect(header).toContain("event: 'appearance_changed'");
-    expect(header).toContain('useHeaderDataStore.getState().refreshAppearance()');
+  it('mounts one account signal outside route-specific header copies', () => {
+    const app = read('src/App.tsx');
+    expect(app.match(/<HeaderAppearanceSync \/>/g)).toHaveLength(1);
+    const owner = read('src/hooks/useHeaderAppearanceSync.ts');
+    expect(owner).toContain('`profile-appearance:${userId}`');
+    expect(owner).toContain("event: 'appearance_changed'");
+    expect(owner).toContain('store.refreshAppearance()');
     expect(read('src/stores/useHeaderDataStore.ts')).not.toContain("table: 'profiles'");
+    expect(read('src/components/navigation/GlobalHeader.tsx')).not.toContain('profile-appearance:');
   });
   it('executes the native PostgreSQL behavior and access cases in the existing required check', () => {
     const workflow = read('.github/workflows/ci.yml');

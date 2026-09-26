@@ -17,10 +17,10 @@
  * NOW:
  * - Data is loaded ONCE on first auth, cached in this store
  * - Updates use source events and visibility/rejoin reads (no periodic polling)
- * - Badge channels belong to the store; the primary header owns appearance signals
+ * - Badge channels belong to the store; one app-level owner receives appearance signals
  * - Badge counts are hydrated from localStorage for instant re-entry
  *
- * GlobalHeader renders this store; its private signal requests an authoritative refresh.
+ * GlobalHeader renders this store; HeaderAppearanceSync requests authoritative refreshes.
  */
 
 import { create } from 'zustand';

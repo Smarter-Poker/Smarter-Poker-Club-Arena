@@ -41,7 +41,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '../..');
-const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
+const WORKFLOWS = [
+  readFileSync(resolve(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8'),
+  readFileSync(resolve(ROOT, '.github/workflows/club-create-certification.yml'), 'utf8'),
+].join('\n');
 const DECLARED = JSON.parse(
   readFileSync(resolve(ROOT, 'scripts/ci/e2e-not-in-post-deploy.json'), 'utf8')
 ) as { notInvoked: Array<{ file: string; reason: string }> };
@@ -59,11 +62,11 @@ describe('every production spec is wired into the deploy gate, or declared', () 
 
   it('leaves no spec both un-invoked and undeclared', () => {
     const declared = new Set(DECLARED.notInvoked.map((e) => e.file));
-    const orphans = specs.filter((f) => !WORKFLOW.includes(f) && !declared.has(f));
+    const orphans = specs.filter((f) => !WORKFLOWS.includes(f) && !declared.has(f));
     expect(
       orphans,
       'These specs run NOWHERE and are not declared. Either add them to\n' +
-        '.github/workflows/post-deploy-e2e.yml, or add an entry with a reason to\n' +
+        'a production certification workflow, or add an entry with a reason to\n' +
         'scripts/ci/e2e-not-in-post-deploy.json:\n  ' +
         orphans.join('\n  ')
     ).toEqual([]);
@@ -82,7 +85,7 @@ describe('every production spec is wired into the deploy gate, or declared', () 
        nobody trusts is a ratchet nobody shortens. */
     const contradictions = DECLARED.notInvoked
       .map((e) => e.file)
-      .filter((f) => WORKFLOW.includes(f));
+      .filter((f) => WORKFLOWS.includes(f));
     expect(contradictions).toEqual([]);
   });
 
@@ -93,7 +96,7 @@ describe('every production spec is wired into the deploy gate, or declared', () 
   });
 
   it('club-data-deep is wired in, because its verdict is the reason this exists', () => {
-    expect(WORKFLOW).toContain('tests/e2e/club-data-deep.spec.ts');
+    expect(WORKFLOWS).toContain('tests/e2e/club-data-deep.spec.ts');
   });
 
   it('the ratchet only goes down', () => {

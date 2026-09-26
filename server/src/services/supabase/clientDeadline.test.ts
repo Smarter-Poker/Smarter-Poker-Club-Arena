@@ -24,10 +24,51 @@ beforeEach(async () => {
        1 maintenanceSupabase - longer, for serialized maintenance writes
        2 seedingSupabase     - SHORTER, so a slow seat purchase cannot stall a
                                horse-fleet seeding cycle (added 2026-09-11)
+       3 accountingPeriodSupabase - LONGER, derived from the 300 s server
+                               budget of fn_rakeback_recompute_periods, so a
+                               committed week is never reported as a timeout
+                               (added 2026-09-26; asserted separately below)
      The count is asserted because every one of them shares the fetch wrapper
      under test: a new client added without a thought about its deadline shows
      up here rather than in production. boundedFetch below is index 0. */
-  expect(captured.fetches).toHaveLength(3);
+  expect(captured.fetches).toHaveLength(4);
+});
+
+describe('the period recompute client outlives its server budget', () => {
+  it('keeps waiting past the hand deadline and gives up only after the server budget', async () => {
+    const { periodRecomputeClientTimeoutMs, PERIOD_RECOMPUTE_SERVER_BUDGET_MS } =
+      await import('../cashAccountingBatchBudget.js');
+    let release!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            release = resolve;
+          })
+      )
+    );
+    let outcome = 'pending';
+    const pending = captured.fetches[3]('https://example.test/rpc', { method: 'POST' }).then(
+      () => {
+        outcome = 'success';
+      },
+      (error: Error) => {
+        outcome = error.message;
+      }
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(PERIOD_RECOMPUTE_SERVER_BUDGET_MS);
+      expect(outcome).toBe('pending');
+      await vi.advanceTimersByTimeAsync(
+        periodRecomputeClientTimeoutMs() - PERIOD_RECOMPUTE_SERVER_BUDGET_MS + 1
+      );
+      expect(outcome).toBe('supabase_timeout');
+    } finally {
+      release(new Response('{}', { status: 200 }));
+      await pending;
+    }
+  });
 });
 
 describe.each([0, 1, 2])('client %i independently owns its response deadline', (clientIndex) => {

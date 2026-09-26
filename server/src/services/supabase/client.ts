@@ -225,6 +225,8 @@ export const supabase: SupabaseClient = createBoundedServiceClient(DB_TIMEOUT_MS
 export const maintenanceSupabase: SupabaseClient =
   createBoundedServiceClient(MAINTENANCE_DB_TIMEOUT_MS);
 
+/* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
+export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);
 /* The rakeback period recompute client. fn_rakeback_recompute_periods rebuilds
    a whole (club, week) book and declares a 300-second server budget; on the
    ordinary 15-second client its committed work was discarded as a timeout and
@@ -233,9 +235,6 @@ export const maintenanceSupabase: SupabaseClient =
 export const accountingPeriodSupabase: SupabaseClient = createBoundedServiceClient(
   periodRecomputeClientTimeoutMs()
 );
-
-/* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
-export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);
 /* Exported so callers can DERIVE their batch sizes from the budget that
    actually binds them, instead of writing a literal that cannot notice
    when its own per-item cost changes. See cashAccountingBatchBudget.ts. */

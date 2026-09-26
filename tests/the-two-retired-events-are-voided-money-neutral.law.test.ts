@@ -21,20 +21,27 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const SQL = readFileSync(
+const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
+const SQL_A = readFileSync(
   join(
-    __dirname,
-    '..',
-    'supabase',
-    'migrations',
+    MIGRATIONS,
     '20260926131948_the_two_retired_mixed_custody_events_are_voided_and_every_do.sql'
   ),
   'utf8'
 );
+const SQL_B = readFileSync(
+  join(
+    MIGRATIONS,
+    '20260926142646_the_retired_noon_freeroll_is_voided_and_the_source_guard_is_.sql'
+  ),
+  'utf8'
+);
+/** Both transactions of the void, in apply order. */
+const SQL = SQL_A + '\n' + SQL_B;
 
 const GUARD_LIVE_MD5 = 'be484837a5103b3c0ac78a1d6d5d0bf2';
 const GUARD_VOID_MD5 = '77a6d6505ecb318845d280176881e0f0';
-const DOOR_MD5 = 'f133744cc580d6092828e09b87fb6617';
+const DOOR_MD5 = '1d8fe29089e20bb6dedd54fe00b46818';
 const NOON = '5a387a75-754a-416e-8fee-b85b15fc2702';
 const AFTERNOON = '615783bf-15e3-40b7-9368-75f21b6ac53b';
 
@@ -101,35 +108,61 @@ describe('the two retired events are voided money-neutral', () => {
     );
   });
 
-  it('never waits while it holds the settlement lane', () => {
+  it('takes the settlement lane only when it is free, in each transaction', () => {
     expect(DOOR.indexOf('fn_ca_lock_settlement_lane_global()')).toBeGreaterThan(0);
-    expect(SQL).toContain("SET LOCAL lock_timeout = '5s';");
-    expect(SQL).toContain("SET LOCAL statement_timeout = '10s';");
-    expect(SQL).toContain(
-      " SET statement_timeout TO '10s'\n SET lock_timeout TO '5s'\nAS $function$"
+    expect(SQL_A).toContain(
+      " SET statement_timeout TO '20s'\n SET lock_timeout TO '5s'\nAS $function$"
     );
     expect(SQL).not.toMatch(/break_window_migration_override/);
-    // The lane is taken with try-locks only, never by queueing, and before the void runs.
-    const lane = SQL.indexOf('DO $lane$');
-    const voidAt = SQL.indexOf('DO $void$');
-    expect(lane).toBeGreaterThan(0);
-    expect(lane).toBeLessThan(voidAt);
-    expect(SQL.slice(lane, voidAt)).toContain(
-      "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1', 0));"
+    for (const [file, cap] of [
+      [SQL_A, '15s'],
+      [SQL_B, '20s'],
+    ] as const) {
+      expect(file).toContain("SET LOCAL lock_timeout = '5s';");
+      const lane = file.indexOf('DO $lane$');
+      const voidAt = file.indexOf('DO $void$');
+      expect(lane).toBeGreaterThan(0);
+      expect(lane).toBeLessThan(voidAt);
+      expect(file.slice(lane, voidAt)).toContain(
+        "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1', 0));"
+      );
+      expect(file.slice(voidAt, voidAt + 600)).toContain(
+        "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:hand-settlement-barrier:v1', 0));"
+      );
+      expect(file.slice(lane, voidAt)).toContain(`SET LOCAL statement_timeout = '${cap}';`);
+      expect(file.replace(DOOR, '')).not.toMatch(/pg_advisory_xact_lock\(/);
+    }
+    // One event per transaction: the 195-entrant event first, the 351-entrant one alone.
+    const a = SQL_A.slice(SQL_A.indexOf('DO $void$'), SQL_A.indexOf('$void$;'));
+    const b = SQL_B.slice(SQL_B.indexOf('DO $void$'), SQL_B.indexOf('$void$;'));
+    expect(a).toContain(`f06_void_retired_mixed_custody_event('${AFTERNOON}'`);
+    expect(a).not.toContain(`f06_void_retired_mixed_custody_event('${NOON}'`);
+    expect(b).toContain(`f06_void_retired_mixed_custody_event('${NOON}'`);
+    expect(b).not.toContain(`f06_void_retired_mixed_custody_event('${AFTERNOON}'`);
+  });
+
+  it('never rewrites a vacated chair that already reads left', () => {
+    expect(DOOR).toContain(
+      "AND (s.status IS DISTINCT FROM 'left' OR s.leave_pending IS DISTINCT FROM false"
     );
-    expect(SQL.slice(voidAt, voidAt + 600)).toContain(
-      "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:hand-settlement-barrier:v1', 0));"
-    );
-    expect(SQL.slice(lane, voidAt)).toContain("SET LOCAL statement_timeout = '10s';");
-    const outsideDoor = SQL.replace(DOOR, '');
-    expect(outsideDoor).not.toMatch(/pg_advisory_xact_lock\(/);
   });
 
   it('is one guarded transaction with explicit service_role grants and private receipts', () => {
-    expect(SQL.match(/^BEGIN;$/gm)?.length).toBe(1);
-    expect(SQL.match(/^COMMIT;$/gm)?.length).toBe(1);
-    expect(SQL).not.toMatch(/CONCURRENTLY|VACUUM/);
-    expect(SQL.indexOf('DO $pre$')).toBeLessThan(SQL.indexOf('CREATE TABLE'));
+    for (const file of [SQL_A, SQL_B]) {
+      expect(file.match(/^BEGIN;$/gm)?.length).toBe(1);
+      expect(file.match(/^COMMIT;$/gm)?.length).toBe(1);
+      expect(file).not.toMatch(/CONCURRENTLY|VACUUM/);
+      expect(file).toMatch(/^-- @live-proof: /m);
+      expect(file.indexOf('DO $pre$')).toBeGreaterThan(0);
+    }
+    expect(SQL_A.indexOf('DO $pre$')).toBeLessThan(SQL_A.indexOf('CREATE TABLE'));
+    // Between the two, the clause is installed; the second pins it and restores the guard.
+    expect(SQL_A.slice(SQL_A.indexOf('DO $post$'))).toContain(
+      `md5(p.prosrc) = '${GUARD_VOID_MD5}'`
+    );
+    expect(SQL_B.slice(0, SQL_B.indexOf('DO $lane$'))).toContain(
+      `md5(p.prosrc) = '${GUARD_VOID_MD5}'`
+    );
     expect(SQL).toContain(
       'GRANT EXECUTE ON FUNCTION smarter_private.f06_void_retired_mixed_custody_event(uuid, text)\n  TO service_role;'
     );

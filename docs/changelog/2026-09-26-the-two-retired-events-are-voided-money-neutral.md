@@ -1,6 +1,7 @@
 # The two retired mixed-custody events are voided, and every dollar goes home
 
-2026-09-26. Migration `20260926131948`. Law
+2026-09-26. Migrations `20260926131948` (615783bf) and `20260926142646`
+(5a387a75, guard restored). Law
 `tests/the-two-retired-events-are-voided-money-neutral.law.test.ts`.
 
 ## What was stranded
@@ -45,9 +46,13 @@ nothing is destroyed.
   migration takes it only when it is free: `pg_try_advisory_xact_lock` in
   50 ms steps (up to 20 s for G, then 3 s for the hand-settlement barrier),
   never queueing behind the fleet. The void's statement is then capped at
-  10 s. A lane that never frees refuses cleanly with nothing written (the
-  09:33 collapse). Two earlier applies with a queueing wait (2 s, 5 s) were
-  refused that way at 13:44 and 14:15 UTC, with nothing written.
+  15 s (615783bf) or 20 s (5a387a75, alone in its own transaction). A lane
+  that never frees refuses cleanly with nothing written (the 09:33
+  collapse). Two earlier applies with a queueing wait (2 s, 5 s) were
+  refused that way at 13:44 and 14:15 UTC, and a third, with both events in
+  one transaction, reached its 10 s cap stamping 5a387a75's 351
+  registrations at 14:23. Nothing was written in any of them. The door
+  also no longer rewrites vacated chairs that already read `left`.
 
 ## Measured after apply
 

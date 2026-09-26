@@ -5,7 +5,9 @@ import PlinkoBoard from '../components/plinko/PlinkoBoard';
 import CrashCurve from '../components/crash/CrashCurve';
 import DoubleDownOffer from '../components/games/DoubleDownOffer';
 import { WheelWinReveal } from '../components/wheel/WheelWinReveal';
+import { BonusReceiptArt } from '../components/games/BonusReceiptArt';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
+import { useSceneBudget } from '../hooks/useSceneBudget';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import {
   CHOICE_MODE,
@@ -81,12 +83,16 @@ export default function DiamondTestPage() {
     [liveCents, setLiveCents] = useState(100),
     [notice, setNotice] = useState('');
   const [measure, width] = useMeasuredWidth<HTMLDivElement>(600);
+  // Held sideways, the scene gets the height the console leaves it.
+  const sceneBudget = useSceneBudget();
   const started = useRef(0),
     crash = useRef(100),
     sealedRoad = useRef(0n),
     mines = useRef<number[]>([]),
     busy = useRef(false),
-    payout = useRef(0);
+    payout = useRef(0),
+    // The best bucket the batch lands in, for the receipt's own art.
+    bestCents = useRef(0);
   const total = entry * boost + (doubled ? entry : 0),
     chips = total / 100,
     // What the player paid: the spin entry, plus the add-on when it was taken.
@@ -160,6 +166,11 @@ export default function DiamondTestPage() {
     if (game === 'plinko') {
       const next = Array.from(crypto.getRandomValues(new Uint16Array(dropCount)));
       setPaths(next);
+      bestCents.current = Math.max(
+        ...next.map(
+          (path) => table.multipliersCents[plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]
+        )
+      );
       const dropped = next.reduce(
         (sum, path) =>
           sum +
@@ -364,7 +375,7 @@ export default function DiamondTestPage() {
           onClick: cash,
         }}
       >
-        <div ref={measure} style={{ width: '100%' }}>
+        <div ref={measure} className={styles.sceneFit} data-scene={game}>
           {game === 'plinko' ? (
             <PlinkoBoard
               key={epoch}
@@ -386,7 +397,10 @@ export default function DiamondTestPage() {
             <CrashCurve
               key={epoch}
               width={width}
-              height={Math.max(280, Math.min(560, width * 0.7))}
+              height={Math.min(
+                Math.max(280, Math.min(560, width * 0.7)),
+                sceneBudget === null ? Infinity : Math.max(200, sceneBudget)
+              )}
               phase={phase === 'lost' ? 'crashed' : phase}
               growthK={CRASH_K}
               capCents={CRASH_CAP}
@@ -444,6 +458,24 @@ export default function DiamondTestPage() {
           autoContinue
           autoContinueAfterMs={5000}
           onOpen={() => setReveal(false)}
+          // The live receipt's own art and figure, and its loss dress.
+          eyebrow={phase === 'lost' ? 'Guarantee Paid' : undefined}
+          silent={phase === 'lost'}
+          art={
+            <BonusReceiptArt
+              game={game}
+              dim={phase === 'lost'}
+              figure={
+                game === 'crash'
+                  ? (phase === 'lost' ? crash.current : liveCents) / 100
+                  : game === 'plinko'
+                    ? bestCents.current / 100
+                    : game === 'mines' && phase === 'lost'
+                      ? Math.max(0, picked.length - 1)
+                      : picked.length
+              }
+            />
+          }
         />
       )}
     </main>

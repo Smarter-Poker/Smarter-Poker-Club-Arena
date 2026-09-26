@@ -507,6 +507,44 @@
     border-radius: 2px;
   }
 }
+/* A PHONE ON ITS SIDE (2026-09-26). Upright, the readouts sit over the board
+   and the caption under it, which is the height a sideways phone does not
+   have. Sideways the board is a row: the two readouts and the caption in a
+   column on the left, the square stage on the right, as tall as the console
+   leaves the scene (--scene-budget, GameConsole.module.css, less the board's
+   own padding). The grid gives the stage whatever width the readouts leave
+   up to that height, so on the narrowest sideways playfield (844 x 390 with
+   a notch each side) the square is still about 264px and every tile is wider
+   than a thumb's 44px. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .board {
+    display: grid;
+    grid-template-columns: minmax(96px, 150px) minmax(0, calc(var(--scene-budget, 100dvh) - 12px));
+    grid-template-areas:
+      'readouts stage'
+      'caption stage';
+    grid-template-rows: 1fr 1fr;
+    justify-content: center;
+    column-gap: 12px;
+    width: 100%;
+    padding: 6px;
+  }
+  .readouts {
+    grid-area: readouts;
+    align-self: end;
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0 0 8px;
+  }
+  .stage {
+    grid-area: stage;
+  }
+  .caption {
+    grid-area: caption;
+    align-self: start;
+    margin: 0;
+    text-align: left;
+  }
+}
 /* Motion collapses; every mine, every gem, the found gem's glow and sparkle,
    and the red edge of the mine that ended the round still read. */
 @media (prefers-reduced-motion: reduce) {

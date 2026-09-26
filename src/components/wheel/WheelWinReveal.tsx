@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
@@ -38,6 +38,7 @@ export function WheelWinReveal({
   silent = false,
   openLabel,
   holdOpen = false,
+  art,
 }: {
   prize: Pick<WheelSegment, 'kind' | 'game' | 'multiplier'>;
   title: string;
@@ -71,6 +72,12 @@ export function WheelWinReveal({
    * a bonus game or an upgrade.
    */
   holdOpen?: boolean;
+  /**
+   * A picture of its own in place of the prize's atlas art: the offline test
+   * page shows a finished bonus game's receipt art here, exactly as the live
+   * receipt (BonusCompletion) does.
+   */
+  art?: ReactNode;
 }) {
   const opened = useRef(false);
   const onOpenRef = useRef(onOpen);
@@ -147,7 +154,7 @@ export function WheelWinReveal({
         >
           <div className={styles.prize} aria-hidden="true">
             <div className={styles.rays} />
-            <WheelPrizeArt segment={prize} className={styles.art} />
+            {art ?? <WheelPrizeArt segment={prize} className={styles.art} />}
           </div>
           <p className="sc-copy sc-copy--center" role="status">
             {detail}

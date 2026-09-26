@@ -1258,6 +1258,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? `Hit At Street ${round.picked.length}.`
                 : `${bookedAt === null ? 'Your Win Is Booked.' : `Street ${picks} At ${bookedAt}`}${roadEnded === null ? '' : `; ${roadEnded}`}.`
           }
+          // The street the donkey reached (or was hit on), or the gems found:
+          // a lost Mines round's last pick was the mine.
+          game={game}
+          figure={
+            game === 'mines' && round.status === 'lost'
+              ? Math.max(0, round.picked.length - 1)
+              : round.picked.length
+          }
           proof={
             roundVerified === null
               ? undefined

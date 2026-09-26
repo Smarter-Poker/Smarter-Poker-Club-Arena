@@ -202,7 +202,7 @@ export function horseDenials(sql: string): Finding[] {
   for (const lit of stringLiterals(code)) {
     for (const sentence of lit.split(/(?<=[.;])\s+/)) {
       if (HORSE_GROUP.test(sentence) && DENIAL_WORD.test(sentence) && !REJECTS_IT.test(sentence)) {
-        findings.push({ rule: 'text', detail: sentence.slice(0, 200) });
+        findings.push({ rule: 'text', detail: sentence });
       }
     }
   }

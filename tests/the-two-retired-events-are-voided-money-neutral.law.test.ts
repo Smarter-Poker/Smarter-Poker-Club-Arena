@@ -126,7 +126,7 @@ describe('the two retired events are voided money-neutral', () => {
       expect(file.slice(lane, voidAt)).toContain(
         "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1', 0));"
       );
-      expect(file.slice(voidAt, voidAt + 600)).toContain(
+      expect(file.slice(voidAt, file.indexOf('$void$;', voidAt))).toContain(
         "EXIT WHEN pg_try_advisory_xact_lock(hashtextextended('ca:hand-settlement-barrier:v1', 0));"
       );
       expect(file.slice(lane, voidAt)).toContain(`SET LOCAL statement_timeout = '${cap}';`);

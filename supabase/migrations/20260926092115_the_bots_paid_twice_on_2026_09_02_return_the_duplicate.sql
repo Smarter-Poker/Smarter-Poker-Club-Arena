@@ -1,5 +1,7 @@
 -- 20260926092115_the_bots_paid_twice_on_2026_09_02_return_the_duplicate.sql
 --
+-- @live-proof: (SELECT count(*) FROM public.ca_manual_adjustments WHERE decision_note = 'migration 20260926092115_the_bots_paid_twice_on_2026_09_02_return_the_duplicate' AND status = 'settled') = 32
+--
 -- THE BOTS PAID TWICE ON 2026-09-02 RETURN THE DUPLICATE (2026-09-26)
 --
 -- DECISION (CLAUDE.md 10.9, delegated by Dan for this item on 2026-09-26): a

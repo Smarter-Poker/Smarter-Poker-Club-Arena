@@ -5,15 +5,27 @@
 them. Every figure below was read back from production after the migrations
 were applied.
 
-| #   | Item                            | Final position                                         | Migration                          |
-| --- | ------------------------------- | ------------------------------------------------------ | ---------------------------------- |
-| 1   | Mystery-bounty make-good        | Paid, 76.90 to five players, seven journal legs        | `20260926085132`                   |
-| 2   | PKO 3f19bd70 shortfall 1,355.00 | Closed by recorded disposition, nothing paid           | `20260926092142`                   |
-| 3   | Satellite seat into a PKO       | No defect: every path splits or refuses                | none needed                        |
-| 4   | Ledger replay drift -234.10     | Detector defect, fixed                                 | `20260926084812`                   |
-| 5   | Rakeback, week of 2026-09-14    | Basis decided, stays owed (write-off voided)           | `20260926131554`                   |
-| 6   | 32 obligations paid twice       | Real; the house absorbs 1,001.00 (recovery reversed)   | `20260926131530`                   |
-| 7   | Alert noise                     | 62 closed earlier, 360 floored-week retries closed now | `20260926092142`, `20260926131554` |
+| #   | Item                            | Final position                                                               | Migration                          |
+| --- | ------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------- |
+| 1   | Mystery-bounty make-good        | Paid, 76.90 to five players, seven journal legs                              | `20260926085132`                   |
+| 2   | PKO 3f19bd70 shortfall 1,355.00 | Owed again: closure reopened under Dan's ruling; not attributable per player | `20260926092142`, `20260926131420` |
+| 3   | Satellite seat into a PKO       | No defect: every path splits or refuses                                      | none needed                        |
+| 4   | Ledger replay drift -234.10     | Detector defect, fixed                                                       | `20260926084812`                   |
+| 5   | Rakeback, week of 2026-09-14    | Basis decided, stays owed; alert open for Dan's one-off payment              | `20260926131554`, `20260926131420` |
+| 6   | 32 obligations paid twice       | Real; the house absorbs 1,001.00 (recovery reversed)                         | `20260926131530`                   |
+| 7   | Alert noise                     | 62 closed earlier, 360 floored-week retries closed now                       | `20260926092142`, `20260926131554` |
+
+## Dan's Ruling
+
+Dan ruled on 2026-09-26, in answer to a direct question from another session,
+to reverse all three horse-based money decisions of the morning
+(`20260926092115`, `20260926092142` for event 3f19bd70, and `20260926093159`).
+That session's migration `20260926131420` applied the rest of the ruling after
+the two migrations below: it verified the 1,001.00 was returned exactly once
+and moved no chips, reopened the three 3f19bd70 alerts (the 1,355.00 is owed;
+that nobody can derive who knocked out whom decides how it is paid, not
+whether), and reopened `deferred_rakeback_basis_2026_09_14` until Dan's one-off
+payment is made.
 
 ## Two Corrections
 

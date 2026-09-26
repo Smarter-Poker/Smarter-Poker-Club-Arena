@@ -1,5 +1,7 @@
 -- 20260926131530_a_horse_keeps_the_duplicate_prize_our_defect_paid_it_and_the.sql
 --
+-- @live-proof: (SELECT count(*) FROM public.ca_manual_adjustments WHERE decision_note = 'migration 20260926131530_a_horse_keeps_the_duplicate_prize_our_defect_paid_it_and_the' AND status = 'settled' AND amount > 0) = 32
+--
 -- A HORSE KEEPS THE DUPLICATE PRIZE OUR DEFECT PAID IT, AND THE HOUSE ABSORBS IT
 -- (2026-09-26)
 --

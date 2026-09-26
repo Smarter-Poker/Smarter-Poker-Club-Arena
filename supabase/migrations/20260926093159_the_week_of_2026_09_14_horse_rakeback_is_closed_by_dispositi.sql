@@ -1,5 +1,7 @@
 -- 20260926093159_the_week_of_2026_09_14_horse_rakeback_is_closed_by_dispositi.sql
 --
+-- @live-proof: (SELECT count(*) FROM public.accounting_deferred_obligations WHERE period_start = '2026-09-14 07:00:00+00' AND position('DISPOSITION 2026-09-26 (migration 20260926093159_the_week_of_2026_09_14_horse_rakeback_is_closed_by_dispositi' IN reason) > 0) = 2
+--
 -- THE WEEK OF 2026-09-14 HORSE RAKEBACK IS CLOSED BY DISPOSITION (2026-09-26)
 --
 -- DECISION (CLAUDE.md 10.9; the alert named Dan as decision owner and Dan

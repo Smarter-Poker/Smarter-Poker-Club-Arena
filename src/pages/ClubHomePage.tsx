@@ -136,6 +136,7 @@ import { ClubIdentityCard } from '../components/club-buttons';
 import { COUNT_UNKNOWN, type CountFigure } from '../lib/countFigure';
 import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import { playerDisplayName } from '../utils/playerDisplayName';
+import { titleCase } from '../utils/titleCase';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
   loadFilters,
@@ -5302,9 +5303,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     belongs here anyway: this is the club's permanent identity
                     line, and it is the one thing on this block that is safe to
                     bake in, because it does not change from one day to the
-                    next. */}
+                    next. The owner types it, so it is data: Title Cased where
+                    it is printed (skill v1.5.0), like every other string a
+                    player reads. */}
                 {club.tagline?.trim() && (
-                  <p className="club-lobby-command-top__tagline">{club.tagline.trim()}</p>
+                  <p className="club-lobby-command-top__tagline">
+                    {titleCase(club.tagline.trim())}
+                  </p>
                 )}
               </div>
             </div>
@@ -5956,7 +5961,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           clubName={club.name}
           clubBank={Number(club.chip_treasury) || 0}
           initialTagline={club.tagline ?? null}
-          onClose={() => setShowOpeningWizard(false)}
+          onClose={() => {
+            setShowOpeningWizard(false);
+            /* A close can follow a setup the server already holds (the
+               wizard's "Already Completed" answer closes it): read the setup
+               state once more through the existing load path above, so the
+               checklist step resolves without a reload. One read, no timer. */
+            setOpeningSetupReadRevision((revision) => revision + 1);
+          }}
           onComplete={({ clubBankAfter, spinsEnabled, tagline }) => {
             setClub((previous) =>
               previous

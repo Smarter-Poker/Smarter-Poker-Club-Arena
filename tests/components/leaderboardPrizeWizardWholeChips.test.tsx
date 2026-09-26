@@ -238,9 +238,17 @@ describe('the wizard says only what the settlement and publication SQL do', () =
         'Harbor Kings Is Standalone, So Its Promo Wallet Pays Its Leaderboard Prizes. Any Leaderboard Prize Seed Left From Opening Is Used First.'
       )
     ).toBeInTheDocument();
-    const rule = screen.getByLabelText('Shortfall Rule');
-    expect(within(rule).getByText('If Promo Falls Short')).toBeInTheDocument();
-    expect(within(rule).getByText('Round Waits Unpaid')).toBeInTheDocument();
+    /* A paid standalone program's shortfall row is the owner's Club Bank
+       overlay switch now (20260923143157), Off unless chosen; with it Off the
+       rule is exactly the old fixed row's. (Was: a fixed "If Promo Falls
+       Short / Round Waits Unpaid" row, which the owner's opt-in replaces for
+       this program; a union program keeps it, below and in
+       leaderboardPrizeWizardClubBankOverlay.test.tsx.) */
+    const rule = screen.getByRole('group', { name: 'Shortfall Rule' });
+    const overlay = within(rule).getByRole('switch', { name: 'Club Bank Covers Shortfalls' });
+    expect(overlay).not.toBeChecked();
+    expect(within(rule).getByText('Off')).toBeInTheDocument();
+    expect(within(rule).queryByText('If Promo Falls Short')).not.toBeInTheDocument();
     expect(screen.getByText(/No Winner Is Paid, The Round Stays Unpaid/)).toHaveTextContent(
       'The Club Bank Is Never Used.'
     );
@@ -249,7 +257,7 @@ describe('the wizard says only what the settlement and publication SQL do', () =
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(screen.getByText('Publishing Checks Funding And Moves No Chips.')).toBeInTheDocument();
     expect(screen.getByText(/Its Chips Are Not Locked\./)).toBeInTheDocument();
-    expect(reviewRow('If Promo Falls Short')).toBe('Round Waits Unpaid');
+    expect(reviewRow('Club Bank Covers Shortfalls')).toBe('Off');
     // The claim this replaced read as if publishing reserved the chips.
     expect(screen.queryByText(/Claims Funding Capacity/)).not.toBeInTheDocument();
   });
@@ -268,6 +276,10 @@ describe('the wizard says only what the settlement and publication SQL do', () =
       'The Union Bank And Club Banks Are Never Used.'
     );
     expect(screen.queryByText(/Seed/)).not.toBeInTheDocument();
+    const rule = screen.getByLabelText('Shortfall Rule');
+    expect(within(rule).getByText('If Promo Falls Short')).toBeInTheDocument();
+    expect(within(rule).getByText('Round Waits Unpaid')).toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 });
 

@@ -8,6 +8,7 @@ import type {
 import { LeaderboardService } from '../../services/LeaderboardService';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { Toggle } from '../table-config/controls';
 import { compactChips } from '../../utils/format';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import {
@@ -180,28 +181,45 @@ function exactChips(value: number | null | undefined): string {
 /**
  * WHAT HAPPENS WHEN THE PROMO WALLET FALLS SHORT: the one place it is said.
  *
- * Today's settlement is promo only (20260906084547): a closed round is paid
- * from the recorded Promo Wallet (a standalone club's leftover opening prize
- * seed first) in full or not at all. An underfunded round is left unpaid, no
- * winner is partly paid, the daily settlement run retries it, and no bank is
- * ever debited (the batch table's overlay column is held at zero by a check
- * constraint). Publication itself is gated on the Promo Wallet alone
- * (20260906003717).
+ * Settlement pays a closed round in full or not at all (fn_payout_leaderboard,
+ * 20260923143157): a standalone club's round from any leftover opening prize
+ * seed first, then its recorded Promo Wallet; a union's round from the union
+ * Promo Wallet alone. A round they cannot cover is left unpaid, no winner is
+ * partly paid, and the daily settlement run retries it.
  *
- * If the publication RPC gains the owner's opt-in to cover a shortfall from
- * the bank, THIS is what becomes that one labelled On/Off choice (the Toggle
- * in table-config/controls, default Off), shown where this row is shown, and
- * planPayload() is where its value is sent. Until the SQL has it, the row
- * states the only behaviour there is.
+ * THE CLUB BANK OVERLAY (20260923143157). A paid standalone club program also
+ * carries the owner's explicit answer, per published version, to one question:
+ * may the club's own Club Bank cover a shortfall? It is Off unless chosen
+ * (leaderboard_reward_program_versions.overlay_enabled, default false), so for
+ * that program this row is the labelled On/Off Toggle from table-config/controls,
+ * and planPayload() sends the answer with every publication: a republish from
+ * here keeps an owner's earlier On instead of silently turning it Off.
+ *   On:  when the seed and the Promo Wallet together hold less than the round,
+ *        the Club Bank pays only the missing chips, as its own overlay leg
+ *        (journal category overlay, recorded on the batch as overlay_funded).
+ *        A Club Bank that cannot hold the whole shortfall pays nothing, and the
+ *        round stays unpaid and is retried, exactly as with the answer Off.
+ *   Off: the Club Bank is never debited.
+ * A union program cannot carry the opt-in (a table CHECK and the publication
+ * RPC both refuse it), so a union-funded program keeps the fixed row, and no
+ * bank is ever used. Either way publication is checked against the Promo
+ * Wallet alone: the overlay covers a later round's shortfall, it is never
+ * capacity to publish against.
  */
-function shortfallRule(ownerType: LeaderboardSettings['funding_owner_type']) {
+function shortfallRule(ownerType: LeaderboardSettings['funding_owner_type'], overlayOn: boolean) {
+  if (ownerType !== 'club') {
+    return {
+      label: 'If Promo Falls Short',
+      value: 'Round Waits Unpaid',
+      note: 'A Closed Round Is Paid In Full Or Not At All. If The Union Promo Wallet Holds Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until The Wallet Covers It. The Union Bank And Club Banks Are Never Used.',
+    };
+  }
   return {
-    label: 'If Promo Falls Short',
-    value: 'Round Waits Unpaid',
-    note:
-      ownerType === 'union'
-        ? 'A Closed Round Is Paid In Full Or Not At All. If The Union Promo Wallet Holds Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until The Wallet Covers It. The Union Bank And Club Banks Are Never Used.'
-        : 'A Closed Round Is Paid In Full Or Not At All. If Any Leftover Opening Prize Seed And The Promo Wallet Together Hold Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until They Cover It. The Club Bank Is Never Used.',
+    label: 'Club Bank Covers Shortfalls',
+    value: overlayOn ? 'On' : 'Off',
+    note: overlayOn
+      ? 'A Closed Round Is Paid In Full Or Not At All. Any Leftover Opening Prize Seed Pays First, Then The Promo Wallet. If They Together Hold Less Than The Prizes, The Club Bank Pays Only The Missing Chips, As A Separate Overlay Entry. If The Club Bank Cannot Cover All Of Them Either, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It.'
+      : 'A Closed Round Is Paid In Full Or Not At All. If Any Leftover Opening Prize Seed And The Promo Wallet Together Hold Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until They Cover It. The Club Bank Is Never Used.',
   };
 }
 
@@ -217,6 +235,9 @@ export function LeaderboardPrizeWizard({
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const [step, setStep] = useState(0);
   const [enabled, setEnabled] = useState(setup.rewards_enabled);
+  /* The owner's Club Bank overlay answer, as the current program carries it
+     (Off unless it was chosen). Only a paid standalone club program sends it. */
+  const [overlayEnabled, setOverlayEnabled] = useState(setup.overlay_enabled === true);
   const [metric, setMetric] = useState(setup.payout_metric);
   const [planKey, setPlanKey] = useState<LeaderboardPrizePlanKey>(setup.suggestion_key);
   const [weeklyPrizes, setWeeklyPrizes] = useState<LeaderboardPrize[]>(setup.weekly_prizes);
@@ -249,6 +270,7 @@ export function LeaderboardPrizeWizard({
       : distributePrizeBudget(suggested.monthly, 'balanced');
     setStep(0);
     setEnabled(setup.rewards_enabled);
+    setOverlayEnabled(setup.overlay_enabled === true);
     setMetric(setup.payout_metric);
     setPlanKey(initialKey);
     setWeeklyPrizes(initialWeekly);
@@ -326,7 +348,12 @@ export function LeaderboardPrizeWizard({
     setup.funding_owner_type === 'union'
       ? `This Club Belongs To ${setup.union_name || 'A Union'}, So The Union Promo Wallet Pays Its Leaderboard Prizes.`
       : `${setup.club_name} Is Standalone, So Its Promo Wallet Pays Its Leaderboard Prizes. Any Leaderboard Prize Seed Left From Opening Is Used First.`;
-  const shortfall = shortfallRule(setup.funding_owner_type);
+  /* The Club Bank overlay exists only on a paid standalone club program: the
+     switch is offered there, the answer is printed there, and planPayload()
+     sends it there. Everywhere else the row is fixed and no bank is used. */
+  const offersOverlay = setup.funding_owner_type === 'club' && enabled;
+  const overlayOn = offersOverlay && overlayEnabled;
+  const shortfall = shortfallRule(setup.funding_owner_type, overlayOn);
   const placesLine = (prizes: LeaderboardPrize[]) =>
     prizes.length ? prizes.map((prize) => exactChips(prize.amount)).join(' / ') : 'None';
 
@@ -380,6 +407,7 @@ export function LeaderboardPrizeWizard({
     weekly_prizes: normalizeCustomPrizes(weeklyPlaces),
     monthly_prizes: normalizeCustomPrizes(monthlyPlaces),
     suggestion_key: planKey,
+    overlay_enabled: setup.funding_owner_type === 'club' && enabled && overlayEnabled,
   });
 
   /* Sends the plan to one union sibling as that club's own next version. Its
@@ -651,12 +679,23 @@ export function LeaderboardPrizeWizard({
                     A Union Wallet.
                   </span>
                 </div>
-                <dl className="lb-prize-rows" aria-label="Shortfall Rule">
-                  <div>
-                    <dt>{shortfall.label}</dt>
-                    <dd>{shortfall.value}</dd>
+                {offersOverlay ? (
+                  <div role="group" aria-label="Shortfall Rule">
+                    <Toggle
+                      label="Club Bank Covers Shortfalls"
+                      value={overlayEnabled}
+                      onChange={setOverlayEnabled}
+                      disabled={saving}
+                    />
                   </div>
-                </dl>
+                ) : (
+                  <dl className="lb-prize-rows" aria-label="Shortfall Rule">
+                    <div>
+                      <dt>{shortfall.label}</dt>
+                      <dd>{shortfall.value}</dd>
+                    </div>
+                  </dl>
+                )}
                 <p className="lb-prize-rule-note">{shortfall.note}</p>
               </div>
             )}
@@ -933,6 +972,17 @@ export function LeaderboardPrizeWizard({
                       Published From It. Its Chips Are Not Locked. After Each Period Closes, The
                       Service-Only Settlement Pays The Winners From That Wallet And Writes Immutable
                       Payout Receipts.
+                    </span>
+                  ) : overlayOn ? (
+                    /* The overlay is never publication capacity: the Promo
+                       Wallet alone is checked here, and the Club Bank is drawn
+                       only at settlement, for a shortfall (20260923143157). */
+                    <span>
+                      The Promo Wallet Must Cover This Plan When It Is Published, And Its Chips Are
+                      Not Locked. The Club Bank Never Counts Toward That Check. After Each Period
+                      Closes, The Service-Only Settlement Pays The Winners From Any Leftover Opening
+                      Prize Seed, Then The Promo Wallet, Then The Club Bank For Only The Missing
+                      Chips, And Writes Immutable Payout Receipts.
                     </span>
                   ) : (
                     <span>

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { sliceSqlStatement } from '../helpers/sourceWindow';
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: mocks }));
@@ -37,10 +38,11 @@ function liveDefinitionOf(fn: string): string {
     const sql = readFileSync(resolve(migrations, file), 'utf8');
     const start = sql.search(create);
     if (start < 0) continue;
-    const bodyOpen = sql.indexOf('$function$', start);
-    const bodyClose = sql.indexOf('$function$', bodyOpen + 10);
-    expect(bodyClose, `${fn} in ${file} has no closing $function$`).toBeGreaterThan(bodyOpen);
-    return sql.slice(start, bodyClose + 10);
+    const anchor = sql
+      .slice(start)
+      .match(/^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.[^(]+\(/i)?.[0];
+    expect(anchor, `${fn} in ${file} has no structural function anchor`).toBeTruthy();
+    return sliceSqlStatement(sql, anchor ?? `FUNCTION public.${fn}(`);
   }
   throw new Error(`No migration defines public.${fn}`);
 }

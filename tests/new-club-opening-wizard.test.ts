@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceSqlStatement } from './helpers/sourceWindow';
 
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -30,10 +31,12 @@ const definesFunction = (fn: string) =>
 function liveFunction(fn: string): string {
   const { file, sql } = newestMigrationMatching(definesFunction(fn));
   const start = sql.search(definesFunction(fn));
-  const open = sql.indexOf('$function$', start);
-  const close = sql.indexOf('$function$', open + 10);
-  expect(close, `${fn} in ${file} has no closing $function$`).toBeGreaterThan(open);
-  return sql.slice(start, close + 10);
+  expect(start, `${fn} in ${file} has no live definition`).toBeGreaterThanOrEqual(0);
+  return sliceSqlStatement(
+    sql,
+    sql.slice(start).match(/^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.[^(]+\(/i)?.[0] ??
+      `FUNCTION public.${fn}(`
+  );
 }
 
 const wizard = read('src/components/club/ClubOpeningWizard.tsx');

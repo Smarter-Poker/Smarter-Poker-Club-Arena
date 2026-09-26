@@ -48,6 +48,7 @@ import {
   type MttCreationProfileId,
 } from '../../../server/src/tournament/mttCreationProfiles';
 import { manualMttCreationProfile, selectedManualMttProfile } from '../../lib/mttCreationProfile';
+import { joinLocalStart, upcomingDateOptions } from '../../lib/quarterHourStartSelect';
 import {
   describeStoredMttStructure,
   mttClockDescription,
@@ -183,6 +184,8 @@ export default function CreateTournamentModal({
   const [satelliteTargetId, setSatelliteTargetId] = useState('');
   const [satelliteSeats, setSatelliteSeats] = useState('1');
   const [satelliteTargets, setSatelliteTargets] = useState<{ id: string; name: string }[]>([]);
+  /* A failed target read is not "no upcoming tournaments": say which it was. */
+  const [satelliteTargetsFailed, setSatelliteTargetsFailed] = useState(false);
 
   // ── Auto Satellite Generation (for Main Events) ──
   const [generateSatellites, setGenerateSatellites] = useState(false);
@@ -194,25 +197,13 @@ export default function CreateTournamentModal({
   const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled' | 'schedule_only'>('now');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
-  const scheduledDateOptions = useMemo(
-    () =>
-      Array.from({ length: 366 }, (_, offset) => {
-        const date = new Date();
-        date.setHours(12, 0, 0, 0);
-        date.setDate(date.getDate() + offset);
-        const value = date.toISOString().slice(0, 10);
-        return {
-          value,
-          label: date.toLocaleDateString(undefined, {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        };
-      }),
-    []
-  );
+  /* LOCAL CALENDAR DAYS, VALUE AND LABEL ALIKE (2026-09-23). The value used
+     to be toISOString() of local noon, which is the UTC date: at UTC+12:45 to
+     UTC+14 (New Zealand daylight time from 27 September) local noon is the
+     previous UTC day, so every option's value was the day BEFORE its label and
+     the event was created a day early. The shared builder reads the local
+     fields for both, and the start below is read back as the same local time. */
+  const scheduledDateOptions = useMemo(() => upcomingDateOptions(new Date(), null), []);
   const scheduledTimeOptions = useMemo(
     () =>
       Array.from({ length: 96 }, (_, index) => {
@@ -339,7 +330,7 @@ export default function CreateTournamentModal({
   const weeklySlotFromStart = useCallback((): { daysOfWeek: number[]; startTimesUtc: string[] } => {
     const when =
       startTimeMode === 'scheduled' && scheduledDate && scheduledTime
-        ? new Date(`${scheduledDate}T${scheduledTime}`)
+        ? new Date(joinLocalStart(scheduledDate, scheduledTime))
         : new Date(Date.now() + 10 * 60 * 1000);
     const at = Number.isFinite(when.getTime()) ? when : new Date(Date.now() + 10 * 60 * 1000);
     return { daysOfWeek: [at.getUTCDay()], startTimesUtc: [at.toISOString().slice(11, 16)] };
@@ -488,7 +479,7 @@ export default function CreateTournamentModal({
     (async () => {
       try {
         const resolved = await resolveClubUUID(clubId);
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('tournaments')
           .select(
             'id, name, tournament_type, status, start_time, variant, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
@@ -498,6 +489,9 @@ export default function CreateTournamentModal({
           .in('status', ['registering', 'scheduled', 'upcoming', 'announced', 'pending', 'open'])
           .order('start_time', { ascending: true })
           .limit(50);
+        /* A refused read is not an empty club: reported, and the picker says
+           it could not load rather than "No Upcoming Tournaments". */
+        if (error) throw error;
         // A satellite can only award a seat the settlement authority can
         // deliver: never into a bounty, PKO, mystery-bounty or Spin event
         // (the database refuses that insert too, 20260911110907).
@@ -510,9 +504,13 @@ export default function CreateTournamentModal({
             String(t.variant ?? '').toLowerCase() !== 'spin' &&
             String(t.tournament_type ?? '').toUpperCase() !== 'SPIN'
         );
-        if (alive) setSatelliteTargets(deliverable.map((t: any) => ({ id: t.id, name: t.name })));
+        if (alive) {
+          setSatelliteTargets(deliverable.map((t: any) => ({ id: t.id, name: t.name })));
+          setSatelliteTargetsFailed(false);
+        }
       } catch (e) {
         reportError(e, 'CreateTournamentModal.loadSatelliteTargets');
+        if (alive) setSatelliteTargetsFailed(true);
       }
     })();
     return () => {
@@ -648,7 +646,7 @@ export default function CreateTournamentModal({
        picking yesterday got no feedback at all. A minute of slack, for a form
        filled in while the clock moves. */
     if (startTimeMode === 'scheduled') {
-      const startsAt = new Date(`${scheduledDate}T${scheduledTime}`).getTime();
+      const startsAt = new Date(joinLocalStart(scheduledDate, scheduledTime)).getTime();
       if (!Number.isFinite(startsAt) || startsAt < Date.now() - 60_000) {
         toast.error('Pick A Start Time In The Future');
         submittingRef.current = false;
@@ -733,7 +731,7 @@ export default function CreateTournamentModal({
       // Build start time
       let startTime: Date | undefined;
       if (startTimeMode === 'scheduled' && scheduledDate && scheduledTime) {
-        startTime = new Date(`${scheduledDate}T${scheduledTime}`);
+        startTime = new Date(joinLocalStart(scheduledDate, scheduledTime));
       } else {
         // Start 1 minute from now to allow last-second registrations
         startTime = new Date(Date.now() + 60 * 1000);
@@ -1489,9 +1487,11 @@ export default function CreateTournamentModal({
                       ))}
                     </select>
                     <span className={styles.helperText}>
-                      {satelliteTargets.length === 0
-                        ? 'No Upcoming Tournaments To Feed Into - Create One First.'
-                        : 'Winners Earn A Seat Into This Tournament.'}
+                      {satelliteTargetsFailed
+                        ? 'Target Tournaments Could Not Be Loaded. Close And Reopen To Try Again.'
+                        : satelliteTargets.length === 0
+                          ? 'No Upcoming Tournaments To Feed Into - Create One First.'
+                          : 'Winners Earn A Seat Into This Tournament.'}
                     </span>
                   </div>
                 </div>

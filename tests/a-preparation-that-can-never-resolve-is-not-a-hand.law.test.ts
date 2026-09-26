@@ -188,9 +188,7 @@ describe('3. the release gate asks the database, and fails closed', () => {
     // An allow-list, so an unrecognised reason refuses. A deny-list would let
     // every reason a future engine invents through by default.
     expect(TRANSACTION).toContain('if not isinstance(k,str): raise SystemExit(1)');
-    expect(TRANSACTION).toContain(
-      'if k not in BOUNDED_ONLY and not (k==RAW_STOPPED_BANK and predecessor): raise SystemExit(1)'
-    );
+    expect(TRANSACTION).toContain('if k not in BOUNDED_ONLY: raise SystemExit(1)');
     // Assert the SET ITSELF, not a slice of the file: the surrounding prose
     // names the excluded reasons on purpose, and a text search would match it.
     const literal = TRANSACTION.slice(

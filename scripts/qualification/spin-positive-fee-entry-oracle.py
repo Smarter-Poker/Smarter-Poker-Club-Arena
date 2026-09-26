@@ -42,9 +42,23 @@ def uid(value):
 
 def instant(value):
     require(isinstance(value, str), 'timestamp string')
-    result = datetime.fromisoformat(value.replace('Z', '+00:00'))
-    require(result.tzinfo is not None, 'timestamp timezone')
-    return result
+    # PostgreSQL JSON omits trailing microsecond zeroes. Python 3.9 accepts
+    # only three or six fractional digits, so normalize losslessly after
+    # validating the exact timestamp domain used by these observations.
+    match = re.fullmatch(
+        r'([0-9]{4}-[0-9]{2}-[0-9]{2})[T ]([0-9]{2}:[0-9]{2}:[0-9]{2})'
+        r'(?:\.([0-9]{1,6}))?(Z|[+-][0-9]{2}:[0-9]{2})', value)
+    require(match is not None, 'timestamp format, timezone and microsecond precision')
+    day, clock, fraction, zone = match.groups()
+    require(int(clock[:2]) < 24 and int(clock[3:5]) < 60 and int(clock[6:]) < 60,
+            'timestamp clock range')
+    if zone == 'Z':
+        zone = '+00:00'
+    else:
+        # datetime can normalize invalid minutes instead of refusing them.
+        require(int(zone[1:3]) < 24 and int(zone[4:6]) < 60, 'timestamp timezone range')
+    normalized = day + 'T' + clock + ('.' + fraction.ljust(6, '0') if fraction else '') + zone
+    return datetime.fromisoformat(normalized)
 
 
 def fields(row, **expected):

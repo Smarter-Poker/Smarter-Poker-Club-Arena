@@ -75,7 +75,12 @@ const certificateHelper = TRANSACTION.slice(
 function inflightHelper(rc: number): string {
   const dir = mkdtempSync(join(tmpdir(), 'inflight-'));
   const path = join(dir, 'engine-release-inflight-hands.py');
-  writeFileSync(path, `#!/bin/sh\nexit ${rc}\n`);
+  // The real helper announces its answer on stdout; the stand-in does too, so
+  // a certificate that leaks it into the captured figure fails here.
+  writeFileSync(
+    path,
+    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+  );
   chmodSync(path, 0o755);
   return path;
 }
@@ -138,7 +143,7 @@ describe('1. the stuck stopped-bank class is refused, from every serving release
     for (const releaseSha of [BOUNDED_RELEASE, PREDECESSOR]) {
       const result = certificate({ reasons: { stopped_bank_custody_stuck: 154 }, releaseSha });
       expect(result.status, result.stderr).not.toBe(0);
-      expect(result.stdout).not.toContain('the database confirms');
+      expect(result.stderr).not.toContain('the database confirms');
     }
   });
 
@@ -149,14 +154,15 @@ describe('1. the stuck stopped-bank class is refused, from every serving release
     ]) {
       const result = certificate({ reasons });
       expect(result.status, JSON.stringify(reasons)).not.toBe(0);
-      expect(result.stdout).not.toContain('the database confirms');
+      expect(result.stderr).not.toContain('the database confirms');
     }
   });
 
   it('still admits the preparation reasons alone under the database proof', () => {
     const result = certificate({ reasons: { f06_preparation_stuck: 13 } });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('the database confirms no hand is in the air');
+    expect(result.stdout).toBe('296000\n');
+    expect(result.stderr).toContain('the database confirms no hand is in the air');
   });
 });
 
@@ -167,7 +173,7 @@ describe('2. the raw reason is admitted from the exact predecessor only', () => 
       releaseSha: PREDECESSOR,
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('the database confirms no hand is in the air');
+    expect(result.stderr).toContain('the database confirms no hand is in the air');
     expect(result.stderr).toContain(
       'restart certificate is held shut by stopped-bank custody the predecessor 778075b4 can never release; ' +
         'the bound that retires it is not in that release; consulting the database for hands actually in the air'
@@ -212,7 +218,7 @@ describe('2. the raw reason is admitted from the exact predecessor only', () => 
       releaseSha,
     });
     expect(result.status).not.toBe(0);
-    expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
     expect(result.stderr).not.toContain('can never release');
   });
 
@@ -253,7 +259,7 @@ describe('3. everything that refused still refuses', () => {
   ])('refuses %j from a bounded release', (reasons) => {
     const result = certificate({ reasons });
     expect(result.status).not.toBe(0);
-    expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
   });
 
   it.each([
@@ -266,7 +272,7 @@ describe('3. everything that refused still refuses', () => {
   ])('refuses %j from the predecessor too', (reasons) => {
     const result = certificate({ reasons, releaseSha: PREDECESSOR });
     expect(result.status).not.toBe(0);
-    expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
   });
 
   it('a short window is still a missed opportunity, whoever is serving', () => {
@@ -279,6 +285,50 @@ describe('3. everything that refused still refuses', () => {
       expect(result.status).toBe(2);
       expect(result.stdout.trim()).toBe('284999');
     }
+  });
+});
+
+describe('5. stdout is the verdict and nothing else', () => {
+  // Run 36211686180 (2026-09-26 02:34:11Z): the first admission through the
+  // database branch captured the helper's announcement as the figure and the
+  // transaction died on `$(( ... / 1000 ))` before prepare.
+  it('an admitted certificate prints only the remaining milliseconds, which the caller can do arithmetic on', () => {
+    // (#5267: stopped_bank_custody_stuck is refused, so the admitted shapes
+    // are the preparation reasons and the predecessor's raw reason.)
+    for (const reasons of [
+      { f06_preparation_stuck: 13 },
+      { f06_preparation_unresolved: 1 },
+      { f06_preparation_stuck: 13, f06_preparation_unresolved: 2 },
+    ]) {
+      const result = certificate({ reasons });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/^[0-9]+\n$/);
+      expect(result.stderr).toContain('[engine-release-inflight-hands] answer 0');
+    }
+    const raw = certificate({
+      reasons: { f06_preparation_stuck: 13, stopped_bank_custody_unconfirmed: 186 },
+      releaseSha: PREDECESSOR,
+    });
+    expect(raw.status, raw.stderr).toBe(0);
+    expect(raw.stdout).toBe('296000\n');
+  });
+
+  it('the caller evaluates the captured figure exactly as the transaction does', () => {
+    const result = certificate({ reasons: { f06_preparation_stuck: 13 } });
+    const arithmetic = spawnSync(
+      'bash',
+      ['-c', 'set -eu; BREAK_REMAINING_MS="$FIGURE"; echo $(( BREAK_REMAINING_MS / 1000 ))'],
+      { encoding: 'utf8', env: { ...process.env, FIGURE: result.stdout.replace(/\n$/, '') } }
+    );
+    expect(arithmetic.status, arithmetic.stderr).toBe(0);
+    expect(arithmetic.stdout.trim()).toBe('296');
+  });
+
+  it('the helper and the admission line are sent to stderr in the source', () => {
+    expect(TRANSACTION).toContain('"$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2');
+    expect(TRANSACTION).toContain(
+      'admitting the cutover past the unresolved preparation named above" >&2'
+    );
   });
 });
 

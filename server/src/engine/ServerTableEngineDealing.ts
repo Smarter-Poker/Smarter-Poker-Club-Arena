@@ -544,11 +544,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            already-started hands to resolve normally" is not a second check -
            it is the position of this one.
 
-           IT SITS ABOVE THE SIT-OUT EVICTION DELIBERATELY. Everything before
-           this gate keeps the table's picture of itself current - the roster,
-           the moved presence, the horse heartbeats, and the throttled row
-           re-read inside prepareNextHand that is how the halt is lifted again.
-           Everything after it changes somebody's seat or deals: the sit-out
+           IT SITS ABOVE THE SIT-OUT EVICTION DELIBERATELY. Almost everything
+           before this gate keeps the table's picture of itself current - the
+           roster, the moved presence, the horse heartbeats, and the throttled
+           row re-read inside prepareNextHand that is how the halt is lifted
+           again. The ONE exception is deliberate and is argued at length in
+           prepareNextHand: the `leave_pending` sweep, which is not a read. It
+           is a departure the PLAYER asked for, it is already uncounted by
+           every population query the conversion asks, and it stays above this
+           gate on purpose. Everything after the gate changes somebody's seat
+           or deals: the sit-out
            eviction cashes a player out, `announcePendingSeatMoves` and the
            idle sweeps move one between tables, and `dealHand` posts blinds. A
            halted table does none of that. The start-up wait loop learned the
@@ -569,6 +574,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            and because a table halted while its FSM is still 'waiting' has no
            'paused' state to show GameServer's zombie reaper, which would
            otherwise condemn it at 180s and rebuild it into the same halt. */
+        /* AND A TABLE MUST NOT STAY LABELLED PAUSED ONCE THE HALT LIFTS
+           (2026-09-25). The gate below moves the FSM 'running' -> 'paused' so
+           that a halted table reads as quiet on purpose. Nothing ever moved it
+           back: `releasePauseGate()` is the only other writer of that edge,
+           and no owner in this process will ever release a POLLED lock. So a
+           Cluster whose conversion finished left its tables dealing normally
+           while every reader that asks `isPausedByDesign()` - the zombie
+           reaper, the turn watchdog, the drain's boundary test, /health - was
+           told for the rest of the process's life that the table was parked on
+           purpose. It dealt, so nobody would have seen it; the guards around
+           it were simply switched off. The hourly maintenance break washes it
+           away through `releasePauseGate`, which is getting lucky on a clock
+           rather than a fix (CLAUDE.md 10.11/10.12).
+
+           ABOVE the gate rather than in an `else` on it, so the gate itself
+           stays the narrow park-and-poll branch its law slices and reads.
+           Guarded on `isNextHandPaused()` rather than on the halt alone: that
+           predicate names every owner which forbids the next hand, so this
+           edge can only fire when nothing whatever is holding the table. */
+        if (this.tableFSM.state === 'paused' && !this.isNextHandPaused()) {
+          this.tableFSM.transition('running');
+        }
         if (this.dealingHaltLock) {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('paused');
@@ -1594,6 +1621,59 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async prepareNextHand(): Promise<SeatedPlayer[]> {
     const releaseSeatBoundary = await this.acquireSeatBoundary();
     try {
+      /* ═══ A LEAVE THE PLAYER ASKED FOR STILL HAPPENS UNDER A HALT ═════
+         (Lightning 2.0 Phase 5 remediation, 2026-09-25. JUDGED, NOT MISSED.)
+
+         `prepareNextHand` runs ABOVE the dealing loop's Cluster-halt gate, and
+         the sweep below stands a `leave_pending` seat up and cashes it out. An
+         audit called that a hole, and on the letter of the gate's own comment
+         it was one: that comment justifies the gate's position by saying
+         everything above it merely keeps the table's picture of itself
+         current, and this is not that. It writes `table_seats.left_at` and it
+         moves money.
+
+         IT STAYS ABOVE THE GATE. The halt stops what the ENGINE decides to do
+         to a seat. It does not stop what the PLAYER asked for.
+
+         WHY THAT IS SAFE AGAINST THE ABORT-ON-POPULATION-CHANGE PATH, which is
+         the only reason the population has to be stable at all. Every
+         population query the conversion asks carries
+         `coalesce(ts.leave_pending, false) = false`:
+         `fn_cash_cluster_live_eligible` (the verdict that opens the
+         conversion), the commit's re-ask of it, the pool-session INSERT, and
+         the stranded-player check that asks the same question from the other
+         side. The seat left the counted set the instant POST /leave wrote the
+         flag - which happens outside this engine, on the player's own action,
+         and which the halt neither does nor should gate. This sweep only turns
+         `leave_pending = true` into `left_at IS NOT NULL`: uncounted before,
+         uncounted after. It cannot move the number the commit re-asks, so it
+         cannot be what makes a conversion fall back to MUST_MOVE. Nor can it
+         trip LIGHTNING_CONVERSION_MOVED_MONEY: that assertion reads the chip
+         total twice INSIDE the commit's own transaction, over `left_at IS
+         NULL` seats only. "A mode change is a seating transition, not an
+         economic transaction" is a statement about what the CONVERSION does -
+         and it writes no `table_seats` row at all - not a freeze on players.
+
+         WHAT REFUSING IT WOULD COST. The player has pressed Leave and their
+         client is gone. Their seat is already uncounted, so holding it buys
+         the conversion nothing; all it does is strand that player's money at a
+         table for the length of a conversion with no bound on it, to protect a
+         number that cannot change.
+
+         THE CONTRAST, so the line is legible: the sit-out eviction BELOW the
+         gate IS stopped, because a sitting-out player has asked for nothing.
+         That cash-out is the engine's own decision, taken on a clock the halt
+         is itself making tick - and a player told their seat was safe and then
+         emptied is the exact failure the wait loop's gate was written for.
+
+         ONE SWEEP PER HALT, AND NOTHING IS LOST. `takePreparedLeavePending` -
+         which does the per-player engine teardown (disconnect FSM, time bank,
+         straddle, pre-action) - sits BELOW the gate. So while the halt stands,
+         `preparedLeavePending` is never taken, `leaveSweepCanRace` is false on
+         every later pass and no second sweep runs; the roster was already
+         filtered here, and the teardown lands on the first pass after the halt
+         lifts. Pinned in AHaltedTableFinishesItsHandAndDealsNoOther.law.test.ts
+         so this decision cannot flip without someone saying so. */
       const leaveSweepCanRace =
         !this.isTournamentTable() &&
         !this.pendingAddOnSweepNeeded &&

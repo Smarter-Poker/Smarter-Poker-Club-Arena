@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "786785945a40cecd83afc5dfa2564320d257e267689a4e3508a2f610f4ad1266",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "ab8241b2b12c506e39118b7d33e02cbcf0836265e91e7d8d353100356827963c",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -325,7 +325,7 @@
     "tests/fixtures/union-weekly-basis/concurrency.py": "0c39241c365297ec24f472234428b11d36f93411bc2110fd8542cb673365a94e",
     "tests/fixtures/union-weekly-basis/accepted-document-relations.sql": "ff1493ba0e3dd7a3480029ab83dd522d29c03502d37ff05d74bc59dda20beaf3",
     "tests/fixtures/union-weekly-basis/captured-rake-dependencies.json": "30c0915a12676a85e720ffa2d8f56797e15d9de8217197f60bdc99a6de197ece",
-    "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
+    "tests/fixtures/union-weekly-basis/raked-regression.sql": "1d5bdfa1fdf03a78f206099522f329f1292586b5267a3c9bff7ff13becc2803d",
     "tests/fixtures/union-weekly-basis/captured-refund-dependencies.sql": "5332204d5d5c8edf070c199652acaaa4108e349c08207a84768d2c7a901dc42b",
     "tests/fixtures/union-weekly-basis/README.md": "b722e09f7a923872066f19efd819899045badb6b0cbae97dd09163b7486661bd",
     "tests/fixtures/union-weekly-basis/captured-payer-preimages.json": "fca603ec5e3ffe5ba00c718a6ccde6514e39e477b8e4deb7004635b1f4c762e9",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
+    "scripts/dev/test-union-weekly-basis.py": "72eb966f218808739e33aaa19d16788c093b74d49b437e1568f4c0c12fe7cfac",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -1974,5 +1974,32 @@
       }
     ]
   },
-  "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."
+  "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
+
+  "weekly_rakeback_cost_successor_20260926": {
+    "migrations": [
+      "supabase/migrations/20260925205938_the_weekly_rakeback_gate_stops_proving_every_tournament_one_.sql"
+    ],
+    "prior_binding_sha256": "3845e4274f4b4c16199529e6baf6e7045bf8a38e9c49f47c6ef7136760734242",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
+        "sha256": "72eb966f218808739e33aaa19d16788c093b74d49b437e1568f4c0c12fe7cfac"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/raked-regression.sql",
+        "previous_sha256": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
+        "sha256": "1d5bdfa1fdf03a78f206099522f329f1292586b5267a3c9bff7ff13becc2803d"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "786785945a40cecd83afc5dfa2564320d257e267689a4e3508a2f610f4ad1266",
+        "sha256": "ab8241b2b12c506e39118b7d33e02cbcf0836265e91e7d8d353100356827963c"
+      }
+    ],
+    "added_repository_inputs": ["tests/fixtures/union-weekly-basis/rakeback-cost-predecessors.sql"],
+    "reason": "fn_rakeback_recompute_periods for one club-week cost about 71 s warm against the engine's 15 s client budget, so the settler discarded committed work every cycle and held its watermark. 20260925205938 makes fn_accounting_tournament_week_quality prove an event with no refund reversal in one set pass instead of calling fn_accounting_tournament_fee_net_plan per event, and makes fn_calculate_cash_rakeback_periods read its week once; eight CONCURRENTLY indexes precede its one transaction, which refuses unless the installed md5(prosrc) of both replaced functions and of net_plan is the body it was derived from. The union weekly basis cluster installs the rewritten bodies, installs production's exact predecessors beside them as fixture.predecessor_*, and period-coverage-regression requires identical answers from both. raked-regression's retained-house negative control now binds the rewritten clause; its meaning is unchanged.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py (LANG=en_US.UTF-8, no LC_ALL): exit 0, 80 PASS steps. period-coverage-regression: the rewrite and the pinned predecessors return identical gate verdicts, calculator receipts and certificates for all 40 club-weeks of the cluster (3 certified, 1 zero-entitlement certificate); a rolled-back fully refunded entry plus an ordinary fee prove ready under both, with net_plan called once under the rewrite (the refund only) and once per proved event under the predecessor; a disagreeing batch and a refunded source recorded as earned are refused identically; the page-drained book, the NULL-user completeness proof and the due coordinator at a simulated 2026-09-28T09:00Z all still pass. raked-regression: 22 PASS including the retained-house negative control on the rewritten clause."
+  }
 }

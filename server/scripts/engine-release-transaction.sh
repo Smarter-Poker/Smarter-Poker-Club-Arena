@@ -695,13 +695,25 @@ raise SystemExit(4)
   # refused when the database had never been asked. A missing helper is
   # UNKNOWN, and UNKNOWN has to say so in its own words (CLAUDE.md 10.86
   # rules 1 and 2). All four branches still refuse; only the message differs.
+  #
+  # STDOUT IS THE VERDICT AND NOTHING ELSE (2026-09-26). Every caller reads
+  # this function as `BREAK_REMAINING_MS="$(maintenance_certificate ...)"` and
+  # then does arithmetic on it, so the ONLY bytes it may print to stdout are
+  # the remaining-milliseconds figure. The helper announces its answer on
+  # stdout and the admission line below used to as well; the first admission
+  # that ever reached this branch (run 36211686180, 02:34:11Z, predecessor
+  # 778075b4) captured "[engine-release-inflight-hands] no hand in the air ...
+  # 294308" as the figure, `$(( ... / 1000 ))` refused it as a syntax error,
+  # and the transaction died before prepare. Nothing had been mutated, but a
+  # cutover every other gate had admitted was thrown away. Both now go to
+  # stderr, where the journal still records them.
   set +e
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE"
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2
   local inflight_rc=$?
   set -e
   case "$inflight_rc" in
     0)
-      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above"
+      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above" >&2
       printf '%s\n' "$verdict"
       return 0
       ;;

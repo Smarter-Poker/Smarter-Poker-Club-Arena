@@ -24,3 +24,40 @@ MOST 60 SECONDS and a read that fails leaves a halted table halted rather than r
 converting Cluster on a database blip. Clearing the column resumes dealing on the same
 engine object with no restart, inside that same 60 seconds - acceptance F04, "conversion
 canceled, state returns to MUST_MOVE, regular tables resume".
+
+REMEDIATION, 2026-09-25 - IT IS NOT ONLY THE DEALING LOOP. A table below
+`minPlayersToDeal()` lives in `start()`'s wait-for-players loop, which reached no gate and
+re-read no row, and which goes on running `evictExpiredSitOuts` (that one stands a player
+up and CASHES THEM OUT), `executeIdleSeatMoves`, `processPendingAddOns` and
+`restoreEntryHoldsFromSeats`. A feeder that went quiet before a halt was raised therefore
+had no worst case at all: it emptied a seat in the middle of a transition whose law is
+that it unseats nobody. That loop now takes the SAME throttled `refreshRakeConfig` re-read
+
+- cash tables with a `cluster_id` only, so a quiet TOURNAMENT table makes no extra request
+  and `theQuietTournamentTableBacksOff` is untouched - and then the same POLLED gate, which
+  is why gating it no longer wedges it: it can watch the flag lift. Worst case is now 60
+  seconds for a quiet table exactly as for a dealing one. `isPausedByDesign()` names the
+  halt too, so a table halted while its FSM still says `waiting` reads as parked on purpose
+  to the zombie reaper, the drain and the turn watchdog; `pausedSinceMs` is deliberately not
+  stamped for a polled lock, so `MAX_HEALTHY_PAUSE_MS` cannot condemn a long conversion, and
+  the mid-hand branch of `isParkedByDesign()` still excludes the halt so a frozen hand is
+  worked and reaped as usual. The dealing loop's `'running' -> 'paused'` transition now has
+  its matching edge back to `'running'`, guarded by `isNextHandPaused()`: nothing else ever
+  wrote it, so a table that had resumed dealing went on telling every reader it was parked
+  for the life of the process.
+
+AND ONE THING ABOVE THE GATE IS NOT A READ, WHICH IS JUDGED RATHER THAN MISSED:
+`prepareNextHand`'s `leave_pending` sweep, which writes `table_seats.left_at` and cashes a
+seat out. It stays above the gate. The halt stops what the ENGINE decides to do to a seat;
+it does not stop what the PLAYER asked for. Every population query the conversion asks -
+`fn_cash_cluster_live_eligible`, the commit's re-ask, the pool-session INSERT, the
+stranded-player check - carries `coalesce(ts.leave_pending, false) = false`, so the seat
+left the counted set when POST /leave wrote the flag, outside this engine; turning
+`leave_pending` into `left_at` cannot move the number the commit re-asks and so cannot be
+what sends a conversion back to MUST_MOVE, and the chip-total assertion takes both of its
+sums inside the commit's own transaction over `left_at IS NULL` seats. Refusing it would
+strand a departed player's money at a table for an unbounded conversion to protect a
+number that cannot change. The sit-out eviction below the gate is the opposite case and is
+stopped: that player asked for nothing. The per-player teardown sits below the gate too,
+so a halt defers it to the first pass after the lift rather than losing it, and no second
+sweep can start while the first is un-taken.

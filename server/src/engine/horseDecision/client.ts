@@ -184,34 +184,6 @@ interface QueuedJob {
   executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
 }
 
-const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
-  phase: 'stopped',
-  startedAt: null,
-  readyAt: null,
-  maxInFlight: 0,
-  queueDepth: 0,
-  inFlightJobs: 0,
-  activeRequestId: null,
-  activeJobAgeMs: null,
-  oldestQueuedAgeMs: null,
-  lastCompletedAt: null,
-  lastComputeMs: null,
-  completedJobs: 0,
-  expiredJobs: 0,
-  lastExpiredAt: null,
-  lastExpiredRequestType: null,
-  lastExpiredPhase: null,
-  recoverableRequestErrors: 0,
-  lastRecoverableRequestErrorAt: null,
-  lastRecoverableRequestErrorType: null,
-  lastRecoverableRequestError: null,
-  lastError: null,
-  solverStores: null,
-  solverPolicyArtifact: null,
-  governor: null,
-  statusSampledAt: null,
-});
-
 function defaultWorkerFactory(): WorkerLike {
   // Production executes compiled JS; `npm run dev` executes this source via
   // tsx and workers inherit that loader. Point each runtime at an entry it can
@@ -1345,34 +1317,5 @@ export class LiveHorseDecisionWorkerClient {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }
     return this.terminationPromise;
-  }
-}
-
-let singleton: LiveHorseDecisionWorkerClient | null = null;
-
-export async function startLiveHorseDecisionWorker(
-  options: LiveHorseDecisionWorkerClientOptions = {}
-): Promise<LiveHorseDecisionWorkerClient> {
-  if (!singleton) singleton = new LiveHorseDecisionWorkerClient(options);
-  await singleton.ready();
-  return singleton;
-}
-
-export function getLiveHorseDecisionWorker(): LiveHorseDecisionWorkerClient {
-  if (!singleton) throw new Error('live horse decision worker has not been started');
-  return singleton;
-}
-
-export function liveHorseDecisionWorkerStatus(): LiveHorseDecisionWorkerStatus {
-  return singleton?.status() ?? stoppedStatus();
-}
-
-export async function stopLiveHorseDecisionWorker(): Promise<void> {
-  const owned = singleton;
-  if (!owned) return;
-  try {
-    await owned.stop();
-  } finally {
-    if (singleton === owned) singleton = null;
   }
 }

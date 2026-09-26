@@ -135,4 +135,25 @@ describe('the published membership stream carries live wallet invalidations', ()
     flush();
     expect(fixture.emit).not.toHaveBeenCalled();
   });
+  it('keeps the existing five-attempt limit across failed channel replacements', () => {
+    for (const delay of [2000, 4000, 8000, 16000, 30000]) {
+      fixture.channels.at(-1).status('CHANNEL_ERROR');
+      vi.advanceTimersByTime(delay);
+    }
+    expect(fixture.channels).toHaveLength(6);
+    fixture.channels.at(-1).status('CHANNEL_ERROR');
+    vi.advanceTimersByTime(60000);
+    expect(fixture.channels).toHaveLength(6);
+  });
+  it('cancels a pending replacement when the current channel recovers', () => {
+    fixture.channels[0].status('CHANNEL_ERROR');
+    fixture.channels[0].status('SUBSCRIBED');
+    vi.advanceTimersByTime(2000);
+    expect(fixture.channels).toHaveLength(1);
+    fixture.channels[0].status('CHANNEL_ERROR');
+    vi.advanceTimersByTime(1999);
+    expect(fixture.channels).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(fixture.channels).toHaveLength(2);
+  });
 });

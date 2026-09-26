@@ -18,9 +18,13 @@ The existing app-level balance owner also refreshes the persistent wallet store
 on routes without a header. Unknown reads retain known amounts; no money command,
 grant, database publication, engine protocol or scheduled repair is changed.
 
-Seven actual service callback regressions failed before the repair. The focused
-56-case suite passes, covering burst coalescing, irrelevant writes, composite-key
-deletion, account switches, late callbacks and the persistent wallet consumer.
+Seven actual service callback regressions failed before the balance repair.
+Two further reconnect regressions reproduced a reset attempt counter and an
+unnecessary replacement after successful recovery. The existing five-attempt
+replacement budget now survives teardown; successful recovery resets it and
+cancels the obsolete timer. The SDK's own socket recovery remains intact.
+The focused suite covers burst coalescing, irrelevant writes, composite-key
+deletion, account switches, late callbacks, reconnects and the persistent wallet consumer.
 Compiler, full client/required checks, protected publication and affected live
 proof are recorded separately; tests do not demonstrate invoice savings or a
 production financial transaction.

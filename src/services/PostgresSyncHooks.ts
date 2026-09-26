@@ -125,7 +125,7 @@ class PostgresSyncHooksService {
     );
   }
 
-  init(userId: string) {
+  init(userId: string, reconnectAttempt = 0) {
     // Guard: If already initialized with a live channel FOR THE SAME USER, skip.
     // FIX: Also track userId to detect user switches (e.g., logout → login as different user)
     if (this.initialized && this.channel && this._userId === userId) return;
@@ -136,6 +136,7 @@ class PostgresSyncHooksService {
     // FIX: Set initialized BEFORE any async work to prevent re-entrancy
     this.initialized = true;
     this._userId = userId;
+    this.retryCount = reconnectAttempt;
     const generation = this.generation;
     const ownsSubscription = () =>
       this.initialized && this.generation === generation && this._userId === userId;
@@ -405,6 +406,10 @@ class PostgresSyncHooksService {
         const channelName = `global_db_sync:${userId}`;
         switch (status) {
           case 'SUBSCRIBED':
+            if (this.reconnectTimer) {
+              clearTimeout(this.reconnectTimer);
+              this.reconnectTimer = null;
+            }
             this.lastSeenMemberships.clear();
             this.debouncedEmit('wallet_balance', 'BALANCE_UPDATED', {
               source: 'postgres_sync_connected',
@@ -473,8 +478,9 @@ class PostgresSyncHooksService {
         this.channel = null;
       }
       this.initialized = false;
-      // Preserve _userId and retryCount across reconnect
-      this.init(userId);
+      // init tears down the old owner. Preserve the bounded attempt count
+      // across that teardown; only SUBSCRIBED or an actual new owner resets it.
+      this.init(userId, this.retryCount);
     }, delay);
   }
 

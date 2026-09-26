@@ -29,7 +29,15 @@ export function MttCreationStructurePreview({
       </div>
     );
   }
-  const proposed = buildTournamentConfig(config, gameType);
+  // The preview follows an in-progress form. A half start date, a past time or
+  // another temporarily invalid field belongs to the form's own refusal path;
+  // it must never crash the entire Create Table page while the owner edits it.
+  let proposed;
+  try {
+    proposed = buildTournamentConfig(config, gameType);
+  } catch {
+    return null;
+  }
   const facts = describeStoredMttStructure(proposed.blindStructure, proposed.startingStack);
   const depth = facts.startingDepthBB;
   const chips = Number(proposed.startingStack);

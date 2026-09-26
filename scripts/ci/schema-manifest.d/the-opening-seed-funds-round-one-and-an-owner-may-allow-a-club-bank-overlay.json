@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/cowork/feat/create-club-console-phase2 (dbfunding) -- 20260923143157_the_opening_seed_funds_round_one_and_an_owner_may_allow_a_cl.sql. Applied to production from this branch's own bytes by apply-merged-migration.yml; the readback confirming the column is recorded in the PR.",
+  "columns": {
+    "leaderboard_reward_program_versions": ["overlay_enabled"]
+  }
+}

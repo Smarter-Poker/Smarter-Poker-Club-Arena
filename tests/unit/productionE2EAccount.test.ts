@@ -8,6 +8,7 @@ import {
   cleanupStaleProductionE2EAccounts,
   createProductionE2EAccount,
   prepareProductionE2EStaffMembership,
+  retireProductionCreateClubFixtures,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
 const USER_ID = '00000000-0000-4000-8000-000000000099';
@@ -194,6 +195,69 @@ describe('post-deploy production account', () => {
       prepareProductionE2EStaffMembership({ environment: env, fetchImpl: fetchMock })
     ).rejects.toThrow('outside the reserved post-deploy namespace');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('retires only the reserved account own prefixed Create Club fixture and verifies absence', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-create-club-'));
+    const env = environment(directory);
+    const clubId = '11111111-1111-4111-8111-111111111111';
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-create@example.invalid',
+      })
+    );
+    let clubReads = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?')) {
+        clubReads += 1;
+        return Response.json(
+          clubReads === 1
+            ? [{ id: clubId, name: 'Club Create Cert 123456789', owner_id: USER_ID }]
+            : []
+        );
+      }
+      if (url.includes('/rest/v1/rpc/fn_ca_retire_certification_club')) {
+        return Response.json({ success: true, chips_retired: 100000 });
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toBe(1);
+    const retirement = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/rest/v1/rpc/fn_ca_retire_certification_club')
+    );
+    expect(JSON.parse(String(retirement?.[1]?.body))).toEqual({
+      p_club_id: clubId,
+      p_reason: 'ui-cert-cleanup',
+    });
+  });
+
+  it('refuses to retire an owned club outside the exact certificate prefix', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-create-refusal-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-create-refusal@example.invalid',
+      })
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json([{ id: 'real-club', name: 'Real Player Club', owner_id: USER_ID }])
+      );
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('Refusing to retire unrecognized club real-club');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('recovers only bounded post-deploy accounts older than the job timeout', async () => {

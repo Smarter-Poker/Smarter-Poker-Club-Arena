@@ -20,7 +20,12 @@ describe('club MTT creator contract', () => {
   });
 
   it('publishes one fee-free 60-second add-on rule', () => {
-    expect(modal).toContain('1 Minute After Rebuy Period');
+    // The engine opens ONE 60-second period the moment the rebuy period closes
+    // (TournamentManagerBase.triggerAddOnPeriod). "1 Minute After Rebuy Period"
+    // read as a delay, so the pinned copy now says what happens.
+    expect(modal).toContain('One 60-Second Period When The Rebuy Period Closes');
+    expect(modal).not.toContain('1 Minute After Rebuy Period');
+    expect(modal).toContain('Play Pauses After The Current Hand');
     expect(modal).toContain('No Rake');
     expect(modal).not.toContain('<label>Add-On Levels</label>');
     expect(modal).not.toContain('<label>Add-On Break (Minutes)</label>');
@@ -36,7 +41,13 @@ describe('club MTT creator contract', () => {
     expect(css).toContain('+ 120px');
   });
 
-  it('keeps a configured Spins reserve represented in the wallet', () => {
-    expect(wallet.match(/spinsActive: spins\.state !== null/g)).toHaveLength(2);
+  it('keeps a funded Spins reserve represented in the wallet', () => {
+    /* Was `spins.state !== null` (2026-09-20). The owner-state read answers a
+       real object for a club that never enabled Spins, so that gate showed
+       every standalone owner a zero-chip Spins Treasury. The rule is now one
+       pure predicate - running, funded or seeded - and both wallet layouts
+       must ask it. tests/unit/spinsWalletRowVisible.test.ts pins the rule. */
+    expect(wallet.match(/spinsActive: spinsWalletRowVisible\(spins\.state\),/g)).toHaveLength(2);
+    expect(wallet).not.toMatch(/spinsActive: spins\.state !== null/);
   });
 });

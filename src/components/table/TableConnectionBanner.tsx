@@ -55,7 +55,15 @@ export type TableConnectionState =
   | 'connected'
   | 'reconnecting'
   | 'failed'
-  | 'auth_failed';
+  | 'auth_failed'
+  | 'access_refused';
+
+/**
+ * The engine's two access verdicts (mirrors MUX_ACCESS_REFUSAL_CODES in
+ * services/EngineSocketMux; kept as a plain union so this component stays a
+ * leaf that imports no transport).
+ */
+export type TableAccessRefusal = 'CLUB_MEMBERSHIP_REQUIRED' | 'OBSERVERS_RESTRICTED';
 
 /** How long a bad state must persist before the player is told. */
 export const GRACE_MS = 1200;
@@ -110,6 +118,13 @@ interface Props {
    * still says so, because there the pixels really are stale.
    */
   hasLiveState?: boolean;
+  /**
+   * WHY the engine refused, when `status` is 'access_refused' (2026-09-20).
+   * The status alone says the table will not be shown; the code lets the line
+   * say what would change that. Absent or unknown, the generic sentence is
+   * used - never a transport word, because nothing is wrong with the link.
+   */
+  accessRefusal?: TableAccessRefusal | null;
 }
 
 /**
@@ -126,7 +141,31 @@ interface Props {
  */
 export const AUTH_REFUSED_LABEL = 'The Table Cannot Verify Your Sign In. Still Trying';
 
-export function labelFor(status: TableConnectionState, authRefused = false): string | null {
+/**
+ * What a viewer the engine will not admit is told (2026-09-20). Until today
+ * this case had no words of its own: the refusal rode the reconnect ladder and
+ * the felt said "Reconnecting To The Table", then "Connection Lost. Trying To
+ * Get You Back" - both false, and both an invitation to keep waiting for
+ * something that was never going to happen. Nothing here says "trying",
+ * because nothing is being retried.
+ */
+const ACCESS_REFUSED_LABELS: Record<TableAccessRefusal | 'default', string> = {
+  CLUB_MEMBERSHIP_REQUIRED: 'This Table Is Open To Club Members Only. Join The Club To Watch',
+  OBSERVERS_RESTRICTED: 'This Table Is Open To Seated Players Only',
+  default: 'You Do Not Have Access To This Table',
+};
+
+export function labelFor(
+  status: TableConnectionState,
+  authRefused = false,
+  accessRefusal: TableAccessRefusal | null = null
+): string | null {
+  /* An access verdict outranks everything, including a stale auth flag: it is
+     the engine's last word on this viewer and this table, reached only after
+     the socket authenticated well enough to be judged. */
+  if (status === 'access_refused') {
+    return ACCESS_REFUSED_LABELS[accessRefusal ?? 'default'] ?? ACCESS_REFUSED_LABELS.default;
+  }
   /* An auth refusal outranks the transport words for every state that would
      otherwise blame the connection. 'connecting' and 'idle' are left alone:
      the first is a fresh attempt that may well succeed, and the second is a
@@ -161,8 +200,9 @@ export function TableConnectionBanner({
   isActive = true,
   authRefused = false,
   hasLiveState = false,
+  accessRefusal = null,
 }: Props): React.ReactElement | null {
-  const label = labelFor(status, authRefused);
+  const label = labelFor(status, authRefused, accessRefusal);
   /* THE SUPPRESSION IS HERE, NOT IN labelFor (law, tests/a-reload-cannot-fix-
      a-sign-in): that function maps a status to WHAT IT IS CALLED and must stay
      a pure translation - it is read by the popup-copy laws, and a branch that
@@ -203,8 +243,14 @@ export function TableConnectionBanner({
   /* The bullet's ink, from the master's own palette. Blue while something is
      still being attempted on the player's behalf, red once the link is down.
      Two literal branches rather than one clever expression (#ClubArenaConsole
-     trap 7.6): the class names stay greppable in the source. */
-  const dotInk = status === 'failed' || status === 'auth_failed' ? 'sc-ink--red' : 'sc-ink--blue';
+     trap 7.6): the class names stay greppable in the source.
+     2026-09-20: an access verdict takes the red the kit keeps for refusals,
+     and TableConnectionBanner.css holds its bullet still - nothing is being
+     attempted, and a pulse would say that something is. */
+  const dotInk =
+    status === 'failed' || status === 'auth_failed' || status === 'access_refused'
+      ? 'sc-ink--red'
+      : 'sc-ink--blue';
 
   return (
     <div

@@ -115,6 +115,41 @@ export function clubWalletRows(
 }
 
 /**
+ * Whether the Spins Treasury row has anything to show (2026-09-20).
+ *
+ * The row used to be gated on `spins.state !== null`. The server's owner-state
+ * read never answers null for a club that may ask: a standalone club that has
+ * NEVER touched Spins gets a real object back with `is_active: false`,
+ * `balance: 0` and `seeded_amount: 0` (20260823160000_spin_wallet_hardening,
+ * the NOT FOUND branch). So "state exists" was true for every standalone owner
+ * and each of them was shown a Spins Treasury holding zero chips, for a product
+ * they had not switched on.
+ *
+ * A row is a wallet, so it appears when there is a wallet: Spins is running,
+ * or the reserve holds chips, or a seed is still outstanding in it. A reserve
+ * that is switched off but still funded stays visible - hiding that made real
+ * club money vanish from the owner's panel.
+ */
+export function spinsWalletRowVisible(
+  state:
+    | {
+        is_active?: boolean | null;
+        balance?: number | string | null;
+        seeded_amount?: number | string | null;
+      }
+    | null
+    | undefined
+): boolean {
+  if (!state) return false;
+  if (state.is_active === true) return true;
+  const holds = (value: number | string | null | undefined) => {
+    const amount = Number(value ?? 0);
+    return Number.isFinite(amount) && amount > 0;
+  };
+  return holds(state.balance) || holds(state.seeded_amount);
+}
+
+/**
  * The club lobby is a glance surface, not the cashier.
  *
  * It deliberately shows at most two club-scoped rows beside the always-on

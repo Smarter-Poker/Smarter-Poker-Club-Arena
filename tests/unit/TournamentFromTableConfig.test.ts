@@ -392,7 +392,10 @@ describe('parity fields (2026-08-22)', () => {
     );
     expect(c.rebuyCost).toBe(25);
     expect(c.addOnCost).toBe(40);
-    expect(c.addonBreakMinutes).toBe(5);
+    // 2026-09-20: this asserted 5. A paid event's add-on window is always 60
+    // seconds in the engine, so the form no longer offers a length and the
+    // mapper sends 1, exactly as the club tournament modal does.
+    expect(c.addonBreakMinutes).toBe(1);
     expect(c.maxRebuys).toBe(2);
     expect(c.maxReentries).toBe(2);
     // Without the custom toggles the costs default to the buy-in total.
@@ -556,4 +559,56 @@ describe('retired MTT entry cap compatibility', () => {
       }
     }
   );
+});
+
+describe('owner requirements, 2026-09-20', () => {
+  it('an MTT is created with chat banned even when the draft never set it', () => {
+    expect(buildTournamentConfig({ ...base, banChat: undefined }, 'nlh').banChat).toBe(true);
+    expect(buildTournamentConfig({ ...base, banChat: false }, 'nlh').banChat).toBe(true);
+    // Bounty and satellite events are MTT-family too.
+    expect(buildTournamentConfig({ ...base, prizeStyle: 'bounty' }, 'nlh').banChat).toBe(true);
+    expect(
+      buildTournamentConfig(
+        {
+          ...base,
+          nextStepSatellite: true,
+          satelliteTargetId: 'd3000000-0000-4000-8000-000000000001',
+        },
+        'nlh'
+      ).banChat
+    ).toBe(true);
+  });
+
+  it('a Sit And Go keeps its own chat switch', () => {
+    const sng = { ...base, gameMode: 'sng' as const, payoutStructure: 'payout3' };
+    expect(buildTournamentConfig({ ...sng, banChat: undefined }, 'nlh').banChat).toBe(false);
+    expect(buildTournamentConfig({ ...sng, banChat: true }, 'nlh').banChat).toBe(true);
+  });
+
+  it('a paid MTT with an add-on always sends a one minute add-on break', () => {
+    for (const minutes of [undefined, 1, 5, 10]) {
+      const c = buildTournamentConfig(
+        { ...base, addOnMultiplier: 1, addOnBreakLengthMinutes: minutes },
+        'nlh'
+      );
+      expect(c.addonBreakMinutes).toBe(1);
+    }
+    // No add-on, no break.
+    expect(buildTournamentConfig({ ...base, addOnMultiplier: 0 }, 'nlh').addonBreakMinutes).toBe(
+      undefined
+    );
+  });
+
+  it('a Free Buy keeps the add-on break length its from-the-start window uses', () => {
+    const c = buildTournamentConfig(
+      { ...base, buyIn: 0, addOnMultiplier: 0, addOnBreakLengthMinutes: 7 },
+      'nlh'
+    );
+    expect(c.addOnAvailable).toBe(true);
+    expect(c.addonBreakMinutes).toBe(7);
+  });
+
+  it('an MTT still has no entry ceiling', () => {
+    expect(buildTournamentConfig({ ...base, entryRules: 'rebuy' }, 'nlh').maxPlayers).toBeNull();
+  });
 });

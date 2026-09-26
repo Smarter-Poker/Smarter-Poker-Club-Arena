@@ -49,6 +49,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { SpadeConsole } from '../console/SpadeConsole';
 import PageSkeleton from '../common/PageSkeleton';
 import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import './ClubDiscovery.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -152,14 +153,26 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         slug: c.slug,
         name: c.name,
         logo: c.logo_url || c.avatar_url,
-        description: c.description || 'Welcome To Our Club!',
+        // A blank description stays blank. The list used to print a welcome
+        // line the owner never wrote, as if it were the club's own copy.
+        description: typeof c.description === 'string' ? c.description.trim() : '',
         memberCount: c.member_count || 0,
         activeTableCount: c.table_count || 0,
         // No minStakes/maxStakes: clubs has no such columns, so every card
         // showed the fallback "1/2 - 5/10" as if it were real. Fabricated
         // data is worse than no data — the stake filter built on it is gone
         // for the same reason.
-        tags: c.tags || (c.game_type ? [c.game_type] : ['Texas Holdem']),
+        // The same law for games: a club with no tags and no game type shows
+        // none. The old fallback named a game the club may never have run.
+        tags: (() => {
+          const own: string[] = Array.isArray(c.tags)
+            ? c.tags.filter(
+                (tag: unknown): tag is string => typeof tag === 'string' && !!tag.trim()
+              )
+            : [];
+          if (own.length > 0) return own;
+          return typeof c.game_type === 'string' && c.game_type.trim() ? [c.game_type] : [];
+        })(),
         isPrivate: c.requires_approval || !c.is_public,
         rating: c.average_rating || c.rating || 0,
         levelInfo: getClubLevel({
@@ -269,7 +282,10 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                 )}
               </div>
 
-              <p className="sc-copy club-discovery__desc">{club.description}</p>
+              {/* Owner copy is data, so it is Title Cased where it prints. */}
+              {club.description && (
+                <p className="sc-copy club-discovery__desc">{titleCase(club.description)}</p>
+              )}
 
               <dl className="club-discovery__facts">
                 <div className="club-discovery__fact">
@@ -304,7 +320,10 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                   <div className="club-discovery__fact">
                     <dt className="club-discovery__fact-label sc-label sc-ink--blue">Games</dt>
                     <dd className="club-discovery__fact-value sc-ink--silver">
-                      {club.tags.slice(0, 3).join(', ')}
+                      {club.tags
+                        .slice(0, 3)
+                        .map((tag) => titleCase(tag))
+                        .join(', ')}
                     </dd>
                   </div>
                 )}

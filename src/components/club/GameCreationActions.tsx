@@ -34,6 +34,15 @@ interface Props {
    * rather than tidy a lobby. The club lobby is the caller that asks.
    */
   desktopOnly?: boolean;
+  /**
+   * The cash variant the Add Table button opens, as a CreateTablePage game type
+   * id (`nlh`, `plo4`, `flh`, ...). Table Management reads it from
+   * `?create=table&game=<id>` and opens that variant's config form directly,
+   * with its own Back To Game Types control for every other variant. Only the
+   * table target carries it; events, spins and sit n gos have no variant step.
+   * Omitted by the union and management screens, which keep the full selector.
+   */
+  tableGame?: string | null;
 }
 
 const ACTIONS: Array<{ target: GameCreationTarget; label: string }> = [
@@ -49,6 +58,7 @@ export default function GameCreationActions({
   onNavigate,
   only,
   desktopOnly = false,
+  tableGame,
 }: Props) {
   const navigate = useNavigate();
   const shown = only === undefined ? ACTIONS : ACTIONS.filter((action) => action.target === only);
@@ -67,7 +77,14 @@ export default function GameCreationActions({
         <button
           key={action.target}
           type="button"
-          onClick={() => (onNavigate || navigate)(`${managementPath}?create=${action.target}`)}
+          onClick={() => {
+            const path = `${managementPath}?create=${action.target}`;
+            (onNavigate || navigate)(
+              action.target === 'table' && tableGame
+                ? `${path}&game=${encodeURIComponent(tableGame)}`
+                : path
+            );
+          }}
         >
           <span aria-hidden="true">+</span>
           <strong>{action.label}</strong>

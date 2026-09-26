@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceCssRule } from './helpers/sourceWindow';
+import { sliceBetween, sliceCssRule } from './helpers/sourceWindow';
 
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -71,6 +71,17 @@ describe('Club entry dialogs', () => {
     expect(joinService).toContain("from '../utils/clubCode'");
     expect(joinClub).toContain('ClubJoinService.parseInput');
     expect(joinClub).toContain('ClubJoinService.join');
+  });
+
+  it('keeps Create Club full-page with an independently scrolling console body and painted foot', () => {
+    // The scroll body is printed INSIDE the console, so it is the console's own
+    // body; the plates are the console's painted foot, outside it.
+    const consoleJsx = sliceBetween(createClub, '<SpadeConsole', '</SpadeConsole>');
+    expect(consoleJsx).toContain('className={styles.scrollBody}');
+    expect(consoleJsx).toContain('plates={{');
+    expect(createCss).toMatch(/height:\s*100dvh/);
+    expect(sliceCssRule(createCss, '.console > :global(.sc__body)')).toMatch(/min-height:\s*0/);
+    expect(sliceCssRule(createCss, '.scrollBody')).toMatch(/overflow-y:\s*auto/);
   });
 
   it.each([

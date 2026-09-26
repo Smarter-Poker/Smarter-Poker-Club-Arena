@@ -205,7 +205,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],
   ['src/components/navigation/HamburgerMenu.tsx', 1],
-  ['src/components/club/CreateTournamentModal.tsx', 1],
   ['src/components/agent/AgentAssignmentPanel.tsx', 1],
   ['src/components/admin/StatsExport.tsx', 1],
   ['src/components/admin/PlayerSearch.tsx', 1],
@@ -228,6 +227,10 @@ const AUDITED_ZERO = [
   'src/services/TableService.ts',
   'src/pages/TablePage.tsx',
   'src/pages/ClubHomePage.tsx',
+  // 2026-09-23, 1 -> 0: the satellite-target read binds its error, reports
+  // it, and says the targets could not load instead of "No Upcoming
+  // Tournaments". Moved out of the baseline so the file is held at zero.
+  'src/components/club/CreateTournamentModal.tsx',
 ];
 
 describe('discarded-error-read ratchet', () => {

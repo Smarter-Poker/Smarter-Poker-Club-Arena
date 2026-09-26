@@ -208,6 +208,16 @@ describe('ClubsService', () => {
         'Club Creation Is Temporarily Unavailable. Please Try Again Soon.'
       );
     });
+
+    it('states maintenance instead of hiding a platform freeze behind a generic error', async () => {
+      refuse(
+        '55006',
+        'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. INSERT was refused.'
+      );
+      await expect(create()).rejects.toThrow(
+        'Club Creation Is Temporarily Unavailable. Please Try Again Soon.'
+      );
+    });
   });
 
   describe('retireClub', () => {

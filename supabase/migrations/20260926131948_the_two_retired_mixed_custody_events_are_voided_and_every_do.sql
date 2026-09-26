@@ -105,10 +105,13 @@
 -- Production safety (the 2026-09-26 09:33 collapse). The void takes the
 -- settlement lane (G then the hand-settlement barrier, exclusive), as every
 -- terminal authority does, so while it runs no hand settles anywhere. It must
--- never WAIT holding it: the transaction and the door carry lock_timeout 2s
--- and statement_timeout 10s (a third of the 30 s lease-stale window), so a
--- busy lane or a slow void refuses cleanly (the whole
+-- never WAIT long for it or hold it long: the transaction and the door carry
+-- lock_timeout 5s and statement_timeout 10s (a third of the 30 s lease-stale
+-- window), so a busy lane or a slow void refuses cleanly (the whole
 -- transaction rolls back, nothing written) instead of stalling the fleet.
+-- The first apply (13:44 UTC, lock_timeout 2s) was refused exactly that way
+-- after 2.6 s waiting for the lane behind in-flight hand settlements, with
+-- nothing written; a finish waits for the same lane with no timeout at all.
 --
 -- Proved rolled back (2026-09-26 09:32 UTC, this exact function and guard in
 -- one transaction, SET CONSTRAINTS ALL IMMEDIATE, ROLLBACK): both CANCELLED
@@ -125,7 +128,7 @@
 -- @live-proof: (SELECT count(*) FROM smarter_private.f06_retired_event_voids WHERE completed_at IS NOT NULL) = 2
 
 BEGIN;
-SET LOCAL lock_timeout = '2s';
+SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '10s';
 
 DO $pre$
@@ -283,7 +286,7 @@ CREATE OR REPLACE FUNCTION smarter_private.f06_void_retired_mixed_custody_event(
  SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public', 'smarter_private'
  SET statement_timeout TO '10s'
- SET lock_timeout TO '2s'
+ SET lock_timeout TO '5s'
 AS $function$
 DECLARE
   -- THE TWO REVIEWED EVENTS. Nothing else can ever take this door.
@@ -886,7 +889,7 @@ BEGIN
        AND md5(p.prosrc) = 'f133744cc580d6092828e09b87fb6617'
        AND pg_get_userbyid(p.proowner) = 'postgres'
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
-       AND p.proconfig::text = '{"search_path=pg_catalog, public, smarter_private","statement_timeout=10s","lock_timeout=2s"}'
+       AND p.proconfig::text = '{"search_path=pg_catalog, public, smarter_private","statement_timeout=10s","lock_timeout=5s"}'
        AND p.prosecdef AND p.provolatile = 'v') THEN
     RAISE EXCEPTION 'POSTIMAGE: the void door is not the reviewed definition with its owner, grants and settings';
   END IF;

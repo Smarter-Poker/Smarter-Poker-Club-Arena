@@ -26,7 +26,7 @@
  *      receipt check and its openWeekIncomplete lower bound read it unchanged.
  */
 import { describe, it, expect } from 'vitest';
-import { latestDeclaring, functionBody } from './helpers/migrations';
+import { latestDeclaring, latestNamed, functionBody } from './helpers/migrations';
 
 const FN = 'fn_rakeback_recompute_periods';
 
@@ -35,7 +35,17 @@ export function recomputeDoorViolations(body: string): string[] {
   const out: string[] = [];
   const b = body.replace(/--[^\n]*/g, '');
   const lock = b.indexOf("pg_advisory_xact_lock(hashtextextended('accounting_rakeback_period:'");
-  const guard = b.search(/IF\s+p_user_ids\s+IS\s+NOT\s+NULL\s+THEN/);
+  // The door's own guard is the first page-scoped guard AFTER the lock. A
+  // page-scoped block before the lock is 20260926133201's witness wait, which
+  // decides nothing and is pinned by its own law.
+  const afterLock =
+    lock >= 0 ? b.slice(lock).search(/IF\s+p_user_ids\s+IS\s+NOT\s+NULL\s+THEN/) : -1;
+  const guard =
+    lock >= 0
+      ? afterLock >= 0
+        ? lock + afterLock
+        : -1
+      : b.search(/IF\s+p_user_ids\s+IS\s+NOT\s+NULL\s+THEN/);
   const probe = b.search(
     /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+public\.accounting_cash_accrual_batches\s+b\s+WHERE\s+b\.rake_record_id\s*=\s*w\.id\s+AND\s+b\.status\s*=\s*'accrued'\s*\)/
   );
@@ -96,15 +106,25 @@ describe('a page cannot certify an unfinished week', () => {
   });
 
   it('pins its own performance evidence in the migration header', () => {
-    expect(sql).toMatch(/209,364 ms/);
+    // The door's evidence lives in the migration that introduced it; the
+    // definition in force must still assert its own pre- and postimage.
+    const origin = latestNamed(
+      '_a_page_recompute_of_an_unfinished_week_answers_from_one_unaccrued_hand'
+    );
+    expect(origin.sql).toMatch(/209,364 ms/);
     expect(sql).toMatch(/RECOMPUTE_PREIMAGE_CHANGED/);
     expect(sql).toMatch(/RECOMPUTE_POSTIMAGE/);
   });
 
   // Planted regressions: each one is a way the door could be broken, and the
   // checker must name it. A law that cannot fail is not a law.
+  // Plants land in the door, which sits after the club-week lock; the
+  // witness wait before the lock (20260926133201) has its own law.
+  const lockAt = body.indexOf(
+    "pg_advisory_xact_lock(hashtextextended('accounting_rakeback_period:'"
+  );
   const plant = (from: RegExp | string, to: string) => {
-    const planted = body.replace(from as RegExp, to);
+    const planted = body.slice(0, lockAt) + body.slice(lockAt).replace(from as RegExp, to);
     expect(planted, 'the plant must change the body').not.toBe(body);
     return recomputeDoorViolations(planted);
   };

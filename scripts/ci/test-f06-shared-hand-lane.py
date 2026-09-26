@@ -234,6 +234,9 @@ try:
     results['historicalRetiredOtherZero'] = historical_results.get('retiredOtherZero')
     require((results['historicalLoss'] or {}).get('passed') is True,
             'Historical MTT bank loss qualification did not complete')
+    first_hand = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/first_hand_continuation_qualification.py'))
+    first_hand['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('firstHandContinuation', {}).get('passed') is True, 'First-hand continuation did not qualify')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

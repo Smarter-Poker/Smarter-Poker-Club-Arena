@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/f06-a-table-that-never-dealt-continues-from-its-entries - migration 20260926132457_a_last_table_that_never_dealt_continues_from_its_entries",
+  "_comment": "smarter_private.f06_no_start_first_hand_stacks(permit, roster) proves a never-started last table from its entries when the table never committed a hand; public.fn_f06_continue_no_start_last_table calls it. Private (postgres only), writes nothing.",
+  "functions": ["smarter_private.f06_no_start_first_hand_stacks"]
+}

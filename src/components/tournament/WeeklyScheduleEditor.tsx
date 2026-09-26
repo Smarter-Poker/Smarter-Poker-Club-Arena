@@ -66,7 +66,7 @@ export function describeSchedule(
           .sort((a, b) => a - b)
           .map((d) => WEEKDAY_NAMES[d]?.slice(0, 3) ?? String(d))
           .join(', ');
-  if (intervalMinutes) return `${dayText} - Every ${intervalMinutes.toLocaleString()} Min`;
+  if (intervalMinutes) return `${dayText}, Every ${intervalMinutes.toLocaleString()} Minutes`;
   return `${dayText} At ${times.join(', ')} ${scheduleZoneLabel(timeZone)}`;
 }
 

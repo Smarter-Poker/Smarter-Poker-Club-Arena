@@ -122,7 +122,7 @@
   border-color: #ff5b6e !important;
 }
 .errorText,
-.errorSummary {
+.validationSummary {
   color: #ff5b6e;
   font-size: 12px;
   line-height: 1.4;
@@ -130,12 +130,12 @@
 .errorText {
   margin: 6px 0 0;
 }
-.errorSummary {
+.validationSummary {
   padding: 4px 0;
 }
-.errorSummary p {
+.validationSummary p {
   margin: 4px 0;
-  color: #ff5b6e;
+  color: inherit;
 }
 .input:focus,
 .select:focus,
@@ -180,14 +180,6 @@
 .lockedRule span {
   color: #9aa5b3;
 }
-/* The refusals under the form (visual acceptance 2026-09-24). The red is set
-   on the block, but every <p> is recoloured by the global `p` rule and the
-   popup muting rule, so each refusal printed in the same grey as the helper
-   copy and did not read as a refusal. The lines take the block's ink. */
-.validationSummary p {
-  color: inherit;
-}
-
 .helperText {
   display: block;
   margin-top: 6px;

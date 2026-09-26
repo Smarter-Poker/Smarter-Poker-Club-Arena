@@ -2339,7 +2339,7 @@ export default function CreateTournamentModal({
 
             {/* ── Validation Summary ── */}
             {!canSubmit && !isSubmitting && (
-              <div className={styles.errorSummary} aria-label="What Still Needs Fixing">
+              <div className={styles.validationSummary} aria-label="What Still Needs Fixing">
                 {!name.trim() && <p>Tournament Name Is Required</p>}
                 {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
                 {!payoutsValid && (

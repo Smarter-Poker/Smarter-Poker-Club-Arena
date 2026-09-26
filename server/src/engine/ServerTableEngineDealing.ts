@@ -88,6 +88,12 @@ function countAwardGroups(
 }
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
 
+/** One pre-allocation's settled outcome: a number, an F06 failure, or nothing. */
+type PreparedHandNumberOutcome =
+  | { n: number; at: number; epoch: string | null; issuerEpoch?: number }
+  | { failure: unknown }
+  | null;
+
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
   // DEALING LOOP — Millisecond-level performance
@@ -1701,18 +1707,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const allocation = this.allocatorMeasurement
           ? this.allocatorMeasurement.job('preparation', issuerEpoch!, prepare)
           : prepare();
+        /* A FAILED ALLOCATION IS ONE ATTEMPT (2026-09-26). The failure
+           travels inside this preparation's own outcome and is taken by the
+           one deal attempt it belongs to. It used to be written to a field
+           that nothing but the Manager's retry sweep ever cleared, so a single
+           statement timeout behind the tournament's settlement lane
+           (production, 03:45 UTC, release 92d59cfb) was re-thrown on every
+           later deal attempt while the allocator was answering again: table
+           16de0024 sat 183 s until the zombie watchdog rebuilt it. An
+           allocation claims no hand - custody begins at fn_f06_begin_hand -
+           so the next preparation simply allocates fresh; a lost reply costs
+           at most a burned number. */
         this.preparedHandNumber = allocation
-          .then((n) => {
+          .then((n): PreparedHandNumberOutcome => {
             this.allocatorMeasurement?.assertAdmission(issuerEpoch!);
             return { n, at: Date.now(), epoch: this.f06AllocationEpoch, issuerEpoch };
           })
-          .catch((err: unknown) => {
-            if (this.hasF06Allocator()) this.preparedF06AllocationError = err;
+          .catch((err: unknown): PreparedHandNumberOutcome => {
+            const f06 = this.hasF06Allocator();
             console.warn(
-              `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
+              f06
+                ? `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; this deal attempt fails and the next one allocates fresh:`
+                : `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
               err instanceof Error ? err.message : err
             );
-            return null;
+            return f06 ? { failure: err ?? new Error('f06_allocation_unproven') } : null;
           });
       }
       // A failed sibling read or elapsed step budget does not cancel a
@@ -1741,12 +1760,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   private preparedLeavePending: ReturnType<typeof processLeavePending> | null = null;
-  private preparedHandNumber: Promise<{
-    n: number;
-    at: number;
-    epoch: string | null;
-    issuerEpoch?: number;
-  } | null> | null = null;
+  private preparedHandNumber: Promise<PreparedHandNumberOutcome> | null = null;
+  /** The failure of the last settled F06 preparation, taken by exactly one deal attempt. */
   private preparedF06AllocationError: unknown = null;
   private preparedHandNumberValue: {
     n: number;
@@ -1774,53 +1789,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const pending = this.preparedHandNumber;
     this.preparedHandNumber = null;
     if (!pending) return;
-    const value = await pending;
-    if (value) this.allocatorMeasurement?.assertAdmission(value.issuerEpoch!);
-    this.preparedHandNumberValue = value;
-  }
-
-  getF06FailedAllocation(): { epoch: string; failure: unknown } | null {
-    return this.preparedF06AllocationError && this.f06AllocationEpoch
-      ? Object.freeze({ epoch: this.f06AllocationEpoch, failure: this.preparedF06AllocationError })
-      : null;
-  }
-  private f06AllocationRecoveryInFlight = false;
-  /** Explicit one-shot allocation recovery. Never a recovery for unknown BEGIN. */
-  async retryF06FailedAllocation(
-    expected: { epoch: string; failure: unknown },
-    ownerCurrent: () => boolean
-  ): Promise<void> {
-    const assertOriginal = () => {
-      if (
-        !this.running ||
-        !ownerCurrent() ||
-        !this.hasF06Allocator() ||
-        !this.preparedAllocationIsCurrent(expected.epoch) ||
-        this.preparedF06AllocationError !== expected.failure ||
-        !expected.failure ||
-        this.f06CurrentPermit ||
-        this.preparedHandNumber
-      )
-        throw new Error('f06_allocation_recovery_unproven');
-    };
-    assertOriginal();
-    if (this.f06AllocationRecoveryInFlight) throw new Error('f06_allocation_recovery_in_flight');
-    this.f06AllocationRecoveryInFlight = true;
-    try {
-      const issuerEpoch = this.allocatorMeasurement?.capture();
-      const number = await this.allocateGlobalHandNumber();
-      assertOriginal();
-      this.allocatorMeasurement?.assertAdmission(issuerEpoch!);
-      this.preparedHandNumberValue = {
-        n: number,
-        at: Date.now(),
-        epoch: expected.epoch,
-        issuerEpoch,
-      };
-      this.preparedF06AllocationError = null;
-    } finally {
-      this.f06AllocationRecoveryInFlight = false;
+    const outcome = await pending;
+    // Each settled preparation replaces the last one whole: a newer success
+    // is never vetoed by an older failure that no deal attempt took.
+    if (outcome && 'failure' in outcome) {
+      this.preparedHandNumberValue = null;
+      this.preparedF06AllocationError = outcome.failure;
+      return;
     }
+    if (outcome) this.allocatorMeasurement?.assertAdmission(outcome.issuerEpoch!);
+    this.preparedF06AllocationError = null;
+    this.preparedHandNumberValue = outcome;
   }
 
   protected override invalidatePreparedAllocatorValue(): void {
@@ -1831,7 +1810,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return this.preparedHandNumberValue ? 1 : 0;
   }
   protected takePreparedHandNumber(): number | null {
-    if (this.preparedF06AllocationError) throw this.preparedF06AllocationError;
+    // An F06 preparation that failed fails this one deal attempt, as it always
+    // has (no inline second allocation on the F06 path), and is then gone.
+    const failure = this.preparedF06AllocationError;
+    if (failure) {
+      this.preparedF06AllocationError = null;
+      throw failure;
+    }
     const prepared = this.preparedHandNumberValue;
     this.preparedHandNumberValue = null;
     if (!prepared) return null;

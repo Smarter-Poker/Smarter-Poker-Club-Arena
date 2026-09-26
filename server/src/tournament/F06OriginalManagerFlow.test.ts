@@ -351,35 +351,24 @@ it('ownership loss after park response cannot stop or move the original', async 
   expect(f.state().state).toBe('park_requested');
 });
 
-it.each(['success', 'allocation lost', 'owner changed'])(
-  'allocation-only original retry: %s',
-  async (outcome) => {
-    const f = await fixture();
-    f.engine.f06CurrentPermit = null;
-    f.engine.running = false;
-    const originalFailure = new Error('original allocation reply lost');
-    const allocate = vi.fn(async () => {
-      if (outcome === 'allocation lost') throw new Error('second allocation reply lost');
-      if (outcome === 'owner changed') f.invalidate();
-      return 1000002;
-    });
-    f.engine.installF06Allocator('original-epoch', allocate, () => true);
-    f.engine.preparedF06AllocationError = originalFailure;
-    f.engine.running = true;
-    if (outcome === 'success') {
-      await f.manager.recoverF06OriginalAdmissions();
-      expect(f.engine.getF06FailedAllocation()).toBeNull();
-      expect(f.engine.takePreparedHandNumber()).toBe(1000002);
-    } else {
-      await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
-      expect(f.engine.getF06FailedAllocation().failure).toBe(originalFailure);
-      expect(f.engine.preparedHandNumberValue).toBeNull();
-    }
-    expect(allocate).toHaveBeenCalledTimes(1);
-    expect(f.state()).toBeNull();
-    expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
-  }
-);
+it('the Manager sweep leaves a failed allocation to the dealer and allocates nothing', async () => {
+  // A failed allocation claims no hand; the dealer's next preparation
+  // allocates fresh. The sweep neither retries it nor clears it.
+  const f = await fixture();
+  f.engine.f06CurrentPermit = null;
+  f.engine.running = false;
+  const originalFailure = new Error('original allocation reply lost');
+  const allocate = vi.fn(async () => 1000002);
+  f.engine.installF06Allocator('original-epoch', allocate, () => true);
+  f.engine.preparedF06AllocationError = originalFailure;
+  f.engine.running = true;
+  await f.manager.recoverF06OriginalAdmissions();
+  expect(allocate).not.toHaveBeenCalled();
+  expect(f.engine.preparedF06AllocationError).toBe(originalFailure);
+  expect(f.engine.preparedHandNumberValue ?? null).toBeNull();
+  expect(f.state()).toBeNull();
+  expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
+});
 it('retained stopped original never silently falls back to successor custody', async () => {
   const f = await fixture('fn_f06_begin_break');
   await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();

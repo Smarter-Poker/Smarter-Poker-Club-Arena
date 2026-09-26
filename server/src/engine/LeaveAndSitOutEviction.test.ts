@@ -219,7 +219,8 @@ describe('Leave Table overrides everything', () => {
     const at = DEALING.indexOf("'leave_pending'");
     const body = sliceEnclosingBlock(DEALING, "'leave_pending'");
     expect(body).toMatch(/unregisterPlayer/);
-    expect(body).toMatch(/timeBankEngine\.removePlayer/);
+    // 2026-09-25: the bank and its metadata leave together.
+    expect(body).toMatch(/forgetTimeBank/);
     expect(body).toMatch(/seatedPlayers = this\.seatedPlayers\.filter/);
   });
 });

@@ -302,6 +302,15 @@ export interface TableInfo {
   role?: 'main' | 'feeder' | null;
   main_index?: number | null;
   lifecycle?: 'opening' | 'live' | 'breaking' | 'closed' | null;
+  /**
+   * Lightning 2.0 Phase 5. Set on every table of a Cluster while it converts
+   * MUST_MOVE -> LIGHTNING, cleared if the conversion aborts. It means FINISH
+   * THE HAND YOU ARE IN AND START NO OTHER - never close, unseat or cash out.
+   * See `dealingHaltLock` on ServerTableEngineBase for the whole contract.
+   */
+  dealing_halted_at?: string | null;
+  /** null, 'lightning_pending_on' or 'lightning'. Log copy, never a gate. */
+  dealing_halted_reason?: string | null;
 }
 
 export interface SeatedPlayer {
@@ -447,6 +456,16 @@ export interface HandConfig {
    * they're buying in early out of position. Distinct from deadBlinds.
    */
   bbOnlyPosts?: { seat: number }[];
+  /**
+   * THE DEAD BUTTON AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30). The seats
+   * that post the blinds this hand, decided by the engine's rotation. When
+   * present HandController posts from exactly these seats instead of walking
+   * from the button: `smallBlind` is null when the small blind is DEAD (the
+   * seat that posted the big blind last hand has emptied, nobody posts it),
+   * and the button may sit on an empty seat. Absent on a cash table, whose
+   * published rule is the moving button and whose controller walk is exact.
+   */
+  blindSeats?: { smallBlind: number | null; bigBlind: number };
   /** Bible V8 §1.9 / Appendix A: BBJ config for this hand */
   bbjConfig?: {
     /** Whether BBJ is enabled for this variant */

@@ -75,8 +75,12 @@ function fixture(count = 1, predecessor = release) {
   let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
   const moveReads: { ids: string[] }[] = [];
   let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
-  const dealtReads: { table: string; since: string; player: string }[] = [];
+  const dealtReads: { table: string; since: string; player: string; op: string }[] = [];
   let onDealt:
+    | ((table: string, since: string, player: string) => { data: any; error: any })
+    | undefined;
+  // Has this engine ever dealt the open seat that collided with its residue?
+  let onResidueSeatDealt:
     | ((table: string, since: string, player: string) => { data: any; error: any })
     | undefined;
   // Opt-in: model a predecessor whose `unparkedTables()` has no bound, so one
@@ -122,10 +126,21 @@ function fixture(count = 1, predecessor = release) {
       }
       return [...server.tableEngines.values()].every(
         (e) =>
-          e.isMaintenanceStateDurable() && (predecessor !== checkpoint8825 || !e.f06CurrentPermit)
+          // 8825 `unparkedTables` (MaintenanceBreak.ts:1768-1795) asks a STOPPED
+          // engine only about an unresolved F06 preparation and then
+          // `continue`s past it: `if (!engine.isRunning()) continue;` comes
+          // before the durability question, so a dead engine's unwritten park
+          // never holds the process's own certificate shut.
+          (predecessor === checkpoint8825 && !e.running) ||
+          (e.isMaintenanceStateDurable() && (predecessor !== checkpoint8825 || !e.f06CurrentPermit))
       );
     }
   }
+  // Tables whose park write the database fences (a lease generation that is
+  // no longer current): `savePresenceAtPark` returns false, nothing is
+  // written, and `parkedBankSaveComplete` stays false - exactly what
+  // `persistPresenceForRestart` does on a refused upsert, with no throw.
+  const fenced = new Set<string>();
   class Table {
     static liveEngines = new Map();
     tableId: string;
@@ -190,16 +205,20 @@ function fixture(count = 1, predecessor = release) {
       }
       return saved;
     }
-    isMaintenanceStateDurable() {
-      // 8825 `maintenanceDurabilityReason`: only a parked bank or a SEATED
-      // player's bank needs the park write (ServerTableEngineBase.ts:5575-5585);
-      // a bank a bust left behind for a player the roster no longer holds does not.
+    maintenanceDurabilityReason() {
+      // 8825 `maintenanceDurabilityReason` (ServerTableEngineBase.ts:5573-5585):
+      // only a parked bank or a SEATED player's bank needs the park write; a
+      // bank a bust left behind for a player the roster no longer holds does
+      // not, and the one reason an unwritten park produces is named.
       const hasBanks =
         Object.keys(this.parkedTimeBanks ?? {}).length > 0 ||
         this.seatedPlayers.some((seat) =>
           this.timeBankEngine.playerBanks.has(`${this.tableId}:${seat.user_id}`)
         );
-      return !hasBanks || this.parkedBankSaveComplete;
+      return hasBanks && !this.parkedBankSaveComplete ? 'bank_park_write_incomplete' : null;
+    }
+    isMaintenanceStateDurable() {
+      return this.maintenanceDurabilityReason() === null;
     }
     hasReleasedProcessOwnership() {
       return !this.running && this.terminal;
@@ -220,6 +239,7 @@ function fixture(count = 1, predecessor = release) {
       try {
         calls.push(when);
         await onWrite?.(this);
+        if (fenced.has(this.tableId)) return;
         const parkedAt = new Date().toISOString();
         rows.set(this.tableId, {
           table_id: this.tableId,
@@ -358,7 +378,7 @@ function fixture(count = 1, predecessor = release) {
             };
             return {
               select: (columns: string) => {
-                expect(columns).toBe('table_id,user_id,occupancy_id');
+                expect(columns).toBe('table_id,user_id,occupancy_id,joined_at');
                 return filter;
               },
             };
@@ -391,6 +411,9 @@ function fixture(count = 1, predecessor = release) {
               table: '',
               since: '',
               player: '',
+              // `gt` is the arrival's "dealt since the move executed"; `gte` is
+              // the residue seat's "dealt since this occupancy opened".
+              op: '',
               eq: (key: string, value: string) => {
                 expect(key).toBe('table_id');
                 filter.table = value;
@@ -399,12 +422,25 @@ function fixture(count = 1, predecessor = release) {
               gt: (key: string, value: string) => {
                 expect(key).toBe('created_at');
                 filter.since = value;
+                filter.op = 'gt';
+                return filter;
+              },
+              gte: (key: string, value: string) => {
+                expect(key).toBe('created_at');
+                filter.since = value;
+                filter.op = 'gte';
                 return filter;
               },
               contains: (key: string, value: any) => {
                 expect(key).toBe('players');
-                expect(Object.keys(value[0])).toEqual(['userId']);
-                filter.player = value[0].userId;
+                // postgrest-js writes an array as a Postgres array literal
+                // (`cs.{...}`), which a jsonb column refuses with 22P02. Only
+                // a JSON string reaches PostgREST as JSON.
+                expect(typeof value).toBe('string');
+                const parsed = JSON.parse(value);
+                expect(Array.isArray(parsed)).toBe(true);
+                expect(Object.keys(parsed[0])).toEqual(['userId']);
+                filter.player = parsed[0].userId;
                 return filter;
               },
               limit: async (bound: number) => {
@@ -413,10 +449,15 @@ function fixture(count = 1, predecessor = release) {
                   table: filter.table,
                   since: filter.since,
                   player: filter.player,
+                  op: filter.op,
                 });
-                return onDealt
-                  ? onDealt(filter.table, filter.since, filter.player)
-                  : { data: [], error: null };
+                return filter.op === 'gte'
+                  ? onResidueSeatDealt
+                    ? onResidueSeatDealt(filter.table, filter.since, filter.player)
+                    : { data: [], error: null }
+                  : onDealt
+                    ? onDealt(filter.table, filter.since, filter.player)
+                    : { data: [], error: null };
               },
             };
             return {
@@ -475,11 +516,17 @@ function fixture(count = 1, predecessor = release) {
       onSeats = hook;
     },
     dealtReads,
+    onResidueSeatDealt: (hook: typeof onResidueSeatDealt) => {
+      onResidueSeatDealt = hook;
+    },
     onDealt: (hook: typeof onDealt) => {
       onDealt = hook;
     },
     onMoves: (hook: typeof onMoves) => {
       onMoves = hook;
+    },
+    fence: (tableId: string) => {
+      fenced.add(tableId);
     },
     holdGate: (reasons?: Record<string, number>) => {
       gateOnPreparations = true;
@@ -1570,9 +1617,26 @@ function mixedFixture() {
   const f = fixture(1, checkpoint8825);
   const events = ['5a387a75-754a-416e-8fee-b85b15fc2702', '615783bf-15e3-40b7-9368-75f21b6ac53b'];
   const receipts = new Map();
+  /* `rpcCalls` is the custody TRANSFER traffic: every prepare (observe and
+     commit) and the readback that follows a commit. Since 2026-09-25 the guard
+     asks the rows FIRST, per retained manager and before any prepare, whether
+     it already sealed that manager's transfer in an earlier run; those
+     `fn_f06_find_mixed_manager_custody` lookups are reads, write nothing, and
+     are kept apart in `probes` so "transfers nothing, retires nothing" keeps
+     meaning exactly that. A find for a tournament nothing has prepared is a
+     probe; a find after a prepare for it is the readback, as before. */
   const rpcCalls: string[] = [];
+  const probes: string[] = [];
+  const prepared = new Set<string>();
   let onRpc: ((name: string, input: any) => void) | undefined;
+  let onProbe: ((tournamentId: string) => void) | undefined;
   let changeResponse: ((name: string, data: any) => any) | undefined;
+  // `changeResponse` can only reshape a SUCCESSFUL answer. A refusal the
+  // database raises arrives as `{ data: null, error }`, which is the shape the
+  // live run met, so the whole response has to be replaceable to model it.
+  let onRpcResponse:
+    | ((name: string, answer: { data: any; error: any }) => { data: any; error: any } | undefined)
+    | undefined;
   class Manager {
     gameServer = f.server;
     tournamentId: string;
@@ -1713,6 +1777,7 @@ function mixedFixture() {
   let batchArrivals: 'perPlayer' | 'missing' = 'perPlayer';
   let onArrivals: ((table: string, occupancies: string[]) => { data: any; error: any }) | undefined;
   let onArrivalsForPlayers: ((players: string[]) => { data: any; error: any }) | undefined;
+  let lifecycleWitness: 'permits' | 'never_reserved' | 'unmarked' = 'never_reserved';
   Object.assign(f.modules.client.supabase, {
     rpc: async (name: string, input: any) => {
       if (name === 'fn_cash_seat_move_arrivals_for_players') {
@@ -1745,12 +1810,61 @@ function mixedFixture() {
           ? onArrivals(input.p_table_id, input.p_occupancy_ids)
           : { data: [], error: null };
       }
-      rpcCalls.push(name);
-      onRpc?.(name, input);
+      // `onRpc` models something moving DURING a custody transfer call, after
+      // the originals were captured; a probe precedes that capture and is
+      // hooked by `onProbe` instead.
+      const probe =
+        name === 'fn_f06_find_mixed_manager_custody' && !prepared.has(input.p_tournament_id);
+      if (probe) probes.push(input.p_tournament_id);
+      else rpcCalls.push(name);
+      if (name === 'fn_f06_prepare_mixed_manager_custody') prepared.add(input.p_tournament_id);
+      if (probe) onProbe?.(input.p_tournament_id);
+      else onRpc?.(name, input);
       let data: any;
       if (name === 'fn_f06_prepare_mixed_manager_custody') {
         const canonical = {
-          engine_lifecycles: [],
+          // smarter_private.f06_mixed_custody_snapshot (migration
+          // 20260924225647): every allocation-backed engine is witnessed, from
+          // its permit rows when it reserved, by their absence when it never did.
+          engine_lifecycles: input.p_local.engines
+            .filter((e: any) => e.permit === null && e.allocation_epoch !== null)
+            .map((e: any) =>
+              lifecycleWitness === 'permits'
+                ? {
+                    table_id: e.table_id,
+                    allocation_epoch: e.allocation_epoch,
+                    lifecycle: '1',
+                    witness: 'permits',
+                    permits: [
+                      {
+                        permit_id: uuid(91000),
+                        tournament_id: input.p_tournament_id,
+                        generation: input.p_origin_generation,
+                        table_id: e.table_id,
+                        custody_id: e.allocation_epoch,
+                        lifecycle: 1,
+                        state: 'accepted',
+                      },
+                    ],
+                  }
+                : lifecycleWitness === 'never_reserved'
+                  ? {
+                      table_id: e.table_id,
+                      allocation_epoch: e.allocation_epoch,
+                      lifecycle: '1',
+                      witness: 'never_reserved',
+                      permits: [],
+                    }
+                  : {
+                      // The database before migration 20260924225647 could not
+                      // answer this shape at all; a receipt naming neither
+                      // witness is what an old body would look like if it did.
+                      table_id: e.table_id,
+                      allocation_epoch: e.allocation_epoch,
+                      lifecycle: '1',
+                      permits: [],
+                    }
+            ),
           pending_original_tables: [],
           original_evidence: input.p_local.engines
             .filter((e: any) => e.permit)
@@ -1803,7 +1917,13 @@ function mixedFixture() {
           receipt: receipts.get(input.p_tournament_id),
         };
       }
-      return { error: null, data: changeResponse ? changeResponse(name, data) : data };
+      const changed = changeResponse ? changeResponse(name, data) : data;
+      // From #5218: a PostgREST refusal travels as `error.message` with no data.
+      const answer =
+        changed && changed.__rpcError
+          ? { error: changed.__rpcError, data: null }
+          : { error: null, data: changed };
+      return onRpcResponse ? (onRpcResponse(name, answer) ?? answer) : answer;
     },
   });
   /* A SECOND original on one manager holding NO permit at all - the shape the
@@ -1850,6 +1970,49 @@ function mixedFixture() {
     f.server.tournamentOwnedTables.add(e.tableId);
     return e;
   };
+  /* A WAITING TABLE: admitted under this generation (allocator installed, so
+     it holds an epoch), stopped before it ever dealt, so no permit was ever
+     reserved under that epoch and no witness for its lifecycle exists in
+     memory. Tournament 5a387a75 holds seven of these (run 36068474418). */
+  const waitingOriginal = (managerIndex = 0, n = 0) => {
+    const { manager } = originals[managerIndex];
+    const e: any = new f.Table(400 + managerIndex * 10 + n);
+    e.running = false;
+    e.terminal = true;
+    e.terminalTeardownComplete = true;
+    e.teardownPromise = Promise.resolve();
+    e.dealingLoopPromise = null;
+    e.seatBoundaryTail = Promise.resolve();
+    e.snapshotFlushPromise = null;
+    e.readContinuationTasks = new Set();
+    e.tournamentMoveOperationByOwner = new Map();
+    e.entryHoldWriteChains = new Map();
+    e.f06HandPreparation = null;
+    e.f06AllocationEpoch = uuid(92000 + managerIndex * 10 + n);
+    e.f06Allocator = async () => 1;
+    e.f06AllocationCurrent = () => false;
+    e.f06PermitFactory = async () => {
+      throw new Error('never dealt');
+    };
+    e.f06CurrentPermit = null;
+    e.lifecycleDiagnostics = { instanceId: uuid(85600 + managerIndex * 10 + n) };
+    e.engineLeaseScope = 'tournament';
+    e.engineLeaseVerified = true;
+    e.engineLeaseTournamentId = manager.tournamentId;
+    e.engineLeaseGeneration = manager.tournamentLeaseGeneration;
+    e.hasOnlyDrainedTournamentMoveOwner = () => true;
+    e.timeBankEngine.playerBanks.clear();
+    e.timeBankMeta.clear();
+    manager.tableEngines.set(e.tableId, e);
+    manager.drainedF06Originals.push([e.tableId, e]);
+    dataActorContext.bindTournamentDataAuthorityMethods(
+      { tournamentId: manager.tournamentId, leaseGeneration: manager.tournamentLeaseGeneration },
+      e
+    );
+    f.server.tableEngines.set(e.tableId, e);
+    f.server.tournamentOwnedTables.add(e.tableId);
+    return e;
+  };
   /* Take the interrupted permit off a manager's FIRST original, leaving it the
      lifecycle witness a permit used to carry - so the run reaches the custody
      proof rather than stopping at `mixed_original_lifecycle_unproven` and
@@ -1862,13 +2025,25 @@ function mixedFixture() {
   };
   return {
     ...f,
+    // Each guard run classifies its own finds: a run that prepares nothing
+    // makes probes only.
+    run: (discovered?: any[]) => {
+      prepared.clear();
+      return f.run(discovered);
+    },
     Manager,
     intent,
     originals,
     abandonedOriginal,
+    waitingOriginal,
     clearInterruptedPermit,
+    lifecycleWitness: (mode: typeof lifecycleWitness) => {
+      lifecycleWitness = mode;
+    },
     receipts,
     rpcCalls,
+    probes,
+    events,
     arrivalReads,
     arrivalPlayerReads,
     perTableArrivalReads,
@@ -1884,8 +2059,14 @@ function mixedFixture() {
     onRpc: (cb: typeof onRpc) => {
       onRpc = cb;
     },
+    onProbe: (cb: typeof onProbe) => {
+      onProbe = cb;
+    },
     changeResponse: (cb: typeof changeResponse) => {
       changeResponse = cb;
+    },
+    onRpcResponse: (cb: typeof onRpcResponse) => {
+      onRpcResponse = cb;
     },
   };
 }
@@ -1977,6 +2158,95 @@ describe('exact 8825 retained original custody retirement', () => {
       expect(f.server.tableEngines.size).toBe(1);
     }
   );
+  /* A RAISED REFUSAL IS NOT AN ANSWER OF "NO" (2026-09-24). Run 36068474418
+     attempted 62 tables, completed 62 and read back and verified all 62, then
+     refused `mixed_custody_rpc_unknown` naming nothing at all. The whole
+     diagnosis - `POST fn_f06_prepare_mixed_manager_custody` answering 400 with
+     SQLSTATE P0001 - lived in the Supabase edge log, outside the run, and the
+     Postgres log that held the refusal token itself had aged out before anyone
+     read it. The three facts that one code collapsed are now told apart and the
+     database's own SQLSTATE and token travel with the refusal. The reason
+     string, the stage and the outcome do not move. */
+  const raised = (code: string, message: string) => () => ({
+    data: null,
+    error: { code, message },
+  });
+  it.each([
+    [
+      'a refusal the database raised',
+      raised('P0001', 'F06_MIXED_OLD_LEASE_CHANGED'),
+      'rpc.transport',
+      'sqlstate=P0001,refusal=F06_MIXED_OLD_LEASE_CHANGED',
+    ],
+    /* Half the SQLSTATEs this function can raise begin with a digit -
+       `F06_RETRY_MAINTENANCE_LANE` is 40001 - and a digit is exactly what an
+       identifier-shaped reader throws away. The code is the half of the answer
+       that says whether a refusal is a retry, a permission or a rule. */
+    [
+      'a refusal whose SQLSTATE begins with a digit',
+      raised('40001', 'F06_RETRY_MAINTENANCE_LANE'),
+      'rpc.transport',
+      'sqlstate=40001,refusal=F06_RETRY_MAINTENANCE_LANE',
+    ],
+    ['a body that is not a record', () => ({ data: [], error: null }), 'rpc.body', 'body=Array(0)'],
+    [
+      'a body that says no',
+      (_name: string, answer: any) => ({ ...answer, data: { ...answer.data, ok: false } }),
+      'rpc.ok',
+      'ok=false',
+    ],
+  ])(
+    'names which fact the mixed custody RPC lacked: %s',
+    async (_label, respond, failedCheck, detail) => {
+      const f = mixedFixture();
+      f.onRpcResponse((name: string, answer: any) =>
+        name === 'fn_f06_prepare_mixed_manager_custody' ? (respond as any)(name, answer) : undefined
+      );
+      const result: any = await f.run();
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'mixed_custody_rpc_unknown',
+        stage: 'mixed_custody',
+        checkpointOutcome: 'unconfirmed',
+        restartAuthorized: false,
+        failedCheck,
+        failedField: 'fn_f06_prepare_mixed_manager_custody',
+      });
+      expect(result.observedDetail).toContain(detail);
+    }
+  );
+  /* The token is carried because it NAMES the refusal, not because a message is
+     safe. Anything that is not a bare upper-case refusal token is reduced to its
+     length, so a message that carried a hand, a player or a credential could not
+     export it through the receipt. */
+  it('carries a refusal token that names its key (2026-09-25)', async () => {
+    // Run 36095932476, the 04:55 recovery window: the second retained manager
+    // refused `F06_RETIRED_CANONICAL_CHANGED: registrations` and the receipt
+    // said `refusal=string(44)`. The key is the finding.
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? raised('P0001', 'F06_RETIRED_CANONICAL_CHANGED: registrations')()
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_custody_rpc_unknown');
+    expect(result.observedDetail).toContain('refusal=F06_RETIRED_CANONICAL_CHANGED: registrations');
+  });
+
+  it('reduces a refusal message that is not a bare token to its length', async () => {
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? raised('P0001', 'As Kd for user 046718c5')()
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_custody_rpc_unknown');
+    expect(result.observedDetail).toContain('refusal=string(23)');
+    expect(result.observedDetail).not.toContain('Kd');
+    expect(result.observedDetail).not.toContain('046718c5');
+  });
   // A preflight refusal used to name only its code. These conjunctions are wide
   // and run against live state, so the code alone cost a deploy to interpret.
   // Each sub-condition now reports itself, and the fixture proves it. What is
@@ -2343,6 +2613,88 @@ describe('exact 8825 retained original custody retirement', () => {
       reason: 'server_changed',
       failedCheck: 'server.lifecycleGeneration',
     });
+  });
+  /* The capture and all seven registry terms below it run in ONE synchronous
+     turn - no await separates `captureDrainedF06Originals()` from the reads
+     that pin each original - so a term that is false is a standing
+     disagreement between the manager's own map and the process registries,
+     never a capture that went stale. Run 36144951750 refused on exactly this
+     conjunction at stage preflight with attemptedTables 0 and named nothing
+     else, so each term now names itself and says which registry moved. */
+  it('names the fleet registry when a captured original left it', async () => {
+    const f = mixedFixture();
+    const { engine, manager } = f.originals[0];
+    f.server.tableEngines.delete(engine.tableId);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'fleet.tableEngines',
+      failedTable: engine.tableId,
+      failedField: 'drainedF06Originals',
+    });
+    expect(result.observedDetail).toContain(`tournament=${manager.tournamentId}`);
+    expect(result.observedDetail).toContain('fleetSlot=absent');
+    // The manager still holds it, which is why the capture above said nothing
+    // was wrong: the two registries disagree, and the receipt says which.
+    expect(result.observedDetail).toContain('managerSlot=same');
+    expect(result.observedDetail).toContain('owned=true');
+    // How many of this manager's originals are out of step, so the next
+    // release can tell one reaped table from a whole custody handoff.
+    expect(result.observedDetail).toContain('fleetDisagree=1/1');
+    expect(f.receipts.size).toBe(0);
+  });
+  it('refuses and names the fleet registry when another engine holds the slot', async () => {
+    const f = mixedFixture();
+    const { engine } = f.originals[0];
+    const usurper: any = new f.Table(700);
+    f.server.tableEngines.set(engine.tableId, usurper);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'fleet.tableEngines',
+      failedTable: engine.tableId,
+      observed: 'fleet:other',
+      expected: 'fleet:same',
+    });
+    expect(result.observedDetail).toContain('fleetSlot=other');
+    // Nothing is retired on the way out: the usurper keeps the slot and no
+    // custody receipt was written for either tournament.
+    expect(f.server.tableEngines.get(engine.tableId)).toBe(usurper);
+    expect(f.receipts.size).toBe(0);
+  });
+  it('names the ownership set when the fleet slot is right and ownership is not', async () => {
+    const f = mixedFixture();
+    const { engine } = f.originals[0];
+    f.server.tournamentOwnedTables.delete(engine.tableId);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'fleet.tournamentOwnedTables',
+      failedTable: engine.tableId,
+    });
+    expect(result.observedDetail).toContain('fleetSlot=same');
+    expect(result.observedDetail).toContain('owned=false');
+    expect(f.receipts.size).toBe(0);
+  });
+  it('names the duplicate when two managers capture the same original', async () => {
+    const f = mixedFixture();
+    const first = f.originals[0].engine;
+    const second = f.originals[1].manager;
+    second.tableEngines = new Map([[first.tableId, first]]);
+    second.drainedF06Originals = [[first.tableId, first]];
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_registry_disagreement',
+      failedCheck: 'original.distinctEngine',
+      failedTable: first.tableId,
+    });
+    expect(result.observedDetail).toContain(`tournament=${second.tournamentId}`);
+    expect(result.observedDetail).toContain('duplicate=true');
+    expect(f.receipts.size).toBe(0);
   });
   it.each(['original', 'canonical', 'readback', 'healthy'])(
     'refuses %s evidence loss without hiding originals',
@@ -2716,13 +3068,36 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect([...e.timeBankMeta.keys()]).toEqual([departed]);
   });
 
-  it('refuses a residue player the database still seats at that table, names it, and writes nothing', async () => {
-    const f: any = mixedFixture();
-    const { e, departed } = cashedOut(f, 600);
+  /* A SEAT THIS ENGINE NEVER DEALT HOLDS NONE OF ITS BANKS (2026-09-25).
+     Run 36098984451 refused on a86077f2 for one open seat, out of 2178, that
+     sat at a table whose engine also held residue for that player; the runs
+     either side of it found no collision at all. The roster cannot forget an
+     occupancy the database still holds open, so an open row the roster does
+     not hold is a LATER occupancy - and a later occupancy owns a bank of this
+     engine's only if this engine dealt it a hand. That is the question now,
+     and it is asked from rows. */
+  const seatedHere = (f: any, table: string, user: string, joinedAt?: string) =>
     f.onSeats(() => ({
-      data: [{ table_id: e.tableId, user_id: departed, occupancy_id: uuid(65000) }],
+      data: [
+        {
+          table_id: table,
+          user_id: user,
+          occupancy_id: uuid(65000),
+          ...(joinedAt === undefined ? {} : { joined_at: joinedAt }),
+        },
+      ],
       error: null,
     }));
+  const seatOpened = new Date(Date.now() - 4 * 60000).toISOString();
+
+  it('refuses a residue player whose open seat at that table this engine has dealt, names it, and writes nothing', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = cashedOut(f, 600);
+    seatedHere(f, e.tableId, departed, seatOpened);
+    f.onResidueSeatDealt((table: string, since: string, player: string) => {
+      expect([table, since, player]).toEqual([e.tableId, seatOpened, departed]);
+      return { data: [{ id: uuid(71000) }], error: null };
+    });
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: false,
@@ -2735,6 +3110,93 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.calls).toEqual([]);
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it('refuses a tournament bust whose bank and metadata both outlived a seat this engine dealt', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 600);
+    seatedHere(f, e.tableId, departed, seatOpened);
+    f.onResidueSeatDealt(() => ({ data: [{ id: uuid(71000) }], error: null }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.openSeatAtResidueTable',
+      failedTable: e.tableId,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('admits an open seat at a residue table that this engine has never dealt', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 600);
+    seatedHere(f, e.tableId, departed, seatOpened);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // Exactly one question, at or after the seat opened, about that player.
+    expect(f.dealtReads.filter((r: any) => r.op === 'gte')).toEqual([
+      { table: e.tableId, since: seatOpened, player: departed, op: 'gte' },
+    ]);
+    expect(result.bankDisposition).toContain('residueSeatsHere=1');
+    expect(result.bankDisposition).toContain('residueSeatsNeverDealt=1');
+    // Nothing is written for the residue, and the metadata is left as found.
+    expect(e.timeBankMeta.has(departed)).toBe(true);
+  });
+
+  it.each([
+    ['no readable joined_at', undefined, () => ({ data: [], error: null })],
+    ['an unreadable answer', seatOpened, () => ({ data: null, error: { code: '57014' } })],
+    ['a body that is not a list', seatOpened, () => ({ data: { id: 'x' }, error: null })],
+    ['a page that filled', seatOpened, () => ({ data: [{ id: 'a' }, { id: 'b' }], error: null })],
+  ])(
+    'keeps the refusal when the seat it collided with answers %s',
+    async (_label, joinedAt: any, answer: any) => {
+      const f: any = mixedFixture();
+      const { e, departed } = busted(f, 600);
+      seatedHere(f, e.tableId, departed, joinedAt);
+      f.onResidueSeatDealt(answer);
+      const result: any = await f.run();
+      expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
+      expect(f.calls).toEqual([]);
+      expect(f.rpcCalls).toEqual([]);
+    }
+  );
+
+  it('asks nothing at all when no open seat is at a residue table', async () => {
+    const f: any = mixedFixture();
+    const { departed } = busted(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(66000), user_id: departed, occupancy_id: uuid(66001) }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.dealtReads.filter((r: any) => r.op === 'gte')).toEqual([]);
+    expect(result.bankDisposition).toContain('residueSeatsHere=0');
+    expect(result.bankDisposition).toContain('residueSeatsNeverDealt=0');
+  });
+
+  it('refuses without asking when more than a page of open seats sit at residue tables', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 600);
+    f.onSeats(() => ({
+      data: Array.from({ length: 101 }, (_, i) => ({
+        table_id: e.tableId,
+        user_id: departed,
+        occupancy_id: uuid(65000 + i),
+        joined_at: seatOpened,
+      })),
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.openSeatAtResidueTable',
+      failedTable: e.tableId,
+    });
+    expect(f.dealtReads.filter((r: any) => r.op === 'gte')).toEqual([]);
+    expect(f.calls).toEqual([]);
   });
 
   it.each([
@@ -3259,17 +3721,237 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     return e;
   };
 
-  it('a restored bank no roster will ever claim is deferred and proved from rows', async () => {
+  /* A DEAD GENERATION PROVES ITS PARK FROM THE ROW IT READ (2026-09-24).
+
+     Run 36061780372 (the 21:36 recovery window) cleared every capture
+     refusal and every row proof, wrote 83 tables, and refused
+     `native_checkpoint_unconfirmed`: 22 of those writes came back `403
+     TOURNAMENT_MANAGER_FENCED: lease generation is no longer current` - the
+     eleven `parkedNoRoster` tables, each written once and retried once. A
+     stopped tournament engine on a dead lease generation cannot write
+     tournament data, and the database is right to refuse it. It does not
+     need to: the row it would write is the row it read at `start()`, at the
+     same hand, so the guard proves THAT row instead of writing it, and holds
+     it to the standard the write would have been. */
+  const rowTheEngineRead = (f: any, e: any, overrides: Record<string, unknown> = {}) => {
+    const parkedAt = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
+    const row = {
+      table_id: e.tableId,
+      // Written by whichever process parked this table last; not this one.
+      engine_instance: '1-e662d4b1:parked',
+      parked_at: parkedAt,
+      disconnect_states: { [uuid(90001)]: { state: 'disconnected' } },
+      time_bank_snapshot: {
+        version: 1,
+        parkedAt,
+        handNumber: e.handCount,
+        players: structuredClone(e.parkedTimeBanks),
+      },
+      ...overrides,
+    };
+    f.rows.set(e.tableId, row);
+    return structuredClone(row);
+  };
+
+  it('a restored bank no roster will ever claim is deferred, proved from rows, and its row is proved rather than written', async () => {
     const f: any = mixedFixture();
     const e = parkedNoRoster(f, 640, 2);
+    // The write the database would fence. It is never attempted.
+    f.fence(e.tableId);
+    const before = rowTheEngineRead(f, e);
     const result: any = await f.run();
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
     expect(result.unresolvableCustody).toContain(`${e.tableId}:parkedNoRoster:2`);
     // It asked the database, per table, with the one predicate this file has.
     expect(f.snapshotReads.map((read: any) => read.ids)).toContainEqual([e.tableId]);
-    // And the row it writes is the row it read: the same banks, same hand.
-    expect(f.rows.get(e.tableId).time_bank_snapshot.players).toEqual(e.parkedTimeBanks);
-    expect(f.rows.get(e.tableId).time_bank_snapshot.handNumber).toBe(e.handCount);
+    // The row it read is the row that stands: untouched, same banks, same hand.
+    expect(f.rows.get(e.tableId)).toEqual(before);
+    // It was never written: the one park call is the mixed original's.
+    expect(f.calls).toEqual(['parked']);
+    expect(result.attemptedTables).toBe(1);
+    expect(result.verifiedTables).toBe(1);
+    expect(result.provedRows).toContain('tables=1/1 tournament=1');
+    expect(result.provedRows).toContain(
+      `${e.tableId.slice(0, 8)}:tournament:banks=2:extra=0:states=1`
+    );
+    // And the engine's own unwritten-park reason did not hold the release.
+    expect(e.parkedBankSaveComplete).toBe(false);
+    expect(e.isMaintenanceStateDurable()).toBe(false);
+  });
+
+  it('a row the loader would have skipped an entry of is still the row it read', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 650, 1);
+    f.fence(e.tableId);
+    const row = rowTheEngineRead(f, e);
+    // An unrestorable entry: `loadTimeBanksFromPark` skipped it, so the engine
+    // never held it, and the successor skips it again.
+    row.time_bank_snapshot.players[uuid(76999)] = { ...restoredBank(650), remainingSeconds: 900 };
+    f.rows.set(e.tableId, row);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.provedRows).toContain(`${e.tableId.slice(0, 8)}:tournament:banks=1:extra=1`);
+  });
+
+  /* A row that does not say what the engine holds is not a proof, and the
+     capture stays on the write path it always had. On a dead generation that
+     write is fenced and the refusal names the table, the deferral and the
+     check the row failed; on a live one it is written and read back inside
+     its own write window, exactly as before. */
+  const unprovenRow = async (
+    n: number,
+    alter: (row: any, e: any) => void,
+    fence: boolean
+  ): Promise<{ result: any; e: any; f: any }> => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, n, 2);
+    if (fence) f.fence(e.tableId);
+    const row = rowTheEngineRead(f, e);
+    alter(row, e);
+    f.rows.set(e.tableId, row);
+    return { result: await f.run(), e, f };
+  };
+  const unprovenShapes: [string, string, (row: any, e: any) => void, string][] = [
+    [
+      'a restorable bank the engine does not hold',
+      'snapshot.extraPlayers',
+      (row) => {
+        row.time_bank_snapshot.players[uuid(76998)] = restoredBank(651);
+      },
+      '',
+    ],
+    [
+      'a bank that does not match the one the engine holds',
+      'snapshot.players',
+      (row, e) => {
+        row.time_bank_snapshot.players[Object.keys(e.parkedTimeBanks)[0]].remainingSeconds = 10;
+      },
+      '',
+    ],
+    [
+      'another hand',
+      'snapshot.handNumber',
+      (row, e) => {
+        row.time_bank_snapshot.handNumber = e.handCount + 1;
+      },
+      '',
+    ],
+    [
+      'an announcement that nulled the snapshot',
+      'snapshot.shape',
+      (row) => {
+        row.time_bank_snapshot = null;
+      },
+      '',
+    ],
+    [
+      'a presence the successor would still read',
+      'row.presence',
+      (row) => {
+        const parkedAt = new Date(Date.now() - 60000).toISOString();
+        row.parked_at = parkedAt;
+        row.time_bank_snapshot.parkedAt = parkedAt;
+      },
+      '',
+    ],
+  ];
+
+  it.each(unprovenShapes)(
+    'a row holding %s is not a proof: on a dead generation the fenced write refuses, naming the check (%s)',
+    async (_shape, check, alter) => {
+      const { result, e } = await unprovenRow(651, alter, true);
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'native_checkpoint_unconfirmed',
+        failedCheck: 'engine.parkedBankSaveComplete',
+        failedTable: e.tableId,
+      });
+      expect(result.observedDetail).toContain(`rowProof=${check}`);
+      expect(result.observedDetail).toContain('deferred=parkedNoRoster:2');
+      expect(result.provedRows).toContain(`tables=0/1`);
+      expect(result.provedRows).toContain(`${e.tableId.slice(0, 8)}:unproven=${check}`);
+    }
+  );
+
+  it.each(unprovenShapes)(
+    'a row holding %s is not a proof: on a live generation the row is written and read back (%s)',
+    async (_shape, check, alter) => {
+      const { result, e, f } = await unprovenRow(652, alter, false);
+      expect(result, JSON.stringify(result)).toMatchObject({ ok: true, attemptedTables: 2 });
+      expect(result.provedRows).toContain(`${e.tableId.slice(0, 8)}:unproven=${check}`);
+      // The row it writes is the row it read: the same banks, same hand, fresh.
+      const row = f.rows.get(e.tableId);
+      expect(row.engine_instance).toBe('1-3846b8bb:parked');
+      expect(row.time_bank_snapshot.players).toEqual(e.parkedTimeBanks);
+      expect(row.time_bank_snapshot.handNumber).toBe(e.handCount);
+      expect(row.disconnect_states).toEqual({});
+    }
+  );
+
+  it('a row that is gone is not a proof either: nothing is invented, the write path answers', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 654, 1);
+    f.fence(e.tableId);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'native_checkpoint_unconfirmed',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('rowProof=row.present');
+    expect(f.rows.has(e.tableId)).toBe(false);
+  });
+
+  it('a row read that errors is not a proof: the write path answers', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 656, 1);
+    rowTheEngineRead(f, e);
+    let reads = 0;
+    f.onRead(() => {
+      reads += 1;
+      throw new Error('synthetic read failure');
+    });
+    const result: any = await f.run();
+    // The read threw inside the client call; the guard cannot use it as a
+    // proof, and refuses on the throw exactly as any other failed read does.
+    expect(result.ok).toBe(false);
+    expect(reads).toBe(1);
+  });
+
+  it('a fenced write on a table that is NOT a dead generation still refuses, and now names the table', async () => {
+    const f: any = mixedFixture();
+    // The mixed original's own seated player: it writes, and the write is refused.
+    const first = f.first;
+    f.fence(first.tableId);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'native_checkpoint_unconfirmed',
+      failedCheck: 'engine.parkedBankSaveComplete',
+      failedTable: first.tableId,
+    });
+    expect(result.observedDetail).toContain('deferred=none');
+    expect(f.calls).toEqual(['parked']);
+  });
+
+  it('a table the engine will not call durable for any other reason still refuses, naming it', async () => {
+    const f: any = mixedFixture();
+    const e = parkedNoRoster(f, 655, 1);
+    f.fence(e.tableId);
+    rowTheEngineRead(f, e);
+    // 8825's own reason for this shape is `bank_park_write_incomplete`; any
+    // other reason on the same table is an engine this guard does not
+    // understand, and it refuses exactly as the process-wide require did.
+    e.maintenanceDurabilityReason = () => 'accounting_pending';
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'native_readiness_refused',
+      failedCheck: 'engine.isMaintenanceStateDurable',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toContain('durability=accounting_pending');
+    expect(result.observedDetail).toContain('rowProved=true');
   });
 
   it('a hand in the air on that table refuses the restored bank too', async () => {
@@ -3822,7 +4504,68 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
       });
     });
     const result: any = await f.run();
-    expect(result).toMatchObject({ ok: false, reason: 'engine_state_changed' });
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'engine_state_changed',
+      failedCheck: 'custody',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toBe('moved=residue');
+  });
+
+  /* PRESENCE IS OBSERVED; CUSTODY IS HELD (2026-09-24). Run 36056765988
+     wrote 79 park rows and refused engine_state_changed on the
+     re-verification, naming nothing. The only part of the signature the
+     break does not freeze is the disconnect FSM. */
+  it('a presence value that moves between the capture and the write is adopted, and the row is read against it', async () => {
+    const f: any = mixedFixture();
+    const e: any = f.first;
+    const userId = e.seatedPlayers[0].user_id;
+    let state: any = { [userId]: { status: 'connected', since: 1 } };
+    e.disconnectEngine = { getFsmStatesForTable: () => structuredClone(state) };
+    f.onWrite((engine: any) => {
+      if (engine === e) state = { [userId]: { status: 'disconnected', since: 2 } };
+    });
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.rows.get(e.tableId).disconnect_states).toEqual({
+      [userId]: { status: 'disconnected', since: 2 },
+    });
+  });
+
+  it('a presence registry that changes between observations still refuses, and names it', async () => {
+    const f: any = mixedFixture();
+    const e: any = f.first;
+    const userId = e.seatedPlayers[0].user_id;
+    let state: any = { [userId]: { status: 'connected' } };
+    e.disconnectEngine = { getFsmStatesForTable: () => structuredClone(state) };
+    f.onWrite((engine: any) => {
+      if (engine === e) state = {};
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'engine_state_changed',
+      failedCheck: 'presence.registry',
+      failedTable: e.tableId,
+    });
+    expect(result.observedDetail).toBe('presenceRegistry=0/1');
+  });
+
+  it('a readback whose presence names a different set of players still refuses', async () => {
+    const f: any = mixedFixture();
+    const e: any = f.first;
+    const userId = e.seatedPlayers[0].user_id;
+    e.disconnectEngine = { getFsmStatesForTable: () => ({ [userId]: { status: 'connected' } }) };
+    f.onRead((data: any[]) =>
+      data.map((row: any) =>
+        row.table_id === e.tableId
+          ? { ...row, disconnect_states: { [uuid(64001)]: { status: 'connected' } } }
+          : row
+      )
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'checkpoint_readback_mismatch' });
   });
 
   it('leaves every other profile exactly as strict as before', async () => {
@@ -3946,5 +4689,625 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
     expect(f.snapshotReads).toHaveLength(1);
     expect(f.receipts.size).toBe(0);
     expect(f.server.tableEngines.has(stuck.tableId)).toBe(true);
+  });
+});
+
+describe('an epoch that never reserved a hand is witnessed by its absence (2026-09-24)', () => {
+  /* Run 36068474418, the first release to reach fn_f06_prepare_mixed_manager
+     _custody: `mixed_custody_rpc_unknown`, named nothing; the Postgres log said
+     F06_MIXED_ALLOCATION_WITNESS_UNPROVEN at f06_mixed_custody_snapshot line
+     42. The retained $100 Freeroll manager holds seven waiting single-seat
+     tables admitted under its generation that never dealt. */
+  it('a waiting original is witnessed never_reserved and the transfer proceeds', async () => {
+    const f = mixedFixture();
+    const waiting = [f.waitingOriginal(0, 0), f.waitingOriginal(0, 1)];
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.rpcCalls.length).toBeGreaterThan(0);
+    for (const e of waiting) expect(f.server.tableEngines.has(e.tableId)).toBe(false);
+    // The engine's own fields are untouched: the guard proves, it never edits.
+    for (const e of waiting) expect(e.f06CurrentPermit).toBeNull();
+  });
+
+  it('an epoch that did reserve is still witnessed from its permits, exactly as before', async () => {
+    const f = mixedFixture();
+    f.lifecycleWitness('permits');
+    f.waitingOriginal(0, 0);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+  });
+
+  it('a receipt that names neither witness refuses, and nothing is committed', async () => {
+    const f = mixedFixture();
+    f.lifecycleWitness('unmarked');
+    f.waitingOriginal(0, 0);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_lifecycle_evidence_invalid',
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+
+  it('a never_reserved witness for an epoch the guard can itself place refuses', async () => {
+    const f = mixedFixture();
+    const e = f.waitingOriginal(0, 0);
+    // A lifecycle witness in memory means the epoch is not unplaceable; the
+    // absence witness is only for the engine nobody can place.
+    const breakId = uuid(83900);
+    f.originals[0].manager.retainedTournamentBreakSources.set(e.tableId, { breakId, engine: e });
+    f.originals[0].manager.durableTournamentBreaks.set(breakId, { lifecycle: '1' });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_lifecycle_evidence_invalid',
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+
+  it('a refusal on the second manager commits nothing for the first (2026-09-24)', async () => {
+    const f = mixedFixture();
+    const second = f.originals[1].manager.tournamentId;
+    let observations = 0;
+    f.changeResponse((name: string, data: any) => {
+      if (name !== 'fn_f06_prepare_mixed_manager_custody') return data;
+      if (data.receipt !== null) return data;
+      observations += 1;
+      return data.tournament_id === second
+        ? { __rpcError: { code: 'P0001', message: 'F06_RETIRED_CANONICAL_CHANGED: registrations' } }
+        : data;
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedTable: second,
+    });
+    expect(result.observedDetail).toContain('commit=no');
+    // Both managers were observed, and the first was NOT committed: no
+    // immutable transfer row exists for the next attempt to refuse against.
+    expect(observations).toBe(2);
+    expect(f.receipts.size).toBe(0);
+    // And nothing was retired: every original is still in the map.
+    for (const { engine } of f.originals)
+      expect(f.server.tableEngines.has(engine.tableId)).toBe(true);
+  });
+
+  it('a refused custody RPC names the manager, the RPC, the message and the map', async () => {
+    const f = mixedFixture();
+    const e = f.waitingOriginal(0, 0);
+    f.changeResponse((name: string, data: any) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? { __rpcError: { code: 'P0001', message: 'F06_MIXED_ALLOCATION_WITNESS_UNPROVEN' } }
+        : data
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedCheck: 'rpc.transport',
+      failedField: 'fn_f06_prepare_mixed_manager_custody',
+      failedTable: f.originals[0].manager.tournamentId,
+    });
+    expect(result.observedDetail).toContain('commit=no');
+    expect(result.observedDetail).toContain('sqlstate=P0001');
+    expect(result.observedDetail).toContain('refusal=F06_MIXED_ALLOCATION_WITNESS_UNPROVEN');
+    expect(result.observedDetail).toContain('allocationBacked=1');
+    expect(result.observedDetail).toContain(
+      `backed=${e.tableId.slice(0, 8)}:${e.f06AllocationEpoch.slice(0, 8)}:null:hand=17:seats=1`
+    );
+    expect(f.receipts.size).toBe(0);
+  });
+});
+
+/* ═══ A SEALED CUSTODY TRANSFER IS NOT TRANSFERRED TWICE (2026-09-25) ═══
+
+   Run 36144233010 (target c3e8d3fe, the 14:05Z recovery window): the
+   publisher reported `inspector operation outcome unknown` at stage
+   `mixed_custody` with 65 tables verified, while the guard went on inside the
+   engine and finished - both `f06_manager_custody_transfers` rows committed
+   (Noon 5a387a75 at 14:05:23Z, Afternoon 615783bf at 14:05:29Z) and both
+   originals retired through the CAS, so `/health.maintenance` now says
+   `unparkedTables: 0`. The transaction requires the checkpoint again on every
+   release while the sealed predecessor is 8825, with a fresh intent each
+   time. These are the shapes the next run meets. */
+describe('a sealed custody transfer is not transferred twice', () => {
+  // The second release: a fresh intent per RUN_ID, new ids for every manager.
+  const nextRelease = (f: any) => {
+    f.intent.runId = '124-1';
+    f.intent.custody.forEach((c: any, n: number) => {
+      c.transfer_id = uuid(88100 + n);
+      c.successor_generation = uuid(89100 + n);
+    });
+    f.rpcCalls.length = 0;
+    f.probes.length = 0;
+  };
+  const sealBoth = async (f: any) => {
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true, sealedManagers: 0 });
+    expect(f.receipts.size).toBe(2);
+    expect(f.probes).toEqual(f.events);
+    // THE POST-RETIREMENT SHAPE, as 8825 leaves it. `unregisterTournamentTableEngine`
+    // deletes from the global map and the owned set only; the manager's own
+    // maps are untouched because its stop retry throws before it reaches
+    // them, and `captureDrainedF06Originals()` still answers the same engines.
+    for (const { engine, manager } of f.originals) {
+      expect(f.server.tableEngines.has(engine.tableId)).toBe(false);
+      expect(f.server.tournamentOwnedTables.has(engine.tableId)).toBe(false);
+      expect(manager.tableEngines.get(engine.tableId)).toBe(engine);
+      expect(manager.retainedTournamentBreakSources.has(engine.tableId)).toBe(true);
+      expect(manager.captureDrainedF06Originals()).toEqual([[engine.tableId, engine]]);
+      expect(f.server.tournamentEngines.get(manager.tournamentId)).toBe(manager);
+    }
+    return [...f.receipts.values()].map((r: any) => structuredClone(r));
+  };
+
+  it.each([
+    ['as 8825 leaves them: manager maps still holding the retired originals', () => undefined],
+    [
+      'with the manager maps emptied and the drain capture answering null',
+      (f: any) => {
+        for (const { manager } of f.originals) {
+          manager.tableEngines.clear();
+          manager.retainedTournamentBreakSources.clear();
+          manager.drainedF06Originals = [];
+          manager.captureMode = 'stopping';
+        }
+      },
+    ],
+  ])(
+    'both managers already sealed, %s: no prepare, nothing written, readiness certified',
+    async (_label, shape) => {
+      const f = mixedFixture();
+      const rows = await sealBoth(f);
+      nextRelease(f);
+      shape(f);
+      const writes = f.calls.length;
+      const result: any = await f.run();
+      expect(result, JSON.stringify(result)).toMatchObject({
+        ok: true,
+        readyForRestart: true,
+        restartAuthorized: false,
+        stage: 'complete',
+        sealedManagers: 2,
+      });
+      // The rows were asked first, once per manager, and nothing was prepared,
+      // committed or read back: the fresh intent ids are simply unused.
+      expect(f.probes).toEqual(f.events);
+      expect(f.rpcCalls).toEqual([]);
+      expect(result.sealedLookup).toBe(
+        f.events.map((e: string) => `${e.slice(0, 8)}:sealed`).join(' ')
+      );
+      expect([...f.receipts.values()]).toEqual(rows);
+      // The bank checkpoint stage still ran for the live cash fleet.
+      expect(f.calls.length).toBeGreaterThanOrEqual(writes);
+      expect(f.server.tableEngines.size).toBe(1);
+      expect(f.server.maintenanceBreak.readyForRestart()).toBe(true);
+    }
+  );
+
+  it('one sealed, one not: the unsealed manager still goes observe, commit, readback, CAS', async () => {
+    const f = mixedFixture();
+    await sealBoth(f);
+    nextRelease(f);
+    // Manager 1 was never sealed: no row for it, and its original is still in
+    // the global registry exactly as before any checkpoint.
+    const { engine, manager } = f.originals[1];
+    f.receipts.delete(manager.tournamentId);
+    f.server.tableEngines.set(engine.tableId, engine);
+    f.server.tournamentOwnedTables.add(engine.tableId);
+    const seen: { name: string; tournament: string; commit: boolean }[] = [];
+    f.onRpc((name: string, input: any) =>
+      seen.push({ name, tournament: input.p_tournament_id, commit: input.p_expected != null })
+    );
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, sealedManagers: 1 });
+    expect(f.probes).toEqual(f.events);
+    expect(f.rpcCalls).toEqual([
+      'fn_f06_prepare_mixed_manager_custody',
+      'fn_f06_prepare_mixed_manager_custody',
+      'fn_f06_find_mixed_manager_custody',
+    ]);
+    // Every transfer call named the unsealed manager and the NEW ids; the
+    // sealed one was never prepared.
+    for (const call of seen.filter((c) => c.name === 'fn_f06_prepare_mixed_manager_custody'))
+      expect(call.tournament).toBe(manager.tournamentId);
+    expect(f.receipts.get(manager.tournamentId)).toMatchObject({
+      transfer_id: uuid(88101),
+      successor_generation: uuid(89101),
+      origin_generation: manager.tournamentLeaseGeneration,
+    });
+    expect(f.receipts.get(f.originals[0].manager.tournamentId).transfer_id).toBe(uuid(88000));
+    expect(f.server.tableEngines.has(engine.tableId)).toBe(false);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+
+  it("a row for a DIFFERENT origin generation is not this manager's seal: the full path, and the database's refusal", async () => {
+    const f = mixedFixture();
+    const { manager } = f.originals[0];
+    f.receipts.set(manager.tournamentId, {
+      transfer_id: uuid(70000),
+      tournament_id: manager.tournamentId,
+      origin_generation: uuid(70001),
+      successor_generation: uuid(70002),
+      local_proof: {
+        release_checkpoint: {
+          kind: 'legacy_engine_checkpoint_8825_v1',
+          source: checkpoint8825,
+          instance_id: f.intent.instance,
+          container_id: f.intent.container,
+          process_id: process.pid,
+        },
+        manager_id: manager.managerLifecycleDiagnostics.instanceId,
+        engines: [],
+      },
+      canonical_proof: {},
+    });
+    // What the live function does to an observe whose prior row disagrees
+    // (migration 20260921155216 L181-182).
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? { data: null, error: { code: 'P0001', message: 'F06_MIXED_TRANSFER_CHANGED' } }
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedField: 'fn_f06_prepare_mixed_manager_custody',
+      sealedManagers: 0,
+    });
+    expect(result.observedDetail).toContain('refusal=F06_MIXED_TRANSFER_CHANGED');
+    expect(result.observedDetail).toContain('commit=no');
+    expect(result.sealedLookup).toContain(`${manager.tournamentId.slice(0, 8)}:other_generation`);
+    expect(f.probes).toEqual(f.events);
+    expect(f.rpcCalls).toEqual(['fn_f06_prepare_mixed_manager_custody']);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+
+  it.each([
+    [
+      'another container',
+      (r: any) => (r.local_proof.release_checkpoint.container_id = 'b'.repeat(64)),
+      'release_checkpoint.container_id',
+    ],
+    [
+      'another instance',
+      (r: any) => (r.local_proof.release_checkpoint.instance_id = '2-deadbeef'),
+      'release_checkpoint.instance_id',
+    ],
+    [
+      'another manager',
+      (r: any) => (r.local_proof.manager_id = uuid(70009)),
+      'local_proof.manager_id',
+    ],
+    [
+      'a proof with no checkpoint at all',
+      (r: any) => delete r.local_proof.release_checkpoint,
+      'receipt.local_proof',
+    ],
+  ])(
+    'a row for THIS generation that names %s refuses, named, before any prepare',
+    async (_label, alter, failedCheck) => {
+      const f = mixedFixture();
+      const rows = await sealBoth(f);
+      nextRelease(f);
+      alter(f.receipts.get(f.originals[0].manager.tournamentId));
+      const result: any = await f.run();
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'mixed_sealed_transfer_foreign',
+        failedCheck,
+        failedTable: f.originals[0].manager.tournamentId,
+        sealedManagers: 0,
+      });
+      expect(f.rpcCalls).toEqual([]);
+      expect(f.receipts.get(f.originals[1].manager.tournamentId)).toEqual(rows[1]);
+    }
+  );
+
+  /* THE LOOKUP NEVER REFUSES AN UNSEALED MANAGER. `EngineLifecycleDiagnostics
+     .test.ts` runs this guard against fixtures that never answer the find at
+     all, and every drain refusal it names is on the path the lookup precedes.
+     A lookup that did not come back, came back malformed, or found nothing
+     decides nothing: the manager takes the exact existing path, whose
+     refusals are unchanged and whose observe call still meets the database's
+     own `F06_MIXED_TRANSFER_CHANGED` against a transfer this run did not
+     make. Only the readback AFTER a commit is a find the guard refuses on. */
+  it.each([
+    [
+      'an error',
+      () => ({ data: null, error: { code: 'PGRST002', message: 'schema cache' } }),
+      'unanswered',
+    ],
+    [
+      'a throw',
+      () => {
+        throw new Error('socket hang up');
+      },
+      'unanswered',
+    ],
+    ['a body that is not a record', () => ({ data: 'synthetic', error: null }), 'malformed'],
+    ['a body saying no', () => ({ data: { ok: false }, error: null }), 'malformed'],
+    [
+      'a receipt that is not a record',
+      () => ({ data: { ok: true, receipt: 'x' }, error: null }),
+      'malformed',
+    ],
+  ])(
+    'a seal lookup that meets %s decides nothing: the full path, unchanged',
+    async (_label, answer, outcome) => {
+      const f = mixedFixture();
+      f.onRpcResponse((name: string) =>
+        name === 'fn_f06_find_mixed_manager_custody' && f.rpcCalls.length === 0
+          ? answer()
+          : undefined
+      );
+      const result: any = await f.run();
+      expect(result, JSON.stringify(result)).toMatchObject({
+        ok: true,
+        readyForRestart: true,
+        sealedManagers: 0,
+      });
+      expect(result.sealedLookup).toBe(
+        f.events.map((e: string) => `${e.slice(0, 8)}:${outcome}`).join(' ')
+      );
+      expect(f.probes).toEqual(f.events);
+      expect(f.rpcCalls).toEqual([
+        // Both observations, then each commit with its readback.
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_find_mixed_manager_custody',
+        'fn_f06_prepare_mixed_manager_custody',
+        'fn_f06_find_mixed_manager_custody',
+      ]);
+      expect(f.receipts.size).toBe(2);
+      expect(f.server.tableEngines.size).toBe(1);
+    }
+  );
+
+  it('an unanswered lookup does not hide a drain refusal on the existing path', async () => {
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_find_mixed_manager_custody' && f.rpcCalls.length === 0
+        ? { data: null, error: { code: 'PGRST002', message: 'schema cache' } }
+        : undefined
+    );
+    f.originals[0].engine.readContinuationTasks.add(Promise.resolve());
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'mixed_original_work_not_drained' });
+    expect(result.sealedLookup).toContain(':unanswered');
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+
+  /* THE ONE STEP THE SEALING RUN HAD LEFT. The commit row is immutable and the
+     rows already hold the custody; the CAS that retires the original from the
+     global map is what a run cut off between commit and retirement would not
+     have reached. Retiring it here is finishing that run's own work with the
+     same synchronous identity CAS, on the exact engine the row names, and
+     nothing else: refusing instead would hold `readyForRestart()` false for
+     ever on a table whose custody is already gone (8825 `unparkedTables`
+     counts an unresolved preparation before it asks whether the engine runs). */
+  it('a sealed manager whose original is still registered under the exact engine the row names is retired by the same CAS', async () => {
+    const f = mixedFixture();
+    // 8825's own gate: one unresolved preparation in the global map holds
+    // `readyForRestart()` false for ever, however the engine holding it stopped.
+    f.holdGate();
+    await sealBoth(f);
+    nextRelease(f);
+    const { engine, manager } = f.originals[0];
+    f.server.tableEngines.set(engine.tableId, engine);
+    f.server.tournamentOwnedTables.add(engine.tableId);
+    expect(f.server.maintenanceBreak.readyForRestart()).toBe(false);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, sealedManagers: 2 });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.has(engine.tableId)).toBe(false);
+    expect(f.server.tournamentOwnedTables.has(engine.tableId)).toBe(false);
+    expect(manager.tableEngines.get(engine.tableId)).toBe(engine);
+    expect(f.server.maintenanceBreak.readyForRestart()).toBe(true);
+  });
+
+  it.each([
+    [
+      'a different engine behind the same table id',
+      (f: any) => {
+        const other: any = new f.Table(500);
+        other.tableId = f.originals[0].engine.tableId;
+        other.lifecycleDiagnostics = { instanceId: uuid(85900) };
+        other.running = false;
+        other.terminal = true;
+        f.server.tableEngines.set(other.tableId, other);
+        f.server.tournamentOwnedTables.add(other.tableId);
+      },
+    ],
+    [
+      'the exact engine, no longer stopped',
+      (f: any) => {
+        const { engine } = f.originals[0];
+        engine.running = true;
+        f.server.tableEngines.set(engine.tableId, engine);
+        f.server.tournamentOwnedTables.add(engine.tableId);
+      },
+    ],
+    [
+      'a table gone from the map but still marked owned',
+      (f: any) => f.server.tournamentOwnedTables.add(f.originals[0].engine.tableId),
+    ],
+  ])('a sealed manager with %s refuses, and retires nothing', async (_label, alter) => {
+    const f = mixedFixture();
+    await sealBoth(f);
+    nextRelease(f);
+    alter(f);
+    const size = f.server.tableEngines.size;
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_sealed_original_registry_disagreement',
+      sealedManagers: 0,
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(size);
+  });
+
+  it('a sealed manager still holding an engine the row never named refuses', async () => {
+    const f = mixedFixture();
+    await sealBoth(f);
+    nextRelease(f);
+    const stray: any = new f.Table(501);
+    stray.lifecycleDiagnostics = { instanceId: uuid(85901) };
+    f.originals[0].manager.tableEngines.set(stray.tableId, stray);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'mixed_sealed_original_unnamed' });
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it('a sealed manager whose owner moved before the CAS refuses there', async () => {
+    const f = mixedFixture();
+    await sealBoth(f);
+    nextRelease(f);
+    const { manager } = f.originals[0];
+    // The lease generation moves after the capture and before the CAS phase:
+    // the seal was proved for the generation that was captured, not this one.
+    f.onWrite(() => {
+      manager.tournamentLeaseGeneration = uuid(80099);
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'mixed_sealed_owner_changed' });
+    expect(f.rpcCalls).toEqual([]);
+  });
+});
+
+/* ═══ AN OUTCOME THE CLIENT LOSES NAMES THE STEP IT WAS LOST IN ═══
+
+   Run 36144233010 is the measurement: the deepest a release has reached. All
+   65 tables were parked, read back and verified, and then the publisher's
+   20000ms work budget ran out with the guard's call still running. The only
+   thing that survives that is the progress record the guard leaves on the
+   predecessor's global object - `witness` and `noteRefusal` travel in the
+   RETURN VALUE, which by definition never arrived - and what the record said
+   was `stage: mixed_custody, note: mixed_custody`. `mixed_custody` is two
+   operations and six RPCs across two managers, and one of those RPCs writes
+   an immutable custody row. Which one was in flight is the whole question,
+   and the record could not answer it. These prove it now does. */
+describe('an unknown outcome names the mixed-custody step it was lost in', () => {
+  const record = () => (globalThis as any).__legacyEngineCheckpointProgress;
+
+  it('names proveAbandonedBoundaries and the page it is reading, not just the stage', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    const seen: any[] = [];
+    f.onSnapshots((ids: string[]) => {
+      seen.push({ ids: [...ids], ...record() });
+      return { data: [], error: null };
+    });
+    expect((await f.run()).ok).toBe(true);
+    const page = seen.find((entry) => entry.ids.includes(stuck.tableId));
+    expect(page).toBeDefined();
+    expect(page.stage).toBe('mixed_custody');
+    // The step's own name, never the stage's.
+    expect(page.note).toBe('proveAbandonedBoundariesPage');
+    expect(page.detail).toBe('page=1/1,ids=1');
+  });
+
+  it('names the custody RPC on the wire, its phase, its manager and whether a commit was sent', async () => {
+    const f = mixedFixture();
+    const seen: any[] = [];
+    f.onRpc((name: string) => seen.push({ name, ...record() }));
+    expect((await f.run()).ok).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const entry of seen) {
+      expect(entry.stage).toBe('mixed_custody');
+      expect(entry.note).toBe('mixedCustodyRpc');
+      expect(entry.detail).toContain(`rpc=${entry.name}`);
+    }
+    const parsed = seen.map((entry) => ({
+      name: entry.name,
+      phase: /phase=(\w+)/.exec(entry.detail)![1],
+      tournament: /tournament=([0-9a-f-]{36})/.exec(entry.detail)![1],
+      commitAttempted: /commitAttempted=(\w+)/.exec(entry.detail)![1],
+    }));
+    const tournaments = f.originals.map(({ manager }: any) => manager.tournamentId);
+    for (const entry of parsed) expect(tournaments).toContain(entry.tournament);
+    // Both managers are observed before either is committed, and the record
+    // tells the two identical calls apart.
+    expect(parsed.filter((entry) => entry.phase === 'observe')).toHaveLength(2);
+    expect(parsed.filter((entry) => entry.phase === 'commit')).toHaveLength(2);
+    expect(parsed.findIndex((entry) => entry.phase === 'commit')).toBeGreaterThan(
+      parsed.map((entry) => entry.phase).lastIndexOf('observe')
+    );
+    expect(parsed.find((entry) => entry.name === 'fn_f06_find_mixed_manager_custody')!.phase).toBe(
+      'read'
+    );
+    // The one fact that says whether a lost outcome could have written a row.
+    expect(parsed[0].commitAttempted).toBe('false');
+    expect(parsed.at(-1)!.commitAttempted).toBe('true');
+  });
+
+  it('tells a call still on the wire from an answer already in hand', async () => {
+    const f = mixedFixture();
+    const answered: any[] = [];
+    f.onRpcResponse((name: string, answer: any) => {
+      answered.push({ name, ...record() });
+      return answer;
+    });
+    expect((await f.run()).ok).toBe(true);
+    // The response hook runs while the call is still on the wire...
+    const custody = answered.filter((entry) => entry.stage === 'mixed_custody');
+    expect(custody.length).toBeGreaterThan(0);
+    for (const entry of custody) expect(entry.note).toBe('mixedCustodyRpc');
+    // ...and the sealed-transfer probe the capture walk sends is named by the
+    // step that sends it, never by this one.
+    expect(answered.some((entry) => entry.note === 'captureMixedOriginals')).toBe(true);
+    // ...and the record moves on the moment the answer is in hand, so the
+    // checks that follow are never reported as a call in flight.
+    expect(record().note).toBe('complete');
+  });
+
+  it('never leaves a stale detail behind a later step', async () => {
+    const f = mixedFixture();
+    expect((await f.run()).ok).toBe(true);
+    // `complete` names no page, manager or RPC, so it carries no detail.
+    expect(record().note).toBe('complete');
+    expect(record().detail).toBeNull();
+    expect(record().stage).toBe('complete');
+  });
+
+  it('changes no outcome: a refusal inside a named step still refuses', async () => {
+    const f = mixedFixture();
+    f.onRpcResponse((name: string) =>
+      name === 'fn_f06_prepare_mixed_manager_custody'
+        ? { data: null, error: { code: 'P0001', message: 'F06_MIXED_OLD_LEASE_CHANGED' } }
+        : undefined
+    );
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_custody_rpc_unknown',
+      failedCheck: 'rpc.transport',
+    });
+    expect(result.observedDetail).toContain('refusal=F06_MIXED_OLD_LEASE_CHANGED');
+    expect(f.receipts.size).toBe(0);
+    expect(record().note).toBe('refused');
+  });
+
+  // The record is a courtesy to the reader and can never be a condition: a
+  // global that refuses to be written must not move a single outcome.
+  it('survives a global object that refuses the record', async () => {
+    const f = mixedFixture();
+    Object.defineProperty(globalThis, '__legacyEngineCheckpointProgress', {
+      configurable: true,
+      get: () => null,
+      set() {
+        throw new Error('synthetic refusal');
+      },
+    });
+    try {
+      expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    } finally {
+      Reflect.deleteProperty(globalThis, '__legacyEngineCheckpointProgress');
+    }
   });
 });

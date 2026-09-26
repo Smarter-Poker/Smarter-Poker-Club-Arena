@@ -152,9 +152,14 @@
   flex-direction: column;
 }
 
+/* The label column never narrows below its longest word (visual acceptance
+   2026-09-24). It was minmax(0, 1fr), so a value longer than the row - the
+   kill rule's Trigger and Killer sentences - took every pixel and printed
+   over its own label ("Trigger" under "One Player Wins..."). The value now
+   wraps inside what the label leaves; a short value sits exactly as before. */
 .rules-modal__item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(min-content, 1fr) auto;
   gap: 3cqw;
   align-items: baseline;
   padding: 2.2cqw 0.5cqw;

@@ -4,17 +4,59 @@ import { setTimeout as checkpointDelay } from 'node:timers/promises';
 
 class CheckpointTransportError extends Error {}
 const refused = (code) => new CheckpointTransportError(code);
-const remaining = (deadline, maximum) => {
+/* ═══ AN UNKNOWN OUTCOME NAMES ITS OPERATION AND ITS DEADLINE (2026-09-25) ═══
+
+   Run 36144233010 is the measurement: the deepest a release has reached, and
+   the whole of what it reported was `inspector operation outcome unknown`.
+   That one string is produced by three different facts, and they are not the
+   same fact:
+
+     - `budget_exhausted`: the publisher's work budget was ALREADY spent when
+       this operation was about to be issued, so nothing was sent;
+     - `request_timeout`: the operation WAS sent, ran past the slice of the
+       budget that was left for it, and its answer is genuinely lost;
+     - `unexpected_error`: something that is not a transport refusal escaped.
+
+   Only the second one leaves a call in flight inside the predecessor, and
+   only the second one can be answered by giving the operation more of the
+   budget or by making it cheaper. Collapsed into one word, the run cannot
+   say which fix it is asking for - and the number that decides it, how many
+   milliseconds the operation actually got, was never written down at all.
+
+   Observability only. `reason` is still exactly `inspector operation outcome
+   unknown` for every existing parser, the refusal is still a refusal, and
+   `retryAllowed` is still false: an operation whose answer was lost is not
+   made knowable by describing it. What changes is that the description
+   exists. The label rides on the error and is emitted as `transportDetail`,
+   a compact `key=value` string held to the same 512-character carrier class
+   the guard's own details use. */
+const TRANSPORT_DETAIL = /^[\w .,:/=()+-]+$/;
+const detailOf = (error) =>
+  typeof error?.transportDetail === 'string' &&
+  error.transportDetail.length > 0 &&
+  error.transportDetail.length <= 512 &&
+  TRANSPORT_DETAIL.test(error.transportDetail)
+    ? error.transportDetail
+    : null;
+const lost = (detail) => {
+  const error = refused('inspector operation outcome unknown');
+  error.transportDetail = detail.slice(0, 512);
+  return error;
+};
+const remaining = (deadline, maximum, operation = 'unnamed') => {
   const left = Math.min(maximum, deadline - Date.now());
-  if (left <= 0) throw refused('inspector operation outcome unknown');
+  if (left <= 0)
+    throw lost(
+      `op=${operation},cause=budget_exhausted,allowanceMs=0,overrunMs=${Date.now() - deadline}`
+    );
   return left;
 };
 
-async function inspectorTarget(port, deadline) {
+async function inspectorTarget(port, deadline, operation = 'inspectorDiscovery') {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
       redirect: 'error',
-      signal: AbortSignal.timeout(remaining(deadline, 500)),
+      signal: AbortSignal.timeout(remaining(deadline, 500, operation)),
     });
     if (!response.ok || !response.body) throw refused('inspector response refused');
     const reader = response.body.getReader(),
@@ -76,6 +118,16 @@ function progressSummary(value) {
     if (typeof item === 'string' && item.length <= 64 && /^[A-Za-z][A-Za-z0-9_]*$/.test(item))
       out[key] = item;
   }
+  // The step's own `key=value` pairs: which page, which manager, which RPC.
+  // Same carrier class and ceiling as every other detail the guard emits.
+  const detail = value.detail;
+  if (
+    typeof detail === 'string' &&
+    detail.length > 0 &&
+    detail.length <= 512 &&
+    TRANSPORT_DETAIL.test(detail)
+  )
+    out.detail = detail;
   return Object.keys(out).length > 0 ? out : null;
 }
 
@@ -95,6 +147,10 @@ function checkpointSummary(value) {
     'checkpointOutcome',
     'paidAccountingQualification',
     'restartAuthorized',
+    // How many retained managers the rows proved an earlier run had already
+    // sealed, so this run transferred nothing for them (2026-09-25). A count,
+    // validated like every other count; absent from a guard that predates it.
+    'sealedManagers',
   ];
   const result = {};
   for (const key of keys) {
@@ -133,6 +189,14 @@ function checkpointSummary(value) {
     'failedCheck',
     'failedTable',
     'failedField',
+    // `failedCheck` names the sub-expression that refused; WHICH map, set,
+    // drain condition or captured revision moved underneath it travels in
+    // `observedDetail` below. This list is FIXED and drops every unlisted key,
+    // so one carrier is the design: a key of its own has to be remembered
+    // here too, and on 2026-09-21 it was not - `mixed_owner_changed` reached
+    // the runner naming a call and nothing else, which is the whole reason
+    // nobody could act on it (CLAUDE.md 10.86 rule 2: an unreadable answer
+    // must not be coerced into an empty one).
     'observed',
     'expected',
     'observedDetail',
@@ -160,6 +224,15 @@ function checkpointSummary(value) {
     // account of what a release stepped over. Carried verbatim; nothing
     // reads it.
     'nativeWorkMembers',
+    // Which dead generations' park rows were proved from the row they had read
+    // instead of written again (the database fences a write from a lease
+    // generation that is no longer current), with what each row held. Carried
+    // verbatim; nothing reads it.
+    'provedRows',
+    // What the seal lookup answered for each retained manager (2026-09-25):
+    // sealed, none, other_generation, unanswered or malformed. Carried
+    // verbatim; nothing reads it.
+    'sealedLookup',
   ]) {
     const item = value?.[key];
     if (
@@ -209,7 +282,7 @@ function connectInspector(endpoint, deadline, createWebSocket) {
         socket.close();
         reject(refused('inspector connection timeout'));
       },
-      remaining(deadline, 1000)
+      remaining(deadline, 1000, 'inspectorOpen')
     );
     socket.addEventListener(
       'open',
@@ -230,17 +303,26 @@ function connectInspector(endpoint, deadline, createWebSocket) {
     socket,
     opened,
     closed,
-    request(method, params, requestDeadline) {
+    request(method, params, requestDeadline, operation = method) {
       if (ended || socket.readyState !== WebSocket.OPEN)
         return Promise.reject(refused('inspector disconnected; outcome unknown'));
       const id = ++nextId;
       return new Promise((resolve, reject) => {
+        // Computed inside the executor, exactly as before, so a budget that is
+        // already spent still arrives as a rejection and never as a throw.
+        const allowanceMs = remaining(requestDeadline, 20000, operation);
+        const startedAt = Date.now();
         const timer = setTimeout(
           () => {
             pending.delete(id);
-            reject(refused('inspector operation outcome unknown'));
+            reject(
+              lost(
+                `op=${operation},cause=request_timeout,method=${method},` +
+                  `allowanceMs=${allowanceMs},waitedMs=${Date.now() - startedAt}`
+              )
+            );
           },
-          remaining(requestDeadline, 20000)
+          allowanceMs
         );
         pending.set(id, {
           resolve(value) {
@@ -270,6 +352,83 @@ function connectInspector(endpoint, deadline, createWebSocket) {
 
 /** One checkpoint attempt; a timeout/disconnect is unknown, never a retry.
  * The stdin production caller fixes PID, module coordinates and budgets. */
+/**
+ * The refusals a release may stand down on, in two groups, both of which mean
+ * "this attempt could not act", never "this attempt is unsafe".
+ *
+ * ARRIVED LATE. `insufficient_reserve` is the guard finding less than its
+ * 285000ms reserve left. #5026 built `defer()` for exactly this sentence and
+ * could only reach it ABOVE the intent write, so the guard's own copy of the
+ * same finding stayed terminal - and it is what ended run 35625997626 at
+ * 16:30 on 2026-09-21, twenty minutes after the ladder shipped. Deferring it
+ * does NOT move the floor: the guard refuses at the identical threshold, on
+ * the identical reading. It simply stops one mistimed arrival from consuming
+ * the operation.
+ *
+ * OVERTAKEN WHILE READING. The four `*_changed` codes each mean a value the
+ * guard had already READ stopped being what it read - the fleet gained or lost
+ * a table, the server object was replaced, custody moved - between the capture
+ * and the re-verification a page of Supabase reads later.
+ *
+ * Deliberately NOT here: every `maintenance_*` code, which is what stops a
+ * cutover being certified over a hand in the air, and every code naming
+ * durable state such as `bank_park_write_incomplete`. Those are safety
+ * findings, not timing ones, and a refusal that is not in this list still ends
+ * the release.
+ */
+export const CHECKPOINT_DEFERRABLE_REFUSALS = Object.freeze([
+  'insufficient_reserve',
+  'server_changed',
+  'fleet_identity_changed',
+  'mixed_owner_changed',
+  'mixed_local_custody_changed',
+]);
+
+/**
+ * True when the helper may exit 75 (defer) instead of 1 (die).
+ *
+ * WHY THIS EXISTS. `legacy-engine-checkpoint.sh` writes its O_EXCL intent
+ * BEFORE opening the inspector, because a disconnect is unknown and unknown is
+ * never permission to invoke again. That is right for a disconnect and wrong
+ * for this: the guard came back, closed its inspector, and handed over a
+ * complete receipt saying it refused in preflight having touched nothing. On
+ * 2026-09-21 that exact receipt - stage `preflight`, `attemptedTables: 0`,
+ * `completedCalls: 0`, `checkpointOutcome: "not_started"` - ended the release
+ * permanently, twice, while 49 seats and 4,908,000 chips sat behind it.
+ *
+ * This is NOT a tolerance and NOT a retry loop (CLAUDE.md 10.12). The refusal
+ * still refuses and nothing is retired; all that changes is that an attempt
+ * which provably did not act stops poisoning every later attempt. Every
+ * condition below is READ from the receipt, never inferred: if any field is
+ * missing, unexpected, or says work began, this is false and the release dies
+ * (CLAUDE.md 10.86 rules 1 and 2 - an unreadable answer is not an empty one).
+ */
+export function deferrableCheckpointRefusal(outcome) {
+  const isRecord = (value) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isRecord(outcome) || outcome.ok !== false || outcome.retryAllowed !== false) return false;
+  // A retained debugger session is an unknown process state, never a deferral.
+  if (outcome.inspectorClosed !== true || outcome.cleanupConnections !== 0) return false;
+  // A cleanup failure carries its OWN outer reason and must not be deferred
+  // behind the guard's inner one; requiring the two to agree seals that.
+  const checkpoint = isRecord(outcome.checkpoint) ? outcome.checkpoint : outcome;
+  return (
+    checkpoint.schema === 'legacy-engine-checkpoint/v1' &&
+    checkpoint.ok === false &&
+    checkpoint.stage === 'preflight' &&
+    checkpoint.checkpointOutcome === 'not_started' &&
+    checkpoint.attemptedTables === 0 &&
+    checkpoint.completedCalls === 0 &&
+    checkpoint.verifiedTables === 0 &&
+    checkpoint.bankCount === 0 &&
+    checkpoint.readyForRestart === false &&
+    checkpoint.restartAuthorized === false &&
+    typeof checkpoint.reason === 'string' &&
+    checkpoint.reason === outcome.reason &&
+    CHECKPOINT_DEFERRABLE_REFUSALS.includes(checkpoint.reason)
+  );
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -312,7 +471,24 @@ export async function runLegacyEngineCheckpoint({
   let checkpointInvoked = false,
     inspectorClosed = false,
     cleanupConnections = 0,
-    progress = null;
+    progress = null,
+    transportDetail = null;
+  // Which operation the transport is on. It is the name an unknown outcome
+  // reports; it takes part in no decision and no branch reads it.
+  let operation = 'inspectorEntry';
+  const startedAt = deadline - workBudgetMs;
+  const describeLoss = (error) =>
+    [
+      detailOf(error) ??
+        `op=${operation},cause=${
+          error instanceof CheckpointTransportError ? 'transport_refused' : 'unexpected_error'
+        }`,
+      `budgetMs=${workBudgetMs}`,
+      `spentMs=${Date.now() - startedAt}`,
+      `invoked=${checkpointInvoked ? 'yes' : 'no'}`,
+    ]
+      .join(',')
+      .slice(0, 512);
   const verifyPid = async (owned, until) => {
     const identity = remoteValue(
       await owned.request(
@@ -321,24 +497,29 @@ export async function runLegacyEngineCheckpoint({
           expression: 'process.pid',
           returnByValue: true,
         },
-        until
+        until,
+        operation
       )
     );
     if (identity?.value !== pid) throw refused('inspector process identity refused');
   };
   try {
     // Never attach to, signal or close an inspector predating this invocation.
-    if (await inspectorTarget(port, deadline)) throw refused('inspector already active');
+    operation = 'inspectorPreexisting';
+    if (await inspectorTarget(port, deadline, operation)) throw refused('inspector already active');
     process.kill(pid, 'SIGUSR1');
     signalled = true;
+    operation = 'inspectorOpen';
     for (let attempt = 0; attempt < 20 && !endpoint; attempt++) {
-      await checkpointDelay(remaining(deadline, 50));
-      endpoint = await inspectorTarget(port, deadline);
+      await checkpointDelay(remaining(deadline, 50, 'inspectorOpenPoll'));
+      endpoint = await inspectorTarget(port, deadline, operation);
     }
     if (!endpoint) throw refused('inspector did not open');
     connection = connectInspector(endpoint, deadline, createWebSocket);
     await connection.opened;
+    operation = 'verifyProcessIdentity';
     await verifyPid(connection, deadline);
+    operation = 'importModules';
     const modules = remoteValue(
       await connection.request(
         'Runtime.evaluate',
@@ -347,10 +528,12 @@ export async function runLegacyEngineCheckpoint({
           awaitPromise: true,
           objectGroup: 'legacy-checkpoint',
         },
-        deadline
+        deadline,
+        operation
       )
     );
     if (!modules?.objectId) throw refused('cached modules unavailable');
+    operation = 'serverPrototype';
     const prototype = remoteValue(
       await connection.request(
         'Runtime.callFunctionOn',
@@ -359,18 +542,22 @@ export async function runLegacyEngineCheckpoint({
           functionDeclaration: 'function() { return this.gameServer.GameServer.prototype; }',
           objectGroup: 'legacy-checkpoint',
         },
-        deadline
+        deadline,
+        operation
       )
     );
     if (!prototype?.objectId) throw refused('cached prototype unavailable');
+    operation = 'queryObjects';
     const objects = await connection.request(
       'Runtime.queryObjects',
       {
         prototypeObjectId: prototype.objectId,
         objectGroup: 'legacy-checkpoint',
       },
-      deadline
+      deadline,
+      operation
     );
+    operation = 'serverSingleton';
     const server = remoteValue(
       await connection.request(
         'Runtime.callFunctionOn',
@@ -380,11 +567,13 @@ export async function runLegacyEngineCheckpoint({
             'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
           objectGroup: 'legacy-checkpoint',
         },
-        deadline
+        deadline,
+        operation
       )
     );
     if (!server?.objectId) throw refused('singleton unavailable');
     checkpointInvoked = true;
+    operation = 'guardCall';
     const response = remoteValue(
       await connection.request(
         'Runtime.callFunctionOn',
@@ -406,7 +595,8 @@ export async function runLegacyEngineCheckpoint({
           awaitPromise: true,
           returnByValue: true,
         },
-        deadline
+        deadline,
+        operation
       )
     );
     result = checkpointSummary(response?.value);
@@ -416,6 +606,9 @@ export async function runLegacyEngineCheckpoint({
       error instanceof CheckpointTransportError
         ? error.message
         : 'inspector operation outcome unknown';
+    // Only an outcome nobody can state needs describing; a refusal that named
+    // itself already has. The description never becomes the refusal.
+    if (/outcome unknown/.test(failure)) transportDetail = describeLoss(error);
   } finally {
     if (signalled) {
       const cleanupDeadline = Date.now() + cleanupBudgetMs;
@@ -424,7 +617,8 @@ export async function runLegacyEngineCheckpoint({
         // One cleanup-only reconnection at most: no imports or guard calls.
         if (!connection || connection.socket.readyState !== WebSocket.OPEN) {
           connection?.close();
-          const current = await inspectorTarget(port, cleanupDeadline);
+          operation = 'inspectorCleanupDiscovery';
+          const current = await inspectorTarget(port, cleanupDeadline, operation);
           if (current) {
             if (endpoint && current !== endpoint)
               throw refused('inspector cleanup identity changed');
@@ -435,6 +629,7 @@ export async function runLegacyEngineCheckpoint({
           } else inspectorClosed = true;
         }
         if (!inspectorClosed) {
+          operation = 'inspectorCleanupPid';
           await verifyPid(connection, cleanupDeadline);
           // AN UNKNOWN OUTCOME SAYS HOW FAR IT GOT (2026-09-24, run 36041108119).
           // One read of the guard's own progress record, only when the call's
@@ -449,7 +644,8 @@ export async function runLegacyEngineCheckpoint({
                     expression: 'globalThis.__legacyEngineCheckpointProgress ?? null',
                     returnByValue: true,
                   },
-                  cleanupDeadline
+                  cleanupDeadline,
+                  'inspectorCleanupProgress'
                 )
               );
               progress = progressSummary(read?.value);
@@ -457,14 +653,17 @@ export async function runLegacyEngineCheckpoint({
               // The record is a courtesy to the reader, never a condition.
             }
           }
+          operation = 'inspectorCleanupRelease';
           await connection.request(
             'Runtime.releaseObjectGroup',
             { objectGroup: 'legacy-checkpoint' },
-            cleanupDeadline
+            cleanupDeadline,
+            operation
           );
           // Native inspector shutdown owns the close handshake. A simultaneous
           // client close can crash the pinned Linux runtime; await its close.
           shutdownRequested = true;
+          operation = 'inspectorCleanupShutdown';
           await connection.request(
             'Runtime.evaluate',
             {
@@ -472,11 +671,15 @@ export async function runLegacyEngineCheckpoint({
                 "setImmediate(() => process.getBuiltinModule('node:inspector').close()); undefined",
               returnByValue: true,
             },
-            cleanupDeadline
+            cleanupDeadline,
+            operation
           );
         }
-      } catch {
+      } catch (error) {
         failure = 'inspector cleanup outcome unknown';
+        // The work phase's own loss, when there was one, is the fact that
+        // decides the next fix; a cleanup loss never overwrites it.
+        transportDetail ??= describeLoss(error);
       } finally {
         if (connection && shutdownRequested) {
           let closeTimer;
@@ -486,7 +689,7 @@ export async function runLegacyEngineCheckpoint({
               new Promise((_, reject) => {
                 closeTimer = setTimeout(
                   () => reject(refused('inspector cleanup outcome unknown')),
-                  remaining(cleanupDeadline, cleanupBudgetMs)
+                  remaining(cleanupDeadline, cleanupBudgetMs, 'inspectorCleanupClose')
                 );
               }),
             ]);
@@ -502,8 +705,9 @@ export async function runLegacyEngineCheckpoint({
       }
       while (!inspectorClosed && Date.now() < cleanupDeadline) {
         try {
-          await checkpointDelay(remaining(cleanupDeadline, 50));
-          inspectorClosed = (await inspectorTarget(port, cleanupDeadline)) === null;
+          await checkpointDelay(remaining(cleanupDeadline, 50, 'inspectorCleanupPoll'));
+          inspectorClosed =
+            (await inspectorTarget(port, cleanupDeadline, 'inspectorCleanupPoll')) === null;
         } catch {
           break;
         }
@@ -523,6 +727,8 @@ export async function runLegacyEngineCheckpoint({
       ...(result ? { checkpoint: result } : {}),
       // Where the guard had got to when the outcome was lost, if it said.
       ...(progress ? { progress } : {}),
+      // Which operation was lost, and how much of the budget it was given.
+      ...(transportDetail ? { transportDetail } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,
@@ -566,5 +772,9 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
   (checkpointResult.ok ? console.log : console.error)(JSON.stringify(checkpointResult));
   // A failed cleanup may retain a client socket. End this helper after its
   // bounded attempt without sending another WebSocket close to the engine.
-  if (!checkpointResult.ok) process.exit(1);
+  // 75 is `legacy-engine-checkpoint.sh`'s deferral, and it is reachable here
+  // ONLY on a receipt that proves this attempt touched nothing. Anything else,
+  // including an unreadable or partial receipt, is 1 and ends the release.
+  if (!checkpointResult.ok)
+    process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
 }

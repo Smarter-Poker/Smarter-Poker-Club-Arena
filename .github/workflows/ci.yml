@@ -1345,6 +1345,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-union-weekly-accounting.sh
+      - name: A must_be_zero ledger account is checked by its balance, not an hour of flow
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-must-be-zero-balance-detector.py
       - name: Lightning Phase 2 domain schema carries its invariants as constraints
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1369,6 +1373,14 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-population.sh
+      - name: Lightning Phase 4 remediation repairs the threshold reader, the verdict and the plan
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase4-remediation.sh
+      - name: Lightning Phase 5 converts a must-move cluster in one transaction and stands the tick down
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase5-conversion.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

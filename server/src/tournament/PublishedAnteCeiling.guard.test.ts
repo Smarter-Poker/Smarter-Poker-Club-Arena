@@ -48,11 +48,16 @@ const migrationPath = (suffix: string): string => {
   return matches[0] ?? '';
 };
 
-const siblingPath = migrationPath('the_overflow_ante_keeps_its_authored_share_of_the_big_blind.sql');
+const siblingPath = migrationPath(
+  'the_overflow_ante_keeps_its_authored_share_of_the_big_blind.sql'
+);
 const guardPath = migrationPath('a_published_ante_never_exceeds_its_big_blind.sql');
 const SQL = readFileSync(guardPath, 'utf8');
 const ANTE_MATH = readFileSync(join(process.cwd(), 'src', 'engine', 'AnteMath.ts'), 'utf8');
-const ESCALATION = readFileSync(join(process.cwd(), 'src', 'tournament', 'blindEscalation.ts'), 'utf8');
+const ESCALATION = readFileSync(
+  join(process.cwd(), 'src', 'tournament', 'blindEscalation.ts'),
+  'utf8'
+);
 
 /** The plpgsql this migration splices into the validation block's tail. */
 const PATCH = (() => {
@@ -85,7 +90,9 @@ describe('a published ante never exceeds its big blind', () => {
     expect(SQL).toContain('EXECUTE v_new;');
     expect(SQL).not.toMatch(/^CREATE OR REPLACE FUNCTION/m);
     // It creates no catalogue object, so it declares its own liveness proof.
-    expect(SQL).toContain("-- @live-proof: (SELECT position('IF p_ante>p_big_blind THEN' in p.prosrc) > 0");
+    expect(SQL).toContain(
+      "-- @live-proof: (SELECT position('IF p_ante>p_big_blind THEN' in p.prosrc) > 0"
+    );
   });
 
   it('pins the whole pre-image before it touches anything', () => {
@@ -147,23 +154,39 @@ describe('a published ante never exceeds its big blind', () => {
     expect(ANTE_MATH).toContain('ante >= bigBlind');
     expect(ANTE_MATH).toContain('authoredAsTotal');
     expect(SQL).toContain('PUBLISHED_ANTE_CEILING_BROKE_A_BIG_BLIND_ANTE');
-    // The TypeScript side still clamps the ante independently of the big
-    // blind, which is why the saturated level below must stay publishable.
+    // The TypeScript side applies MAX_BLIND_VALUE to the ante on its own and
+    // then holds it to the anchor's authored ante:bigBlind share
+    // (2026-09-25), so only a genuine big blind ante still arrives here
+    // saturated - which is why the saturated level below must stay
+    // publishable.
     expect(ESCALATION).toContain('Math.min(rawAnte, MAX_BLIND_VALUE)');
+    expect(ESCALATION).toContain(
+      'const anteCeiling = (bigBlind * requestedAnte) / requestedBigBlind;'
+    );
   });
 
   it('proves every edge inside its own transaction, against the patched function', () => {
     // Refused: 2.5x the big blind, and the smallest possible violation.
-    expect(SQL).toContain('PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,500);');
-    expect(SQL).toContain('PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,201);');
+    expect(SQL).toContain(
+      'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,500);'
+    );
+    expect(SQL).toContain(
+      'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,201);'
+    );
     expect(SQL).toContain('PUBLISHED_ANTE_CEILING_DID_NOT_REFUSE_ANTE_OVER_BB');
     expect(SQL).toContain('PUBLISHED_ANTE_CEILING_MISSED_THE_BOUNDARY');
     // Accepted: a big blind ante, the estate's usual 0.125 x bb per-player
     // ante, no ante at all, and the 10,000,000 saturation point where
     // blindEscalation.ts already hands this function sb = bb = ante.
-    expect(SQL).toContain('PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,200);');
-    expect(SQL).toContain('PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,25);');
-    expect(SQL).toContain('PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,0);');
+    expect(SQL).toContain(
+      'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,200);'
+    );
+    expect(SQL).toContain(
+      'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,25);'
+    );
+    expect(SQL).toContain(
+      'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,0);'
+    );
     expect(SQL).toContain(
       'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,10000000,10000000,10000000);'
     );
@@ -175,7 +198,9 @@ describe('a published ante never exceeds its big blind', () => {
     // without writing anything.
     expect(SQL.match(/42501 TOURNAMENT_MANAGER_FENCED%/g)?.length).toBe(4);
     // The checks that were already there are re-proven, unchanged.
-    expect(SQL).toContain('PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,300,200,0);');
+    expect(SQL).toContain(
+      'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,300,200,0);'
+    );
     expect(SQL).toContain(
       'PERFORM public.fn_publish_tournament_blind_level(v_t,v_g,0,1,100,200,20000000);'
     );

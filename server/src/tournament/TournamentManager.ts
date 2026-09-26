@@ -19,7 +19,11 @@ import {
 
 import { randomUUID } from 'node:crypto';
 import { INSTANCE_ID, INSTANCE_VERSION } from '../services/tableLease.js';
-import { readF06RecoveryAdmission, type DrainedF06Custody } from './drainedF06Custody.js';
+import {
+  readF06RecoveryAdmission,
+  type DrainedF06Custody,
+  type F06CustodyRefusal,
+} from './drainedF06Custody.js';
 import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
 import {
   TournamentTableBreakRpc,
@@ -1680,13 +1684,42 @@ export class TournamentManager extends TournamentManagerEliminations {
     return this.retainedTournamentBreakSources.get(tableId)?.engine === engine;
   }
 
+  /**
+   * WHY THE LAST CAPTURE RETURNED NULL, or null when it returned a packet.
+   *
+   * Both captures below end in a dozen guards that used to answer with the
+   * same bare `null`. On 2026-09-25 seventeen lease-lost managers were
+   * re-offered this transfer every five seconds for hours and the log said
+   * nothing, because nothing here could say which guard had refused. Every
+   * guard keeps its exact condition and order; it now names itself here on
+   * the way out, and GameServer reads this when the packet is missing.
+   */
+  lastF06CustodyRefusal(): F06CustodyRefusal | null {
+    return this.f06CustodyRefusal;
+  }
+
+  private f06CustodyRefusal: F06CustodyRefusal | null = null;
+
+  private refuseF06Custody(
+    path: F06CustodyRefusal['path'],
+    refused: string,
+    detail?: string | null
+  ): null {
+    this.f06CustodyRefusal = Object.freeze(detail ? { path, refused, detail } : { path, refused });
+    return null;
+  }
+
   /** Transfer only a positively drained pre-manifest park, never an unknown move. */
   async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
+      const refuse = (refused: string, detail?: string | null) =>
+        this.refuseF06Custody('drained', refused, detail);
       const engines = this.captureDrainedF06Originals();
       const originGeneration = this.getTournamentLeaseGeneration();
-      if (!engines || !originGeneration || this.retainedTournamentBreakSources.size === 0)
-        return null;
+      if (!engines) return refuse('originals_not_drained', this.drainedF06OriginalsRefusal());
+      if (!originGeneration) return refuse('lease_generation_unknown');
+      if (this.retainedTournamentBreakSources.size === 0)
+        return refuse('no_retained_break_sources');
       const retained = [...this.retainedTournamentBreakSources];
       const durable = [...this.durableTournamentBreaks];
       const authorityRevision = this.tournamentSeatMoveAuthorityRevision;
@@ -1701,59 +1734,79 @@ export class TournamentManager extends TournamentManagerEliminations {
           )
           .sort((a, b) => a.table_id.localeCompare(b.table_id))
       );
-      const current = () =>
-        this.tournamentSeatMoveAuthorityRevision === authorityRevision &&
-        this.captureDrainedF06Originals() === engines &&
-        this.pendingTournamentSeatMoveOutcomes.size === 0 &&
-        this.pendingTournamentParkRequests.size === 0 &&
-        this.pendingTournamentBreakBegins.size === 0 &&
-        this.pendingTournamentBreakAmendments.size === 0 &&
-        this.rejectedTournamentBreakBegins.size === 0 &&
-        this.resolvedTournamentBreakProposals.size === 0 &&
-        this.pendingTournamentBreakCustodyIds.size === 0 &&
-        this.pendingTournamentCleanupKinds.size === 0 &&
-        this.pendingNoStartContinuations.size === 0 &&
-        this.activeStoppedOriginalCustody.size === 0 &&
-        this.stoppedOriginalBreaks.size === 0 &&
-        this.tournamentBreakArrivalWakes.size === 0 &&
-        this.pendingTableBreakRetirement === null &&
-        this.retainedTournamentBreakSources.size === retained.length &&
-        retained.every(
-          ([id, value]) =>
-            this.retainedTournamentBreakSources.get(id) === value &&
-            this.tableEngines.get(id) === value.engine
-        ) &&
-        this.durableTournamentBreaks.size === durable.length &&
-        durable.length === retained.length &&
-        durable.every(
-          ([id, value]) =>
-            this.durableTournamentBreaks.get(id) === value &&
-            value.state === 'park_requested' &&
-            value.revision === '0' &&
-            value.members.length === 0 &&
-            value.custody_id === null &&
-            value.custody_generation === null &&
-            !value.terminal_handoff_required
-        ) &&
-        sources.every((source) => /^[1-9][0-9]*$/.test(source.lifecycle)) &&
-        engines.every(
-          ([id, engine]) =>
-            this.gameServer.tournamentRetirementCustody.admissionAllowed(id) &&
-            (!engine.hasClaimedTournamentMoveBoundary() ||
-              retained.some(
-                ([sourceId, value]) =>
-                  sourceId === id &&
-                  value.engine === engine &&
-                  engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
-              ))
-        );
-      if (!current()) return null;
+      // The same conjunction it always was, clause by clause, so that a false
+      // answer can say which clause. `current` is derived from it.
+      const staleness = (): string | null => {
+        if (this.tournamentSeatMoveAuthorityRevision !== authorityRevision)
+          return 'authority_revision_changed';
+        if (this.captureDrainedF06Originals() !== engines) return 'originals_changed';
+        if (this.pendingTournamentSeatMoveOutcomes.size !== 0) return 'pending_seat_moves';
+        if (this.pendingTournamentParkRequests.size !== 0) return 'pending_park_requests';
+        if (this.pendingTournamentBreakBegins.size !== 0) return 'pending_break_begins';
+        if (this.pendingTournamentBreakAmendments.size !== 0) return 'pending_break_amendments';
+        if (this.rejectedTournamentBreakBegins.size !== 0) return 'rejected_break_begins';
+        if (this.resolvedTournamentBreakProposals.size !== 0) return 'resolved_break_proposals';
+        if (this.pendingTournamentBreakCustodyIds.size !== 0) return 'pending_break_custody_ids';
+        if (this.pendingTournamentCleanupKinds.size !== 0) return 'pending_cleanup_kinds';
+        if (this.pendingNoStartContinuations.size !== 0) return 'pending_no_start_continuations';
+        if (this.activeStoppedOriginalCustody.size !== 0) return 'active_stopped_original_custody';
+        if (this.stoppedOriginalBreaks.size !== 0) return 'stopped_original_breaks';
+        if (this.tournamentBreakArrivalWakes.size !== 0) return 'break_arrival_wakes';
+        if (this.pendingTableBreakRetirement !== null) return 'pending_table_break_retirement';
+        if (this.retainedTournamentBreakSources.size !== retained.length)
+          return 'retained_break_sources_changed';
+        if (
+          !retained.every(
+            ([id, value]) =>
+              this.retainedTournamentBreakSources.get(id) === value &&
+              this.tableEngines.get(id) === value.engine
+          )
+        )
+          return 'retained_break_source_changed';
+        if (this.durableTournamentBreaks.size !== durable.length) return 'durable_breaks_changed';
+        if (durable.length !== retained.length) return 'durable_and_retained_breaks_differ';
+        if (
+          !durable.every(
+            ([id, value]) =>
+              this.durableTournamentBreaks.get(id) === value &&
+              value.state === 'park_requested' &&
+              value.revision === '0' &&
+              value.members.length === 0 &&
+              value.custody_id === null &&
+              value.custody_generation === null &&
+              !value.terminal_handoff_required
+          )
+        )
+          return 'durable_break_not_premanifest';
+        if (!sources.every((source) => /^[1-9][0-9]*$/.test(source.lifecycle)))
+          return 'source_lifecycle_unknown';
+        if (
+          !engines.every(
+            ([id, engine]) =>
+              this.gameServer.tournamentRetirementCustody.admissionAllowed(id) &&
+              (!engine.hasClaimedTournamentMoveBoundary() ||
+                retained.some(
+                  ([sourceId, value]) =>
+                    sourceId === id &&
+                    value.engine === engine &&
+                    engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
+                ))
+          )
+        )
+          return 'engine_admission_or_move_boundary_refused';
+        return null;
+      };
+      const current = () => staleness() === null;
+      const staleBeforeRead = staleness();
+      if (staleBeforeRead !== null) return refuse('stale_before_admission_read', staleBeforeRead);
       const state = await readF06RecoveryAdmission(this.tournamentId, null, {
         originGeneration,
         sources,
         proof: null,
       });
-      if (!current()) return null;
+      const staleAfterRead = staleness();
+      if (staleAfterRead !== null) return refuse('stale_after_admission_read', staleAfterRead);
+      this.f06CustodyRefusal = null;
       return Object.freeze({
         manager: this,
         tournamentId: this.tournamentId,
@@ -1771,23 +1824,25 @@ export class TournamentManager extends TournamentManagerEliminations {
   /** A separate mixed-state transfer; the strict premanifest path stays intact. */
   async captureMixedF06Custody(successorGeneration: string): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
+      const refuse = (refused: string, detail?: string | null) =>
+        this.refuseF06Custody('mixed', refused, detail);
       const engines = this.captureDrainedF06Originals();
       const originGeneration = this.getTournamentLeaseGeneration();
+      if (!engines) return refuse('originals_not_drained', this.drainedF06OriginalsRefusal());
+      if (!originGeneration) return refuse('lease_generation_unknown');
+      if (originGeneration === successorGeneration) return refuse('successor_is_origin');
       if (
-        !engines ||
-        !originGeneration ||
-        originGeneration === successorGeneration ||
-        (!this.retainedTournamentBreakSources.size &&
-          !engines.some(([, engine]) => engine.hasUnretiredStoppedTimeBankCustody())) ||
-        this.activeStoppedOriginalCustody.size
+        !this.retainedTournamentBreakSources.size &&
+        !engines.some(([, engine]) => engine.hasUnretiredStoppedTimeBankCustody())
       )
-        return null;
+        return refuse('nothing_to_transfer');
+      if (this.activeStoppedOriginalCustody.size) return refuse('active_stopped_original_custody');
       const reservations = this.gameServer.tournamentRetirementCustody.captureDrained(
         this.tournamentId,
         originGeneration,
         engines.map(([id]) => id)
       );
-      if (!reservations) return null;
+      if (!reservations) return refuse('retirement_reservation_refused');
       const sorted = <T>(map: Map<string, T>) => [...map].sort(([a], [b]) => a.localeCompare(b));
       const physical = () =>
         engines.map(
@@ -1795,7 +1850,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             engine.captureDrainedF06Identity?.(id, this.tournamentId, originGeneration) ?? null
         );
       const initial = physical();
-      if (initial.some((value) => value === null)) return null;
+      if (initial.some((value) => value === null)) return refuse('physical_identity_unreadable');
       const { data: presence, error: presenceError } = await supabase
         .from('engine_presence_parked')
         .select('*')
@@ -1886,39 +1941,60 @@ export class TournamentManager extends TournamentManagerEliminations {
         reservations: reservations.reservations,
       });
       const local = immutableCustody(vector());
+      if (local.retained.some((entry) => !entry.engine_id))
+        return refuse('local_vector_incomplete', 'retained_engine_id');
+      if (local.no_start.some((entry) => !(entry[1] as { engine_id: string | null }).engine_id))
+        return refuse('local_vector_incomplete', 'no_start_engine_id');
+      if (local.stopped_originals.some(([, table]) => !table))
+        return refuse('local_vector_incomplete', 'stopped_original_table');
       if (
-        local.retained.some((entry) => !entry.engine_id) ||
-        local.no_start.some((entry) => !(entry[1] as { engine_id: string | null }).engine_id) ||
-        local.stopped_originals.some(([, table]) => !table) ||
         local.arrival_wakes.some(([, entries]) =>
           (entries as (string | null)[][]).some(([, table]) => !table)
-        ) ||
-        (local.retirement && !local.retirement.engine_id)
+        )
       )
-        return null;
+        return refuse('local_vector_incomplete', 'arrival_wake_table');
+      if (local.retirement && !local.retirement.engine_id)
+        return refuse('local_vector_incomplete', 'retirement_engine_id');
       const revision = this.tournamentSeatMoveAuthorityRevision;
-      const current = () =>
-        this.tournamentSeatMoveAuthorityRevision === revision &&
-        this.captureDrainedF06Originals() === engines &&
-        reservations.current() &&
-        this.gameServer.hasCompleteMixedF06PhysicalMap(this.tournamentId, this, engines) &&
-        this.activeStoppedOriginalCustody.size === 0 &&
-        engines.every(
-          ([id, engine]) =>
-            this.gameServer.ownsTournamentTableEngine(id, engine) ||
-            this.gameServer.hasMixedF06CustodyOriginal(this.tournamentId, this, id, engine)
-        ) &&
-        physical().every((value) => value !== null) &&
-        custodyJSON(vector()) === custodyJSON(local) &&
-        [...this.retainedTournamentBreakSources].every(([id, value]) =>
-          engines.some(([key, engine]) => key === id && engine === value.engine)
-        ) &&
-        engines.every(
-          ([, engine]) =>
-            !engine.hasClaimedTournamentMoveBoundary() ||
-            engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
-        );
-      if (!current()) return null;
+      // The same conjunction it always was, clause by clause, so that a false
+      // answer can say which clause. `current` is derived from it.
+      const staleness = (): string | null => {
+        if (this.tournamentSeatMoveAuthorityRevision !== revision)
+          return 'authority_revision_changed';
+        if (this.captureDrainedF06Originals() !== engines) return 'originals_changed';
+        if (!reservations.current()) return 'retirement_reservation_changed';
+        if (!this.gameServer.hasCompleteMixedF06PhysicalMap(this.tournamentId, this, engines))
+          return 'physical_map_incomplete';
+        if (this.activeStoppedOriginalCustody.size !== 0) return 'active_stopped_original_custody';
+        if (
+          !engines.every(
+            ([id, engine]) =>
+              this.gameServer.ownsTournamentTableEngine(id, engine) ||
+              this.gameServer.hasMixedF06CustodyOriginal(this.tournamentId, this, id, engine)
+          )
+        )
+          return 'original_not_owned';
+        if (!physical().every((value) => value !== null)) return 'physical_identity_unreadable';
+        if (custodyJSON(vector()) !== custodyJSON(local)) return 'local_vector_changed';
+        if (
+          ![...this.retainedTournamentBreakSources].every(([id, value]) =>
+            engines.some(([key, engine]) => key === id && engine === value.engine)
+          )
+        )
+          return 'retained_break_source_not_original';
+        if (
+          !engines.every(
+            ([, engine]) =>
+              !engine.hasClaimedTournamentMoveBoundary() ||
+              engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
+          )
+        )
+          return 'move_boundary_not_drained';
+        return null;
+      };
+      const current = () => staleness() === null;
+      const staleBeforePrepare = staleness();
+      if (staleBeforePrepare !== null) return refuse('stale_before_prepare', staleBeforePrepare);
       if (!this.mixedF06Proposal)
         this.mixedF06Proposal = {
           transferId: randomUUID(),
@@ -1937,7 +2013,9 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.mixedF06Proposal,
         current
       );
-      if (!current()) return null;
+      const staleAfterPrepare = staleness();
+      if (staleAfterPrepare !== null) return refuse('stale_after_prepare', staleAfterPrepare);
+      this.f06CustodyRefusal = null;
       return Object.freeze({
         manager: this,
         tournamentId: this.tournamentId,
@@ -2451,6 +2529,8 @@ export class TournamentManager extends TournamentManagerEliminations {
     engine: ServerTableEngine | null
   ): Promise<boolean> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
+      const path = tableId === null && !engine ? 'shutdown' : 'recovery';
+      this.noteSeatMoveQuarantineRefusal(`${path}:f06_permit_retained`);
       if (
         engine?.getF06RetainedPermit?.() ||
         (engine && [...this.stoppedOriginalBreaks.values()].includes(engine))
@@ -2465,6 +2545,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       for (const [requestId, item] of pending) {
         let boundary: ClaimedTournamentMoveBoundary;
         if (item.input.sourceMode === 'closed_orphan') {
+          this.noteSeatMoveQuarantineRefusal(`${path}:closed_orphan_source_has_live_engine`);
           if (
             this.tableEngines.has(item.input.sourceTableId) ||
             this.gameServer.getTableEngine(item.input.sourceTableId)
@@ -2474,6 +2555,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           boundary = { sourceMode: 'closed_orphan', engine: null };
         } else {
           const sourceEngine = engine ?? this.tableEngines.get(item.input.sourceTableId) ?? null;
+          this.noteSeatMoveQuarantineRefusal(`${path}:live_source_boundary_unavailable`);
           if (
             !sourceEngine ||
             (tableId !== null && item.input.sourceTableId !== tableId) ||
@@ -2498,6 +2580,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             `[Tournament:${this.tournamentId.slice(0, 8)}] Quarantined move ${receipt.requestId.slice(0, 8)} replay certified before engine release`
           );
         } catch (error) {
+          this.noteSeatMoveQuarantineRefusal(`${path}:replay_unresolved`);
           reportError(error, 'Tournament.atomic_move_quarantine_unresolved', {
             tournamentId: this.tournamentId,
             requestId,
@@ -2511,17 +2594,68 @@ export class TournamentManager extends TournamentManagerEliminations {
         const stillPending = [...this.pendingTournamentSeatMoveOutcomes.values()].some(
           (item) => item.input.sourceTableId === tableId
         );
+        this.noteSeatMoveQuarantineRefusal(
+          stillPending ? 'recovery:source_seat_move_pending' : 'recovery:break_source_retained'
+        );
         if (stillPending || this.retainsTournamentBreakSource(tableId, engine)) return false;
         engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
-        return !engine.hasClaimedTournamentMoveBoundary();
+        this.noteSeatMoveQuarantineRefusal('recovery:claimed_move_boundary');
+        if (engine.hasClaimedTournamentMoveBoundary()) return false;
+        this.noteSeatMoveQuarantineRefusal(null);
+        return true;
       }
 
+      this.noteSeatMoveQuarantineRefusal('shutdown:unresolved_seat_move_uuid');
       if (this.pendingTournamentSeatMoveOutcomes.size > 0) return false;
-      if (this.retainedTournamentBreakSources.size > 0) return false;
+      /*
+       * A RETAINED BREAK SOURCE IS NOT A SEAT MOVE (2026-09-25).
+       *
+       * #4799 added `if (this.retainedTournamentBreakSources.size > 0) return
+       * false;` here, beside the pending-UUID guard. In the RECOVERY branch
+       * above, its sibling is right and stays: that branch is asked whether one
+       * named engine may be released while the manager lives, and a manager
+       * that still fences that engine for a break must say no.
+       *
+       * This branch is a different question. It is asked once, during the
+       * manager's own teardown, about the whole generation - and nothing on
+       * that path can ever clear this map. `retainedTournamentBreakSources` is
+       * cleared only by a durable break reaching `acknowledged`
+       * (retireTournamentBreak / finishAcknowledgedTournamentBreak) or by
+       * `forgetContinuedNoStartPark`, and none of those run while a fenced
+       * manager is being stopped. So a manager that was fencing one break
+       * source when its lease was lost could never stop again, for the life of
+       * the process: on release 778075b4, thirteen tournaments, 5,678 refusals
+       * in twenty-five minutes, 20 quarantined managers and a restart gate that
+       * could not open. That is the shape the maintenance-break bound was
+       * written against - "a fail-closed gate with no bound... trades 'breaks
+       * get dismantled' for 'a stuck table never recovers', and the second is
+       * the worse bug".
+       *
+       * Nothing is discarded by letting it go. The retention is LOCAL custody
+       * of a source engine, as its own declaration says ("Local custody only;
+       * durable discovery and completion belong to the break RPC"). The break
+       * row, its members and their immutable `active_request_id`s are durable;
+       * a successor re-discovers the break and re-dispatches the SAME request
+       * identities. The one obligation that lives only in this process - an
+       * ambiguous move UUID - is fenced by the guard above and is replayed to a
+       * receipt before it is ever forgotten. No move is discarded on any path.
+       *
+       * What is kept is the part that was actually unsafe: a retained source
+       * whose engine is still in this manager's registry and has NOT released
+       * process ownership is a dealer this teardown has not joined, so it still
+       * refuses - by name.
+       */
+      this.noteSeatMoveQuarantineRefusal('shutdown:break_source_owns_running_engine');
+      for (const [sourceTableId, retained] of this.retainedTournamentBreakSources) {
+        const live = this.tableEngines.get(sourceTableId);
+        if (live === retained.engine && !live.hasReleasedProcessOwnership()) return false;
+      }
+      this.noteSeatMoveQuarantineRefusal('shutdown:claimed_move_boundary');
       for (const sourceEngine of this.tableEngines.values()) {
         sourceEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         if (sourceEngine.hasClaimedTournamentMoveBoundary()) return false;
       }
+      this.noteSeatMoveQuarantineRefusal(null);
       return true;
     });
   }

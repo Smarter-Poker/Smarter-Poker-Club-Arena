@@ -1,0 +1,7 @@
+{
+  "_owner": "claude-prune-custody-0925 - migration 20260925210126_a_live_table_keeps_the_boundary_its_movement_reads, applied to production 2026-09-25 21:07 UTC (history recorded byte-exactly, md5 ead247f4c97d145116f6939a105988c6). smarter_private.f06_movement_boundary_retained is the retention scope smarter_private.f06_movement_prior actually needs: it is true for the one hand that is currently max(hand_number) in hand_atomic_commits for a table F06 can still be asked to move, and public.sp_prune_hand_history excludes that hand from its candidate set. Without it, retention deleted the only surviving proof of a pending movement at eight days and the table raised F06_MOVEMENT_PRIOR_INCOMPLETE for ever - one seated player in a RUNNING freeroll was six retention runs away from that when it was measured. The same migration also stops smarter_private.f06_movement_permits refusing an accepted permit merely because retention took its commit row.",
+  "functions": [
+    "smarter_private.f06_movement_boundary_retained",
+    "smarter_private.f06_movement_permits"
+  ]
+}

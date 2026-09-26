@@ -1510,7 +1510,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           )
             return false;
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.forgetTimeBank(userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.leaveHeldByClock.delete(userId);

@@ -2922,9 +2922,9 @@ export default function UnionDashboardPage() {
           {/* ══════ TAB: SETTINGS ══════ */}
           {tab === 'operations' && (
             <div style={{ padding: '16px' }}>
-              {/* The panel's own fallback is one hardcoded union. This page
+              {/* The panel requires a union and has no fallback. This page
                   only ever operates on the union it authorized, so without one
-                  it says so instead of showing another union's books. */}
+                  it renders no panel at all and says so. */}
               {authorizedUnionId ? (
                 <UnionOpsPanel unionId={authorizedUnionId} canRun={isLead} />
               ) : (

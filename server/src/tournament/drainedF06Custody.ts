@@ -26,6 +26,35 @@ export interface DrainedF06Custody {
 }
 
 /**
+ * WHY A CUSTODY CAPTURE OR TRANSFER RETURNED NOTHING (2026-09-25).
+ *
+ * `captureDrainedF06Custody`, `captureMixedF06Custody` and
+ * `GameServer.transferDrainedF06Custody` each end in a dozen guards that all
+ * answered `null` or `false`. On production release 778075b4 seventeen
+ * managers that had lost their lease were quarantined and re-offered the same
+ * transfer every five seconds for hours, thousands of attempts each, and the
+ * log held not one line saying which guard refused: no
+ * `f06_drained_custody_unproven`, no mixed-custody prepare, nothing. A gate
+ * that can refuse for fifteen reasons must say which one (the rule
+ * `maintenanceDurabilityReason` already follows on the engine).
+ *
+ * `path` is the capture that refused. `refused` is one stable snake_case
+ * token per guard, never free text and never a player identity, so it can be
+ * counted and compared. `detail` is an optional second token that narrows a
+ * guard made of several conditions (which clause of `current()` went false).
+ */
+export interface F06CustodyRefusal {
+  readonly path: 'drained' | 'mixed' | 'transfer';
+  readonly refused: string;
+  readonly detail?: string;
+}
+
+/** One comparable key per distinct refusal, for once-per-reason reporting. */
+export function f06CustodyRefusalKey(refusal: F06CustodyRefusal): string {
+  return `${refusal.path}:${refusal.refused}${refusal.detail ? `:${refusal.detail}` : ''}`;
+}
+
+/**
  * WHY A DRAINED-CUSTODY READ WAS NOT PROVEN.
  *
  * `refused`   - the database answered, and its own refusal is named in `code`

@@ -20,8 +20,10 @@ import {
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 import {
+  f06CustodyRefusalKey,
   prepareF06SuccessorAdmission,
   type DrainedF06Custody,
+  type F06CustodyRefusal,
 } from './tournament/drainedF06Custody.js';
 /**
  * GameServer — server-side game orchestration.
@@ -1551,6 +1553,16 @@ export class GameServer {
   private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
   /** Bookkeeping that could not be recorded; never a reason to change a stop. */
   private tournamentQuarantineBookkeepingFailures?: number;
+  /**
+   * Why the last custody transfer for a manager was refused, by that exact
+   * manager. Read by the quarantine record so /health can say it, and
+   * compared by `noteF06CustodyRefusal` so a refusal that repeats every
+   * five seconds is logged once and a refusal that CHANGES is logged again.
+   * Before 2026-09-25 a refused transfer left no trace at all: seventeen
+   * quarantined managers, thousands of attempts each, zero log lines.
+   */
+  private tournamentCustodyRefusals?: WeakMap<TournamentManager, F06CustodyRefusal>;
+  private tournamentCustodyRefusalsReported?: WeakMap<TournamentManager, string>;
 
   /** Applies the C20 control law to this instance. Returns the new budget. */
   private adjustEngineStartBudget(distressed: boolean): number {
@@ -2105,8 +2117,15 @@ export class GameServer {
         try {
           const quarantine = (this.tournamentManagerQuarantine ??=
             new QuarantinedTournamentManagers());
+          const custodyRefusal = this.tournamentCustodyRefusals?.get(manager);
           if (this.tournamentEngines.get(tournamentId) === manager) {
-            quarantine.record(tournamentId, errorContext, Date.now(), manager);
+            quarantine.record(
+              tournamentId,
+              errorContext,
+              Date.now(),
+              manager,
+              custodyRefusal ? f06CustodyRefusalKey(custodyRefusal) : undefined
+            );
           } else {
             quarantine.forget(tournamentId);
           }
@@ -2142,13 +2161,60 @@ export class GameServer {
     return operation;
   }
 
+  /**
+   * A refused custody transfer names its reason, once per distinct reason per
+   * manager. The record is what the quarantine carries onto /health; the log
+   * line is deliberately not repeated on every retry of the same refusal,
+   * because the retry pass runs every five seconds and a line per attempt is
+   * how thousands of identical lines bury the one that changed.
+   */
+  private noteF06CustodyRefusal(
+    tournamentId: string,
+    manager: TournamentManager,
+    refusal: F06CustodyRefusal
+  ): false {
+    try {
+      (this.tournamentCustodyRefusals ??= new WeakMap()).set(manager, refusal);
+      const reported = (this.tournamentCustodyRefusalsReported ??= new WeakMap());
+      const key = f06CustodyRefusalKey(refusal);
+      if (reported.get(manager) !== key) {
+        reported.set(manager, key);
+        console.warn(
+          '[tournament-custody-refused]',
+          JSON.stringify({
+            tournamentId,
+            path: refusal.path,
+            refused: refusal.refused,
+            detail: refusal.detail ?? null,
+            priorAttempts:
+              this.tournamentManagerQuarantine
+                ?.snapshot(Date.now())
+                .find((row) => row.tournamentId === tournamentId)?.attempts ?? 0,
+          })
+        );
+      }
+    } catch {
+      // Naming the refusal must never change the refusal.
+      this.tournamentQuarantineBookkeepingFailures =
+        (this.tournamentQuarantineBookkeepingFailures ?? 0) + 1;
+    }
+    return false;
+  }
+
   /** All identities are checked before the first deletion; no await splits CAS. */
   private async transferDrainedF06Custody(
     tournamentId: string,
     manager: TournamentManager
   ): Promise<boolean> {
     this.drainedF06TournamentCustody ??= new Map();
-    if (this.drainedF06TournamentCustody.has(tournamentId)) return false;
+    const transferRefusal = (refused: string): F06CustodyRefusal =>
+      Object.freeze({ path: 'transfer', refused });
+    if (this.drainedF06TournamentCustody.has(tournamentId))
+      return this.noteF06CustodyRefusal(
+        tournamentId,
+        manager,
+        transferRefusal('custody_already_held')
+      );
     let packet = await manager.captureDrainedF06Custody();
     if (!packet) {
       const successor =
@@ -2172,21 +2238,36 @@ export class GameServer {
         )
       );
     };
-    if (
-      !packet ||
-      packet.manager !== manager ||
-      packet.tournamentId !== tournamentId ||
-      this.tournamentEngines.get(tournamentId) !== manager ||
-      this.drainedF06TournamentCustody.has(tournamentId) ||
-      !packet.current() ||
-      !completePhysicalMap() ||
-      packet.engines.some(
-        ([id, engine]) =>
-          this.tableEngines.get(id) !== engine ||
-          (!packet!.mixed && !this.tournamentRetirementCustody.admissionAllowed(id))
+    // Every identity check it always made, in the same order, each naming
+    // itself; the gate is derived from the name so the two cannot disagree.
+    if (!packet)
+      return this.noteF06CustodyRefusal(
+        tournamentId,
+        manager,
+        // A capture that returned null without naming why is itself a finding.
+        manager.lastF06CustodyRefusal?.() ?? transferRefusal('capture_refusal_unnamed')
+      );
+    const refusal = ((): F06CustodyRefusal | null => {
+      if (packet.manager !== manager) return transferRefusal('packet_manager_mismatch');
+      if (packet.tournamentId !== tournamentId)
+        return transferRefusal('packet_tournament_mismatch');
+      if (this.tournamentEngines.get(tournamentId) !== manager)
+        return transferRefusal('manager_not_registered');
+      if (this.drainedF06TournamentCustody.has(tournamentId))
+        return transferRefusal('custody_already_held');
+      if (!packet.current()) return transferRefusal('packet_not_current');
+      if (!completePhysicalMap()) return transferRefusal('physical_map_incomplete');
+      if (packet.engines.some(([id, engine]) => this.tableEngines.get(id) !== engine))
+        return transferRefusal('original_not_registered');
+      if (
+        packet.engines.some(
+          ([id]) => !packet.mixed && !this.tournamentRetirementCustody.admissionAllowed(id)
+        )
       )
-    )
-      return false;
+        return transferRefusal('retirement_admission_refused');
+      return null;
+    })();
+    if (refusal) return this.noteF06CustodyRefusal(tournamentId, manager, refusal);
     // Stage every original's exact bank acknowledgment before mutating any map.
     // The validated immutable receipt is already durable; a lost reply never
     // reaches this edge. The original capture remains available for successor CAS.
@@ -2207,7 +2288,13 @@ export class GameServer {
           );
         })
       : [];
-    if (bankReceipts.some((acknowledge) => acknowledge === null)) return false;
+    if (bankReceipts.some((acknowledge) => acknowledge === null))
+      return this.noteF06CustodyRefusal(
+        tournamentId,
+        manager,
+        transferRefusal('bank_receipt_not_prepared')
+      );
+    this.tournamentCustodyRefusals?.delete(manager);
     // Publish custody before removing any activation slot. Original local maps
     // remain intact; this is a handoff, never successful business teardown.
     this.drainedF06TournamentCustody.set(tournamentId, packet);
@@ -4787,7 +4874,7 @@ export class GameServer {
       // published so the next break answers that in one scrape. Labels are
       // the fixed reason set, zero-seeded, so a rule can read any of them
       // before it has ever been the reason.
-      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, unknown)',
+      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, stopped_bank_custody_stuck, unknown)',
       '# TYPE poker_maintenance_unparked_tables gauge',
       ...(() => {
         const counts = (this.maintenanceBreak.snapshot().unparkedReasons ?? {}) as Record<
@@ -4806,6 +4893,23 @@ export class GameServer {
              table's restart certificate shut. */
           'f06_preparation_unresolved',
           'f06_preparation_stuck',
+          /* The stopped-custody class, split into its two REFUSING outcomes on
+             2026-09-25. It used to publish one name, stopped_bank_custody_
+             unconfirmed, and it was never in this seed list at all - it only
+             ever reached /metrics through the dynamic extension below, so no
+             rule could read it before it had already wedged the fleet, which
+             is how 137 tables held 8 consecutive breaks shut unnoticed.
+             `unwritten` is a real bank not yet on disk; `unreadable` is an
+             accounting outcome this process cannot yet ask about. Both refuse.
+             See ServerTableEngineBase.maintenanceDurabilityReason. */
+          'stopped_bank_custody_unwritten',
+          'stopped_bank_custody_unreadable',
+          /* The bounded case of the raw stopped-custody reason, added
+             2026-09-25 when 154 terminal tournament engines on 778075b4 held
+             every break shut: custody that has outlived the gate no longer
+             holds the certificate, and is still published here so a rule can
+             read it. See MaintenanceBreak.unparkedTables. */
+          'stopped_bank_custody_stuck',
           'unknown',
         ];
         for (const reason of Object.keys(counts)) {

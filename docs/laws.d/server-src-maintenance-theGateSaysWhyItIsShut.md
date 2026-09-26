@@ -19,3 +19,13 @@ never becomes a reason.
 Seven cases. Written 2026-09-18, after the gate stayed shut through five
 consecutive breaks — 3, 16, 22 and 22 unparked tables — while the engine went
 eight hours without a release and the only published number was the count.
+
+Extended 2026-09-25, when 154 terminal tournament engines on 778075b4 held
+`stopped_bank_custody_unconfirmed` with no bound and every break since 15:59
+UTC certified no restart: the stopped-bank class is bounded exactly like the
+F06 class, through one shared helper and the same `F06_UNRESOLVED_GATE_MS`.
+Inside the bound the raw reason still holds the gate; past it the table is
+counted under `stopped_bank_custody_stuck`, in the same stuck counter, and
+stops holding the certificate; a custody that clears drops its clock so a
+fresh custody gets the full gate; and the two classes keep separate clocks on
+the same table. Six cases.

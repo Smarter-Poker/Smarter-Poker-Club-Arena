@@ -3049,20 +3049,37 @@ export const SeatSlot = memo(
           {/* Position Badge — PokerBros parity: SB/BB/UTG/CO/BTN shown
              on each seat. Dealer "D" button rendered separately via DealerButton
              component, so skip 'D' and 'BTN' here to avoid double-badging. */}
-          {position && position !== 'D' && position !== 'BTN' && (
-            <div
-              className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
-            >
-              {position}
+          {/* KILL POTS (kill-v1): on the killer's seat the kill marker and the
+              position badge share one row, so they sit side by side and can
+              never paint over each other (visual acceptance 2026-09-24: as
+              two absolutely placed corners, "Kill Blind" covered SB, and
+              UTG+1 overlapped it by 17px). Every other seat is unchanged. */}
+          {killMarker ? (
+            <div className="seat__corner-badges">
+              <div
+                className="seat__position-badge seat__kill-badge"
+                title="This Player Is The Killer"
+              >
+                {killMarker}
+              </div>
+              {position && position !== 'D' && position !== 'BTN' && (
+                <div
+                  className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
+                >
+                  {position}
+                </div>
+              )}
             </div>
-          )}
-          {killMarker && (
-            <div
-              className="seat__position-badge seat__kill-badge"
-              title="This Player Is The Killer"
-            >
-              {killMarker}
-            </div>
+          ) : (
+            position &&
+            position !== 'D' &&
+            position !== 'BTN' && (
+              <div
+                className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
+              >
+                {position}
+              </div>
+            )
           )}
         </div>
 

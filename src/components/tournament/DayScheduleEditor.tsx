@@ -69,6 +69,7 @@ export default function DayScheduleEditor({
                 <span className="day-schedule__fixed">Plays To A Winner</span>
               ) : (
                 <input
+                  className="config-datetime"
                   type="number"
                   inputMode="numeric"
                   min={1}
@@ -91,6 +92,7 @@ export default function DayScheduleEditor({
                 </span>
               ) : (
                 <input
+                  className="config-datetime"
                   type="datetime-local"
                   value={day.startsAtLocal}
                   aria-label={`Day ${i + 1} Starts At`}

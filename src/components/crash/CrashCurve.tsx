@@ -36,6 +36,37 @@
  * the frozen number back through `tickerCents` and the hero prints exactly
  * that. Replays, which book nothing, let the hero follow the clock. The loop
  * stops while the tab is hidden and resumes when it is shown.
+ *
+ * THE SCENE (2026-09-25, Dan: "the graphics are very crude, basic and boring,
+ * instead of dynamic, and high def. the back round is terrible"). The flight
+ * now climbs through a sky in the house palette instead of past a cartoon
+ * planet: an obsidian-to-navy gradient sky with a faint royal-blue nebula
+ * wash, two starfields on different depths that drift against the flight (the
+ * nearer one brighter, larger and faster, so the climb reads as speed), a
+ * thin horizon glow under the launch line and a small dark world in the lower
+ * corner that the curve never reaches. The curve is a glowing ribbon (a light
+ * core inside a royal-blue halo, gold past 2x, white-gold past 5x, red once
+ * crashed) over a soft fill down to the launch line, with wake particles that
+ * fade behind a chrome-and-blue jet whose afterburners flicker and whose
+ * canopy catches the room. A crash is a real burst: a flash, a shockwave ring
+ * and sparks flung along the curve's tangent while the ribbon reddens from
+ * the head backwards. The camera pushes in very gently as the multiplier
+ * climbs, along its line to the launch point so the launch line never moves
+ * and the glass, placed by the same camera, stays on the curve. Every glow is
+ * an additive sprite or shader plane (no post-processing), every geometry is
+ * built once and only its buffers are rewritten per frame.
+ *
+ * THE CAP IS SAID (Dan: "the multiplier should be 25x max and that should be
+ * displayed to the user"). `capCents` is printed as a permanent "Max 25.00x"
+ * chip in the corner, drawn as a gold dashed line on the axis once the scale
+ * reaches it, and a round that settles AT the cap is told so on its plate.
+ *
+ * HOW HIGH IT WOULD HAVE GONE (Dan: "if a user books the win it should show
+ * them how high it would have gone"). Once a booked round's replay reaches
+ * the sealed crash point, a plate in the lower third of the frame says "It
+ * Would Have Gone To 4.62x" over "You Booked 2.57x" (or that it crashed right
+ * after the booking, or that it would have booked at the max first). It is
+ * shown by the frame loop, like the hero, so nothing re-renders for it.
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -97,204 +128,592 @@ export function floorCents(
   if (!minimumPayoutChips || !betChips || minimumPayoutChips <= 0 || betChips <= 0) return null;
   return Math.round((minimumPayoutChips / betChips) * 100);
 }
+/** What the plate over a booked flight says once the replay has reached the crash point. */
+function wouldHaveGone(
+  cashoutCents: number,
+  crashCents: number,
+  capCents: number
+): { title: string; figure: string; sub: string } {
+  if (cashoutCents >= capCents)
+    return {
+      title: `Booked At The ${tickerLabel(capCents)} Max`,
+      figure: tickerLabel(capCents),
+      sub: 'The Most Any Round Pays',
+    };
+  const booked = `You Booked ${tickerLabel(cashoutCents)}`;
+  if (crashCents > capCents)
+    return {
+      title: `It Would Have Gone To The ${tickerLabel(capCents)} Max`,
+      figure: tickerLabel(capCents),
+      sub: booked,
+    };
+  if (crashCents <= cashoutCents + 1)
+    return {
+      title: 'It Crashed Right After You Booked',
+      figure: tickerLabel(crashCents),
+      sub: booked,
+    };
+  return { title: 'It Would Have Gone To', figure: tickerLabel(crashCents), sub: booked };
+}
 /** The multiplier lines the glass can print; the ones inside the axis are shown. */
 const MULTIPLIER_TICKS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+/** Two tick labels closer than this, in glass pixels, would overprint; the lower one gives way. */
+const TICK_LABEL_GAP = 14;
 /** Seconds tick spacing candidates: the smallest that keeps the axis to a handful of ticks. */
 const SECOND_STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300];
 const SECOND_TICKS = 8;
 /** The red wash on a crash, before Animation Speed. */
 export const CRASH_FLASH_MS = 420;
+/** The plate's entrance once the replay reaches the crash point, before Animation Speed. */
+export const REVEAL_IN_MS = 520;
 /** How closely the axis follows the flight: a time constant, before Animation Speed. */
 const AXIS_FOLLOW_MS = 180;
-/** The flight path in scene units, by progress 0..1 along it. */
-const point = (v: number) => new THREE.Vector3(-3.8 + v * 7.1, -1.55 + v * v * 3.5, 0);
+/** How closely the camera follows the climb: a time constant, before Animation Speed. */
+const CAMERA_FOLLOW_MS = 420;
+/** The furthest the camera pushes in, as a fraction of its distance to the launch point. */
+const CAMERA_PUSH = 0.07;
 const SVG = 'http://www.w3.org/2000/svg';
+const RIBBON = 96;
+const WAKE = 48;
+const SPARKS = 80;
+const NEAR_STARS = 180;
+const FAR_STARS = 420;
 
-function jet() {
-  const group = new THREE.Group();
-  const chrome = metal(0xd4dde5, 0.13),
-    blue = metal(0x1877f2, 0.14),
-    dark = metal(0x111b2b, 0.15);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.33, 2.6, 28), chrome);
-  body.rotation.z = -Math.PI / 2;
-  group.add(body);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.8, 28), chrome);
-  nose.rotation.z = -Math.PI / 2;
-  nose.position.x = 1.7;
-  group.add(nose);
-  const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), dark);
-  glass.scale.set(0.7, 0.22, 0.22);
-  glass.position.set(0.65, 0.2, 0);
-  group.add(glass);
-  for (const side of [-1, 1]) {
-    const shape = new THREE.Shape();
-    shape.moveTo(0.55, 0);
-    shape.lineTo(-0.8, side * 1.65);
-    shape.lineTo(-1.02, side * 1.52);
-    shape.lineTo(-0.65, 0);
-    shape.closePath();
-    const wing = new THREE.Mesh(
-      new THREE.ExtrudeGeometry(shape, {
-        depth: 0.06,
-        bevelEnabled: true,
-        bevelThickness: 0.02,
-        bevelSize: 0.025,
-        bevelSegments: 2,
-        steps: 1,
-      }),
-      chrome
-    );
-    wing.rotation.x = Math.PI / 2;
-    group.add(wing);
-    solid(group, blue, [0.7, 0.08, 0.55], [-1, 0.12, side * 0.35], 0.03);
-  }
-  solid(group, blue, [0.45, 0.72, 0.06], [-1.05, 0.4, 0], 0.03).rotation.z = 0.25;
-  for (const side of [-1, 1]) {
-    const engine = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.95, 24), chrome);
-    engine.rotation.z = -Math.PI / 2;
-    engine.position.set(-0.35, -0.18, side * 0.65);
-    group.add(engine);
-    const nozzle = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.025, 8, 24), dark);
-    nozzle.rotation.y = Math.PI / 2;
-    nozzle.position.set(-0.83, -0.18, side * 0.65);
-    group.add(nozzle);
-    for (let i = 0; i < 4; i++)
-      solid(group, dark, [0.09, 0.025, 0.1], [0.05 - i * 0.25, 0.325, side * 0.17], 0.009);
-    const wingLight = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 12, 8),
-      new THREE.MeshBasicMaterial({ color: side < 0 ? 0xff536a : 0x7cffe1 })
-    );
-    wingLight.position.set(-0.85, 0.08, side * 1.53);
-    group.add(wingLight);
-  }
-  const exhaust = new THREE.Mesh(
-    new THREE.ConeGeometry(0.21, 1.45, 20),
-    new THREE.MeshBasicMaterial({
-      color: 0x39b6ff,
+/**
+ * The flight path in scene units, by progress 0..1 along it. A wide frame
+ * stretches it sideways (the 1.2 aspect of a phone leaves it as it was) so a
+ * desktop flight fills its glass instead of climbing up the middle third.
+ */
+function flightPath(aspect: number) {
+  const s = THREE.MathUtils.clamp(aspect / 1.25, 1, 1.55);
+  const at = (v: number, out: THREE.Vector3) =>
+    out.set((-3.8 + v * 7.1) * s, -1.55 + v * v * 3.5, 0);
+  const tangent = (v: number, out: THREE.Vector3) => out.set(7.1 * s, 7 * v, 0).normalize();
+  return { at, tangent, launch: at(0, new THREE.Vector3()) };
+}
+type FlightPath = ReturnType<typeof flightPath>;
+
+const COLOR_INCLUDES = `
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>`;
+
+/** A soft round texture built in memory: no 2D canvas, so it exists wherever three does. */
+function softTexture(size: number, alphaAt: (d: number) => number) {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const dx = ((x + 0.5) / size) * 2 - 1,
+        dy = ((y + 0.5) / size) * 2 - 1;
+      const d = Math.min(1, Math.hypot(dx, dy));
+      const i = (y * size + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = 255;
+      data[i + 3] = Math.round(255 * THREE.MathUtils.clamp(alphaAt(d), 0, 1));
+    }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+function glowSprite(map: THREE.Texture, color: number, scale: number, opacity: number) {
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map,
+      color,
       transparent: true,
-      opacity: 0.65,
+      opacity,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     })
   );
-  exhaust.rotation.z = Math.PI / 2;
-  exhaust.position.x = -1.95;
-  group.add(exhaust);
-  group.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.castShadow = true;
+  sprite.scale.setScalar(scale);
+  return sprite;
+}
+/** Additive round points whose size and brightness follow a per-point life. */
+function pointsMaterial(scale: number, bright: number, dim: number) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uScale: { value: scale },
+      uBright: { value: new THREE.Color(bright) },
+      uDim: { value: new THREE.Color(dim) },
+    },
+    vertexShader: `
+      uniform float uScale; attribute float aLife; attribute float aSize; varying float vLife;
+      void main(){ vLife=aLife; vec4 mv=modelViewMatrix*vec4(position,1.0);
+        gl_PointSize=aSize*uScale*(0.35+0.65*aLife)/-mv.z; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `
+      uniform vec3 uBright; uniform vec3 uDim; varying float vLife;
+      void main(){ vec2 q=gl_PointCoord-0.5; float d=length(q)*2.0; float a=smoothstep(1.0,0.1,d);
+        gl_FragColor=vec4(mix(uDim,uBright,vLife)*a*vLife,1.0);${COLOR_INCLUDES} }`,
   });
-  return { group, exhaust };
+}
+function lifePoints(count: number, material: THREE.ShaderMaterial, size: (i: number) => number) {
+  const geometry = new THREE.BufferGeometry();
+  const position = new THREE.BufferAttribute(new Float32Array(count * 3), 3);
+  const life = new THREE.BufferAttribute(new Float32Array(count), 1);
+  const sizes = new Float32Array(count);
+  for (let i = 0; i < count; i++) sizes[i] = size(i);
+  position.setUsage(THREE.DynamicDrawUsage);
+  life.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('position', position);
+  geometry.setAttribute('aLife', life);
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  return { points, position, life };
+}
+/** A deterministic 0..1 for a point and a channel, so the burst is the same shape every crash. */
+const hash = (i: number, k: number) => {
+  const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+/** A starfield that wraps as it drifts, twinkling in the vertex shader; one draw call, no CPU work. */
+function starfield(
+  count: number,
+  period: [number, number],
+  depth: [number, number],
+  size: [number, number],
+  color: number,
+  scale: number
+) {
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const phases = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = hash(i, 1) * period[0];
+    positions[i * 3 + 1] = hash(i, 2) * period[1];
+    positions[i * 3 + 2] = -(depth[0] + hash(i, 3) * (depth[1] - depth[0]));
+    sizes[i] = size[0] + hash(i, 4) ** 2 * (size[1] - size[0]);
+    phases[i] = hash(i, 5);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uTime: { value: 0 },
+      uDrift: { value: new THREE.Vector2() },
+      uPeriod: { value: new THREE.Vector2(period[0], period[1]) },
+      uScale: { value: scale },
+      uColor: { value: new THREE.Color(color) },
+    },
+    vertexShader: `
+      uniform float uTime; uniform vec2 uDrift; uniform vec2 uPeriod; uniform float uScale;
+      attribute float aSize; attribute float aPhase; varying float vA;
+      void main(){ vec3 p=position;
+        p.x=mod(p.x+uDrift.x,uPeriod.x)-uPeriod.x*0.5; p.y=mod(p.y+uDrift.y,uPeriod.y)-uPeriod.y*0.5;
+        vec4 mv=modelViewMatrix*vec4(p,1.0); gl_PointSize=aSize*uScale/-mv.z;
+        vA=0.6+0.4*sin(uTime*(1.2+aPhase*2.4)+aPhase*31.0); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `
+      uniform vec3 uColor; varying float vA;
+      void main(){ vec2 q=gl_PointCoord-0.5; float d=length(q)*2.0; float a=smoothstep(1.0,0.12,d); a*=a;
+        gl_FragColor=vec4(uColor*a*vA,1.0);${COLOR_INCLUDES} }`,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  return { points, material };
 }
 
-/** The space, the planet, the jet, its trail, the cash-out ring and the burst. */
-function dressScene(scene: THREE.Scene) {
-  scene.fog = new THREE.FogExp2(0x070b10, 0.006);
-  const points = new Float32Array(240 * 3);
-  for (let i = 0; i < 240; i++) {
-    points[i * 3] = ((i * 37.13) % 42) - 21;
-    points[i * 3 + 1] = ((i * 11.71) % 24) - 9;
-    points[i * 3 + 2] = -((i * 19.3) % 60) - 6;
-  }
-  const starsGeometry = new THREE.BufferGeometry();
-  starsGeometry.setAttribute('position', new THREE.BufferAttribute(points, 3));
-  const stars = new THREE.Points(
-    starsGeometry,
-    new THREE.PointsMaterial({ color: 0xc9e8ff, size: 0.085, transparent: true, opacity: 0.7 })
-  );
-  scene.add(stars);
-  // A lit planet, atmosphere and distant orbital rings give the flight depth.
-  const planet = new THREE.Group();
-  const globe = new THREE.Mesh(
-    new THREE.SphereGeometry(12, 64, 40),
-    new THREE.ShaderMaterial({
-      vertexShader: `varying vec3 surface; varying vec3 worldNormal; void main(){surface=position;worldNormal=normalize(mat3(modelMatrix)*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-      fragmentShader: `
-          varying vec3 surface; varying vec3 worldNormal;
-          float hash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
-          float noise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);}
-          float terrain(vec3 p){float n=0.0,a=0.5;for(int i=0;i<5;i++){n+=a*noise(p);p=p*2.03+vec3(1.7,9.2,4.1);a*=0.5;}return n;}
-          void main(){
-            vec3 n=normalize(surface);float land=terrain(n*4.0);float coast=smoothstep(.49,.54,land);
-            vec3 ocean=mix(vec3(.008,.04,.11),vec3(.015,.21,.35),smoothstep(.34,.53,land));
-            vec3 ground=mix(vec3(.04,.13,.11),vec3(.27,.31,.19),smoothstep(.55,.68,land));
-            vec3 color=mix(ocean,ground,coast);
-            float clouds=smoothstep(.57,.69,terrain(n*10.0+vec3(terrain(n*3.0)*2.0)));
-            color=mix(color,vec3(.8,.89,.96),clouds*.86);
-            float light=max(0.0,dot(normalize(worldNormal),normalize(vec3(-.65,.6,.9))));
-            color*=.12+light*1.15;
-            float rim=pow(1.0-max(0.0,dot(normalize(worldNormal),vec3(0,0,1))),4.0);
-            color+=vec3(.01,.12,.3)*rim;
-            gl_FragColor=vec4(color,1.0);
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }`,
-    })
-  );
-  planet.add(globe);
-  const atmosphere = new THREE.Mesh(
-    new THREE.SphereGeometry(12.18, 64, 40),
-    new THREE.ShaderMaterial({
-      transparent: true,
-      side: THREE.BackSide,
-      depthWrite: false,
-      vertexShader: `varying vec3 normalView; varying vec3 viewDirection; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); normalView=normalize(normalMatrix*normal); viewDirection=normalize(-p.xyz); gl_Position=projectionMatrix*p; }`,
-      fragmentShader: `varying vec3 normalView; varying vec3 viewDirection; void main(){ float rim=pow(1.0-abs(dot(normalView,viewDirection)),2.5); gl_FragColor=vec4(0.12,0.6,1.0,rim*0.85); }`,
-      blending: THREE.AdditiveBlending,
-    })
-  );
-  planet.add(atmosphere);
-  planet.position.set(2, -15, -16);
-  scene.add(planet);
-  const orbit = new THREE.Mesh(
-    new THREE.TorusGeometry(18, 0.025, 8, 160),
-    new THREE.MeshBasicMaterial({ color: 0x57b9ff, transparent: true, opacity: 0.4 })
-  );
-  orbit.position.copy(planet.position);
-  orbit.rotation.x = 1.15;
-  scene.add(orbit);
-  const sun = new THREE.DirectionalLight(0xffd6a0, 2.5);
-  sun.position.set(-8, 4, 5);
-  scene.add(sun);
-  const flight = jet();
-  scene.add(flight.group);
-  flight.group.scale.setScalar(1.05);
-  const trailGeo = new THREE.BufferGeometry();
-  trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(96 * 3), 3));
-  const trailMat = new THREE.LineBasicMaterial({
-    color: 0x39b6ff,
-    transparent: true,
-    opacity: 0.85,
+/** The jet: a lathed chrome fuselage, a canopy that catches the room, swept wings, canted fins, twin afterburners. */
+function jet(disc: THREE.Texture) {
+  const group = new THREE.Group();
+  const chrome = metal(0xd9e1ea, 0.12),
+    blue = metal(0x1877f2, 0.18),
+    livery = metal(0x1a5fd0, 0.24),
+    dark = metal(0x141d2b, 0.22);
+  const canopyGlass = new THREE.MeshPhysicalMaterial({
+    color: 0x0b1c3a,
+    metalness: 0.6,
+    roughness: 0.04,
+    clearcoat: 1,
+    clearcoatRoughness: 0.03,
+    envMapIntensity: 1.6,
   });
-  const trail = new THREE.Line(trailGeo, trailMat);
-  const wake = new THREE.Points(
-    trailGeo,
-    new THREE.PointsMaterial({
-      color: 0x5ad5ff,
-      size: 0.1,
-      transparent: true,
-      opacity: 0.65,
-      blending: THREE.AdditiveBlending,
+  // The hull sits ahead of the group origin, so the head of the curve (and the
+  // glass marker on it) is under the wing root and the ribbon leaves the engines.
+  const hull = new THREE.Group();
+  hull.position.x = 0.55;
+  group.add(hull);
+  const profile = (
+    [
+      [0, -1.55],
+      [0.09, -1.45],
+      [0.16, -1.1],
+      [0.22, -0.5],
+      [0.235, 0.15],
+      [0.2, 0.65],
+      [0.12, 0.98],
+      [0, 1.18],
+    ] as [number, number][]
+  ).map(([r, y]) => new THREE.Vector2(r, y));
+  const fuselage = new THREE.Mesh(new THREE.LatheGeometry(profile, 32), chrome);
+  fuselage.rotation.z = -Math.PI / 2;
+  hull.add(fuselage);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 18), canopyGlass);
+  canopy.scale.set(0.5, 0.17, 0.17);
+  canopy.position.set(0.35, 0.16, 0);
+  hull.add(canopy);
+  solid(hull, blue, [1.5, 0.035, 0.46], [-0.35, 0, 0], 0.01);
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0.45, 0.15);
+  wingShape.lineTo(-0.85, 1.2);
+  wingShape.lineTo(-1.1, 1.16);
+  wingShape.lineTo(-1.1, 0.15);
+  wingShape.closePath();
+  const wingGeometry = new THREE.ExtrudeGeometry(wingShape, {
+    depth: 0.05,
+    bevelEnabled: true,
+    bevelThickness: 0.015,
+    bevelSize: 0.02,
+    bevelSegments: 2,
+    steps: 1,
+  });
+  const finShape = new THREE.Shape();
+  finShape.moveTo(-0.75, 0);
+  finShape.lineTo(-1.15, 0.58);
+  finShape.lineTo(-1.4, 0.55);
+  finShape.lineTo(-1.45, 0);
+  finShape.closePath();
+  const finGeometry = new THREE.ExtrudeGeometry(finShape, { depth: 0.035, bevelEnabled: false });
+  const tailShape = new THREE.Shape();
+  tailShape.moveTo(-0.9, 0.1);
+  tailShape.lineTo(-1.35, 0.75);
+  tailShape.lineTo(-1.5, 0.72);
+  tailShape.lineTo(-1.5, 0.1);
+  tailShape.closePath();
+  const tailGeometry = new THREE.ExtrudeGeometry(tailShape, { depth: 0.03, bevelEnabled: false });
+  const engineGeometry = new THREE.CylinderGeometry(0.11, 0.14, 1.05, 24);
+  const nozzleGeometry = new THREE.TorusGeometry(0.135, 0.03, 8, 24);
+  const outerCone = new THREE.ConeGeometry(0.13, 1.2, 20, 1, true);
+  outerCone.translate(0, 0.6, 0);
+  const innerCone = new THREE.ConeGeometry(0.06, 0.75, 16, 1, true);
+  innerCone.translate(0, 0.375, 0);
+  const afterburners: { outer: THREE.Mesh; inner: THREE.Mesh; glow: THREE.Sprite }[] = [];
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(wingGeometry, livery);
+    wing.rotation.x = Math.PI / 2;
+    wing.scale.z = side;
+    wing.position.y = -0.06;
+    hull.add(wing);
+    solid(hull, chrome, [0.3, 0.07, 0.1], [-0.95, -0.06, side * 1.16], 0.02);
+    const wingLight = new THREE.Mesh(
+      new THREE.SphereGeometry(0.04, 10, 8),
+      new THREE.MeshBasicMaterial({ color: side < 0 ? 0xff5b6e : 0x45adff })
+    );
+    wingLight.position.set(-1.0, -0.02, side * 1.22);
+    hull.add(wingLight);
+    const wingGlow = glowSprite(disc, side < 0 ? 0xff5b6e : 0x45adff, 0.42, 0.75);
+    wingGlow.position.copy(wingLight.position);
+    hull.add(wingGlow);
+    const fin = new THREE.Mesh(finGeometry, livery);
+    fin.position.z = side * 0.16;
+    fin.rotation.x = -side * 0.3;
+    hull.add(fin);
+    const tail = new THREE.Mesh(tailGeometry, chrome);
+    tail.rotation.x = Math.PI / 2;
+    tail.scale.z = side;
+    tail.position.y = -0.02;
+    hull.add(tail);
+    const engine = new THREE.Mesh(engineGeometry, chrome);
+    engine.rotation.z = -Math.PI / 2;
+    engine.position.set(-0.85, -0.13, side * 0.4);
+    hull.add(engine);
+    const nozzle = new THREE.Mesh(nozzleGeometry, dark);
+    nozzle.rotation.y = Math.PI / 2;
+    nozzle.position.set(-1.38, -0.13, side * 0.4);
+    hull.add(nozzle);
+    const outer = new THREE.Mesh(
+      outerCone,
+      new THREE.MeshBasicMaterial({
+        color: 0x45adff,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    outer.rotation.z = Math.PI / 2;
+    outer.position.set(-1.38, -0.13, side * 0.4);
+    hull.add(outer);
+    const inner = new THREE.Mesh(
+      innerCone,
+      new THREE.MeshBasicMaterial({
+        color: 0xeaf6ff,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    inner.rotation.z = Math.PI / 2;
+    inner.position.copy(outer.position);
+    hull.add(inner);
+    const glow = glowSprite(disc, 0x9fd8ff, 0.6, 0.85);
+    glow.position.set(-1.42, -0.13, side * 0.4);
+    hull.add(glow);
+    afterburners.push({ outer, inner, glow });
+  }
+  group.rotation.order = 'ZYX';
+  return { group, afterburners };
+}
+
+/** The sky, the stars, the horizon, the jet, its ribbon and fill, the wake, the cash-out ring and the burst. */
+function dressScene(scene: THREE.Scene, path: FlightPath, height: number) {
+  scene.fog = new THREE.FogExp2(0x070b10, 0.006);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const pointScale = dpr * height * 0.35;
+  const disc = softTexture(64, (d) => (1 - d) ** 1.8);
+  const ring = softTexture(64, (d) => Math.exp(-(((d - 0.74) / 0.07) ** 2)));
+  // The sky: one far plane, obsidian at the top through deep navy, with a
+  // royal-blue nebula wash breathing very slowly through its middle band.
+  const sky = new THREE.Mesh(
+    new THREE.PlaneGeometry(240, 130),
+    new THREE.ShaderMaterial({
       depthWrite: false,
+      uniforms: {
+        uTime: { value: 0 },
+        uTop: { value: new THREE.Color(0x050607) },
+        uMid: { value: new THREE.Color(0x06101f) },
+        uLow: { value: new THREE.Color(0x0a1424) },
+        uNebula: { value: new THREE.Color(0x1877f2) },
+      },
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `
+        uniform float uTime; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uLow; uniform vec3 uNebula; varying vec2 vUv;
+        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
+        void main(){
+          float y=clamp((vUv.y-0.22)/0.56,0.0,1.0);
+          vec3 c=mix(uLow,uMid,smoothstep(0.0,0.5,y)); c=mix(c,uTop,smoothstep(0.5,1.0,y));
+          vec2 q=vUv*vec2(5.0,3.0)+vec2(uTime*0.006,-uTime*0.003);
+          float n=noise(q)*0.55+noise(q*2.7+3.1)*0.3+noise(q*6.1+7.7)*0.15;
+          float band=smoothstep(0.08,0.5,y)*(1.0-smoothstep(0.6,1.0,y));
+          c+=uNebula*pow(n,3.0)*0.2*band;
+          gl_FragColor=vec4(c,1.0);${COLOR_INCLUDES} }`,
     })
   );
-  scene.add(wake);
-  scene.add(trail);
+  sky.position.set(0, -16, -70);
+  sky.renderOrder = -3;
+  scene.add(sky);
+  const far = starfield(FAR_STARS, [90, 46], [30, 52], [0.45, 1.1], 0x9fc6ff, pointScale);
+  far.points.position.set(0, -7, 0);
+  far.points.renderOrder = -2;
+  scene.add(far.points);
+  const near = starfield(NEAR_STARS, [56, 30], [12, 24], [0.8, 1.7], 0xe4f1ff, pointScale);
+  near.points.position.set(0, -3, 0);
+  near.points.renderOrder = -2;
+  scene.add(near.points);
+  const nebula: THREE.Sprite[] = [];
+  const nebulaColors = [0x1877f2, 0x0d3f8a, 0x1355c0, 0x1877f2, 0x0b2f6b];
+  for (let i = 0; i < 5; i++) {
+    const wash = glowSprite(disc, nebulaColors[i], 16 + hash(i, 6) * 12, 0.02 + hash(i, 7) * 0.018);
+    wash.position.set(-14 + hash(i, 8) * 30, -9 + hash(i, 9) * 12, -20 - hash(i, 10) * 8);
+    wash.renderOrder = -1;
+    nebula.push(wash);
+    scene.add(wash);
+  }
+  // A thin horizon glow under the launch line, and a small dark world in the
+  // lower corner: depth cues that the curve never touches.
+  const horizon = new THREE.Mesh(
+    new THREE.PlaneGeometry(44, 0.8),
+    new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uColor: { value: new THREE.Color(0x45adff) } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `
+        uniform vec3 uColor; varying vec2 vUv;
+        void main(){ float dy=abs(vUv.y-0.5); float line=exp(-dy*dy*900.0); float haze=exp(-dy*dy*40.0)*0.08;
+          float ends=smoothstep(0.0,0.3,vUv.x)*smoothstep(1.0,0.7,vUv.x);
+          gl_FragColor=vec4(uColor*(line*0.55+haze)*ends,1.0);${COLOR_INCLUDES} }`,
+    })
+  );
+  horizon.position.set(0, -4.15, 0);
+  scene.add(horizon);
+  const world = new THREE.Mesh(
+    new THREE.SphereGeometry(0.85, 40, 28),
+    new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(0x0a1424) },
+        uRim: { value: new THREE.Color(0x1877f2) },
+      },
+      vertexShader: `varying vec3 vN; varying vec3 vV; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); vN=normalize(normalMatrix*normal); vV=normalize(-p.xyz); gl_Position=projectionMatrix*p; }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform vec3 uRim; varying vec3 vN; varying vec3 vV;
+        void main(){ float f=dot(vN,vV); float rim=pow(1.0-max(0.0,f),3.0);
+          float lit=max(0.0,dot(vN,normalize(vec3(-0.6,0.5,0.6))));
+          gl_FragColor=vec4(uColor*(0.35+lit*0.8)+uRim*rim*0.7,1.0);${COLOR_INCLUDES} }`,
+    })
+  );
+  world.position.set(path.launch.x * -1.2, -4.45, -3);
+  scene.add(world);
+  const worldGlow = glowSprite(disc, 0x1877f2, 2.4, 0.12);
+  worldGlow.position.copy(world.position);
+  scene.add(worldGlow);
+  const sun = new THREE.DirectionalLight(0xdfe9ff, 1.6);
+  sun.position.set(-8, 6, 5);
+  scene.add(sun);
+  const flight = jet(disc);
+  flight.group.scale.setScalar(0.95);
+  scene.add(flight.group);
+  const headGlow = glowSprite(disc, 0x7fd0ff, 1.7, 0.55);
+  scene.add(headGlow);
+  // The ribbon and the fill: one strip each, rewritten in place every frame.
+  const strip = (halfWidthAcross: boolean) => {
+    const geometry = new THREE.BufferGeometry();
+    const position = new THREE.BufferAttribute(new Float32Array(RIBBON * 2 * 3), 3);
+    position.setUsage(THREE.DynamicDrawUsage);
+    const uv = new Float32Array(RIBBON * 2 * 2);
+    const index: number[] = [];
+    for (let i = 0; i < RIBBON; i++) {
+      const along = i / (RIBBON - 1);
+      uv.set(halfWidthAcross ? [-1, along, 1, along] : [0, along, 1, along], i * 4);
+      if (i < RIBBON - 1) index.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    }
+    geometry.setAttribute('position', position);
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.setIndex(index);
+    return { geometry, position };
+  };
+  const ribbon = strip(true);
+  const ribbonMaterial = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uCore: { value: new THREE.Color(0xbfe6ff) },
+      uHalo: { value: new THREE.Color(0x1877f2) },
+      uRedCore: { value: new THREE.Color(0xff8a99) },
+      uRedHalo: { value: new THREE.Color(0xff2d4a) },
+      uRed: { value: 0 },
+    },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 uCore; uniform vec3 uHalo; uniform vec3 uRedCore; uniform vec3 uRedHalo; uniform float uRed; varying vec2 vUv;
+      void main(){ float a=abs(vUv.x); float core=1.0-smoothstep(0.0,0.2,a); float halo=pow(1.0-a,2.2)*0.6;
+        float red=step(1.0-uRed,vUv.y); vec3 c=mix(uCore,uRedCore,red); vec3 h=mix(uHalo,uRedHalo,red);
+        gl_FragColor=vec4(c*core+h*halo,1.0);${COLOR_INCLUDES} }`,
+  });
+  const ribbonMesh = new THREE.Mesh(ribbon.geometry, ribbonMaterial);
+  ribbonMesh.frustumCulled = false;
+  ribbonMesh.position.z = 0.03;
+  scene.add(ribbonMesh);
+  const fill = strip(false);
+  const fillMaterial = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color(0x1877f2) } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 uColor; varying vec2 vUv;
+      void main(){ float up=pow(vUv.x,1.7); gl_FragColor=vec4(uColor*up*0.42,1.0);${COLOR_INCLUDES} }`,
+  });
+  const fillMesh = new THREE.Mesh(fill.geometry, fillMaterial);
+  fillMesh.frustumCulled = false;
+  fillMesh.position.z = -0.05;
+  scene.add(fillMesh);
+  const wake = lifePoints(
+    WAKE,
+    pointsMaterial(pointScale, 0x9fd8ff, 0x1877f2),
+    (i) => 0.45 + hash(i, 11) * 0.7
+  );
+  wake.points.renderOrder = 1;
+  scene.add(wake.points);
+  const wakeVelocity = new Float32Array(WAKE * 3);
+  // The cash-out ring stays where the win was booked while the flight goes on.
   const marker = new THREE.Mesh(
     new THREE.TorusGeometry(0.22, 0.035, 8, 24),
     new THREE.MeshBasicMaterial({ color: 0x5df2a0 })
   );
-  scene.add(marker);
   marker.visible = false;
-  const burstGeometry = new THREE.BufferGeometry();
-  burstGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(80 * 3), 3));
-  const burst = new THREE.Points(
-    burstGeometry,
-    new THREE.PointsMaterial({ color: 0xff6c52, size: 0.08, transparent: true, opacity: 0.9 })
+  scene.add(marker);
+  const markerGlow = glowSprite(disc, 0x5df2a0, 1.1, 0.5);
+  markerGlow.visible = false;
+  scene.add(markerGlow);
+  // The burst: a flash, a shockwave and sparks flung along the tangent.
+  const flash = glowSprite(disc, 0xfff1c9, 1, 0);
+  const fire = glowSprite(disc, 0xff5b3a, 1, 0);
+  const shock = glowSprite(ring, 0xff5b6e, 1, 0);
+  // Additive sprites can carry more than white: the burst is meant to blow out.
+  fire.material.color.multiplyScalar(1.6);
+  shock.material.color.multiplyScalar(1.6);
+  for (const sprite of [flash, fire, shock]) {
+    sprite.visible = false;
+    sprite.renderOrder = 2;
+    scene.add(sprite);
+  }
+  const sparks = lifePoints(
+    SPARKS,
+    pointsMaterial(pointScale, 0xfff1c9, 0xff5b6e),
+    (i) => 0.3 + hash(i, 12) * 0.6
   );
-  scene.add(burst);
-  burst.visible = false;
-  return { stars, planet, orbit, flight, trailGeo, trailMat, marker, burstGeometry, burst };
+  sparks.points.visible = false;
+  sparks.points.renderOrder = 2;
+  scene.add(sparks.points);
+  // Each spark's direction (along the tangent, fanned out) and speed, fixed at build.
+  const sparkFan = new Float32Array(SPARKS * 4);
+  for (let i = 0; i < SPARKS; i++) {
+    sparkFan[i * 4] = 0.5 + hash(i, 13) * 1.1;
+    sparkFan[i * 4 + 1] = (hash(i, 14) * 2 - 1) * 0.6;
+    sparkFan[i * 4 + 2] = (hash(i, 15) * 2 - 1) * 0.4;
+    sparkFan[i * 4 + 3] = 1.2 + hash(i, 16) * 2.4;
+  }
+  return {
+    sky,
+    far,
+    near,
+    nebula,
+    flight,
+    headGlow,
+    ribbon,
+    ribbonMaterial,
+    fill,
+    fillMaterial,
+    wake,
+    wakeVelocity,
+    marker,
+    markerGlow,
+    flash,
+    fire,
+    shock,
+    sparks,
+    sparkFan,
+  };
 }
+type Art = ReturnType<typeof dressScene>;
+/** The ribbon's colours by heat: calm light blue in royal, gold past 2x, white-gold past 5x. */
+const RIBBON_HEAT = {
+  calm: {
+    core: new THREE.Color(0xbfe6ff),
+    halo: new THREE.Color(0x1877f2),
+    glow: new THREE.Color(0x7fd0ff),
+  },
+  warm: {
+    core: new THREE.Color(0xffe27a),
+    halo: new THREE.Color(0xd9a500),
+    glow: new THREE.Color(0xffd700),
+  },
+  hot: {
+    core: new THREE.Color(0xfff8e1),
+    halo: new THREE.Color(0xffd700),
+    glow: new THREE.Color(0xfff2c4),
+  },
+};
 
 /** A line with a label on the glass: placed each frame, hidden when off the axis. */
 interface Mark {
@@ -403,20 +822,225 @@ function dressGlass(svg: SVGSVGElement) {
   const seconds = Array.from({ length: SECOND_TICKS }, (_, i) =>
     markIn(axis, { 'data-second': String(i) })
   );
+  const cap = markIn(group('cap', styles.capLine), { 'data-line': 'cap' });
   const auto = markIn(group('auto', styles.autoLine), { 'data-line': 'auto' });
   const floor = markIn(group('floor', styles.floorLine), { 'data-line': 'floor' });
   const head = spotIn(group('head', styles.headMark), 'head', 7);
   const cash = spotIn(group('cash', styles.cashMark), 'cash', 5.5);
   const crash = spotIn(group('crash', styles.crashMark), 'crash', 9);
-  return { grid, seconds, auto, floor, head, cash, crash };
+  return { grid, seconds, cap, auto, floor, head, cash, crash };
+}
+
+/** The scene's per-frame inputs, gathered by the loop so the flight and the burst read one state. */
+interface FrameState {
+  now: number;
+  dt: number;
+  phase: CrashPhase;
+  progress: number;
+  shownCents: number;
+  finished: boolean;
+  burst: number;
+  cashProgress: number | null;
+  /** A round booked at the ceiling: the flight is crowned in gold, nothing crashes. */
+  atCap: boolean;
+  reduced: boolean;
+  speed: number;
+}
+/** The burst's two palettes: the crash in red, the ceiling in gold. */
+const BURST_PALETTE = {
+  crash: {
+    flash: new THREE.Color(0xfff1c9),
+    fire: new THREE.Color(0xff5b3a).multiplyScalar(1.6),
+    shock: new THREE.Color(0xff5b6e).multiplyScalar(1.6),
+    bright: new THREE.Color(0xfff1c9),
+    dim: new THREE.Color(0xff5b6e),
+  },
+  max: {
+    flash: new THREE.Color(0xfff6d0),
+    fire: new THREE.Color(0xffd700).multiplyScalar(1.5),
+    shock: new THREE.Color(0xffd700).multiplyScalar(1.4),
+    bright: new THREE.Color(0xfff6d0),
+    dim: new THREE.Color(0xffb300),
+  },
+} as const;
+/** Writes the flight, the ribbon, the wake, the sky and the burst for one frame. Allocates nothing. */
+function paintScene(art: Art, path: FlightPath, s: FrameState, v: THREE.Vector3[]) {
+  const [head, tangent, normal, scratch] = v;
+  path.at(s.progress, head);
+  path.tangent(s.progress, tangent);
+  normal.set(-tangent.y, tangent.x, 0);
+  const heat = RIBBON_HEAT[tickerHeat(s.shownCents)];
+  const mix = s.reduced ? 1 : 1 - Math.exp(-s.dt / (260 * s.speed));
+  art.ribbonMaterial.uniforms.uCore.value.lerp(heat.core, mix);
+  art.ribbonMaterial.uniforms.uHalo.value.lerp(heat.halo, mix);
+  art.fillMaterial.uniforms.uColor.value.lerp(
+    s.finished && !s.atCap ? art.ribbonMaterial.uniforms.uRedHalo.value : heat.halo,
+    mix
+  );
+  art.headGlow.material.color.lerp(heat.glow, mix);
+  art.ribbonMaterial.uniforms.uRed.value =
+    s.finished && !s.atCap ? (s.reduced ? 1 : Math.min(1, s.burst * 1.6)) : 0;
+  // The jet: on the head, along the tangent, banking harder as the curve steepens.
+  const flight = art.flight.group;
+  flight.position.copy(head);
+  // Between rounds the jet hovers on the launch line instead of sitting on it.
+  if (s.phase === 'idle' && !s.reduced) flight.position.y += Math.sin(s.now / 700) * 0.06;
+  flight.rotation.set(
+    0.04 + s.progress * 0.14,
+    0.06,
+    Math.atan2(tangent.y, tangent.x) +
+      (s.phase === 'idle' && !s.reduced ? Math.sin(s.now / 900) * 0.035 : 0)
+  );
+  // A crash removes the jet; a booking at the ceiling keeps it flying under the crown.
+  flight.visible = !s.finished || s.atCap;
+  art.headGlow.visible = !s.finished || s.atCap;
+  art.headGlow.position.copy(flight.position);
+  art.headGlow.material.opacity = s.reduced ? 0.55 : 0.45 + Math.sin(s.now / 160) * 0.12;
+  art.flight.afterburners.forEach(({ outer, inner, glow }, i) => {
+    const flicker = s.reduced
+      ? 1
+      : 0.82 + Math.sin(s.now / 41 + i * 2.1) * 0.12 + Math.sin(s.now / 97 + i) * 0.08;
+    outer.scale.y = flicker;
+    inner.scale.y = flicker * (s.reduced ? 1 : 0.9 + Math.sin(s.now / 63 + i) * 0.1);
+    glow.material.opacity = 0.6 + (flicker - 0.82) * 1.2;
+  });
+  // The ribbon and the fill follow the curve to the head.
+  const ribbon = art.ribbon.position.array as Float32Array;
+  const fill = art.fill.position.array as Float32Array;
+  const launchY = path.launch.y;
+  for (let i = 0; i < RIBBON; i++) {
+    const along = i / (RIBBON - 1);
+    path.at(s.progress * along, scratch);
+    path.tangent(s.progress * along, normal);
+    const nx = -normal.y,
+      ny = normal.x;
+    const w = 0.26 * (0.7 + 0.3 * along);
+    ribbon.set(
+      [scratch.x - nx * w, scratch.y - ny * w, 0, scratch.x + nx * w, scratch.y + ny * w, 0],
+      i * 6
+    );
+    fill.set([scratch.x, launchY, 0, scratch.x, scratch.y, 0], i * 6);
+  }
+  normal.set(-tangent.y, tangent.x, 0);
+  art.ribbon.position.needsUpdate = true;
+  art.fill.position.needsUpdate = true;
+  // The wake: particles born at the engines, drifting back down the curve and fading.
+  const wakePos = art.wake.position.array as Float32Array;
+  const wakeLife = art.wake.life.array as Float32Array;
+  const vel = art.wakeVelocity;
+  if (s.reduced) {
+    if (art.wake.points.visible) {
+      wakeLife.fill(0);
+      art.wake.life.needsUpdate = true;
+      art.wake.points.visible = false;
+    }
+  } else {
+    art.wake.points.visible = true;
+    const dt = Math.min(0.1, s.dt / 1000);
+    let emit = s.phase === 'open' ? 3 : 0;
+    for (let i = 0; i < WAKE; i++) {
+      wakeLife[i] -= dt / (0.75 * s.speed);
+      if (wakeLife[i] <= 0) {
+        wakeLife[i] = 0;
+        if (emit > 0) {
+          emit--;
+          wakeLife[i] = 1;
+          const j = i * 3;
+          wakePos[j] = head.x - tangent.x * 0.7 + normal.x * (Math.random() - 0.5) * 0.2;
+          wakePos[j + 1] = head.y - tangent.y * 0.7 + normal.y * (Math.random() - 0.5) * 0.2;
+          wakePos[j + 2] = (Math.random() - 0.5) * 0.3;
+          const push = 1.3 + Math.random() * 0.9,
+            side = (Math.random() - 0.5) * 0.9;
+          vel[j] = -tangent.x * push + normal.x * side;
+          vel[j + 1] = -tangent.y * push + normal.y * side;
+          vel[j + 2] = (Math.random() - 0.5) * 0.5;
+        }
+      } else {
+        const j = i * 3;
+        wakePos[j] += vel[j] * dt;
+        wakePos[j + 1] += vel[j + 1] * dt;
+        wakePos[j + 2] += vel[j + 2] * dt;
+        const drag = 1 - 1.6 * dt;
+        vel[j] *= drag;
+        vel[j + 1] *= drag;
+        vel[j + 2] *= drag;
+      }
+    }
+    art.wake.position.needsUpdate = true;
+    art.wake.life.needsUpdate = true;
+  }
+  // The cash-out ring, where the win was booked.
+  art.marker.visible = art.markerGlow.visible = s.cashProgress !== null;
+  if (s.cashProgress !== null) {
+    path.at(s.cashProgress, art.marker.position);
+    art.markerGlow.position.copy(art.marker.position);
+    art.markerGlow.material.opacity = s.reduced ? 0.5 : 0.4 + Math.sin(s.now / 220) * 0.15;
+  }
+  // The burst: a flash that blows out and fades, a shockwave ring, sparks on the tangent.
+  const bursting = s.finished;
+  art.flash.visible = art.fire.visible = art.shock.visible = art.sparks.points.visible = bursting;
+  if (bursting) {
+    const palette = s.atCap ? BURST_PALETTE.max : BURST_PALETTE.crash;
+    art.flash.material.color.copy(palette.flash);
+    art.fire.material.color.copy(palette.fire);
+    art.shock.material.color.copy(palette.shock);
+    art.sparks.points.material.uniforms.uBright.value.copy(palette.bright);
+    art.sparks.points.material.uniforms.uDim.value.copy(palette.dim);
+    // The crown at the ceiling keeps ringing while the plate is read; a crash burns out once.
+    const t = s.reduced ? 0.55 : s.atCap ? s.burst - Math.floor(s.burst) : Math.min(1, s.burst);
+    const quick = Math.min(1, t * 1.8);
+    art.flash.position.copy(head);
+    art.flash.scale.setScalar(0.8 + quick * 3.8);
+    art.flash.material.opacity = (1 - quick) ** 1.3;
+    art.fire.position.copy(head);
+    art.fire.scale.setScalar(0.9 + t * 2.4);
+    art.fire.material.opacity = (1 - t) ** 0.9 * 0.9;
+    art.shock.position.copy(head);
+    art.shock.scale.setScalar(0.8 + t * 4.8);
+    art.shock.material.opacity = (1 - t) ** 0.9;
+    const eased = 1 - (1 - t) ** 2;
+    const sparkPos = art.sparks.position.array as Float32Array;
+    const sparkLife = art.sparks.life.array as Float32Array;
+    const fan = art.sparkFan;
+    for (let i = 0; i < SPARKS; i++) {
+      const f = i * 4,
+        reach = fan[f + 3] * eased;
+      sparkPos[i * 3] = head.x + (tangent.x * fan[f] + normal.x * fan[f + 1]) * reach;
+      sparkPos[i * 3 + 1] =
+        head.y + (tangent.y * fan[f] + normal.y * fan[f + 1]) * reach - 0.8 * t * t;
+      sparkPos[i * 3 + 2] = fan[f + 2] * reach;
+      sparkLife[i] = Math.max(0, 1 - t * (0.85 + hash(i, 17) * 0.4));
+    }
+    art.sparks.position.needsUpdate = true;
+    art.sparks.life.needsUpdate = true;
+  }
+  // The sky: stars drift against the flight, faster as it climbs; the nebula breathes.
+  if (!s.reduced) {
+    const seconds = s.now / 1000;
+    const rush = 1 + s.progress * 2.2;
+    const dtSeconds = s.dt / 1000;
+    art.far.material.uniforms.uTime.value = seconds;
+    art.near.material.uniforms.uTime.value = seconds;
+    art.far.material.uniforms.uDrift.value.x -= 0.18 * rush * dtSeconds;
+    art.far.material.uniforms.uDrift.value.y -= 0.05 * rush * dtSeconds;
+    art.near.material.uniforms.uDrift.value.x -= 0.55 * rush * dtSeconds;
+    art.near.material.uniforms.uDrift.value.y -= 0.16 * rush * dtSeconds;
+    art.sky.material.uniforms.uTime.value = seconds;
+    art.nebula.forEach((wash, i) => {
+      wash.position.x += Math.sin(seconds * 0.05 + i) * 0.004;
+    });
+  }
 }
 
 export default function CrashCurve(props: CrashCurveProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const glass = useRef<SVGSVGElement>(null);
+  const frameNode = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   /** The hero's text node, written by the frame loop while the round is open. */
   const ticker = useRef<HTMLDivElement>(null);
+  /** The plate over a booked flight, shown by the frame loop once the replay reaches the crash. */
+  const plate = useRef<HTMLDivElement>(null);
   /** The last figure the loop printed, so a re-render prints the same one rather than an older one. */
   const clockCents = useRef(100);
   const [reduced] = useState(prefersReducedMotion);
@@ -445,6 +1069,11 @@ export default function CrashCurve(props: CrashCurveProps) {
     camera.position.set(0, 3.5, 12);
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
+    const path = flightPath(width / height);
+    // The camera pushes in along its line to the launch point, so the launch
+    // line projects to the same pixel at every push and only the climb grows.
+    const cameraHome = camera.position.clone();
+    let push = 0;
     const surface = kit?.renderer.domElement ?? null;
     const lost = (event: Event) => {
       event.preventDefault();
@@ -453,12 +1082,20 @@ export default function CrashCurve(props: CrashCurveProps) {
     const restored = () => setFailed(false);
     surface?.addEventListener('webglcontextlost', lost);
     surface?.addEventListener('webglcontextrestored', restored);
-    const art = kit ? dressScene(kit.scene) : null;
+    const art = kit ? dressScene(kit.scene, path, height) : null;
     const marks = dressGlass(glass.current);
+    const scratch = [
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+    ];
     let raf = 0,
       last = 0,
       previousPhase: CrashPhase = 'idle',
       notified = false,
+      plateShown = false,
       revealedFor = 0,
       axisLog = 0,
       clockShown = -1;
@@ -477,7 +1114,7 @@ export default function CrashCurve(props: CrashCurveProps) {
     document.addEventListener('visibilitychange', visibilityChanged);
     const speed = getAnimationSpeed();
     const toScreen = (progress: number): [number, number] => {
-      const s = point(progress).project(camera);
+      const s = path.at(progress, scratch[4]).project(camera);
       return [((s.x + 1) / 2) * width, ((1 - s.y) / 2) * height];
     };
     const draw = (now: number) => {
@@ -495,6 +1132,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         previousPhase = p.phase;
         revealedFor = 0;
         notified = false;
+        plateShown = false;
       } else revealedFor += visibleDelta;
       const elapsed =
         p.replayElapsedMs ??
@@ -515,8 +1153,13 @@ export default function CrashCurve(props: CrashCurveProps) {
           ticker.current.dataset.heat = tickerHeat(printed);
         }
       }
+      // Booked at the ceiling: there is nothing above it to reveal, so the
+      // replay ends at the cap and the flight is crowned instead of crashed.
+      const atCap = p.phase === 'cashed' && (p.cashoutCents ?? 0) >= p.capCents;
       const target =
-        p.phase === 'cashed' ? (p.crashCents ?? p.finalCents ?? 100) : (p.finalCents ?? current);
+        p.phase === 'cashed'
+          ? Math.min(p.crashCents ?? p.finalCents ?? 100, atCap ? p.capCents : Infinity)
+          : (p.finalCents ?? current);
       const replay =
         p.phase === 'cashed'
           ? reduced
@@ -543,63 +1186,68 @@ export default function CrashCurve(props: CrashCurveProps) {
       const maxLog = axisLog;
       const progressOf = (cents: number) => Math.log(Math.max(100, cents) / 100) / maxLog;
       const progress = p.phase === 'idle' ? 0.14 : Math.min(0.92, progressOf(shown));
-      const head = point(progress);
       const finished = p.phase === 'crashed' || (p.phase === 'cashed' && replay === 1);
+      // The camera: a gentle push-in with the multiplier, glided like the
+      // axis while it is far from its goal and walked the last of the way at
+      // a steady pace, so it arrives exactly and then holds still. Snapped
+      // under reduced motion and between rounds.
+      const wantPush =
+        p.phase === 'idle'
+          ? 0
+          : CAMERA_PUSH *
+            THREE.MathUtils.clamp(Math.log(Math.max(100, shown) / 100) / Math.log(20), 0, 1);
+      if (reduced || p.phase === 'idle') push = wantPush;
+      else {
+        const gap = wantPush - push;
+        const glide = gap * (1 - Math.exp(-visibleDelta / (CAMERA_FOLLOW_MS * speed)));
+        const pace = (CAMERA_PUSH / (1400 * speed)) * visibleDelta;
+        push += Math.abs(glide) > pace ? glide : Math.sign(gap) * Math.min(Math.abs(gap), pace);
+      }
+      camera.position.copy(path.launch).sub(cameraHome).multiplyScalar(push).add(cameraHome);
+      camera.updateMatrixWorld();
       if (art) {
-        art.flight.group.position.copy(head);
-        art.flight.group.rotation.set(
-          0.08,
-          0.08,
-          Math.atan(progress * 0.85) +
-            (p.phase === 'idle' && !reduced ? Math.sin(now / 900) * 0.035 : 0)
+        const burstAfter = p.phase === 'cashed' ? 800 + 2600 * speed : 0;
+        paintScene(
+          art,
+          path,
+          {
+            now,
+            dt: visibleDelta,
+            phase: p.phase,
+            progress,
+            shownCents: shown,
+            finished,
+            burst: (revealedFor - burstAfter) / (1200 * speed),
+            cashProgress:
+              p.phase === 'cashed' ? Math.min(0.92, progressOf(p.cashoutCents ?? 100)) : null,
+            atCap,
+            reduced,
+            speed,
+          },
+          scratch
         );
-        art.flight.exhaust.scale.y = reduced ? 1 : 0.8 + Math.sin(now / 75) * 0.2;
-        art.flight.group.visible = !finished;
-        art.burst.visible = finished;
-        const values = art.trailGeo.attributes.position.array as Float32Array;
-        for (let i = 0; i < 96; i++) {
-          const v = point((progress * i) / 95);
-          values.set([v.x, v.y, v.z], i * 3);
-        }
-        art.trailGeo.attributes.position.needsUpdate = true;
-        art.trailMat.color.setHex(finished ? 0xff6152 : 0x39b6ff);
-        art.marker.visible = p.phase === 'cashed';
-        if (art.marker.visible)
-          art.marker.position.copy(point(Math.min(0.92, progressOf(p.cashoutCents ?? 100))));
-        if (finished) {
-          const positions = art.burstGeometry.attributes.position.array as Float32Array;
-          const t = reduced ? 0.55 : Math.min(1, revealedFor / (1200 * speed));
-          for (let i = 0; i < 80; i++) {
-            const angle = i * 2.39996;
-            const radius = (0.2 + (i % 9) * 0.1) * t;
-            positions.set(
-              [
-                head.x + Math.cos(angle) * radius,
-                head.y + Math.sin(angle) * radius,
-                Math.sin(i) * radius,
-              ],
-              i * 3
-            );
-          }
-          art.burstGeometry.attributes.position.needsUpdate = true;
-        }
-        if (!reduced) {
-          art.stars.position.z = (now / 800) % 6;
-          art.planet.rotation.y = now / 70000;
-          art.orbit.rotation.z = now / 16000;
-        }
       }
       // ── The glass ──────────────────────────────────────────────────────
       const [, y0] = toScreen(0),
         [, y1] = toScreen(1);
-      MULTIPLIER_TICKS.forEach((cents, i) => {
+      // Lines for every tick inside the axis. Labels: 1.00x always prints (it
+      // is the launch line), and going up from it a label prints only where it
+      // has room under the one below, so the low ticks never overprint once
+      // the axis is large.
+      let labelCeiling = Infinity;
+      for (let i = 0; i < MULTIPLIER_TICKS.length; i++) {
+        const cents = MULTIPLIER_TICKS[i];
         const q = progressOf(cents);
-        if (q > 1) hide(marks.grid[i]);
-        else {
-          const [, y] = toScreen(q);
-          place(marks.grid[i], 6, y, width - 6, y, 8, y - 4, tickerLabel(cents));
+        if (q > 1) {
+          hide(marks.grid[i]);
+          continue;
         }
-      });
+        const [, y] = toScreen(q);
+        place(marks.grid[i], 6, y, width - 6, y, 8, y - 4, tickerLabel(cents));
+        const crowded = labelCeiling - y < TICK_LABEL_GAP;
+        marks.grid[i].text.setAttribute('visibility', crowded ? 'hidden' : 'visible');
+        if (!crowded) labelCeiling = y;
+      }
       const span = maxLog / Math.max(1e-6, p.growthK);
       const step =
         SECOND_STEPS.find((s) => span / s <= SECOND_TICKS - 2) ??
@@ -613,6 +1261,15 @@ export default function CrashCurve(props: CrashCurveProps) {
           place(mark, x, height - 15, x, height - 10, x, height - 3, `${t}s`);
         }
       });
+      // The cap, drawn where the flight would stop, once the axis reaches it.
+      if (p.capCents > 100 && progressOf(p.capCents) <= 1) {
+        const [, y] = toScreen(progressOf(p.capCents));
+        // The label sits at the right edge like the auto line, clear of the hero
+        // and of the tick labels on the left; once a round has booked at the
+        // cap the cash mark says Max and the line needs no label.
+        place(marks.cap, 6, y, width - 6, y, width - 8, y - 4, `Max ${tickerLabel(p.capCents)}`);
+        marks.cap.text.setAttribute('visibility', atCap ? 'hidden' : 'visible');
+      } else hide(marks.cap);
       const auto = p.autoCashoutCents;
       if (auto && auto > 100 && progressOf(auto) <= 1) {
         const [, y] = toScreen(progressOf(auto));
@@ -649,9 +1306,16 @@ export default function CrashCurve(props: CrashCurveProps) {
       if (p.phase === 'cashed') {
         const cashed = p.cashoutCents ?? 100;
         const [cx, cy] = toScreen(Math.min(0.92, progressOf(cashed)));
-        pin(marks.cash, cx, cy, `Cashed ${tickerLabel(cashed)}`, cx, cy - 12);
+        pin(
+          marks.cash,
+          cx,
+          cy,
+          atCap ? `Max ${tickerLabel(p.capCents)}` : `Cashed ${tickerLabel(cashed)}`,
+          cx,
+          cy - 12
+        );
       } else unpin(marks.cash);
-      if (finished)
+      if (finished && !atCap)
         pin(
           marks.crash,
           hx,
@@ -661,6 +1325,14 @@ export default function CrashCurve(props: CrashCurveProps) {
           hy - 16
         );
       else unpin(marks.crash);
+      if (frameNode.current && frameNode.current.dataset.max !== String(atCap && finished))
+        frameNode.current.dataset.max = String(atCap && finished);
+      // The plate over a booked flight comes up the moment the replay reaches
+      // the crash point, once per round, without a render.
+      if (p.phase === 'cashed' && finished && !plateShown && plate.current) {
+        plateShown = true;
+        plate.current.dataset.shown = 'true';
+      }
       const submitted = kit ? kit.render() : false;
       const terminalComplete =
         finished &&
@@ -682,12 +1354,22 @@ export default function CrashCurve(props: CrashCurveProps) {
     };
   }, [width, height, reduced]);
   const heroCents = heroFigure(props, clockCents.current);
+  const reveal =
+    props.phase === 'cashed'
+      ? wouldHaveGone(
+          props.cashoutCents ?? 100,
+          props.crashCents ?? props.finalCents ?? 100,
+          props.capCents
+        )
+      : null;
   return (
     <div className={styles.wrap} data-motion="keep">
       <div
+        ref={frameNode}
         className={styles.frame}
         data-phase={props.phase}
         data-reduced={reduced ? 'true' : undefined}
+        data-compact={height < 360 ? 'true' : undefined}
         style={{ width, height }}
       >
         <canvas
@@ -714,6 +1396,27 @@ export default function CrashCurve(props: CrashCurveProps) {
         >
           {tickerLabel(heroCents)}
         </div>
+        <div className={styles.cap} data-cap={props.capCents}>
+          Max <b>{tickerLabel(props.capCents)}</b>
+        </div>
+        <div className={styles.launchLine} data-attract="launch-line" aria-hidden="true" />
+        {reveal ? (
+          <div
+            ref={plate}
+            className={styles.reveal}
+            data-reveal="would-have-gone"
+            data-reduced={reduced ? 'true' : undefined}
+            style={
+              reduced
+                ? undefined
+                : { animationDuration: `${Math.round(REVEAL_IN_MS * getAnimationSpeed())}ms` }
+            }
+          >
+            <span className={styles.revealTitle}>{reveal.title}</span>{' '}
+            <strong className={styles.revealFigure}>{reveal.figure}</strong>{' '}
+            <span className={styles.revealSub}>{reveal.sub}</span>
+          </div>
+        ) : null}
         {props.phase === 'crashed' ? (
           <div
             className={styles.flash}

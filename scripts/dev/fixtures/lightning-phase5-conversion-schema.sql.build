@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""Regenerates scripts/dev/fixtures/lightning-phase5-conversion-schema.sql.
+
+The fixture is an ASSEMBLED artifact, never a hand-written one: every SQL byte
+in it is lifted by LINE RANGE out of a real migration in supabase/migrations, or
+out of the production schema dump at tests/fixtures/full-weekly-accounting/
+schema.sql, and this file is the manifest that says which. Run it from the
+repository root:
+
+    python3 scripts/dev/fixtures/lightning-phase5-conversion-schema.sql.build \
+      > scripts/dev/fixtures/lightning-phase5-conversion-schema.sql
+
+If a migration is edited and the fixture stops matching, regenerate rather than
+patching the fixture: one copy of that text in the repository, free to be
+corrected in one place.
+"""
+import os, re, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+MIG  = os.path.join(ROOT, 'supabase', 'migrations')
+DUMP = os.path.join(ROOT, 'tests', 'fixtures', 'full-weekly-accounting', 'schema.sql')
+
+
+def migration(prefix):
+    for name in sorted(os.listdir(MIG)):
+        if name.startswith(prefix) and name.endswith('.sql'):
+            return os.path.join(MIG, name)
+    raise SystemExit('no migration matching ' + prefix)
+
+
+def lines(prefix, first, last):
+    """Lines [first, last] of a migration, 1-based and inclusive, verbatim."""
+    return ''.join(open(migration(prefix)).readlines()[first - 1:last])
+
+
+def do_blocks(prefix, needle):
+    """Every top-level DO block of a migration that mentions `needle`, whole."""
+    src = open(migration(prefix)).read().split('\n')
+    out, i = [], 0
+    while i < len(src):
+        m = re.match(r'^DO (\$[A-Za-z_]*\$)\s*$', src[i])
+        if m:
+            tag, start, j = m.group(1), i, i + 1
+            end = re.compile(r'^(END )?' + re.escape(tag) + r';\s*$')
+            while j < len(src) and not end.match(src[j]):
+                j += 1
+            blk = '\n'.join(src[start:j + 1])
+            if needle in blk:
+                out.append(blk)
+            i = j + 1
+        else:
+            i += 1
+    if not out:
+        raise SystemExit('no DO block carrying %s in %s' % (needle, prefix))
+    return '\n\n'.join(out) + '\n'
+
+
+def dump_table(name):
+    """The production DDL of one table, split into (column, type) pairs with
+    NOT NULL, DEFAULT, CHECK, GENERATED and COLLATE stripped."""
+    s = open(DUMP).read()
+    i = s.index('CREATE TABLE "public"."%s"(' % name)
+    j = s.index('(', i)
+    depth = 0
+    for k in range(j, len(s)):
+        if s[k] == '(':
+            depth += 1
+        elif s[k] == ')':
+            depth -= 1
+            if depth == 0:
+                break
+    body, depth, cur, parts = s[j + 1:k], 0, '', []
+    for ch in body:
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        if ch == ',' and depth == 0:
+            parts.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    parts.append(cur)
+    out = []
+    for p in parts:
+        p = ' '.join(p.split())
+        m = re.match(r'"([a-z0-9_]+)"\s+(.*)$', p)
+        if not m:
+            continue
+        col, rest = m.group(1), m.group(2)
+        if 'GENERATED' in rest.upper():
+            continue
+        for kw in (' DEFAULT', ' NOT NULL', ' CHECK', ' REFERENCES', ' PRIMARY', ' UNIQUE', ' COLLATE'):
+            x = rest.upper().find(kw)
+            if x >= 0:
+                rest = rest[:x]
+        rest = rest.strip()
+        if rest:
+            out.append((col, rest))
+    return out
+
+
+def club_members():
+    s = open(DUMP).read()
+    i = s.index('CREATE TABLE "public"."club_members"(')
+    j = s.index('(', i)
+    depth = 0
+    for k in range(j, len(s)):
+        if s[k] == '(':
+            depth += 1
+        elif s[k] == ')':
+            depth -= 1
+            if depth == 0:
+                break
+    t = s[i:k + 1] + ';\n'
+    t = t.replace('CREATE TABLE "public"."club_members"(', 'CREATE TABLE IF NOT EXISTS public.club_members(')
+    t = re.sub(r'\bNOT NULL\b', '', t)
+    return re.sub(r'"([a-z0-9_]+)"', r'\1', t)
+
+
+HEADER = """\
+-- Isolated PostgreSQL contract fixture, never a production migration.
+--
+-- THE PRE-MIGRATION SHAPE FOR LIGHTNING PHASE 5, THE CONVERSION
+-- (20260921151618). It is a DELTA, laid on top of the two fixtures the Phase 4
+-- harnesses already use, and it exists for one reason: Phase 5 does not
+-- retype fn_cash_cluster_tick or fn_cash_cluster_balance, it SUBSTITUTES into
+-- whatever the catalogue holds. A stub body that happened to contain the
+-- anchor would let the substitution succeed against a fake and prove nothing
+-- at all, so this file carries the REAL bodies, taken verbatim out of the
+-- migrations that produced them.
+--
+-- WHY THE PHASE 4 CHAIN IS NOT ENOUGH, MEASURED RATHER THAN ASSUMED. The tick
+-- that scripts/dev/fixtures/lightning-phase3-remediation-schema.sql installs is
+-- a deliberately reduced one - it names the eight steps it does not implement
+-- in a comment so that 25523's and 44045's survival checks can see them - and
+-- it does not mention fn_platform_frozen anywhere. Phase 5's own read-back
+-- asserts `v_live !~ 'fn_platform_frozen'` is FALSE after its substitution, so
+-- against the Phase 4 chain alone the migration under test refuses to apply
+-- with "the substitution into fn_cash_cluster_tick lost a guard that was there
+-- before it". fn_cash_cluster_balance does not exist in that chain at all, and
+-- neither does hand_history, which is the whole of Phase 5's step 9.
+--
+-- EVERY BYTE BELOW IS EXTRACTED FROM A REAL MIGRATION BY LINE RANGE, not
+-- transcribed. The extraction is reproducible; scripts/dev/fixtures/
+-- lightning-phase5-conversion-schema.sql.build documents it line by line and
+-- regenerates this file.
+--
+-- WHAT IS IN HERE, AND WHERE EACH PIECE CAME FROM:
+--
+--   public.engine_maintenance_break  20260902080000 lines 41-70, plus
+--                                    20260902090000 line 91-92 (enforce_freeze)
+--   public.fn_platform_frozen()      20260902090000 lines 103-129, verbatim,
+--                                    including its COMMENT and its GRANT. The
+--                                    real tick calls it, Phase 5's begin and
+--                                    commit gate on it, and Phase 5 asserts
+--                                    the abort does NOT.
+--   public.fn_entry_purchases_frozen 20260908042800 lines 41-75, verbatim. The
+--                                    real tick's top guard is
+--                                    `IF fn_platform_frozen() OR
+--                                    fn_entry_purchases_frozen()`, put there by
+--                                    20260909181632, so without it the tick
+--                                    raises on its own first IF and section G
+--                                    could not prove a must_move tick works.
+--   public.hand_history              20260307 lines 7-26 and 20260419 lines
+--                                    25-30, which is where started_at and
+--                                    ended_at were added. Phase 5's
+--                                    conversion-safe hand boundary is defined
+--                                    entirely in terms of those two columns.
+--   cash_seat_moves.resolved_at      20260910181447 lines 88-90. Phase 5's
+--                                    begin_pending_on writes it on every move
+--                                    it cancels, and the Phase 4 fixture chain
+--                                    predates the column.
+--   public.fn_cash_cluster_tick      20260906015029 lines 61-645 - the LAST
+--                                    migration to define the whole body - then
+--                                    the tick DO blocks of 20260907171507,
+--                                    20260907173251, 20260909035726,
+--                                    20260909181632 and 20260909181704, each
+--                                    lifted whole out of its own file and
+--                                    applied in version order. 38,705 bytes of
+--                                    20260906015029 become 43,538 in the
+--                                    catalogue after those five, and 44,355
+--                                    once the harness applies 20260921025523
+--                                    and 20260921044045 on top of this file -
+--                                    which is the body Phase 5 substitutes
+--                                    into, next to the 40,443 its own header
+--                                    measures on production.
+--   public.fn_cash_cluster_balance   20260910181433 lines 123-219 plus its two
+--                                    grant lines. THE anchor Phase 5 asserts
+--                                    occurs exactly once - BEGIN followed by
+--                                    `v_census := public.fn_cash_cluster_census
+--                                    (p_game_id, p_now);` - is at byte 364 of
+--                                    this body and is not put there by this
+--                                    file.
+--   public.fn_cash_clusters_tick_all 20260906150956 lines 61-226 plus grants.
+--                                    Phase 5's section 7 exists BECAUSE this
+--                                    function calls the balancer after every
+--                                    tick whatever the tick returned, so the
+--                                    harness has to be able to run the real
+--                                    pass and watch both stand down together.
+--
+-- THREE TICK SUBSTITUTIONS ARE DELIBERATELY NOT REPLAYED, AND SAYING SO IS THE
+-- POINT OF THIS PARAGRAPH RATHER THAN A FOOTNOTE:
+--
+--   20260909054702 and 20260909062236 both refuse to run until "native
+--   committed seat ownership" / "native game ownership" is installed, which is
+--   a different subsystem entirely and is not in any Lightning fixture.
+--   20260909181259 reads public.fn_cash_game_roster_track(), which no Lightning
+--   fixture creates.
+--
+--   None of the three touches any string Phase 5 reads, asserts or substitutes:
+--   the anchor, `IF NOT g.must_move THEN RETURN`, manual_game,
+--   fn_platform_frozen, FOR UPDATE and the absence of is_horse are all present
+--   and correct without them, and the harness asserts each one of those on the
+--   body this file actually produces before the migration under test is
+--   applied, so the substitution is biting a real 43KB body and the assertions
+--   about it are about that body. What is missing from the fixture tick
+--   relative to production is the expiry-reason wording of 181259 and two
+--   ownership retirements - none of which is reachable from any Phase 5 code
+--   path. It is named here rather than faked.
+--
+-- 20260910181447 is likewise not replayed: its balancer edit is guarded on a
+-- back-off predicate inside fn_cash_seat_change_plan that the Phase 3 fixture's
+-- reduced planner does not carry. It changes the MINUTE a refusal is stamped
+-- with. Phase 5 reads nothing it writes.
+
+"""
+
+COLUMN_NOTE = """\
+-- THE PRODUCTION COLUMNS THE REAL TICK NEEDS AND THE LIGHTNING FIXTURES LACK.
+--
+-- Derived mechanically from the real public.tables and public.table_seats DDL
+-- in the production schema dump at tests/fixtures/full-weekly-accounting/
+-- schema.sql, for exactly the columns the Phase 3 and Phase 4 fixtures do not
+-- already carry. NOT NULL, DEFAULT, CHECK and GENERATED are dropped
+-- deliberately: this fixture seats its rows through its own writers, and a
+-- production NOT NULL with no default would refuse them.
+--
+-- Nothing in Phase 5 reads one of these. They exist so that the REAL tick
+-- RUNS - fn_cash_apply_ruleset, which is its very first action, projects a
+-- ruleset onto thirty of them, and the duplicate-chair reconciliation reads
+-- table_seats.club_id - instead of raising on its own first statement. A tick
+-- that raised would make "the stood-down tick moved nothing" vacuously true,
+-- which is the one thing section 08 must not be.
+"""
+
+CLUB_MEMBERS_NOTE = """\
+-- public.club_members, from the production dump at
+-- tests/fixtures/full-weekly-accounting/schema.sql, NOT NULL stripped. It is
+-- read by fn_player_home_club, which the tick names in the duplicate-chair
+-- reconciliation SELECT. PL/pgSQL plans that SELECT the first time the loop
+-- is reached even when it returns no rows, so the function and its table have
+-- to exist for the tick to run at all.
+"""
+
+DIV_TICK = """\
+-- ===========================================================================
+-- THE REAL fn_cash_cluster_tick, 43,538 CHARACTERS OF IT
+-- ===========================================================================
+-- 20260906015029 lines 61-645 verbatim, then five real substitution blocks in
+-- version order. This is the body Phase 5 section 6 reads out of the catalogue,
+-- asserts the anchor in exactly once, replaces once and reads back. Nothing
+-- here is written for the harness: if a byte of it drifts, the migration under
+-- test refuses to apply, which is the migration working.
+
+"""
+
+DIV_BAL = """\
+-- ===========================================================================
+-- THE REAL fn_cash_cluster_balance
+-- ===========================================================================
+-- 20260910181433 lines 123-219 verbatim plus its grants. Phase 5 section 7
+-- substitutes a cluster_mode stand-down in front of its census call; the anchor
+-- is this body's own first two lines of executable text.
+
+"""
+
+DIV_TICKALL = """\
+-- ===========================================================================
+-- THE REAL fn_cash_clusters_tick_all
+-- ===========================================================================
+-- 20260906150956 lines 61-226 plus grants. It calls fn_cash_cluster_balance
+-- after every tick, in the same transaction, INDEPENDENTLY of what the tick
+-- returned - which is the entire argument for Phase 5 section 7 existing, and
+-- is a claim the harness runs rather than reads.
+
+"""
+
+w = sys.stdout.write
+w(HEADER)
+w(lines('20260902080000', 41, 70))                                   # engine_maintenance_break
+w('\n')
+w(lines('20260902090000', 91, 92))                                   # enforce_freeze
+w('\n')
+w(lines('20260902090000', 103, 129))                                 # fn_platform_frozen
+w('\n')
+w(lines('20260908042800', 41, 75))                                   # fn_entry_purchases_frozen
+w('\n')
+w(lines('20260307_hand_rake_history_missing_rpcs', 7, 26))           # hand_history
+w('\n')
+w(lines('20260419_phase3_engine_integrity', 25, 31))                 # started_at / ended_at
+w('\n')
+w(lines('20260910181447', 88, 90))                                   # cash_seat_moves.resolved_at
+w('\n')
+w(COLUMN_NOTE)
+for tab in ('tables', 'table_seats'):
+    for col, typ in dump_table(tab):
+        w('ALTER TABLE public.%s ADD COLUMN IF NOT EXISTS %s %s;\n' % (tab, col, typ))
+w('\n')
+w(CLUB_MEMBERS_NOTE)
+w(club_members())
+w('\n')
+w(lines('20260901090000_club_card_human_realtime_stats', 134, 153))  # fn_player_home_club
+w(lines('20260901090000_club_card_human_realtime_stats', 156, 156))
+w(lines('20260901090000_club_card_human_realtime_stats', 158, 158))
+w('\n')
+w(lines('20260909181230', 346, 482))                                 # fn_cash_apply_ruleset
+w('\n')
+w(lines('20260909181230', 568, 569))
+w('\n\n')
+w(DIV_TICK)
+w(lines('20260906015029', 61, 645))                                  # THE REAL TICK
+w('\n')
+for prefix, title in (('20260907171507', 'an expired move says what it was waiting for'),
+                      ('20260907173251', 'a disabled game still tells the truth about itself'),
+                      ('20260909035726', 'status follows lifecycle down as well as up'),
+                      ('20260909181632', 'a move cannot be late while the platform is parking'),
+                      ('20260909181704', 'a main keeps its number while it breaks')):
+    w('\n-- %s (%s), verbatim.\n' % (prefix, title))
+    w(do_blocks(prefix, 'fn_cash_cluster_tick'))
+w('\nREVOKE ALL ON FUNCTION public.fn_cash_cluster_tick(uuid, integer) FROM PUBLIC, anon, authenticated;\n')
+w('GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_tick(uuid, integer) TO service_role;\n\n')
+w(DIV_BAL)
+w(lines('20260910181433', 123, 219))                                 # THE REAL BALANCER
+w('\n')
+w(lines('20260910181433', 248, 249))
+w('\n')
+w(DIV_TICKALL)
+w(lines('20260906150956', 61, 226))                                  # fn_cash_clusters_tick_all
+w('\n')
+w(lines('20260906150956', 228, 229))

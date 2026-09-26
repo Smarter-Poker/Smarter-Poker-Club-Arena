@@ -7,39 +7,118 @@
 .canvas {
   display: block;
   max-width: 100%;
-  border-radius: 10px;
-  box-shadow: inset 0 0 80px #000;
+  border-radius: 12px;
 }
 
 /* ── The glass over the flight (2026-09-19) ─────────────────────────────
    The hero figure, the axes, the reference lines and the two markers sit on
    the canvas in a frame the same size as it. Nothing here moves on its own:
-   the frame loop places every mark, and the one timed effect (the red wash
-   on a crash) scales with Animation Speed and is static under reduced
-   motion. No :hover; motion collapses but meaning never does. */
+   the frame loop places every mark, and the timed effects (the red wash on a
+   crash, the plate's entrance) scale with Animation Speed and are static
+   under reduced motion. No :hover; motion collapses but meaning never does.
+
+   THE FRAME (2026-09-25): black glass in the house style. A chrome hairline
+   with a soft top highlight, a blue LED in each corner, and a vignette laid
+   over the flight so the HUD reads against the stars. The vignette and the
+   LEDs are the frame's own pseudo-elements, under the glass and the hero. */
 
 .frame {
   position: relative;
   max-width: 100%;
-  border-radius: 10px;
-  background: #070b10;
+  border-radius: 12px;
+  overflow: hidden;
+  /* Under the canvas before its first frame: the same sky the scene will draw,
+     so a slow phone shows the house frame, not a black hole (Phase 1, the
+     first-load placeholder). The canvas is transparent until it is drawn on. */
+  background:
+    radial-gradient(120% 80% at 50% 100%, rgb(24 119 242 / 14%), transparent 60%),
+    linear-gradient(180deg, #050607 0%, #06101f 55%, #0a1424 100%);
+  isolation: isolate;
+  box-shadow:
+    0 0 0 1px rgb(154 165 179 / 34%),
+    0 1px 0 rgb(255 255 255 / 8%) inset,
+    0 18px 40px rgb(0 0 0 / 55%),
+    0 0 30px rgb(24 119 242 / 12%);
 }
 
-.frame[data-phase='crashed'] .canvas {
+/* The vignette, the chrome hairline and the phase tint. */
+.frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 12px;
+  background: radial-gradient(
+    ellipse 78% 70% at 50% 45%,
+    transparent 0%,
+    transparent 58%,
+    rgb(5 6 7 / 42%) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgb(154 165 179 / 22%),
+    inset 0 1px 0 rgb(244 247 251 / 12%),
+    inset 0 0 46px rgb(0 0 0 / 45%);
+}
+
+/* Four blue LEDs in the corners, each with its own bloom. */
+.frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 12px;
+  background:
+    radial-gradient(
+      circle at 10px 10px,
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    radial-gradient(
+      circle at calc(100% - 10px) 10px,
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    radial-gradient(
+      circle at 10px calc(100% - 10px),
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    radial-gradient(
+      circle at calc(100% - 10px) calc(100% - 10px),
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    linear-gradient(90deg, transparent 8%, rgb(69 173 255 / 45%) 50%, transparent 92%) top / 100%
+      1px no-repeat;
+}
+
+.frame[data-phase='crashed']::before {
   box-shadow:
     inset 0 0 0 2px rgb(255 91 110 / 45%),
-    inset 0 0 80px #000;
+    inset 0 0 46px rgb(0 0 0 / 45%),
+    inset 0 0 60px rgb(255 91 110 / 12%);
 }
 
-.frame[data-phase='cashed'] .canvas {
+.frame[data-phase='cashed']::before {
   box-shadow:
     inset 0 0 0 2px rgb(93 242 160 / 40%),
-    inset 0 0 80px #000;
+    inset 0 0 46px rgb(0 0 0 / 45%);
 }
 
 .glass {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   overflow: visible;
@@ -55,7 +134,7 @@
   font-variant-numeric: tabular-nums;
   fill: rgb(200 220 240 / 62%);
   paint-order: stroke;
-  stroke: rgb(7 11 16 / 85%);
+  stroke: rgb(5 6 7 / 85%);
   stroke-width: 3px;
   stroke-linejoin: round;
 }
@@ -63,6 +142,19 @@
 .axis line {
   stroke: rgb(200 220 240 / 16%);
   stroke-width: 1;
+}
+
+/* The cap: gold, dashed, drawn where the flight would stop. */
+.capLine line {
+  stroke: #ffd700;
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.7;
+}
+
+.capLine text {
+  fill: #ffd700;
+  text-anchor: end;
 }
 
 .autoLine line {
@@ -125,12 +217,15 @@
    61px on a 375px phone, 121px declared as 112px at the cap - and the digits
    bled above and below a box that claimed not to hold them. 1.2 contains the
    content area of this stack with room to spare and leaves the figure tight;
-   nothing about it scales with the viewport, so the fix is width-independent. */
+   nothing about it scales with the viewport, so the fix is width-independent.
+
+   A soft dark halo sits behind the figure so it reads over the stars. */
 .ticker {
   position: absolute;
   top: 17%;
   right: 0;
   left: 0;
+  z-index: 3;
   margin: 0;
   text-align: center;
   pointer-events: none;
@@ -142,14 +237,28 @@
   color: #f4f7fb;
   text-shadow:
     0 0 18px rgb(140 210 255 / 55%),
+    0 0 42px rgb(69 173 255 / 35%),
     0 2px 0 rgb(0 0 0 / 70%),
     0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.ticker::before {
+  content: '';
+  position: absolute;
+  /* Kept inside the hero's own box: a negative inset, or a transform that
+     grows past it, extends the element's scrollable overflow and reads as
+     cut-off content on a 375px phone (tests/e2e/css/diamond-games-playfield.spec.ts).
+     The glow beyond the box is the text-shadow's job. */
+  inset: 0 18%;
+  z-index: -1;
+  background: radial-gradient(ellipse at center, rgb(5 6 7 / 60%), transparent 70%);
 }
 
 .ticker[data-heat='warm'] {
   color: #ffd700;
   text-shadow:
     0 0 20px rgb(255 215 0 / 55%),
+    0 0 46px rgb(255 215 0 / 28%),
     0 2px 0 rgb(0 0 0 / 70%),
     0 4px 14px rgb(0 0 0 / 70%);
 }
@@ -158,6 +267,7 @@
   color: #ff8a3d;
   text-shadow:
     0 0 26px rgb(255 120 40 / 75%),
+    0 0 52px rgb(255 160 60 / 35%),
     0 2px 0 rgb(0 0 0 / 70%),
     0 4px 14px rgb(0 0 0 / 70%);
 }
@@ -166,6 +276,7 @@
   color: #ff5b6e;
   text-shadow:
     0 0 24px rgb(240 40 73 / 75%),
+    0 0 52px rgb(240 40 73 / 35%),
     0 2px 0 rgb(0 0 0 / 70%),
     0 4px 14px rgb(0 0 0 / 70%);
 }
@@ -174,15 +285,157 @@
   color: #c8ffd2;
   text-shadow:
     0 0 24px rgb(53 217 90 / 70%),
+    0 0 52px rgb(53 217 90 / 30%),
     0 2px 0 rgb(0 0 0 / 70%),
     0 4px 14px rgb(0 0 0 / 70%);
+}
+
+/* The cap, said permanently: a house chip in the corner, gold for the figure. */
+.cap {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  pointer-events: none;
+  padding: 4px 10px 4px 9px;
+  border-radius: 999px;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+  color: #9aa5b3;
+  background: linear-gradient(180deg, rgb(20 26 36 / 92%), rgb(6 9 14 / 94%));
+  box-shadow:
+    0 0 0 1px rgb(154 165 179 / 42%),
+    inset 0 1px 0 rgb(244 247 251 / 14%),
+    0 6px 16px rgb(0 0 0 / 55%);
+}
+
+.cap b {
+  font-weight: 800;
+  color: #ffd700;
+  text-shadow: 0 0 10px rgb(255 215 0 / 45%);
+}
+
+/* The plate over a booked flight: how high it would have gone. It sits in the
+   lower third, clear of the hero, and comes up once the replay reaches the
+   crash point (the loop sets data-shown), scaled by Animation Speed. */
+.reveal {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  z-index: 4;
+  width: max-content;
+  max-width: 86%;
+  box-sizing: border-box;
+  padding: 10px 22px 12px;
+  border-radius: 12px;
+  text-align: center;
+  pointer-events: none;
+  visibility: hidden;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: #e4e7ec;
+  background: linear-gradient(180deg, rgb(20 26 36 / 94%), rgb(6 9 14 / 96%));
+  box-shadow:
+    0 0 0 1px rgb(154 165 179 / 48%),
+    inset 0 1px 0 rgb(244 247 251 / 14%),
+    0 14px 34px rgb(0 0 0 / 65%),
+    0 0 40px rgb(24 119 242 / 18%);
+  transform: translate(-50%, 0);
+}
+
+.reveal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 14%;
+  left: 14%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #45adff, transparent);
+  box-shadow: 0 0 10px rgb(69 173 255 / 75%);
+}
+
+.reveal[data-shown='true'] {
+  visibility: visible;
+  animation: revealIn calc(520ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.reveal[data-reduced='true'][data-shown='true'] {
+  animation: none;
+}
+
+@keyframes revealIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.revealTitle,
+.revealFigure,
+.revealSub {
+  display: block;
+}
+
+.revealTitle {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9aa5b3;
+}
+
+.revealFigure {
+  margin: 1px 0 0;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #ffd700;
+  text-shadow:
+    0 0 18px rgb(255 215 0 / 55%),
+    0 2px 0 rgb(0 0 0 / 70%);
+}
+
+.revealSub {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #c8ffd2;
+}
+
+/* A phone-height frame gets a tighter plate, so it stays in the lower third. */
+.frame[data-compact='true'] .reveal {
+  bottom: 7%;
+  padding: 7px 16px 8px;
+}
+
+.frame[data-compact='true'] .revealTitle {
+  font-size: 10px;
+}
+
+.frame[data-compact='true'] .revealFigure {
+  font-size: 24px;
+}
+
+.frame[data-compact='true'] .revealSub {
+  margin-top: 0;
+  font-size: 11px;
 }
 
 /* The crash moment: one red wash that fades, then the frozen curve stays. */
 .flash {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  z-index: 5;
+  border-radius: 12px;
   pointer-events: none;
   background: radial-gradient(
     ellipse at center,
@@ -217,6 +470,144 @@
   right: 12px;
   bottom: 8px;
   left: 12px;
+  z-index: 6;
   margin: 0;
   text-align: center;
+}
+
+/* BOOKED AT THE CEILING (mobile spins, phase 2). A round that books at the
+   25.00x max is the best thing that can happen on this glass, and it says so:
+   the frame's edge turns gold and breathes, the Max chip lights up, the hero
+   goes gold with a slow sheen, and the plate is gold-edged. The loop sets
+   data-max on the frame once the replay has reached the cap. Reduced motion
+   keeps every colour and drops the breathing and the sheen. */
+.frame[data-max='true']::before {
+  box-shadow:
+    inset 0 0 0 2px rgb(255 215 0 / 70%),
+    inset 0 0 46px rgb(0 0 0 / 40%),
+    inset 0 0 72px rgb(255 215 0 / 18%);
+  animation: maxBreathe calc(1.8s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+.frame[data-max='true'] .cap {
+  color: #f4f7fb;
+  background: linear-gradient(180deg, rgb(120 90 0 / 92%), rgb(60 44 0 / 94%));
+  box-shadow:
+    0 0 0 1px rgb(255 215 0 / 85%),
+    inset 0 1px 0 rgb(255 246 208 / 30%),
+    0 0 18px rgb(255 215 0 / 45%),
+    0 6px 16px rgb(0 0 0 / 55%);
+  animation: maxChip calc(1.2s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+.frame[data-max='true'] .ticker {
+  color: #ffd700;
+  text-shadow:
+    0 0 24px rgb(255 215 0 / 70%),
+    0 0 56px rgb(255 215 0 / 35%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.frame[data-max='true'] .reveal {
+  box-shadow:
+    0 0 0 1px rgb(255 215 0 / 80%),
+    inset 0 1px 0 rgb(255 246 208 / 22%),
+    0 0 26px rgb(255 215 0 / 30%),
+    0 14px 30px rgb(0 0 0 / 60%);
+}
+
+.frame[data-max='true'] .revealTitle {
+  color: #ffd700;
+}
+
+@keyframes maxBreathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes maxChip {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.frame[data-max='true'][data-reduced='true']::before,
+.frame[data-max='true'][data-reduced='true'] .cap {
+  animation: none;
+}
+
+/* THE IDLE ATTRACT (mobile spins, phase 2). Between rounds the frame is not
+   dead: the launch line breathes light blue and the LED corners breathe, both
+   opacity only, so the glass looks live while the player picks a stake. The
+   jet's own hover is drawn by the scene. */
+.frame[data-phase='idle'] .launchLine {
+  opacity: 1;
+}
+
+.launchLine {
+  position: absolute;
+  right: 6%;
+  bottom: 14%;
+  left: 6%;
+  height: 2px;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(69 173 255 / 55%) 20%,
+    rgb(69 173 255 / 55%) 80%,
+    transparent
+  );
+  box-shadow: 0 0 14px rgb(69 173 255 / 45%);
+  animation: launchBreathe calc(2.4s * var(--animation-speed, 1)) ease-in-out infinite;
+  transition: opacity 400ms ease;
+}
+
+@keyframes launchBreathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.frame[data-reduced='true'] .launchLine {
+  animation: none;
+  opacity: 0.6;
+}
+
+.frame[data-phase='idle']::after {
+  animation: ledBreathe calc(2.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes ledBreathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.frame[data-phase='idle'][data-reduced='true']::after {
+  animation: none;
 }

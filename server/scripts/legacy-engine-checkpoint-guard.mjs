@@ -53,6 +53,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // and the band between is empty. Do not invent a second predicate here: two
   // definitions of the same fact is how a gate ends up disagreeing with itself.
   const inflightWindowMs = 120000;
+  // How long the successor still reads a parked row's PRESENCE back
+  // (`loadPresenceFromPark`, `PARKED_PRESENCE_FRESH_MS` in
+  // server/src/services/supabase/snapshots.ts). A row older than this is read
+  // for its banks only, which is exactly what a stopped engine's own park
+  // write would have left it with.
+  const parkedPresenceFreshMs = 20 * 60000;
   const filePins = retained8825
     ? [
         [
@@ -170,17 +176,42 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
      the outcome is unknown. Nothing here is read by a decision, nothing here
      names a player, a bank or a row, and the predecessor is the process that
      is about to be replaced. */
+  /* ═══ AND IT SAYS WHICH STEP, NOT JUST WHICH STAGE (2026-09-25) ═══
+
+     Run 36144233010 (the 13:56 break) is the measurement. The record above
+     did its job - `stage: mixed_custody`, 65 tables attempted, completed and
+     verified, `elapsedMs: 5954` - and the next question it raised had no
+     answer in it. `mixed_custody` is TWO operations, `proveAbandonedBoundaries`
+     then `sealAndRetireOriginals`, and each one opened by overwriting the note
+     with the stage's own name, so the record could not say which of them was
+     in flight, which manager it was on, or which RPC it was waiting for.
+     `witness` and `noteRefusal` cannot answer it either: they travel in the
+     guard's RETURN VALUE, and the whole point of an unknown outcome is that
+     the return value never arrived. This record is the only channel, so the
+     record has to carry the step.
+
+     `note` is now the step's own name, never the stage's, and `detail` holds
+     the compact `key=value` pairs that name the page, the manager and the
+     RPC. A bare `progress()` refreshes the counters and keeps both; a NAMED
+     step replaces both, so a detail can never outlive the step that wrote it.
+     Observability only, exactly as above: no check, threshold or outcome
+     moves, and nothing here names a player, a bank or a row. */
   const progressStartedAt = Date.now();
   let progressNote = 'start';
-  const progress = (note) => {
+  let progressDetail = null;
+  const progress = (note, detail) => {
     try {
-      if (typeof note === 'string') progressNote = note;
+      if (typeof note === 'string') {
+        progressNote = note;
+        progressDetail = typeof detail === 'string' ? detail.slice(0, 512) : null;
+      }
       globalThis.__legacyEngineCheckpointProgress = {
         schema: 'legacy-engine-checkpoint-progress/v1',
         startedAt: progressStartedAt,
         elapsedMs: Date.now() - progressStartedAt,
         stage,
         note: progressNote,
+        detail: progressDetail,
         attemptedTables,
         completedCalls,
         verifiedTables,
@@ -207,10 +238,24 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let bankDisposition = null;
   let unstartedReplacements = 0;
   let unstartedDepartures = 0;
+  // Observability only: how many retained managers the rows proved this guard
+  // had already sealed in an earlier run, so this run transferred nothing for
+  // them. Never read by a decision.
+  let sealedManagers = 0;
+  // Observability only: what the seal lookup answered for each retained
+  // manager (`sealed`, `none`, `other_generation`, `unanswered`, `malformed`).
+  // Never read by a decision: a lookup that did not answer leaves the unsealed
+  // path exactly as it was.
+  let sealedLookup = null;
+  const sealedLookups = [];
   // Observability only: which tables held an F06 permit that no process could
   // ever resolve, and the phase each permit was in when the rows proved the
   // felt quiet. Never read by a decision.
   let unresolvableCustody = null;
+  // Observability only: which dead engines' park rows were PROVED from the
+  // row they had read rather than written again, with what each row held.
+  // Never read by a decision.
+  let provedRows = null;
   const refuse = (code) => {
     if (reason === null) reason = code;
     progress('refused');
@@ -266,6 +311,30 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       return 'unreadable';
     }
   };
+  /* A database refusal names itself. Every `f06` function raises a bare
+     upper-case token (`F06_MIXED_OLD_LEASE_CHANGED`), and PostgREST hands that
+     token back as the error's `message` with the SQLSTATE beside it. Those are
+     the two facts a refused release needs and neither one names a player, a
+     bank or a row. Anything that is NOT such a token is reduced to its length
+     by `describe`, so a message that carried a payload could not export it. */
+  // A bare upper-case token, or one token naming one lower-case key after a
+  // colon: `f06_retired_origin_transfer` raises
+  // `F06_RETIRED_CANONICAL_CHANGED: registrations`, and the key is the whole
+  // finding (run 36095932476 carried it as `string(44)`). Anything else is
+  // still reduced to its length.
+  const refusalToken = (value) =>
+    typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}(: [a-z_]{1,32})?$/.test(value)
+      ? value
+      : describe(value);
+  /* A SQLSTATE is five characters of `[0-9A-Z]` and nothing else - the SQL
+     standard fixes both the length and the alphabet - so it can be carried
+     whole and can carry nothing. `refusalToken` alone would not: half of them
+     begin with a digit (`57014`, `42501`, `23505`) and would be reduced to
+     their length, which is the one thing a SQLSTATE does not tell you.
+     PostgREST's own codes (`PGRST202`) are identifier-shaped and fall through
+     to the token rule; anything else falls through that to its length. */
+  const sqlState = (value) =>
+    typeof value === 'string' && /^[0-9A-Z]{5}$/.test(value) ? value : refusalToken(value);
   const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const uuid = (value) =>
     typeof value === 'string' &&
@@ -354,11 +423,15 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // and position. `reason` above is untouched for existing parsers.
     ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
-    ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
+    ...(retained8825
+      ? { skippedUnstarted, unstartedReplacements, unstartedDepartures, sealedManagers }
+      : {}),
     ...(bankDisposition === null ? {} : { bankDisposition }),
     ...(unresolvableCustody === null ? {} : { unresolvableCustody }),
     ...(nativeWorkMembers === null ? {} : { nativeWorkMembers }),
     ...(refusalCensus === null ? {} : { refusalCensus }),
+    ...(provedRows === null ? {} : { provedRows }),
+    ...(sealedLookup === null ? {} : { sealedLookup }),
   });
 
   try {
@@ -738,6 +811,210 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       };
       const bankRows = new Map();
       const pending = [];
+      /* ═══ A SEALED CUSTODY TRANSFER IS NOT TRANSFERRED TWICE (2026-09-25) ═══
+
+         Run 36144233010 is the measurement. The publisher gave up on this
+         guard's call (`inspector operation outcome unknown`, stage
+         `mixed_custody`, 65 tables bank-checkpointed and verified) while the
+         guard went on inside the engine and FINISHED: both transfers were
+         committed (`f06_manager_custody_transfers` holds 5a387a75 under
+         origin generation 66291622 and 615783bf under b3d06bad) and both
+         originals were retired through `unregisterTournamentTableEngine`,
+         which is why `/health.maintenance` went from
+         `{f06_preparation_unresolved: 1}` to `unparkedTables: 0`.
+
+         The release transaction requires this checkpoint again on every
+         release while the sealed predecessor is 8825, and each run carries a
+         FRESH `transfer_id`/`successor_generation` pair per manager. What the
+         next run meets in-process: 8825 `unregisterOwnedTournamentTableEngine`
+         deletes from `GameServer.tableEngines` and `tournamentOwnedTables`
+         only (TournamentManagerOwnership.ts:60-72); the manager's own
+         `tableEngines`, `retainedTournamentBreakSources` and
+         `drainedF06Originals` are untouched, because the stop retry that
+         would delete them (TournamentManagerBase.ts:5836-5839) throws
+         `retained an unresolved seat-move UUID` first, every ~5 s, for ever.
+         So `captureDrainedF06Originals()` still answers the same engines, the
+         manager is still in `tournamentEngines` (a failed
+         `stopOwnedTournamentManager` keeps the slot, :86-101), and the
+         capture below refuses `mixed_original_registry_disagreement` at
+         `tableMap.get(tableId) === engine` before any RPC - and had it not,
+         the observe call would have refused `F06_MIXED_TRANSFER_CHANGED`
+         (migration 20260921155216 L181-182: the prior row's ids must equal
+         the call's, and the intent's are new). Every future release would die
+         at a checkpoint whose work is done: the forever block one level up
+         (CLAUDE.md 10.86 rule 4), made by this guard.
+
+         So the ROWS are asked first, per retained manager and before any
+         prepare call. `fn_f06_find_mixed_manager_custody` returns the one
+         open transfer for the tournament. A receipt whose `origin_generation`
+         is this manager's lease generation, and whose `local_proof` names
+         this exact process (release, instance, container, pid) and this
+         exact manager, is a transfer THIS guard sealed. Such a manager makes
+         no observe and no commit; the intent's fresh ids for it are simply
+         unused; its originals are not required to be registered or drained,
+         because they were retired; and an original that is STILL registered
+         under the exact engine identity the row names is retired through the
+         same CAS, since that is the one step the sealing run had left and the
+         rows already hold its custody. A receipt for another generation is
+         not this manager's seal and takes the full path exactly as before. A
+         receipt for this generation that names another process or manager
+         refuses, named, rather than reaching the database's refusal. A lookup
+         that did not answer, or found nothing, decides nothing: the manager
+         stays on the existing path, whose own refusals are unchanged.
+         Nothing in this lookup writes, and no check a manager that is NOT
+         sealed meets has moved. */
+      const prefix = (value) =>
+        uuid(value) || /^[0-9a-f]{64}$/.test(String(value)) ? String(value).slice(0, 8) : describe(value);
+      const sealedTransfer = async (manager) => {
+        const note = (outcome) => {
+          sealedLookups.push(`${String(manager.tournamentId).slice(0, 8)}:${outcome}`);
+          sealedLookup = sealedLookups.join(' ').slice(0, 512);
+        };
+        /* THE LOOKUP NEVER REFUSES AN UNSEALED MANAGER. It is a read made
+           ahead of a path that already has every refusal it needs: a lookup
+           that did not come back, came back as something that is not a
+           record, found no row, or found another generation's row, leaves the
+           manager on the exact existing path - drain sweep, observe, commit -
+           where the database itself still refuses `F06_MIXED_TRANSFER_CHANGED`
+           against any transfer this run did not make. Only a positive receipt
+           for this generation decides anything, and that decision is made by
+           the witness below. What the lookup answered travels in
+           `sealedLookup`; nothing reads it. */
+        checkMaintenance();
+        let response;
+        try {
+          response = await modules.client.supabase.rpc('fn_f06_find_mixed_manager_custody', {
+            p_tournament_id: manager.tournamentId,
+          });
+        } catch {
+          response = null;
+        }
+        checkMaintenance();
+        if (response === null || response === undefined || response.error) {
+          note('unanswered');
+          return null;
+        }
+        if (!record(response.data) || response.data.ok !== true) {
+          note('malformed');
+          return null;
+        }
+        const receipt = response.data.receipt ?? null;
+        if (receipt === null) {
+          note('none');
+          return null;
+        }
+        if (!record(receipt)) {
+          note('malformed');
+          return null;
+        }
+        if (receipt.origin_generation !== manager.tournamentLeaseGeneration) {
+          note('other_generation');
+          return null;
+        }
+        note('sealed');
+        const checkpoint = receipt.local_proof?.release_checkpoint;
+        witness(
+          'mixed_sealed_transfer_foreign',
+          [
+            ['receipt.tournament_id', () => receipt.tournament_id === manager.tournamentId],
+            ['receipt.transfer_id', () => uuid(receipt.transfer_id)],
+            [
+              'receipt.successor_generation',
+              () =>
+                uuid(receipt.successor_generation) &&
+                receipt.successor_generation !== manager.tournamentLeaseGeneration,
+            ],
+            ['receipt.local_proof', () => record(receipt.local_proof) && record(checkpoint)],
+            ['receipt.canonical_proof', () => record(receipt.canonical_proof)],
+            ['release_checkpoint.kind', () => checkpoint.kind === 'legacy_engine_checkpoint_8825_v1'],
+            ['release_checkpoint.source', () => checkpoint.source === release],
+            [
+              'release_checkpoint.instance_id',
+              () => checkpoint.instance_id === options.expectedInstanceId,
+            ],
+            ['release_checkpoint.container_id', () => checkpoint.container_id === intent.container],
+            ['release_checkpoint.process_id', () => checkpoint.process_id === options.expectedPid],
+            [
+              'local_proof.manager_id',
+              () =>
+                receipt.local_proof.manager_id === manager.managerLifecycleDiagnostics.instanceId,
+            ],
+          ],
+          () => ({
+            failedTable: manager.tournamentId,
+            // Identifier prefixes only, as the other custody records carry
+            // them; anything not uuid-shaped is reduced by `describe`.
+            observed: prefix(receipt.transfer_id),
+            observedDetail: [
+              `origin=${prefix(receipt.origin_generation)}`,
+              `instance=${describe(checkpoint?.instance_id)}`,
+              `container=${prefix(checkpoint?.container_id)}`,
+              `manager=${prefix(receipt.local_proof?.manager_id)}`,
+              `expectedManager=${prefix(manager.managerLifecycleDiagnostics?.instanceId)}`,
+            ]
+              .join(',')
+              .slice(0, 512),
+          })
+        );
+        return detached(receipt);
+      };
+      const retainSealed = (manager, proposal, receipt) => {
+        const named = receipt.local_proof.engines;
+        require(Array.isArray(named) &&
+          named.length > 0 &&
+          named.length <= maxTables &&
+          named.every((row) => record(row) && uuid(row.table_id) && uuid(row.engine_id)) &&
+          new Set(named.map((row) => row.table_id)).size === named.length, 'mixed_sealed_receipt_shape');
+        // The row is the record of what was transferred. A stopped manager can
+        // admit nothing, so every engine it still holds must be one the row
+        // names, under the same engine identity; anything else is not a seal
+        // this guard made.
+        require(manager.tableEngines instanceof Map &&
+          manager.tableEngines.size <= maxTables &&
+          [...manager.tableEngines].every(([id, engine]) =>
+            named.some(
+              (row) => row.table_id === id && row.engine_id === engine?.lifecycleDiagnostics?.instanceId
+            )
+          ), 'mixed_sealed_original_unnamed');
+        const exactEngines = [];
+        for (const row of named) {
+          const tableId = row.table_id;
+          const engine = tableMap.get(tableId);
+          if (engine === undefined) {
+            // The sealing run's CAS already ran for this table. 8825 deletes
+            // the global slot and the owned mark together or not at all
+            // (TournamentManagerOwnership.ts:66-70), so a table gone from one
+            // and not the other is not something this guard did.
+            require(!ownedTables.has(tableId), 'mixed_sealed_original_registry_disagreement');
+            retiredOriginals.add(tableId);
+            continue;
+          }
+          // Still registered: the sealing run committed its row and did not
+          // reach this table's CAS. Only the exact stopped, terminal engine the
+          // row names, held by this manager, is retired - never a replacement
+          // behind the same table id.
+          require(!retained.has(engine) &&
+            engine instanceof modules.base.ServerTableEngineBase &&
+            engine.tableId === tableId &&
+            engine.lifecycleDiagnostics?.instanceId === row.engine_id &&
+            ownedTables.has(tableId) &&
+            manager.tableEngines.get(tableId) === engine &&
+            engine.running === false &&
+            engine.terminal === true &&
+            engine.hasReleasedProcessOwnership() === true, 'mixed_sealed_original_registry_disagreement');
+          retained.add(engine);
+          exactEngines.push({ tableId, engine });
+        }
+        sealedManagers++;
+        retainedManagers.push({
+          manager,
+          proposal,
+          sealed: true,
+          receipt,
+          exactEngines,
+          capturedLeaseGeneration: manager.tournamentLeaseGeneration,
+        });
+      };
       for (const proposal of intent.custody) {
         const manager = managerMap.get(proposal.tournament_id);
         require(manager instanceof modules.manager.TournamentManager &&
@@ -750,6 +1027,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         boundMethods(manager, manager.tournamentId, manager.tournamentLeaseGeneration, [
           'captureDrainedF06Originals',
         ]);
+        // Rows first. A manager this guard already sealed takes none of the
+        // drain, registry or receipt requirements below: they describe custody
+        // that has already moved.
+        const sealed = await sealedTransfer(manager);
+        if (sealed !== null) {
+          retainSealed(manager, proposal, sealed);
+          continue;
+        }
         const originals = manager.captureDrainedF06Originals();
         require(Array.isArray(originals) &&
           originals.length > 0 &&
@@ -810,14 +1095,90 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               now.every(([id, e], i) => originals[i][0] === id && originals[i][1] === e))
           );
         };
-        const exactEngines = originals.map(([tableId, engine]) => {
-          require(uuid(tableId) &&
-            !retained.has(engine) &&
-            tableMap.get(tableId) === engine &&
-            ownedTables.has(tableId) &&
-            manager.tableEngines.get(tableId) === engine &&
-            engine instanceof modules.base.ServerTableEngineBase &&
-            engine.tableId === tableId, 'mixed_original_registry_disagreement');
+        // Which of these seven terms refused is the one thing run 36144951750
+        // (2026-09-25, stage preflight, attemptedTables 0) could not say: a
+        // bare conjunction refuses under one code and names nothing. Nothing
+        // is widened and nothing is re-captured here, because a false term is
+        // NOT a stale capture: `captureDrainedF06Originals()` above and every
+        // read below run in one synchronous turn with no await between them,
+        // so a term that is false is a STANDING disagreement between this
+        // manager's own map and the two process registries - a state the
+        // release is right to refuse. The exact original sub-expressions, in
+        // the exact original left-to-right order, under the original code.
+        const exactEngines = originals.map(([tableId, engine], originalIndex) => {
+          const slot = (map, expected) =>
+            !(map instanceof Map)
+              ? 'unreadable'
+              : !map.has(tableId)
+                ? 'absent'
+                : map.get(tableId) === expected
+                  ? 'same'
+                  : 'other';
+          /* One original out of step is a table that left the fleet under a
+             manager that still holds it; ALL of them is a custody handoff that
+             took the whole manager. The next refusal should not need a third
+             release to tell those two apart. Read defensively: a detail that
+             throws costs every other field on the receipt. */
+          const disagreeing = () => {
+            try {
+              let count = 0;
+              for (const pair of originals)
+                if (
+                  !Array.isArray(pair) ||
+                  tableMap.get(pair[0]) !== pair[1] ||
+                  !ownedTables.has(pair[0])
+                )
+                  count += 1;
+              return `${count}/${originals.length}`;
+            } catch {
+              return 'unreadable';
+            }
+          };
+          witness(
+            'mixed_original_registry_disagreement',
+            [
+              ['original.tableId', () => uuid(tableId)],
+              ['original.distinctEngine', () => !retained.has(engine)],
+              ['fleet.tableEngines', () => tableMap.get(tableId) === engine],
+              ['fleet.tournamentOwnedTables', () => ownedTables.has(tableId)],
+              ['manager.tableEngines', () => manager.tableEngines.get(tableId) === engine],
+              ['engine.prototype', () => engine instanceof modules.base.ServerTableEngineBase],
+              ['engine.tableId', () => engine.tableId === tableId],
+            ],
+            () => ({
+              failedTable: uuid(tableId) ? tableId : describe(tableId),
+              failedField: 'drainedF06Originals',
+              observed: `fleet:${slot(tableMap, engine)}`,
+              expected: 'fleet:same',
+              /* `failedTournament` is not a carried key (#5034), so the
+                 tournament travels here - and beside it the three registry
+                 slots, so ONE receipt says which registry disagreed, which
+                 way, and whether the id was retired out from under it rather
+                 than replaced. Shapes, sizes and uuids only. */
+              observedDetail: [
+                `tournament=${
+                  uuid(manager.tournamentId) ? manager.tournamentId : describe(manager.tournamentId)
+                }`,
+                `table=${uuid(tableId) ? tableId : describe(tableId)}`,
+                `index=${originalIndex + 1}/${originals.length}`,
+                `fleetSlot=${slot(tableMap, engine)}`,
+                `owned=${describe(ownedTables.has(tableId))}`,
+                `managerSlot=${slot(manager.tableEngines, engine)}`,
+                `duplicate=${describe(retained.has(engine))}`,
+                `prototype=${describe(engine instanceof modules.base.ServerTableEngineBase)}`,
+                `engineTable=${uuid(engine?.tableId) ? engine.tableId : describe(engine?.tableId)}`,
+                `heldRetired=${describe(retirement.held.has(tableId))}`,
+                `pendingRetired=${describe(retirement.pending.has(tableId))}`,
+                `activeRetired=${describe(retirement.active.has(tableId))}`,
+                `fleetSize=${describe(tableMap.size)}`,
+                `ownedSize=${describe(ownedTables.size)}`,
+                `managerEngines=${describe(manager.tableEngines.size)}`,
+                `fleetDisagree=${disagreeing()}`,
+              ]
+                .join(',')
+                .slice(0, 512),
+            })
+          );
           retained.add(engine);
           const permit = engine.f06CurrentPermit;
           require(permit === null ||
@@ -1499,14 +1860,23 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                   ),
               ],
             ]
-              .filter(([, test]) => {
+              .map(([name, test]) => {
+                // Three outcomes, never one (CLAUDE.md 10.86 rule 1). A term
+                // that MOVED names itself. A term that could not be READ is a
+                // different fact - still reported, because an unreadable term
+                // is still suspicious, but it never wears the name of one that
+                // moved, or the next release acts on a finding nobody made.
                 try {
-                  return test();
+                  return test() ? name : null;
                 } catch {
-                  return true;
+                  return `${name}:unreadable`;
                 }
               })
-              .map(([name]) => name);
+              .filter((name) => name !== null);
+            // And the fourth, which matters most: the identity compare said the
+            // capture flipped and every term below still holds, so the cause is
+            // OUTSIDE this list. `none` says that out loud instead of returning
+            // an empty string that reads as "nothing was wrong".
             return flipped.length === 0 ? 'none' : flipped.join(',');
           };
           const failedEngine = () => {
@@ -1822,12 +2192,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     async function proveAbandonedBoundaries(checkAll) {
       if (deferredAbandonedBoundaries.size === 0) return;
       stage = 'mixed_custody';
-      progress('mixed_custody');
+      progress('proveAbandonedBoundaries', `tables=${deferredAbandonedBoundaries.size}`);
       const ids = [...deferredAbandonedBoundaries.keys()].sort();
       require(ids.length <= maxTables, 'mixed_abandoned_generation_unproven');
       const since = new Date(Date.now() - inflightWindowMs).toISOString();
+      const pages = Math.ceil(ids.length / readPageSize);
       for (let offset = 0; offset < ids.length; offset += readPageSize) {
         const page = ids.slice(offset, offset + readPageSize);
+        progress(
+          'proveAbandonedBoundariesPage',
+          `page=${offset / readPageSize + 1}/${pages},ids=${page.length}`
+        );
         checkAll();
         const { data, error } = await modules.client.supabase
           .from('hand_state_snapshots')
@@ -1850,9 +2225,22 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
 
     async function sealAndRetireOriginals(checkAll) {
       stage = 'mixed_custody';
-      progress('mixed_custody');
+      progress('sealObserveManagers', `managers=${retainedManagers.length}`);
+      let observedManagers = 0;
       for (const capture of retainedManagers) {
+        // A sealed manager's transfer is already in the rows: no observe, no
+        // commit, no readback. Its fresh intent ids stay unused.
+        if (capture.sealed === true) continue;
         const { manager, proposal, local } = capture;
+        progress(
+          'sealObserveManager',
+          // The count is of managers that need an observe; a manager whose
+          // transfer the rows already proved sealed is named separately, so
+          // `manager=1/2,sealed=1` cannot be read as a manager gone missing.
+          `manager=${++observedManagers}/${retainedManagers.length},sealed=${
+            retainedManagers.filter((c) => c.sealed === true).length
+          },tournament=${manager.tournamentId}`
+        );
         const input = {
           p_transfer_id: proposal.transfer_id,
           p_tournament_id: manager.tournamentId,
@@ -1865,11 +2253,105 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           checkAll();
           if (name === 'fn_f06_prepare_mixed_manager_custody' && args.p_expected !== null)
             custodyCommitAttempted = true;
+          // The call that is actually on the wire. An unknown outcome inside a
+          // custody RPC and an unknown outcome between two of them are not the
+          // same fact, and only the second is safe to describe as `nothing was
+          // sent`. Observability only; the call, its arguments and its checks
+          // are untouched.
+          progress(
+            'mixedCustodyRpc',
+            `rpc=${name},phase=${
+              args.p_expected === undefined ? 'read' : args.p_expected === null ? 'observe' : 'commit'
+            },tournament=${manager.tournamentId},commitAttempted=${custodyCommitAttempted}`
+          );
           const response = await modules.client.supabase.rpc(name, args);
           checkAll();
-          require(!response.error &&
-            record(response.data) &&
-            response.data.ok === true, 'mixed_custody_rpc_unknown');
+          const engineShape = () => (Array.isArray(local?.engines) ? local.engines : []);
+          const allocationBacked = () =>
+            engineShape().filter((e) => e.permit === null && typeof e.allocation_epoch === 'string');
+          /* ═══ THE DATABASE NAMED IT AND THE GUARD CALLED IT UNKNOWN (2026-09-24) ═══
+
+             Run 36068474418 is the measurement: 62 tables attempted, 62
+             completed, all 62 read back and verified inside their own write
+             windows - and then `mixed_custody_rpc_unknown`, naming nothing.
+             The Supabase edge log for that second holds what this conjunction
+             threw away: `POST /rest/v1/rpc/fn_f06_prepare_mixed_manager_custody`
+             answered 400 with SQLSTATE P0001. Which of that function's refusals
+             fired is written only in its message, and by the time a person
+             looked, the database's own log for that second was no longer
+             retained. So the single fact that decides the next fix reached
+             nobody, and the outcome was `unknown` because the guard made it
+             unknown.
+
+             It cannot be anything else. `fn_f06_prepare_mixed_manager_custody`
+             has no path that returns `ok` false: it returns a record with `ok`
+             true or it raises. So `response.data.ok` can never be the conjunct
+             that fails while the call came back cleanly, and the only reachable
+             failure here is an error this conjunction declined to read. That is
+             10.86 rule 1: "I could not tell" has to say what it does know.
+
+             Observability only. The three collapsed facts - the call did not
+             come back, it came back as something that is not a record, it came
+             back saying no - are told apart, and the database's own SQLSTATE
+             and refusal token travel with them. `reason` is still
+             `mixed_custody_rpc_unknown` for every existing parser, no check,
+             threshold or outcome moves, and a refusal is still a refusal that
+             carries `retryAllowed` false.
+
+             Only a bare upper-case refusal token of the kind every f06 function
+             raises is carried verbatim. Any other string becomes its length,
+             exactly as `describe` does, so no permit payload, card, credential
+             or player identity can reach a log. */
+          witness(
+            'mixed_custody_rpc_unknown',
+            [
+              ['rpc.transport', () => !response.error],
+              ['rpc.body', () => record(response.data)],
+              ['rpc.ok', () => response.data.ok === true],
+            ],
+            () => ({
+              failedField: name,
+              failedTable: manager.tournamentId,
+              observed: sqlState(response.error?.code),
+              observedDetail: [
+                `sqlstate=${sqlState(response.error?.code)}`,
+                `refusal=${refusalToken(response.error?.message)}`,
+                `hint=${refusalToken(response.error?.hint)}`,
+                `details=${describe(response.error?.details)}`,
+                `body=${describe(response.data)}`,
+                `ok=${describe(response.data?.ok)}`,
+                `commit=${args.p_expected === null ? 'no' : 'yes'}`,
+                `tournament=${
+                  uuid(args.p_tournament_id) ? args.p_tournament_id : describe(args.p_tournament_id)
+                }`,
+                // From #5218: the physical map this manager refused on. Kept
+                // after the database's own answer above, so a truncation at the
+                // carrier limit drops the shape and never the SQLSTATE.
+                `engines=${engineShape().length}`,
+                `permits=${engineShape().filter((e) => e.permit !== null).length}`,
+                `allocationBacked=${allocationBacked().length}`,
+                `nullLifecycle=${engineShape().filter((e) => e.lifecycle === null).length}`,
+                `backed=${allocationBacked()
+                  .slice(0, 12)
+                  .map(
+                    (e) =>
+                      `${String(e.table_id).slice(0, 8)}:${String(e.allocation_epoch).slice(0, 8)}:${
+                        e.lifecycle === null ? 'null' : e.lifecycle
+                      }:hand=${e.bank_custody?.hand_number}:seats=${e.bank_custody?.roster?.length}`
+                  )
+                  .join('/')}`,
+              ]
+                .join(',')
+                .slice(0, 512),
+            })
+          );
+          // The answer is in hand. An outcome lost from HERE was lost while
+          // this guard was checking a reply it already had, which is not the
+          // same fact as an outcome lost with a call still on the wire.
+          progress(
+            'mixedCustodyRpcAnswered',
+            `rpc=${name},tournament=${manager.tournamentId},commitAttempted=${custodyCommitAttempted}`
+          );
           return response.data;
         };
         const observation = await rpc('fn_f06_prepare_mixed_manager_custody', input);
@@ -1940,24 +2422,44 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           const matches = proof.engine_lifecycles.filter((e) => e.table_id === original.tableId);
           require(matches.length === 1, 'mixed_original_lifecycle_evidence_missing');
           const witness = matches[0];
+          /* AN EPOCH THAT NEVER RESERVED A HAND IS WITNESSED BY ITS ABSENCE
+             (2026-09-24). An engine holds one allocator epoch for its life and
+             every hand it deals reserves a permit under it, so an epoch with
+             no permit row is an engine that dealt nothing in this generation -
+             a table admitted and left waiting for players. Run 36068474418
+             refused the whole transfer for seven of them. The database now
+             witnesses that case under its locks (migration
+             20260924225647): no permit under the epoch, no reserved hand on
+             the table, the table's own lifecycle, `permits: []` and
+             `witness: 'never_reserved'`. This holds the receipt to exactly
+             that shape, and to the shape it always had for an epoch that did
+             reserve; a receipt saying neither refuses as before. */
+          const neverReserved =
+            witness.witness === 'never_reserved' &&
+            Array.isArray(witness.permits) &&
+            witness.permits.length === 0 &&
+            original.permit === null &&
+            original.lifecycle === null;
           require(witness.allocation_epoch === original.allocationEpoch &&
             typeof witness.lifecycle === 'string' &&
             /^[1-9][0-9]{0,18}$/.test(witness.lifecycle) &&
             (original.lifecycle === null || original.lifecycle === witness.lifecycle) &&
             Array.isArray(witness.permits) &&
-            witness.permits.length > 0 &&
-            new Set(witness.permits.map((p) => p.permit_id)).size === witness.permits.length &&
-            witness.permits.every(
-              (p) =>
-                uuid(p.permit_id) &&
-                p.tournament_id === manager.tournamentId &&
-                p.generation === manager.tournamentLeaseGeneration &&
-                p.table_id === original.tableId &&
-                p.custody_id === original.allocationEpoch &&
-                Number.isSafeInteger(p.lifecycle) &&
-                String(p.lifecycle) === witness.lifecycle &&
-                ['accepted', 'never_started', 'aborted_unsettled'].includes(p.state)
-            ), 'mixed_original_lifecycle_evidence_invalid');
+            (neverReserved ||
+              (witness.witness === 'permits' &&
+                witness.permits.length > 0 &&
+                new Set(witness.permits.map((p) => p.permit_id)).size === witness.permits.length &&
+                witness.permits.every(
+                  (p) =>
+                    uuid(p.permit_id) &&
+                    p.tournament_id === manager.tournamentId &&
+                    p.generation === manager.tournamentLeaseGeneration &&
+                    p.table_id === original.tableId &&
+                    p.custody_id === original.allocationEpoch &&
+                    Number.isSafeInteger(p.lifecycle) &&
+                    String(p.lifecycle) === witness.lifecycle &&
+                    ['accepted', 'never_started', 'aborted_unsettled'].includes(p.state)
+                ))), 'mixed_original_lifecycle_evidence_invalid');
           original.lifecycle = witness.lifecycle;
           local.engines.find((e) => e.table_id === original.tableId).lifecycle = witness.lifecycle;
         }
@@ -2002,6 +2504,33 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           }
         }
         require(originalDispositions === 1, 'mixed_original_disposition_set_changed');
+        capture.commit = { rpc, input, proof };
+      }
+      /* ═══ EVERY MANAGER IS OBSERVED BEFORE ANY IS COMMITTED (2026-09-24) ═══
+
+         The commit call (`p_expected` set) INSERTS an immutable
+         `f06_manager_custody_transfers` row carrying this run's
+         `release_checkpoint` (run id, ownership token, break times). Until
+         today each manager was observed and committed in turn, so a refusal
+         on the SECOND manager's observation - which the rows say is exactly
+         what the next attempt will meet: `F06_RETIRED_CANONICAL_CHANGED:
+         registrations` on 615783bf, a bust recorded after its origin was
+         attested - would have left the FIRST manager's row behind, and every
+         later attempt would then refuse that manager as
+         `F06_MIXED_TRANSFER_CHANGED` against a row nothing can delete. The
+         wedge one level up (CLAUDE.md 10.86 rule 4), made by this guard.
+
+         So the two calls are two phases. Every manager's observation, and
+         every check this guard makes of it, completes before the first commit
+         is sent; a refusal anywhere in the first phase commits nothing. The
+         database still holds each commit to its own observation
+         (`F06_MIXED_CANONICAL_CHANGED`), so nothing that could move between
+         the phases is admitted by the split. */
+      progress('sealCommitManagers', `managers=${retainedManagers.length}`);
+      for (const capture of retainedManagers) {
+        if (capture.sealed === true) continue;
+        const { manager, proposal, local } = capture;
+        const { rpc, input, proof } = capture.commit;
         const committed = await rpc('fn_f06_prepare_mixed_manager_custody', {
           ...input,
           p_expected: proof,
@@ -2024,8 +2553,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // Both continuing owners must exist before retiring either event. All CAS
       // calls are synchronous and all captured local objects remain untouched.
       checkAll();
+      progress('sealRetireOriginals', `managers=${retainedManagers.length}`);
       for (const capture of retainedManagers) {
-        require(record(capture.receipt), 'mixed_custody_receipt_missing');
+        if (capture.sealed === true) {
+          // The seal was proved from rows at capture. What is retired below is
+          // only what that row named and this process still holds, and only
+          // while the same manager still owns the same generation.
+          require(server.tournamentEngines.get(capture.manager.tournamentId) === capture.manager &&
+            capture.manager.tournamentLeaseGeneration ===
+              capture.capturedLeaseGeneration, 'mixed_sealed_owner_changed');
+        } else require(record(capture.receipt), 'mixed_custody_receipt_missing');
         for (const { tableId, engine } of capture.exactEngines) {
           checkAll();
           require(server.unregisterTournamentTableEngine(tableId, engine) ===
@@ -2781,7 +3318,71 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             deadParkedBanksDeferred(tableId, engine)) &&
           Object.keys(states).length === 0, 'stopped_engine_retains_custody');
       }
-      const signature = canonical({
+      /* ═══ PRESENCE IS OBSERVED; CUSTODY IS HELD (2026-09-24) ═══
+
+         Run 36056765988 (the 20:55 break) is the measurement: the first
+         release since 2026-09-22 to clear every capture refusal, every row
+         proof and the previous-work join, write 79 tables' park rows, and
+         then refuse `engine_state_changed` on the re-verification after the
+         write - naming nothing, because that require was the process-wide
+         one. Every part of this signature but one is frozen by the break
+         itself: the hand number (parked), the roster and stacks (the engine's own
+         half of the freeze, immediately below), the banks (no hand, no
+         timer), and the residue and disposed sets that derive from them. The
+         one part the freeze does not touch is the disconnect FSM: a player's
+         socket drops or comes back during the five minutes exactly as it does
+         at any other time, and on a live fleet of hundreds of tables one of
+         them will, in the seconds between the capture and the write. That is
+         presence, which the successor re-observes from heartbeats within
+         seconds of adopting the row; it is not custody, and refusing the
+         whole release on it is the same forever-block one level up (CLAUDE.md
+         10.86 rule 4).
+
+         So the signature is split. CUSTODY - hand number, roster, banks,
+         residue, disposed - must not move between observations, and a move
+         refuses exactly as before, now naming its table and the field.
+         PRESENCE may change its VALUES between observations and the newest
+         observation is adopted; its REGISTRY - which players have a state at
+         all - may not, because a player appearing or vanishing from it is a
+         roster event the freeze forbids, and that still refuses. The readback
+         holds the row's presence to the same rule: the same players, each
+         with a record, not the same bytes. */
+      /* ═══ WHICH HALF OF THE FREEZE HOLDS THE ROSTER STILL (2026-09-24) ═══
+
+         The paragraph above named the Postgres half. For the roster it is the
+         wrong half twice over, and the correction matters because the whole
+         argument for keeping seats and stacks in `custody` rests on it.
+
+         FIRST, the Postgres half does not apply to this process.
+         `fn_refuse_while_frozen`, the function behind `zz_freeze_guard` on
+         `table_seats`, returns early when the caller's `request.jwt.claims`
+         carry the service role, which is exactly what this engine presents.
+         Verified against the live database on 2026-09-24. That guard holds
+         back browsers and pg_cron, which is what `freezeState.ts` says it is
+         for ("the engine is dead for ~2 of the 5 minutes and pg_cron and
+         browsers do not stop when it does"). It was never the engine's leash.
+
+         SECOND, the signature does not read a row. `custody.roster` below
+         reads `engine.seatedPlayers`, an in-memory array, and no trigger on
+         any table can hold an array in this heap still.
+
+         What does hold it is the ENGINE's half: the process-wide flag in
+         `maintenance/freezeState.ts`, set from the ANNOUNCEMENT at :53 rather
+         than the countdown at :55, and read on both paths that could move a
+         seat under this walk. A top-up answers `Scheduled maintenance is in
+         progress` on the first line of `addChips`, before it finds the seat
+         and before any debit, so neither the stack nor the pending-add-on
+         cache moves. And the wait-for-players sweep, the only caller that
+         replaces `seatedPlayers` wholesale, meets the pause gate at the top
+         of its loop before it reads seats or adopts a roster, so an arrival,
+         a departure and an expired sit-out all wait for the resume.
+
+         Both gates are now pinned by
+         `tests/a-seat-does-not-move-under-a-release-walk.law.test.ts`, which
+         also pins this signature's dependency on them. Before it, deleting
+         either gate left every suite green and turned the next release back
+         into the lottery #5215 had just removed. */
+      const custody = {
         handNumber: engine.handCount,
         roster: engine.seatedPlayers.map((seat) => [
           seat.user_id,
@@ -2790,12 +3391,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           seat.stack,
         ]),
         banks: expectedBanks,
-        states,
         ...(retained8825 ? { residue: [...residue].sort(), disposed: [...disposed].sort() } : {}),
-      });
+      };
+      const custodySignature = canonical(custody);
+      const presenceRegistry = canonical(Object.keys(states).sort());
+      const signature = canonical({ ...custody, states });
       return {
         tableId,
         engine,
+        custody,
+        custodySignature,
+        presenceRegistry,
         methods,
         authority,
         stopped,
@@ -2978,11 +3584,34 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         current.methods.every(
           (method, index) => method === captured.methods[index]
         ), 'engine_method_changed');
-      require(current.pause === captured.pause &&
-        current.timer === captured.timer &&
-        current.bankEngine === captured.bankEngine &&
-        current.bankMeta === captured.bankMeta &&
-        current.signature === captured.signature, 'engine_state_changed');
+      witness(
+        'engine_state_changed',
+        [
+          ['engine.pause', () => current.pause === captured.pause],
+          ['engine.timer', () => current.timer === captured.timer],
+          ['engine.bankEngine', () => current.bankEngine === captured.bankEngine],
+          ['engine.bankMeta', () => current.bankMeta === captured.bankMeta],
+          ['custody', () => current.custodySignature === captured.custodySignature],
+          ['presence.registry', () => current.presenceRegistry === captured.presenceRegistry],
+        ],
+        () => ({
+          failedTable: captured.tableId,
+          observedDetail: Object.keys(captured.custody)
+            .filter((key) => canonical(current.custody[key]) !== canonical(captured.custody[key]))
+            .map((key) => `moved=${key}`)
+            .concat(
+              current.presenceRegistry === captured.presenceRegistry
+                ? []
+                : [`presenceRegistry=${Object.keys(current.states).length}/${Object.keys(captured.states).length}`]
+            )
+            .join(',')
+            .slice(0, 512),
+        })
+      );
+      // Presence values are observed, not held: the newest observation is the
+      // one the row will be read against (see the readback).
+      captured.states = current.states;
+      captured.signature = current.signature;
       require(current.presenceSave === captured.presenceSave, 'presence_writer_changed');
       require(current.accountingPending === captured.accountingPending &&
         current.checkpointGeneration ===
@@ -3050,10 +3679,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // A player holds at most a handful of seats, so a hundred players stay
       // far inside the 900-row ceiling, and a page that fills refuses.
       const open = [];
+      const atResidueTable = [];
       for (const answer of await readAll(chunks(residueUsers, 100).map((users) => () =>
         modules.client.supabase
           .from('table_seats')
-          .select('table_id,user_id,occupancy_id')
+          .select('table_id,user_id,occupancy_id,joined_at')
           .in('user_id', users)
           .is('left_at', null)
           .limit(901)))) {
@@ -3063,10 +3693,106 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             uuid(row.table_id) &&
             uuid(row.user_id) &&
             uuid(row.occupancy_id), 'bank_residue_unproven');
-          if (held.has(`${lower(row.table_id)}:${lower(row.user_id)}`))
-            refuseAt('proveBanksHeldNothing.openSeatAtResidueTable', row.table_id, 'bank_residue_unproven');
+          if (held.has(`${lower(row.table_id)}:${lower(row.user_id)}`)) atResidueTable.push(row);
           open.push(row);
         }
+      }
+      /* ═══ A SEAT THIS ENGINE NEVER DEALT HOLDS NONE OF ITS BANKS (2026-09-25) ═══
+
+         Run 36098984451 (2026-09-25 05:39 UTC) refused here on
+         a86077f2-80bc-4cb5-8f75-1220dab2615d - one open seat, out of the 2178
+         this proof read, that happened to be at a table whose engine also held
+         residue for that player. The two runs either side of it, minutes away
+         on the same fleet, read the same 861 residue players and found no
+         collision at all. The refusal is a race, and the race is ordinary
+         operation.
+
+         WHICH OCCUPANCY IS THE QUESTION, AND THE PLAYER IS NOT IT. `held` is
+         keyed `table:player`, so ANY open row for that player at that table
+         refuses - including one this engine has never adopted. That is not the
+         shape the note above set out to catch. The shape it catches is a
+         ROSTER THAT IS MERELY STALE: a LIVE OCCUPANCY the engine forgot, whose
+         bank would then be dropped by a checkpoint that walks the roster.
+
+         THE ROSTER CANNOT FORGET AN OCCUPANCY THE DATABASE STILL HOLDS OPEN.
+         `seatedPlayers` is replaced wholesale, and only from
+         `loadSeatedPlayers` (tables.ts:194), which reads exactly the rows with
+         `left_at IS NULL`; `left_at` is stamped once and never cleared. Every
+         engine-side removal closes the row in its own transaction FIRST and
+         filters the roster after - the held leave (ServerTableEngineBase.ts
+         :3969, on `res.ok`), the sit-out eviction (:8523, after
+         `atomicCashout`), the executed seat move (:4410, confirmed moves
+         only), leave-pending (ServerTableEngineDealing.ts:748, cashed-out ids)
+         and the departure sweep (:1597). For a tournament seat the database is
+         the sole authority and the engine "simply sees it absent from the next
+         loadSeatedPlayers" (:446). So an OPEN row for a player the roster does
+         not hold is a row the roster never held: a LATER occupancy, opened
+         after the last sweep - and during this break the sweep does not run at
+         all, because it meets the pause gate at the top of its loop before it
+         reads seats (:3448, pinned by
+         a-seat-does-not-move-under-a-release-walk.law.test.ts).
+
+         AND A LATER OCCUPANCY OWNS NONE OF THIS ENGINE'S BANKS. A bank is
+         bound to an occupancy in exactly three places: a DEAL
+         (ServerTableEngineDealing.ts:3096, `if (!getPlayerBank(...))`),
+         `applyParkedTimeBanks` (ServerTableEngineBase.ts:4598, only where
+         `bank.occupancyId === seat.occupancy_id`) and a cash seat move's
+         arrival claim (:4529). The last two require the player to BE in the
+         roster, which a residue player is not, and a parked bank that matches
+         no seat was already refused as `parked_bank_invalid` unless the whole
+         table qualified as `deadParkedBanksDeferred`, which holds no seat, no
+         bank and no metadata to be residue with. So the only way this engine
+         holds a bank for THIS occupancy is that it dealt it a hand.
+
+         SO THE SAME QUESTION IS ASKED FROM ROWS, ONCE PER COLLIDING SEAT: has
+         `hand_history` recorded a hand at that table, at or after that seat
+         opened, with that player in it? One row is enough and it refuses
+         exactly as before. No row proves this engine never dealt that
+         occupancy, so nothing it holds is that seat's custody, and the
+         successor seeds the ordinary allowance at that seat's first deal -
+         which is what `applyParkedTimeBanks` says a later seat occupant gets
+         anyway ("later seat occupants keep ordinary allowance seeding").
+
+         NOTHING ELSE MOVES. A collision whose seat WAS dealt - a roster that
+         really is stale, a departure whose row-close was rolled back, a seat
+         `loadSeatedPlayers` dropped because its profile would not resolve -
+         still refuses, and still names this check and this table. An error, a
+         body that is not a list, a page that fills and a row with no readable
+         `joined_at` are all COULD NOT TELL and keep the refusal. And the
+         question is only asked at all when a collision exists: on the runs
+         either side of 36098984451 it cost no read. More than `readPageSize`
+         of them at once is not a race and is refused without asking, because a
+         fleet whose rosters have all gone stale is the condition this proof
+         exists for. The read is the one at `dealtSinceRead` below, including
+         its lesson: the containment value is sent as a JSON STRING, or
+         PostgREST answers 22P02. */
+      if (atResidueTable.length > readPageSize)
+        refuseAt(
+          'proveBanksHeldNothing.openSeatAtResidueTable',
+          atResidueTable[0].table_id,
+          'bank_residue_unproven'
+        );
+      let residueSeatsNeverDealt = 0;
+      for (const [index, answer] of (await readAll(atResidueTable.map((row) => () =>
+        typeof row.joined_at === 'string'
+          ? modules.client.supabase
+              .from('hand_history')
+              .select('id')
+              .eq('table_id', row.table_id)
+              .gte('created_at', row.joined_at)
+              .contains('players', JSON.stringify([{ userId: row.user_id }]))
+              .limit(1)
+          : Promise.resolve({ data: null, error: { code: 'seat_unjoined' } })))).entries()) {
+        answered(answer, 1, 'bank_residue_unproven', 'residueSeatDealtRead');
+        if (answer.data.length === 0) {
+          residueSeatsNeverDealt++;
+          continue;
+        }
+        refuseAt(
+          'proveBanksHeldNothing.openSeatAtResidueTable',
+          atResidueTable[index].table_id,
+          'bank_residue_unproven'
+        );
       }
       // 2. A residue player who left a residue table by a CASH SEAT MOVE and
       // still sits at that move's destination. The source deposited the carried
@@ -3204,7 +3930,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          So a move inside the hour is asked ONE more question, from rows: has
          `hand_history` recorded a hand at the destination table, after the
          move executed, with that player in it? One row is enough. No row, an
-         error or an unreadable answer keeps the refusal exactly as it was. */
+         error or an unreadable answer keeps the refusal exactly as it was.
+
+         The containment value is sent as a JSON STRING. postgrest-js writes an
+         array argument as a Postgres array literal (`cs.{...}`), so an array of
+         objects reached PostgREST as invalid JSON and every read answered
+         22P02 (release run 36081290135, 2026-09-25 01:24 UTC:
+         failedCheck proveBanksHeldNothing.dealtSinceRead, error=22P02). A
+         string is passed through verbatim. */
       const claimableSince = Date.now() - 3600000;
       const inWindow = arrivals.filter((arrival) => {
         const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
@@ -3219,7 +3952,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               .select('id')
               .eq('table_id', arrival.to_table_id)
               .gt('created_at', executed)
-              .contains('players', [{ userId: arrival.player_id }])
+              .contains('players', JSON.stringify([{ userId: arrival.player_id }]))
               .limit(1)
           : Promise.resolve({ data: [], error: null });
       }))).entries()) {
@@ -3255,6 +3988,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         `residueTables=${residueTables.length}`,
         `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
         `residueOpenSeatsElsewhere=${open.length}`,
+        `residueSeatsHere=${atResidueTable.length}`,
+        `residueSeatsNeverDealt=${residueSeatsNeverDealt}`,
         `arrivalTablesAsked=${asked.length}`,
         `arrivalQuestion=${batchMissing ? 'perTable' : 'perPlayer'}`,
         `arrivalPlayersAsked=${askedPlayers.length}`,
@@ -3638,6 +4373,178 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     if (retained8825) await proveBanksHeldNothing(checkAll);
     bankCount = captures.reduce((sum, capture) => sum + Object.keys(capture.banks).length, 0);
     uninitializedSeats = captures.reduce((sum, capture) => sum + capture.uninitialized, 0);
+    /* ═══ A DEAD GENERATION PROVES ITS PARK FROM THE ROW IT READ (2026-09-24) ═══
+
+       Run 36061780372 (the 21:36 recovery window) is the measurement: the
+       first release since 2026-09-22 to clear every capture refusal, every row
+       proof and the previous-work join, and then refuse
+       `native_checkpoint_unconfirmed` after all 83 park writes returned. The
+       Supabase edge logs for those thirteen seconds hold 22 `POST 403
+       engine_presence_parked`, and the Postgres logs hold the same 22 as
+       `TOURNAMENT_MANAGER_FENCED: lease generation is no longer current`,
+       raised by `smarter_private.fn_smarter_data_api_pre_request`. Eleven
+       tables, each written once and once more five seconds on (8825's own
+       `parkWriteRetryMs`), and every one of them a `parkedNoRoster` deferral:
+       a STOPPED, TERMINAL tournament engine whose lease heartbeat stopped on
+       2026-09-22, holding the banks it had read from `engine_presence_parked`
+       at `start()` and never seated anybody to claim. Its
+       `persistPresenceForRestart` is bound to that dead generation
+       (`bindTournamentDataAuthority`), the request carries it, and the
+       database refuses it - CORRECTLY. A generation that is no longer current
+       must not write tournament data; that fence is the platform's own rule
+       and this guard does not argue with it. `savePresenceAtPark` returns
+       false, `parkedBankSaveComplete` stays false, and the whole release
+       refused for a write the database was right to refuse.
+
+       THE WRITE WAS NEVER NEEDED. The deferral above (`deadParkedBanksDeferred`)
+       already says why: 8825's `captureParkedTimeBanks` starts from
+       `{ ...this.parkedTimeBanks }` and this engine seats nobody, so the row
+       the checkpoint would write is the row the engine READ, at the same
+       `handNumber` - on 8825 `parkedTimeBanks` is filled from nowhere but
+       `loadTimeBanksFromPark`, and only when `snapshot.handNumber ===
+       this.handCount`. Writing it again changes nothing the successor will
+       read, and on a dead generation cannot be done at all.
+
+       So the row is asked FIRST, before anything is written. A `parkedNoRoster`
+       capture whose row still says what the engine holds - a snapshot of the
+       shape `loadTimeBanksFromPark` accepts, at the captured hand, every bank
+       the engine holds in it byte for byte, any other entry one the loader
+       would skip as unrestorable, and no presence the successor would still
+       read (`PARKED_PRESENCE_FRESH_MS`) - is NOT written: the row is its
+       proof. A capture whose row does NOT say that stays on the write path
+       exactly as before - a cash engine, or one whose lease is still current,
+       gets its row rewritten and read back inside its own write window; one
+       whose generation is dead gets the same fenced refusal as today, now
+       naming the table, the deferral and which check the row failed. Nothing
+       is admitted on "could not tell": an unreadable row is simply not a
+       proof, and the write path answers instead.
+
+       THIS IS NOT "A DEAD ENGINE IS EXCUSED FROM THE CHECKPOINT". Nothing in
+       the capture walk moves: the engine still has to be stopped, terminal,
+       released, drained, holding no live bank, no metadata and no roster, and
+       the rows still have to prove its felt quiet before anything is written
+       for anyone. A live engine, or a dead one that seats a player, still
+       writes and is still read back inside its own write window, exactly as
+       before. What changes is only that a row the engine cannot rewrite, and
+       need not, is held to the standard the write would have been. */
+    const rowProvedCustody = new Set();
+    const rowUnproven = new Map();
+    const provedDetail = [];
+    {
+      const candidates = captures.filter((capture) =>
+        capture.requiresRow &&
+        /(^|\+)parkedNoRoster:/.test(String(deferredUnresolvableCustody.get(capture.tableId)))
+      );
+      if (candidates.length > 0) progress('proveParkedRows');
+      for (let offset = 0; offset < candidates.length; offset += readPageSize) {
+        checkAll();
+        const page = candidates.slice(offset, offset + readPageSize);
+        const { data, error } = await modules.client.supabase
+          .from('engine_presence_parked')
+          .select('table_id,engine_instance,parked_at,time_bank_snapshot,disconnect_states')
+          .in(
+            'table_id',
+            page.map((capture) => capture.tableId)
+          )
+          .limit(page.length + 1);
+        checkAll();
+        const byId = new Map();
+        const readable = !error && Array.isArray(data) && data.length <= page.length;
+        if (readable) {
+          for (const row of data) {
+            if (record(row) && uuid(row.table_id) && !byId.has(row.table_id))
+              byId.set(row.table_id, row);
+          }
+        }
+        const now = Date.now();
+        for (const captured of page) {
+          const row = readable ? byId.get(captured.tableId) : undefined;
+          const snapshot = row?.time_bank_snapshot;
+          const parkedAt = typeof row?.parked_at === 'string' ? Date.parse(row.parked_at) : NaN;
+          const players = record(snapshot) && record(snapshot.players) ? snapshot.players : {};
+          // What `loadTimeBanksFromPark` keeps: a uuid key and a restorable bank.
+          // Anything else it skipped when this engine read the row, and the
+          // successor will skip it again; an entry it would KEEP that this
+          // engine does not hold is a bank the engine lost, and is not proof.
+          const restorable = (userId, bank) =>
+            uuid(userId) &&
+            validBank(bank) &&
+            (bank.unlimitedActivations === undefined ||
+              typeof bank.unlimitedActivations === 'boolean');
+          const extra = Object.keys(players).filter(
+            (userId) => !Object.hasOwn(captured.banks, userId)
+          );
+          const moved = Object.keys(captured.banks).find(
+            (userId) => canonical(players[userId]) !== canonical(captured.banks[userId])
+          );
+          const kept = extra.find((userId) => restorable(userId, players[userId]));
+          const checks = [
+            ['read', () => readable],
+            ['row.present', () => record(row)],
+            ['row.parked_at', () => Number.isFinite(parkedAt) && parkedAt <= now],
+            ['snapshot.shape', () =>
+              record(snapshot) &&
+              Object.keys(snapshot).sort().join(',') === 'handNumber,parkedAt,players,version' &&
+              snapshot.version === 1 &&
+              typeof snapshot.parkedAt === 'string' &&
+              Date.parse(snapshot.parkedAt) === parkedAt &&
+              record(snapshot.players)],
+            ['snapshot.handNumber', () => snapshot.handNumber === captured.handNumber],
+            ['snapshot.players', () => moved === undefined],
+            ['snapshot.extraPlayers', () => kept === undefined],
+            ['row.disconnect_states', () =>
+              record(row.disconnect_states) &&
+              Object.values(row.disconnect_states).every(record)],
+            // The write would have left an EMPTY presence for a stopped engine.
+            // The row may keep one only if the successor will not read it.
+            ['row.presence', () =>
+              Object.keys(row.disconnect_states).length === 0 ||
+              now - parkedAt > parkedPresenceFreshMs],
+          ];
+          let failed = null;
+          for (const [name, evaluate] of checks) {
+            let holds = false;
+            try {
+              holds = evaluate() === true;
+            } catch {
+              holds = false;
+            }
+            if (!holds) {
+              failed = name;
+              break;
+            }
+          }
+          if (failed === null) {
+            rowProvedCustody.add(captured.tableId);
+            provedDetail.push(
+              `${String(captured.tableId).slice(0, 8)}:${describe(
+                captured.engine.engineLeaseScope
+              )}:banks=${Object.keys(captured.banks).length}:extra=${extra.length}:states=${
+                Object.keys(row.disconnect_states).length
+              }:age=${Math.round((now - parkedAt) / 60000)}m`
+            );
+          } else {
+            rowUnproven.set(captured.tableId, failed);
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        const scopes = new Map();
+        for (const capture of candidates) {
+          if (!rowProvedCustody.has(capture.tableId)) continue;
+          const scope = describe(capture.engine.engineLeaseScope);
+          scopes.set(scope, (scopes.get(scope) ?? 0) + 1);
+        }
+        provedRows = `tables=${rowProvedCustody.size}/${candidates.length} ${[...scopes]
+          .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+          .map(([scope, count]) => `${scope}=${count}`)
+          .join(' ')} ${[...rowUnproven]
+          .map(([tableId, failed]) => `${String(tableId).slice(0, 8)}:unproven=${failed}`)
+          .join(' ')} ${provedDetail.join(' ')}`
+          .replace(/ {2,}/g, ' ')
+          .slice(0, 512);
+      }
+    }
     stage = 'checkpoint';
     progress('checkpoint');
     let next = 0;
@@ -3648,6 +4555,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           checkMaintenance();
           checkEngine(captured);
           if (!captured.requiresRow) continue;
+          if (rowProvedCustody.has(captured.tableId)) continue;
           captured.writeStartedAt = Date.now();
           attemptedTables++;
           progress();
@@ -3661,7 +4569,25 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           captured.writeEndedAt = Date.now();
           checkMaintenance();
           checkEngine(captured);
-          require(captured.engine.parkedBankSaveComplete === true, 'native_checkpoint_unconfirmed');
+          // The same condition and the same code as before; this names the
+          // table whose write the engine did not confirm, which the process-wide
+          // require never did (run 36061780372 refused 83 tables and named none).
+          witness(
+            'native_checkpoint_unconfirmed',
+            [['engine.parkedBankSaveComplete', () => captured.engine.parkedBankSaveComplete === true]],
+            () => ({
+              failedTable: captured.tableId,
+              observedDetail: [
+                `stopped=${captured.stopped}`,
+                `scope=${describe(captured.engine.engineLeaseScope)}`,
+                `banks=${Object.keys(captured.banks).length}`,
+                `states=${Object.keys(captured.states).length}`,
+                `deferred=${String(deferredUnresolvableCustody.get(captured.tableId) ?? 'none')}`,
+                `rowProof=${rowUnproven.get(captured.tableId) ?? 'not_asked'}`,
+                `durability=${describe(captured.engine.maintenanceDurabilityReason?.() ?? 'unknown')}`,
+              ].join(','),
+            })
+          );
         } catch {
           if (reason === null) reason = 'native_checkpoint_failed';
         }
@@ -3673,7 +4599,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
 
     stage = 'readback';
     progress('readback');
-    const written = captures.filter((capture) => capture.requiresRow);
+    const written = captures.filter(
+      (capture) => capture.requiresRow && !rowProvedCustody.has(capture.tableId)
+    );
     for (let offset = 0; offset < written.length; offset += readPageSize) {
       checkAll();
       const page = written.slice(offset, offset + readPageSize);
@@ -3711,8 +4639,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           typeof snapshot.parkedAt === 'string' &&
           Date.parse(snapshot.parkedAt) === parkedAt &&
           canonical(snapshot.players) === canonical(captured.banks) &&
-          canonical(row.disconnect_states) ===
-            canonical(captured.states), 'checkpoint_readback_mismatch');
+          record(row.disconnect_states) &&
+          canonical(Object.keys(row.disconnect_states).sort()) ===
+            canonical(Object.keys(captured.states).sort()) &&
+          Object.values(row.disconnect_states).every(record), 'checkpoint_readback_mismatch');
         verifiedTables++;
         progress();
       }
@@ -3728,8 +4658,39 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     }
     verifyFiles();
     checkAll();
-    require(captures.every(({ engine }) =>
-      engine.isMaintenanceStateDurable() === true), 'native_readiness_refused');
+    /* The same condition and the same code as the process-wide require this
+       replaces, per table, naming the table and the engine's own reason. A
+       dead generation whose row was proved above is the ONE admitted
+       exception, and only for the ONE reason its unwritten park produces on
+       8825 (`maintenanceDurabilityReason`: `parkedTimeBanks` non-empty and
+       `parkedBankSaveComplete` false -> `bank_park_write_incomplete`). Every
+       other reason, on every other table, refuses exactly as before; the
+       process's own `readyForRestart()` never counted a stopped engine's
+       durability at all (8825 `unparkedTables`: `if (!engine.isRunning())
+       continue`), so nothing this admits is something the engine refused. */
+    for (const captured of captures) {
+      const durable = captured.engine.isMaintenanceStateDurable() === true;
+      if (durable) continue;
+      const durability = captured.engine.maintenanceDurabilityReason?.() ?? 'unknown';
+      witness(
+        'native_readiness_refused',
+        [['engine.isMaintenanceStateDurable', () =>
+          rowProvedCustody.has(captured.tableId) &&
+          captured.stopped === true &&
+          durability === 'bank_park_write_incomplete']],
+        () => ({
+          failedTable: captured.tableId,
+          observedDetail: [
+            `durability=${describe(durability)}`,
+            `stopped=${captured.stopped}`,
+            `scope=${describe(captured.engine.engineLeaseScope)}`,
+            `banks=${Object.keys(captured.banks).length}`,
+            `rowProved=${rowProvedCustody.has(captured.tableId)}`,
+            `deferred=${String(deferredUnresolvableCustody.get(captured.tableId) ?? 'none')}`,
+          ].join(','),
+        })
+      );
+    }
     /* THE SAME TRAP, ONE LEVEL UP (CLAUDE.md 10.86 rule 4). The engine's own
        `readyForRestart()` is asked first and is still the authority. On a
        predecessor whose `unparkedTables()` has no bound - 8825af51 is one, and

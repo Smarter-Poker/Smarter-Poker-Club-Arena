@@ -126,6 +126,8 @@ const ROUND_UNREACHABLE =
 const AUTO_PAUSE_MS = 1500;
 /** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
 
+/** The cap as the hero prints it, two decimals always: 2500 -> "25.00x". */
+const capLabel = (cents: number) => `${(Math.max(0, cents) / 100).toFixed(2)}x`;
 const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
 
 /** A prize is an exact ledger amount, including all digits of large wins. */
@@ -505,8 +507,8 @@ function DiamondCrashGame() {
   const bets = useMemo(() => state?.bets ?? [], [state]);
   const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet), [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
-  const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 100000;
-  const growthK = cfg?.growth_k ?? 0.12;
+  const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 2500;
+  const growthK = cfg?.growth_k ?? 0.1;
   const autoPresets = useMemo(
     () => AUTO_PRESETS.filter((t) => t === 0 || t <= capCents),
     [capCents]
@@ -1356,7 +1358,7 @@ function DiamondCrashGame() {
                   'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
                 )
               ) : (
-                `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`
+                `${promise ? `${promise} ` : ''}Every Round Is Capped At ${capLabel(capCents)}. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`
               )}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
@@ -1364,7 +1366,7 @@ function DiamondCrashGame() {
               <span className="sc-copy sc-ink--silver">
                 Would Have Crashed At {multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}.
                 {settledRound.outcome && settledRound.outcome.crash_cents > settledRound.cap_cents
-                  ? ` This Round Would Have Booked At Its ${multiplierLabel(settledRound.cap_cents)} Limit First.`
+                  ? ` It Would Have Booked At The ${capLabel(settledRound.cap_cents)} Max First.`
                   : ''}{' '}
                 {settledRound.fairness.server_seed && settledRound.outcome ? (
                   <SealedPrize

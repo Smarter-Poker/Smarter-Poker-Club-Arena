@@ -42,6 +42,8 @@ export const TIME_UTC_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 /**
  * Human summary of a stored schedule row — shared with the union manager.
  * Times are shown in the row's own zone, named, and UTC when it has none.
+ * Every word is capitalised ("Fri At 20:00", "Every Day - Every 60 Min"): it
+ * prints on the union's schedule cards (visual acceptance 2026-09-24).
  */
 export function describeSchedule(
   days: number[],
@@ -51,14 +53,14 @@ export function describeSchedule(
 ): string {
   const dayText =
     days.length === 7
-      ? 'Every day'
+      ? 'Every Day'
       : days
           .slice()
           .sort((a, b) => a - b)
           .map((d) => WEEKDAY_NAMES[d]?.slice(0, 3) ?? String(d))
           .join(', ');
-  if (intervalMinutes) return `${dayText} - every ${intervalMinutes.toLocaleString()} min`;
-  return `${dayText} at ${times.join(', ')} ${scheduleZoneLabel(timeZone)}`;
+  if (intervalMinutes) return `${dayText} - Every ${intervalMinutes.toLocaleString()} Min`;
+  return `${dayText} At ${times.join(', ')} ${scheduleZoneLabel(timeZone)}`;
 }
 
 export default function WeeklyScheduleEditor({

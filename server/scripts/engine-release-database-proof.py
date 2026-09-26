@@ -30,9 +30,12 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"
 MIXED_CUSTODY_PREDECESSOR = "8825af51817f379c4261658ca29ecc9d8d81932d"
 # Exact service-role READ ONLY result from the historical-bank-loss native-17
-# qualification after the reviewed-noon-hand abort migration 20260921040823 and
-# the legacy checkpoint reserve migration 20260921155216 (the prepare RPC accepts
-# 245 s); preserves the retired-origin, original bank and historical-loss boundaries.
+# qualification after the reviewed-noon-hand abort migration 20260921040823, the
+# legacy checkpoint reserve migration 20260921155216 (the prepare RPC accepts
+# 245 s), the never-reserved witness migration 20260924225647 and the registration
+# bust migration 20260925130323 (a bust of a zero stack recorded after attestation
+# is the same registration); preserves the retired-origin, original bank and
+# historical-loss boundaries.
 # Kept in this immutable control-generation file, never supplied by a caller.
 MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
  'functions': [{'acl': '{postgres=X/postgres,service_role=X/postgres}',
@@ -182,10 +185,10 @@ MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',
                 'config': ['search_path=pg_catalog, public, smarter_private'],
-                'body_md5': '4e678c1f3d06edf6538ce5365e1b643b',
+                'body_md5': '5422e7f73fdbdd34bf73d46e514e844e',
                 'signature': 'smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)',
                 'volatility': 'v',
-                'definition_md5': 'b420ff441ec38d176bf1bf4c26bc5272',
+                'definition_md5': '23d15f8c833cf1d3ef6737cb9c758964',
                 'security_definer': True},
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',
@@ -262,10 +265,10 @@ MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',
                 'config': ['search_path=pg_catalog, public, smarter_private'],
-                'body_md5': '62d8d93f836f4edb633900f7da4ddc85',
+                'body_md5': 'ce9c8da18aa4b596b62cc436fd22348d',
                 'signature': 'smarter_private.f06_retired_origin_transfer(uuid,uuid,jsonb,jsonb)',
                 'volatility': 'v',
-                'definition_md5': 'c59a8710299a46b798facb7b5298ce2d',
+                'definition_md5': '61bd389d3c261ee6422a9e2336c58e89',
                 'security_definer': True}]}
 
 

@@ -57,6 +57,7 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { secureRandomInt } from './CryptoRandom.js';
 import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
+import type { BlindSeats } from './deadButton.js';
 import {
   HAND_COMPLETION,
   handCompletionHoldMs,
@@ -445,7 +446,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                closes is simply absent from the next loadSeatedPlayers. */
             if (!this.isTournamentTable()) {
               this.disconnectEngine.unregisterPlayer(this.tableId, id);
-              this.timeBankEngine.removePlayer(this.tableId, id);
+              this.forgetTimeBank(id);
               this.straddleEngine.removePlayer(this.tableId, id);
               this.preActionEngine.removePlayer(this.tableId, id);
               this.leaveHeldByClock.delete(id);
@@ -528,6 +529,55 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+
+        /* ═══ THE CLUSTER'S HALT (Lightning 2.0 Phase 5, 2026-09-21) ══════
+           `tables.dealing_halted_at` is set on every table of a Cluster while
+           it converts MUST_MOVE -> LIGHTNING and cleared if that conversion
+           aborts. It means one thing: finish the hand you are in and start no
+           other. See `dealingHaltLock` on the base class for the contract, for
+           why it is a polled lock rather than a pause-gate owner, and for the
+           60-second worst case on both the halt and the resume.
+
+           THE HAND IN THE AIR IS NEVER KILLED. This is the top of the
+           iteration: the loop cannot reach this line until `dealHand()` has
+           resolved and the settlement barrier above has drained. "Allow
+           already-started hands to resolve normally" is not a second check -
+           it is the position of this one.
+
+           IT SITS ABOVE THE SIT-OUT EVICTION DELIBERATELY. Everything before
+           this gate keeps the table's picture of itself current - the roster,
+           the moved presence, the horse heartbeats, and the throttled row
+           re-read inside prepareNextHand that is how the halt is lifted again.
+           Everything after it changes somebody's seat or deals: the sit-out
+           eviction cashes a player out, `announcePendingSeatMoves` and the
+           idle sweeps move one between tables, and `dealHand` posts blinds. A
+           halted table does none of that. The start-up wait loop learned the
+           same lesson on 2026-09-01: a deliberately parked table that goes on
+           standing players up is a table telling its players their seat is
+           safe and then emptying it.
+
+           AND IT HOLDS NOBODY FOR A BLIND IT COULD HAVE RELEASED. The idle
+           branch's `releaseWaitersNoBlindCanReach` (see the law of that name)
+           fires only when letting everyone in actually STARTS the game.
+           Letting them in here starts nothing, because the table is halted -
+           they would simply be in, and would come in behind the blinds when
+           the halt lifts, which is the one thing Dan's entry rule forbids. The
+           holds stand, unbilled, for the length of the conversion.
+
+           `markProgress` because a pass of this branch has just re-read the
+           roster and the row, exactly as the short-handed branch below has -
+           and because a table halted while its FSM is still 'waiting' has no
+           'paused' state to show GameServer's zombie reaper, which would
+           otherwise condemn it at 180s and rebuild it into the same halt. */
+        if (this.dealingHaltLock) {
+          if (this.tableFSM.state === 'running') {
+            this.tableFSM.transition('paused');
+          }
+          this.setLoopPhase('cluster_dealing_halted');
+          this.markProgress();
+          await this.sleep(3000);
+          continue;
+        }
 
         // ── Dan 2026-08-21, BINDING: sit-out eviction ──
         // "IF A PLAYER IS SITTING OUT THEY MUST BE REMOVED AFTER THE BUTTON
@@ -737,7 +787,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 const current = this.seatedPlayers.find((sp) => sp.user_id === leftUserId);
                 if (current && current.occupancy_id !== occupancyId) continue;
                 this.disconnectEngine.unregisterPlayer(this.tableId, leftUserId);
-                this.timeBankEngine.removePlayer(this.tableId, leftUserId);
+                this.forgetTimeBank(leftUserId);
                 this.straddleEngine.removePlayer(this.tableId, leftUserId);
                 this.preActionEngine.removePlayer(this.tableId, leftUserId);
                 this.leaveHeldByClock.delete(leftUserId);
@@ -968,7 +1018,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
-          if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
+          // The three POLLED owners have no gate to wait on. awaitPauseGate
+          // returns immediately when only one of them is raised, and this
+          // branch then `continue`s - a hot spin. The gate is for the owners
+          // that something in this process will release.
+          if (!this.adminPauseLock && !this.maintenanceLock && !this.dealingHaltLock)
+            await this.awaitPauseGate();
           if (!this.running) break;
           continue;
         }
@@ -2144,6 +2199,38 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dealerSeat = headsUpSeat;
         }
       }
+      /**
+       * THE DEAD BUTTON RULE HOLDS AT EVERY TABLE SIZE (2026-09-25, TDA Rule 30)
+       *
+       * The block above applied "the blinds advance and the button follows"
+       * only when the table had dropped to two. At three or more the button
+       * still walked to the next occupied seat, which is the moving-button
+       * convention, and a tournament is not played that way. Seats 1..6,
+       * button 2, small blind 3, big blind 4, seat 3 busts: the walk put the
+       * button on 4, so seat 4 posted the big blind and then held the button
+       * (no small blind), and seat 5 went from UTG straight to the big blind.
+       * When the BIG blind busted, seat 5 went small blind, then button, and
+       * never posted a big blind that orbit. When a balanced-in player took
+       * the empty seat between the button and the small blind, the walk
+       * handed them the button and seats 4 and 5 posted the small and the big
+       * blind twice running.
+       *
+       * tournamentDeadButtonSeats is the ONE definition of the rule, shared
+       * with every predictor in the base class: the big blind advances one
+       * live seat, the small blind is the seat that posted it last hand (dead
+       * if that seat emptied) and the button is the seat that held the small
+       * blind last hand (dead if that seat emptied). It stands down on the
+       * first hand, on a cash table (whose published rule IS the moving
+       * button) and heads-up, where the block above already holds. A drawn
+       * first button is hand one by definition, so the two never meet.
+       */
+      const deadButton: BlindSeats | null =
+        !drawnIsSeated && headsUpFirstButton === null
+          ? this.tournamentDeadButtonSeats(players)
+          : null;
+      if (deadButton) {
+        dealerSeat = deadButton.button;
+      }
       this.currentHandDealerSeat = dealerSeat;
       this.lastButtonSeat = dealerSeat;
       // Everyone dealt into THIS hand is a veteran from the NEXT one onward, so
@@ -2218,8 +2305,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // over the same `players` roster HandController is about to receive. Its
       // getNextActiveSeat filters `is_sitting_out`, and every player in this
       // roster is built with `is_sitting_out: false`, so the two walks agree.
-      const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
-      const bbSeat = this.getNextSeat(sbSeat, players);
+      //
+      // Under the tournament dead-button rule the seats are the rule's own
+      // (see `deadButton` above): the small blind can be DEAD - null here, no
+      // seat posts it - and the button can sit on an empty seat. HandController
+      // cannot derive either from the button, so the hand is TOLD its blind
+      // seats through `config.blindSeats` below rather than left to walk.
+      const sbSeat: number | null = deadButton
+        ? deadButton.smallBlind
+        : players.length === 2
+          ? dealerSeat
+          : this.getNextSeat(dealerSeat, players);
+      const sbSeatPosition = deadButton ? deadButton.smallBlindSeat : (sbSeat as number);
+      const bbSeat = deadButton ? deadButton.bigBlind : this.getNextSeat(sbSeat as number, players);
 
       // Bible V8 §4.4: Process straddles before hand starts
       let straddleResults: { seat: number; amount: number }[] = [];
@@ -2229,7 +2327,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         const seatOrder: Array<{ seat: number; playerId: string }> = [];
         let currentSeat = utgSeat;
-        for (let i = 0; i < players.length - 2; i++) {
+        // Exclude the blinds: two seats, or one when the small blind is dead.
+        const blindSeatCount = sbSeat === null ? 1 : 2;
+        for (let i = 0; i < players.length - blindSeatCount; i++) {
           // Exclude SB and BB
           const p = players.find((pl) => pl.seat_number === currentSeat);
           if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
@@ -2608,6 +2708,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
        */
       if (!bombPotConfig) {
         this.lastBigBlindSeat = bbSeat;
+        // The small blind SEAT, posted or dead: the next tournament button
+        // (tournamentDeadButtonSeats). Recorded on exactly the hands the big
+        // blind anchor is, for the same reason.
+        this.lastSmallBlindSeat = sbSeatPosition;
       }
 
       if (!this.isTournamentTable() && !bombPotConfig && players.length >= 2) {
@@ -2617,7 +2721,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.disconnectEngine.noteBlindChargedWhileAway(this.tableId, occupant.user_id, which);
         };
 
-        chargeBlind(sbSeat, 'sb');
+        if (sbSeat !== null) chargeBlind(sbSeat, 'sb');
         chargeBlind(bbSeat, 'bb');
 
         // The posted blinds are not the only blinds. Two other paths take money
@@ -2761,6 +2865,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
         // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
         bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
+        /**
+         * THE HAND IS TOLD ITS BLIND SEATS (2026-09-25, the dead button at
+         * every table size). Under the tournament rule the small blind can be
+         * dead and the button can sit on an empty seat, neither of which
+         * HandController's own walk from the button can express. On a cash
+         * table this stays undefined and the controller walks as it always
+         * has: the published cash rule is the moving button, and its entry
+         * hold-outs are built on that walk.
+         */
+        blindSeats: this.isTournamentTable() ? { smallBlind: sbSeat, bigBlind: bbSeat } : undefined,
         // RAKE-AUDIT 2026-07-24: tournament pots are NEVER raked and never pay a
         // BBJ fee — the house take for tournaments/SNGs is the 10% entry fee at
         // buy-in. Pre-fix the cash schedule (10% + cap) was deducted from every

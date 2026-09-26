@@ -271,6 +271,39 @@ function stripComments(sql) {
   return memoScan(sql, false);
 }
 
+/**
+ * Every function this SQL DROPs.
+ *
+ * A BRANCH IS APPLIED AS A UNIT (2026-09-21). That is already why grants are
+ * read across the whole branch (see anonReadableDefiners): a REVOKE in a
+ * sibling migration really does close a function declared in another one. A
+ * DROP is the same fact carried one step further - once the branch lands the
+ * function does not exist, so nothing can reach it, and judging its
+ * creation-time grants reports a hole that will never exist.
+ *
+ * This is the shape check-no-new-band-aids.mjs has used (`droppedElsewhere`)
+ * for the identical situation since 2026-09-07: a migration that is ALREADY
+ * APPLIED and recorded byte-exactly cannot be edited, so a rename necessarily
+ * ships as declare-in-one-file, drop-in-the-next. It arrived here when
+ * 20260921023309 declared fn_ca_reconcile_treasury_positions and
+ * fn_ca_reconcile_remeasure and 20260921024924 renamed and dropped both; this
+ * gate went on judging two functions that no longer exist.
+ *
+ * Deliberately narrow, so it cannot become a way through:
+ *   - only a DROP inside THIS branch's changed migrations counts;
+ *   - comments are stripped first, so a DROP written in prose proves nothing;
+ *   - a function that merely stops being CALLED is untouched.
+ */
+export function droppedFunctions(sql) {
+  const out = new Set();
+  for (const m of stripComments(sql).matchAll(
+    /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
+  )) {
+    out.add(m[1].toLowerCase());
+  }
+  return out;
+}
+
 /** Every function a migration declares, with its header and its body kept
  *  apart: SECURITY DEFINER and RETURNS live in the header, the writes and the
  *  auth calls live in the body. */
@@ -757,6 +790,18 @@ function main() {
     ]);
     for (const name of unscopedRosterDefiners(sql, anonAllowlist, branchSql)) {
       if (!named.has(name)) rosterOffenders.push({ name, file });
+    }
+  }
+
+  // A function this branch DROPS cannot be reached by anybody once it lands, so
+  // it is not a finding. See droppedFunctions for why this follows from the
+  // same "a branch is applied as a unit" rule that makes grants branch-wide.
+  const droppedInBranch = droppedFunctions(branchSql);
+  if (droppedInBranch.size > 0) {
+    for (const arr of [offenders, anonOffenders, cloneOffenders, rosterOffenders]) {
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (droppedInBranch.has(arr[i].name)) arr.splice(i, 1);
+      }
     }
   }
 

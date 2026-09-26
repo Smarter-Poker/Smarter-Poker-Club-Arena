@@ -117,11 +117,68 @@ BREAK_WINDOW_MS=300000
 LEGACY_ENTRY_ALLOWANCE_MS=$((LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000 - LEGACY_CHECKPOINT_WORK_MS))
 BREAK_ENTRY_BUDGET_CEILING_MS=$((BREAK_WINDOW_MS - MIN_BREAK_REMAINING_MS - LEGACY_ENTRY_ALLOWANCE_MS))
 BREAK_ENTRY_BUDGET_MS=0
+# THE ORDINARY RELEASE IS ADMITTED BY A CERTIFICATE THAT CAN EXIST (2026-09-25)
+# ───────────────────────────────────────────────────────────────────────────
+# Everything above budgets the LEGACY checkpoint's entry. The ordinary release
+# - every release now that the engine is off the four pinned predecessors -
+# had no entry budget at all, and it has exactly the same shape of deficit.
+#
+# `beginCountdown` in server/src/maintenance/MaintenanceBreak.ts starts the
+# 300000ms clock, sets breakEndsAt, broadcasts and arms the end timer, and
+# only THEN awaits the countdown row's durable save; `durableConfirmed`, which
+# maintenance_certificate requires, stays false until that write commits. So
+# the first instant this script can observe a certificate at all is already
+# several seconds into a countdown that is already running, and the 15000ms
+# the strict 285000ms admission leaves has to cover every one of them.
+#
+# MEASURED, on the host that pays it. Runs 36155409978, 36157652866 and
+# 36157811057 logged the first certifiable read of six consecutive breaks at
+# 15375, 15939, 16408, 18455, 19060 and 19846ms into the countdown - six out
+# of six past the allowance. All three runs then spent their whole two-hour
+# deadline refusing every break they were offered, and production drifted
+# eight merges behind main again, which is how the September 18-25 outage
+# started. The lag is the engine's countdown write plus this script's own
+# pre-certificate poll granularity (bounded_sleep 5): 19846 + 5000 = 24846,
+# rounded up to the second.
+BREAK_CERTIFICATE_LAG_SECONDS=25
+# What the ordinary path then pays BETWEEN that admission and the locked read
+# that follows it: acquire_engine_lock, source_target_is_current, the exact-
+# instance probe and the certificate read itself. The locked read demanded the
+# SAME 285000ms the admission had just spent seconds getting past, so a lucky
+# admission was handed a guaranteed deficit one gate later - the identical
+# fault #5026 and PR #5062 answered for the legacy ladder, still live here.
+# The legacy budget already measures this same entry at LEGACY_ENTRY_
+# ALLOWANCE_MS (15000ms, run 35615604946) and the ordinary path does strictly
+# less work in it: no durable intent write, no publisher, no cold node boot.
+BREAK_LOCKED_ENTRY_SECONDS=15
+# The descending ladder for a release that needs no legacy checkpoint, in the
+# same shape as the legacy one above: each rung is the rollback reserve plus
+# the budget that still follows it, so passing an earlier gate implies the
+# last one can pass. Every deduction comes out of the CANDIDATE PROOF
+# (150 -> 125 -> 110 seconds), never out of BREAK_ROLLBACK_RESERVE_SECONDS,
+# and the bottom rung lands on 245000ms - the same floor the legacy ladder
+# already holds and the figure run 36154480502 shipped 778075b4 on.
+BREAK_ADMISSION_MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS - BREAK_CERTIFICATE_LAG_SECONDS * 1000))
+BREAK_LOCKED_MIN_BREAK_MS=$((BREAK_ADMISSION_MIN_BREAK_MS - BREAK_LOCKED_ENTRY_SECONDS * 1000))
 
 die() {
   echo "[engine-release-transaction] FATAL: $*" >&2
   exit 1
 }
+
+# The ladder is derived, so assert the derivation rather than trusting it. A
+# future edit that puts the admission above what a 300000ms countdown can
+# offer, or takes the locked floor below the reserve the legacy path already
+# holds, refuses here - loudly, once, on this host - instead of refusing every
+# break in silence for a week.
+[ "$BREAK_ADMISSION_MIN_BREAK_MS" -lt "$BREAK_WINDOW_MS" ] \
+  || die 'the ordinary break admission demands more countdown than the engine ever offers'
+[ "$BREAK_ADMISSION_MIN_BREAK_MS" -ge "$BREAK_LOCKED_MIN_BREAK_MS" ] \
+  || die 'the ordinary break ladder does not descend'
+[ "$BREAK_LOCKED_MIN_BREAK_MS" -ge "$LEGACY_MIN_BREAK_REMAINING_MS" ] \
+  || die 'the ordinary locked floor is below the reserve the legacy ladder already holds'
+[ "$BREAK_LOCKED_MIN_BREAK_MS" -gt $((BREAK_ROLLBACK_RESERVE_SECONDS * 1000)) ] \
+  || die 'the ordinary locked floor no longer holds the whole rollback reserve'
 
 [ "$(id -u)" = 0 ] || die 'must run as root'
 [ "$#" = 2 ] && [ "$1" = --run-id ] \
@@ -215,7 +272,22 @@ BREAK_DEADLINE_FILE="$REQUEST_ROOT/$RUN_ID.break-deadline"
 LOCK_HELD=0
 PREPARED=0
 MUTATION_STARTED=0
+LEGACY_CHECKPOINT_INTENT_FILE="$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"
 LEGACY_CHECKPOINT_ATTEMPTED=0
+# THE ONE-SHOT IS DURABLE; THIS VARIABLE IS NOT. A boot-resumed or re-entered
+# unit is a fresh process and starts it back at 0, so process memory alone
+# cannot answer "has this run key already opened the checkpoint". On 2026-09-21
+# run 35626149078 proved it: a first attempt in the 16:41 break wrote its
+# O_EXCL intent, the transaction was interrupted ("transient release
+# interruption recovered; durable request retained"), the same run key
+# re-entered, and the helper was invoked a SECOND time. The O_EXCL guard held -
+# which is why nothing was double-applied - but the second invocation should
+# never have happened, and what the operator saw was a Python traceback.
+# Read the durable record here, once, before any of it (CLAUDE.md 10.11: fix
+# the cause, not the symptom).
+if [ -e "$LEGACY_CHECKPOINT_INTENT_FILE" ] || [ -L "$LEGACY_CHECKPOINT_INTENT_FILE" ]; then
+  LEGACY_CHECKPOINT_ATTEMPTED=1
+fi
 
 recover_on_exit() {
   local rc=$? recovery_deadline recovery_remaining non_break_deadline
@@ -492,6 +564,28 @@ health_instance() {
 # That is STRICTLY STRONGER than the old line for a real in-flight hand - it
 # adds two independent witnesses to it - and weaker only for a preparation
 # that is provably not a hand. Unreadable is a refusal at every step.
+#
+# THE SAME RULE, FOR A STOPPED BANK THE PREDECESSOR CAN NEVER RELEASE
+# (2026-09-25). Engine 778075b4 had 20 tournament managers quarantined after
+# lease loss; their STOPPED tournament engines answered
+# hasUnretiredStoppedTimeBankCustody() true for ever (root cause fixed in
+# #5254, not in that build), and /health showed readyForRestart false,
+# unparkedTables 154, unparkedReasons { f06_preparation_stuck: 13,
+# stopped_bank_custody_unconfirmed: 154 } at every break. Every
+# auto-deploy-hetzner run since 15:59 UTC waited on a certificate that could
+# not open, including the one carrying the fix.
+#
+# stopped_bank_custody_unconfirmed is raised ONLY by a terminal tournament
+# engine, which deals no hands. What a restart discards is the in-memory
+# time-bank mirror of seats that already stopped; the chips live in the
+# database. That is the class the legacy checkpoint guard already calls
+# DISPOSED. MaintenanceBreak now bounds it exactly like the F06 class and
+# retires it into stopped_bank_custody_stuck, which joins the allow-list
+# below. The RAW reason stays refused, with one self-retiring exception: when
+# the serving release is one of the exact predecessors that cannot present
+# the bounded class because the bound is not in that build, the raw reason is
+# admitted under the SAME database in-flight proof. The moment a bounded
+# engine is serving, that exception is dead code by construction.
 maintenance_certificate() {
   # The minimum break remaining is the strict MIN_BREAK_REMAINING_MS unless the
   # caller names another; the only caller that does is the read straight after
@@ -533,25 +627,45 @@ if ok:
 # reason not to restart. See the block comment above this function.
 #
 # The window, durability and time-remaining predicates above have all already
-# passed, and this script demands 285000ms (245000ms straight after a legacy
-# checkpoint) where the engine demands 180000ms, so at this exact point the
+# passed against whichever rung of the ladder the caller named - 285000ms for
+# the legacy admission, 260000ms for the ordinary one, 245000ms for both
+# locked reads - where the engine itself demands 180000ms, so at this point the
 # ONLY thing keeping readyForRestart shut is the
 # unparked count. Nothing else is being relaxed.
-PREPARATION_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
+#
+# The BOUNDED classes: each is a blocker the engine itself has already aged
+# past MaintenanceBreak.F06_UNRESOLVED_GATE_MS (or is the live half of one
+# that the engine will age), raised only by a table that deals no hands.
+BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck","stopped_bank_custody_stuck"}
+# The one reason admitted UNBOUNDED, and only from these exact serving
+# releases: predecessors whose MaintenanceBreak counts
+# stopped_bank_custody_unconfirmed with no bound and can therefore never
+# present stopped_bank_custody_stuck, however long the custody has been held.
+# An allow-list of full SHAs, like the checkpoint predecessor profiles in
+# legacy-engine-checkpoint.mjs. Any other serving release keeps refusing the
+# raw reason, so this exception retires itself with the first bounded engine.
+STOPPED_BANK_UNBOUNDED_PREDECESSORS={"778075b419d078c58565c284c0ca7c5225bb773a"}
+RAW_STOPPED_BANK="stopped_bank_custody_unconfirmed"
+serving=d.get("releaseSha")
+predecessor=isinstance(serving,str) and serving in STOPPED_BANK_UNBOUNDED_PREDECESSORS
 unparked=m.get("unparkedTables")
 if not isinstance(unparked,int) or isinstance(unparked,bool) or unparked<1: raise SystemExit(1)
 reasons=m.get("unparkedReasons")
 if not isinstance(reasons,dict) or not reasons: raise SystemExit(1)
 # An ALLOW-list, never a deny-list: a reason string this script does not
-# recognise refuses. cards_in_air, the bank-durability classes and anything a
-# future engine invents are all outside the set and all keep the gate shut.
+# recognise refuses. cards_in_air, the bank-durability classes (unwritten,
+# unreadable, bank_park_write_incomplete) and anything a future engine invents
+# are all outside the set and all keep the gate shut.
 for k,v in reasons.items():
-    if not isinstance(k,str) or k not in PREPARATION_ONLY: raise SystemExit(1)
+    if not isinstance(k,str): raise SystemExit(1)
+    if k not in BOUNDED_ONLY and not (k==RAW_STOPPED_BANK and predecessor): raise SystemExit(1)
     if not isinstance(v,int) or isinstance(v,bool) or v<0: raise SystemExit(1)
 # The engine own physical witness, which must be PRESENT and zero. Absent is
 # unreadable, and unreadable is a refusal, never an assumed zero.
 hands=d.get("handsInFlightTotal")
 if not isinstance(hands,int) or isinstance(hands,bool) or hands!=0: raise SystemExit(1)
+if RAW_STOPPED_BANK in reasons:
+    sys.stderr.write("[engine-release-transaction] restart certificate is held shut by stopped-bank custody the predecessor " + serving[:8] + " can never release; the bound that retires it is not in that release; consulting the database for hands actually in the air\n")
 sys.stderr.write("[engine-release-transaction] restart certificate is held shut only by " + repr(reasons) + "; consulting the database for hands actually in the air\n")
 print(remaining)
 raise SystemExit(4)
@@ -1155,6 +1269,21 @@ if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
   LEGACY_CHECKPOINT_REQUIRED=1
 fi
+if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
+  # Refused HERE, before a break is entered and before any lock, rather than
+  # by the helper crashing on its own O_EXCL write several minutes later.
+  #
+  # An interrupted transaction resumes correctly for everything else it owns -
+  # the sealed desired runtime, a committed-run replay, a pending owner - and
+  # those paths all run above this line, so a run that really did finish still
+  # reports its receipt. What cannot resume is this: the checkpoint is a
+  # one-shot over a live predecessor holding seated stacks, nothing durable
+  # records whether an interrupted entry completed it, and "I could not tell"
+  # is a refusal, never permission (CLAUDE.md 10.86 rule 1). The intent stands;
+  # it is NOT retired here. A later break cannot make it safe either, so this
+  # does not wait - it ends, and the next dispatch gets a new run key.
+  die 'this run key already opened the one-shot legacy checkpoint and its durable intent is still on disk; whether that entry acted is UNKNOWN, so it may not be entered again - dispatch a new run key'
+fi
 
 while :; do
   [ "$(date +%s)" -lt "$CERTIFICATE_DEADLINE" ] \
@@ -1165,8 +1294,16 @@ while :; do
     source_target_is_current
     NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
   fi
+  # The legacy ladder is derived from the strict figure and keeps it. The
+  # ordinary one is admitted by the first certificate the engine can actually
+  # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    ADMISSION_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"
+  else
+    ADMISSION_MIN_BREAK_MS="$BREAK_ADMISSION_MIN_BREAK_MS"
+  fi
   set +e
-  BREAK_REMAINING_MS="$(maintenance_certificate)"
+  BREAK_REMAINING_MS="$(maintenance_certificate "$ADMISSION_MIN_BREAK_MS")"
   CERTIFICATE_RC=$?
   set -e
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
@@ -1191,7 +1328,7 @@ while :; do
     # No prepare or break deadline exists yet. Keep the original request's
     # absolute deadline and source-freshness checks while waiting for a later
     # complete certificate; never reduce the candidate-and-recovery reserve.
-    echo "[engine-release-transaction] the durable table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
+    echo "[engine-release-transaction] the durable table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${ADMISSION_MIN_BREAK_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
     bounded_sleep 15
     continue
   fi
@@ -1272,6 +1409,13 @@ while :; do
       bounded_sleep 15
       continue
     fi
+    if [ "$LEGACY_CHECKPOINT_RC" = 70 ]; then
+      # The helper's own name for "this run key already opened the one-shot".
+      # Reachable only if the durable intent appeared between the check above
+      # and this call, which is another process using our run key: still a
+      # refusal, and still named rather than a traceback.
+      die 'the legacy checkpoint refused as already entered under this run key; its durable intent exists and nothing was re-attempted - dispatch a new run key'
+    fi
     [ "$LEGACY_CHECKPOINT_RC" = 0 ] \
       || die 'legacy checkpoint or cleanup refused; release cannot continue'
     BREAK_END_EPOCH=0
@@ -1283,8 +1427,11 @@ while :; do
     CERTIFICATE_MIN_BREAK_MS="$LEGACY_MIN_BREAK_REMAINING_MS"
     BREAK_REMAINING_MS="$(maintenance_certificate "$LEGACY_MIN_BREAK_REMAINING_MS")"
   else
-    CERTIFICATE_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"
-    BREAK_REMAINING_MS="$(maintenance_certificate)"
+    # The entry between the admission above and this read is budgeted, so this
+    # rung sits BREAK_LOCKED_ENTRY_SECONDS below it. Demanding the admission's
+    # own figure again is the deficit one gate later, every time.
+    CERTIFICATE_MIN_BREAK_MS="$BREAK_LOCKED_MIN_BREAK_MS"
+    BREAK_REMAINING_MS="$(maintenance_certificate "$BREAK_LOCKED_MIN_BREAK_MS")"
   fi
   CERTIFICATE_RC=$?
   set -e

@@ -1,8 +1,8 @@
 /* The physical cabinet is rendered by the scene; the payout legend prints on glass.
  *
  * Every bucket carries two custom properties set by PlinkoBoard from its own
- * multiplier: `--slot-tint` (cool blue for the middle buckets, gold to red for
- * the outer ones) and `--slot-heat` (0 to 1). Nothing here hardcodes a table,
+ * multiplier: `--slot-tint` (navy and royal blue for the middle buckets, chrome
+ * and gold for the outer ones: the smarter.poker schema, never a rainbow) and `--slot-heat` (0 to 1). Nothing here hardcodes a table,
  * so the Diamond table, the Super table and any table opened later all read
  * correctly, and so does the board when WebGL is unavailable.
  *
@@ -23,6 +23,14 @@
 .canvas {
   display: block;
   max-width: 100%;
+  /* Under the first frame: the cabinet's own steel and blue, and the house
+     hairline, so a slow phone shows a machine, not a black hole. The canvas
+     is transparent until it is drawn on. */
+  border-radius: 10px;
+  background:
+    radial-gradient(70% 60% at 50% 40%, rgb(24 119 242 / 16%), transparent 65%),
+    linear-gradient(180deg, #0a1424 0%, #070b10 100%);
+  box-shadow: 0 0 0 1px rgb(154 165 179 / 28%) inset;
 }
 
 .payouts {

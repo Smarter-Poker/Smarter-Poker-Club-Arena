@@ -12,11 +12,22 @@ die() { echo "[legacy-engine-checkpoint] $*" >&2; exit 1; }
 # break window closed while this entry was still running and NOTHING durable
 # was created - no intent file, no inspector, no write - so the owning
 # transaction may wait for a later certificate and enter again. It is only
-# ever reachable ABOVE the O_EXCL intent write below; once that file exists a
-# retry is forbidden and every remaining path is `die`. CLAUDE.md 10.86 rule 1:
+# ever reachable ABOVE the O_EXCL intent write below. CLAUDE.md 10.86 rule 1:
 # "this attempt arrived late" is a different outcome from "this attempt is
 # unsafe", so it gets its own name and its own code.
 defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
+# BELOW the intent there is exactly ONE further deferral, and it is a different
+# function on purpose so the two can never be confused or widened into each
+# other. `defer` above is unconditional: it fires on a plain shell check having
+# written nothing at all. `defer_proved_not_started` fires only after the guard
+# has RETURNED - inspector closed, complete receipt in hand - saying in its own
+# fields that it refused in preflight on a capture-then-reverify race and
+# touched nothing (`deferrableCheckpointRefusal`, exit 75 from the node
+# helper), AND after this script has proved the intent on disk is byte for byte
+# the one THIS entry wrote and retired it. A disconnect, a partial receipt, a
+# retained inspector or any other reason never reaches it; those are all `die`,
+# and a retry stays forbidden however the helper exited.
+defer_proved_not_started() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
 [ "$#" = 1 ] || die 'expected owning run key'
 RUN_ID="$1"
@@ -113,6 +124,19 @@ print(instance)
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
+#
+# THE O_EXCL BELOW IS THE ONE-SHOT AND IT IS NOT WEAKENED HERE. What changed on
+# 2026-09-21 is only that its refusal has a NAME. Run 35626149078 re-entered
+# this helper under the same run key after its owning transaction was
+# interrupted; O_EXCL did exactly its job and the operator was shown
+# `FileExistsError: [Errno 17] File exists` followed by `could not reattach to
+# the durable Hetzner release transaction (1)` - a raw traceback that reads
+# identically to a full disk, a permission fault or a broken interpreter.
+# "This run key already opened the checkpoint" is a different outcome from
+# "the write failed", so it gets its own sentence and its own code, 70
+# (CLAUDE.md 10.86 rule 1). Nothing is retried, nothing is retired, and the
+# guard still refuses: 70 ends the release exactly as 1 did.
+set +e
 CHECKPOINT_INTENT="$(python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$INSTANCE" "$CONTAINER_ID" "$STARTED_AT" "$HOST_PID" "$LEGACY_SHA" "$RUN_ID" "${REQUEST[4]}" <<'PY'
 import json,os,sys,time,uuid
 path,instance,container,started,pid,source,run,control=sys.argv[1:]
@@ -122,7 +146,11 @@ if source=="8825af51817f379c4261658ca29ecc9d8d81932d":
     if instance!="1-3846b8bb": raise SystemExit("original process instance changed")
     intent["custody"]=[{"tournament_id":event,"transfer_id":str(uuid.uuid4()),"successor_generation":str(uuid.uuid4())}
         for event in ["5a387a75-754a-416e-8fee-b85b15fc2702","615783bf-15e3-40b7-9368-75f21b6ac53b"]]
-fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+try:
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+except FileExistsError:
+    sys.stderr.write("[legacy-engine-checkpoint] the one-shot intent for this run key already exists at "+path+"\n")
+    raise SystemExit(70)
 try:
     os.write(fd,(json.dumps(intent)+"\n").encode())
     os.fsync(fd)
@@ -133,9 +161,48 @@ finally: os.close(fd)
 print(json.dumps(intent,separators=(",",":")))
 PY
 )"
+CHECKPOINT_INTENT_RC=$?
+set -e
+if [ "$CHECKPOINT_INTENT_RC" = 70 ]; then
+  echo "[legacy-engine-checkpoint] ALREADY ENTERED: this run key opened the one-shot checkpoint before, and its durable intent is still on disk. Whether that entry acted CANNOT be read from here, so re-entering is forbidden and nothing is retried or retired. Dispatch a new run key." >&2
+  exit 70
+fi
+[ "$CHECKPOINT_INTENT_RC" = 0 ] \
+  || die 'the durable one-shot checkpoint intent could not be written; nothing was attempted'
 
+set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" \
+  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT"
+CHECKPOINT_RC=$?
+set -e
+if [ "$CHECKPOINT_RC" = 75 ]; then
+  # The guard came back, closed its inspector, and reported a capture-then-
+  # reverify refusal at stage `preflight` with attemptedTables 0, completedCalls
+  # 0 and checkpointOutcome not_started. The fleet moved while it was looking.
+  # Nothing was written, so this attempt may stand down and a later break may
+  # enter again - it is one attempt waiting for a window it can act in, not a
+  # retry loop, a sweep or a repair job (CLAUDE.md 10.12).
+  #
+  # The intent was written BEFORE the inspector because a disconnect is unknown.
+  # This is not a disconnect: the helper answered. Retire that intent, and only
+  # this one - compare the exact bytes this entry wrote, never merely the path,
+  # so a file left by any other entry is a `die` and not a licence to retry. The
+  # owning transaction then re-proves the absence from the filesystem itself
+  # before it honours 75 (engine-release-transaction.sh), and that proof is
+  # unchanged: this script does not get to tell it the intent is gone.
+  timeout 5s python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$CHECKPOINT_INTENT" <<'PY' || die 'checkpoint reported a non-acting refusal but its own durable intent could not be retired; refusing a retry'
+import os,sys
+path,intent=sys.argv[1:]
+with open(path,"rb") as handle: on_disk=handle.read()
+if on_disk != (intent+"\n").encode(): raise SystemExit("intent on disk is not the one this entry wrote")
+os.unlink(path)
+fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY)
+try: os.fsync(fd)
+finally: os.close(fd)
+PY
+  defer_proved_not_started 'the fleet moved while the checkpoint was reading it; nothing was attempted and this entry retired its own intent'
+fi
+[ "$CHECKPOINT_RC" = 0 ] \
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
 [ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'

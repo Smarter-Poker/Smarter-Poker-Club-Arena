@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { masterBus } from './MasterBus';
 import { useUserStore } from '../stores/useUserStore';
+import { useWalletStore } from '../stores/useWalletStore';
 import { WalletService } from '../services/WalletService';
 import { reportError } from '../utils/errorReporter';
 
@@ -26,9 +27,12 @@ export function useGlobalBalanceSync() {
     let latestRead = 0;
     const ownsAccount = () => active && useUserStore.getState().user?.id === user.id;
 
-    const fetchTrueBalance = async () => {
+    const fetchTrueBalance = async (force = false) => {
       if (!ownsAccount()) return;
       const read = ++latestRead;
+      // This owner remains mounted on table routes with no visible header.
+      // The store coalesces overlapping reads and retains known values on error.
+      void useWalletStore.getState().loadBalances(user.id, { force });
       try {
         /* A READ THAT NEVER HAPPENED IS NOT A BALANCE OF ZERO (2026-08-27).
            This used getPlayerBalance, whose own docstring says it "collapses
@@ -61,27 +65,17 @@ export function useGlobalBalanceSync() {
     // from bulk operations like BBJ payout or settlement into a single Supabase fetch)
     const unsubscribeLocal = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
-      () => {
-        fetchTrueBalance();
+      (event) => {
+        const eventUserId = event?.payload?.userId;
+        if (typeof eventUserId === 'string' && eventUserId !== user.id) return;
+        fetchTrueBalance(true);
       },
       200
     );
 
-    // Sub to remote Supabase DB changes for cross-tab or server-initiated updates
-    // NOTE (2026-04-19): Direct wallets postgres_changes channel REMOVED — duplicate of
-    // PostgresSyncHooks which already subscribes to wallets with user_id filter and emits
-    // BALANCE_UPDATED on MasterBus. The subscribeDebounced listener above handles this.
-    //
-    // 2026-08-24: that note was WRONG when written, and is true only now.
-    // PostgresSyncHooks did NOT carry a `wallets` listener — it had been moved
-    // out to useRealtimeFinancials on the very same day, and that hook mounts on
-    // exactly two pages (PlayerWalletPage, CashierPage). So this channel was
-    // removed as a "duplicate" of something that did not exist, and on every
-    // other page a server-initiated balance change produced no update at all.
-    // The filtered listener now genuinely lives in PostgresSyncHooks
-    // (`global_db_sync:<userId>`), so the sentence above finally describes
-    // reality and this hook's debounced BALANCE_UPDATED subscriber is fed
-    // everywhere rather than on two pages.
+    // PostgresSyncHooks carries this account's existing club_members stream.
+    // A real chip/promo/locked balance change or subscription recovery emits
+    // BALANCE_UPDATED; unchanged activity counters do not refetch wallets.
 
     // Initial fetch on mount to guarantee parity
     fetchTrueBalance();
@@ -90,7 +84,7 @@ export function useGlobalBalanceSync() {
     const unsubscribeReconnect = masterBus.subscribeDebounced(
       'CONNECTION_RESTORED',
       () => {
-        fetchTrueBalance();
+        fetchTrueBalance(true);
       },
       500
     );

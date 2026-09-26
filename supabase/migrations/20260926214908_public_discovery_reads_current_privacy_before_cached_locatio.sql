@@ -40,6 +40,18 @@ BEGIN
     IF md5(pg_get_functiondef(to_regprocedure('public.get_trending_home_groups(integer, numeric, numeric, integer)'))) IS DISTINCT FROM '3f79db65d9bb9976936e665e9a9353b3' THEN
         RAISE EXCEPTION 'discovery privacy source drift: get_trending_home_groups';
     END IF;
+    -- Home-group keys come from uuid::text in the hash-bound cache definition.
+    -- Refuse unexpected cached keys before the indexed read boundary is created.
+    IF (SELECT atttypid FROM pg_attribute
+        WHERE attrelid = 'public.commander_home_groups'::regclass
+          AND attname = 'id' AND NOT attisdropped) IS DISTINCT FROM 'uuid'::regtype
+       OR EXISTS (
+           SELECT 1 FROM public.mv_active_poker_locations
+           WHERE source = 'home_group' AND (entity_id IS NULL OR entity_id !~
+               '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+       ) THEN
+        RAISE EXCEPTION 'discovery privacy: home-group cache keys are not canonical UUIDs';
+    END IF;
     IF EXISTS (
         SELECT 1 FROM pg_depend d JOIN pg_rewrite r ON r.oid = d.objid
         WHERE d.classid = 'pg_rewrite'::regclass
@@ -81,7 +93,8 @@ FROM discovery_private.mv_active_poker_locations cache
 WHERE cache.source = 'venue'
    OR (cache.source = 'home_group' AND EXISTS (
        SELECT 1 FROM public.commander_home_groups current_group
-       WHERE current_group.id::text = cache.entity_id
+       WHERE current_group.id = CASE WHEN cache.source = 'home_group'
+                                    THEN cache.entity_id::uuid END
          AND current_group.is_active IS TRUE
          AND current_group.is_private IS FALSE
          AND current_group.profile_photo_url IS NOT NULL

@@ -105,21 +105,27 @@ const observation = (table: string, hand: number) => ({
 });
 
 describe('horseDecisionWorkerCount', () => {
-  it('defaults to two and never exceeds the cores left after the main loop and one equity worker', () => {
+  it('defaults by physical cores at two threads each: one worker below three cores, two from there', () => {
     expect(DEFAULT_HORSE_DECISION_WORKERS).toBe(2);
-    expect(horseDecisionWorkerCount({ cores: 4 })).toBe(2);
+    // engine-01: four logical CPUs on two EPYC Milan cores. One worker.
+    expect(horseDecisionWorkerCount({ cores: 4 })).toBe(1);
+    expect(horseDecisionWorkerCount({ cores: 5 })).toBe(1);
+    expect(horseDecisionWorkerCount({ cores: 6 })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 8 })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 16 })).toBe(2);
     expect(horseDecisionWorkerCount({ cores: 3 })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: 2 })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: 1 })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: 0 })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: Number.NaN })).toBe(1);
-    expect(horseDecisionWorkerCount({ cores: 16 })).toBe(2);
   });
 
-  it('honours HORSE_DECISION_WORKERS inside the same capacity', () => {
+  it('honours HORSE_DECISION_WORKERS up to the logical CPUs left after the main loop and one equity worker', () => {
     expect(horseDecisionWorkerCount({ requested: '3', cores: 8 })).toBe(3);
     expect(horseDecisionWorkerCount({ requested: ' 3 ', cores: 8 })).toBe(3);
     expect(horseDecisionWorkerCount({ requested: 3, cores: 8 })).toBe(3);
+    // An operator who knows the host may run two on engine-01; never three.
+    expect(horseDecisionWorkerCount({ requested: '2', cores: 4 })).toBe(2);
     expect(horseDecisionWorkerCount({ requested: '3', cores: 4 })).toBe(2);
     expect(horseDecisionWorkerCount({ requested: '1', cores: 8 })).toBe(1);
     expect(
@@ -128,8 +134,22 @@ describe('horseDecisionWorkerCount', () => {
   });
 
   it('treats a malformed or out-of-range request as unset', () => {
-    for (const requested of ['', 'two', '0', '-1', '1.5', '99', null, undefined, 0, 99, Number.NaN])
+    for (const requested of [
+      '',
+      'two',
+      '0',
+      '-1',
+      '1.5',
+      '99',
+      null,
+      undefined,
+      0,
+      99,
+      Number.NaN,
+    ]) {
       expect(horseDecisionWorkerCount({ requested, cores: 8 })).toBe(2);
+      expect(horseDecisionWorkerCount({ requested, cores: 4 })).toBe(1);
+    }
   });
 });
 

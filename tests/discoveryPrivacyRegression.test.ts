@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
+import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const migration = read(
@@ -10,6 +11,15 @@ const migration = read(
 const fixture = JSON.parse(read('scripts/ci/fixtures/discovery-privacy/baseline.json'));
 
 describe('discovery privacy native regression qualification', () => {
+  it.each([
+    'scripts/ci/test-discovery-privacy-postgres.py',
+    'scripts/ci/fixtures/discovery-privacy/cases.sql',
+    'scripts/ci/fixtures/discovery-privacy/baseline.json',
+    'tests/discoveryPrivacyRegression.test.ts',
+  ])('runs native and source checks for isolated changes to %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
   it('runs the native permission and transition cases in the required accounting job', () => {
     const workflow = read('.github/workflows/ci.yml');
     const accounting = workflow.split('\n  accounting_postgres:')[1].split('\n  server:')[0];

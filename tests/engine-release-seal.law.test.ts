@@ -138,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 9 tests');
+  expect(result.stderr).toContain('Ran 22 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {
@@ -1333,9 +1333,59 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
         .status
     ).toBe(1);
     rmSync(join(sandbox, 'state', 'engine-release-results', '411-1.json'));
+    // ONE OFF-CYCLE WINDOW PER ROLLING HOUR (2026-09-26). 412-1 announced ten
+    // minutes ago, so a second release with a genuine cause is told to wait
+    // for the scheduled break - and nothing is written for it.
+    const missed = [...reserve.slice(0, 4), '414-1', ...reserve.slice(5), '--missed-window'];
+    const limited = runSeal(missed);
+    expect(limited.status, limited.stderr).toBe(0);
+    expect(limited.stdout).toBe('rate-limited');
+    expect(existsSync(join(sandbox, 'state', 'engine-recovery-window-414-1.json'))).toBe(false);
+    // 412-1 replaying its own reservation is not limited by itself.
+    expect(runSeal(reserve).stdout).toBe(String(value.announcedAt));
+    // An unreadable reservation still spends the hour, dated by its file.
+    value.announcedAt -= 3600000;
+    writeFileSync(receipt, JSON.stringify(value));
+    writeFileSync(join(sandbox, 'state', 'engine-recovery-window-415-1.json'), '{not json');
+    expect(runSeal(missed).stdout).toBe('rate-limited');
+    rmSync(join(sandbox, 'state', 'engine-recovery-window-415-1.json'));
+    // Past the hour the next reservation with a cause is granted.
+    const granted = runSeal(missed);
+    expect(granted.status, granted.stderr).toBe(0);
+    expect(Number(granted.stdout)).toBeGreaterThan(Date.now() - 10000);
     expect(
-      runSeal([...reserve.slice(0, 4), '414-1', ...reserve.slice(5), '--missed-window']).status
-    ).toBe(0);
+      JSON.parse(readFileSync(join(sandbox, 'state', 'engine-recovery-window-414-1.json'), 'utf8'))
+        .cause
+    ).toBe('observed-missed-certificate');
+    // Named causes: urgent, engine-degraded and deadline qualify on their
+    // own and share the same hour; anything else is refused by name.
+    const named = (run: string, cause: string) =>
+      runSeal([...reserve.slice(0, 4), run, ...reserve.slice(5), '--cause', cause]);
+    expect(named('416-1', 'engine-degraded').stdout).toBe('rate-limited');
+    const invalid = named('417-1', 'because-i-said-so');
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain('recovery window cause is invalid');
+    const spent = join(sandbox, 'state', 'engine-recovery-window-414-1.json');
+    const spentValue = JSON.parse(readFileSync(spent, 'utf8'));
+    spentValue.announcedAt -= 3600001;
+    writeFileSync(spent, JSON.stringify(spentValue));
+    for (const [run, cause] of [
+      ['418-1', 'urgent'],
+      ['419-1', 'engine-degraded'],
+      ['420-1', 'deadline'],
+    ]) {
+      for (const other of ['418-1', '419-1', '420-1']) {
+        rmSync(join(sandbox, 'state', `engine-recovery-window-${other}.json`), { force: true });
+      }
+      const result = named(run, cause);
+      expect(result.status, result.stderr).toBe(0);
+      expect(Number(result.stdout)).toBeGreaterThan(Date.now() - 10000);
+      expect(
+        JSON.parse(
+          readFileSync(join(sandbox, 'state', `engine-recovery-window-${run}.json`), 'utf8')
+        ).cause
+      ).toBe(cause);
+    }
   });
 
   it('fsyncs one immutable terminal failure after desired recovery and never aliases it with success', () => {
@@ -2627,7 +2677,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       }
     );
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stderr).toContain('Ran 15 tests');
+    expect(result.stderr).toContain('Ran 16 tests');
   });
 
   it('guarantee and rollback can only recover the durable desired image', () => {

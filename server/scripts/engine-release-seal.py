@@ -642,16 +642,55 @@ def cmd_get(args: argparse.Namespace) -> None:
         print(fields[args.field])
 
 
+# One off-cycle "Deployment Recovery" window per rolling hour, across every
+# release and every control generation (2026-09-26). Every reservation ever
+# made is already a durable file in STATE_DIR carrying its announcedAt, so the
+# rolling hour is read from those under the seal lock - no new state, nothing
+# per process. On 2026-09-25/26 a busy hour held 4-5 breaks and 29-36 parked
+# minutes because each queued release reserved its own window.
+RECOVERY_WINDOW_MIN_INTERVAL_MS = 3600 * 1000
+RECOVERY_WINDOW_PREFIX = "engine-recovery-window-"
+RECOVERY_CAUSE_RE = re.compile(r"^(urgent|engine-degraded|deadline)$")
+
+
+def recent_recovery_window(run_id: str, now_ms: int) -> str:
+    """Name the reservation that spent this hour's off-cycle window, if any.
+
+    An unreadable reservation still counts, dated by its file: it can only
+    make a release wait for the scheduled break, never add a pause.
+    """
+    for path in sorted(STATE_DIR.glob(RECOVERY_WINDOW_PREFIX + "*.json")):
+        other = path.name[len(RECOVERY_WINDOW_PREFIX):-len(".json")]
+        if other == run_id:
+            continue
+        try:
+            announced = json.loads(path.read_text(encoding="utf-8")).get("announcedAt")
+        except (OSError, ValueError, AttributeError):
+            announced = None
+        if type(announced) is not int or announced <= 0:
+            try:
+                announced = int(path.stat().st_mtime * 1000)
+            except OSError:
+                continue
+        if announced > now_ms - RECOVERY_WINDOW_MIN_INTERVAL_MS:
+            return other
+    return ""
+
+
 def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
     """Reserve one fixed announcement for this existing release transaction.
 
     Failure receipts are written only after exact desired recovery. Unknown
     outcomes never qualify. This adds no publisher, scheduler or v1 wire field.
+    A reservation needs a cause and a free rolling hour; with a cause but no
+    free hour the answer is `rate-limited`, which the release waits out.
     """
     target = valid_sha(args.sha)
     run_id = str(args.run_id)
     if not RUN_ID_RE.fullmatch(run_id):
         die("recovery window run id is invalid")
+    if args.cause is not None and not RECOVERY_CAUSE_RE.fullmatch(args.cause):
+        die("recovery window cause is invalid")
     with SealLock():
         state = load_state()
         git_is_ancestor(args.repo, target, "origin/main", "recovery target is not protected main")
@@ -678,7 +717,7 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
                 die("recovery failure ancestry is unreadable")
             return result.returncode == 0
 
-        cause = "observed-missed-certificate" if args.missed_window else ""
+        cause = "observed-missed-certificate" if args.missed_window else (args.cause or "")
         if not cause:
             for receipt in sorted(RESULT_DIR.glob("*.json"), reverse=True):
                 if not RUN_ID_RE.fullmatch(receipt.stem):
@@ -694,7 +733,11 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
         if not cause:
             print("unavailable")
             return
-        value = {"runId": run_id, "sha": target, "announcedAt": int(time.time() * 1000), "cause": cause}
+        now_ms = int(time.time() * 1000)
+        if recent_recovery_window(run_id, now_ms):
+            print("rate-limited")
+            return
+        value = {"runId": run_id, "sha": target, "announcedAt": now_ms, "cause": cause}
         write_json_atomic(path, value)
         audit_once("recovery_window_reserved", state, f"recovery_window:{run_id}", window=value)
         print(value["announcedAt"])
@@ -1487,6 +1530,7 @@ def parser() -> argparse.ArgumentParser:
     recovery_window.add_argument("--run-id", required=True)
     recovery_window.add_argument("--repo", required=True)
     recovery_window.add_argument("--missed-window", action="store_true")
+    recovery_window.add_argument("--cause")
     recovery_window.set_defaults(handler=cmd_reserve_recovery_window)
 
     pending_owner = commands.add_parser("pending-owner")

@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-release-unstick/fix/engine-release-stall - migration 20260926131014_a_fenced_manager_s_stopped_custody_park_goes_through_the_pro, applied to production 2026-09-26 13:14Z and recorded in supabase_migrations.schema_migrations with the file's exact bytes (md5 ddb23ba1d7e40d5d2f7e56594704734a). smarter_private.fn_fenced_manager_stopped_custody_park is the BEFORE INSERT trigger on engine_presence_parked that routes a fenced manager's stopped-custody park through public.fn_park_stopped_time_bank_custody; smarter_private.fn_smarter_data_api_pre_request gains the one POST engine_presence_parked exception that reaches it.",
+  "functions": [
+    "smarter_private.fn_fenced_manager_stopped_custody_park",
+    "smarter_private.fn_smarter_data_api_pre_request"
+  ]
+}

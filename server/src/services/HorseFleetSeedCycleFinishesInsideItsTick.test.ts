@@ -134,8 +134,11 @@ describe('a seeding cycle finishes inside its tick', () => {
     // its own literal again the two can drift, and the seeding bound would be
     // compared against a number nothing else uses.
     expect(flat(client)).toContain('const DB_TIMEOUT_MS = resolveClientTimeoutMs()');
-    expect(flat(client)).toContain(
-      "import { resolveClientTimeoutMs } from '../cashAccountingBatchBudget.js'"
+    // The budget module may export more than one derived deadline (the period
+    // recompute client joined on 2026-09-26); what matters is that this one is
+    // imported from it, not which siblings share the import line.
+    expect(flat(client)).toMatch(
+      /import \{[^}]*\bresolveClientTimeoutMs\b[^}]*\} from '\.\.\/cashAccountingBatchBudget\.js'/
     );
     expect(code(client)).not.toMatch(/\bconst DB_TIMEOUT_MS\s*=\s*[0-9_]/);
     expect(code(client)).not.toMatch(/process\.env\.SUPABASE_TIMEOUT_MS/);

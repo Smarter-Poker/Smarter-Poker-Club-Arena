@@ -36,7 +36,7 @@ _terminal_spec = importlib.util.spec_from_file_location('spin_paid_terminal', RO
 TERMINAL = importlib.util.module_from_spec(_terminal_spec)
 _terminal_spec.loader.exec_module(TERMINAL)
 TERMINAL_MANIFEST_SHA256 = '2450ccac1489b9ecaca591761f4a65cb21c7f39a2862a7779728f33368aa4fe1'
-FEE_MANIFEST_SHA256 = 'bf62c5f2c0891264ea5635c84b30a784f626123a6e3e41a513c30727877a0610'
+FEE_MANIFEST_SHA256 = 'deb1c6d84e91bc08d2f28b96a175def83f4636aabdade8613141ff72f8a3cef2'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'

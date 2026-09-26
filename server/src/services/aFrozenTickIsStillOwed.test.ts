@@ -172,6 +172,71 @@ describe('a settlement tick held by the maintenance freeze is still owed', () =>
   });
 });
 
+/**
+ * A RESTART INSIDE THE BREAK OWES ITS FIRST RUN TO THE THAW (2026-09-26).
+ *
+ * The new engine boots at ~:56 and adopts the persisted break, so the
+ * settler's startup run used to meet the database freeze, halt with no page
+ * acknowledged and arm no catch-up: restart 13:56:26, "Cash source batch
+ * failed" 13:56:56, cursor unmoved at 14:03:53, thirty minutes lost to one
+ * boot. A catch-up armed just before the freeze landed inside it the same way.
+ */
+describe('a run launched inside the freeze is held for the thaw', () => {
+  it('a startup inside the break settles nothing until the thaw, then once', async () => {
+    const { service, runs } = harness();
+    setMaintenanceFrozen(true);
+    service.start();
+    expect(runs, 'the startup run must not meet the freeze').toHaveLength(0);
+
+    setMaintenanceFrozen(false);
+    expect(runs, 'the thaw pays the held startup run').toHaveLength(1);
+
+    vi.advanceTimersByTime(INTERVAL_MS);
+    expect(runs, 'and the ordinary cadence follows').toHaveLength(2);
+    await service.stop();
+  });
+
+  it('a startup inside the break that also misses an interval tick is paid once', async () => {
+    const { service, runs } = harness();
+    setMaintenanceFrozen(true);
+    service.start();
+    vi.advanceTimersByTime(INTERVAL_MS);
+    expect(runs).toHaveLength(0);
+
+    setMaintenanceFrozen(false);
+    expect(runs, 'one debt, however many launches the freeze held').toHaveLength(1);
+    await service.stop();
+  });
+
+  it('a catch-up that lands in the freeze is held for the thaw', async () => {
+    const { service, runs } = harness();
+    service.start();
+    expect(runs).toHaveLength(1);
+
+    const internals = service as unknown as {
+      lifecycleGeneration: number;
+      scheduleCatchUp(backlogRemains: boolean, generation: number | null): void;
+    };
+    internals.scheduleCatchUp(true, internals.lifecycleGeneration);
+    setMaintenanceFrozen(true);
+    vi.advanceTimersByTime(60_000);
+    expect(runs, 'no settlement inside the freeze').toHaveLength(1);
+
+    setMaintenanceFrozen(false);
+    expect(runs, 'the held catch-up runs at the thaw').toHaveLength(2);
+    await service.stop();
+  });
+
+  it('a stopped generation started inside the break is never revived by the thaw', async () => {
+    const { service, runs } = harness();
+    setMaintenanceFrozen(true);
+    service.start();
+    await service.stop();
+    setMaintenanceFrozen(false);
+    expect(runs, 'stop() fences the held startup run too').toHaveLength(0);
+  });
+});
+
 describe('the freeze flag reports its own thaw', () => {
   const FREEZE_SRC = readFileSync(resolve(__dirname, '../maintenance/freezeState.ts'), 'utf8');
 

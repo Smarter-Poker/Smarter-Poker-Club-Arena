@@ -95,6 +95,8 @@ export async function evaluateCashSessions(
 export type VoluntaryCashoutResult =
   | { ok: true; stack: number }
   | { ok: false; code: 'LEAVE_LOCKED'; stayRemainingMs: number }
+  /** The player is in a live Lightning hand: nothing moved; ask again after it. */
+  | { ok: false; code: 'LIGHTNING_HAND_IN_PROGRESS' }
   | { ok: false; code: 'FAILED'; message: string };
 
 /**
@@ -114,7 +116,11 @@ export async function atomicCashoutVoluntary(
   seatNumber: number,
   occupancyId: string | undefined
 ): Promise<VoluntaryCashoutResult> {
-  const out: { locked: number | null; failed: string | null } = { locked: null, failed: null };
+  const out: { locked: number | null; failed: string | null; lightning: boolean } = {
+    locked: null,
+    failed: null,
+    lightning: false,
+  };
   const stack = await atomicCashout(userId, tableId, seatNumber, {
     occupancyId,
     leaveMode: 'voluntary',
@@ -124,8 +130,12 @@ export async function atomicCashoutVoluntary(
     onFailed: (m) => {
       out.failed = m;
     },
+    onLightningHandInProgress: () => {
+      out.lightning = true;
+    },
   });
   if (out.locked !== null) return { ok: false, code: 'LEAVE_LOCKED', stayRemainingMs: out.locked };
+  if (out.lightning) return { ok: false, code: 'LIGHTNING_HAND_IN_PROGRESS' };
   if (out.failed !== null) return { ok: false, code: 'FAILED', message: out.failed };
   return { ok: true, stack };
 }

@@ -1,0 +1,3 @@
+# tests/a-bystander-seated-after-a-finished-hand-does-not-hold-its-settlement.law.test.ts
+
+The successor handoff of a retained hand submission (fn_ca_resume_hand_submission) leaves out of its live-chair count only a tournament chair that sat down after the hand ended and was retained, is in no stack row, is no hand-row player, holds no hole card and holds exactly its own playing registration's chips; every participant protection (seat id, player, joined_at and stack_before per stack row, no later commit, history or permit) is unchanged; and the abandoned-generation door reads the event's last dealt hand by when it was played (COALESCE(ended_at, created_at)), so a late commit of an old hand never turns the level clock back (20260926091455).

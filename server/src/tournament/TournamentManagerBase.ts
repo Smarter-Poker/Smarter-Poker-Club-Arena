@@ -7383,6 +7383,21 @@ export abstract class TournamentManagerBase {
       this.drainedF06Originals = stopResults.every((result) => result.status === 'fulfilled')
         ? Object.freeze(engines.map(([id, engine]) => Object.freeze([id, engine] as const)))
         : null;
+      /* WRITE THE BANK DOWN BEFORE ASKING WHETHER IT IS RETAINED (2026-09-26).
+         A stopped engine that holds a frozen time bank not yet on disk made
+         this stop fail "retained time-bank custody" - 134,904 times in the
+         sixteen minutes before the 08:55Z restart - and the only other place
+         that bank gets written is the next break's announcement, up to an
+         hour away. Each engine now writes its own custody first, at the
+         process root and through the guarded database function, so the check
+         below reads a bank that is on disk rather than one that is waiting.
+         A refused or unknown write records nothing, and the check still
+         refuses exactly as it did. */
+      await Promise.allSettled(
+        engines.map(([, engine]) =>
+          Promise.resolve().then(() => engine.persistStoppedTimeBankCustody?.())
+        )
+      );
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];

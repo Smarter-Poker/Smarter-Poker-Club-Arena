@@ -26,7 +26,7 @@ test('isActiveInDispatcher: false for a path that only appears in a comment', ()
 });
 
 test('slugAppearsAnywhere: matches on the bare slug when the full path differs', () => {
-  assert.equal(slugAppearsAnywhere(DISPATCHER_FIXTURE, '/cron/orchestrator'), false);
+  assert.equal(slugAppearsAnywhere(DISPATCHER_FIXTURE, '/cron/totally-unrelated-job'), false);
   assert.equal(slugAppearsAnywhere(DISPATCHER_FIXTURE, '/cron/video-library-scraper'), true);
 });
 

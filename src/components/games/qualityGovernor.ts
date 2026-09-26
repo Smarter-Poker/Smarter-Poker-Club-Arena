@@ -51,6 +51,12 @@ export const REFUSED_SHARE = 0.35;
 export const SLOW_FACTOR = 1.8;
 /** Share of slow frames that condemns a window. */
 export const SLOW_SHARE = 0.4;
+/**
+ * A gap between drawn frames longer than this is a pause, not a slow frame: a
+ * hidden tab, a scene scrolled off screen, a reduced-motion scene that only
+ * redraws when something changes. It is not held against the device.
+ */
+export const RESUME_GAP_MS = 1000;
 
 export const QUALITY_STORAGE_KEY = 'ca:diamond-scene-quality';
 
@@ -99,8 +105,13 @@ export interface GovernorOptions {
 }
 
 export interface QualityGovernor {
-  /** One attempted frame: the clock it ran on and whether it was submitted. */
-  frame(now: number, submitted: boolean): void;
+  /**
+   * One attempted frame: the clock it ran on, whether it was submitted, and
+   * the draw interval the scene's loop is running at right now (defaults to
+   * the interval it was created with; a reduced-motion loop draws far less
+   * often, and is judged against its own pace).
+   */
+  frame(now: number, submitted: boolean, intervalMs?: number): void;
   /** The tier in force. */
   readonly tier: number;
 }
@@ -110,7 +121,7 @@ export function createQualityGovernor(options: GovernorOptions): QualityGovernor
   let tier = Math.max(options.start ?? rememberedTier(storage), rememberedTier(storage));
   tier = Math.min(FLOOR_TIER, Math.max(0, tier));
   options.apply(QUALITY_TIERS[tier], tier);
-  const slowAfter = options.intervalMs * SLOW_FACTOR + 8;
+  const slowAfter = (intervalMs: number) => intervalMs * SLOW_FACTOR + 8;
   let attempts = 0,
     refused = 0,
     slow = 0,
@@ -130,7 +141,7 @@ export function createQualityGovernor(options: GovernorOptions): QualityGovernor
     get tier() {
       return tier;
     },
-    frame(now, submitted) {
+    frame(now, submitted, intervalMs = options.intervalMs) {
       if (tier >= FLOOR_TIER) return;
       if (warming) {
         if (warmSince < 0) warmSince = now;
@@ -142,7 +153,8 @@ export function createQualityGovernor(options: GovernorOptions): QualityGovernor
       attempts += 1;
       if (!submitted) refused += 1;
       else {
-        if (lastDrawn >= 0 && now - lastDrawn > slowAfter) slow += 1;
+        const gap = lastDrawn >= 0 ? now - lastDrawn : 0;
+        if (gap > slowAfter(intervalMs) && gap <= RESUME_GAP_MS) slow += 1;
         lastDrawn = now;
       }
       if (attempts < WINDOW_FRAMES) return;

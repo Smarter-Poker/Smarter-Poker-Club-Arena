@@ -2,7 +2,7 @@ import { useId, useState, type CSSProperties } from 'react';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import styles from './BonusReceiptArt.module.css';
 import {
-  CRASH_MAX_MULTIPLIER,
+  bookedAtCap,
   receiptBucketTint,
   receiptFigure,
   type BonusReceiptGame,
@@ -346,7 +346,10 @@ function PlinkoArt({ uid }: { uid: string }) {
 
 /** Mines: the gems the player found, fanned out, the count beneath them. */
 function MinesArt({ uid, count }: { uid: string; count: number }) {
-  const shown = Math.max(1, Math.min(9, count));
+  // A round lost on its first pick found no gem: one ghost outline stands in,
+  // so the art never shows a gem beside "0 Gems Found".
+  const empty = count <= 0;
+  const shown = empty ? 1 : Math.min(9, count);
   // Wide enough that three gems read as three, tight enough that nine stay a fan.
   const spread = shown === 1 ? 0 : Math.min(84, 26 * (shown - 1));
   return (
@@ -377,6 +380,8 @@ function MinesArt({ uid, count }: { uid: string; count: number }) {
           <g
             key={i}
             className={styles.fanGem}
+            data-empty={empty || undefined}
+            opacity={empty ? 0.18 : undefined}
             style={{ '--fan-angle': `${angle}deg`, '--fan-i': i } as CSSProperties}
           >
             <use href={`#${uid}gem`} transform="translate(180 112) scale(1.6)" />
@@ -403,10 +408,13 @@ function MinesArt({ uid, count }: { uid: string; count: number }) {
 export function BonusReceiptArt({
   game,
   figure,
+  cap,
   dim = false,
 }: {
   game: BonusReceiptGame;
   figure?: number | null;
+  /** Crash: the round's own cap as a multiplier; a round booked at it wears the crown. */
+  cap?: number | null;
   /** A lost round: the art stands back and the figure is not gold. */
   dim?: boolean;
 }) {
@@ -414,7 +422,7 @@ export function BonusReceiptArt({
   const [reduced] = useState(() => prefersReducedMotion());
   const [speed] = useState(() => getAnimationSpeed());
   const label = receiptFigure(game, figure);
-  const crown = game === 'crash' && !dim && Number(figure) >= CRASH_MAX_MULTIPLIER;
+  const crown = game === 'crash' && !dim && bookedAtCap(figure, cap);
   const cents = Math.round(Number(figure) * 100);
   const style = {
     '--animation-speed': speed,

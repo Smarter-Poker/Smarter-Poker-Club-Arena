@@ -7,7 +7,7 @@ export const LIT_PEGS = 16;
 /** Every peg on the board: 1 + 2 + ... + 16. */
 export const PEG_COUNT = (PEG_ROWS * (PEG_ROWS + 1)) / 2;
 /** Where a peg's face sits on the board, in the scene's own units. */
-export const PEG_Z = 0.15;
+const PEG_Z = 0.15;
 
 /** The centre of the peg at `col` on `row`, the one layout every peg layer shares. */
 export function pegCentre(row: number, col: number): [x: number, y: number] {
@@ -19,7 +19,7 @@ export function pegCentre(row: number, col: number): [x: number, y: number] {
  * domed face, turned on a lathe and stood facing the player so the specular
  * highlight sits on the dome. About two hundred triangles a peg, drawn instanced.
  */
-export function pegStudGeometry() {
+function pegStudGeometry() {
   const profile = [
     [0.05, -0.17],
     [0.05, -0.03],

@@ -460,10 +460,13 @@ export default function DiamondTestPage() {
           onOpen={() => setReveal(false)}
           // The live receipt's own art and figure, and its loss dress.
           eyebrow={phase === 'lost' ? 'Guarantee Paid' : undefined}
-          silent={phase === 'lost'}
+          // As on the live pages: only Plinko's receipt sings a win; the other
+          // three scenes sound their own ending.
+          silent={phase === 'lost' || game !== 'plinko'}
           art={
             <BonusReceiptArt
               game={game}
+              cap={CRASH_CAP / 100}
               dim={phase === 'lost'}
               figure={
                 game === 'crash'

@@ -1227,9 +1227,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           clubUuid={uuid}
           awardId={round.award_id ?? null}
           chips={round.payout_chips}
-          // A crossing receipt never sings: the scene has already said what
-          // happened, in its own beat. A lost Mines round is not a win either.
-          silent={game === 'crossing' || round.status === 'lost'}
+          // Neither game's receipt sings: each scene has already said what
+          // happened in its own beat (the crossing's landing, the Mines board's
+          // booked sting on a cash-out, 2026-09-26), and a lost round is not a
+          // win either. The receipt adds no second chord or buzz.
+          silent={game === 'crossing' || game === 'mines' || round.status === 'lost'}
           eyebrow={
             round.status === 'lost'
               ? round.payout_chips > 0

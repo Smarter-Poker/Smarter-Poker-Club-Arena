@@ -163,6 +163,12 @@ export function streetState(street: number, step: number, phase: CrossingPhase):
  * a grazing angle. The city itself takes no fog; it stands in its own haze
  * strip against the glow at the horizon.
  */
+/**
+ * The lane traffic's lap along the road: it turns round at `far`, where a car
+ * is a few pixels and a sixth hazed. The camera test checks the far end still
+ * prints level and in frame.
+ */
+export const TRAFFIC_Z = { near: 12, far: -40 } as const;
 export const CROSSING_CAMERA = {
   /** Vertical field of view, in degrees. */
   fov: 56,

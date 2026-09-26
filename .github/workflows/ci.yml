@@ -2959,7 +2959,10 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          # The JSON report beside the line reporter feeds the flaky-case
+          # summary step below: these suites have run with one retry since
+          # before 2026-09-26, and a case that passed only on retry is named.
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
           # Software WebGL must not compete with the other three browser workers.
           # Keep the full real-scene transitions.
           #
@@ -2982,6 +2985,16 @@ jobs:
         env:
           PLAYFIELD_REPORT: ${{ runner.temp }}/diamond-playfield-report.json
           SUITE_OUTCOME: ${{ steps.css-beats.outcome }}
+        run: node scripts/ci/playwright-flaky-summary.mjs
+
+      # The same for the CSS Beat suites of the first invocation, which also
+      # run with one retry: a case that passed only on retry is named there too.
+      - name: Name every CSS Beat case that passed only on retry
+        if: ${{ always() && (steps.css-beats.outcome == 'success' || steps.css-beats.outcome == 'failure') }}
+        env:
+          PLAYFIELD_REPORT: ${{ runner.temp }}/css-beats-report.json
+          SUITE_OUTCOME: ${{ steps.css-beats.outcome }}
+          SUITE_LABEL: CSS Beat suites (Chromium and WebKit, one retry)
         run: node scripts/ci/playwright-flaky-summary.mjs
 
       # Capture the failed fixture before a later suite can clear its output.

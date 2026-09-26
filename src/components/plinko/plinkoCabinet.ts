@@ -371,7 +371,9 @@ export function plinkoCabinet(scene: THREE.Scene, slots: readonly THREE.Mesh[]) 
     sparkZ = new Float32Array(SPARKS),
     sparkBorn = new Float32Array(SPARKS).fill(-1e9),
     sparkSize = new Float32Array(SPARKS),
-    sparkSpin = new Float32Array(SPARKS);
+    sparkSpin = new Float32Array(SPARKS),
+    /** When each diamond last left a sparkle, on the cabinet clock. */
+    ballSparkAt = new Float32Array(BALLS).fill(-1e9);
   for (let i = 0; i < SPARKS; i++) {
     place(sparks, i, 0, 0, 0, 0);
     sparks.setColorAt(i, tint.setRGB(0, 0, 0));
@@ -500,12 +502,23 @@ export function plinkoCabinet(scene: THREE.Scene, slots: readonly THREE.Mesh[]) 
       rims.instanceMatrix.needsUpdate = true;
 
       // THE SPARKLE TRAIL. None under reduced motion: the diamond does not travel.
+      // The ring is shared, so every diamond in flight spaces its sparkles out
+      // in time: with n diamonds up, each leaves one every life * n / SPARKS ms,
+      // and a slot whose sparkle is still fading is never taken over. A single
+      // drop leaves one a frame; a batch of thirty leaves a sparser trail whose
+      // every sparkle still lives out its whole fade.
       if (!still) {
-        for (let i = 0; i < f.flying && i < f.balls.length; i++) {
+        const life = 520 * f.speed;
+        let up = 0;
+        for (let i = 0; i < f.flying && i < f.balls.length; i++) if (f.balls[i].visible) up += 1;
+        const gap = (life * up) / SPARKS;
+        for (let i = 0; i < f.flying && i < f.balls.length && i < BALLS; i++) {
           const ball = f.balls[i];
-          if (!ball.visible) continue;
-          const n = sparkSerial++;
+          if (!ball.visible || clock - ballSparkAt[i] < gap) continue;
           const k = sparkCursor;
+          if (clock - sparkBorn[k] < life) continue;
+          ballSparkAt[i] = clock;
+          const n = sparkSerial++;
           sparkCursor = (sparkCursor + 1) % SPARKS;
           sparkX[k] = ball.position.x + (sparkleScatter(n) - 0.5) * 0.34;
           sparkY[k] = ball.position.y + (sparkleScatter(n + 0.5) - 0.3) * 0.3;

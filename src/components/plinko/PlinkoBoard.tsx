@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import * as THREE from 'three';
 import { gameRenderer, metal, solid } from '../games/sceneKit';
 import { pegIndexAt, plinkoPegField } from './plinkoPegField';
-import { plinkoCabinet } from './plinkoCabinet';
+import { plinkoCabinet, type CabinetFrame } from './plinkoCabinet';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
@@ -248,7 +248,19 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     const count = p.batchPathBits?.length ?? 0;
     if (!failed || (!count && !p.path)) return;
     if (landedKey.current?.key === p.dropKey && landedKey.current.count === count) return;
+    const from = landedKey.current?.key === p.dropKey ? landedKey.current.count : 0;
     landedKey.current = { key: p.dropKey, count };
+    // The landing is still heard and felt without a picture: one clink (and
+    // its buzz, the jackpot buzz on a 5x or better) at the best bucket this
+    // report lands, as the drawn board gives one a frame.
+    const slots = count
+      ? p.batchPathBits!.slice(from).map((bits) => pathBitsSlot(bits))
+      : p.path
+        ? [p.path.reduce((a, b) => a + b, 0)]
+        : [];
+    let best = -1;
+    for (const slot of slots) best = Math.max(best, p.multipliersCents[slot] ?? 0);
+    if (best >= 0) soundService.playPlinkoLanding(best, isBigWin(best));
     if (count) p.onProgress?.(count);
     p.onLanded?.();
   }, [failed, props.batchPathBits, props.path, props.dropKey]);
@@ -356,6 +368,19 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     const falling: THREE.Object3D[] = [];
     /** Pegs struck this frame, for the cabinet's flares; reused every frame. */
     const struckNow: number[] = [];
+    /** The batch's pegs lit this frame; reused every frame. */
+    const batchStruck: number[] = [];
+    /** The cabinet's frame description, one object rewritten every frame (no per-frame allocation). */
+    const cabinetFrame: CabinetFrame = {
+      now: 0,
+      speed: 1,
+      reduced: false,
+      idle: true,
+      struck: struckNow,
+      balls: falling,
+      flying: 0,
+      pulsing: false,
+    };
     // The win pulse: one ring, parked over whichever bucket just paid 5x or more.
     const winRing = new THREE.Mesh(
       new THREE.RingGeometry(0.3, 0.42, 36),
@@ -514,7 +539,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         while (finished < count && progressOf(finished) >= 16) finished++;
         // Every ball in flight lights the peg it is passing, so a batch shows
         // the same contact the single drop does instead of a silent board.
-        const struck: number[] = [];
+        const struck = batchStruck;
+        struck.length = 0;
         let j = 0;
         for (let index = finished; index < count && j < 32; index++) {
           const progress = progressOf(index);
@@ -627,17 +653,14 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       // bucket pools, the diamond glows and the sparkle trail.
       const flying = falling.length;
       for (const diamond of diamonds) if (!falling.includes(diamond)) falling.push(diamond);
-      cabinet.frame({
-        now,
-        speed,
-        reduced,
-        idle: landed && !pendingLanding,
-        struck: struckNow,
-        balls: falling,
-        flying,
-        pulsing,
-      });
-      if (kit.render()) {
+      cabinetFrame.now = now;
+      cabinetFrame.speed = speed;
+      cabinetFrame.reduced = reduced;
+      cabinetFrame.idle = landed && !pendingLanding;
+      cabinetFrame.flying = flying;
+      cabinetFrame.pulsing = pulsing;
+      cabinet.frame(cabinetFrame);
+      if (kit.render(reduced ? 150 : 30)) {
         /* THE BOARD IS HEARD ON THE FRAME THAT SHOWS IT (2026-09-26). A tick
            for the pegs this frame shows being struck, at most one every
            PLINKO_PEG_GAP_MS on the frame clock, pitched by the lowest row

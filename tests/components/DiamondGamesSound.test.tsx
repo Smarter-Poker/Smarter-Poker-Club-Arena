@@ -32,6 +32,8 @@ const sounds = vi.hoisted(() => ({
   playMinesExplosion: vi.fn(),
 }));
 const motion = vi.hoisted(() => ({ reduced: false }));
+/** When on, the scene kit throws as a phone without WebGL would. */
+const noWebGL = vi.hoisted(() => ({ on: false }));
 const frames = vi.hoisted(() => ({
   render: vi.fn(() => true),
   cleanup: vi.fn(),
@@ -50,13 +52,16 @@ vi.mock('../../src/components/games/sceneKit', async (original) => {
   return {
     ...actual,
     inscription: () => new THREE.Texture(),
-    gameRenderer: (canvas: HTMLCanvasElement) => ({
-      scene: new THREE.Scene(),
-      camera: new THREE.PerspectiveCamera(),
-      renderer: { domElement: canvas, setSize: vi.fn(), render: vi.fn() },
-      render: frames.render,
-      cleanup: frames.cleanup,
-    }),
+    gameRenderer: (canvas: HTMLCanvasElement) => {
+      if (noWebGL.on) throw new Error('WebGL unavailable');
+      return {
+        scene: new THREE.Scene(),
+        camera: new THREE.PerspectiveCamera(),
+        renderer: { domElement: canvas, setSize: vi.fn(), render: vi.fn() },
+        render: frames.render,
+        cleanup: frames.cleanup,
+      };
+    },
   };
 });
 vi.mock('../../src/components/games/gpuFrameRenderer', () => ({
@@ -101,6 +106,7 @@ const frame = (at: number) =>
   });
 beforeEach(() => {
   motion.reduced = false;
+  noWebGL.on = false;
   hidden = false;
   now = 0;
   callback = null;
@@ -214,6 +220,18 @@ describe('Crash: the engine follows the flight, and each ending is heard once', 
     expect(sounds.playCrashExplosion).toHaveBeenCalledTimes(1);
   });
 
+  it('holds the engine at the tapped figure while a cash-out is on its way', () => {
+    const view = fly();
+    const tapped = sounds.driveCrashEngine.mock.calls.at(-1)![0] as number;
+    // The page freezes the hero at the tapped figure through tickerCents.
+    view.rerender(flight({ phase: 'open', tickerCents: tapped }));
+    sounds.driveCrashEngine.mockClear();
+    for (let t = 3100; t <= 3600; t += 100) frame(t);
+    const heard = sounds.driveCrashEngine.mock.calls.map(([cents]) => cents as number);
+    expect(heard.length).toBeGreaterThan(0);
+    expect(new Set(heard)).toEqual(new Set([tapped]));
+  });
+
   it('stops the engine on unmount', () => {
     const view = fly();
     view.unmount();
@@ -294,6 +312,22 @@ describe('Plinko: a tick for each peg struck, a clink for each landing', () => {
     const clinks = sounds.playPlinkoLanding.mock.calls;
     expect(clinks.length).toBeGreaterThanOrEqual(1);
     expect(clinks.length).toBeLessThanOrEqual(batch.length);
+  });
+
+  it('still clinks the landing, once, when the board cannot draw', () => {
+    noWebGL.on = true;
+    const onLanded = vi.fn();
+    const view = render(board({ path: Array(16).fill(1), onLanded }));
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    expect(sounds.playPlinkoLanding).toHaveBeenCalledExactlyOnceWith(1000, true);
+    view.rerender(board({ path: Array(16).fill(1), onLanded }));
+    expect(sounds.playPlinkoLanding).toHaveBeenCalledTimes(1);
+    // A batch released a ball at a time: each release clinks its own best bucket.
+    view.rerender(board({ path: null, dropKey: 2, batchPathBits: [0], onLanded }));
+    expect(sounds.playPlinkoLanding).toHaveBeenLastCalledWith(100, false);
+    view.rerender(board({ path: null, dropKey: 2, batchPathBits: [0, 0xffff], onLanded }));
+    expect(sounds.playPlinkoLanding).toHaveBeenLastCalledWith(1000, true);
+    expect(sounds.playPlinkoLanding).toHaveBeenCalledTimes(3);
   });
 
   it('under reduced motion lands a whole batch as one beat, at its best bucket', () => {
@@ -384,8 +418,31 @@ describe('Donkey Cross: the walk, the car and the beat are heard where they are 
     for (let t = 200; t <= 2000; t += 100) frame(t);
     expect(sounds.playCrossingHit).toHaveBeenCalledExactlyOnceWith({ withHorn: true, speed: 1 });
     expect(onMoment.mock.calls).toEqual([['hit', 2]]);
-    expect(sounds.playCrossingHoof).not.toHaveBeenCalled();
+    // No walk to follow, so one step is heard, not four; no approach, so no engine.
+    expect(sounds.playCrossingHoof).toHaveBeenCalledTimes(1);
     expect(sounds.driveCrossingCar).not.toHaveBeenCalled();
+    expect(sounds.playCrossingBrake).not.toHaveBeenCalled();
+  });
+
+  it('still squeals a safe street to a stop under reduced motion, once, before it lands', () => {
+    motion.reduced = true;
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('reduce'),
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    const onMoment = vi.fn();
+    const view = render(road({ onMoment }));
+    frame(100);
+    view.rerender(road({ onMoment, picked: [0, 1] }));
+    for (let t = 200; t <= 2000; t += 100) frame(t);
+    expect(sounds.playCrossingBrake).toHaveBeenCalledExactlyOnceWith(1);
+    expect(sounds.playCrossingLanded).toHaveBeenCalledExactlyOnceWith(2);
+    expect(sounds.playCrossingHoof).toHaveBeenCalledTimes(1);
+    expect(sounds.driveCrossingCar).not.toHaveBeenCalled();
+    expect(sounds.playCrossingHorn).not.toHaveBeenCalled();
+    expect(onMoment.mock.calls).toEqual([['landed', 2]]);
   });
 
   it('silences the approaching car on unmount', () => {

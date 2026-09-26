@@ -10,6 +10,7 @@ import {
   WARMUP_FRAMES,
   WARMUP_MS,
   WINDOW_FRAMES,
+  RESUME_GAP_MS,
 } from '../../src/components/games/qualityGovernor';
 import { applyQualityTier, COMPILE_WAIT_MS, warmUp } from '../../src/components/games/sceneKit';
 
@@ -123,6 +124,57 @@ describe('the quality governor steps a scene down when its frames say so', () =>
     expect(rememberedTier(memoryStorage({ [QUALITY_STORAGE_KEY]: '99' }))).toBe(0);
     expect(rememberedTier(null)).toBe(0);
     expect(REFUSED_SHARE).toBeGreaterThan(0.2);
+  });
+});
+
+describe('the governor judges a frame against the pace it was drawn at', () => {
+  const walk = (
+    governor: ReturnType<typeof createQualityGovernor>,
+    from: number,
+    gap: number,
+    n: number,
+    interval?: number
+  ) => {
+    let t = from;
+    for (let i = 0; i < n; i++) {
+      t += gap;
+      governor.frame(t, true, interval);
+    }
+    return t;
+  };
+
+  it('does not step a reduced-motion loop down for drawing at its own slow pace', () => {
+    const apply = vi.fn();
+    const governor = createQualityGovernor({ intervalMs: 30, apply, storage: memoryStorage() });
+    // A reduced-motion Crash loop draws every 180 ms, for many windows.
+    walk(governor, 0, 180, 600, 180);
+    expect(governor.tier).toBe(0);
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('still steps a loop down that runs well behind the pace it asked for', () => {
+    const governor = createQualityGovernor({
+      intervalMs: 30,
+      apply: vi.fn(),
+      storage: memoryStorage(),
+    });
+    walk(governor, 0, 180, 200, 30);
+    expect(governor.tier).toBeGreaterThan(0);
+  });
+
+  it('treats a long gap (hidden tab, paused scene) as a pause, not a slow frame', () => {
+    const governor = createQualityGovernor({
+      intervalMs: 16,
+      apply: vi.fn(),
+      storage: memoryStorage(),
+    });
+    let t = walk(governor, 0, 16, 60);
+    // Drawn only when something changes, seconds apart, for several windows.
+    for (let i = 0; i < 300; i++) {
+      t += RESUME_GAP_MS + 500;
+      governor.frame(t, true);
+    }
+    expect(governor.tier).toBe(0);
   });
 });
 

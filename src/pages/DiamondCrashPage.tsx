@@ -1554,8 +1554,9 @@ function DiamondCrashGame() {
             clubId={routeClubId ?? ''}
             clubUuid={clubUuid}
             awardId={settledRound.award_id ?? null}
-            // The page already sang the cash-out at its own multiplier, and a
-            // crash says nothing. Either way the receipt adds no chord.
+            // The scene already sounded the ending on the frame that showed it
+            // (the booked sting, the gold fanfare at the cap, or the crash
+            // explosion). Either way the receipt adds no chord.
             silent
             // A crash is not a win. The receipt says what it is.
             eyebrow={
@@ -1571,6 +1572,7 @@ function DiamondCrashGame() {
             // where it crashed on a round that was not cashed.
             game="crash"
             figure={finalCents === null ? null : finalCents / 100}
+            cap={settledRound.cap_cents / 100}
           />
         )}
     </div>

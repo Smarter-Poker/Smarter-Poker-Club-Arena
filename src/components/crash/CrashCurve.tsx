@@ -158,7 +158,7 @@ function wouldHaveGone(
 }
 /** The multiplier lines the glass can print; the ones inside the axis are shown. */
 const MULTIPLIER_TICKS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
-/** Two tick labels closer than this, in glass pixels, would overprint; the lower one gives way. */
+/** Two tick labels closer than this, in glass pixels, would overprint; the upper one gives way (1.00x always prints). */
 const TICK_LABEL_GAP = 14;
 /** Seconds tick spacing candidates: the smallest that keeps the axis to a handful of ticks. */
 const SECOND_STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300];
@@ -1281,8 +1281,10 @@ export default function CrashCurve(props: CrashCurveProps) {
         }
       });
       // The cap, drawn where the flight would stop, once the axis reaches it.
+      let capLabelY: number | null = null;
       if (p.capCents > 100 && progressOf(p.capCents) <= 1) {
         const [, y] = toScreen(progressOf(p.capCents));
+        if (!atCap) capLabelY = y - 4;
         // The label sits at the right edge like the auto line, clear of the hero
         // and of the tick labels on the left; once a round has booked at the
         // cap the cash mark says Max and the line needs no label.
@@ -1292,7 +1294,12 @@ export default function CrashCurve(props: CrashCurveProps) {
       const auto = p.autoCashoutCents;
       if (auto && auto > 100 && progressOf(auto) <= 1) {
         const [, y] = toScreen(progressOf(auto));
-        place(marks.auto, 6, y, width - 6, y, width - 8, y - 4, `Auto ${tickerLabel(auto)}`);
+        // Both labels sit at the right edge; an auto line close under the cap
+        // prints its label below its own line instead, so the two never overprint.
+        const above = y - 4;
+        const labelY =
+          capLabelY !== null && Math.abs(capLabelY - above) < TICK_LABEL_GAP ? y + 12 : above;
+        place(marks.auto, 6, y, width - 6, y, width - 8, labelY, `Auto ${tickerLabel(auto)}`);
       } else hide(marks.auto);
       const floor = floorCents(p.minimumPayoutChips, p.betChips);
       let floorY: number | null = null;
@@ -1352,9 +1359,11 @@ export default function CrashCurve(props: CrashCurveProps) {
         plateShown = true;
         plate.current.dataset.shown = 'true';
       }
-      const submitted = kit ? kit.render() : false;
+      const submitted = kit ? kit.render(reduced ? 180 : 30) : false;
       /* THE SOUND IS ON THIS FRAME'S CLOCK (2026-09-26). The engine is one
-         voice for the whole flight, steered to the figure this frame printed;
+         voice for the whole flight, steered to the figure this frame printed
+         (so once the cash-out is tapped and the hero holds the tapped figure,
+         the engine holds with it instead of climbing through the round trip);
          it stops on the frame the round stops. A terminal beat sounds on the
          frame that shows it (the red flash, or the cash marker, which reads
          "Max" for a round booked at the cap, so that booking gets the gold
@@ -1362,7 +1371,7 @@ export default function CrashCurve(props: CrashCurveProps) {
          still owes it on the same frame. */
       if (p.phase === 'open') {
         engine = true;
-        soundService.driveCrashEngine(current);
+        soundService.driveCrashEngine(printed);
       } else silenceEngine(p.phase === 'crashed' ? 0.03 : 0.25);
       if (sounded.current !== p.phase && (submitted || !kit || failedRef.current)) {
         sounded.current = p.phase;

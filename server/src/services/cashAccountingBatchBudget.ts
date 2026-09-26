@@ -105,3 +105,55 @@ export function cashAccountingBatchSize(
   const fits = Math.floor(budgetMs / perItemMs);
   return Math.max(MIN_BATCH, Math.min(MAX_BATCH, fits));
 }
+
+/**
+ * THE PERIOD RECOMPUTE IS WAITED FOR AS LONG AS THE SERVER WORKS (2026-09-26)
+ *
+ * The same defect as the incident at the top of this file, one call further
+ * down the same cycle. `fn_rakeback_recompute_periods` rebuilds a whole
+ * (club, week) rakeback book from source and declares its own
+ * `SET statement_timeout='300s'`
+ * (supabase/accounting/weekly-v3/components/20260914132216_*.sql). The engine
+ * called it through the ordinary 15-second client.
+ *
+ * Measured 2026-09-26 02:00 UTC, engine build 778075b4: for Deep Stack Society
+ * (2a1132b9), week 2026-09-21, 268,277 week rake_records platform-wide and
+ * 170,161 for the club, the call started at ~02:00:09, the client gave up with
+ * `supabase_timeout` at 02:00:24, and the SERVER finished at 02:02:26
+ * (accounting_period_recompute_requests.attempted_at; pg_stat_statements
+ * max_exec_time 137,213 ms). The work committed; the settler threw its answer
+ * away, logged 46 failures, and held the cursor. `daemon_state` for
+ * 'rakeback_settler' sat at 2026-09-22 10:37:05.499207+00 for 3.6 days with
+ * 234,593 positive rake_records behind it - every cycle re-acknowledging the
+ * same 986 sources and re-running the same 137-second recompute.
+ *
+ * The week is the unit of work, so its cost grows through the week: the first
+ * week under the 2026-09-17 accrual cutover crossed 15 s about a day in, and
+ * nothing could notice because the literal client budget never looked at the
+ * function it was calling.
+ *
+ * So the recompute's client deadline is DERIVED from the server's own budget
+ * plus a transport margin: the client always outlives the statement, and
+ * therefore always hears the server's verdict - success, a durable deferral, or
+ * the server's own statement-timeout error - rather than inventing a failure
+ * for work that committed.
+ *
+ * PERIOD_RECOMPUTE_SERVER_BUDGET_MS must equal the function's declared
+ * statement_timeout; tests/the-period-recompute-outlives-its-server.law.test.ts
+ * reads the SQL and fails if they disagree.
+ */
+export const PERIOD_RECOMPUTE_SERVER_BUDGET_MS = 300_000;
+
+/** Time for the response to cross PostgREST and the network after the statement ends. */
+export const PERIOD_RECOMPUTE_TRANSPORT_MARGIN_MS = 15_000;
+
+export function periodRecomputeClientTimeoutMs(
+  serverBudgetMs: number = PERIOD_RECOMPUTE_SERVER_BUDGET_MS,
+  marginMs: number = PERIOD_RECOMPUTE_TRANSPORT_MARGIN_MS
+): number {
+  // An unreadable budget is not a generous one, but neither may it fall below
+  // the ordinary client: the recompute never waits LESS than any other call.
+  if (!Number.isFinite(serverBudgetMs) || serverBudgetMs <= 0) return DEFAULT_CLIENT_TIMEOUT_MS;
+  const margin = Number.isFinite(marginMs) && marginMs > 0 ? marginMs : 0;
+  return Math.max(DEFAULT_CLIENT_TIMEOUT_MS, serverBudgetMs + margin);
+}

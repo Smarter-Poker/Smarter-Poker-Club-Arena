@@ -13,7 +13,10 @@
  * module graph acyclic.
  */
 
-import { resolveClientTimeoutMs } from '../cashAccountingBatchBudget.js';
+import {
+  periodRecomputeClientTimeoutMs,
+  resolveClientTimeoutMs,
+} from '../cashAccountingBatchBudget.js';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
 import { dataActorHeaders } from './dataActorContext.js';
@@ -221,6 +224,15 @@ export const supabase: SupabaseClient = createBoundedServiceClient(DB_TIMEOUT_MS
 /** Only the serialized maintenance save/clear RPCs use this longer deadline. */
 export const maintenanceSupabase: SupabaseClient =
   createBoundedServiceClient(MAINTENANCE_DB_TIMEOUT_MS);
+
+/* The rakeback period recompute client. fn_rakeback_recompute_periods rebuilds
+   a whole (club, week) book and declares a 300-second server budget; on the
+   ordinary 15-second client its committed work was discarded as a timeout and
+   the settler cursor held for 3.6 days (2026-09-22 to 2026-09-26). The deadline
+   is derived from the server budget. See cashAccountingBatchBudget.ts. */
+export const accountingPeriodSupabase: SupabaseClient = createBoundedServiceClient(
+  periodRecomputeClientTimeoutMs()
+);
 
 /* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
 export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);

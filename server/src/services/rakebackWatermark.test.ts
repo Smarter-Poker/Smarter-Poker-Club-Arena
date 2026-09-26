@@ -124,6 +124,12 @@ vi.mock('./supabase.js', () => ({
     from: (table: string) => mockFrom(table),
     rpc: (...args: unknown[]) => mockRpc(...args),
   },
+  // The period recompute's long-deadline client (2026-09-26). Same recorder,
+  // so every assertion on mockRpc still sees the recompute call.
+  accountingPeriodSupabase: {
+    from: (table: string) => mockFrom(table),
+    rpc: (...args: unknown[]) => mockRpc(...args),
+  },
 }));
 
 vi.mock('./errorReporter.js', () => ({

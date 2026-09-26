@@ -25,7 +25,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { supabase } from './supabase.js';
+import { accountingPeriodSupabase, supabase } from './supabase.js';
 import { cashAccountingBatchSize, resolveClientTimeoutMs } from './cashAccountingBatchBudget.js';
 import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
@@ -1540,12 +1540,18 @@ export class RakebackSettlerService {
         for (let offset = 0; offset < groupUserIds.length; offset += PERIOD_USER_BATCH_SIZE) {
           const userIds = groupUserIds.slice(offset, offset + PERIOD_USER_BATCH_SIZE);
           try {
-            const { data, error } = await supabase.rpc('fn_rakeback_recompute_periods', {
-              p_club_id: g.club_id,
-              p_period_start: g.period_start,
-              p_period_end: g.period_end,
-              p_user_ids: userIds,
-            });
+            // The recompute waits as long as its server budget, not the 15 s
+            // hand client: a committed week must never be reported as a
+            // timeout (2026-09-26, cashAccountingBatchBudget.ts).
+            const { data, error } = await accountingPeriodSupabase.rpc(
+              'fn_rakeback_recompute_periods',
+              {
+                p_club_id: g.club_id,
+                p_period_start: g.period_start,
+                p_period_end: g.period_end,
+                p_user_ids: userIds,
+              }
+            );
             if (error) {
               failures += userIds.length;
               reportError(

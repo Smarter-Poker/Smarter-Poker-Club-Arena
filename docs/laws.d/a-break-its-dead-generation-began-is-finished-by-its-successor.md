@@ -1,3 +1,0 @@
-# tests/a-break-its-dead-generation-began-is-finished-by-its-successor.law.test.ts
-
-The successor's movement-admission door rebuilds the movement proof of an F06 break only when the break is begun with a manifest, neither its origin nor its custody generation is the caller's, and no admission was ever recorded; the rebuilt proof keeps every boundary check of f06_movement_prior, accepts a moved member only on this break's own winning receipt, counts chips added after the boundary only from rebuy/add-on purchase debits at the event's rates, accounts for every manifest member, and writes nothing (20260926092954).

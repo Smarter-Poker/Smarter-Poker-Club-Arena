@@ -139,3 +139,17 @@ is recorded here for the owner of the movement lane.
 ## Measured after apply
 
 Recorded on the pull request.
+
+## Superseded by 20260926091645 (2026-09-26 13:30 UTC)
+
+`20260926092954` never reached the database, and it no longer can. Its
+pre-image pins `fn_f06_admit_parked_movement` at `9bcb1b3b` and
+`f06_movement_prior` at `97c4a1af`. `20260926091645` ("a receipted chip is
+movement evidence", applied 2026-09-26) had already moved them to
+`b77d5c53` / `b6909802`. That migration solves the same refusal
+(`F06_MOVEMENT_ORIGINAL_PROOF_MISSING` on a break its dead generation
+began) for this event and twelve others: a begun break with no proof takes
+one from durable receipts, and moved members are named by their winner
+receipts. 7c6277e7 is `COMPLETED` (2026-09-26 09:50 UTC). The file, its law, its
+registry row and its manifest promise are deleted, and the law for the live
+mechanism is `tests/a-receipted-chip-is-movement-evidence.law.test.ts`.

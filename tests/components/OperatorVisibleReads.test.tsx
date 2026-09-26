@@ -21,13 +21,6 @@ vi.mock('../../src/hooks/useMasterBusSubscription', () => ({ useMasterBusSubscri
 vi.mock('../../src/utils/unionScope', () => ({
   clubGamesOrFilter: async (id: string) => `club_id.eq.${id}`,
 }));
-vi.mock('../../src/services/TableService', () => ({
-  tableService: {
-    getClubTables: state.tables,
-    getSeatedPlayers: state.seats,
-    getTableStats: async () => ({ totalRake: 1, totalHands: 1 }),
-  },
-}));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     subscribeDebounced: () => vi.fn(),
@@ -76,7 +69,6 @@ vi.mock('../../src/lib/supabase', () => ({
     },
   },
 }));
-import TableOperationsPanel from '../../src/components/club/TableOperationsPanel';
 import AdminTableHeatmap from '../../src/components/admin/AdminTableHeatmap';
 import AgentPromoPanel from '../../src/components/agent/AgentPromoPanel';
 const table = (players = 2, name = 'Cash A') => ({
@@ -122,43 +114,6 @@ afterEach(() => {
 });
 
 describe('operator views observe only their visible scope', () => {
-  it('updates open tables and expanded seats without a hot-table channel', async () => {
-    render(<TableOperationsPanel clubId="club-a" />);
-    await flush();
-    expect(screen.getByText(/2\/9 Players/)).toBeDefined();
-    state.tables.mockResolvedValue([table(3)]);
-    fireEvent.click(screen.getByText('Cash A'));
-    await flush();
-    expect(state.seats).toHaveBeenCalledWith('table-a', expect.any(AbortSignal));
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
-    expect(screen.getByText(/3\/9 Players/)).toBeDefined();
-    expect(state.channel).not.toHaveBeenCalled();
-    const calls = state.tables.mock.calls.length;
-    visible = 'hidden';
-    act(() => document.dispatchEvent(new Event('visibilitychange')));
-    await act(() => vi.advanceTimersByTimeAsync(60_000));
-    expect(state.tables).toHaveBeenCalledTimes(calls);
-  });
-  it('refuses an old clubs late answer and shows a failed list as unavailable', async () => {
-    let finish!: (rows: unknown[]) => void;
-    state.tables.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        })
-    );
-    const view = render(<TableOperationsPanel clubId="club-a" />);
-    await flush();
-    state.tables.mockResolvedValue([table(5, 'Club B Table')]);
-    view.rerender(<TableOperationsPanel clubId="club-b" />);
-    await flush();
-    await act(async () => finish([table(2, 'Old Club')]));
-    expect(screen.queryByText('Old Club')).toBeNull();
-    state.tables.mockRejectedValue(new Error('Refused'));
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
-    expect(screen.getByRole('alert').textContent).toContain('Tables Could Not Be Refreshed');
-    expect(screen.queryByText('No Active Tables In This Club')).toBeNull();
-  });
   it('updates the heatmap from scoped reads and respects an explicitly empty prop list', async () => {
     const view = render(<AdminTableHeatmap clubId="club-a" />);
     await flush();

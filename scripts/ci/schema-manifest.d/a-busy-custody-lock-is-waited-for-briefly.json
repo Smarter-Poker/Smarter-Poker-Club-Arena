@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-release-unstick/fix/custody-busy-waits - migration 20260926145903_a_busy_custody_lock_is_waited_for_briefly, applied to production 2026-09-26 15:03Z and recorded with the file's exact bytes (md5 329f934a634f3702ab3442baeedaa2dc). public.fn_park_stopped_time_bank_custody waits up to about one second for the retired-origin lock before answering custody_transfer_busy.",
+  "functions": ["fn_park_stopped_time_bank_custody"]
+}

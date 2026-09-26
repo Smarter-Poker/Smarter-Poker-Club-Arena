@@ -746,6 +746,8 @@ describe('Phase 4 remediation: it proves what it says, and says nothing CI does 
     // uses, so the new step cannot silently pick up a different PostgreSQL.
     expect(ACCOUNTING).toContain(
       '      - name: Lightning Phase 4 remediation repairs the threshold reader, the verdict and the plan\n' +
+        // Its accounting shard (four since 2026-09-26) is its only condition.
+        '        if: matrix.shard == 1\n' +
         '        env:\n' +
         '          PG_BIN: /usr/lib/postgresql/17/bin\n' +
         '        run: bash scripts/dev/test-lightning-phase4-remediation.sh'

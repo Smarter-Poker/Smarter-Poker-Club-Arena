@@ -249,7 +249,7 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
       step.run?.includes('python3 -B scripts/ci/test-horse-commitment-audit.py')
     );
     expect(steps).toHaveLength(1);
-    expect(steps[0].if).toBeUndefined();
+    expect(steps[0].if).toMatch(/^matrix\.shard == [1-4]$/); // its accounting shard, nothing else
     expect(steps[0]['continue-on-error']).toBeUndefined();
     expect(steps[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(steps[0].run).toContain('--source-root "$GITHUB_WORKSPACE"');

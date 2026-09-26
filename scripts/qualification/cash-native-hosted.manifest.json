@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 168560,
-      "sha256": "4558dcc8d46a47e1b8b8c13561ccc80733fda73b1270dd24c7598751b3a16078"
+      "bytes": 168725,
+      "sha256": "d0d62f232b18f9ea699ed32b46a14e2520e2a80d089af2af7ed771adec1488a4"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -318,6 +318,13 @@
         "bytes": 156053,
         "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
       }
+    }
+  },
+  "discoveryPrivacyIntegration": {
+    "reason": "Add isolated discovery privacy regression to existing accounting shard 4; existing financial suites and assertions unchanged.",
+    "previousWorkflowPin": {
+      "bytes": 168560,
+      "sha256": "4558dcc8d46a47e1b8b8c13561ccc80733fda73b1270dd24c7598751b3a16078"
     }
   }
 }

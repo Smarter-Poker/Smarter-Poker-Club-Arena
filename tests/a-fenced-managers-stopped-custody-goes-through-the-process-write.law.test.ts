@@ -46,7 +46,7 @@ const RELEASE = readFileSync(
 );
 
 // Applied to production 2026-09-26 13:14Z and recorded with these exact bytes.
-const APPLIED_MD5 = 'ddb23ba1d7e40d5d2f7e56594704734a';
+const APPLIED_MD5 = 'cebc8f96d9af8358005802b7858ec8f4';
 
 const code = (s: string) =>
   s
@@ -141,8 +141,8 @@ describe('a fenced manager stopped custody goes through the process write', () =
       /CREATE TRIGGER trg_fenced_manager_stopped_custody_park\s+BEFORE INSERT ON public\.engine_presence_parked\s+FOR EACH ROW EXECUTE FUNCTION smarter_private\.fn_fenced_manager_stopped_custody_park\(\);/
     );
     expect(FILE).not.toMatch(/BEFORE (INSERT OR )?UPDATE ON public\.engine_presence_parked/);
-    expect(FILE).toContain(
-      'REVOKE ALL ON FUNCTION smarter_private.fn_fenced_manager_stopped_custody_park() FROM anon, authenticated, service_role;'
+    expect(FILE).toMatch(
+      /REVOKE ALL ON FUNCTION smarter_private\.fn_fenced_manager_stopped_custody_park\(\)\s+FROM PUBLIC, anon, authenticated, service_role;/
     );
   });
 

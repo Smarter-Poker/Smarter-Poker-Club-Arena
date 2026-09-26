@@ -99,3 +99,12 @@ what it is.
   an owner-held credential.
 - Once #5323 is serving, the trigger is inert for new custody (the fixed engine
   writes as `service`). It stays as the narrow path for any older engine.
+
+## Record note
+
+The first apply at 13:14Z revoked the trigger function from `PUBLIC` and from
+`anon, authenticated, service_role` in two statements.
+`tests/a-revoke-from-anon-must-name-public.law.test.ts` requires one list that
+names `PUBLIC`, so the file now does that. The single statement was executed on
+production (a no-op, same ACL `{postgres=X/postgres}`), and the history row was
+re-recorded with the file's exact bytes (md5 `cebc8f96d9af8358005802b7858ec8f4`).

@@ -306,8 +306,8 @@ BEGIN
 END
 $function$;
 
-REVOKE ALL ON FUNCTION smarter_private.fn_fenced_manager_stopped_custody_park() FROM PUBLIC;
-REVOKE ALL ON FUNCTION smarter_private.fn_fenced_manager_stopped_custody_park() FROM anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION smarter_private.fn_fenced_manager_stopped_custody_park()
+  FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE TRIGGER trg_fenced_manager_stopped_custody_park
   BEFORE INSERT ON public.engine_presence_parked

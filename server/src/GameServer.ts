@@ -54,12 +54,12 @@ import { AsyncResource } from 'node:async_hooks';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
+import { HorseDecisionAbortedError } from './engine/horseDecision/client.js';
 import {
-  HorseDecisionAbortedError,
   liveHorseDecisionWorkerStatus,
   startLiveHorseDecisionWorker,
   stopLiveHorseDecisionWorker,
-} from './engine/horseDecision/client.js';
+} from './engine/horseDecision/lane.js';
 import {
   EquityWorkerPoolAbortedError,
   equityWorkerPoolPreservesDealerLiveness,

@@ -172,7 +172,7 @@ snapshot = ("SELECT md5(jsonb_build_object("
 installer = MIGRATION.read_text()
 backfill = re.search(r"INSERT INTO public\.accepted_event_operations\s*\n\s*\(event_kind[^;]*?FROM public\.tournaments t[^;]*;",
                      installer).group(0)
-proofs = [m.group(1).strip() for m in re.finditer(r'--\s*@live-proof:\s*(.+?)\s*$', installer, re.M)]
+proofs = [m.group(1).strip() for m in re.finditer(r'^-- @live-proof: (.+?)\s*$', installer, re.M)]
 try:
     version = command([pg / 'postgres', '--version']).stdout
     require(re.search(r'PostgreSQL\) 1[6-9]\.', version), 'PostgreSQL 16 or newer required, found ' + version)

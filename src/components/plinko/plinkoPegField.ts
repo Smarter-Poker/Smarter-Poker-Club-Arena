@@ -80,24 +80,29 @@ export function plinkoPegField(steel: THREE.MeshPhysicalMaterial) {
     }
   }
   const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
-  let last = '';
+  /** The lit set now showing, and the one being asked for: both reused every frame. */
+  const shown: number[] = [];
+  const wanted: number[] = [];
   /**
    * Light exactly these pegs. One drop hands over the trail it has struck; a
    * batch hands over the peg each ball is passing this frame, which is why this
    * takes a list rather than a single path. Redundant frames are skipped so the
    * instance matrices only upload when the set actually changes.
    */
-  function light(indices: number[]) {
-    const wanted: number[] = [];
+  function light(indices: readonly number[]) {
+    // Nothing is allocated here: the board calls this every frame.
+    wanted.length = 0;
     for (const index of indices) {
       if (!Number.isInteger(index) || index < 0 || index >= positions.length) continue;
       if (wanted.includes(index)) continue;
       wanted.push(index);
       if (wanted.length === LIT_PEGS) break;
     }
-    const key = wanted.join(',');
-    if (last === key) return;
-    last = key;
+    let same = shown.length === wanted.length;
+    for (let i = 0; same && i < wanted.length; i++) same = shown[i] === wanted[i];
+    if (same) return;
+    shown.length = 0;
+    for (const index of wanted) shown.push(index);
     positions.forEach((matrix, index) => unlit.setMatrixAt(index, matrix));
     lit.count = wanted.length;
     wanted.forEach((index, slot) => {

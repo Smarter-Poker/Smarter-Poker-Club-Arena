@@ -46,6 +46,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fontFileName } from './lib/font-file-name.mjs';
 
 const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
@@ -81,7 +82,11 @@ async function main() {
   if (!cssRes.ok) throw new Error(`css2 fetch failed: ${cssRes.status}`);
   let css = await cssRes.text();
 
-  const fontUrls = [...new Set([...css.matchAll(/url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g)].map((m) => m[1]))];
+  const fontUrls = [
+    ...new Set(
+      [...css.matchAll(/url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g)].map((m) => m[1])
+    ),
+  ];
   if (fontUrls.length === 0) throw new Error('no woff2 URLs found in css');
 
   const fontsDir = path.join(DIST, 'fonts');
@@ -89,11 +94,9 @@ async function main() {
 
   let bytes = 0;
   for (const url of fontUrls) {
-    // e.g. https://fonts.gstatic.com/s/inter/v19/xyz.woff2 -> inter-v19-xyz.woff2
-    const name = url
-      .replace('https://fonts.gstatic.com/s/', '')
-      .split('/')
-      .join('-');
+    // e.g. https://fonts.gstatic.com/s/inter/v19/xyz.woff2 -> inter-v19-xyz.woff2;
+    // a kit URL (/l/font?kit=...) is named by its hash (lib/font-file-name.mjs).
+    const name = fontFileName(url);
     const res = await fetch(url, { headers: { 'User-Agent': UA } });
     if (!res.ok) throw new Error(`font fetch failed: ${res.status} ${url}`);
     const buf = Buffer.from(await res.arrayBuffer());

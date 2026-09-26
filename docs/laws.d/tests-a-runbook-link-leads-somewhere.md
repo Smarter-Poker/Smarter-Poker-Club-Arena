@@ -18,3 +18,11 @@ the deploy lands. A link into this repository is resolved as a file and never
 fetched, because the repository is private and an anonymous GET of a blob URL
 answers 404 whether or not the document exists - fetching the two such links
 here would have reported both as dead on the first run.
+
+2026-09-26: the links were fixed at the root rather than at the host. Nineteen
+runbooks now live under `docs/runbooks/`, each written from its alert's
+expression and producer, and all 22 annotations name them as repo-relative
+paths. The law now also refuses any rule that points at `monitor.smarter.poker`
+and requires every repo-relative runbook to exist, and
+`scripts/ci/check-runbook-links.mjs` resolves every target, path or URL, not
+only http(s) ones.

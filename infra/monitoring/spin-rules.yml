@@ -50,7 +50,7 @@ groups:
             reserve pool locked tiers out and renormalised — expected, not a
             defect. Zero means the draw itself moved: compare
             v_spin_draw_distribution_7d against spin_tier_spec.
-          runbook: https://monitor.smarter.poker/runbooks/spin-fairness-drift
+          runbook: 'docs/runbooks/spin-fairness-drift.md'
 
       # A collector that cannot read is not a healthy platform. A failed
       # refresh keeps the last good snapshot on purpose, so this gauge is
@@ -68,14 +68,16 @@ groups:
             gauges are showing the last good values, which look healthy and
             are not current. fn_spin_metrics is failing; check the engine log
             for SpinMetrics.refresh_failed.
-          runbook: https://monitor.smarter.poker/runbooks/spin-metrics-stale
+          runbook: 'docs/runbooks/spin-metrics-stale.md'
 
   - name: spin-money
     interval: 60s
     rules:
-      # The prize left the reserve pool and reached no wallet. There is a
-      # back-pay job for exactly this; a non-zero reading that persists
-      # means the job is not running or not working.
+      # The prize left the reserve pool and reached no wallet. Since
+      # 2026-09-10 one transaction (fn_spin_draw_and_settle_atomic) draws and
+      # settles together, and the GameServer winner-backpay caller was
+      # removed (docs/BAND-AIDS-REGISTER.md, TIER 1 section 9), so nothing
+      # clears this on its own: a standing count is the live path failing.
       - alert: SpinPrizeUnpaid
         expr: poker_spin_unpaid_settlements > 0
         for: 10m
@@ -87,12 +89,11 @@ groups:
           description: |
             fn_spin_unpaid_settlements(24) compares what the reserve pool
             DREW for each recent Spin against what reached a player's wallet.
-            fn_backpay_spin_unpaid_winners sweeps a 6-hour window every 10
-            minutes and should clear these, so ten minutes of a standing count
-            means the repair is not working. It was not working AT ALL before
-            2026-08-31: it read the unbounded auditor three times and timed
-            out on every call. Check that first.
-          runbook: https://monitor.smarter.poker/runbooks/spin-prize-unpaid
+            The draw and the settlement commit in one transaction
+            (fn_spin_draw_and_settle_atomic) and no back-pay job runs, so a
+            standing count means that transaction was bypassed or a later
+            write undid part of it. Players are owed money: find the writer.
+          runbook: 'docs/runbooks/spin-prize-unpaid.md'
 
       # NEW gaps only, and the gauge itself is what makes that simple. The
       # eleven historical rows (2026-08-22 to 08-24, cause closed, 293.00
@@ -121,7 +122,7 @@ groups:
             of defect was closed on 2026-08-24; a new row means it reopened.
             v_spin_draw_booking_gaps holds the full history, including the
             eleven closed rows this gauge deliberately cannot see.
-          runbook: https://monitor.smarter.poker/runbooks/spin-booking-gap
+          runbook: 'docs/runbooks/spin-booking-gap.md'
 
       # THE ONE THE BOOKING GAUGE ABOVE CANNOT SEE. SpinDrawBookingGapOpened
       # is guarded, in SQL, on the booked amount being non-null: it asks only
@@ -168,7 +169,7 @@ groups:
             that job, read its RESPONSE BODY, not its exit: the dispatcher logs
             "executed successfully" for an HTTP 500, and `remaining` in that
             body is this same number.
-          runbook: https://monitor.smarter.poker/runbooks/spin-never-booked
+          runbook: 'docs/runbooks/spin-never-booked.md'
 
       # THE OUTAGE NOTHING COULD SEE.
       #
@@ -203,12 +204,13 @@ groups:
             back; the error and its call site come back together.
             Check `[ScheduledTournaments.insert_failed]` in the engine log and
             `fn_tournament_management_readiness` for a text/jsonb mismatch.
-          runbook: https://monitor.smarter.poker/runbooks/spin-fleet-stalled
+          runbook: 'docs/runbooks/spin-fleet-stalled.md'
 
       # Every row is a player who lost VIP points and an agent who lost
       # commission. The threshold is not zero: the settle path attributes
       # asynchronously and a handful in flight is normal. A standing hundred
-      # is the back-pay sweeper having stopped.
+      # is the live attribution path failing; the old repair and back-pay
+      # functions now only count and have no engine caller.
       - alert: RakeAttributionBacklog
         expr: poker_rake_attribution_gaps > 100
         for: 30m
@@ -220,12 +222,11 @@ groups:
           description: |
             Tournament rake was banked but never attributed, so VIP points,
             rakeback and agent commission went unpaid for those events. The
-            engine's 15-minute loop runs fn_repair_ and fn_backpay_
-            tournament_rake_attribution. A standing backlog means one of them
-            is failing — check GameServer.rake_attribution_backpay_failed,
-            and read `needs_a_human` in its return for rows a transient-lock
-            retry will never pick up.
-          runbook: https://monitor.smarter.poker/runbooks/rake-attribution-backlog
+            count is every row of v_tournament_rake_attribution_gaps, all
+            tournament formats. Read its verdict and attribution_error, then
+            the live path: fn_settle_tournament_rake and
+            fn_attribute_tournament_rake.
+          runbook: 'docs/runbooks/rake-attribution-backlog.md'
 
   - name: spin-experience
     interval: 60s
@@ -252,7 +253,7 @@ groups:
             full, which is correct and also means the players sat looking at
             a table waiting for it. The cost is in the start path: see the
             sequential reads between start() and fn_spin_draw_multiplier.
-          runbook: https://monitor.smarter.poker/runbooks/spin-reveal-late
+          runbook: 'docs/runbooks/spin-reveal-late.md'
 
       # The reserve pool cannot cover the top tier, so 100x (and possibly
       # 50x) are locked out of the draw entirely. The lobby still advertises
@@ -274,7 +275,7 @@ groups:
             lobby shows, and poker_spin_draw_realised_multiplier will sit
             below spec for as long as this lasts. Top the pool up, or accept
             it and expect SpinDrawFairnessDrift to follow.
-          runbook: https://monitor.smarter.poker/runbooks/spin-reserve-thin
+          runbook: 'docs/runbooks/spin-reserve-thin.md'
 
       # This is the population of partly filled, open, unstarted Spins.
       # The view exposes wait age but does not filter on the fill deadline
@@ -297,4 +298,4 @@ groups:
             A drawn or played game requires its continuation or settlement
             authority. This count alone proves neither that expiry is due
             nor that the expiry timer failed.
-          runbook: https://monitor.smarter.poker/runbooks/spin-unfilled-backlog
+          runbook: 'docs/runbooks/spin-unfilled-backlog.md'

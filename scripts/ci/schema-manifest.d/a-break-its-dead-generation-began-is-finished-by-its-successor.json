@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/stranded-money/fix/abandoned-begun-break - migration 20260926092954_a_break_its_dead_generation_began_is_finished_by_its_successor",
+  "_comment": "NOT YET APPLIED when written: a promise until 20260926092954 is installed through apply-merged-migration.yml. smarter_private.f06_movement_abandoned_begun_proof(tournament, table, break) rebuilds the movement proof of a begun F06 break whose origin and custody generations are both dead and that never recorded an admission; public.fn_f06_admit_parked_movement calls it. Private (postgres only), writes nothing.",
+  "functions": ["smarter_private.f06_movement_abandoned_begun_proof"]
+}

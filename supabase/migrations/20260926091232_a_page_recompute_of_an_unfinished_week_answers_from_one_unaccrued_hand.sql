@@ -176,6 +176,11 @@ BEGIN
   'request_state',request_state,'request_recorded',true);
 END $function$;
 
+-- The installed ACL is already {postgres=X, service_role=X}; restated so the
+-- migration carries its own authority (check-definer-authorization).
+REVOKE ALL ON FUNCTION public.fn_rakeback_recompute_periods(uuid,date,date,uuid[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rakeback_recompute_periods(uuid,date,date,uuid[]) TO service_role;
+
 DO $post$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc
@@ -183,7 +188,8 @@ BEGIN
                     AND md5(prosrc) = '37a114ec314e300a5c369c80245fee7b' AND prosecdef
                     AND proconfig @> ARRAY['search_path=public','statement_timeout=300s']
                     AND has_function_privilege('service_role','public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])','EXECUTE')
-                    AND NOT has_function_privilege('anon','public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])','EXECUTE')) THEN
+                    AND NOT has_function_privilege('anon','public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])','EXECUTE')
+                    AND NOT has_function_privilege('authenticated','public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])','EXECUTE')) THEN
     RAISE EXCEPTION 'RECOMPUTE_POSTIMAGE: the installed body is not the proved body, or its grants or budget moved';
   END IF;
 END $post$;

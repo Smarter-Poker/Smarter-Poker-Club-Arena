@@ -146,6 +146,20 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-registration-bust-install','BEGIN;\n'+regbust+'\nCOMMIT;')
             run('historical-registration-bust-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_retired_origin_transfer(uuid,uuid,jsonb,jsonb)');",
                 'smarter_private.f06_retired_origin_transfer(uuid,uuid,jsonb,jsonb) ce9c8da18aa4b596b62cc436fd22348d 61bd389d3c261ee6422a9e2336c58e89')
+            # Production then applies 20260926043127, which replaces the movement
+            # assert with the byte-exact installed text carrying two relaxed
+            # comparisons: a key absent from a stored movement proof whose live
+            # value is JSON null (a column added after the proof was taken, such as
+            # hand_history.kill_pot from 20260924034010) no longer refuses the
+            # sealed history or atomic row. Its pre-image refuses unless the
+            # installed body is exactly 1bc767e2..., which this clone holds, so the
+            # whole transaction is applied as written: pre-image, CREATE OR
+            # REPLACE, post-image.
+            added=(root/'supabase/migrations/20260926043127_a_column_added_after_a_movement_proof_was_taken_is_not_a_cha.sql').read_text()
+            added=added[added.index('DO $movement_proof_preimage$'):added.index('$movement_proof_postimage$;',added.index('DO $movement_proof_postimage$')+30)+len('$movement_proof_postimage$;')]
+            run('historical-added-column-install','BEGIN;\n'+added+'\nCOMMIT;')
+            run('historical-added-column-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_assert_movement(uuid)');",
+                'smarter_private.f06_assert_movement(uuid) 0cbea76808f835945a63f91f03e7d91c 611ab479ccb52d5211145e8ffc0ec912')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -244,7 +258,8 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     # 29-function catalogue, the one production holds after this migration, the
     # reviewed-noon-hand abort migration 20260921040823, the legacy checkpoint
     # reserve migration 20260921155216, the never-reserved witness migration
-    # 20260924225647 and the registration bust migration 20260925130323.
+    # 20260924225647, the registration bust migration 20260925130323 and the
+    # added-column movement proof migration 20260926043127.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

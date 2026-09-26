@@ -12,9 +12,10 @@
  * Mobile-first, dark theme consistent with Club Arena design
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { supabase } from '../../lib/supabase';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { tableService } from '../../services/TableService';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -329,6 +330,8 @@ const getStatusBadgeStyle = (status: string): React.CSSProperties => ({
 
 export default function TableOperationsPanel({ clubId }: Props) {
   const isMounted = useIsMounted();
+  const { user } = useAuthUser();
+  const readScope = `${user?.id || ''}:${clubId}`;
   const toast = useToast();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -359,25 +362,61 @@ export default function TableOperationsPanel({ clubId }: Props) {
   const [visibleTables, setVisibleTables] = useState<boolean[]>([]);
   const [visiblePlayers, setVisiblePlayers] = useState<Record<string, boolean[]>>({});
 
-  // ─── Load tables ───────────────────────────────────────────────────────────
-  const loadTables = useCallback(async () => {
-    setLoading(true);
-    try {
-      /* getClubTables THROWS on a failed read now, rather than returning an
-         empty array that reads as "this club has no tables". Caught here so a
-         failure leaves the previous list on screen and clears the spinner,
-         instead of an unhandled rejection and a permanent load state. */
-      const data = await tableService.getClubTables(clubId);
-      if (isMounted.current) setTables(data as unknown as TableInfo[]);
-    } catch (err) {
-      reportError(err, 'TableOperationsPanel.loadTables', { clubId });
-    } finally {
-      if (isMounted.current) setLoading(false);
-    }
-  }, [clubId]);
+  const [tableLoadFailed, setTableLoadFailed] = useState(false);
+  const scopeRef = useRef(readScope);
+  scopeRef.current = readScope;
+  const loadTables = useVisibleRead({
+    scopeKey: readScope,
+    enabled: Boolean(clubId && user?.id),
+    intervalMs: 15_000,
+    read: (signal) =>
+      tableService.getClubTables(clubId, {
+        signal,
+        columns:
+          'id, name, game_variant, small_blind, big_blind, ante, max_players, current_players, status, game_type',
+      }),
+    onData: (data) => {
+      setTables(data as unknown as TableInfo[]);
+      setTableLoadFailed(false);
+      setLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'TableOperationsPanel.loadTables', { clubId });
+      setTableLoadFailed(true);
+      setLoading(false);
+    },
+    onReset: () => {
+      setTables([]);
+      setExpandedTable(null);
+      setSeatedPlayers({});
+      setSeatLoadFailed({});
+      setTableStats({});
+      setConfirmAction(null);
+      setLoading(true);
+      setTableLoadFailed(false);
+    },
+  });
+  const refreshSeats = useVisibleRead({
+    scopeKey: `${readScope}:${expandedTable || ''}`,
+    enabled: Boolean(expandedTable && user?.id),
+    intervalMs: 8_000,
+    read: (signal) => tableService.getSeatedPlayers(expandedTable!, signal),
+    onData: (players) => {
+      setSeatedPlayers((previous) => ({
+        ...previous,
+        [expandedTable!]: players as unknown as SeatedPlayer[],
+      }));
+      setSeatLoadFailed((previous) => ({ ...previous, [expandedTable!]: false }));
+    },
+    onError: () => setSeatLoadFailed((previous) => ({ ...previous, [expandedTable!]: true })),
+  });
+  const loadSeatedPlayers = (_tableId: string) => refreshSeats();
 
   useEffect(() => {
-    loadTables();
+    const unsubs = ['TABLE_CREATED', 'TABLE_UPDATED', 'TABLE_CLOSED'].map((event) =>
+      masterBus.subscribeDebounced(event as 'TABLE_CREATED', loadTables, 500)
+    );
+    return () => unsubs.forEach((unsubscribe) => unsubscribe());
   }, [loadTables]);
 
   useEffect(() => {
@@ -412,64 +451,11 @@ export default function TableOperationsPanel({ clubId }: Props) {
     }
   }, [expandedTable, seatedPlayers]);
 
-  // ─── Realtime subscription ─────────────────────────────────────────────────
-  useEffect(() => {
-    const channelKey = 'table-ops-live';
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    const sub = channel.on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
-      () => loadTables()
-    );
-
-    // NOTE (2026-04-19): table_seats listener is now conditionally added with a
-    // table_id filter ONLY when a table is expanded. Previously this was a global
-    // listener (no filter) that fired on every seat change across the entire platform.
-    // table_seats is the engine's highest-write table — filtering is critical.
-    if (expandedTable) {
-      sub.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'table_seats',
-          filter: `table_id=eq.${expandedTable}`,
-        },
-        () => loadSeatedPlayers(expandedTable)
-      );
-    }
-
-    sub.subscribe((status: string, err?: Error) => {
-      if (status === 'CHANNEL_ERROR') {
-        if (err) reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
-      }
-      if (status === 'TIMED_OUT') {
-        console.warn('[TableOperationsPanel] Realtime channel timed out');
-      }
-    });
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [clubId, expandedTable, loadTables]);
-
-  // ─── Load seated players for a table ───────────────────────────────────────
-  const loadSeatedPlayers = async (tableId: string) => {
-    try {
-      const players = await tableService.getSeatedPlayers(tableId);
-      setSeatedPlayers((prev) => ({ ...prev, [tableId]: players as unknown as SeatedPlayer[] }));
-      setSeatLoadFailed((prev) => ({ ...prev, [tableId]: false }));
-    } catch {
-      // getSeatedPlayers already reported it; show the operator the truth.
-      setSeatedPlayers((prev) => ({ ...prev, [tableId]: [] }));
-      setSeatLoadFailed((prev) => ({ ...prev, [tableId]: true }));
-    }
-  };
-
   // ─── Load stats for a table ────────────────────────────────────────────────
   const loadTableStats = async (tableId: string) => {
+    const scope = readScope;
     const stats = await tableService.getTableStats(tableId);
+    if (!isMounted.current || scopeRef.current !== scope) return;
     setTableStats((prev) => ({ ...prev, [tableId]: stats }));
   };
 
@@ -479,7 +465,6 @@ export default function TableOperationsPanel({ clubId }: Props) {
       setExpandedTable(null);
     } else {
       setExpandedTable(tableId);
-      loadSeatedPlayers(tableId);
       loadTableStats(tableId);
     }
   };
@@ -562,6 +547,13 @@ export default function TableOperationsPanel({ clubId }: Props) {
   if (loading) {
     return <div style={styles.emptyState}>Loading Tables...</div>;
   }
+
+  if (tableLoadFailed)
+    return (
+      <div style={styles.emptyState} role="alert">
+        Tables Could Not Be Refreshed. <button onClick={loadTables}>Try Again</button>
+      </div>
+    );
 
   if (tables.length === 0) {
     return <div style={styles.emptyState}>No Active Tables In This Club</div>;

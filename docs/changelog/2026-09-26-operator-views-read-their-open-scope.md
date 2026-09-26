@@ -1,0 +1,11 @@
+# 2026-09-26: operator views read their open scope
+
+Table operations, the admin heatmap, commission summary, and agent promo float were subscribed to high-write tables outside the Realtime publication. An external change could therefore leave an open panel stale indefinitely. They now use the existing shared visible-read hook: one cancellable request per scope, no overlapping reads, pause while hidden/offline, refresh on return, and coalesce requests following local commands.
+
+Table lists and heatmaps observe every 15 seconds; only an expanded seat list and the two-column agent float use eight seconds. Commissions use thirty seconds. The complete promo downline uses sixty seconds and its existing published membership events. Profile ID reads are chunked and member pagination has a unique ordering. Tables retain the existing union/private-game selection and cash-table ordering; the operations projection requests only its ten displayed fields. Supplied empty heatmap data remains an explicit empty list.
+
+Failed reads display unavailable rather than a fabricated zero/empty answer. Account/club changes invalidate replies and clear old data. A pending promo reply cannot clear another account's input or invoke the prior account's completion callback. Existing financial request bodies, idempotency keys, settlement guards, horse treatment, engine transport, RLS and publication membership are unchanged. These read budgets are operator-page freshness, not poker action latency guarantees.
+
+Qualification: mounted components exercise external changes, visibility, failed reads, scope changes and low-cost membership wiring. Nine new behavioral cases fail on predecessor source. Existing financial-reader tests retain authorization and refusal assertions with optional cancellation. Full client tests, compiler, build, hooks, required hosted checks, protected merge, static publication and applicable production route proof are recorded in the task evidence; no production chip movement is used as a probe.
+
+The existing capped rake-history total in TableService.getTableStats is not changed by this observation repair and remains separately recorded in the audit. No direct cross-device promo transaction or billing savings is claimed from these component tests.

@@ -57,7 +57,10 @@ class TableService {
   /**
    * Get all tables for a club
    */
-  async getClubTables(clubId: string): Promise<PokerTable[]> {
+  async getClubTables(
+    clubId: string,
+    options?: { signal?: AbortSignal; columns?: string }
+  ): Promise<PokerTable[]> {
     // Resolve integer club_id to UUID for FK query
     const resolvedId = await resolveClubUUID(clubId);
 
@@ -119,7 +122,8 @@ class TableService {
     let query = supabase
       .from('tables')
       .select(
-        'id, club_id, union_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
+        options?.columns ||
+          'id, club_id, union_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
       );
     if (unionId) {
       /* Both ids are verified UUIDs at this point - `resolvedId` by the guard
@@ -138,6 +142,8 @@ class TableService {
     } else {
       query = query.eq('club_id', resolvedId);
     }
+    options?.signal?.throwIfAborted();
+    if (options?.signal) query = query.abortSignal(options.signal);
     const { data, error } = await query
       .eq('is_deleted', false)
       .neq('status', 'closed')
@@ -169,7 +175,7 @@ class TableService {
       reportError(error, 'TableService.getClubTables');
       throw error;
     }
-    return data || [];
+    return (data || []) as unknown as PokerTable[];
   }
 
   /**
@@ -525,7 +531,7 @@ class TableService {
     return ((tbls || [])[0]?.id as string | undefined) ?? null;
   }
 
-  async getSeatedPlayers(tableId: string) {
+  async getSeatedPlayers(tableId: string, signal?: AbortSignal) {
     if (!isUUID(tableId)) return [];
     /* is_horse / horse_profile are NOT in this profiles read (Dan 2026-09-03).
        `authenticated` has no column grant on either - deliberately, per the
@@ -538,7 +544,7 @@ class TableService {
        felt actually needs (it drives styling), and the engine snapshot - built
        server-side with service_role, which CAN read is_horse - remains the
        authority for the resolved name. */
-    const { data, error } = await supabase
+    const query = supabase
       .from('table_seats')
       .select(
         `
@@ -556,6 +562,8 @@ class TableService {
       .eq('table_id', tableId)
       .is('left_at', null)
       .order('seat_number', { ascending: true });
+    signal?.throwIfAborted();
+    const { data, error } = await (signal ? query.abortSignal(signal) : query);
 
     if (error) {
       reportError(error, 'TableService.getSeatedPlayers');

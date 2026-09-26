@@ -69,32 +69,63 @@ import type { HorseDiscardExecutionObservation } from '../../services/horseDecis
  * dispatch barrier one table holds across its synchronous performAction is
  * held on every shard, so it can only be stricter than before.
  *
- * The count is a capacity policy, not a tunable: HORSE_DECISION_WORKERS when
- * set, otherwise two, never more than the cores left after the main event
- * loop and one equity worker (availableParallelism() - 2). engine-01 has four
- * cores and therefore runs two.
+ * THE COUNT IS A CAPACITY POLICY, MEASURED TWICE (2026-09-26).
+ *
+ * The first cut ran two workers on any host with four or more logical CPUs.
+ * engine-01 reports four, but they are two EPYC Milan cores with SMT, and at
+ * 780-880 dealing tables the second worker showed what that means:
+ *
+ *     poker_horse_decision_fallbacks_total     0.0 /s from 07:15Z (24-31 /s before)
+ *     lane oldest queued job                   3-6 s        (12-13.5 s before)
+ *     fleet                                    830-940 hands/min (680-945)
+ *     poker_event_loop_delay_p50_ms            300-650      (20 before)
+ *     host                                     95-100% busy
+ *     poker_tournament_managers_quarantined    0 -> 27 in 30 minutes
+ *
+ * The horses thought, and the main thread paid for it: the tournament lease
+ * renewal pass missed its 20 s proof window in the two storms it met (07:10
+ * and 07:35Z, "lease generation expired before it was renewed"), 27 managers
+ * were quarantined, their terminal engines answered stopped_bank_custody_
+ * unwritten at the next break, and that held the restart certificate shut
+ * for every release. A brain that thinks on a host that then drops leases is
+ * not a better engine.
+ *
+ * So the default counts PHYSICAL cores, which Node cannot see, by the only
+ * safe assumption for a cloud host: two threads per core. One worker until
+ * the host has three physical cores (six logical), two from there, never
+ * more than two by default. HORSE_DECISION_WORKERS raises it explicitly for
+ * an operator who knows the host, still capped by availableParallelism() - 2
+ * (one context for the main loop, one for an equity worker). On engine-01
+ * that is one worker until the floor is capped to what two cores can think
+ * for, or the engine moves to a larger host.
  */
 export const HORSE_DECISION_WORKERS_ENV = 'HORSE_DECISION_WORKERS';
 export const DEFAULT_HORSE_DECISION_WORKERS = 2;
 export const MAX_HORSE_DECISION_WORKERS = 8;
 
+/** Logical CPUs per physical core assumed when nothing says otherwise. */
+export const ASSUMED_THREADS_PER_CORE = 2;
+
 export function horseDecisionWorkerCount(input: {
   requested?: string | number | null | undefined;
   cores: number;
 }): number {
-  const cores = Number.isSafeInteger(input.cores) && input.cores > 0 ? input.cores : 1;
-  const capacity = Math.max(1, cores - 2);
+  const logical = Number.isSafeInteger(input.cores) && input.cores > 0 ? input.cores : 1;
+  // An explicit request may use every logical CPU but the main loop's and one
+  // equity worker's; the default leaves a whole physical core for them.
+  const explicitCapacity = Math.max(1, logical - 2);
+  const physical = Math.max(1, Math.floor(logical / ASSUMED_THREADS_PER_CORE));
+  const defaultCount = Math.max(1, Math.min(DEFAULT_HORSE_DECISION_WORKERS, physical - 1));
   const raw =
     typeof input.requested === 'number'
       ? input.requested
       : typeof input.requested === 'string' && /^\d+$/.test(input.requested.trim())
         ? Number(input.requested.trim())
         : NaN;
-  const requested =
-    Number.isSafeInteger(raw) && raw >= 1 && raw <= MAX_HORSE_DECISION_WORKERS
-      ? raw
-      : DEFAULT_HORSE_DECISION_WORKERS;
-  return Math.max(1, Math.min(capacity, requested));
+  if (Number.isSafeInteger(raw) && raw >= 1 && raw <= MAX_HORSE_DECISION_WORKERS) {
+    return Math.max(1, Math.min(explicitCapacity, raw));
+  }
+  return defaultCount;
 }
 
 /** FNV-1a over the fence's table id. Stable across processes and restarts. */
@@ -375,7 +406,7 @@ export async function startLiveHorseDecisionWorker(
     singleton = new LiveHorseDecisionWorkerPool(options);
     console.log(
       `[LiveHorseDecisionWorker] ${singleton.workerCount} decision worker(s) sharded by table ` +
-        `on ${availableParallelism()} core(s)` +
+        `on ${availableParallelism()} logical CPU(s)` +
         (process.env[HORSE_DECISION_WORKERS_ENV]
           ? ` (${HORSE_DECISION_WORKERS_ENV}=${process.env[HORSE_DECISION_WORKERS_ENV]})`
           : '')

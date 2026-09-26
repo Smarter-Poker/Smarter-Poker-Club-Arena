@@ -1,56 +1,39 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  LAW: A STOPPED BANK IS NOT A FLEET DECISION (2026-09-26)
+ *  LAW: A STOPPED BANK PAST ITS BOUND IS NAMED, AND STILL REFUSES (2026-09-26)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `unparkedTables()` bounds every F06 blocker class through
- * `f06PreparationHoldsGate` - #4909 added that after one unresolved permit held
- * engine 8825af51 shut for 70 consecutive breaks, and 2026-09-21 extended the
- * same bound to the manager-retained class beside it. THE STOPPED-CUSTODY TEST
- * NEXT TO THEM NEVER GOT ONE.
+ * `unparkedTables()` bounds every F06 blocker class (#4909, extended
+ * 2026-09-21). The stopped-custody test beside them had no bound, so on
+ * 778075b4 `stopped_bank_custody_unconfirmed` answered "not yet" for ever:
+ * 137 -> 154 -> 187 tables over ten hours on 2026-09-25/26, monotonic. On that
+ * build it could never clear - `acknowledgedTimeBankPark` was set only on the
+ * 'parked' path, inside a dealing loop a terminal engine does not have.
  *
- * Measured on production 2026-09-25/26: `stopped_bank_custody_unconfirmed` went
- * 137 -> 154 -> 187 over ten hours, monotonic, while `/health` read
- * `readyForRestart: false` and the break's census cost - which is charged
- * against the release's 15000ms admission window (see
- * theCertificateOpensBeforeTheFleetIsSwept) - scaled with it. The release
- * window narrowed every hour, and the engine could not be replaced by the very
- * release that carried the fix.
+ * THE ROOT CAUSE IS FIXED ELSEWHERE, NOT HERE. #5255 (on main) makes a
+ * terminal engine persist the custody it holds on the 'announced' path, which
+ * every break's :53 fan-out reaches (`parkEveryEngine` -> `pauseForMaintenance`
+ * for every engine, running or not), and acknowledges it only on a real write.
+ * The class drains on its own evidence. What remains is a write that keeps
+ * failing, and #5255 is explicit about it: "a bank we could not persist is
+ * still a bank at stake".
  *
- * WHY IT COULD NEVER CLEAR. `hasUnretiredStoppedTimeBankCustody()` requires
- * `this.terminal`. Failing a replacement engine's adoption, a confirmed session
- * close or a durable F06 receipt, it compares `acknowledgedTimeBankPark`
- * against the custody hand number - and `acknowledgedTimeBankPark` is set ONLY
- * when `when === 'parked'`, whose every call site is inside the dealing loop,
- * which a terminal engine does not have. The `'announced'` path it does take
- * passes `timeBanks: undefined` and writes `time_bank_snapshot: null`.
- * Corroborated from rows: 267,741 tournament park rows carry a null
- * `time_bank_snapshot` against 8,016 with banks. So the census answered "not
- * yet" to a question whose answer was "never" - CLAUDE.md 10.86 rule 1.
+ * SO THE BOUND CHANGES THE NAME, NEVER THE VERDICT. Two drafts of this fix
+ * (#5266, and the first commit of #5267) retired the table from the census
+ * past the bound, as F06 is retired. That is safe for F06, which holds no
+ * money. For a time bank it would have been an allow-list by another name:
+ * the per-table release guard that draft relied on
+ * (legacy-engine-checkpoint-guard.mjs) runs only when the serving release is
+ * one of four pinned predecessors, and every other cutover is admitted on
+ * `readyForRestart && unparkedTables == 0` without reading a reason. Past the
+ * bound the table is therefore reported as `stopped_bank_custody_stuck` - the
+ * distinct "this process will not resolve it" outcome CLAUDE.md 10.86 rule 1
+ * asks for - it is still counted in unparkedTables, and it still refuses.
+ * The decision is one declared fact: UNPARKED_REASON_BOUNDS.neverHoldsGate.
  *
- * THE ORDERING, AND WHY THE CHECK STAYS WHERE IT IS. The custody test sits
- * ABOVE `if (!engine.isRunning()) continue`, and that position is correct: a
- * terminal engine is exactly what it exists to catch, so moving it below the
- * skip would DELETE the check and pass over a player's time bank in silence.
- * What it never did was INHERIT the skip's reasoning - that a stopped engine
- * has no hand to protect, and therefore has no business making a fleet-wide
- * decision for ever. The bound is how it inherits it.
- *
- * NOTHING IS PASSED OVER PAST THE BOUND. The money protection is not this
- * census and never was: `legacy-engine-checkpoint-guard.mjs` checks every
- * captured engine's own `maintenanceDurabilityReason()` per table and from
- * rows, admitting only `bank_park_write_incomplete` on a row-proved stopped
- * table, so an engine whose bank is genuinely unwritten or unreadable still
- * refuses the cutover on its own. And `stopped_bank_custody_stuck` is
- * deliberately outside that guard's allow-list, which admits the two F06 names
- * and nothing else.
- *
- * AND THE HALF #5255 STILL OWED. #5255 split the engine's answer into
- * `stopped_bank_custody_unwritten` and `_unreadable` and seeded both as
- * /metrics labels, but this census kept publishing the retired conflated name
- * `stopped_bank_custody_unconfirmed`, which is in no seed list - so the count
- * only ever reached /metrics through the dynamic extension and no rule could
- * read it before it had already wedged the fleet.
+ * AND THE HALF #5255 STILL OWED. The census publishes the engine's own
+ * `unwritten` / `unreadable` answer instead of the retired conflated
+ * `unconfirmed` name, which was in no /metrics seed list.
  */
 
 import { readFileSync } from 'node:fs';
@@ -108,7 +91,7 @@ function atClock(engines: Array<[string, Engine]>) {
 const reasons = (mb: MaintenanceBreak): Record<string, number> =>
   (mb.snapshot().unparkedReasons ?? {}) as Record<string, number>;
 
-describe('a stopped bank is not a fleet decision', () => {
+describe('a stopped bank past its bound is named, and still refuses', () => {
   const GATE = MaintenanceBreak.STOPPED_CUSTODY_GATE_MS as unknown as number;
 
   // ── 1. THE PROTECTION IS UNCHANGED WHILE THE CUSTODY IS YOUNG ────────────
@@ -130,15 +113,28 @@ describe('a stopped bank is not a fleet decision', () => {
   });
 
   // ── 2. PAST THE BOUND IT STOPS DECIDING FOR EVERY OTHER TABLE ────────────
-  it('stops holding every other table hostage once it outlives the bound', () => {
+  it('past the bound it changes its name and still holds the gate', () => {
     const { mb, advance } = atClock([
       ['a', table(custody())],
       ['b', table()],
       ['c', table()],
     ]);
     expect(mb.snapshot().unparkedTables, 'shut while the custody is young').toBe(1);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_unwritten: 1 });
     advance(GATE + 1000);
-    expect(mb.snapshot().unparkedTables, 'the fleet gate must no longer be shut by it').toBe(0);
+    // NEGATIVE PROOF of the rejected drafts: a player's unwritten time bank is
+    // never retired from the census. Only the name says it will not resolve.
+    expect(mb.snapshot().unparkedTables, 'an unwritten bank still refuses').toBe(1);
+    expect(mb.snapshot().readyForRestart).toBe(false);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_stuck: 1 });
+    expect(reasons(mb)).not.toHaveProperty('stopped_bank_custody_unwritten');
+    // The verdict is declared data, not an accident of which branch was edited.
+    const bound = MaintenanceBreak.UNPARKED_REASON_BOUNDS.stopped_bank_custody_unwritten;
+    expect(bound).toMatchObject({
+      scope: 'lifetime',
+      never: 'stopped_bank_custody_stuck',
+      neverHoldsGate: true,
+    });
   });
 
   // ── 3. AND IT NEVER STOPS SAYING SO ─────────────────────────────────────
@@ -207,6 +203,8 @@ describe('a stopped bank is not a fleet decision', () => {
     expect(start, 'the guard fallback must still exist').toBeGreaterThan(-1);
     const body = guard.slice(start, guard.indexOf('\n    };', start));
     // It is an ALLOW-list: anything not these two names keeps the gate shut.
+    // (The same hard limit holds for engine-release-transaction.sh's
+    // PREPARATION_ONLY; theCertificateOpensBeforeTheFleetIsSwept pins it.)
     expect(body).toContain("name !== 'f06_preparation_unresolved'");
     expect(body).toContain("name !== 'f06_preparation_stuck'");
     // NEGATIVE PROOF, the pinned hard limit: not the bounded custody name, not
@@ -231,7 +229,13 @@ describe('a stopped bank is not a fleet decision', () => {
     expect(skipAt, 'the running skip must be in the census').toBeGreaterThan(-1);
     expect(custodyAt, 'custody is asked BEFORE the skip').toBeLessThan(skipAt);
     // And it is bounded, by the same named constant this law owns.
-    expect(body).toContain('this.stoppedCustodyHoldsGate(tableId)');
+    expect(body).toContain('this.stoppedCustodyHoldsGate(tableId, custodyReason)');
+    // The push comes BEFORE the bound, so no answer the bound gives can drop it.
+    const branch = body.slice(custodyAt, body.indexOf('if (engine.hasUnresolvedF06Preparation'));
+    expect(branch.indexOf('out.push(tableId);')).toBeGreaterThan(-1);
+    expect(branch.indexOf('out.push(tableId);')).toBeLessThan(
+      branch.indexOf('this.stoppedCustodyHoldsGate(')
+    );
   });
 
   // ── 8. A HAND IN THE AIR IS NEVER BOUNDED OUT ───────────────────────────

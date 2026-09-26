@@ -1,4 +1,4 @@
-# A stopped bank is not a fleet decision (2026-09-26)
+# A stopped bank is not a fleet decision (2026-09-26) - corrected before merge: it is named past its bound, and still refuses
 
 ## What was wrong
 
@@ -119,8 +119,69 @@ cannot clear" can hold the whole fleet again.
 
 ## Law
 
-`server/src/maintenance/aStoppedBankIsNotAFleetDecision.law.test.ts` - 10 pins.
+`server/src/maintenance/aStoppedBankPastItsBoundIsNamedAndStillRefuses.law.test.ts` - 10 pins.
 Verified **8 of 10 failing** against pre-fix `origin/main` sources and 10/10
 passing after (the other two are invariant pins: the guard allow-list already
 excluded custody, and `cards_in_air` was already unbounded). Registry entry:
-`docs/laws.d/server-src-maintenance-aStoppedBankIsNotAFleetDecision.md`.
+`docs/laws.d/server-src-maintenance-aStoppedBankPastItsBoundIsNamedAndStillRefuses.md`.
+
+## Correction before merge (2026-09-26, release-path owner)
+
+The first commit of this PR retired a stopped-custody table from the census
+past `STOPPED_CUSTODY_GATE_MS`, as the F06 class is retired. The section
+"Nothing is passed over" above justified that by the per-table durability
+witness in `legacy-engine-checkpoint-guard.mjs`. That guard does not run for an
+ordinary cutover: `engine-release-transaction.sh` sets
+`LEGACY_CHECKPOINT_REQUIRED=1` only when the serving release is one of
+`2f4e3356`, `758610f3`, `a0ab287d` or `8825af51`. Every other release,
+including the one off `778075b4`, is admitted on
+`readyForRestart && unparkedTables == 0` and never reads a reason. Retiring the
+table in the census would have been a custody allow-list the release script
+cannot see - the thing the hard limit forbids.
+
+It is also not needed to unwedge the fleet. The root cause described above
+("`acknowledgedTimeBankPark` is set only on the 'parked' path") is the
+778075b4 code. On main, #5255 made the 'announced' path persist a terminal
+engine's custody and acknowledge it on a real write, and every break's :53
+fan-out reaches that path for every engine, running or not. What can outlive
+the bound there is a write that keeps failing, which #5255 names "a bank we
+could not persist is still a bank at stake".
+
+So the bound now changes the NAME, never the verdict: past it the table is
+reported as `stopped_bank_custody_stuck`, is still counted in
+`unparkedTables`, and still refuses. The decision is one declared field,
+`UNPARKED_REASON_BOUNDS.stopped_bank_custody_*.neverHoldsGate: true`, beside
+F06's `false`. The law was renamed to say what it now pins.
+
+Carried over from #5266 (closed as superseded): the single shared
+`holdsGateWithinBound` helper, now reading each bound from the registry
+instead of restating it. Not carried: #5266's `BOUNDED_ONLY` release
+allow-list entry for `stopped_bank_custody_stuck` and its raw-reason exception
+for predecessor `778075b4`, both of which admit custody state into the release
+allow-list.
+
+## Every restart blocker declares its bound
+
+`MaintenanceBreak.UNPARKED_REASON_BOUNDS` declares every reason the census can
+report: scope `break` (a live loop resolves it within one break; its never is
+the uncertified break, already counted by `breaksSinceRestartCertified`) or
+scope `lifetime` (can be held by something with no dealing loop; finite
+`boundMs`, distinct `never`, explicit `neverHoldsGate`).
+`server/src/maintenance/everyRestartBlockerDeclaresItsBound.law.test.ts`
+derives the reasons from the census and the engines' `maintenanceDurabilityReason()`,
+requires every one to be declared, requires anything asked of a non-running
+engine to be `lifetime`, drives each lifetime reason past its bound, and checks
+every name is seeded on /metrics. Negative proof: planting
+`count('terminal_boundary_pending')` above the running skip in
+`MaintenanceBreak.ts` turned the law red with "asked of a non-running engine
+but not declared scope 'lifetime'" and "not declared in UNPARKED_REASON_BOUNDS";
+the in-test plants do the same on every run.
+
+## What this does not do
+
+It does not get the fleet off `778075b4`. That build's census has no bound and
+no custody write, and it is the build whose `/health` every cutover reads. Its
+custody count restarts from zero at each process start and climbs (0 at the
+01:55 countdown after a restart, 29 at the 02:07 recovery window), so a
+cutover off it needs a break at which it reads zero. No release-script
+exception was added for it.

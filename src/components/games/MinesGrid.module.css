@@ -1,3 +1,17 @@
+/* DIAMOND MINES IN THE HOUSE STYLE (mobile spins, phase 4, 2026-09-25).
+
+   The four bonus games read as one family: black glass, chrome hairlines,
+   blue LEDs, gold for money and bust red for a loss. The board is a plate of
+   black glass with a faint diamond lattice in it, a chrome bevel and a blue
+   LED in each of its four corners, over a soft blue underglow; every tile is a
+   machined block of the same glass with a chrome hairline and a bevel.
+
+   Motion is opacity and transform only, every duration is scaled by Animation
+   Speed, and the board carries data-motion="keep", so the reduced-motion block
+   at the bottom of this file is what collapses it: the flip, the blast, the
+   sparkle and the attract sweep go, and every gem, every mine, the red edge
+   of the mine that ended the round and the glow of a found gem stay. */
+
 .board {
   width: min(100%, 660px, 66dvh);
   min-width: 0;
@@ -6,11 +20,17 @@
   box-sizing: border-box;
 }
 
+/* The square the diamond sits in. Its own background is the underglow: a soft
+   blue pool under the plate, painted once, with nothing to re-rasterise when
+   a tile animates (a drop-shadow filter here re-drew the whole board on every
+   frame of every flip). */
 .stage {
   position: relative;
   aspect-ratio: 1;
   width: 100%;
-  filter: drop-shadow(0 12px 12px #0009);
+  background:
+    radial-gradient(46% 12% at 50% 96%, rgb(24 119 242 / 30%), transparent 100%),
+    radial-gradient(50% 50% at 50% 50%, rgb(24 119 242 / 10%), transparent 100%);
 }
 .board[data-terminal='true'] {
   animation-name: mine-board-complete;
@@ -25,25 +45,98 @@
     opacity: 1;
   }
 }
+
+/* THE PLATE: black glass with a faint diamond lattice (the plate is turned 45
+   degrees, so a square grid in it reads as diamonds), a top-left sheen, a
+   chrome hairline and a two-step chrome bevel, the rim of the machine. */
 .stage::before {
   content: '';
   position: absolute;
   inset: 13.6%;
   transform: rotate(45deg);
-  border-radius: 7px;
-  background: linear-gradient(135deg, #48627b, #152a42 12%, #081320 80%, #accde1);
-  border: 1px solid #88b4d4;
+  border-radius: 6px;
+  background:
+    radial-gradient(90% 70% at 18% 14%, rgb(69 173 255 / 12%), transparent 60%),
+    repeating-linear-gradient(0deg, rgb(69 173 255 / 5%) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(90deg, rgb(69 173 255 / 5%) 0 1px, transparent 1px 14px),
+    linear-gradient(135deg, #111a25 0%, #070b11 42%, #050607 100%);
+  border: 1px solid rgb(184 195 205 / 70%);
   box-shadow:
-    3px 3px #6e8ca3,
-    6px 6px #253950,
-    9px 9px #040c18;
+    inset 0 1px 0 rgb(244 247 251 / 22%),
+    inset 0 0 0 3px #0a0f16,
+    inset 0 0 0 4px rgb(154 165 179 / 26%),
+    inset 0 0 36px rgb(0 0 0 / 60%),
+    0 0 0 2px #1a222d,
+    0 0 0 3px rgb(154 165 179 / 55%),
+    0 0 0 5px #0b1017,
+    0 0 40px rgb(24 119 242 / 22%);
 }
+
+/* THE FOUR LEDS, one in each corner of the plate, each with its own bloom (the
+   Crash frame's pattern), and the chrome catching light along the top edge.
+   Laid over the plate's rim, so their blooms only kiss the corner tiles. */
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 13.6%;
+  transform: rotate(45deg);
+  border-radius: 6px;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 1.6% 1.6%,
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    radial-gradient(
+      circle at 98.4% 1.6%,
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    radial-gradient(
+      circle at 1.6% 98.4%,
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    radial-gradient(
+      circle at 98.4% 98.4%,
+      #bfe6ff 0 1.4px,
+      rgb(69 173 255 / 75%) 2.4px,
+      rgb(24 119 242 / 35%) 4px,
+      transparent 11px
+    ),
+    linear-gradient(90deg, transparent 8%, rgb(69 173 255 / 45%) 50%, transparent 92%) top / 100%
+      1px no-repeat;
+}
+
+/* Before the first pick the LEDs breathe, as the Crash corners do between rounds. */
+.board[data-attract='true'] .stage::after {
+  animation: mine-led-breathe calc(2.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes mine-led-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* The tiles sit inside the plate's rim, so the chrome and the LEDs show round them. */
 .grid {
   position: absolute;
-  width: 70.7%;
-  height: 70.7%;
-  top: 14.65%;
-  left: 14.65%;
+  z-index: 1;
+  width: 68%;
+  height: 68%;
+  top: 16%;
+  left: 16%;
   transform: rotate(45deg);
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -51,7 +144,8 @@
   perspective: 900px;
 }
 
-/* What the board is worth now, and what the next tile adds: read before every pick. */
+/* What the board is worth now, and what the next tile adds: read before every
+   pick, on two black-glass plates with a chrome hairline. Gold is money. */
 .readouts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -62,15 +156,19 @@
   display: grid;
   gap: 2px;
   padding: 8px 10px;
-  border: 1px solid #638ba566;
-  border-radius: 8px;
-  background: #0b1b2de0;
+  border: 1px solid rgb(154 165 179 / 38%);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #0f1620 0%, #080c12 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(244 247 251 / 8%),
+    inset 0 -1px 0 rgb(0 0 0 / 60%),
+    0 0 14px rgb(24 119 242 / 8%);
 }
 .readouts dt {
   font:
     500 11px/1.3 Inter,
     sans-serif;
-  color: #a3bdd5;
+  color: #9aa5b3;
 }
 .readouts dd {
   margin: 0;
@@ -78,13 +176,19 @@
     800 18px/1.1 'Roboto Condensed',
     Inter,
     sans-serif;
-  color: #ffe9a8;
+  color: #ffd700;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+  text-shadow: 0 0 10px rgb(255 215 0 / 22%);
 }
 .readouts dd[data-sign='loss'] {
-  color: #ffb09a;
+  color: #ff5b6e;
+  text-shadow: 0 0 10px rgb(255 91 110 / 22%);
 }
+
+/* A TILE: a machined block of black glass. A chrome hairline, a lit top bevel
+   and a dark lower cavity on its face, and two steps of machined side under it
+   (the grid is turned 45 degrees, so a 2px 2px offset falls straight down). */
 .tile {
   position: relative;
   aspect-ratio: 1;
@@ -93,41 +197,46 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  border: 1px solid #638ba5;
-  border-radius: 7px;
+  border: 1px solid rgb(184 195 205 / 58%);
+  border-radius: 3px;
   color: #9fd4ee;
-  background: linear-gradient(
-    145deg,
-    #526b80 0%,
-    #213d57 9%,
-    #152c43 44%,
-    #0b182a 83%,
-    #37546c 100%
-  );
+  background:
+    linear-gradient(145deg, rgb(244 247 251 / 12%) 0%, transparent 34%),
+    linear-gradient(160deg, #141e2a 0%, #0a1018 48%, #050607 100%);
   box-shadow:
-    inset 0 2px 0 #c5e7ff42,
-    inset 0 -5px 0 #02091299,
-    3px 3px 0 #152c43,
-    5px 5px 0 #617e96,
-    7px 7px 0 #071425;
+    inset 0 1px 0 rgb(244 247 251 / 24%),
+    inset 1px 0 0 rgb(244 247 251 / 10%),
+    inset 0 -2px 0 rgb(0 0 0 / 70%),
+    inset -1px 0 0 rgb(0 0 0 / 45%),
+    2px 2px 0 #27313c,
+    3px 3px 0 #0b1017,
+    4px 4px 6px rgb(0 0 0 / 55%);
   cursor: pointer;
   transition:
     background 0.2s,
-    box-shadow 0.2s;
+    box-shadow 0.2s,
+    border-color 0.2s;
 }
+/* The engraved inner line of the face. */
 .tile::after {
   content: '';
   position: absolute;
-  inset: 6px;
-  border: 1px solid #83bfe529;
-  border-radius: 3px;
+  inset: 5px;
+  border: 1px solid rgb(69 173 255 / 16%);
+  border-radius: 2px;
   pointer-events: none;
 }
-.tile:enabled:active {
-  background: linear-gradient(145deg, #618aa8, #215a7e 40%, #0d2c47);
+/* The blue LED edge: the tile a finger is on, or the keyboard has reached. */
+.tile:enabled:active,
+.tile:focus-visible {
+  border-color: #45adff;
   box-shadow:
-    inset 0 2px #b4e6ff66,
-    0 0 18px #45b8ff38;
+    inset 0 1px 0 rgb(244 247 251 / 24%),
+    inset 0 0 14px rgb(69 173 255 / 22%),
+    0 0 0 1px #45adff,
+    0 0 16px rgb(69 173 255 / 55%),
+    2px 2px 0 #27313c,
+    3px 3px 0 #0b1017;
 }
 .tile:focus-visible {
   outline: 3px solid #ebfbff;
@@ -139,22 +248,40 @@
 .tile.tile:disabled {
   opacity: 1;
 }
+
+/* A gem, found: the glass lights up light blue from inside. */
 .tile[data-revealed='true'] {
-  background: radial-gradient(ellipse at 50% 35%, #226a91, #09263e 68%);
-  border-color: #44bde7;
+  background:
+    radial-gradient(
+      ellipse at 50% 42%,
+      rgb(69 173 255 / 36%),
+      rgb(24 119 242 / 10%) 58%,
+      transparent 78%
+    ),
+    linear-gradient(160deg, #0f1d2e 0%, #070d15 100%);
+  border-color: rgb(69 173 255 / 70%);
 }
+/* A mine: gunmetal glass with a bust-red edge. */
 .tile[data-mine='true'] {
-  background: radial-gradient(ellipse at 50% 35%, #642f37, #211925 68%);
-  border-color: #ba6c73;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgb(255 91 110 / 18%), transparent 72%),
+    linear-gradient(160deg, #1a1319 0%, #08070a 100%);
+  border-color: rgb(255 91 110 / 72%);
 }
+/* A gem the player turned over glows: a light-blue LED edge and a halo. */
 .tile[data-picked='true'] {
+  border-color: #45adff;
   box-shadow:
-    inset 0 0 20px #73d6ff21,
-    0 0 0 1px #8de3ff;
+    inset 0 1px 0 rgb(244 247 251 / 26%),
+    inset 0 0 20px rgb(69 173 255 / 26%),
+    0 0 0 1px #45adff,
+    0 0 18px rgb(69 173 255 / 45%),
+    2px 2px 0 #27313c,
+    3px 3px 0 #0b1017;
 }
 /* A tile turns over to show its face: the pick as it lands, the rest in the cascade. */
 .tile[data-flip='true'] {
-  animation: tile-flip 0.48s ease-out both;
+  animation: tile-flip calc(0.48s * var(--animation-speed, 1)) ease-out both;
 }
 .tile[data-cascade='true'] {
   animation-duration: 0.42s;
@@ -163,14 +290,33 @@
 .tile[data-revealed='true'][data-picked='false'] .gem {
   filter: drop-shadow(0 5px 3px #0007) brightness(0.72) saturate(0.7);
 }
-/* The mine that ended the round: a blast ring, then it stays lit. */
+/* The mine that ended the round: one bust-red flash and a jolt, then it rests
+   with its red edge and a red halo. The rest state is the rule itself, so it
+   is what reduced motion shows. */
 .tile[data-hit='true'] {
-  border-color: #ff745b;
+  border-color: #ff5b6e;
   box-shadow:
-    inset 0 0 22px #ff5a3c55,
-    0 0 0 2px #ff745b,
-    0 0 26px #ff5a3c88;
-  animation: tile-blast 0.6s ease-out both;
+    inset 0 0 22px rgb(255 91 110 / 30%),
+    0 0 0 2px #ff5b6e,
+    0 0 24px rgb(255 91 110 / 50%),
+    2px 2px 0 #27313c,
+    3px 3px 0 #0b1017;
+  animation: tile-blast calc(0.6s * var(--animation-speed, 1)) ease-out both;
+}
+.tile[data-hit='true']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(255 91 110 / 85%),
+    rgb(255 91 110 / 30%) 55%,
+    transparent 80%
+  );
+  opacity: 0;
+  animation: mine-flash calc(0.6s * var(--animation-speed, 1)) ease-out both;
 }
 @keyframes tile-flip {
   from {
@@ -183,33 +329,126 @@
 @keyframes tile-blast {
   0% {
     transform: scale(0.9);
-    box-shadow:
-      inset 0 0 22px #ff5a3c55,
-      0 0 0 0 #ff745b,
-      0 0 0 #ff5a3c00;
   }
   35% {
     transform: scale(1.12);
-    box-shadow:
-      inset 0 0 22px #ff5a3c55,
-      0 0 0 6px #ff745b,
-      0 0 40px #ff5a3ccc;
   }
   100% {
     transform: scale(1);
-    box-shadow:
-      inset 0 0 22px #ff5a3c55,
-      0 0 0 2px #ff745b,
-      0 0 26px #ff5a3c88;
   }
 }
+@keyframes mine-flash {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The sparkle on a gem the player found: a four-point star in the corner of
+   the glass that twinkles, opacity and scale only. */
+.tile[data-picked='true'][data-mine='false']::before {
+  content: '';
+  position: absolute;
+  top: 7%;
+  right: 7%;
+  z-index: 1;
+  width: 36%;
+  height: 36%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, #f4f7fb 0 8%, rgb(191 230 255 / 60%) 16%, transparent 34%),
+    linear-gradient(90deg, transparent 0 47%, rgb(244 247 251 / 90%) 50%, transparent 53%) center /
+      100% 100% no-repeat,
+    linear-gradient(0deg, transparent 0 47%, rgb(244 247 251 / 90%) 50%, transparent 53%) center /
+      100% 100% no-repeat;
+  -webkit-mask: radial-gradient(circle, #000 0 42%, transparent 72%);
+  mask: radial-gradient(circle, #000 0 42%, transparent 72%);
+  opacity: 0.8;
+  animation: gem-sparkle calc(2.6s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes gem-sparkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.45) rotate(0deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+  70% {
+    opacity: 0.35;
+    transform: scale(0.6) rotate(60deg);
+  }
+}
+
+/* THE ATTRACT: before the first pick a band of light sweeps slowly across the
+   board, column by column. Each tile carries its own slice of the band (the
+   tile already clips its face), moved by transform and faded by opacity, so
+   the sweep is composited and repaints nothing. */
+.board[data-attract='true'] .tile::before {
+  content: '';
+  position: absolute;
+  inset: -30% -60%;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 34%,
+    rgb(69 173 255 / 16%) 46%,
+    rgb(244 247 251 / 20%) 50%,
+    rgb(69 173 255 / 16%) 54%,
+    transparent 66%
+  );
+  opacity: 0;
+  transform: translateX(-70%);
+  animation: tile-sweep calc(5.2s * var(--animation-speed, 1)) ease-in-out infinite;
+  animation-delay: calc(var(--sweep-step, 0) * 0.16s * var(--animation-speed, 1));
+}
+.tile:nth-child(5n + 2) {
+  --sweep-step: 1;
+}
+.tile:nth-child(5n + 3) {
+  --sweep-step: 2;
+}
+.tile:nth-child(5n + 4) {
+  --sweep-step: 3;
+}
+.tile:nth-child(5n + 5) {
+  --sweep-step: 4;
+}
+@keyframes tile-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-70%);
+  }
+  6% {
+    opacity: 1;
+  }
+  26% {
+    opacity: 1;
+    transform: translateX(70%);
+  }
+  32%,
+  100% {
+    opacity: 0;
+    transform: translateX(70%);
+  }
+}
+
+/* The sealed face: a light-blue diamond seal and the tile's number in chrome. */
 .seal {
   transform: rotate(-45deg);
   font-size: clamp(22px, 3.5vw, 45px);
-  color: #5996bf;
+  color: #45adff;
   text-shadow:
-    0 2px 0 #011528,
-    0 -1px #b0e3ff66;
+    0 0 10px rgb(24 119 242 / 55%),
+    0 2px 0 #050607,
+    0 -1px 0 rgb(191 230 255 / 50%);
 }
 .number {
   transform: rotate(-45deg);
@@ -219,7 +458,7 @@
   font:
     600 10px Inter,
     sans-serif;
-  color: #8cacc8;
+  color: #b8c3cd;
 }
 .gem {
   display: block;
@@ -228,14 +467,14 @@
   max-width: 100%;
   filter: drop-shadow(0 5px 3px #0007);
   transform: rotate(-45deg);
-  animation: reveal 0.28s ease-out both;
+  animation: reveal calc(0.28s * var(--animation-speed, 1)) ease-out both;
 }
 .caption {
   margin: 15px 0 0;
   font:
     400 12px/1.5 Inter,
     sans-serif;
-  color: #a3bdd5;
+  color: #9aa5b3;
   text-align: center;
 }
 @keyframes reveal {
@@ -265,10 +504,11 @@
     padding: 10px 5px;
   }
   .tile {
-    border-radius: 5px;
+    border-radius: 2px;
   }
 }
-/* Motion collapses; every mine, every gem and the blast ring still read. */
+/* Motion collapses; every mine, every gem, the found gem's glow and sparkle,
+   and the red edge of the mine that ended the round still read. */
 @media (prefers-reduced-motion: reduce) {
   .gem {
     animation: none;
@@ -278,6 +518,18 @@
   .tile[data-cascade='true'],
   .tile[data-hit='true'] {
     transition: none;
+    animation: none;
+  }
+  .tile[data-hit='true']::before,
+  .board[data-attract='true'] .tile::before {
+    animation: none;
+    opacity: 0;
+  }
+  .tile[data-picked='true'][data-mine='false']::before {
+    animation: none;
+    opacity: 0.8;
+  }
+  .board[data-attract='true'] .stage::after {
     animation: none;
   }
 }

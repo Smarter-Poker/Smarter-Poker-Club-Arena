@@ -87,10 +87,20 @@
 #   4. Nothing is read from the migration's text where the catalogue or the
 #      estate can be asked instead.
 #
-# LIGHTNING_PHASE9_MIGRATION overrides the file under test, so that mutation
-# testing - copying the migration to a scratch directory, deleting one clause
-# from the copy and watching this harness go red - never has to touch the
-# migration in the repository. LIGHTNING_PHASE9_PORT overrides the port.
+# SECTIONS 16 TO 30 ARE ABOUT 20260926023047, THE REMEDIATION. Sections 00 to
+# 15 run against 20260925215731 alone and are left exactly as they were proved.
+# Section 16 then reproduces every defect the remediation repairs on that code,
+# the remediation is applied over the estate 00 to 16 built - wedged hands and
+# all - and sections 17 to 27 each prove one repair on the same board 16 proved
+# the defect on; 28 proves the file's own lock_timeout by behaviour, 29
+# evaluates its @live-proofs and every proof of 20260925215731 it does not
+# supersede, and 30 applies it a second time.
+#
+# LIGHTNING_PHASE9_MIGRATION overrides the file under test, and
+# LIGHTNING_PHASE9_REMEDIATION the remediation, so that mutation testing -
+# copying a migration to a scratch directory, deleting one clause from the copy
+# and watching this harness go red - never has to touch a migration in the
+# repository. LIGHTNING_PHASE9_PORT overrides the port.
 set -euo pipefail
 export LC_ALL=C  # else initdb's postmaster refuses to start on macOS ("became multithreaded during startup") and string_agg ordering stops being deterministic
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -109,8 +119,9 @@ phase4r=$root/supabase/migrations/20260921142954_lightning_phase_4_remediation_a
 phase5=$root/supabase/migrations/20260921151618_lightning_phase_5_the_conversion_is_one_transaction_and_the_.sql
 phase5r=$root/supabase/migrations/20260925204249_lightning_phase_5_remediation_the_halt_is_a_standing_bar.sql
 migration=${LIGHTNING_PHASE9_MIGRATION:-$root/supabase/migrations/20260925215731_lightning_phase_9_the_hand_formation_barrier_is_atomic_and_t.sql}
+mine=${LIGHTNING_PHASE9_REMEDIATION:-$root/supabase/migrations/20260926023047_lightning_phase_9_remediation_nothing_holds_a_player_that_no.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$phase2" "$phase2r" \
-         "$phase3" "$phase3r" "$phase4" "$phase4r" "$phase5" "$phase5r" "$migration"; do
+         "$phase3" "$phase3r" "$phase4" "$phase4r" "$phase5" "$phase5r" "$migration" "$mine"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-phase9-test.XXXXXX")
@@ -129,7 +140,7 @@ mkdir "$fixture/socket"
   -o "-k $fixture/socket -p $port -h ''" start >/dev/null
 started=1
 
-# ONE psql SESSION, FIFTEEN FILES. One session because the estate built before
+# ONE psql SESSION, TWENTY-SEVEN FILES. One session because the estate built before
 # the migration is the estate the migration is applied over, because the bodies
 # and acls measured before the re-apply are compared to the ones after it, and
 # because the TEMP tables that carry Cluster ids between sections have to live
@@ -597,10 +608,14 @@ BEGIN
     RAISE EXCEPTION 'FAIL 06: an instance inserted with no deadline did not get one in the future';
   END IF;
 
-  -- AND A DEADLINE THAT IS NOT A DEADLINE IS REFUSED.
-  v_msg := public.fx9_try(format(
+  -- AND A DEADLINE THAT IS NOT A DEADLINE IS REFUSED. One instant, written
+  -- twice: two calls of clock_timestamp() in one VALUES list are two readings
+  -- of the clock, and whenever it ticked between them the deadline really did
+  -- follow creation and this assertion failed for a reason that was not a bug.
+  v_msg := public.fx9_try((SELECT format(
     'INSERT INTO public.lightning_instance (cluster_id, cluster_epoch, target_size, max_size, created_at, deadline_at) '
-    'VALUES (%L, %s, 2, 6, clock_timestamp(), clock_timestamp())', v_g, v_e));
+    'VALUES (%L, %s, 2, 6, %L::timestamptz, %L::timestamptz)', v_g, v_e, q.t, q.t)
+    FROM (SELECT clock_timestamp()::text AS t) q));
   IF v_msg !~ 'lightning_instance_deadline_follows_creation' THEN
     RAISE EXCEPTION 'FAIL 06: an instance whose deadline equals its creation time was refused by % rather than by the CHECK', v_msg;
   END IF;
@@ -1455,10 +1470,1858 @@ END $$;
 \echo '  ok  15 IT IS RE-APPLIABLE  the migration applied a second time over an estate full of formed hands, committed reservations, abandoned instances and stamped blind ledgers leaves all fifteen function bodies, all fifteen acls and every comment byte-identical, every index definition identical, exactly six Phase 9 triggers rather than twelve, not one row added or removed from any of the six lightning tables - and the estate still forms a hand afterwards, because a file that re-applies cleanly and leaves the feature dead is re-appliable and broken'
 REAPPLY
 
-# ONE psql SESSION, FIFTEEN FILES: the four fixtures, the seven predecessor
-# migrations, the pre-migration measurements and the estate they build, the
-# migration, the assertions, the migration's own @live-proofs, the pre-re-apply
-# capture, the migration AGAIN and the re-apply assertions.
+cat > "$fixture/ground.sql" <<'ASSERT'
+-- 16 THE GROUND BEFORE THE REMEDIATION -----------------------------------------
+-- Every defect 20260926023047 exists for, reproduced on THIS estate by the code
+-- 20260925215731 installed, before a line of the remediation has been applied.
+-- If any of these does not reproduce, the sections after the remediation are
+-- about a fixture that could never have failed, so each is a hard FAIL here.
+-- Several of the shapes built here are then the very rows a later section
+-- recovers: the wedged dealing hand of 16a is the hand section 17 reaps, the
+-- stale instance of 16c is the corpse section 18's formation buries, the empty
+-- dealt hand of 16b is one the pass reaps in section 18, the re-entered player
+-- of 16d is the one section 25 slots, the eight-handed board of 16d is the one
+-- section 26 re-deals, and the boards of 16e are the ones sections 20 and 21
+-- contend over again.
+CREATE SCHEMA IF NOT EXISTS harness;
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA harness;
+
+-- 16a BLOCKER 1: a hand that started dealing keeps its players for ever.
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_r jsonb; v_i uuid; v_t text; v_n integer;
+BEGIN
+  v_g := public.fx9_cluster('G16 WEDGE', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  -- Formed ten minutes ago with an hour to be dealt, and released into gameplay
+  -- nine minutes ago with a thirty-second window, through the REAL writers: the
+  -- hand of an engine that went silent eight and a half minutes ago.
+  v_r := public.fn_lightning_form_hand(v_g, v_p, NULL, NULL, NULL, interval '20 seconds',
+           interval '1 hour', clock_timestamp() - interval '10 minutes');
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16a: could not form the hand whose engine dies: %', v_r;
+  END IF;
+  v_i := (v_r ->> 'instance_id')::uuid;
+  IF coalesce((public.fn_lightning_instance_begin_dealing(v_i, interval '30 seconds',
+       clock_timestamp() - interval '9 minutes') ->> 'dealing')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16a: the hand would not begin dealing';
+  END IF;
+  IF (SELECT deadline_at < clock_timestamp() FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16a: the dealing hand is not past its deadline, so nothing below is about staleness';
+  END IF;
+  PERFORM public.fn_lightning_reap_formations(p_cluster_id => v_g);
+  PERFORM public.fn_lightning_reap_formations(clock_timestamp() + interval '1 day', 200, v_g);
+  SELECT state INTO v_t FROM public.lightning_instance WHERE id = v_i;
+  SELECT count(*)::integer INTO v_n FROM public.lightning_reservation
+   WHERE lightning_instance_id = v_i AND state = 'committed';
+  IF v_t IS DISTINCT FROM 'dealing' OR v_n IS DISTINCT FROM 6 THEN
+    RAISE EXCEPTION 'FAIL 16a: BLOCKER 1 did not reproduce - after two reaps, one of them a day ahead, the instance is % with % committed reservations', v_t, v_n;
+  END IF;
+  v_r := public.fn_lightning_form_hand(v_g, v_p);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'insufficient_legal_candidates'
+     OR (v_r ->> 'legal')::integer IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 16a: the six wedged players were not locked out: %', v_r;
+  END IF;
+  INSERT INTO b9 (k, game, a, t) VALUES ('g16_wedge', v_g, v_i, v_p::text);
+END $$;
+
+-- 16b MAJOR 3: a hand born locked over nobody is accepted, and dealt.
+DO $$
+DECLARE v_g uuid; v_e integer; v_i uuid; v_h uuid := gen_random_uuid(); v_msg text;
+BEGIN
+  v_g := public.fx9_cluster('G16 BORN LOCKED', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  v_i := (public.fn_lightning_instance_open(v_g, NULL, NULL, interval '5 seconds',
+            clock_timestamp() - interval '10 minutes') ->> 'instance_id')::uuid;
+  INSERT INTO public.lightning_hand
+    (hand_id, cluster_id, cluster_epoch, lightning_instance_id, formed_at, participants_locked_at, player_count)
+  VALUES (v_h, v_g, v_e, v_i, clock_timestamp() - interval '10 minutes', clock_timestamp() - interval '10 minutes', 6);
+  UPDATE public.lightning_instance SET hand_id = v_h, state = 'reserved' WHERE id = v_i;
+  UPDATE public.lightning_instance SET state = 'dealing', started_at = clock_timestamp() - interval '9 minutes'
+   WHERE id = v_i;
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'dealing'
+     OR (SELECT count(*) FROM public.lightning_hand_player WHERE hand_id = v_h) IS DISTINCT FROM 0::bigint THEN
+    RAISE EXCEPTION 'FAIL 16b: MAJOR 3 did not reproduce - a hand born locked over nobody was not dealt';
+  END IF;
+  v_msg := public.fx9_try(format(
+    'INSERT INTO public.lightning_hand_player (hand_id, player_id, pool_slot_id, seat, cluster_id, cluster_epoch) '
+    'VALUES (%L, gen_random_uuid(), gen_random_uuid(), 1, %L, %s)', v_h, v_g, v_e));
+  IF v_msg !~ 'LIGHTNING_NO_ADDITIONAL_PLAYER_INSERTION' THEN
+    RAISE EXCEPTION 'FAIL 16b: the empty dealt hand could be given a participant, so it is not the wedge the audit found: %', v_msg;
+  END IF;
+  INSERT INTO b9 (k, game, a, b) VALUES ('g16_born', v_g, v_i, v_h);
+END $$;
+
+-- 16c BLOCKER 2: the barrier does not reap, and the pass does not sync.
+DO $$
+DECLARE v_g uuid; v_s uuid; v_p uuid[]; v_r jsonb; v_i uuid; v_t jsonb; v_bad text;
+BEGIN
+  v_g := public.fx9_cluster('G16 UNREAPED', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  v_r := public.fn_lightning_form_hand(v_g, v_p, NULL, NULL, NULL, interval '20 seconds',
+           interval '5 seconds', clock_timestamp() - interval '10 minutes');
+  v_i := (v_r ->> 'instance_id')::uuid;
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'reserved'
+     OR (SELECT deadline_at < clock_timestamp() FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16c: could not build the stale reserved instance: %', v_r;
+  END IF;
+  v_r := public.fn_lightning_form_hand(v_g, public.fx9_candidates(v_g, 6));
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16c: the next formation on the Cluster did not form: %', v_r;
+  END IF;
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'reserved' THEN
+    RAISE EXCEPTION 'FAIL 16c: BLOCKER 2 did not reproduce - the next formation buried the corpse';
+  END IF;
+  IF (public.fn_lightning_form_hand(v_g, v_p) ->> 'legal')::integer IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 16c: the stale instance''s six are not held';
+  END IF;
+  INSERT INTO b9 (k, game, a, t) VALUES ('g16_unreaped', v_g, v_i, v_p::text);
+
+  -- A Cluster converted and never synced: eighteen pool sessions, no slot.
+  v_s := public.fx9_cluster('G16 SLOTLESS', 6, 40, true);
+  PERFORM public.fx9_seat(v_s, 18);
+  PERFORM public.fx9_convert(v_s);
+  v_t := public.fn_cash_clusters_tick_all();
+  IF coalesce((v_t ->> 'ok')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16c: the pass did not run: %', v_t - 'results' - 'rested_games';
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_pool_slot WHERE cluster_id = v_s) IS DISTINCT FROM 0::bigint
+     OR (SELECT count(*) FROM public.lightning_pool_session WHERE cluster_id = v_s AND exited_at IS NULL) IS DISTINCT FROM 18::bigint THEN
+    RAISE EXCEPTION 'FAIL 16c: BLOCKER 2 did not reproduce - the pass gave the pool slots';
+  END IF;
+  IF pg_get_functiondef('public.fn_cash_clusters_tick_all(jsonb)'::regprocedure) ~ 'fn_lightning_' THEN
+    RAISE EXCEPTION 'FAIL 16c: the pass already calls Lightning';
+  END IF;
+  -- THE CALLERS, from the catalogue: apart from the three themselves and this
+  -- harness's own writers, fn_lightning_instance_open is the only function in
+  -- the estate that calls any of them, and no formation path calls it.
+  SELECT string_agg(p.proname, ',' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname !~ '^fx9_'
+     AND p.proname NOT IN ('fn_lightning_reap_formations', 'fn_lightning_pool_slots_sync', 'fn_lightning_pool_slot_open')
+     AND regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g')
+         ~ 'fn_lightning_(reap_formations|pool_slots_sync|pool_slot_open)';
+  IF v_bad IS DISTINCT FROM 'fn_lightning_instance_open' THEN
+    RAISE EXCEPTION 'FAIL 16c: the callers of the reaper, the sync and slot open are %, not fn_lightning_instance_open alone', v_bad;
+  END IF;
+  INSERT INTO b9 (k, game) VALUES ('g16_slotless', v_s);
+END $$;
+
+-- 16d MAJOR 6, MAJOR 7 AND MINORS a, b, c, d.
+DO $$
+DECLARE v_g uuid; v_e integer; v_p uuid[]; v_r jsonb; v_late uuid; v_msg text; v_ps uuid; v_new uuid; v_slot uuid; v_t text;
+BEGIN
+  -- MAJOR 6: service_role truncates the history, in a probe that rolls back.
+  IF (SELECT count(*) FROM public.lightning_hand) = 0 THEN
+    RAISE EXCEPTION 'FAIL 16d: there are no hands to erase, so the TRUNCATE probe would prove nothing';
+  END IF;
+  v_msg := public.fx9_truncate_probe('service_role', 'public.lightning_hand');
+  IF v_msg !~ '^FX9_TRUNCATED public\.lightning_hand leaving 0 hand' THEN
+    RAISE EXCEPTION 'FAIL 16d: MAJOR 6 did not reproduce - service_role could not truncate the hands: %', v_msg;
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_hand) = 0 THEN
+    RAISE EXCEPTION 'FAIL 16d: the TRUNCATE probe did not roll back';
+  END IF;
+
+  -- MAJOR 7: none of the five versions exists.
+  IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.lightning_hand'::regclass AND NOT attisdropped
+               AND attname IN ('rules_version', 'matcher_version', 'blind_algorithm_version', 'lightning_version', 'rake_version')) THEN
+    RAISE EXCEPTION 'FAIL 16d: a version column already exists';
+  END IF;
+
+  -- MINOR a: a matcher may name a player who loses on pool entry. All six tie
+  -- on the first three terms - no obligation, no big blind ever, the same
+  -- ledger timestamp - and differ only on when they entered the pool.
+  v_g := public.fx9_cluster('G16 OVERRIDE', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  INSERT INTO public.lightning_blind_ledger (cluster_id, player_id, first_seen_at, updated_at)
+  SELECT v_g, x, timestamptz '2026-01-01', timestamptz '2026-01-01' FROM unnest(v_p) x;
+  UPDATE public.lightning_pool_slot sl SET opened_at = clock_timestamp() - (q.o || ' minutes')::interval
+    FROM (SELECT s.id, row_number() OVER (ORDER BY s.player_id) AS o FROM public.lightning_pool_slot s
+           WHERE s.cluster_id = v_g AND s.player_id = ANY (v_p)) q
+   WHERE q.id = sl.id;
+  SELECT bo.player_id INTO v_late FROM public.fn_lightning_blind_order(v_g, v_e, v_p) bo WHERE bo.p2_rank = 6;
+  v_r := public.fn_lightning_form_hand(v_g, v_p, NULL, NULL, v_late);
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'bb')::uuid IS DISTINCT FROM v_late THEN
+    RAISE EXCEPTION 'FAIL 16d: MINOR a did not reproduce - the late entrant was refused as the big blind: %', v_r;
+  END IF;
+
+  -- MINOR b: a player who left and came back is handed the exited session's slot.
+  v_g := public.fx9_cluster('G16 REENTRY', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  SELECT ps.id INTO v_ps FROM public.lightning_pool_session ps WHERE ps.cluster_id = v_g ORDER BY ps.entered_at, ps.id LIMIT 1;
+  SELECT sl.id INTO v_slot FROM public.lightning_pool_slot sl WHERE sl.pool_session_id = v_ps AND sl.closed_at IS NULL;
+  UPDATE public.lightning_pool_session SET exited_at = clock_timestamp(), exit_reason = 'harness: left', state = 'closed'
+   WHERE id = v_ps;
+  INSERT INTO public.lightning_pool_session (cluster_id, cluster_epoch, player_id, cash_player_session_id, starting_stack, state)
+  SELECT cluster_id, cluster_epoch, player_id, cash_player_session_id, starting_stack, 'active'
+    FROM public.lightning_pool_session WHERE id = v_ps RETURNING id INTO v_new;
+  v_r := public.fn_lightning_pool_slot_open(v_new);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'already_open' OR (v_r ->> 'pool_slot_id')::uuid IS DISTINCT FROM v_slot THEN
+    RAISE EXCEPTION 'FAIL 16d: MINOR b did not reproduce - slot open did not hand back the exited session''s slot: %', v_r;
+  END IF;
+  INSERT INTO b9 (k, game, a, b) VALUES ('g16_reentry', v_g, v_new, v_slot);
+
+  -- MINOR c: an eight-handed hand has three players under the gun.
+  v_g := public.fx9_cluster('G16 EIGHT', 9, 40, true);
+  PERFORM public.fx9_seat(v_g, 27);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_r := public.fn_lightning_form_hand(v_g, public.fx9_candidates(v_g, 8), 8::smallint, 8::smallint);
+  SELECT string_agg(seat || ':' || "position", ' ' ORDER BY seat) INTO v_t
+    FROM public.lightning_hand_player WHERE hand_id = (v_r ->> 'hand_id')::uuid;
+  IF v_t IS DISTINCT FROM '1:sb 2:bb 3:utg 4:utg 5:utg 6:hj 7:co 8:btn'
+     OR (SELECT sum(utg_count) FROM public.lightning_blind_ledger WHERE cluster_id = v_g) IS DISTINCT FROM 3::bigint THEN
+    RAISE EXCEPTION 'FAIL 16d: MINOR c did not reproduce - the eight-handed map is %', v_t;
+  END IF;
+  INSERT INTO b9 (k, game, a) VALUES ('g16_eight', v_g, (v_r ->> 'instance_id')::uuid);
+
+  -- MINOR d: the reservation section 05 wrote belongs to no instance.
+  IF (SELECT count(*) FROM public.lightning_reservation WHERE lightning_instance_id IS NULL) IS DISTINCT FROM 1::bigint
+     OR (SELECT NOT attnotnull FROM pg_attribute WHERE attrelid = 'public.lightning_reservation'::regclass
+          AND attname = 'lightning_instance_id') IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16d: MINOR d did not reproduce - there is not exactly one instance-less reservation under a nullable column';
+  END IF;
+END $$;
+
+-- 16e MAJOR 4 AND MAJOR 5, WITH A SECOND BACKEND. The estates are committed
+-- first, because the other backend cannot see rows this transaction has not
+-- committed.
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_victim uuid;
+BEGIN
+  v_g := public.fx9_cluster('G16 CONCURRENT', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  SELECT ps.id INTO v_victim FROM public.lightning_pool_session ps
+   WHERE ps.cluster_id = v_g AND NOT (ps.player_id = ANY (v_p)) ORDER BY ps.id LIMIT 1;
+  INSERT INTO b9 (k, game, a, t) VALUES ('g16_concurrent', v_g, v_victim, v_p::text);
+
+  v_g := public.fx9_cluster('G16 CONTENDED', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  INSERT INTO public.lightning_blind_ledger (cluster_id, player_id) VALUES (v_g, v_p[3]);
+  INSERT INTO b9 (k, game, t) VALUES ('g16_contended', v_g, v_p::text);
+END $$;
+
+CREATE TRIGGER zz_fx9_commit_elsewhere AFTER INSERT ON public.lightning_hand_player
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_commit_elsewhere();
+
+DO $$
+DECLARE v_g uuid; v_victim uuid; v_p uuid[]; v_msg text;
+BEGIN
+  SELECT game, a, t::uuid[] INTO v_g, v_victim, v_p FROM b9 WHERE k = 'g16_concurrent';
+  -- ANOTHER TRANSACTION COMMITS FIVE CHIPS TO SOMEBODY WHO IS NOT IN THE HAND,
+  -- between the barrier's before and after reads.
+  PERFORM set_config('fx9.elsewhere_sql',
+    format('UPDATE public.lightning_pool_session SET net_result = net_result + 5 WHERE id = %L', v_victim), false);
+  v_msg := public.fx9_try(format('SELECT public.fn_lightning_form_hand(%L, %L::uuid[])', v_g, v_p));
+  PERFORM set_config('fx9.elsewhere_sql', '', false);
+  IF v_msg !~ 'LIGHTNING_FORMATION_MOVED_MONEY' THEN
+    RAISE EXCEPTION 'FAIL 16e: MAJOR 4 did not reproduce - a commit to a non-participant did not destroy the formation: %', v_msg;
+  END IF;
+  IF (SELECT net_result FROM public.lightning_pool_session WHERE id = v_victim) IS DISTINCT FROM 5.00 THEN
+    RAISE EXCEPTION 'FAIL 16e: the other backend''s commit did not land, so the false positive was not caused by it';
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_hand WHERE cluster_id = v_g) IS DISTINCT FROM 0::bigint THEN
+    RAISE EXCEPTION 'FAIL 16e: the destroyed formation left a hand';
+  END IF;
+END $$;
+
+DROP TRIGGER zz_fx9_commit_elsewhere ON public.lightning_hand_player;
+
+-- ONE CANDIDATE'S BLIND LEDGER ROW, HELD BY ANOTHER TRANSACTION.
+DO $$
+BEGIN
+  IF public.fx9_elsewhere('BEGIN') IS DISTINCT FROM 'BEGIN'
+     OR public.fx9_elsewhere(format('UPDATE public.lightning_blind_ledger SET updated_at = clock_timestamp() WHERE cluster_id = %L',
+          (SELECT game FROM b9 WHERE k = 'g16_contended'))) IS DISTINCT FROM 'UPDATE 1' THEN
+    RAISE EXCEPTION 'FAIL 16e: the other backend could not take the ledger row';
+  END IF;
+END $$;
+
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_msg text; v_ev bigint;
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g16_contended';
+  PERFORM set_config('lock_timeout', '300ms', true);
+  SELECT count(*) INTO v_ev FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry';
+  v_msg := public.fx9_try(format('SELECT public.fn_lightning_form_hand(%L, %L::uuid[])', v_g, v_p));
+  IF v_msg !~ 'lock timeout' THEN
+    RAISE EXCEPTION 'FAIL 16e: MAJOR 5 did not reproduce - the barrier did not die of the lock timeout: %', v_msg;
+  END IF;
+  IF (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry') IS DISTINCT FROM v_ev THEN
+    RAISE EXCEPTION 'FAIL 16e: the lock timeout wrote a matcher_retry, so MAJOR 5 is not the ground';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF public.fx9_elsewhere('ROLLBACK') IS DISTINCT FROM 'ROLLBACK' THEN
+    RAISE EXCEPTION 'FAIL 16e: the other backend would not let go of the ledger row';
+  END IF;
+END $$;
+
+-- THE ONE ROW THE REMEDIATION MAKES UNREPRESENTABLE. Section 05 wrote a pending
+-- reservation bound to no instance, through the table, to prove the reaper
+-- expires one; 20260926023047 makes lightning_instance_id NOT NULL and refuses
+-- BY NAME to be applied over such a row rather than invent an owner for it.
+-- Production holds none. This harness removes the one it made, deliberately and
+-- counted, and it is the only row in the estate it removes.
+DO $$
+DECLARE v_n integer;
+BEGIN
+  DELETE FROM public.lightning_reservation WHERE lightning_instance_id IS NULL AND state = 'expired';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 16: % instance-less reservation(s) removed, not the one section 05 wrote', v_n;
+  END IF;
+END $$;
+\echo '  ok  16 THE GROUND BEFORE IT  on this estate and by the code 20260925215731 installed: a hand dealt nine minutes ago with a thirty-second window survives two reaps - one of them a DAY ahead - still dealing with six committed reservations, and its six players answer legal = 0; a hand INSERTed already latched at player_count 6 over nobody is accepted, reserved and DEALT by a bare UPDATE, and can never be given a participant; a stale reserved instance survives the next formation on its own Cluster, a real tick_all pass leaves eighteen pool sessions slotless, and the only caller of the reaper, the sync and slot open in the whole estate is fn_lightning_instance_open, which no formation path calls; service_role TRUNCATEs every hand; no version column exists; a matcher names a player who loses on pool entry as the big blind and is obeyed; a player who re-entered the pool is handed the exited session''s slot; an eight-handed hand seats three players under the gun and moves three utg_counts; a reservation belongs to no instance under a nullable column; a SECOND BACKEND committing five chips to a player who is not in the hand destroys a correct formation with LIGHTNING_FORMATION_MOVED_MONEY; and a second backend holding one candidate''s ledger row kills the barrier with a lock timeout and ZERO matcher_retry events'
+ASSERT
+
+cat > "$fixture/mine-assertions.sql" <<'ASSERT'
+-- ===========================================================================
+-- EVERYTHING FROM HERE ON IS ABOUT 20260926023047, THE REMEDIATION, applied
+-- over the estate sections 00 to 16 built - including every defect section 16
+-- reproduced, and several of the very rows it left wedged. Each section below
+-- is paired with the reproduction in section 16: that one proved the defect on
+-- 20260925215731's code, and this one proves the same board now behaves.
+-- ===========================================================================
+
+-- THE MATCHER'S CALL FROM HERE ON. The barrier now REQUIRES p_matcher_version
+-- (MAJOR 7); section 23 proves the refusal when it is missing or blank.
+CREATE FUNCTION public.fx9_form(p_game uuid, p_players uuid[], p_bb uuid DEFAULT NULL,
+                                p_target smallint DEFAULT NULL, p_max smallint DEFAULT NULL,
+                                p_ttl interval DEFAULT interval '20 seconds',
+                                p_window interval DEFAULT interval '45 seconds',
+                                p_now timestamp with time zone DEFAULT NULL)
+RETURNS jsonb LANGUAGE sql AS $fx$
+  SELECT public.fn_lightning_form_hand(p_game, p_players, p_target, p_max, p_bb, p_ttl, p_window,
+                                       coalesce(p_now, clock_timestamp()), 'harness-matcher/1');
+$fx$;
+
+-- 17 A DEALING HAND NOTHING VOUCHES FOR IS REAPED (BLOCKER 1) -------------------
+-- 16a left a hand dealing since nine minutes ago on a thirty-second window, with
+-- six committed reservations two reaps could not touch. The same hand, the same
+-- real reaper.
+DO $$
+DECLARE v_g uuid; v_i uuid; v_p uuid[]; v_r jsonb; v_li record; v_hp uuid[];
+BEGIN
+  SELECT game, a, t::uuid[] INTO v_g, v_i, v_p FROM b9 WHERE k = 'g16_wedge';
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'dealing'
+     OR (SELECT count(*) FROM public.lightning_reservation WHERE lightning_instance_id = v_i AND state = 'committed') IS DISTINCT FROM 6::bigint
+     OR (SELECT deadline_at < clock_timestamp() FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 17: the wedge section 16a built is not standing, so nothing below would be a recovery';
+  END IF;
+  v_r := public.fn_lightning_reap_formations(p_cluster_id => v_g);
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_r -> 'instances') x
+                  WHERE (x ->> 'instance_id')::uuid = v_i AND x ->> 'was' = 'dealing') THEN
+    RAISE EXCEPTION 'FAIL 17: the reaper did not abandon the dealing hand nothing vouches for: %', v_r;
+  END IF;
+  SELECT li.state, li.abandon_reason, li.started_at, li.completed_at INTO v_li
+    FROM public.lightning_instance li WHERE li.id = v_i;
+  IF v_li.state IS DISTINCT FROM 'abandoned' OR coalesce(v_li.abandon_reason, '') !~ 'the hand is void'
+     OR v_li.completed_at IS NULL OR v_li.completed_at < v_li.started_at THEN
+    RAISE EXCEPTION 'FAIL 17: the reaped hand is % (%), started % and completed %', v_li.state, v_li.abandon_reason, v_li.started_at, v_li.completed_at;
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_reservation WHERE lightning_instance_id = v_i AND state = 'released') IS DISTINCT FROM 6::bigint
+     OR EXISTS (SELECT 1 FROM public.lightning_reservation WHERE lightning_instance_id = v_i AND state IN ('pending', 'committed')) THEN
+    RAISE EXCEPTION 'FAIL 17: the reaped hand did not hand back all six committed reservations';
+  END IF;
+  -- AND THE SIX ARE PLAYERS AGAIN: the very call 16a answered legal = 0.
+  v_r := public.fx9_form(v_g, v_p);
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'players')::integer IS DISTINCT FROM 6 THEN
+    RAISE EXCEPTION 'FAIL 17: the six players of the reaped hand are still locked out: %', v_r;
+  END IF;
+  SELECT array_agg(hp.player_id ORDER BY hp.player_id) INTO v_hp
+    FROM public.lightning_hand_player hp WHERE hp.hand_id = (v_r ->> 'hand_id')::uuid;
+  IF v_hp IS DISTINCT FROM (SELECT array_agg(x ORDER BY x) FROM unnest(v_p) x) THEN
+    RAISE EXCEPTION 'FAIL 17: the new hand is not the six the dead hand held';
+  END IF;
+END $$;
+
+-- THE HEARTBEAT, AND THE CLOCK THAT HAS NOT ARRIVED. Four hands on one board,
+-- formed in the order A, B, D, C so that no formation after C can bury it (the
+-- barrier reaps its own Cluster, and would): A is vouched for; B has a second
+-- of deal window left and no keepalive; D is settling on the same second B
+-- has; C's window ran out fifteen minutes ago. The reaper is then handed a
+-- clock a day ahead, as 16a handed the old one, and must reap B, C and D by the
+-- real clock and leave A alone.
+DO $$
+DECLARE v_g uuid; v_h uuid[] := ARRAY[]::uuid[]; v_p uuid[]; v_b6 uuid[]; v_r jsonb; k integer;
+        v_dl timestamptz; v_dl2 timestamptz;
+BEGIN
+  v_g := public.fx9_cluster('G17 HEARTBEAT', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 24);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  FOR k IN 1 .. 4 LOOP
+    v_p := public.fx9_candidates(v_g, 6);
+    IF k = 2 THEN v_b6 := v_p; END IF;
+    IF k = 4 THEN
+      v_r := public.fx9_form(v_g, v_p, NULL, NULL, NULL, interval '20 seconds', interval '1 hour',
+                             clock_timestamp() - interval '20 minutes');
+    ELSE
+      v_r := public.fx9_form(v_g, v_p, NULL, NULL, NULL, interval '20 seconds', interval '5 minutes',
+                             clock_timestamp() - interval '1 minute');
+    END IF;
+    IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+      RAISE EXCEPTION 'FAIL 17: hand % of the heartbeat board did not form: %', k, v_r;
+    END IF;
+    v_h := v_h || (v_r ->> 'instance_id')::uuid;
+    IF k = 4 THEN
+      v_r := public.fn_lightning_instance_begin_dealing(v_h[k], interval '30 seconds', clock_timestamp() - interval '15 minutes');
+    ELSE
+      v_r := public.fn_lightning_instance_begin_dealing(v_h[k], interval '30 seconds', clock_timestamp() - interval '29 seconds');
+    END IF;
+    IF coalesce((v_r ->> 'dealing')::boolean, false) IS DISTINCT FROM true THEN
+      RAISE EXCEPTION 'FAIL 17: hand % of the heartbeat board would not begin dealing: %', k, v_r;
+    END IF;
+    IF k = 1 THEN
+      -- THE ENGINE VOUCHES FOR A, at once, while its window is still open.
+      v_r := public.fn_lightning_instance_keepalive(v_h[1], interval '2 minutes');
+      IF coalesce((v_r ->> 'alive')::boolean, false) IS DISTINCT FROM true THEN
+        RAISE EXCEPTION 'FAIL 17: a keepalive inside the deal window was refused: %', v_r;
+      END IF;
+    END IF;
+  END LOOP;
+
+  SELECT deadline_at INTO v_dl FROM public.lightning_instance WHERE id = v_h[1];
+  IF v_dl < clock_timestamp() + interval '100 seconds' THEN
+    RAISE EXCEPTION 'FAIL 17: a two-minute keepalive left the deadline at %', v_dl;
+  END IF;
+  PERFORM public.fn_lightning_instance_keepalive(v_h[1], interval '30 seconds');
+  IF (SELECT deadline_at FROM public.lightning_instance WHERE id = v_h[1]) IS DISTINCT FROM v_dl THEN
+    RAISE EXCEPTION 'FAIL 17: a shorter keepalive moved the deadline backwards';
+  END IF;
+  PERFORM public.fn_lightning_instance_keepalive(v_h[1], interval '1 day');
+  SELECT deadline_at INTO v_dl2 FROM public.lightning_instance WHERE id = v_h[1];
+  IF v_dl2 <= v_dl OR v_dl2 > clock_timestamp() + interval '15 minutes' THEN
+    RAISE EXCEPTION 'FAIL 17: a keepalive of a day set the deadline to %, not at most fifteen minutes out', v_dl2;
+  END IF;
+
+  -- A HAND DECLARED DEAD STAYS DEAD.
+  SELECT deadline_at INTO v_dl FROM public.lightning_instance WHERE id = v_h[4];
+  v_r := public.fn_lightning_instance_keepalive(v_h[4]);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'past_deadline' OR coalesce((v_r ->> 'alive')::boolean, true) IS DISTINCT FROM false
+     OR (SELECT deadline_at FROM public.lightning_instance WHERE id = v_h[4]) IS DISTINCT FROM v_dl THEN
+    RAISE EXCEPTION 'FAIL 17: a late keepalive revived a hand already past its deadline: %', v_r;
+  END IF;
+
+  UPDATE public.lightning_instance SET state = 'settling' WHERE id = v_h[3];
+  PERFORM pg_sleep(1.2);
+  IF (SELECT bool_and(deadline_at < clock_timestamp()) FROM public.lightning_instance WHERE id IN (v_h[2], v_h[3], v_h[4])) IS DISTINCT FROM true
+     OR (SELECT deadline_at > clock_timestamp() FROM public.lightning_instance WHERE id = v_h[1]) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 17: the board is not B, C and D past their deadlines with A inside its own';
+  END IF;
+
+  v_r := public.fn_lightning_reap_formations(clock_timestamp() + interval '1 day', 200, v_g);
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_h[1]) IS DISTINCT FROM 'dealing'
+     OR (SELECT count(*) FROM public.lightning_reservation WHERE lightning_instance_id = v_h[1] AND state = 'committed') IS DISTINCT FROM 6::bigint THEN
+    RAISE EXCEPTION 'FAIL 17: a hand the engine is still vouching for was reaped by a clock that has not arrived: %', v_r;
+  END IF;
+  IF (v_r ->> 'instances_abandoned')::integer IS DISTINCT FROM 3
+     OR (SELECT string_agg(state, ',' ORDER BY array_position(v_h, id)) FROM public.lightning_instance
+          WHERE id IN (v_h[2], v_h[3], v_h[4])) IS DISTINCT FROM 'abandoned,abandoned,abandoned' THEN
+    RAISE EXCEPTION 'FAIL 17: the dealing, dead and settling hands were not all reaped: %', v_r;
+  END IF;
+  IF (SELECT abandon_reason FROM public.lightning_instance WHERE id = v_h[3]) !~ '^reaped: settling' THEN
+    RAISE EXCEPTION 'FAIL 17: the settling hand was not reaped as settling';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.lightning_reservation
+              WHERE lightning_instance_id IN (v_h[2], v_h[3], v_h[4]) AND state IN ('pending', 'committed')) THEN
+    RAISE EXCEPTION 'FAIL 17: a reaped hand kept a live reservation';
+  END IF;
+  v_r := public.fn_lightning_instance_keepalive(v_h[2]);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'wrong_state' OR (v_r ->> 'state') IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'FAIL 17: a keepalive for a reaped hand was not told so: %', v_r;
+  END IF;
+  IF coalesce((public.fx9_form(v_g, v_b6) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 17: the six of the reaped hand B are not players again';
+  END IF;
+END $$;
+\echo '  ok  17 A HAND NOBODY VOUCHES FOR IS REAPED  the very dealing hand 16a wedged - dealing nine minutes on a thirty-second window, surviving two reaps with six committed reservations and its six players at legal = 0 - is abandoned by the real reaper as a VOID hand with completed_at after started_at, hands all six reservations back, and those six form a new hand at once; on a second board a hand the engine vouches for with fn_lightning_instance_keepalive is NOT reaped even by a reaper handed a clock a day ahead, because the reaper now clamps its clock to the real one, while a dealing hand whose half-second window ran out, a hand fifteen minutes dead and a SETTLING hand are all reaped and release everything; the keepalive moves a deadline forward only, never by more than fifteen minutes, refuses a hand already past its deadline without touching it, and tells a late caller the hand is abandoned; and the reaped players form again'
+
+-- 18 THE BARRIER REAPS, AND THE PASS REAPS AND OPENS THE DOOR (BLOCKER 2) ---------
+-- 16c: a stale reserved instance survived the next formation on its own
+-- Cluster, and a real tick_all pass left eighteen pool sessions slotless. No
+-- tick_all has run since the remediation was applied, so the only thing that
+-- can bury 16c's corpse in the first block below is the barrier itself.
+DO $$
+DECLARE v_g uuid; v_i uuid; v_p uuid[]; v_r jsonb; v_hp uuid[];
+BEGIN
+  SELECT game, a, t::uuid[] INTO v_g, v_i, v_p FROM b9 WHERE k = 'g16_unreaped';
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'reserved'
+     OR (SELECT deadline_at < clock_timestamp() FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 18: the corpse section 16c left is not standing';
+  END IF;
+  -- The call 16c answered legal = 0.
+  v_r := public.fx9_form(v_g, v_p);
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 18: the barrier did not bury the corpse and form over its six in the same call: %', v_r;
+  END IF;
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'abandoned'
+     OR (SELECT abandon_reason FROM public.lightning_instance WHERE id = v_i) !~ '^reaped: reserved' THEN
+    RAISE EXCEPTION 'FAIL 18: the corpse was not reaped by the formation';
+  END IF;
+  SELECT array_agg(hp.player_id ORDER BY hp.player_id) INTO v_hp
+    FROM public.lightning_hand_player hp WHERE hp.hand_id = (v_r ->> 'hand_id')::uuid;
+  IF v_hp IS DISTINCT FROM (SELECT array_agg(x ORDER BY x) FROM unnest(v_p) x) THEN
+    RAISE EXCEPTION 'FAIL 18: the new hand is not the six the corpse held';
+  END IF;
+END $$;
+
+CREATE TRIGGER zz_fx9_break_slot BEFORE INSERT ON public.lightning_pool_slot
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_break_slot();
+
+DO $$
+DECLARE v_s uuid; v_x uuid; v_y uuid; v_born uuid; v_dead uuid; v_sp uuid[]; v_u uuid; v_e integer;
+        v_t jsonb; v_r jsonb; v_sync jsonb;
+BEGIN
+  SELECT game INTO v_s FROM b9 WHERE k = 'g16_slotless';
+  SELECT a INTO v_born FROM b9 WHERE k = 'g16_born';
+  IF (SELECT count(*) FROM public.lightning_pool_slot WHERE cluster_id = v_s) IS DISTINCT FROM 0::bigint
+     OR (SELECT state FROM public.lightning_instance WHERE id = v_born) IS DISTINCT FROM 'dealing' THEN
+    RAISE EXCEPTION 'FAIL 18: the slotless pool of 16c or the empty dealt hand of 16b is not standing';
+  END IF;
+
+  -- A FRESH HAND WHOSE ENGINE DIED nine minutes ago.
+  v_x := public.fx9_cluster('G18 DEAD ENGINE', 6, 40, true);
+  PERFORM public.fx9_seat(v_x, 18);
+  v_e := public.fx9_convert(v_x);
+  PERFORM public.fx9_pool(v_x);
+  v_sp := public.fx9_candidates(v_x, 6);
+  v_r := public.fx9_form(v_x, v_sp, NULL, NULL, NULL, interval '20 seconds', interval '1 hour',
+                         clock_timestamp() - interval '10 minutes');
+  v_dead := (v_r ->> 'instance_id')::uuid;
+  IF coalesce((public.fn_lightning_instance_begin_dealing(v_dead, interval '30 seconds',
+       clock_timestamp() - interval '9 minutes') ->> 'dealing')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 18: the dead engine''s hand would not begin dealing';
+  END IF;
+
+  -- A PLAYER WHO ENTERS THE POOL after the conversion, with a pool session and
+  -- nothing else.
+  v_u := (public.fx9_seat(v_x, 1, 19))[1];
+  INSERT INTO public.lightning_pool_session (cluster_id, cluster_epoch, player_id, cash_player_session_id, starting_stack, state)
+  SELECT v_x, v_e, v_u, cps.id, 119.00, 'active' FROM public.cash_player_session cps WHERE cps.player_id = v_u;
+
+  -- A CONVERTED CLUSTER EVERY ONE OF WHOSE SLOT WRITES FAILS.
+  v_y := public.fx9_cluster('G18 BROKEN SYNC', 6, 40, true);
+  PERFORM public.fx9_seat(v_y, 18);
+  PERFORM public.fx9_convert(v_y);
+  PERFORM set_config('fx9.break_slot_cluster', v_y::text, false);
+
+  -- THE REAL ENTRY POINT: the pass the engine calls.
+  v_t := public.fn_cash_clusters_tick_all();
+  PERFORM set_config('fx9.break_slot_cluster', '', false);
+  IF coalesce((v_t ->> 'ok')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 18: the pass did not run: %', v_t - 'results' - 'rested_games';
+  END IF;
+
+  -- IT REAPED, estate-wide.
+  IF (SELECT state FROM public.lightning_instance WHERE id = v_dead) IS DISTINCT FROM 'abandoned'
+     OR (SELECT state FROM public.lightning_instance WHERE id = v_born) IS DISTINCT FROM 'abandoned'
+     OR EXISTS (SELECT 1 FROM public.lightning_reservation WHERE lightning_instance_id = v_dead AND state IN ('pending', 'committed')) THEN
+    RAISE EXCEPTION 'FAIL 18: the pass did not reap the dead engine''s hand and the empty dealt hand of 16b: %', v_t -> 'lightning_reaped';
+  END IF;
+  IF (SELECT count(*) FROM jsonb_array_elements(v_t -> 'lightning_reaped' -> 'instances') x
+       WHERE (x ->> 'instance_id')::uuid IN (v_dead, v_born) AND x ->> 'was' = 'dealing') IS DISTINCT FROM 2::bigint THEN
+    RAISE EXCEPTION 'FAIL 18: the pass''s answer does not record the two dealing hands it reaped: %', v_t -> 'lightning_reaped';
+  END IF;
+
+  -- IT OPENED THE DOOR.
+  SELECT e -> 'result' INTO v_sync FROM jsonb_array_elements(v_t -> 'lightning_synced') e WHERE (e ->> 'cluster_id')::uuid = v_s;
+  IF (SELECT count(*) FROM public.lightning_pool_slot sl JOIN public.cash_games g ON g.id = sl.cluster_id
+       WHERE sl.cluster_id = v_s AND sl.closed_at IS NULL AND sl.cluster_epoch = g.cluster_epoch) IS DISTINCT FROM 18::bigint
+     OR (v_sync ->> 'slots_opened')::integer IS DISTINCT FROM 18 THEN
+    RAISE EXCEPTION 'FAIL 18: the pass did not open a slot for each of the eighteen pool sessions 16c left slotless: %', v_sync;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.lightning_pool_slot sl JOIN public.lightning_pool_session ps ON ps.id = sl.pool_session_id
+                  WHERE sl.cluster_id = v_x AND sl.player_id = v_u AND sl.closed_at IS NULL AND sl.cluster_epoch = v_e
+                    AND ps.player_id = v_u) THEN
+    RAISE EXCEPTION 'FAIL 18: the player who entered the pool after the conversion was not given a slot by the pass';
+  END IF;
+
+  -- AND ONE CLUSTER'S FAILING SYNC COST THAT CLUSTER, NOT THE PASS.
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_t -> 'lightning_synced') e
+                  WHERE (e ->> 'cluster_id')::uuid = v_y AND e -> 'error' ->> 'message' ~ 'FX9_INJECTED_SLOT_FAULT')
+     OR (SELECT count(*) FROM public.lightning_pool_slot WHERE cluster_id = v_y) IS DISTINCT FROM 0::bigint THEN
+    RAISE EXCEPTION 'FAIL 18: the broken Cluster''s failure is not recorded as its own: %', v_t -> 'lightning_synced';
+  END IF;
+
+  -- The dead engine's six are players again.
+  IF coalesce((public.fx9_form(v_x, v_sp) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 18: the six of the hand the pass reaped are not players again';
+  END IF;
+
+  -- A SECOND PASS: the fault is gone, so the broken Cluster is slotted, and
+  -- nothing is opened twice.
+  v_t := public.fn_cash_clusters_tick_all();
+  SELECT e -> 'result' INTO v_sync FROM jsonb_array_elements(v_t -> 'lightning_synced') e WHERE (e ->> 'cluster_id')::uuid = v_s;
+  IF (SELECT count(*) FROM public.lightning_pool_slot WHERE cluster_id = v_y AND closed_at IS NULL) IS DISTINCT FROM 18::bigint
+     OR (v_sync ->> 'slots_opened')::integer IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FAIL 18: the second pass did not slot the recovered Cluster, or opened a slot twice: %', v_t -> 'lightning_synced';
+  END IF;
+END $$;
+
+DROP TRIGGER zz_fx9_break_slot ON public.lightning_pool_slot;
+\echo '  ok  18 THE BARRIER AND THE PASS REAP  with no pass run since the remediation, the stale reserved instance 16c proved survives the next formation is buried BY that formation, under the Cluster lock and before its own INSERT, and its six players form in the same call that 16c answered legal = 0; then ONE call of the real fn_cash_clusters_tick_all reaps estate-wide - the hand of an engine that died nine minutes ago and the empty hand 16b dealt - releasing every reservation, records both in its answer, opens a slot for every one of the eighteen pool sessions 16c left slotless and for a player who entered the pool after the conversion, and survives a Cluster whose every slot write fails, recording the failure against that Cluster alone; a second pass slots the recovered Cluster and opens nothing twice'
+
+-- 19 THE LATCH IS NOT A BIRTHRIGHT, AND A HAND IS DEALT ONLY IF ITS SET AGREES (MAJOR 3)
+-- 16b: a hand INSERTed already latched at player_count 6 over nobody was
+-- accepted and dealt by a bare UPDATE.
+DO $$
+DECLARE v_g uuid; v_e integer; v_i uuid; v_h uuid := gen_random_uuid(); v_msg text; v_free uuid[];
+        v_s1 uuid; v_s2 uuid; v_ins text;
+BEGIN
+  v_g := public.fx9_cluster('G19 LATCH', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_i := (public.fn_lightning_instance_open(v_g) ->> 'instance_id')::uuid;
+  v_ins := 'INSERT INTO public.lightning_hand (hand_id, cluster_id, cluster_epoch, lightning_instance_id, formed_at, '
+        || 'participants_locked_at, player_count, rules_version, matcher_version, blind_algorithm_version, lightning_version, rake_version) '
+        || 'VALUES (%L, %L, %s, %L, clock_timestamp(), %s, %s, ''h'', ''h'', ''h'', ''h'', ''h'')';
+
+  -- 16b's INSERT, carrying the five versions the table now demands.
+  v_msg := public.fx9_try(format(v_ins, gen_random_uuid(), v_g, v_e, v_i, 'clock_timestamp()', '6'));
+  IF v_msg !~ 'LIGHTNING_HAND_IS_BORN_UNLOCKED' THEN
+    RAISE EXCEPTION 'FAIL 19: a hand born latched at player_count 6 over nobody was not refused by name: %', v_msg;
+  END IF;
+  -- EITHER HALF OF THE LATCH, and by the trigger rather than by the table CHECK.
+  v_msg := public.fx9_try(format(v_ins, gen_random_uuid(), v_g, v_e, v_i, 'NULL', '6'));
+  IF v_msg !~ 'LIGHTNING_HAND_IS_BORN_UNLOCKED' THEN
+    RAISE EXCEPTION 'FAIL 19: a hand born carrying only a player_count was not refused by the latch trigger: %', v_msg;
+  END IF;
+  v_msg := public.fx9_try(format(v_ins, gen_random_uuid(), v_g, v_e, v_i, 'clock_timestamp()', 'NULL'));
+  IF v_msg !~ 'LIGHTNING_HAND_IS_BORN_UNLOCKED' THEN
+    RAISE EXCEPTION 'FAIL 19: a hand born carrying only participants_locked_at was not refused by the latch trigger: %', v_msg;
+  END IF;
+  -- NON-VACUITY: the same INSERT, unlatched, is accepted.
+  v_msg := public.fx9_try(format(v_ins, v_h, v_g, v_e, v_i, 'NULL', 'NULL'));
+  IF v_msg IS DISTINCT FROM 'no error' THEN
+    RAISE EXCEPTION 'FAIL 19: the same INSERT without the latch was refused, so the refusals above were not about the latch: %', v_msg;
+  END IF;
+
+  -- A LOCKED HAND WHOSE COUNT AGREES WITH ITS ROWS AND NOT WITH ITS RESERVATIONS.
+  v_free := public.fx9_candidates(v_g, 2);
+  SELECT id INTO v_s1 FROM public.lightning_pool_slot WHERE cluster_id = v_g AND player_id = v_free[1] AND closed_at IS NULL;
+  SELECT id INTO v_s2 FROM public.lightning_pool_slot WHERE cluster_id = v_g AND player_id = v_free[2] AND closed_at IS NULL;
+  INSERT INTO public.lightning_hand_player
+    (hand_id, player_id, pool_slot_id, seat, "position", blind_role, stack_before, cluster_id, cluster_epoch)
+  VALUES (v_h, v_free[1], v_s1, 1, 'sb', 'sb', 100, v_g, v_e),
+         (v_h, v_free[2], v_s2, 2, 'bb', 'bb', 100, v_g, v_e);
+  UPDATE public.lightning_hand SET participants_locked_at = clock_timestamp(), player_count = 2 WHERE hand_id = v_h;
+  UPDATE public.lightning_instance SET hand_id = v_h, state = 'reserved' WHERE id = v_i;
+
+  -- THE BARE UPDATE, which begin_dealing's own check never sees. No reservation.
+  v_msg := public.fx9_try(format('UPDATE public.lightning_instance SET state = ''dealing'', started_at = clock_timestamp() WHERE id = %L', v_i));
+  IF v_msg !~ 'LIGHTNING_INSTANCE_HAND_SET_DOES_NOT_AGREE' THEN
+    RAISE EXCEPTION 'FAIL 19: a locked hand with no committed reservation was released into gameplay by a bare UPDATE: %', v_msg;
+  END IF;
+  -- One of two.
+  INSERT INTO public.lightning_reservation
+    (cluster_id, cluster_epoch, player_id, pool_slot_id, lightning_instance_id, seat_number, state, created_at, expires_at)
+  VALUES (v_g, v_e, v_free[1], v_s1, v_i, 1, 'pending', clock_timestamp(), clock_timestamp() + interval '1 minute');
+  UPDATE public.lightning_reservation SET state = 'committed', resolved_at = clock_timestamp()
+   WHERE lightning_instance_id = v_i AND player_id = v_free[1];
+  v_msg := public.fx9_try(format('UPDATE public.lightning_instance SET state = ''dealing'', started_at = clock_timestamp() WHERE id = %L', v_i));
+  IF v_msg !~ 'LIGHTNING_INSTANCE_HAND_SET_DOES_NOT_AGREE' THEN
+    RAISE EXCEPTION 'FAIL 19: a hand locked at two over one committed reservation was dealt: %', v_msg;
+  END IF;
+  INSERT INTO public.lightning_reservation
+    (cluster_id, cluster_epoch, player_id, pool_slot_id, lightning_instance_id, seat_number, state, created_at, expires_at)
+  VALUES (v_g, v_e, v_free[2], v_s2, v_i, 2, 'pending', clock_timestamp(), clock_timestamp() + interval '1 minute');
+  UPDATE public.lightning_reservation SET state = 'committed', resolved_at = clock_timestamp()
+   WHERE lightning_instance_id = v_i AND player_id = v_free[2];
+
+  -- THE ROWS ARM. Two committed reservations now agree with the count; the one
+  -- way left for the rows to disagree is a bypass of the row trigger by DDL or
+  -- by replication role, which is what a future edit looks like. Done in a
+  -- probe that rolls itself back.
+  BEGIN
+    PERFORM set_config('session_replication_role', 'replica', true);
+    DELETE FROM public.lightning_hand_player WHERE hand_id = v_h AND seat = 2;
+    PERFORM set_config('session_replication_role', 'origin', true);
+    v_msg := public.fx9_try(format('UPDATE public.lightning_instance SET state = ''dealing'', started_at = clock_timestamp() WHERE id = %L', v_i));
+    RAISE EXCEPTION 'FX9_PROBE %', v_msg;
+  EXCEPTION WHEN OTHERS THEN
+    v_msg := SQLERRM;
+  END;
+  IF v_msg !~ '^FX9_PROBE .*LIGHTNING_INSTANCE_HAND_SET_DOES_NOT_AGREE' THEN
+    RAISE EXCEPTION 'FAIL 19: a hand locked at two over ONE participant row was dealt: %', v_msg;
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_hand_player WHERE hand_id = v_h) IS DISTINCT FROM 2::bigint THEN
+    RAISE EXCEPTION 'FAIL 19: the probe did not roll back';
+  END IF;
+
+  -- NON-VACUITY: count, rows and reservations agree, and the same bare UPDATE
+  -- is accepted - so what refused it above was the agreement and not the road.
+  v_msg := public.fx9_try(format('UPDATE public.lightning_instance SET state = ''dealing'', started_at = clock_timestamp() WHERE id = %L', v_i));
+  IF v_msg IS DISTINCT FROM 'no error' OR (SELECT state FROM public.lightning_instance WHERE id = v_i) IS DISTINCT FROM 'dealing' THEN
+    RAISE EXCEPTION 'FAIL 19: a hand whose count, rows and reservations all agree could not be dealt: %', v_msg;
+  END IF;
+END $$;
+\echo '  ok  19 THE LATCH IS NOT A BIRTHRIGHT  the INSERT 16b proved was accepted - a hand born latched at player_count 6 over nobody - is refused by name as LIGHTNING_HAND_IS_BORN_UNLOCKED, and so is a hand born with either half of the latch, by the trigger rather than the table CHECK, while the same INSERT unlatched is accepted; and the bare UPDATE into dealing that begin_dealing never sees is refused as LIGHTNING_INSTANCE_HAND_SET_DOES_NOT_AGREE for a hand locked at two over no committed reservation, over one, and - with the row trigger bypassed inside a probe that rolls back - over one participant row, and is accepted the moment count, rows and reservations agree'
+
+-- 20 THE MONEY GUARD MEASURES THIS TRANSACTION (MAJOR 4) ------------------------
+-- 16e: a SECOND BACKEND committing five chips to a player who was not in the
+-- hand destroyed a correct formation. The same board, the same second backend,
+-- the same moment - and this time the moment is witnessed from the other side:
+-- the other backend reports that this backend is active in a statement calling
+-- the barrier and that it cannot see the hand this backend can, i.e. that the
+-- formation is open and uncommitted while its commit lands.
+CREATE TRIGGER zz_fx9_commit_elsewhere AFTER INSERT ON public.lightning_hand_player
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_commit_elsewhere();
+
+DO $$
+DECLARE v_g uuid; v_victim uuid; v_p uuid[]; v_r jsonb; v_q uuid[]; v_target uuid; v_msg text; v_before numeric;
+BEGIN
+  SELECT game, a, t::uuid[] INTO v_g, v_victim, v_p FROM b9 WHERE k = 'g16_concurrent';
+  IF (SELECT count(*) FROM public.lightning_hand WHERE cluster_id = v_g) IS DISTINCT FROM 0::bigint
+     OR (SELECT net_result FROM public.lightning_pool_session WHERE id = v_victim) IS DISTINCT FROM 5.00 THEN
+    RAISE EXCEPTION 'FAIL 20: the board 16e left is not standing';
+  END IF;
+  PERFORM set_config('fx9.elsewhere_said', '', false);
+  PERFORM set_config('fx9.elsewhere_witness', '', false);
+  PERFORM set_config('fx9.elsewhere_sql',
+    format('UPDATE public.lightning_pool_session SET net_result = net_result + 5 WHERE id = %L', v_victim), false);
+  PERFORM set_config('fx9.elsewhere_witness_sql', format(
+    'SELECT (SELECT count(*) FROM pg_stat_activity WHERE pid = %s AND state = ''active'' AND query ~ ''fn_lightning_form_hand'')::text'
+    || ' || ''|'' || (SELECT count(*) FROM public.lightning_hand WHERE cluster_id = %L)::text'
+    || ' || ''|'' || (SELECT net_result FROM public.lightning_pool_session WHERE id = %L)::text',
+    pg_backend_pid(), v_g, v_victim), false);
+  BEGIN
+    v_r := public.fn_lightning_form_hand(v_g, v_p, p_matcher_version => 'harness-matcher/1');
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'FAIL 20: a commit to a player who is not in the hand still destroyed the formation: %', SQLERRM;
+  END;
+  IF current_setting('fx9.elsewhere_said') IS DISTINCT FROM 'UPDATE 1'
+     OR split_part(current_setting('fx9.elsewhere_witness'), '|', 1) IS DISTINCT FROM '1'
+     OR split_part(current_setting('fx9.elsewhere_witness'), '|', 2) IS DISTINCT FROM '0'
+     OR nullif(split_part(current_setting('fx9.elsewhere_witness'), '|', 3), '')::numeric IS DISTINCT FROM 10
+     OR current_setting('fx9.elsewhere_here') IS DISTINCT FROM '1' THEN
+    RAISE EXCEPTION 'FAIL 20: the other backend''s commit was not witnessed landing inside the open formation: said %, witnessed %, here %',
+      current_setting('fx9.elsewhere_said'), current_setting('fx9.elsewhere_witness'), current_setting('fx9.elsewhere_here', true);
+  END IF;
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 20: a commit to a player who is not in the hand still destroyed the formation: %', v_r;
+  END IF;
+  IF (SELECT net_result FROM public.lightning_pool_session WHERE id = v_victim) IS DISTINCT FROM 10.00
+     OR EXISTS (SELECT 1 FROM public.lightning_hand_player hp JOIN public.lightning_pool_slot sl ON sl.id = hp.pool_slot_id
+                 WHERE hp.hand_id = (v_r ->> 'hand_id')::uuid AND sl.pool_session_id = v_victim) THEN
+    RAISE EXCEPTION 'FAIL 20: the other backend''s chips did not land, or landed on a participant';
+  END IF;
+
+  -- A PARTICIPANT, from the other backend: it cannot write the row at all
+  -- until the formation ends. Its lock_timeout is 300ms.
+  v_q := public.fx9_candidates(v_g, 6);
+  SELECT sl.pool_session_id INTO v_target FROM public.lightning_pool_slot sl
+   WHERE sl.cluster_id = v_g AND sl.player_id = v_q[1] AND sl.closed_at IS NULL;
+  SELECT net_result INTO v_before FROM public.lightning_pool_session WHERE id = v_target;
+  PERFORM set_config('fx9.elsewhere_sql',
+    format('UPDATE public.lightning_pool_session SET net_result = net_result + 7 WHERE id = %L', v_target), false);
+  BEGIN
+    v_r := public.fx9_form(v_g, v_q);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'FAIL 20: another backend''s write to a participant mid-formation destroyed the formation: %', SQLERRM;
+  END;
+  IF current_setting('fx9.elsewhere_said') !~ 'lock timeout' THEN
+    RAISE EXCEPTION 'FAIL 20: the other backend wrote a participant''s pool session in the middle of the formation: %', current_setting('fx9.elsewhere_said');
+  END IF;
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true
+     OR (SELECT net_result FROM public.lightning_pool_session WHERE id = v_target) IS DISTINCT FROM v_before THEN
+    RAISE EXCEPTION 'FAIL 20: the formation over a participant another backend tried to write did not stand untouched: %', v_r;
+  END IF;
+END $$;
+
+DROP TRIGGER zz_fx9_commit_elsewhere ON public.lightning_hand_player;
+
+-- AND A CHANGE TO A PARTICIPANT'S STACK INSIDE THE FORMATION IS STILL CAUGHT.
+CREATE TRIGGER zz_fx9_move_money AFTER INSERT ON public.lightning_hand_player
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_move_money();
+DO $$
+DECLARE v_g uuid; v_q uuid[]; v_msg text;
+BEGIN
+  SELECT game INTO v_g FROM b9 WHERE k = 'g16_concurrent';
+  v_q := public.fx9_candidates(v_g, 6);
+  IF coalesce(array_length(v_q, 1), 0) IS DISTINCT FROM 6 THEN
+    RAISE EXCEPTION 'FAIL 20: there are not six players left to move money under';
+  END IF;
+  v_msg := public.fx9_try(format('SELECT public.fn_lightning_form_hand(%L, %L::uuid[], p_matcher_version => ''harness'')', v_g, v_q));
+  IF v_msg !~ 'LIGHTNING_FORMATION_MOVED_MONEY' THEN
+    RAISE EXCEPTION 'FAIL 20: a chip moved on a participant during the formation was not caught: %', v_msg;
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_hand_player hp WHERE hp.cluster_id = v_g AND hp.player_id = ANY (v_q)) IS DISTINCT FROM 0::bigint THEN
+    RAISE EXCEPTION 'FAIL 20: the formation that moved money left a hand behind';
+  END IF;
+END $$;
+DROP TRIGGER zz_fx9_move_money ON public.lightning_hand_player;
+\echo '  ok  20 THE MONEY GUARD MEASURES THIS TRANSACTION  on the board 16e used, a REAL second backend commits five chips to a player who is not in the hand while the formation is open - witnessed from that backend, which sees this one active in the barrier and cannot see the hand this one already holds - and the formation now stands, with the five chips landed on the non-participant; the same backend trying to write a PARTICIPANT''s pool session mid-formation is held off by the FOR SHARE the barrier takes before reading a stack and gives up on its lock timeout, leaving the stack and the hand intact; and a chip moved on a participant inside the formation is still refused by LIGHTNING_FORMATION_MOVED_MONEY, which raises rather than retrying, leaving no hand'
+
+-- 21 CONTENTION IS A RETRY, NOT A CRASH (MAJOR 5) ---------------------------------
+-- 16e: a second backend holding one candidate's ledger row killed the barrier
+-- with a lock timeout and ZERO matcher_retry events. Each retryable class is
+-- provoked FOR REAL below, and then again by fault injection at both depths -
+-- inside the atomic block and outside it - so that every arm of both handlers
+-- is made to fire:
+--   55P03 lock_not_available  REAL, inside (16e's ledger row) and outside (the
+--                             Cluster row), with a 300ms lock_timeout;
+--   40P01 deadlock_detected   REAL, inside: the other backend holds a ledger
+--                             row and then asks for the Cluster row the
+--                             barrier holds, and the barrier walks into its row;
+--   40001 serialization_failure  REAL, outside: a REPEATABLE READ caller whose
+--                             candidate's slot another transaction rewrote
+--                             after its snapshot;
+--   57014 query_canceled      REAL statement_timeout, and it must NOT become a
+--                             retry: it propagates to whoever set the timeout.
+
+-- 21a. 16e's board: the other backend holds one candidate's ledger row again.
+DO $$
+BEGIN
+  IF public.fx9_elsewhere('BEGIN') IS DISTINCT FROM 'BEGIN'
+     OR public.fx9_elsewhere(format('UPDATE public.lightning_blind_ledger SET updated_at = clock_timestamp() WHERE cluster_id = %L',
+          (SELECT game FROM b9 WHERE k = 'g16_contended'))) IS DISTINCT FROM 'UPDATE 1' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend could not take the ledger row';
+  END IF;
+END $$;
+
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_r jsonb; v_ev bigint; v_res text; v_other integer;
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g16_contended';
+  v_other := public.fx9_elsewhere_ask('SELECT pg_backend_pid()::text')::integer;
+  IF NOT EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid = v_other AND l.granted
+                   AND l.relation = 'public.lightning_blind_ledger'::regclass AND l.mode = 'RowExclusiveLock') THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend does not hold a write lock on the ledger, so nothing below waits on it';
+  END IF;
+  PERFORM set_config('lock_timeout', '300ms', true);
+  SELECT count(*) INTO v_ev FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry';
+  v_res := public.fx9_residue(v_g);
+  v_r := public.fx9_form(v_g, v_p);
+  IF coalesce((v_r ->> 'formed')::boolean, true) IS DISTINCT FROM false OR coalesce((v_r ->> 'retry')::boolean, false) IS DISTINCT FROM true
+     OR (v_r ->> 'sqlstate') IS DISTINCT FROM '55P03' OR (v_r ->> 'reason') IS DISTINCT FROM 'formation_refused' THEN
+    RAISE EXCEPTION 'FAIL 21: the lock timeout 16e died of is not a clean retry answer: %', v_r;
+  END IF;
+  IF (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry'
+        AND payload ->> 'sqlstate' = '55P03') IS DISTINCT FROM 1::bigint
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry') IS DISTINCT FROM v_ev + 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the lock timeout did not write exactly one matcher_retry naming 55P03';
+  END IF;
+  IF public.fx9_residue(v_g) IS DISTINCT FROM v_res THEN
+    RAISE EXCEPTION 'FAIL 21: the retried formation left something behind: % became %', v_res, public.fx9_residue(v_g);
+  END IF;
+END $$;
+
+DO $$
+DECLARE v_g uuid; v_p uuid[];
+BEGIN
+  IF public.fx9_elsewhere('ROLLBACK') IS DISTINCT FROM 'ROLLBACK' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend would not let go of the ledger row';
+  END IF;
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g16_contended';
+  IF coalesce((public.fx9_form(v_g, v_p) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 21: the same six did not form once the lock was gone, so the retry was not about the lock';
+  END IF;
+END $$;
+
+-- 21b. OUTSIDE the atomic block: the other backend holds the CLUSTER row.
+DO $$
+DECLARE v_g uuid;
+BEGIN
+  v_g := public.fx9_cluster('G21 CLUSTER LOCK', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  INSERT INTO b9 (k, game, t) VALUES ('g21_cluster_lock', v_g, public.fx9_candidates(v_g, 6)::text);
+END $$;
+DO $$
+BEGIN
+  IF public.fx9_elsewhere('BEGIN') IS DISTINCT FROM 'BEGIN'
+     OR public.fx9_elsewhere(format('DO $x$ BEGIN PERFORM 1 FROM public.cash_games WHERE id = %L FOR UPDATE; END $x$',
+          (SELECT game FROM b9 WHERE k = 'g21_cluster_lock'))) IS DISTINCT FROM 'DO' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend could not take the Cluster row';
+  END IF;
+END $$;
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_r jsonb; v_res text;
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_cluster_lock';
+  PERFORM set_config('lock_timeout', '300ms', true);
+  v_res := public.fx9_residue(v_g);
+  BEGIN
+    v_r := public.fx9_form(v_g, v_p);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'FAIL 21: contention crashed the barrier instead of answering a retry: % (%)', SQLERRM, SQLSTATE;
+  END;
+  IF coalesce((v_r ->> 'retry')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'sqlstate') IS DISTINCT FROM '55P03'
+     OR (v_r ->> 'reason') IS DISTINCT FROM 'formation_contended' THEN
+    RAISE EXCEPTION 'FAIL 21: a lock timeout on the Cluster row, outside the atomic block, is not a clean retry answer: %', v_r;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.cash_cluster_events e JOIN public.cash_games g ON g.id = e.game_id
+                  WHERE e.game_id = v_g AND e.kind = 'lightning_matcher_retry' AND e.payload ->> 'reason' = 'formation_contended'
+                    AND e.payload ->> 'sqlstate' = '55P03' AND e.cluster_epoch = g.cluster_epoch) THEN
+    RAISE EXCEPTION 'FAIL 21: the contended formation wrote no matcher_retry filed under the Cluster''s epoch';
+  END IF;
+  IF public.fx9_residue(v_g) IS DISTINCT FROM v_res THEN
+    RAISE EXCEPTION 'FAIL 21: the contended formation left something behind';
+  END IF;
+END $$;
+DO $$
+BEGIN
+  IF public.fx9_elsewhere('ROLLBACK') IS DISTINCT FROM 'ROLLBACK' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend would not let go of the Cluster row';
+  END IF;
+  IF coalesce((public.fx9_form((SELECT game FROM b9 WHERE k = 'g21_cluster_lock'),
+       (SELECT t::uuid[] FROM b9 WHERE k = 'g21_cluster_lock')) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 21: the same six did not form once the Cluster row was free';
+  END IF;
+END $$;
+
+-- 21c. A REAL DEADLOCK. The other backend takes one candidate's ledger row and
+-- keeps it; with lock_timeout off and a thirty-second deadlock_timeout it will
+-- wait for as long as it takes, so the detector that runs is THIS backend's,
+-- at 100ms, and this backend is the victim.
+DO $$
+DECLARE v_g uuid; v_p uuid[];
+BEGIN
+  v_g := public.fx9_cluster('G21 DEADLOCK', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  INSERT INTO public.lightning_blind_ledger (cluster_id, player_id) VALUES (v_g, v_p[3]);
+  INSERT INTO b9 (k, game, t) VALUES ('g21_deadlock', v_g, v_p::text);
+END $$;
+DO $$
+DECLARE v_g uuid; v_p uuid[];
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_deadlock';
+  PERFORM public.fx9_elsewhere('SET lock_timeout = 0');
+  PERFORM public.fx9_elsewhere('SET deadlock_timeout = ''30s''');
+  PERFORM set_config('fx9.elsewhere_pid', public.fx9_elsewhere_ask('SELECT pg_backend_pid()::text'), false);
+  IF public.fx9_elsewhere('BEGIN') IS DISTINCT FROM 'BEGIN'
+     OR public.fx9_elsewhere(format('UPDATE public.lightning_blind_ledger SET updated_at = clock_timestamp() WHERE cluster_id = %L AND player_id = %L',
+          v_g, v_p[3])) IS DISTINCT FROM 'UPDATE 1' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend could not take the ledger row for the deadlock';
+  END IF;
+END $$;
+SET deadlock_timeout = '100ms';
+SET lock_timeout = '5s';
+CREATE TRIGGER zz_fx9_deadlock_elsewhere AFTER INSERT ON public.lightning_hand_player
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_deadlock_elsewhere();
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_r jsonb; v_res text; v_waiting integer; i integer;
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_deadlock';
+  v_res := public.fx9_residue(v_g);
+  PERFORM set_config('fx9.deadlock_sql', format('SELECT 1 FROM public.cash_games WHERE id = %L FOR UPDATE', v_g), false);
+  BEGIN
+    v_r := public.fx9_form(v_g, v_p);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'FAIL 21: contention crashed the barrier instead of answering a retry: % (%)', SQLERRM, SQLSTATE;
+  END;
+  IF coalesce((v_r ->> 'retry')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'sqlstate') IS DISTINCT FROM '40P01'
+     OR (v_r ->> 'reason') IS DISTINCT FROM 'formation_refused' OR (v_r ->> 'message') !~ 'deadlock detected' THEN
+    RAISE EXCEPTION 'FAIL 21: a real deadlock inside the atomic block is not a clean retry answer from the atomic block: %', v_r;
+  END IF;
+  -- STILL INSIDE THIS TRANSACTION the other half of the cycle is alive: its
+  -- query has not finished - it cannot, until this transaction lets go of the
+  -- Cluster row - and it is in a Lock wait. The wait is polled rather than
+  -- read once, because the victim's rollback wakes the waiter to re-check the
+  -- row before it queues again behind the lock this transaction still holds.
+  IF harness.dblink_is_busy('fx9_elsewhere') IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the other half of the deadlock already finished, so this transaction was not holding what it waited for';
+  END IF;
+  FOR i IN 1 .. 100 LOOP
+    PERFORM pg_stat_clear_snapshot();
+    SELECT count(*)::integer INTO v_waiting FROM pg_stat_activity
+     WHERE pid = current_setting('fx9.elsewhere_pid')::integer AND wait_event_type = 'Lock'
+       AND query ~ 'FROM public\.cash_games WHERE id = .* FOR UPDATE';
+    EXIT WHEN v_waiting > 0;
+    PERFORM pg_sleep(0.02);
+  END LOOP;
+  IF v_waiting < 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend is not waiting on this one''s Cluster row, so there was no cycle';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry'
+                   AND payload ->> 'sqlstate' = '40P01') THEN
+    RAISE EXCEPTION 'FAIL 21: the deadlock wrote no matcher_retry';
+  END IF;
+  IF public.fx9_residue(v_g) IS DISTINCT FROM v_res THEN
+    RAISE EXCEPTION 'FAIL 21: the deadlocked formation left something behind';
+  END IF;
+END $$;
+RESET deadlock_timeout;
+RESET lock_timeout;
+DROP TRIGGER zz_fx9_deadlock_elsewhere ON public.lightning_hand_player;
+DO $$
+DECLARE v_x integer; v_g uuid; v_p uuid[];
+BEGIN
+  -- The Cluster row was released when the block above committed; the other
+  -- backend got it and answered.
+  SELECT t.x INTO v_x FROM harness.dblink_get_result('fx9_elsewhere') AS t(x integer);
+  PERFORM 1 FROM harness.dblink_get_result('fx9_elsewhere') AS t2(x integer);
+  IF v_x IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 21: the other half of the deadlock never got the Cluster row';
+  END IF;
+  IF public.fx9_elsewhere('ROLLBACK') IS DISTINCT FROM 'ROLLBACK' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend would not roll back after the deadlock';
+  END IF;
+  PERFORM public.fx9_elsewhere('SET lock_timeout = ''300ms''');
+  PERFORM public.fx9_elsewhere('RESET deadlock_timeout');
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_deadlock';
+  IF coalesce((public.fx9_form(v_g, v_p) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 21: the same six did not form once the deadlock was gone';
+  END IF;
+END $$;
+
+-- 21d. A REAL SERIALIZATION FAILURE, OUTSIDE the atomic block: a REPEATABLE
+-- READ caller whose candidate's slot another transaction rewrote after its
+-- snapshot was taken. The barrier's slot FOR UPDATE is where it lands.
+DO $$
+DECLARE v_g uuid;
+BEGIN
+  v_g := public.fx9_cluster('G21 REPEATABLE READ', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  INSERT INTO b9 (k, game, t) VALUES ('g21_rr', v_g, public.fx9_candidates(v_g, 6)::text);
+END $$;
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+DO $$
+DECLARE v_g uuid; v_p uuid[];
+BEGIN
+  -- This statement takes the transaction's snapshot.
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_rr';
+  IF public.fx9_elsewhere(format('UPDATE public.lightning_pool_slot SET updated_at = clock_timestamp() WHERE cluster_id = %L AND player_id = %L AND closed_at IS NULL',
+       v_g, v_p[2])) IS DISTINCT FROM 'UPDATE 1' THEN
+    RAISE EXCEPTION 'FAIL 21: the other backend could not commit its write to the candidate''s slot';
+  END IF;
+END $$;
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_r jsonb;
+BEGIN
+  IF current_setting('transaction_isolation') IS DISTINCT FROM 'repeatable read' THEN
+    RAISE EXCEPTION 'FAIL 21: the serialization probe is not running under REPEATABLE READ';
+  END IF;
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_rr';
+  BEGIN
+    v_r := public.fx9_form(v_g, v_p);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'FAIL 21: contention crashed the barrier instead of answering a retry: % (%)', SQLERRM, SQLSTATE;
+  END;
+  IF coalesce((v_r ->> 'retry')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'sqlstate') IS DISTINCT FROM '40001'
+     OR (v_r ->> 'reason') IS DISTINCT FROM 'formation_contended' THEN
+    RAISE EXCEPTION 'FAIL 21: a real serialization failure is not a clean retry answer: %', v_r;
+  END IF;
+END $$;
+COMMIT;
+DO $$
+DECLARE v_g uuid; v_p uuid[];
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_rr';
+  IF NOT EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry'
+                   AND payload ->> 'sqlstate' = '40001' AND payload ->> 'reason' = 'formation_contended') THEN
+    RAISE EXCEPTION 'FAIL 21: the serialization failure wrote no matcher_retry that survived its transaction';
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_hand WHERE cluster_id = v_g) IS DISTINCT FROM 0::bigint THEN
+    RAISE EXCEPTION 'FAIL 21: the serialization failure left a hand';
+  END IF;
+  IF coalesce((public.fx9_form(v_g, v_p) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 21: the same six did not form under READ COMMITTED';
+  END IF;
+END $$;
+
+-- 21e. A REAL STATEMENT TIMEOUT, and a cancel is NOT a retry.
+CREATE TRIGGER zz_fx9_slow BEFORE INSERT ON public.lightning_hand_player
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_slow();
+DO $$
+DECLARE v_g uuid;
+BEGIN
+  v_g := public.fx9_cluster('G21 CANCEL', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  INSERT INTO b9 (k, game, t) VALUES ('g21_cancel', v_g, public.fx9_candidates(v_g, 6)::text);
+END $$;
+SET fx9.slow = 'on';
+SET statement_timeout = '700ms';
+DO $$
+BEGIN
+  PERFORM set_config('fx9.cancel_said', public.fx9_try_cancel(format(
+    'SELECT public.fn_lightning_form_hand(%L, %L::uuid[], p_matcher_version => ''harness'')',
+    (SELECT game FROM b9 WHERE k = 'g21_cancel'), (SELECT t FROM b9 WHERE k = 'g21_cancel'))), false);
+END $$;
+RESET statement_timeout;
+SET fx9.slow = '';
+DROP TRIGGER zz_fx9_slow ON public.lightning_hand_player;
+DO $$
+DECLARE v_g uuid; v_p uuid[];
+BEGIN
+  SELECT game, t::uuid[] INTO v_g, v_p FROM b9 WHERE k = 'g21_cancel';
+  IF current_setting('fx9.cancel_said') !~ '^query_canceled: canceling statement due to statement timeout' THEN
+    RAISE EXCEPTION 'FAIL 21: a statement timeout inside the barrier did not reach the caller as query_canceled: %', current_setting('fx9.cancel_said');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry')
+     OR (SELECT count(*) FROM public.lightning_instance WHERE cluster_id = v_g) IS DISTINCT FROM 0::bigint THEN
+    RAISE EXCEPTION 'FAIL 21: a cancelled formation left a retry or an instance behind';
+  END IF;
+  IF coalesce((public.fx9_form(v_g, v_p) ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 21: the same six did not form without the slow write';
+  END IF;
+END $$;
+
+-- 21f. EVERY ARM OF BOTH HANDLERS, BY FAULT INJECTION. Each retryable class is
+-- raised inside the atomic block (at the participant write) and outside it (at
+-- the reap's abandon of a stale instance, which only the outer sub-block
+-- covers), and a class that is NOT retryable is raised at both depths too.
+CREATE TRIGGER zz_fx9_raise_hand_player BEFORE INSERT ON public.lightning_hand_player
+  FOR EACH ROW EXECUTE FUNCTION public.fx9_raise_class('hand_player');
+CREATE TRIGGER zz_fx9_raise_reap BEFORE UPDATE ON public.lightning_instance
+  FOR EACH ROW WHEN (NEW.state = 'abandoned') EXECUTE FUNCTION public.fx9_raise_class('reap');
+DO $$
+DECLARE v_g uuid; v_p uuid[]; v_r jsonb; c text; v_res text; v_stale uuid; v_msg text; v_n integer := 0;
+BEGIN
+  v_g := public.fx9_cluster('G21 INJECTED', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  FOREACH c IN ARRAY ARRAY['55P03', '40P01', '40001'] LOOP
+    v_res := public.fx9_residue(v_g);
+    PERFORM set_config('fx9.raise_class_hand_player', c, false);
+    BEGIN
+      v_r := public.fx9_form(v_g, v_p);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION 'FAIL 21: an injected % crashed the barrier instead of answering a retry: %', c, SQLERRM;
+    END;
+    PERFORM set_config('fx9.raise_class_hand_player', '', false);
+    IF coalesce((v_r ->> 'retry')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'sqlstate') IS DISTINCT FROM c
+       OR (v_r ->> 'reason') IS DISTINCT FROM 'formation_refused' OR public.fx9_residue(v_g) IS DISTINCT FROM v_res THEN
+      RAISE EXCEPTION 'FAIL 21: % raised inside the atomic block is not a clean retry: %', c, v_r;
+    END IF;
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- A STALE INSTANCE, so that the barrier's reap has an abandon to make.
+  v_stale := (public.fn_lightning_instance_open(v_g, NULL, NULL, interval '5 seconds',
+               clock_timestamp() - interval '1 minute') ->> 'instance_id')::uuid;
+  FOREACH c IN ARRAY ARRAY['55P03', '40P01', '40001'] LOOP
+    v_res := public.fx9_residue(v_g);
+    PERFORM set_config('fx9.raise_class_reap', c, false);
+    BEGIN
+      v_r := public.fx9_form(v_g, v_p);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION 'FAIL 21: an injected % crashed the barrier instead of answering a retry: %', c, SQLERRM;
+    END;
+    PERFORM set_config('fx9.raise_class_reap', '', false);
+    IF coalesce((v_r ->> 'retry')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'sqlstate') IS DISTINCT FROM c
+       OR (v_r ->> 'reason') IS DISTINCT FROM 'formation_contended' OR public.fx9_residue(v_g) IS DISTINCT FROM v_res
+       OR (SELECT state FROM public.lightning_instance WHERE id = v_stale) IS DISTINCT FROM 'forming' THEN
+      RAISE EXCEPTION 'FAIL 21: % raised outside the atomic block is not a clean retry with the reap rolled back: %', c, v_r;
+    END IF;
+    v_n := v_n + 1;
+  END LOOP;
+  IF (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'lightning_matcher_retry'
+        AND payload ->> 'sqlstate' IN ('55P03', '40P01', '40001')) IS DISTINCT FROM 6::bigint OR v_n IS DISTINCT FROM 6 THEN
+    RAISE EXCEPTION 'FAIL 21: six injected contentions did not write six matcher_retry events';
+  END IF;
+
+  -- A CLASS THAT IS NOT RETRYABLE propagates, at both depths.
+  PERFORM set_config('fx9.raise_class_reap', '22012', false);
+  v_msg := public.fx9_try(format('SELECT public.fn_lightning_form_hand(%L, %L::uuid[], p_matcher_version => ''harness'')', v_g, v_p));
+  PERFORM set_config('fx9.raise_class_reap', '', false);
+  IF v_msg !~ 'FX9_INJECTED_CLASS 22012 at reap' THEN
+    RAISE EXCEPTION 'FAIL 21: a non-retryable class outside the atomic block was swallowed: %', v_msg;
+  END IF;
+  PERFORM set_config('fx9.raise_class_hand_player', '22012', false);
+  v_msg := public.fx9_try(format('SELECT public.fn_lightning_form_hand(%L, %L::uuid[], p_matcher_version => ''harness'')', v_g, v_p));
+  PERFORM set_config('fx9.raise_class_hand_player', '', false);
+  IF v_msg !~ 'FX9_INJECTED_CLASS 22012 at hand_player' THEN
+    RAISE EXCEPTION 'FAIL 21: a non-retryable class inside the atomic block was swallowed: %', v_msg;
+  END IF;
+
+  INSERT INTO b9 (k, game) VALUES ('g21_injected', v_g);
+  -- With the injectors quiet the same six form, and the reap buries the stale one.
+  v_r := public.fx9_form(v_g, v_p);
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true
+     OR (SELECT state FROM public.lightning_instance WHERE id = v_stale) IS DISTINCT FROM 'abandoned' THEN
+    RAISE EXCEPTION 'FAIL 21: with the injectors quiet the six did not form, or the stale instance was not reaped: %', v_r;
+  END IF;
+END $$;
+DROP TRIGGER zz_fx9_raise_hand_player ON public.lightning_hand_player;
+DROP TRIGGER zz_fx9_raise_reap ON public.lightning_instance;
+\echo '  ok  21 CONTENTION IS A RETRY  the lock timeout 16e died of - another backend holding one candidate''s ledger row - is now a clean formed:false retry:true answer naming 55P03 with one matcher_retry and not one row left behind, and the same six form once the lock is gone; and so, REALLY provoked each time, is a lock timeout on the Cluster row OUTSIDE the atomic block (formation_contended, filed under the Cluster''s epoch), a REAL deadlock the other backend and the barrier close between them (40P01, with the other backend observed still waiting on this one), and a REAL serialization failure of a REPEATABLE READ caller whose candidate''s slot another transaction rewrote (40001, surviving its own transaction); every one of the three classes injected at BOTH depths - the participant write inside the atomic block and the reap outside it - answers a clean retry with nothing behind and the reap rolled back, while a class that is not retryable propagates at both depths; and a REAL statement timeout inside the barrier is NOT turned into a retry but reaches the caller as query_canceled, leaving nothing'
+
+-- 22 TRUNCATE IS REFUSED, TO THE APPLICATION AND TO THE OWNER (MAJOR 6) ----------
+-- 16d: service_role TRUNCATEd every hand. The same probe, which always rolls
+-- back, against all seven tables, as service_role and as the owner - this
+-- session, which owns every one of them and is a superuser besides.
+CREATE TABLE harness.fx9_scratch (x integer);
+INSERT INTO harness.fx9_scratch VALUES (1);
+DO $$
+DECLARE t text; v_msg text; v_hands bigint := (SELECT count(*) FROM public.lightning_hand);
+BEGIN
+  IF v_hands = 0 THEN
+    RAISE EXCEPTION 'FAIL 22: there are no hands to erase, so the probe would prove nothing';
+  END IF;
+  -- NON-VACUITY: the probe really truncates what nothing protects.
+  v_msg := public.fx9_truncate_probe(NULL, 'harness.fx9_scratch');
+  IF v_msg !~ '^FX9_TRUNCATED harness\.fx9_scratch' THEN
+    RAISE EXCEPTION 'FAIL 22: the probe cannot truncate an unprotected table, so every refusal below would be vacuous: %', v_msg;
+  END IF;
+  FOREACH t IN ARRAY ARRAY['lightning_hand', 'lightning_hand_player', 'lightning_instance', 'lightning_reservation',
+                           'lightning_pool_slot', 'lightning_pool_session', 'lightning_blind_ledger'] LOOP
+    IF (SELECT c.relowner FROM pg_class c WHERE c.oid = format('public.%I', t)::regclass)
+       IS DISTINCT FROM (SELECT r.oid FROM pg_roles r WHERE r.rolname = current_user) THEN
+      RAISE EXCEPTION 'FAIL 22: % is not owned by this session, so the owner half below is not about the owner', t;
+    END IF;
+    -- THE PRIVILEGE, both directions: TRUNCATE gone, the rest untouched.
+    IF has_table_privilege('service_role', format('public.%I', t), 'TRUNCATE') THEN
+      RAISE EXCEPTION 'FAIL 22: service_role still holds TRUNCATE on %', t;
+    END IF;
+    IF NOT has_table_privilege('service_role', format('public.%I', t), 'SELECT') THEN
+      RAISE EXCEPTION 'FAIL 22: the REVOKE on % took more than TRUNCATE', t;
+    END IF;
+    v_msg := public.fx9_truncate_probe('service_role', format('public.%I', t));
+    IF v_msg !~ 'permission denied' THEN
+      RAISE EXCEPTION 'FAIL 22: service_role''s TRUNCATE of % was not refused by the privilege: %', t, v_msg;
+    END IF;
+    v_msg := public.fx9_truncate_probe(NULL, format('public.%I', t));
+    IF v_msg !~ 'LIGHTNING_HISTORY_IS_NOT_TRUNCATABLE' THEN
+      RAISE EXCEPTION 'FAIL 22: the owner''s TRUNCATE of % was not refused by the trigger: %', t, v_msg;
+    END IF;
+  END LOOP;
+  -- AND BY CASCADE, from the table every lightning row hangs off.
+  v_msg := public.fx9_truncate_probe(NULL, 'public.cash_games');
+  IF v_msg !~ 'LIGHTNING_HISTORY_IS_NOT_TRUNCATABLE' THEN
+    RAISE EXCEPTION 'FAIL 22: a TRUNCATE of cash_games CASCADE was not refused on reaching the lightning tables: %', v_msg;
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_hand) IS DISTINCT FROM v_hands THEN
+    RAISE EXCEPTION 'FAIL 22: a probe did not roll back';
+  END IF;
+END $$;
+DROP TABLE harness.fx9_scratch;
+\echo '  ok  22 TRUNCATE IS REFUSED  the TRUNCATE 16d proved service_role could make is refused on every one of the seven lightning tables TWICE - to service_role by the privilege, which is gone while its SELECT is untouched, and to this session, which owns all seven and is a superuser, by LIGHTNING_HISTORY_IS_NOT_TRUNCATABLE - and a TRUNCATE of cash_games that reaches them by CASCADE is refused too, through a probe proved first to truncate a table nothing protects'
+
+-- 23 EVERY HAND RECORDS THE VERSIONS IT WAS FORMED UNDER (MAJOR 7) ---------------
+-- 16d: no version column existed.
+DO $$
+DECLARE v_g uuid; v_e integer; v_p uuid[]; v_r jsonb; v_h uuid; v_h2 uuid; h record; h2 record; c text; v_msg text;
+        v_i uuid; v_x uuid := gen_random_uuid(); v_ins text;
+BEGIN
+  v_g := public.fx9_cluster('G23 VERSIONS', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+
+  -- THE MATCHER MUST SAY WHICH IT IS, and a refusal writes nothing.
+  v_r := public.fn_lightning_form_hand(v_g, v_p);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'matcher_version_required' THEN
+    RAISE EXCEPTION 'FAIL 23: a formation with no matcher_version was not refused: %', v_r;
+  END IF;
+  v_r := public.fn_lightning_form_hand(v_g, v_p, p_matcher_version => '   ');
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'matcher_version_required' THEN
+    RAISE EXCEPTION 'FAIL 23: a formation with a blank matcher_version was not refused: %', v_r;
+  END IF;
+  IF (SELECT count(*) FROM public.lightning_instance WHERE cluster_id = v_g) IS DISTINCT FROM 0::bigint
+     OR EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g
+                   AND kind IN ('lightning_matcher_retry', 'lightning_hand_formed')) THEN
+    RAISE EXCEPTION 'FAIL 23: a formation refused for want of a matcher_version wrote something';
+  END IF;
+
+  v_r := public.fn_lightning_form_hand(v_g, v_p, p_matcher_version => '  matcher/7.3  ');
+  v_h := (v_r ->> 'hand_id')::uuid;
+  SELECT * INTO h FROM public.lightning_hand WHERE hand_id = v_h;
+  IF h.matcher_version IS DISTINCT FROM 'matcher/7.3'
+     OR h.rules_version IS DISTINCT FROM 'ruleset:' || md5((SELECT ruleset_snapshot FROM public.cash_games WHERE id = v_g)::text)
+     OR h.rake_version IS DISTINCT FROM 'rake:' || md5(coalesce((SELECT ruleset_snapshot -> 'rake' FROM public.cash_games WHERE id = v_g), 'null'::jsonb)::text)
+     OR h.blind_algorithm_version IS DISTINCT FROM 'fn_lightning_blind_order:'
+          || (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_lightning_blind_order(uuid,integer,uuid[])'::regprocedure)
+     OR h.lightning_version IS DISTINCT FROM 'fn_lightning_form_hand:'
+          || (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text)'::regprocedure) THEN
+    RAISE EXCEPTION 'FAIL 23: the formed hand is not stamped with what it was formed under: %', row_to_json(h);
+  END IF;
+  IF (SELECT payload ->> 'matcher_version' FROM public.cash_cluster_events
+       WHERE game_id = v_g AND kind = 'lightning_hand_formed' AND payload ->> 'hand_id' = v_h::text) IS DISTINCT FROM 'matcher/7.3' THEN
+    RAISE EXCEPTION 'FAIL 23: the formed event does not name its matcher';
+  END IF;
+
+  -- THE STAMPS FOLLOW THE RULES, NOT A CONSTANT: a changed rake policy is a
+  -- different rules_version and rake_version, and the same code is the same
+  -- blind and lightning version.
+  UPDATE public.cash_games SET ruleset_snapshot = coalesce(ruleset_snapshot, '{}'::jsonb) || '{"rake": {"policy": "harness"}}'::jsonb
+   WHERE id = v_g;
+  v_r := public.fn_lightning_form_hand(v_g, public.fx9_candidates(v_g, 6), p_matcher_version => 'matcher/7.3');
+  v_h2 := (v_r ->> 'hand_id')::uuid;
+  SELECT * INTO h2 FROM public.lightning_hand WHERE hand_id = v_h2;
+  IF h2.rules_version IS NOT DISTINCT FROM h.rules_version OR h2.rake_version IS NOT DISTINCT FROM h.rake_version
+     OR h2.blind_algorithm_version IS DISTINCT FROM h.blind_algorithm_version
+     OR h2.lightning_version IS DISTINCT FROM h.lightning_version THEN
+    RAISE EXCEPTION 'FAIL 23: the versions do not follow what the hand was formed under: % then %', row_to_json(h), row_to_json(h2);
+  END IF;
+
+  -- FROZEN, on a hand that is locked...
+  FOREACH c IN ARRAY ARRAY['rules_version', 'matcher_version', 'blind_algorithm_version', 'lightning_version', 'rake_version'] LOOP
+    v_msg := public.fx9_try(format('UPDATE public.lightning_hand SET %I = %L WHERE hand_id = %L', c, 'rewritten', v_h));
+    IF v_msg !~ 'LIGHTNING_HAND_IS_IMMUTABLE: .*versions it was formed under' THEN
+      RAISE EXCEPTION 'FAIL 23: % of a locked hand could be rewritten: %', c, v_msg;
+    END IF;
+  END LOOP;
+  -- ...and from birth, on one that is not.
+  v_i := (public.fn_lightning_instance_open(v_g) ->> 'instance_id')::uuid;
+  v_ins := 'INSERT INTO public.lightning_hand (hand_id, cluster_id, cluster_epoch, lightning_instance_id, '
+        || 'rules_version, matcher_version, blind_algorithm_version, lightning_version, rake_version) '
+        || 'VALUES (%L, %L, %s, %L, %s, ''m'', ''b'', ''l'', %s)';
+  v_msg := public.fx9_try(format(v_ins, v_x, v_g, v_e, v_i, '''r''', '''k'''));
+  IF v_msg IS DISTINCT FROM 'no error' THEN
+    RAISE EXCEPTION 'FAIL 23: an unlocked hand carrying all five versions could not be inserted: %', v_msg;
+  END IF;
+  v_msg := public.fx9_try(format('UPDATE public.lightning_hand SET rules_version = ''r2'' WHERE hand_id = %L', v_x));
+  IF v_msg !~ 'versions it was formed under' THEN
+    RAISE EXCEPTION 'FAIL 23: an unlocked hand''s rules_version could be rewritten: %', v_msg;
+  END IF;
+  -- NON-VACUITY: writing the same values is not a rewrite.
+  IF public.fx9_try(format('UPDATE public.lightning_hand SET rules_version = rules_version, rake_version = rake_version WHERE hand_id = %L', v_h))
+     IS DISTINCT FROM 'no error' THEN
+    RAISE EXCEPTION 'FAIL 23: an UPDATE that rewrites nothing was refused, so the refusals above were not about the versions';
+  END IF;
+  -- STRAIGHT AGAINST THE TABLE: absent, and blank.
+  v_i := (public.fn_lightning_instance_open(v_g) ->> 'instance_id')::uuid;
+  v_msg := public.fx9_try(format(v_ins, gen_random_uuid(), v_g, v_e, v_i, 'NULL', '''k'''));
+  IF v_msg !~ 'null value in column "rules_version"' THEN
+    RAISE EXCEPTION 'FAIL 23: a hand with no rules_version was not refused by NOT NULL: %', v_msg;
+  END IF;
+  v_msg := public.fx9_try(format(v_ins, gen_random_uuid(), v_g, v_e, v_i, '''r''', '''  '''));
+  IF v_msg !~ 'lightning_hand_versions_are_named' THEN
+    RAISE EXCEPTION 'FAIL 23: a hand with a blank rake_version was not refused by name: %', v_msg;
+  END IF;
+
+  -- THE HANDS FORMED BEFORE THIS FILE SAY SO, in all five, and no hand is blank.
+  IF NOT EXISTS (SELECT 1 FROM public.lightning_hand WHERE rules_version = 'unrecorded_before_versioning')
+     OR EXISTS (SELECT 1 FROM public.lightning_hand WHERE rules_version = 'unrecorded_before_versioning'
+                  AND (matcher_version, blind_algorithm_version, lightning_version, rake_version)
+                      IS DISTINCT FROM ('unrecorded_before_versioning', 'unrecorded_before_versioning',
+                                        'unrecorded_before_versioning', 'unrecorded_before_versioning')) THEN
+    RAISE EXCEPTION 'FAIL 23: the hands formed before the remediation are not honestly marked';
+  END IF;
+END $$;
+\echo '  ok  23 EVERY HAND RECORDS ITS VERSIONS  where 16d found no version column, a formation without a matcher_version, or with a blank one, is refused before anything is written, and a formed hand carries all five non-null: matcher_version as the matcher gave it, trimmed; rules_version and rake_version as hashes of the Cluster''s ruleset and rake policy, which MOVE when the rake policy moves; blind_algorithm_version and lightning_version as hashes of the installed fn_lightning_blind_order and of the barrier itself, which do not; the formed event names the matcher; each of the five is frozen on a locked hand and from birth on an unlocked one while a write of the same value passes; the table refuses a hand with a version absent by NOT NULL and blank by lightning_hand_versions_are_named; and every hand formed before the remediation says unrecorded_before_versioning in all five'
+
+-- 24 P2 IS PINNED: THE OVERRIDE TIES ON POOL ENTRY, AND EVERY TERM BITES (MINOR a)
+-- 16d: six players tied on the first three terms and entering the pool a minute
+-- apart, and a matcher that named the LAST entrant as big blind was obeyed.
+DO $$
+DECLARE v_g uuid; v_e integer; v_p uuid[]; v_r jsonb; v_late uuid; v_first uuid; v_tie uuid; v_other uuid;
+BEGIN
+  v_g := public.fx9_cluster('G24 OVERRIDE', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 6);
+  INSERT INTO public.lightning_blind_ledger (cluster_id, player_id, first_seen_at, updated_at)
+  SELECT v_g, x, timestamptz '2026-01-01', timestamptz '2026-01-01' FROM unnest(v_p) x;
+  UPDATE public.lightning_pool_slot sl SET opened_at = clock_timestamp() - (q.o || ' minutes')::interval
+    FROM (SELECT s.id, row_number() OVER (ORDER BY s.player_id) AS o FROM public.lightning_pool_slot s
+           WHERE s.cluster_id = v_g AND s.player_id = ANY (v_p)) q
+   WHERE q.id = sl.id;
+  SELECT bo.player_id INTO v_late FROM public.fn_lightning_blind_order(v_g, v_e, v_p) bo WHERE bo.p2_rank = 6;
+  SELECT bo.player_id INTO v_first FROM public.fn_lightning_blind_order(v_g, v_e, v_p) bo WHERE bo.p2_rank = 1;
+  v_r := public.fx9_form(v_g, v_p, v_late);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'bb_choice_is_not_p2_legal' OR (v_r ->> 'p2_would_choose')::uuid IS DISTINCT FROM v_first THEN
+    RAISE EXCEPTION 'FAIL 24: the matcher named the last entrant as big blind and was obeyed: %', v_r;
+  END IF;
+  -- NON-VACUITY: a player who ties with P2's own choice on ALL FOUR terms is
+  -- still the matcher's to name.
+  SELECT bo.player_id INTO v_tie FROM public.fn_lightning_blind_order(v_g, v_e, v_p) bo WHERE bo.p2_rank = 2;
+  UPDATE public.lightning_pool_slot SET opened_at = (SELECT opened_at FROM public.lightning_pool_slot
+                                                      WHERE cluster_id = v_g AND player_id = v_first AND closed_at IS NULL)
+   WHERE cluster_id = v_g AND player_id = v_tie AND closed_at IS NULL;
+  SELECT bo.player_id INTO v_first FROM public.fn_lightning_blind_order(v_g, v_e, v_p) bo WHERE bo.p2_rank = 1;
+  SELECT bo.player_id INTO v_other FROM public.fn_lightning_blind_order(v_g, v_e, v_p) bo WHERE bo.p2_rank = 2;
+  v_r := public.fx9_form(v_g, v_p, v_other);
+  IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'bb')::uuid IS DISTINCT FROM v_other THEN
+    RAISE EXCEPTION 'FAIL 24: a big blind that ties with P2''s choice on the whole key was refused: %', v_r;
+  END IF;
+END $$;
+
+-- FIVE PAIRS, ONE PER TERM of fn_lightning_blind_order's ORDER BY. Pair k is
+-- tied on every term before k, won by X on term k, and won by Y on EVERY term
+-- after it - so deleting term k, or moving any later term in front of it,
+-- hands pair k to Y. Y is always the smaller id, except in pair 5 where the id
+-- is the term.
+DO $$
+DECLARE v_g uuid; v_e integer; v_s uuid[]; x uuid[] := ARRAY[]::uuid[]; y uuid[] := ARRAY[]::uuid[]; k integer;
+        base constant timestamptz := timestamptz '2026-01-01 00:00:00+00'; v_win uuid;
+BEGIN
+  v_g := public.fx9_cluster('G24 KEY', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_s := ARRAY(SELECT sl.player_id FROM public.lightning_pool_slot sl WHERE sl.cluster_id = v_g AND sl.closed_at IS NULL
+                ORDER BY sl.player_id LIMIT 10);
+  FOR k IN 1 .. 5 LOOP
+    IF k < 5 THEN y := y || v_s[2 * k - 1]; x := x || v_s[2 * k];
+    ELSE x := x || v_s[2 * k - 1]; y := y || v_s[2 * k]; END IF;
+  END LOOP;
+  -- One ledger row each, so that term 3 reads the ledger and not the slot.
+  INSERT INTO public.lightning_blind_ledger (cluster_id, player_id, first_seen_at, updated_at)
+  SELECT v_g, p, base, base FROM unnest(x || y) p;
+
+  -- 1: X owes a big blind. Y wins 2 (never paid), 3, 4, 5.
+  UPDATE public.lightning_blind_ledger SET missed_bb_debt = 3, updated_at = base + interval '1 hour' WHERE cluster_id = v_g AND player_id = x[1];
+  UPDATE public.lightning_pool_slot SET last_bb_at = base + interval '1 hour', opened_at = base + interval '1 hour' WHERE cluster_id = v_g AND player_id = x[1];
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, opened_at = base WHERE cluster_id = v_g AND player_id = y[1];
+  -- 2: X paid a big blind longer ago. Y wins 3, 4, 5.
+  UPDATE public.lightning_blind_ledger SET updated_at = base + interval '3 hours' WHERE cluster_id = v_g AND player_id = x[2];
+  UPDATE public.lightning_pool_slot SET last_bb_at = base + interval '1 hour', opened_at = base + interval '3 hours' WHERE cluster_id = v_g AND player_id = x[2];
+  UPDATE public.lightning_pool_slot SET last_bb_at = base + interval '2 hours', opened_at = base WHERE cluster_id = v_g AND player_id = y[2];
+  -- 3: X's debt age is older. Y wins 4, 5.
+  UPDATE public.lightning_blind_ledger SET updated_at = base + interval '1 hour' WHERE cluster_id = v_g AND player_id = x[3];
+  UPDATE public.lightning_blind_ledger SET updated_at = base + interval '2 hours' WHERE cluster_id = v_g AND player_id = y[3];
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, opened_at = base + interval '3 hours' WHERE cluster_id = v_g AND player_id = x[3];
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, opened_at = base WHERE cluster_id = v_g AND player_id = y[3];
+  -- 4: X entered the pool first. Y wins 5.
+  UPDATE public.lightning_blind_ledger SET updated_at = base + interval '1 hour' WHERE cluster_id = v_g AND player_id IN (x[4], y[4]);
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, opened_at = base WHERE cluster_id = v_g AND player_id = x[4];
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, opened_at = base + interval '30 minutes' WHERE cluster_id = v_g AND player_id = y[4];
+  -- 5: everything equal; X has the smaller id.
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, opened_at = base WHERE cluster_id = v_g AND player_id IN (x[5], y[5]);
+
+  FOR k IN 1 .. 5 LOOP
+    SELECT bo.player_id INTO v_win FROM public.fn_lightning_blind_order(v_g, v_e, ARRAY[x[k], y[k]]) bo WHERE bo.p2_rank = 1;
+    IF v_win IS DISTINCT FROM x[k] THEN
+      RAISE EXCEPTION 'FAIL 24: pair % was not decided by term %, so that term is missing or out of order', k, k;
+    END IF;
+  END LOOP;
+END $$;
+\echo '  ok  24 P2 IS PINNED  on the board 16d built - six players tied on the first three terms of the P2 key and entering the pool a minute apart - the matcher that named the LAST entrant as big blind and was obeyed is now refused as bb_choice_is_not_p2_legal with P2''s own choice in the answer, while a player who ties with that choice on all four terms is accepted, so the override ties on pool entry and on nothing looser; and five pairs of players, each tied on every earlier term, won by X on its own term and by Y on every later one, are each decided for X by fn_lightning_blind_order, so deleting or reordering any of its five terms is a failure here'
+
+-- 25 A STALE SLOT IS CLOSED, NOT RETURNED (MINOR b) -----------------------------
+-- 16d: a player who left and came back was handed the exited session's slot.
+DO $$
+DECLARE v_g uuid; v_new uuid; v_old uuid; v_r jsonb; v_slot uuid; v_e integer; v_ps uuid; v_ps2 uuid; v_os uuid; v_player uuid; v_n integer;
+BEGIN
+  SELECT game, a, b INTO v_g, v_new, v_old FROM b9 WHERE k = 'g16_reentry';
+  -- The pass of section 18 has already reached 16d's player - the Cluster is
+  -- lightning, so it was synced - closing the exited session's slot and
+  -- slotting the new session.
+  IF (SELECT close_reason FROM public.lightning_pool_slot WHERE id = v_old) IS DISTINCT FROM 'pool_session_exited'
+     OR NOT EXISTS (SELECT 1 FROM public.lightning_pool_slot WHERE pool_session_id = v_new AND closed_at IS NULL) THEN
+    RAISE EXCEPTION 'FAIL 25: the pass did not close 16d''s stale slot and slot its re-entered player';
+  END IF;
+  -- The same shape again, on the same board, for slot open called on its own:
+  -- a player leaves, comes back as a new pool session, and nothing has synced.
+  SELECT sl.pool_session_id, sl.id INTO v_ps, v_old FROM public.lightning_pool_slot sl
+   WHERE sl.cluster_id = v_g AND sl.closed_at IS NULL AND sl.pool_session_id <> v_new
+     AND NOT EXISTS (SELECT 1 FROM public.lightning_reservation r WHERE r.pool_slot_id = sl.id AND r.state IN ('pending', 'committed'))
+   ORDER BY sl.player_id LIMIT 1;
+  UPDATE public.lightning_pool_session SET exited_at = clock_timestamp(), exit_reason = 'harness: left', state = 'closed'
+   WHERE id = v_ps;
+  INSERT INTO public.lightning_pool_session (cluster_id, cluster_epoch, player_id, cash_player_session_id, starting_stack, state)
+  SELECT cluster_id, cluster_epoch, player_id, cash_player_session_id, starting_stack, 'active'
+    FROM public.lightning_pool_session WHERE id = v_ps RETURNING id INTO v_new;
+  v_r := public.fn_lightning_pool_slot_open(v_new);
+  v_slot := (v_r ->> 'pool_slot_id')::uuid;
+  IF coalesce((v_r ->> 'opened')::boolean, false) IS DISTINCT FROM true OR v_slot IS NOT DISTINCT FROM v_old
+     OR (v_r ->> 'stale_slots_closed')::integer IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 25: the re-entered player was not given a slot of their own: %', v_r;
+  END IF;
+  IF (SELECT close_reason FROM public.lightning_pool_slot WHERE id = v_old) IS DISTINCT FROM 'superseded_by_pool_session'
+     OR (SELECT closed_at FROM public.lightning_pool_slot WHERE id = v_old) IS NULL
+     OR (SELECT pool_session_id FROM public.lightning_pool_slot WHERE id = v_slot) IS DISTINCT FROM v_new THEN
+    RAISE EXCEPTION 'FAIL 25: the exited session''s slot was not closed as superseded, or the new one is not the new session''s';
+  END IF;
+  v_r := public.fn_lightning_pool_slot_open(v_new);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'already_open' OR (v_r ->> 'pool_slot_id')::uuid IS DISTINCT FROM v_slot THEN
+    RAISE EXCEPTION 'FAIL 25: a second open for the same session is not idempotent: %', v_r;
+  END IF;
+
+  -- ACROSS AN EPOCH BUMP.
+  SELECT sl.pool_session_id, sl.id, sl.player_id INTO v_ps, v_os, v_player FROM public.lightning_pool_slot sl
+   WHERE sl.cluster_id = v_g AND sl.closed_at IS NULL AND sl.id <> v_slot ORDER BY sl.player_id LIMIT 1;
+  PERFORM set_config('ca.epoch_reason', 'harness_epoch_bump', true);
+  UPDATE public.cash_games SET cluster_epoch = cluster_epoch + 1 WHERE id = v_g RETURNING cluster_epoch INTO v_e;
+  v_r := public.fn_lightning_pool_slot_open(v_ps);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'pool_session_epoch_is_not_current'
+     OR (SELECT closed_at FROM public.lightning_pool_slot WHERE id = v_os) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 25: a pool session from a dead epoch opened or disturbed a slot: %', v_r;
+  END IF;
+  -- The same player, a session at the NEW epoch.
+  UPDATE public.lightning_pool_session SET exited_at = clock_timestamp(), exit_reason = 'harness: epoch moved', state = 'closed'
+   WHERE id = v_ps;
+  INSERT INTO public.lightning_pool_session (cluster_id, cluster_epoch, player_id, cash_player_session_id, starting_stack, state)
+  SELECT cluster_id, v_e, player_id, cash_player_session_id, starting_stack, 'active'
+    FROM public.lightning_pool_session WHERE id = v_ps RETURNING id INTO v_ps2;
+  v_r := public.fn_lightning_pool_slot_open(v_ps2);
+  IF coalesce((v_r ->> 'opened')::boolean, false) IS DISTINCT FROM true OR (v_r ->> 'cluster_epoch')::integer IS DISTINCT FROM v_e
+     OR (SELECT close_reason FROM public.lightning_pool_slot WHERE id = v_os) IS DISTINCT FROM 'epoch_advanced' THEN
+    RAISE EXCEPTION 'FAIL 25: across an epoch bump the player was not given a current slot with the dead one closed as epoch_advanced: %', v_r;
+  END IF;
+  SELECT count(*)::integer INTO v_n FROM public.lightning_pool_slot WHERE cluster_id = v_g AND player_id = v_player AND closed_at IS NULL;
+  IF v_n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL 25: the player holds % open slots', v_n;
+  END IF;
+  v_r := public.fn_lightning_pool_slot_open(v_ps2);
+  IF (v_r ->> 'reason') IS DISTINCT FROM 'already_open' THEN
+    RAISE EXCEPTION 'FAIL 25: a second open at the new epoch is not idempotent: %', v_r;
+  END IF;
+END $$;
+\echo '  ok  25 A STALE SLOT IS CLOSED  the re-entered player of 16d, who was handed the exited session''s slot, has been slotted by the pass of section 18 with the stale slot closed; and the same shape rebuilt on the same board and given to fn_lightning_pool_slot_open alone gets a slot bound to the NEW session, with the old one closed in the same call as superseded_by_pool_session, and a second call answers already_open with the new slot; after a real epoch bump a pool session from the dead epoch opens nothing and disturbs nothing, while the same player''s session at the new epoch gets a current slot with the dead one closed as epoch_advanced, exactly one open slot, and an idempotent second call'
+
+-- 26 POSITIONS AT SEVEN, EIGHT AND NINE (MINOR c) ------------------------------
+-- 16d: an eight-handed hand seated three players under the gun and moved three
+-- utg_counts. The same nine-max board.
+DO $$
+DECLARE v_g uuid; v_i uuid; v_r jsonb; v_t text; n integer; v_before bigint; v_after bigint; v_map text[];
+BEGIN
+  SELECT game, a INTO v_g, v_i FROM b9 WHERE k = 'g16_eight';
+  PERFORM public.fn_lightning_instance_abandon(v_i, 'harness: section 26 frees the eight');
+  v_map := ARRAY['1:sb 2:bb 3:hj 4:co 5:btn',
+                 '1:sb 2:bb 3:utg 4:hj 5:co 6:btn',
+                 '1:sb 2:bb 3:utg 4:lj 5:hj 6:co 7:btn',
+                 '1:sb 2:bb 3:utg 4:utg1 5:lj 6:hj 7:co 8:btn',
+                 '1:sb 2:bb 3:utg 4:utg1 5:utg2 6:lj 7:hj 8:co 9:btn'];
+  FOR n IN 5 .. 9 LOOP
+    SELECT coalesce(sum(utg_count), 0) INTO v_before FROM public.lightning_blind_ledger WHERE cluster_id = v_g;
+    v_r := public.fx9_form(v_g, public.fx9_candidates(v_g, n), NULL, n::smallint, n::smallint);
+    IF coalesce((v_r ->> 'formed')::boolean, false) IS DISTINCT FROM true THEN
+      RAISE EXCEPTION 'FAIL 26: a %-handed hand did not form: %', n, v_r;
+    END IF;
+    SELECT string_agg(seat || ':' || "position", ' ' ORDER BY seat) INTO v_t
+      FROM public.lightning_hand_player WHERE hand_id = (v_r ->> 'hand_id')::uuid;
+    IF v_t IS DISTINCT FROM v_map[n - 4]
+       OR (SELECT count(DISTINCT "position") FROM public.lightning_hand_player WHERE hand_id = (v_r ->> 'hand_id')::uuid) IS DISTINCT FROM n::bigint THEN
+      RAISE EXCEPTION 'FAIL 26: the %-handed map is %', n, v_t;
+    END IF;
+    SELECT coalesce(sum(utg_count), 0) INTO v_after FROM public.lightning_blind_ledger WHERE cluster_id = v_g;
+    IF v_after - v_before IS DISTINCT FROM (CASE WHEN n >= 6 THEN 1 ELSE 0 END)::bigint THEN
+      RAISE EXCEPTION 'FAIL 26: a %-handed hand moved % utg_counts', n, v_after - v_before;
+    END IF;
+    PERFORM public.fn_lightning_instance_abandon((v_r ->> 'instance_id')::uuid, 'harness: section 26 next size');
+  END LOOP;
+END $$;
+\echo '  ok  26 ONE PLAYER UNDER THE GUN  on the nine-max board where 16d''s eight-handed hand seated three players under the gun and moved three utg_counts, hands of five to nine now carry n distinct positions - sb bb hj co btn, sb bb utg hj co btn unchanged, then lj, utg1 and utg2 as the table grows - and each hand of six or more moves exactly one utg_count'
+
+-- 27 A RESERVATION BELONGS TO AN INSTANCE (MINOR d) -----------------------------
+-- 16d: the reservation section 05 wrote belonged to no instance, under a
+-- nullable column.
+DO $$
+DECLARE v_g uuid; v_e integer; v_p uuid[]; v_slot uuid; v_i uuid; v_msg text; v_ins text;
+BEGIN
+  IF (SELECT attnotnull FROM pg_attribute WHERE attrelid = 'public.lightning_reservation'::regclass
+       AND attname = 'lightning_instance_id') IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 27: lightning_reservation.lightning_instance_id is still nullable';
+  END IF;
+  v_g := public.fx9_cluster('G27 RESERVATION', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 18);
+  v_e := public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  v_p := public.fx9_candidates(v_g, 1);
+  SELECT id INTO v_slot FROM public.lightning_pool_slot WHERE cluster_id = v_g AND player_id = v_p[1] AND closed_at IS NULL;
+  v_ins := 'INSERT INTO public.lightning_reservation (cluster_id, cluster_epoch, player_id, pool_slot_id, lightning_instance_id, '
+        || 'seat_number, state, created_at, expires_at) VALUES (%L, %s, %L, %L, %s, 1, ''pending'', clock_timestamp(), clock_timestamp() + interval ''1 minute'')';
+  v_msg := public.fx9_try(format(v_ins, v_g, v_e, v_p[1], v_slot, 'NULL'));
+  IF v_msg !~ 'null value in column "lightning_instance_id"' THEN
+    RAISE EXCEPTION 'FAIL 27: a reservation belonging to no instance was not refused by NOT NULL: %', v_msg;
+  END IF;
+  v_i := (public.fn_lightning_instance_open(v_g) ->> 'instance_id')::uuid;
+  v_msg := public.fx9_try(format(v_ins, v_g, v_e, v_p[1], v_slot, quote_literal(v_i)));
+  IF v_msg IS DISTINCT FROM 'no error' THEN
+    RAISE EXCEPTION 'FAIL 27: the same reservation naming its instance was refused, so the refusal was not about the instance: %', v_msg;
+  END IF;
+END $$;
+\echo '  ok  27 A RESERVATION BELONGS TO AN INSTANCE  the instance-less pending reservation 16d found under a nullable column is now refused by NOT NULL straight against the table, and the same row naming its instance is accepted'
+
+-- 28 THE DDL DOES NOT QUEUE BEHIND THE ENGINE -------------------------------------
+-- SET LOCAL lock_timeout = '8s' is not in any catalogue, so it is proved by
+-- behaviour: the other backend takes ACCESS SHARE on lightning_hand, as any
+-- engine read does, and a THIRD backend applies the file under test. With a
+-- twelve-second statement_timeout as the backstop, a file without the setting
+-- dies of a statement timeout at twelve seconds; this one must die of a LOCK
+-- timeout at eight, having changed nothing.
+DO $$
+DECLARE v_t0 timestamptz; v_s numeric; v_r text; v_err text; v_body text;
+BEGIN
+  v_body := pg_get_functiondef('public.fn_cash_clusters_tick_all(jsonb)'::regprocedure);
+  IF public.fx9_elsewhere('BEGIN') IS DISTINCT FROM 'BEGIN'
+     OR public.fx9_elsewhere('LOCK TABLE public.lightning_hand IN ACCESS SHARE MODE') IS DISTINCT FROM 'LOCK TABLE' THEN
+    RAISE EXCEPTION 'FAIL 28: the other backend could not take its read lock';
+  END IF;
+  PERFORM harness.dblink_connect('fx9_ddl',
+    'host=' || current_setting('unix_socket_directories') || ' port=' || current_setting('port')
+    || ' dbname=' || current_database() || ' user=' || current_user);
+  PERFORM harness.dblink_exec('fx9_ddl', 'SET statement_timeout = ''12s''');
+  v_t0 := clock_timestamp();
+  v_r := harness.dblink_exec('fx9_ddl', current_setting('fx9.mine_text'), false);
+  v_s := extract(epoch FROM clock_timestamp() - v_t0);
+  v_err := harness.dblink_error_message('fx9_ddl');
+  PERFORM harness.dblink_exec('fx9_ddl', 'ROLLBACK', false);
+  PERFORM harness.dblink_disconnect('fx9_ddl');
+  IF public.fx9_elsewhere('ROLLBACK') IS DISTINCT FROM 'ROLLBACK' THEN
+    RAISE EXCEPTION 'FAIL 28: the other backend would not let go of its read lock';
+  END IF;
+  IF v_r IS DISTINCT FROM 'ERROR' OR coalesce(v_err, '') !~ 'lock timeout' OR v_s < 7.5 OR v_s > 11 THEN
+    RAISE EXCEPTION 'FAIL 28: applying the file behind a held read lock answered % (%) after % seconds, not a lock timeout at eight', v_r, v_err, round(v_s, 1);
+  END IF;
+  IF pg_get_functiondef('public.fn_cash_clusters_tick_all(jsonb)'::regprocedure) IS DISTINCT FROM v_body THEN
+    RAISE EXCEPTION 'FAIL 28: the refused application changed something';
+  END IF;
+END $$;
+\echo '  ok  28 THE DDL DOES NOT QUEUE  applied by a third backend while a second holds nothing more than ACCESS SHARE on lightning_hand, the file refuses by LOCK timeout at eight seconds - not by the twelve-second statement timeout a file without SET LOCAL lock_timeout would reach - and changes nothing, so it cannot sit in the lock queue in front of every engine read'
+ASSERT
+
+# 28's input: the file under test as TEXT, so that a third backend can apply
+# it. Built here rather than in the heredoc because the path is only known here.
+printf '%s\n' "\\set mine_text \`cat '$mine'\`" > "$fixture/mine-text.sql"
+printf '%s\n' "SELECT set_config('fx9.mine_text', :'mine_text', false) IS NOT NULL AS fx9_mine_text_loaded \\gset" >> "$fixture/mine-text.sql"
+
+# 29 EVERY LIVE PROOF OF THE REMEDIATION, AND EVERY ONE OF PHASE 9'S IT KEEPS ---
+# Section 14's mechanism, pointed at 20260926023047: every `-- @live-proof:` it
+# carries is extracted, inlined as code and evaluated over the estate sections
+# 17 to 28 built. And because that header says it SUPERSEDES exactly two proofs
+# of 20260925215731 - the second, a nine-name list of callable functions, and
+# the fifteenth, a six-name list of triggers, both of which name an exact set
+# this file grows - every OTHER proof of 20260925215731 is evaluated again here
+# and must still be true, and those two must now be FALSE: a supersession that
+# left the old proof true would mean the set did not grow.
+: > "$fixture/mine-live-proofs.sql"
+printf '%s\n' 'CREATE TEMP TABLE lp_mine (src text, n integer, lineno integer, ok boolean);' \
+  >> "$fixture/mine-live-proofs.sql"
+mine_n=0
+while IFS= read -r proof_line; do
+  mine_n=$((mine_n + 1))
+  proof_lineno=${proof_line%%:*}
+  proof_expr=${proof_line#*:}
+  proof_expr=${proof_expr#-- @live-proof: }
+  {
+    printf '%s%s%s%s%s' "INSERT INTO lp_mine VALUES ('remediation', " "$mine_n" ', ' "$proof_lineno" ', coalesce(('
+    printf '%s%s\n' "$proof_expr" ')::boolean, false));'
+  } >> "$fixture/mine-live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$mine")
+p9_n=0
+while IFS= read -r proof_line; do
+  p9_n=$((p9_n + 1))
+  proof_lineno=${proof_line%%:*}
+  proof_expr=${proof_line#*:}
+  proof_expr=${proof_expr#-- @live-proof: }
+  proof_src=phase9
+  if [ "$p9_n" = 2 ] || [ "$p9_n" = 15 ]; then proof_src=superseded; fi
+  {
+    printf '%s%s%s%s%s%s%s' "INSERT INTO lp_mine VALUES ('" "$proof_src" "', " "$p9_n" ', ' "$proof_lineno" ', coalesce(('
+    printf '%s%s\n' "$proof_expr" ')::boolean, false));'
+  } >> "$fixture/mine-live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$migration")
+# AND THE PASS'S OWN PROOFS. The remediation re-cuts fn_cash_clusters_tick_all,
+# which 20260925204249 re-cut before it and pinned with its own proofs; every
+# one of them must survive this file's substitution. ONE of them scans the
+# whole catalogue for callers of the conversion functions, and this harness's
+# own writer fx9_convert is such a caller by design - it is how every Cluster
+# here is converted for real - so that one proof, and only that one, is
+# evaluated with fx9_ functions set aside, and the harness counts that the
+# narrowing was applied exactly once rather than trusting it was.
+p5r_n=0
+p5r_narrowed=0
+p5r_anchor="AND p.proname NOT IN ('fn_cash_cluster_begin_pending_on', 'fn_cash_cluster_abort_pending_on', 'fn_cash_cluster_commit_lightning', 'fn_cash_cluster_reap_stuck_conversions')"
+while IFS= read -r proof_line; do
+  p5r_n=$((p5r_n + 1))
+  proof_lineno=${proof_line%%:*}
+  proof_expr=${proof_line#*:}
+  proof_expr=${proof_expr#-- @live-proof: }
+  case "$proof_expr" in
+    *"$p5r_anchor"*)
+      proof_expr=${proof_expr/"$p5r_anchor"/"AND p.proname !~ '^fx9_' $p5r_anchor"}
+      p5r_narrowed=$((p5r_narrowed + 1)) ;;
+  esac
+  {
+    printf '%s%s%s%s%s' "INSERT INTO lp_mine VALUES ('phase5r', " "$p5r_n" ', ' "$proof_lineno" ', coalesce(('
+    printf '%s%s\n' "$proof_expr" ')::boolean, false));'
+  } >> "$fixture/mine-live-proofs.sql"
+done < <(grep -n -- '^-- @live-proof: ' "$phase5r")
+
+if [ "$p5r_narrowed" != 1 ]; then
+  echo "FAIL 29: the fx9_ narrowing of 20260925204249's caller scan applied $p5r_narrowed time(s), not once"
+  exit 1
+fi
+if [ "$mine_n" -lt 30 ] || [ "$p5r_n" -lt 20 ]; then
+  echo "FAIL 29: only $mine_n @live-proof line(s) were found in $mine, so this section would prove almost nothing"
+  exit 1
+fi
+
+{
+  printf '%s\n' 'DO $lp$'
+  printf '%s\n' 'DECLARE v_bad text;'
+  printf '%s\n' 'BEGIN'
+  printf '%s%s%s%s%s%s%s\n' "  IF (SELECT count(*) FROM lp_mine WHERE src = 'remediation') IS DISTINCT FROM " "$mine_n" "::bigint OR (SELECT count(*) FROM lp_mine WHERE src IN ('phase9', 'superseded')) IS DISTINCT FROM " "$p9_n" "::bigint OR (SELECT count(*) FROM lp_mine WHERE src = 'phase5r') IS DISTINCT FROM " "$p5r_n" '::bigint THEN'
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL 29: not every proof expression was evaluated';"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' "  SELECT string_agg(src || ' #' || n || ' (line ' || lineno || ')', ', ' ORDER BY src, n) INTO v_bad"
+  printf '%s\n' "    FROM lp_mine WHERE src IN ('remediation', 'phase9', 'phase5r') AND ok IS DISTINCT FROM true;"
+  printf '%s\n' '  IF v_bad IS NOT NULL THEN'
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL 29: % is NOT true of the database the remediation produced', v_bad;"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' "  IF (SELECT count(*) FROM lp_mine WHERE src = 'superseded' AND ok IS DISTINCT FROM false) IS DISTINCT FROM 0::bigint"
+  printf '%s\n' "     OR (SELECT count(*) FROM lp_mine WHERE src = 'superseded') IS DISTINCT FROM 2::bigint THEN"
+  printf '%s\n' "    RAISE EXCEPTION 'FAIL 29: a proof of 20260925215731 the remediation says it supersedes is still true, so the set it names did not grow';"
+  printf '%s\n' '  END IF;'
+  printf '%s\n' 'END $lp$;'
+  printf '%s%s%s%s%s%s%s\n' "\\echo '  ok  29 EVERY LIVE PROOF    all " "$mine_n" " @live-proof expressions the remediation carries in its own header were extracted from the file under test, inlined as code and evaluated over the estate sections 17 to 28 built, and every one is true; and of the " "$p9_n" " proofs 20260925215731 carries, every one the remediation does not supersede is STILL true after it, while the two it says it supersedes - the nine-name function list and the six-name trigger list - are now false, because the sets they name really grew; and all " "$p5r_n" " proofs of 20260925204249, which re-cut fn_cash_clusters_tick_all before this file did, are still true after this file re-cut it again - the one catalogue-wide caller scan among them evaluated with this harness''s own fx9_ writers set aside, and nothing else'"
+} >> "$fixture/mine-live-proofs.sql"
+
+# 30 THE REMEDIATION IS RE-APPLIABLE ---------------------------------------------
+cat > "$fixture/mine-precapture.sql" <<'CAP'
+CREATE TEMP TABLE rm_fn AS
+  SELECT p.oid::regprocedure::text AS name, pg_get_functiondef(p.oid) AS body,
+         coalesce(array_to_string(p.proacl, ','), '(default)') AS acl,
+         coalesce(obj_description(p.oid, 'pg_proc'), '') AS note
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f'
+     AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_cash_clusters_tick_all');
+CREATE TEMP TABLE rm_rel AS
+  SELECT 'index ' || i.indexname AS name, i.indexdef AS def FROM pg_indexes i
+   WHERE i.schemaname = 'public' AND i.tablename LIKE 'lightning%'
+  UNION ALL
+  SELECT 'trigger ' || c.relname || '.' || t.tgname, pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text
+    FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE NOT t.tgisinternal AND n.nspname = 'public' AND c.relname LIKE 'lightning%'
+  UNION ALL
+  SELECT 'constraint ' || co.conrelid::regclass::text || '.' || co.conname, pg_get_constraintdef(co.oid)
+    FROM pg_constraint co JOIN pg_class c ON c.oid = co.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relname LIKE 'lightning%'
+  UNION ALL
+  SELECT 'table ' || c.relname, coalesce(array_to_string(c.relacl, ','), '(default)') || ' ' || coalesce(obj_description(c.oid, 'pg_class'), '')
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'lightning%'
+  UNION ALL
+  SELECT 'column ' || c.relname || '.' || a.attname,
+         format_type(a.atttypid, a.atttypmod) || ' ' || a.attnotnull || ' ' || coalesce(col_description(c.oid, a.attnum), '')
+    FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'lightning%' AND a.attnum > 0 AND NOT a.attisdropped;
+CREATE TEMP TABLE rm_rows AS
+  SELECT 'instance' AS t, count(*) AS n FROM public.lightning_instance
+  UNION ALL SELECT 'reservation', count(*) FROM public.lightning_reservation
+  UNION ALL SELECT 'hand', count(*) FROM public.lightning_hand
+  UNION ALL SELECT 'hand_player', count(*) FROM public.lightning_hand_player
+  UNION ALL SELECT 'pool_slot', count(*) FROM public.lightning_pool_slot
+  UNION ALL SELECT 'pool_session', count(*) FROM public.lightning_pool_session
+  UNION ALL SELECT 'blind_ledger', count(*) FROM public.lightning_blind_ledger;
+CAP
+
+cat > "$fixture/mine-reapply.sql" <<'REAPPLY'
+DO $$
+DECLARE v_bad text; v_n integer;
+BEGIN
+  IF (SELECT count(*) FROM rm_fn) IS DISTINCT FROM 18::bigint THEN
+    RAISE EXCEPTION 'FAIL 30: % function bodies were captured before the re-apply, not the seventeen fn_lightning_ and tick_all', (SELECT count(*) FROM rm_fn);
+  END IF;
+  SELECT string_agg(coalesce(r.name, now.name), ', ') INTO v_bad
+    FROM rm_fn r FULL JOIN (
+      SELECT p.oid::regprocedure::text AS name, pg_get_functiondef(p.oid) AS body,
+             coalesce(array_to_string(p.proacl, ','), '(default)') AS acl,
+             coalesce(obj_description(p.oid, 'pg_proc'), '') AS note
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.prokind = 'f'
+         AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_cash_clusters_tick_all')) now ON now.name = r.name
+   WHERE r.name IS NULL OR now.name IS NULL
+      OR now.body IS DISTINCT FROM r.body OR now.acl IS DISTINCT FROM r.acl OR now.note IS DISTINCT FROM r.note;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 30: the second application changed the body, acl or comment of %', v_bad;
+  END IF;
+
+  SELECT string_agg(coalesce(r.name, now.name), ', ') INTO v_bad
+    FROM rm_rel r FULL JOIN (
+      SELECT 'index ' || i.indexname AS name, i.indexdef AS def FROM pg_indexes i
+       WHERE i.schemaname = 'public' AND i.tablename LIKE 'lightning%'
+      UNION ALL
+      SELECT 'trigger ' || c.relname || '.' || t.tgname, pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text
+        FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE NOT t.tgisinternal AND n.nspname = 'public' AND c.relname LIKE 'lightning%'
+      UNION ALL
+      SELECT 'constraint ' || co.conrelid::regclass::text || '.' || co.conname, pg_get_constraintdef(co.oid)
+        FROM pg_constraint co JOIN pg_class c ON c.oid = co.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relname LIKE 'lightning%'
+      UNION ALL
+      SELECT 'table ' || c.relname, coalesce(array_to_string(c.relacl, ','), '(default)') || ' ' || coalesce(obj_description(c.oid, 'pg_class'), '')
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'lightning%'
+      UNION ALL
+      SELECT 'column ' || c.relname || '.' || a.attname,
+             format_type(a.atttypid, a.atttypmod) || ' ' || a.attnotnull || ' ' || coalesce(col_description(c.oid, a.attnum), '')
+        FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'lightning%' AND a.attnum > 0 AND NOT a.attisdropped) now
+      ON now.name = r.name
+   WHERE r.name IS NULL OR now.name IS NULL OR now.def IS DISTINCT FROM r.def;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 30: the second application changed %', v_bad;
+  END IF;
+
+  SELECT string_agg(r.t, ', ') INTO v_bad FROM rm_rows r
+   WHERE r.n IS DISTINCT FROM (CASE r.t
+     WHEN 'instance' THEN (SELECT count(*) FROM public.lightning_instance)
+     WHEN 'reservation' THEN (SELECT count(*) FROM public.lightning_reservation)
+     WHEN 'hand' THEN (SELECT count(*) FROM public.lightning_hand)
+     WHEN 'hand_player' THEN (SELECT count(*) FROM public.lightning_hand_player)
+     WHEN 'pool_slot' THEN (SELECT count(*) FROM public.lightning_pool_slot)
+     WHEN 'pool_session' THEN (SELECT count(*) FROM public.lightning_pool_session)
+     ELSE (SELECT count(*) FROM public.lightning_blind_ledger) END);
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 30: the second application changed the row count of %', v_bad;
+  END IF;
+
+  -- NO DOUBLE SUBSTITUTION, stated rather than inferred from identity alone:
+  -- each thing a re-cut adds is in its body exactly once.
+  SELECT string_agg(q.what, ', ') INTO v_bad FROM (VALUES
+      ('tick_all reap', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_cash_clusters_tick_all(jsonb)'::regprocedure), 'public\.fn_lightning_reap_formations\(\)', 'g'))),
+      ('tick_all sync', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_cash_clusters_tick_all(jsonb)'::regprocedure), 'public\.fn_lightning_pool_slots_sync\(lc\.id\)', 'g'))),
+      ('barrier reap', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text)'::regprocedure), 'PERFORM public\.fn_lightning_reap_formations\(p_now, 200, g\.id\)', 'g'))),
+      ('barrier contention block', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text)'::regprocedure), 'CONTENTION IS A RETRY, NOT A CRASH', 'g'))),
+      ('barrier FOR SHARE', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text)'::regprocedure), 'FOR SHARE;', 'g'))),
+      ('latch INSERT branch', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_hand_is_immutable()'::regprocedure), 'IF TG_OP = ''INSERT'' THEN', 'g'))),
+      ('agreement check', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_instance_is_disciplined()'::regprocedure), 'RAISE EXCEPTION ''LIGHTNING_INSTANCE_HAND_SET_DOES_NOT_AGREE', 'g'))),
+      ('reaper clamp', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_reap_formations(timestamp with time zone,integer,uuid)'::regprocedure), 'p_now := LEAST', 'g'))),
+      ('slot supersession', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_lightning_pool_slot_open(uuid,timestamp with time zone)'::regprocedure), 'GET DIAGNOSTICS v_closed = ROW_COUNT', 'g')))
+    ) q(what, n) WHERE q.n IS DISTINCT FROM 1::bigint;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 30: a re-cut is not present exactly once in: %', v_bad;
+  END IF;
+
+  -- AND THE ESTATE STILL WORKS: the pass runs and a Cluster still forms.
+  IF coalesce((public.fn_cash_clusters_tick_all() ->> 'ok')::boolean, false) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 30: the pass does not run after the second application';
+  END IF;
+  IF coalesce((public.fx9_form((SELECT game FROM b9 WHERE k = 'g21_injected'), public.fx9_candidates((SELECT game FROM b9 WHERE k = 'g21_injected'), 6)) ->> 'formed')::boolean, false)
+     IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 30: a Cluster cannot form a hand after the second application';
+  END IF;
+END $$;
+\echo '  ok  30 THE REMEDIATION IS RE-APPLIABLE  applied a second time over an estate of reaped, dealt, abandoned, versioned and contended hands, it leaves all eighteen bodies, acls and comments byte-identical - the seventeen fn_lightning_ functions and fn_cash_clusters_tick_all - and every index, trigger, constraint, table acl, table comment, column type, nullability and column comment of the seven lightning tables identical, not one row added or removed from any of them, every re-cut present in its body exactly ONCE, and the pass still runs and a Cluster still forms'
+REAPPLY
+
+# ONE psql SESSION, TWENTY-SEVEN FILES: the four fixtures, the eight
+# predecessor migrations, the pre-migration measurements and the estate they
+# build, the migration, the assertions, the migration's own @live-proofs, the
+# pre-re-apply capture, the migration AGAIN and the re-apply assertions; then
+# the ground before the remediation, the remediation, its text for section 28,
+# its assertions, its @live-proofs, its pre-re-apply capture, the remediation
+# AGAIN and its re-apply assertions.
 set +e
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p "$port" -d postgres \
   -f "$base_fixture" \
@@ -1479,7 +3342,15 @@ set +e
   -f "$fixture/live-proofs.sql" \
   -f "$fixture/precapture.sql" \
   -f "$migration" \
-  -f "$fixture/reapply-assertions.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  -f "$fixture/reapply-assertions.sql" \
+  -f "$fixture/ground.sql" \
+  -f "$mine" \
+  -f "$fixture/mine-text.sql" \
+  -f "$fixture/mine-assertions.sql" \
+  -f "$fixture/mine-live-proofs.sql" \
+  -f "$fixture/mine-precapture.sql" \
+  -f "$mine" \
+  -f "$fixture/mine-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 psql_status=${PIPESTATUS[0]}
 set -e
 if [ "$psql_status" != 0 ]; then
@@ -1487,13 +3358,13 @@ if [ "$psql_status" != 0 ]; then
   exit 1
 fi
 
-# SIXTEEN SECTIONS REPORTED, and the count is asserted rather than eyeballed: a
+# THIRTY-ONE SECTIONS REPORTED, and the count is asserted rather than eyeballed: a
 # psql that stopped early exits non-zero, but a section deleted from this file
 # during a refactor would not, and the PASS line below would still print.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 16 ]; then
-  echo "FAIL: $oks of the 16 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 31 ]; then
+  echo "FAIL: $oks of the 31 sections reported, so this run proved less than this file claims"
   exit 1
 fi
 
-echo "PASS: Lightning Phase 9, the hand formation barrier is atomic and the participant set is locked, 16 checks: THE ESTATE IS REAL - every Cluster in this file is made Lightning by the REAL fn_cash_cluster_begin_pending_on and the REAL fn_cash_cluster_commit_lightning over the real 40,000-character tick, and fx9_convert RAISES rather than continuing if a conversion did not happen, so every hand formed below is formed inside an epoch a real conversion opened, over pool sessions a real conversion wrote, against starting_stack values a real conversion copied out of table_seats. Before the migration: no fn_lightning_ function, no trigger on any lightning table, the P2 index lightning_pool_slot_oldest_bb standing with NOT ONE reader of last_bb_at anywhere in the estate, NOT ONE function that inserts a lightning_pool_slot, an eighteen-player conversion that opens eighteen pool sessions and zero slots - which is why a reservation could not have been taken for anybody - and the two-concurrent-slots bypass demonstrated by actually opening two. After it: the sync pass opens the founding population's slots and is idempotent; the barrier forms a six-hand with the instance bound to the hand and the epoch, participants_locked_at set at a player_count the latch trigger checked against the rows, seats 1 to 6 carrying sb bb utg hj co btn, every stack_before equal to its own pool session's starting_stack plus net_result, six committed reservations each in the seat the hand gave it, and begin_dealing releasing it into gameplay and refusing a second release; a fault injected at the hand write and again at the participant write leaves NOT ONE instance, reservation, hand, participant or moved fairness column behind - compared as a whole-Cluster census - while the matcher_retry event emitted after the rollback carries the sqlstate and the message, and the same six players form immediately with the injectors off; a player in a hand cannot be reserved again, the refusal coming from lightning_reservation_one_active_per_player attempted straight against the table, the two-slot bypass is refused by lightning_pool_slot_one_open_per_player, and the claim comes off through an AFTER trigger when the instance reaches a terminal state so that the settlement phase nobody has written yet cannot forget it; a stale pending reservation makes its player illegal at five candidates of six, the reaper expires it with a reason, an expired claim cannot become pending again, and the six form immediately afterwards; an instance inserted with no deadline gets one in the future, one whose deadline equals its creation is refused by CHECK, a stale forming instance is buried by the NEXT formation on the same Cluster with nothing scheduled anywhere while one inside its deadline survives the identical pass, and a formed hand that was never released cannot be dealt late and hands its six players back; all four of specification 519-524 are attempted against a hand this file really formed and really locked and refused BY NAME, and every one of those same statements succeeds against an unlocked twin hand on the same Cluster, with the latch unclearable, the hand undeletable, the instance un-re-pointable, a lock at a wrong count refused, the twin immutable the moment it IS locked, a pool slot that sat in a hand undeletable out from under its reservations, and fold_type and stack_after still writable because a locked hand that cannot be played is a barrier that froze the game; a must_move Cluster is refused by name and cannot have an instance created for it against the table, lightning_enabled false stops formation and true restores it, and after a real epoch bump the previous epoch's slot holders are ZERO legal candidates while an instance at the previous epoch is refused and one at the current epoch accepted in the same breath; forming, releasing and abandoning leave an md5 of every money-bearing column of every table_seats, cash_player_session, lightning_pool_session and lightning_blind_ledger row byte-identical, through a measure first proved to move for one cent and come back, and a trigger injected to move a chip DURING a formation is refused by the barrier's own LIGHTNING_FORMATION_MOVED_MONEY guard, which raises rather than retrying; a horse seated by table_seats.horse_id converts, pools, slots, reserves, seats, takes a position and a blind role and a stack snapshot and a blind-ledger row exactly as a human does, and no Phase 9 function body mentions a horse at all; the freeze refuses forming, opening, releasing and slot-opening and does NOT refuse abandoning, reaping or closing a departed player's slot, and formation resumes when the break lifts; P2's oldest-unresolved-BB key really decides the big blind, the rotation really moves, an unresolved obligation outranks a fresher timestamp, seats 3 to 6 stay in the caller's order so P3 is left to the matcher, not one DEBT column is written, and a matcher-supplied big blind is refused unless it ties with the barrier's own choice on the whole key; anon, authenticated and PUBLIC execute none of the fifteen functions, service_role executes all nine callable ones, none is SECURITY DEFINER, RLS is on with no policies and no browser grant on any lightning table, and the barrier is the ONLY function in the estate that can seat a participant; all of the migration's own @live-proof expressions are extracted from the file under test and true; and the migration applied a SECOND time leaves fifteen bodies, fifteen acls, every comment and every index definition byte-identical with exactly six triggers and not one row moved, over an estate full of formed hands"
+echo "PASS: Lightning Phase 9, the hand formation barrier is atomic and the participant set is locked, 31 checks: THE ESTATE IS REAL - every Cluster in this file is made Lightning by the REAL fn_cash_cluster_begin_pending_on and the REAL fn_cash_cluster_commit_lightning over the real 40,000-character tick, and fx9_convert RAISES rather than continuing if a conversion did not happen, so every hand formed below is formed inside an epoch a real conversion opened, over pool sessions a real conversion wrote, against starting_stack values a real conversion copied out of table_seats. Before the migration: no fn_lightning_ function, no trigger on any lightning table, the P2 index lightning_pool_slot_oldest_bb standing with NOT ONE reader of last_bb_at anywhere in the estate, NOT ONE function that inserts a lightning_pool_slot, an eighteen-player conversion that opens eighteen pool sessions and zero slots - which is why a reservation could not have been taken for anybody - and the two-concurrent-slots bypass demonstrated by actually opening two. After it: the sync pass opens the founding population's slots and is idempotent; the barrier forms a six-hand with the instance bound to the hand and the epoch, participants_locked_at set at a player_count the latch trigger checked against the rows, seats 1 to 6 carrying sb bb utg hj co btn, every stack_before equal to its own pool session's starting_stack plus net_result, six committed reservations each in the seat the hand gave it, and begin_dealing releasing it into gameplay and refusing a second release; a fault injected at the hand write and again at the participant write leaves NOT ONE instance, reservation, hand, participant or moved fairness column behind - compared as a whole-Cluster census - while the matcher_retry event emitted after the rollback carries the sqlstate and the message, and the same six players form immediately with the injectors off; a player in a hand cannot be reserved again, the refusal coming from lightning_reservation_one_active_per_player attempted straight against the table, the two-slot bypass is refused by lightning_pool_slot_one_open_per_player, and the claim comes off through an AFTER trigger when the instance reaches a terminal state so that the settlement phase nobody has written yet cannot forget it; a stale pending reservation makes its player illegal at five candidates of six, the reaper expires it with a reason, an expired claim cannot become pending again, and the six form immediately afterwards; an instance inserted with no deadline gets one in the future, one whose deadline equals its creation is refused by CHECK, a stale forming instance is buried by the NEXT formation on the same Cluster with nothing scheduled anywhere while one inside its deadline survives the identical pass, and a formed hand that was never released cannot be dealt late and hands its six players back; all four of specification 519-524 are attempted against a hand this file really formed and really locked and refused BY NAME, and every one of those same statements succeeds against an unlocked twin hand on the same Cluster, with the latch unclearable, the hand undeletable, the instance un-re-pointable, a lock at a wrong count refused, the twin immutable the moment it IS locked, a pool slot that sat in a hand undeletable out from under its reservations, and fold_type and stack_after still writable because a locked hand that cannot be played is a barrier that froze the game; a must_move Cluster is refused by name and cannot have an instance created for it against the table, lightning_enabled false stops formation and true restores it, and after a real epoch bump the previous epoch's slot holders are ZERO legal candidates while an instance at the previous epoch is refused and one at the current epoch accepted in the same breath; forming, releasing and abandoning leave an md5 of every money-bearing column of every table_seats, cash_player_session, lightning_pool_session and lightning_blind_ledger row byte-identical, through a measure first proved to move for one cent and come back, and a trigger injected to move a chip DURING a formation is refused by the barrier's own LIGHTNING_FORMATION_MOVED_MONEY guard, which raises rather than retrying; a horse seated by table_seats.horse_id converts, pools, slots, reserves, seats, takes a position and a blind role and a stack snapshot and a blind-ledger row exactly as a human does, and no Phase 9 function body mentions a horse at all; the freeze refuses forming, opening, releasing and slot-opening and does NOT refuse abandoning, reaping or closing a departed player's slot, and formation resumes when the break lifts; P2's oldest-unresolved-BB key really decides the big blind, the rotation really moves, an unresolved obligation outranks a fresher timestamp, seats 3 to 6 stay in the caller's order so P3 is left to the matcher, not one DEBT column is written, and a matcher-supplied big blind is refused unless it ties with the barrier's own choice on the whole key; anon, authenticated and PUBLIC execute none of the fifteen functions, service_role executes all nine callable ones, none is SECURITY DEFINER, RLS is on with no policies and no browser grant on any lightning table, and the barrier is the ONLY function in the estate that can seat a participant; all of the migration's own @live-proof expressions are extracted from the file under test and true; and the migration applied a SECOND time leaves fifteen bodies, fifteen acls, every comment and every index definition byte-identical with exactly six triggers and not one row moved, over an estate full of formed hands; and then, against 20260926023047 applied on top of all of it after section 16 had reproduced every defect it repairs on 20260925215731's own code: the very dealing hand 16a wedged is reaped by the real reaper as a void hand and its six form again, a hand vouched for by fn_lightning_instance_keepalive survives a reaper handed a clock a day ahead while a dealing, a dead and a settling hand are reaped, and the keepalive only ever moves a deadline forward, by at most fifteen minutes, and never revives a dead hand; the barrier buries the corpse 16c left and forms over its six in the same call, and ONE call of the real fn_cash_clusters_tick_all reaps estate-wide, slots the eighteen pool sessions 16c left slotless and a player who entered after the conversion, and isolates a Cluster whose slot writes fail; a hand born latched is refused by name while the same INSERT unlatched is accepted, and a bare UPDATE into dealing is refused unless count, participant rows and committed reservations agree; a REAL second backend commits chips to a non-participant inside an open formation, witnessed from that backend, and the formation stands, while a write to a participant is held off by FOR SHARE and a chip moved inside the formation is still refused; lock_not_available on the ledger row and on the Cluster row, a REAL deadlock and a REAL serialization failure are each a clean matcher_retry with nothing behind, all three classes injected at both depths are too, a class that is not retryable propagates, and a REAL statement timeout reaches its caller as query_canceled; TRUNCATE of all seven lightning tables is refused to service_role by the privilege and to the owner by the trigger, directly and by CASCADE; every hand carries five non-null versions frozen from birth; the P2 override ties on pool entry and all five terms of the key are pinned by five pairs; slot open supersedes a stale slot across a re-entry and an epoch bump; five- to nine-handed hands carry n distinct positions and one utg_count; a reservation with no instance is refused; the file refuses by lock timeout at eight seconds behind a held read lock; every @live-proof of the remediation and every unsuperseded one of 20260925215731 is true while the two it supersedes are false; and the remediation applied a SECOND time leaves eighteen bodies and every index, trigger, constraint, acl and column byte-identical with each re-cut present exactly once"

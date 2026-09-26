@@ -579,9 +579,13 @@ health_instance() {
 # engine, which deals no hands. What a restart discards is the in-memory
 # time-bank mirror of seats that already stopped; the chips live in the
 # database. That is the class the legacy checkpoint guard already calls
-# DISPOSED. MaintenanceBreak now bounds it exactly like the F06 class and
-# retires it into stopped_bank_custody_stuck, which joins the allow-list
-# below. The RAW reason stays refused, with one self-retiring exception: when
+# DISPOSED. MaintenanceBreak now bounds it and, past the bound, reports it as
+# stopped_bank_custody_stuck - which STILL refuses and is NOT in the allow-list
+# below (corrected 2026-09-26, #5267): on a build with #5255 a terminal engine
+# persists its custody at every break announcement, so what outlives the bound
+# there is a write that keeps failing, a player's bank genuinely not on disk,
+# and nothing behind this script re-checks it on an ordinary cutover. The RAW
+# reason stays refused, with one self-retiring exception: when
 # the serving release is one of the exact predecessors that cannot present
 # the bounded class because the bound is not in that build, the raw reason is
 # admitted under the SAME database in-flight proof. The moment a bounded
@@ -636,7 +640,9 @@ if ok:
 # The BOUNDED classes: each is a blocker the engine itself has already aged
 # past MaintenanceBreak.F06_UNRESOLVED_GATE_MS (or is the live half of one
 # that the engine will age), raised only by a table that deals no hands.
-BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck","stopped_bank_custody_stuck"}
+# No bank or custody name may appear in this set (pinned by
+# theCertificateOpensBeforeTheFleetIsSwept and everyRestartBlockerDeclaresItsBound).
+BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
 # The one reason admitted UNBOUNDED, and only from these exact serving
 # releases: predecessors whose MaintenanceBreak counts
 # stopped_bank_custody_unconfirmed with no bound and can therefore never

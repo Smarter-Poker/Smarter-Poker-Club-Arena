@@ -247,3 +247,164 @@ BEGIN
    WHERE ps.id = (SELECT sl.pool_session_id FROM public.lightning_pool_slot sl WHERE sl.id = NEW.pool_slot_id);
   RETURN NEW;
 END $fx$;
+
+-- ===========================================================================
+-- THE WRITERS SECTIONS 16 TO 30 NEED, for 20260926023047, the remediation.
+-- ===========================================================================
+
+-- A CATCHER FOR THE ONE CLASS fx9_try CANNOT CATCH. PL/pgSQL's WHEN OTHERS
+-- does not match query_canceled, which is exactly the property section 21
+-- relies on the barrier having: this names it, so that a cancel which escaped
+-- the barrier can be observed rather than aborting the harness.
+CREATE FUNCTION public.fx9_try_cancel(p_sql text)
+RETURNS text LANGUAGE plpgsql AS $fx$
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'no error';
+EXCEPTION
+  WHEN query_canceled THEN RETURN 'query_canceled: ' || SQLERRM;
+  WHEN OTHERS THEN RETURN SQLERRM;
+END $fx$;
+
+-- A FAULT OF ANY SQLSTATE, AT A NAMED DEPTH, switched by a GUC. fx9_break
+-- raises check_violation only; section 21 needs the three retryable classes
+-- and one that must NOT be retried, each raised at the same depth of the same
+-- formation - inside the barrier's atomic block (hung on lightning_hand_player)
+-- and outside it (hung on the reap's abandon of a stale instance). TG_ARGV[0]
+-- names the depth, and fx9.raise_class_<depth> names the class.
+CREATE FUNCTION public.fx9_raise_class() RETURNS trigger LANGUAGE plpgsql AS $fx$
+DECLARE v text := coalesce(current_setting('fx9.raise_class_' || TG_ARGV[0], true), '');
+BEGIN
+  IF v <> '' THEN
+    RAISE EXCEPTION USING ERRCODE = v, MESSAGE = 'FX9_INJECTED_CLASS ' || v || ' at ' || TG_ARGV[0];
+  END IF;
+  RETURN NEW;
+END $fx$;
+
+-- A WRITE THAT TAKES LONGER THAN THE CALLER WILL WAIT, switched by a GUC, so
+-- that a real statement_timeout fires inside the barrier.
+CREATE FUNCTION public.fx9_slow() RETURNS trigger LANGUAGE plpgsql AS $fx$
+BEGIN
+  IF coalesce(current_setting('fx9.slow', true), '') = 'on' THEN
+    PERFORM pg_sleep(3);
+  END IF;
+  RETURN NEW;
+END $fx$;
+
+-- A SLOT WRITE THAT FAILS FOR ONE NAMED CLUSTER, so section 18 can prove one
+-- Cluster's failing sync costs that Cluster and not the pass.
+CREATE FUNCTION public.fx9_break_slot() RETURNS trigger LANGUAGE plpgsql AS $fx$
+BEGIN
+  IF NEW.cluster_id::text = coalesce(current_setting('fx9.break_slot_cluster', true), '') THEN
+    RAISE EXCEPTION 'FX9_INJECTED_SLOT_FAULT for Cluster %', NEW.cluster_id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $fx$;
+
+-- ANOTHER BACKEND. A READ COMMITTED false positive and a lock that bites can
+-- only be shown with a second transaction that really commits, or really
+-- waits, while this one is in the middle of forming - which one session cannot
+-- do to itself. dblink lives in its own schema, created by section 16, so that
+-- nothing this harness needs is added to public. Its lock_timeout is short so
+-- that a write this session has blocked comes back as an error in well under a
+-- second instead of waiting on a session that is itself waiting on it - a
+-- cycle no deadlock detector can see, because half of it is a client wait.
+CREATE FUNCTION public.fx9_elsewhere(p_sql text) RETURNS text LANGUAGE plpgsql AS $fx$
+DECLARE v_r text;
+BEGIN
+  IF NOT coalesce('fx9_elsewhere' = ANY (harness.dblink_get_connections()), false) THEN
+    PERFORM harness.dblink_connect('fx9_elsewhere',
+      'host=' || current_setting('unix_socket_directories') || ' port=' || current_setting('port')
+      || ' dbname=' || current_database() || ' user=' || current_user);
+    PERFORM harness.dblink_exec('fx9_elsewhere', 'SET lock_timeout = ''300ms''');
+  END IF;
+  v_r := harness.dblink_exec('fx9_elsewhere', p_sql, false);
+  IF v_r = 'ERROR' THEN
+    RETURN 'ERROR: ' || harness.dblink_error_message('fx9_elsewhere');
+  END IF;
+  RETURN v_r;
+END $fx$;
+
+-- A QUESTION ASKED OF THE OTHER BACKEND, answered as one text value. Its
+-- snapshot is its own, so what it can and cannot see is evidence about what
+-- this backend has and has not committed.
+CREATE FUNCTION public.fx9_elsewhere_ask(p_sql text) RETURNS text LANGUAGE plpgsql AS $fx$
+DECLARE v_r text;
+BEGIN
+  PERFORM public.fx9_elsewhere('SET application_name = ''fx9_elsewhere''');
+  SELECT t.a INTO v_r FROM harness.dblink('fx9_elsewhere', p_sql) AS t(a text);
+  RETURN v_r;
+END $fx$;
+
+-- THE SAME, FROM INSIDE A FORMATION. Hung on lightning_hand_player for one
+-- call: runs the GUC's statement ONCE in the other backend, between the
+-- barrier's before and after measures, and leaves what the other backend said
+-- in a second GUC. When fx9.elsewhere_witness_sql is set it then asks the
+-- other backend that question too, from the same instant, and records how many
+-- rows of this hand THIS backend can see, so that "the other transaction
+-- committed while the formation was open" is observed rather than assumed.
+CREATE FUNCTION public.fx9_commit_elsewhere() RETURNS trigger LANGUAGE plpgsql AS $fx$
+DECLARE
+  v_sql text := coalesce(current_setting('fx9.elsewhere_sql', true), '');
+  v_ask text := coalesce(current_setting('fx9.elsewhere_witness_sql', true), '');
+BEGIN
+  IF v_sql <> '' THEN
+    PERFORM set_config('fx9.elsewhere_sql', '', false);
+    PERFORM set_config('fx9.elsewhere_said', public.fx9_elsewhere(v_sql), false);
+    IF v_ask <> '' THEN
+      PERFORM set_config('fx9.elsewhere_witness_sql', '', false);
+      PERFORM set_config('fx9.elsewhere_witness', public.fx9_elsewhere_ask(v_ask), false);
+      PERFORM set_config('fx9.elsewhere_here',
+        (SELECT count(*) FROM public.lightning_hand h WHERE h.hand_id = NEW.hand_id)::text, false);
+    END IF;
+  END IF;
+  RETURN NEW;
+END $fx$;
+
+-- A REAL DEADLOCK, built from inside a formation. Hung on lightning_hand_player
+-- for one call - so the barrier already holds its Cluster row - it SENDS the
+-- other backend, which already holds a candidate's blind ledger row, a request
+-- for that same Cluster row, asynchronously, and waits until pg_locks shows the
+-- other backend genuinely waiting. The barrier then walks into the ledger row
+-- and the cycle is closed by the two backends themselves.
+CREATE FUNCTION public.fx9_deadlock_elsewhere() RETURNS trigger LANGUAGE plpgsql AS $fx$
+DECLARE
+  v_sql text := coalesce(current_setting('fx9.deadlock_sql', true), '');
+  v_pid integer;
+  v_n   integer := 0;
+  i     integer;
+BEGIN
+  IF v_sql = '' THEN
+    RETURN NEW;
+  END IF;
+  PERFORM set_config('fx9.deadlock_sql', '', false);
+  v_pid := current_setting('fx9.elsewhere_pid')::integer;
+  PERFORM harness.dblink_send_query('fx9_elsewhere', v_sql);
+  FOR i IN 1 .. 250 LOOP
+    SELECT count(*)::integer INTO v_n FROM pg_locks WHERE pid = v_pid AND NOT granted;
+    EXIT WHEN v_n > 0;
+    PERFORM pg_sleep(0.02);
+  END LOOP;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'FIXTURE: the other backend never waited on the Cluster row, so no deadlock could follow';
+  END IF;
+  RETURN NEW;
+END $fx$;
+
+-- A TRUNCATE THAT ALWAYS ROLLS BACK. Run as p_role (NULL: as this session), it
+-- truncates p_table and then RAISES, so whatever happened is undone and the
+-- answer comes back as text: either the refusal, or FX9_TRUNCATED with the
+-- number of hands left standing, counted after the role is reset so that row
+-- level security cannot make an untruncated table read as empty. A harness
+-- that proved TRUNCATE works by committing one would erase its own estate.
+CREATE FUNCTION public.fx9_truncate_probe(p_role text, p_table text) RETURNS text LANGUAGE plpgsql AS $fx$
+BEGIN
+  IF p_role IS NOT NULL THEN
+    EXECUTE format('SET LOCAL ROLE %I', p_role);
+  END IF;
+  EXECUTE format('TRUNCATE %s CASCADE', p_table);
+  EXECUTE 'RESET ROLE';
+  RAISE EXCEPTION 'FX9_TRUNCATED % leaving % hand(s)', p_table, (SELECT count(*) FROM public.lightning_hand);
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLERRM;
+END $fx$;

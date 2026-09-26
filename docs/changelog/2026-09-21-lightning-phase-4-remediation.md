@@ -229,3 +229,65 @@ Three function bodies and one new function. Dropping
 taken before the apply returns the prior behaviour exactly - including the
 blocker. No table, no column, no row, no grant. No money moved. Nothing reads
 the new numbers yet except the lobby, whose ten keys are unchanged.
+
+## Correction, 2026-09-25: the fifteenth `@live-proof` of `20260921142954` is now false, deliberately
+
+Written while shipping Lightning Phase 9
+(`20260925215731_lightning_phase_9_the_hand_formation_barrier_is_atomic_and_t`).
+Migration files are immutable, so nothing above is edited; what follows is the
+record, in the same style as the correction to the fourteenth proof of
+`20260921064717` in `2026-09-21-lightning-phase-4-population.md`.
+
+**The fifteenth `@live-proof` line of `20260921142954` is now false.** It reads
+
+```
+(SELECT count(*) = 10 FROM jsonb_object_keys(public.fn_cash_cluster_lightning_state(
+   (SELECT id FROM public.cash_games ORDER BY created_at, id LIMIT 1))))
+```
+
+It asserts that the lobby's state object has **exactly ten** top-level keys.
+Evaluated read-only against production on 2026-09-25, it returns **false**:
+production returns **eleven**. They are `cluster_epoch`, `cluster_mode`,
+`enabled`, `game_id`, `handedness`, `lightning_enabled`, `must_move`,
+`open_cluster_sessions`, `open_pool_sessions`, `thresholds` and `verdict`. The
+eleventh is `open_pool_sessions`.
+
+**Why it is false.** `20260925204249`
+(`lightning_phase_5_remediation_the_halt_is_a_standing_bar`) added
+`open_pool_sessions` on purpose, as its item 6. `open_cluster_sessions` counts
+`cash_player_session` rows and carries no epoch, and it cannot carry one:
+`cash_player_session` has no `cluster_epoch` column, by design, because the
+specification makes a Lightning Pool Session subordinate to the continuous Cash
+Player Session, which outlives the epoch. Read beside `cluster_epoch` and beside
+an epoch-scoped `live_eligible`, the unscoped count invited exactly the wrong
+conclusion, so the remediation put the epoch-scoped count next to it rather than
+"fixing" the one that is correct. It did so by asserted substitution into the
+live body, refusing to substitute unless all three anchors were present, and
+then re-read the installed definition to confirm the new key was there and that
+the reader still does not call `fn_cash_cluster_population`.
+
+**What the later migration proves instead.** `20260925204249`'s twenty-first
+`@live-proof` asserts that the comment-stripped body of
+`fn_cash_cluster_lightning_state(uuid)` contains `open_pool_sessions`, and it is
+true in production today. That is a "contains this" assertion, which is the
+durable form: it will still be true the day a twelfth key is added.
+
+**The code is right and the proof was pinning an intermediate state.** Ten was
+the true number between `20260921142954` and `20260925204249`, and it is the
+number this migration's own harness sees, because that harness applies the chain
+only up to here. The proof is superseded, not rewritten. The static test is
+unaffected: `tests/lightning-phase-4-remediation.test.ts` asserts the ten keys as
+a set over **this migration's text**, which has not changed and still has ten.
+Only the claim about the live database moved. The Rollback section's closing
+sentence, "the lobby, whose ten keys are unchanged", was true of this migration
+and is now true only as a statement about what this migration did; the lobby
+object in production has eleven.
+
+**The line is latent rather than red**, for the reason given in the other two
+corrections of this kind: `scripts/ci/check-migrations-are-live.mjs` clears
+`20260921142954` at step 1, the name match, and evaluates proofs only for a
+migration it cannot match by name. It would fire on a replay into a database
+whose `schema_migrations` was not carried over, and there the honest answer is
+the one written here: superseded, on purpose, by `20260925204249`.
+
+The other twenty proofs of `20260921142954` are true in production.

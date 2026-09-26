@@ -177,3 +177,31 @@ in the 22:31Z re-probe, which returned exactly that and left the felt at
 a satellite that finishes inside a break settles after the thaw rather than
 admitting a winner the frozen platform cannot seat. The settlement is idempotent
 on its own receipt, so that is a retry, not a loss.
+
+## The contract pin compared names, and was caught before a second refusal
+
+Read back against production on 2026-09-26 02:21Z, before any second dispatch:
+`pg_get_function_identity_arguments` returns the parameter NAMES as well as the
+types, and production's authority answers
+`p_tournament_id uuid, p_user_id uuid`. The merged predicate compared that string
+to `'uuid, uuid'`, so it matched no function at all
+(`count(*) = 0` against the live catalog) and the install would have been refused
+a second time, against the very function it was written for, leaving the door
+open.
+
+The predicate now reads the argument TYPES, `oidvectortypes(p.proargtypes) =
+'uuid, uuid'`, which is what the seat delivery depends on. Every other clause of
+the contract is unchanged, and the byte preimage on
+`fn_ca_settle_satellite_cohort` is unchanged.
+
+A text test could not see this, so the guard is now qualified in PostgreSQL:
+`scripts/ci/test-satellite-seat-preimage.py`, in `accounting_postgres`, loads
+production's real `fn_ca_settle_satellite_cohort` (from 20260921095012, asserted
+to hash to the installed `86709c35...`) and production's real
+`fn_seat_late_registrant` (asserted to hash to the installed `28b68b7f...`), then
+runs the `DO $preimage$` block read out of this migration file. RED: the guard as
+merged refuses. GREEN: the candidate accepts. Nothing was weakened: a seat
+authority that skips the lane, skips the terminal gate, runs as INVOKER, takes
+other argument types, is not owned by postgres, or is missing, is refused; a
+one-byte change to, or a widened ACL on, the replaced function is refused; a
+re-declaration that only renames parameters is accepted.

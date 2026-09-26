@@ -1412,6 +1412,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-must-be-zero-balance-detector.py
+      - name: The satellite seat preimage guard accepts the installed seat authority and refuses a broken contract
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-satellite-seat-preimage.py
       - name: Lightning Phase 2 domain schema carries its invariants as constraints
         if: matrix.shard == 1
         env:

@@ -19,6 +19,7 @@ import {
   unlinkSync,
   constants,
   readSync,
+  statfsSync,
   type Stats,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -750,14 +751,9 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       )
         throw Error('Horse archive writer allocation changed');
       const bytes = segments.reduce((n, s) => n + s.bytes, 0);
-      if (fresh.length && Number(usage.bytes) + bytes > this.archive.maxBytes)
-        throw Error('horse_archive_byte_capacity');
-      if (
-        fresh.length &&
-        (Number(usage.segments) + segments.length > this.archive.maxSegments ||
-          Number(usage.records) + fresh.length > this.archive.maxSegments * 16)
-      )
-        throw Error('horse_archive_segment_capacity');
+      const quota = this.archiveQuotaRefusal(usage, bytes, segments.length, fresh.length);
+      if (quota === 'archive_bytes') throw Error('horse_archive_byte_capacity');
+      if (quota === 'archive_segments') throw Error('horse_archive_segment_capacity');
       if (fresh.length) this.assertCatalogCapacity(fresh.length, segments);
       segments.forEach((s, i) =>
         db
@@ -790,18 +786,99 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
    * lower the ceiling, and the freelist changes with every completed batch.
    * An unlimited connection (max_page_count 0) never refuses on this ground. */
   private assertCatalogCapacity(records: number, segments: readonly Segment[]): void {
+    if (!this.catalogHasRoom(records, segments)) throw Error('horse_archive_catalog_capacity');
+  }
+  /** The byte and segment/record quotas, shared by the writer and the probe so
+   * the two cannot disagree. A batch with nothing new reserves nothing. */
+  private archiveQuotaRefusal(
+    usage: Record<string, SQLOutputValue>,
+    bytes: number,
+    segments: number,
+    fresh: number
+  ): 'archive_bytes' | 'archive_segments' | null {
+    const archive = this.archive!;
+    if (fresh && Number(usage.bytes) + bytes > archive.maxBytes) return 'archive_bytes';
+    if (
+      fresh &&
+      (Number(usage.segments) + segments > archive.maxSegments ||
+        Number(usage.records) + fresh > archive.maxSegments * 16)
+    )
+      return 'archive_segments';
+    return null;
+  }
+  private catalogPagesNeeded(records: number, segments: readonly Segment[]): number {
+    return (
+      records * CATALOG_PAGES_PER_RECORD +
+      segments.reduce((n, s) => n + Math.ceil(s.bytes / CATALOG_OVERFLOW_BYTES) + 1, 0) +
+      CATALOG_MARGIN_PAGES
+    );
+  }
+  private catalogHasRoom(records: number, segments: readonly Segment[]): boolean {
     const db = this.catalog!;
     const pages = Number(db.prepare('PRAGMA page_count').get()!.page_count),
       max = Number(db.prepare('PRAGMA max_page_count').get()!.max_page_count),
       free = Number(db.prepare('PRAGMA freelist_count').get()!.freelist_count);
     if (![pages, max, free].every((n) => Number.isSafeInteger(n) && n >= 0))
       throw Error('Horse archive catalog state unavailable');
-    if (max === 0) return;
+    if (max === 0) return true;
+    return max - pages + free >= this.catalogPagesNeeded(records, segments);
+  }
+  /** Read-only answer to one question from a publisher paused at a quota:
+   * would this exact batch be refused by a named quota now? It reads the usage
+   * row, the catalog page counts and the filesystem's free space, and never
+   * reserves, writes, finishes pending work or deletes anything; no quota
+   * grants permission to delete records. Conservative: every probed record is
+   * counted as new, and any reserved batch still pending is charged too. An
+   * answer of room is an estimate; if the append is still refused the
+   * publisher pauses again and asks at its next probe. */
+  capacityRefusal(
+    records: readonly HorseJournalRecord[]
+  ):
+    | 'archive_bytes'
+    | 'archive_segments'
+    | 'archive_catalog_capacity'
+    | 'archive_storage_capacity'
+    | null {
+    if (!Array.isArray(records) || records.length < 1 || records.length > 16)
+      throw Error('Horse journal batch exceeds bounds');
+    for (const record of records) validateHorseJournalRecord(record);
+    const captured = records.map((r) => JSON.parse(horseJournalJson(r)) as HorseJournalRecord);
+    if (captured.reduce((n, r) => n + Buffer.byteLength(horseJournalJson(r)), 0) > DECODE_BYTES)
+      throw Error('Horse journal batch exceeds bounds');
+    // The legacy spool has no named quota; the publisher never pauses on it.
+    if (!this.archive) return null;
+    if (this.archiveReadOnly) throw Error('Horse journal is read only');
+    this.assertLegacy();
+    const db = this.catalog!;
+    const usage = db.prepare('SELECT * FROM archive_meta WHERE id=1').get();
+    if (
+      !usage ||
+      [usage.bytes, usage.segments, usage.records].some(
+        (n) => !Number.isSafeInteger(n) || Number(n) < 0
+      )
+    )
+      throw Error('Horse archive usage corruption');
+    const segments = segmentsFor(captured);
+    const bytes = segments.reduce((n, s) => n + s.bytes, 0);
+    const quota = this.archiveQuotaRefusal(usage, bytes, segments.length, captured.length);
+    if (quota) return quota;
+    const pending = Number(
+      db.prepare('SELECT coalesce(sum(records),0) AS n FROM archive_pending').get()!.n
+    );
+    if (!Number.isSafeInteger(pending) || pending < 0)
+      throw Error('Horse archive pending exceeds bounds');
+    if (!this.catalogHasRoom(captured.length + pending, segments))
+      return 'archive_catalog_capacity';
+    // ENOSPC and a full disk under SQLite: the segment file, the catalog pages
+    // and their rollback copy must all fit in what the filesystem will give us.
+    const fs = statfsSync(this.archive.directory);
+    const free = Number(fs.bavail) * Number(fs.bsize);
     const needed =
-      records * CATALOG_PAGES_PER_RECORD +
-      segments.reduce((n, s) => n + Math.ceil(s.bytes / CATALOG_OVERFLOW_BYTES) + 1, 0) +
-      CATALOG_MARGIN_PAGES;
-    if (max - pages + free < needed) throw Error('horse_archive_catalog_capacity');
+      bytes +
+      2 * this.catalogPagesNeeded(captured.length + pending, segments) * CATALOG_PAGE_BYTES +
+      1024 * 1024;
+    if (!Number.isFinite(free) || free < needed) return 'archive_storage_capacity';
+    return null;
   }
   override readHand(handKey: string): readonly HorseJournalRecord[] {
     this.assertLegacy();

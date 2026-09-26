@@ -119,7 +119,11 @@ BEGIN
        AND p.proname = 'fn_seat_late_registrant'
        AND p.prokind = 'f'
        AND p.pronargs = 2
-       AND pg_get_function_identity_arguments(p.oid) = 'uuid, uuid'
+       -- Argument TYPES, not the identity string: pg_get_function_identity_arguments
+       -- includes the parameter NAMES ('p_tournament_id uuid, p_user_id uuid' on
+       -- production), so comparing it to 'uuid, uuid' matched nothing and would
+       -- have refused this migration against the very function it was written for.
+       AND oidvectortypes(p.proargtypes) = 'uuid, uuid'
        AND p.prorettype = 'jsonb'::regtype
        AND p.prosecdef
        AND pg_get_userbyid(p.proowner) = 'postgres'

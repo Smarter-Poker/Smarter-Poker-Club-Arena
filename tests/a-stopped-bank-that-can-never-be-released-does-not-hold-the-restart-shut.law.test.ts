@@ -33,10 +33,13 @@
  *
  * WHAT THIS PINS
  * --------------
- * 1. The engine bounds the class exactly like the F06 class (the engine-side
- *    cases live in server/src/maintenance/theGateSaysWhyItIsShut.law.test.ts)
- *    and the release admits the BOUNDED reason, `stopped_bank_custody_stuck`,
- *    under the same database in-flight proof as the preparation reasons.
+ * 1. CORRECTED 2026-09-26 (#5267). The engine bounds the class, but past the
+ *    bound it reports `stopped_bank_custody_stuck` and STILL refuses, and the
+ *    release REFUSES that name too: on a build with #5255 what outlives the
+ *    bound is a bank genuinely not on disk, and nothing behind this script
+ *    re-checks it on an ordinary cutover. No bank or custody name is in
+ *    BOUNDED_ONLY. Engine-side cases: server/src/maintenance/
+ *    aStoppedBankPastItsBoundIsNamedAndStillRefuses.law.test.ts.
  * 2. The RAW reason is admitted from exactly one serving release: the exact
  *    predecessor profile that can never present the bounded class because the
  *    bound is not in that build. An allow-list of full SHAs, like the
@@ -72,7 +75,12 @@ const certificateHelper = TRANSACTION.slice(
 function inflightHelper(rc: number): string {
   const dir = mkdtempSync(join(tmpdir(), 'inflight-'));
   const path = join(dir, 'engine-release-inflight-hands.py');
-  writeFileSync(path, `#!/bin/sh\nexit ${rc}\n`);
+  // The real helper announces its answer on stdout; the stand-in does too, so
+  // a certificate that leaks it into the captured figure fails here.
+  writeFileSync(
+    path,
+    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+  );
   chmodSync(path, 0o755);
   return path;
 }
@@ -130,47 +138,31 @@ maintenance_certificate`,
   );
 }
 
-describe('1. the bounded stopped-bank class is admitted like the bounded preparation class', () => {
-  it('admits stopped_bank_custody_stuck with the database proof, from any serving release', () => {
-    const result = certificate({ reasons: { stopped_bank_custody_stuck: 154 } });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('296000');
-    expect(result.stdout).toContain('the database confirms no hand is in the air');
-    expect(result.stderr).toContain("held shut only by {'stopped_bank_custody_stuck': 154}");
-    // Never the predecessor sentence: this is the ordinary bounded path.
-    expect(result.stderr).not.toContain('can never release');
-  });
-
-  it('admits it mixed with both preparation reasons, which is the shape production showed', () => {
-    const result = certificate({
-      reasons: { f06_preparation_stuck: 13, stopped_bank_custody_stuck: 154 },
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(
-      certificate({
-        reasons: { f06_preparation_unresolved: 1, stopped_bank_custody_stuck: 1 },
-      }).status
-    ).toBe(0);
-  });
-
-  it('refuses it without the database proof, on every one of the helper answers', () => {
-    for (const rc of [1, 3, 126, 127, 9]) {
-      const result = certificate({ reasons: { stopped_bank_custody_stuck: 154 }, inflightRc: rc });
-      expect(result.status, `helper rc ${rc}`).not.toBe(0);
-      expect(result.stdout).not.toContain('the database confirms');
+describe('1. the stuck stopped-bank class is refused, from every serving release', () => {
+  it('refuses stopped_bank_custody_stuck even with the database proof', () => {
+    for (const releaseSha of [BOUNDED_RELEASE, PREDECESSOR]) {
+      const result = certificate({ reasons: { stopped_bank_custody_stuck: 154 }, releaseSha });
+      expect(result.status, result.stderr).not.toBe(0);
+      expect(result.stderr).not.toContain('the database confirms');
     }
   });
 
-  it("refuses it when the engine's own hands-in-flight witness is absent or non-zero", () => {
-    expect(certificate({ reasons: { stopped_bank_custody_stuck: 1 }, hands: 1 }).status).not.toBe(
-      0
-    );
-    expect(
-      certificate({ reasons: { stopped_bank_custody_stuck: 1 }, hands: 'absent' }).status
-    ).not.toBe(0);
-    expect(certificate({ reasons: { stopped_bank_custody_stuck: 1 }, hands: '0' }).status).not.toBe(
-      0
-    );
+  it('refuses it mixed with both preparation reasons, the shape production showed', () => {
+    for (const reasons of [
+      { f06_preparation_stuck: 13, stopped_bank_custody_stuck: 154 },
+      { f06_preparation_unresolved: 1, stopped_bank_custody_stuck: 1 },
+    ]) {
+      const result = certificate({ reasons });
+      expect(result.status, JSON.stringify(reasons)).not.toBe(0);
+      expect(result.stderr).not.toContain('the database confirms');
+    }
+  });
+
+  it('still admits the preparation reasons alone under the database proof', () => {
+    const result = certificate({ reasons: { f06_preparation_stuck: 13 } });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe('296000\n');
+    expect(result.stderr).toContain('the database confirms no hand is in the air');
   });
 });
 
@@ -181,7 +173,7 @@ describe('2. the raw reason is admitted from the exact predecessor only', () => 
       releaseSha: PREDECESSOR,
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('the database confirms no hand is in the air');
+    expect(result.stderr).toContain('the database confirms no hand is in the air');
     expect(result.stderr).toContain(
       'restart certificate is held shut by stopped-bank custody the predecessor 778075b4 can never release; ' +
         'the bound that retires it is not in that release; consulting the database for hands actually in the air'
@@ -226,7 +218,7 @@ describe('2. the raw reason is admitted from the exact predecessor only', () => 
       releaseSha,
     });
     expect(result.status).not.toBe(0);
-    expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
     expect(result.stderr).not.toContain('can never release');
   });
 
@@ -267,7 +259,7 @@ describe('3. everything that refused still refuses', () => {
   ])('refuses %j from a bounded release', (reasons) => {
     const result = certificate({ reasons });
     expect(result.status).not.toBe(0);
-    expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
   });
 
   it.each([
@@ -280,7 +272,7 @@ describe('3. everything that refused still refuses', () => {
   ])('refuses %j from the predecessor too', (reasons) => {
     const result = certificate({ reasons, releaseSha: PREDECESSOR });
     expect(result.status).not.toBe(0);
-    expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
   });
 
   it('a short window is still a missed opportunity, whoever is serving', () => {
@@ -296,6 +288,50 @@ describe('3. everything that refused still refuses', () => {
   });
 });
 
+describe('5. stdout is the verdict and nothing else', () => {
+  // Run 36211686180 (2026-09-26 02:34:11Z): the first admission through the
+  // database branch captured the helper's announcement as the figure and the
+  // transaction died on `$(( ... / 1000 ))` before prepare.
+  it('an admitted certificate prints only the remaining milliseconds, which the caller can do arithmetic on', () => {
+    // (#5267: stopped_bank_custody_stuck is refused, so the admitted shapes
+    // are the preparation reasons and the predecessor's raw reason.)
+    for (const reasons of [
+      { f06_preparation_stuck: 13 },
+      { f06_preparation_unresolved: 1 },
+      { f06_preparation_stuck: 13, f06_preparation_unresolved: 2 },
+    ]) {
+      const result = certificate({ reasons });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/^[0-9]+\n$/);
+      expect(result.stderr).toContain('[engine-release-inflight-hands] answer 0');
+    }
+    const raw = certificate({
+      reasons: { f06_preparation_stuck: 13, stopped_bank_custody_unconfirmed: 186 },
+      releaseSha: PREDECESSOR,
+    });
+    expect(raw.status, raw.stderr).toBe(0);
+    expect(raw.stdout).toBe('296000\n');
+  });
+
+  it('the caller evaluates the captured figure exactly as the transaction does', () => {
+    const result = certificate({ reasons: { f06_preparation_stuck: 13 } });
+    const arithmetic = spawnSync(
+      'bash',
+      ['-c', 'set -eu; BREAK_REMAINING_MS="$FIGURE"; echo $(( BREAK_REMAINING_MS / 1000 ))'],
+      { encoding: 'utf8', env: { ...process.env, FIGURE: result.stdout.replace(/\n$/, '') } }
+    );
+    expect(arithmetic.status, arithmetic.stderr).toBe(0);
+    expect(arithmetic.stdout.trim()).toBe('296');
+  });
+
+  it('the helper and the admission line are sent to stderr in the source', () => {
+    expect(TRANSACTION).toContain('"$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2');
+    expect(TRANSACTION).toContain(
+      'admitting the cutover past the unresolved preparation named above" >&2'
+    );
+  });
+});
+
 describe('4. the shape of the gate is unchanged', () => {
   it('keeps the allow-list an allow-list and admits only through the database branch', () => {
     const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file');
@@ -305,17 +341,21 @@ describe('4. the shape of the gate is unchanged', () => {
     // Every reason must still be a string; the bounded set stays a literal.
     expect(TRANSACTION).toContain('if not isinstance(k,str): raise SystemExit(1)');
     expect(TRANSACTION).toContain(
-      'BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck","stopped_bank_custody_stuck"}'
+      'BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}'
     );
+    const literal = TRANSACTION.match(/^BOUNDED_ONLY=\{(.*)\}$/m);
+    expect(literal).toBeTruthy();
+    expect(literal![1]).not.toMatch(/bank|custody/);
     // The old name is gone everywhere, so no reader keeps a stale copy.
     expect(TRANSACTION).not.toContain('PREPARATION_ONLY');
   });
 
-  it('the engine raises the bounded reason it admits, under the shared bound', () => {
+  it('the engine raises the stuck reason under the shared bound, and still holds the gate', () => {
     expect(BREAK).toContain("count('stopped_bank_custody_stuck');");
-    expect(BREAK).toContain('private stoppedBankCustodyHoldsGate(tableId: string): boolean {');
     expect(BREAK).toContain(
-      'for (const tableId of [...this.stoppedBankUnconfirmedSince.keys()]) {'
+      'private stoppedCustodyHoldsGate(tableId: string, reason: string): boolean {'
     );
+    expect(BREAK).toContain('for (const tableId of [...this.stoppedCustodySince.keys()]) {');
+    expect(BREAK).toMatch(/stopped_bank_custody_unwritten: \{[^}]*neverHoldsGate: true/);
   });
 });

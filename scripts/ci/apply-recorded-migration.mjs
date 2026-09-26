@@ -36,12 +36,19 @@
  *
  * NO RETRY LOOP (CLAUDE.md section 2 rule 2). One attempt per dispatch.
  *
+ * CONCURRENT INDEXES (2026-09-26). A file may open with CREATE INDEX
+ * CONCURRENTLY IF NOT EXISTS statements before its BEGIN; and nothing else
+ * (migration-concurrent-preamble.mjs). Each is sent alone, outside any
+ * transaction, only with room to finish before the :50 break window, and read
+ * back VALID before the next; the transaction is sent only after all of them.
+ *
  * Usage:
  *   DATABASE_URL=postgres://... node scripts/ci/apply-recorded-migration.mjs \
  *     --migration 20260922143541_club_and_union_diamond_commerce.sql [--dry-run]
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { splitConcurrentPreamble, minutesBeforeBreakWindow } from './migration-concurrent-preamble.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
@@ -86,6 +93,17 @@ if (!sql.trim()) refused(`${path} is empty`);
 if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
   refused(`${file} does not open with BEGIN; and close with COMMIT; - refusing to apply it outside one transaction`);
 }
+// The one sanctioned exception (migration-concurrent-preamble.mjs): CREATE
+// INDEX CONCURRENTLY statements before BEGIN;, which cannot run inside any
+// transaction block. Each is sent on its own; everything else must still be
+// inside the one transaction.
+const shape = splitConcurrentPreamble(sql);
+if (!shape.ok) refused(`${file}: ${shape.reason}`);
+const preamble = shape.indexes;
+// Leave room for the slowest ledger build to finish before :50: a concurrent
+// build still running when the break window opens is refused at its end and
+// leaves an INVALID index behind.
+const PREAMBLE_MINUTES_NEEDED = 12;
 
 // CLAUDE.md section 2 rule 8: the database refuses non-temporary DDL from a
 // postgres-role session inside minute-of-hour :50-:03 UTC, the hourly
@@ -135,7 +153,36 @@ if (already.length > 0) {
 
 console.log(`[apply] ${file}`);
 console.log(`[apply]   version ${version}, slug ${slug}, ${Buffer.byteLength(sql)} bytes`);
-console.log('[apply]   not present in schema_migrations; applying as ONE transaction');
+if (preamble.length > 0) {
+  console.log(`[apply]   ${preamble.length} CREATE INDEX CONCURRENTLY statement(s) first, each on its own:`);
+  for (const ix of preamble) console.log(`[apply]     ${ix.name} ON public.${ix.table}`);
+}
+console.log('[apply]   not present in schema_migrations; applying the migration as ONE transaction');
+
+// The dynamic half of the break window: an announced engine maintenance window
+// or its thaw refuses DDL outside the fixed :50-:03 minutes too
+// (fn_ca_break_window_refuses_migrations). Read it before sending anything, so
+// a refusal is a sentence here and not an aborted build there.
+async function refusalNow() {
+  try {
+    const { rows } = await client.query('SELECT public.fn_ca_break_window_refuses_migrations(clock_timestamp()) AS refusal');
+    return rows[0].refusal;
+  } catch (e) {
+    await client.end().catch(() => {});
+    unknown(`could not read fn_ca_break_window_refuses_migrations: ${e.message}`);
+  }
+}
+{
+  const refusal = await refusalNow();
+  if (refusal) {
+    await client.end().catch(() => {});
+    refused(`the database would refuse DDL now: ${refusal}. Nothing was sent. Do not loop.`);
+  }
+}
+if (preamble.length > 0 && minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED) {
+  await client.end().catch(() => {});
+  refused(`${PREAMBLE_MINUTES_NEEDED} minutes are needed before :50 UTC to build the concurrent indexes; dispatch again after :03. Nothing was sent.`);
+}
 
 if (DRY_RUN) {
   console.log('[apply] DRY RUN: nothing sent.');
@@ -143,9 +190,51 @@ if (DRY_RUN) {
   process.exit(EXIT_OK);
 }
 
+for (const ix of preamble) {
+  const refusal = await refusalNow();
+  if (refusal || minutesBeforeBreakWindow(new Date()) < 5) {
+    await client.end().catch(() => {});
+    refused(`stopped before ${ix.name}: ${refusal || 'fewer than 5 minutes before :50 UTC'}. Indexes already built stay (IF NOT EXISTS skips them); the transaction was NOT sent. Dispatch again after :03.`);
+  }
+  const t0 = Date.now();
+  try {
+    // Session-level and outside any transaction block: CONCURRENTLY requires it.
+    await client.query("SET statement_timeout = '600s'");
+    await client.query(ix.statement);
+    await client.query('RESET statement_timeout');
+  } catch (e) {
+    await client.end().catch(() => {});
+    console.error(`[apply] ${ix.name} did not build after ${Date.now() - t0}ms: ${e.code || ''} ${e.message}`);
+    console.error('[apply] A failed CONCURRENTLY build can leave an INVALID index: DROP INDEX CONCURRENTLY IF EXISTS it before dispatching again.');
+    console.error('[apply] The transaction was NOT sent. Nothing else changed.');
+    process.exit(EXIT_REFUSED);
+  }
+  let valid;
+  try {
+    const { rows } = await client.query(
+      `SELECT i.indisvalid AND i.indisready AS valid FROM pg_index i
+         JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = $1`,
+      [ix.name]
+    );
+    valid = rows.length === 1 && rows[0].valid === true;
+  } catch (e) {
+    await client.end().catch(() => {});
+    console.error(`[apply] UNKNOWN: ${ix.name} was sent but its validity could not be read (${e.message}).`);
+    console.error('[apply] The transaction was NOT sent. Read pg_index for it before dispatching again.');
+    process.exit(EXIT_UNKNOWN);
+  }
+  if (!valid) {
+    await client.end().catch(() => {});
+    refused(`${ix.name} exists but is not VALID. DROP INDEX CONCURRENTLY IF EXISTS public.${ix.name}; then dispatch again. The transaction was NOT sent.`);
+  }
+  console.log(`[apply]   ${ix.name} valid (${Date.now() - t0}ms)`);
+}
+
 const started = Date.now();
 try {
-  await client.query(sql);
+  // With no preamble this is the whole file, exactly as before.
+  await client.query(preamble.length > 0 ? shape.body : sql);
 } catch (e) {
   await client.end().catch(() => {});
   console.error(`[apply] the migration did not commit after ${Date.now() - started}ms`);

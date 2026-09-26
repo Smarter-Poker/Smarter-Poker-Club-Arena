@@ -228,30 +228,19 @@ describe('the certificate opens before the fleet is swept', () => {
   });
 
   // ── 5. THE RELEASE GATE NEVER PASSES OVER A BANK ─────────────────────────
-  it('keeps every refusing stopped-custody reason out of the release allow-list', () => {
+  it('keeps every stopped-custody reason out of the release allow-list', () => {
     const sh = read(`../../scripts/engine-${RELEASE_SH}.sh`);
     const allow = sh.match(/^BOUNDED_ONLY=\{(.*)\}$/m);
     expect(allow, 'the allow-list must stay a literal set').toBeTruthy();
     // An ALLOW-list, never a deny-list (the script says so itself). A bank
-    // that is still at stake must never be admitted into it:
-    // `bank_park_write_incomplete` was deliberately kept fatal because passing
-    // it over can cost a player their time bank, and `unwritten` and
-    // `unreadable` are the same class. The raw `unconfirmed` reason is not in
-    // the set either. What IS in it, since 2026-09-25, is the BOUNDED
-    // retirement of that raw reason - custody a terminal engine has held past
-    // the gate, which deals no hands and whose chips are in the database - the
-    // same shape `f06_preparation_stuck` already takes.
-    for (const refusing of [
-      'bank_park_write_incomplete',
-      'stopped_bank_custody_unwritten',
-      'stopped_bank_custody_unreadable',
-      'stopped_bank_custody_unconfirmed',
-    ])
-      expect(allow![1]).not.toContain(refusing);
-    const admitted = [...allow![1].matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]);
-    expect(admitted.filter((r) => r.includes('bank') || r.includes('custody'))).toEqual([
-      'stopped_bank_custody_stuck',
-    ]);
+    // class must never be admitted into it: `bank_park_write_incomplete` was
+    // deliberately kept fatal because passing it over can cost a player their
+    // time bank, and every custody name is the same class - including
+    // `stopped_bank_custody_stuck`, which #5266 admitted on 2026-09-25 and
+    // #5267 took back out on 2026-09-26: on a build with this law's own
+    // announcement write, custody past the bound is a bank still not on disk.
+    expect(allow![1]).not.toContain('bank');
+    expect(allow![1]).not.toContain('custody');
   });
 
   // ── 6. THE SCRAPE CARRIES THEM ZERO-SEEDED ───────────────────────────────

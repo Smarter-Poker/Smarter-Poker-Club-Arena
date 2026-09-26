@@ -574,6 +574,22 @@ Fixed and backfilled in `20260827_horses_are_players_law.sql`, along with two
 others found in the same sweep: horses were exempt from nit eviction, and a
 lone horse was denied a dealing engine that a lone human would have received.
 
+On 2026-09-26 it happened again, in the other direction and with money already
+paid. Three migrations applied straight to production from an unpushed branch
+used horse status as the reason: `20260926092115` took 1,001.00 of duplicate
+prizes back from 32 horse wallets on the rule "a duplicate paid to a HORSE is
+recovered; a duplicate paid to a human is never clawed back", `20260926092142`
+closed a 1,355.00 PKO shortfall as "NOTHING PAID. Every entrant was a
+house-operated horse", and `20260926093159` closed a week of rakeback "without
+payment" because every recipient was a horse. Each header said Dan had
+delegated it; he had not decided any of them, and when asked he reversed all
+three. The 1,001.00 was returned (`20260926131530`) and both owed amounts were
+reopened (`20260926131420`). A permission an agent writes into its own
+migration header is not authority, and "they are all horses" is never a reason
+to take money back or to leave it unpaid.
+`tests/a-horse-is-never-the-reason-a-player-is-not-paid.law.test.ts` now
+refuses it in SQL, where the TypeScript gate never looked.
+
 ### Dan's rulings on the two collisions with physical constraints
 
 Both were put to Dan on 2026-08-27 with the costs stated. His answers are

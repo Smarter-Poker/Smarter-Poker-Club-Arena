@@ -2,7 +2,8 @@
 # Lightning Phases 5 and 9, remediation two: the seat is the anchor, the pool
 # follows it, and a halt is a stop only once the engine has seen it.
 #
-# Proves 20260926045132 against a running catalogue and a running estate, on
+# Proves the four files of remediation two (20260926072527, 20260926072551,
+# 20260926072615, 20260926072638) against a running catalogue and estate, on
 # Postgres 17, socket only, on port 55551 (LIGHTNING_R2_PORT overrides it).
 #
 # THE CHAIN IS THE REAL ONE. The three Lightning fixtures, every Lightning
@@ -32,7 +33,7 @@
 # asked, never the migration's text, except where the text IS the claim (the
 # @live-proof lines, section 17).
 #
-# LIGHTNING_R2_MIGRATION overrides the file under test, so mutation testing
+# LIGHTNING_R2_MIGRATION_A, _B, _C and _D override the four files under test, so mutation testing
 # never touches the repository.
 set -euo pipefail
 export LC_ALL=C
@@ -56,9 +57,17 @@ phase5=$M/20260921151618_lightning_phase_5_the_conversion_is_one_transaction_and
 phase5r=$M/20260925204249_lightning_phase_5_remediation_the_halt_is_a_standing_bar.sql
 phase9=$M/20260925215731_lightning_phase_9_the_hand_formation_barrier_is_atomic_and_t.sql
 phase9r=$M/20260926023047_lightning_phase_9_remediation_nothing_holds_a_player_that_no.sql
-mine=${LIGHTNING_R2_MIGRATION:-$M/20260926045132_lightning_phase_5_and_9_remediation_two_the_seat_is_the_anch.sql}
+# THE FOUR FILES UNDER TEST, in version order. A adds tables' column, B the
+# events' columns, C the body, D the table_seats triggers; no one of them holds
+# a lock on both `tables` and `table_seats`. Each LIGHTNING_R2_MIGRATION_<X>
+# overrides one, so mutation testing never touches the repository.
+mine_a=${LIGHTNING_R2_MIGRATION_A:-$M/20260926072527_lightning_remediation_two_a_the_table_records_that_its_engin.sql}
+mine_b=${LIGHTNING_R2_MIGRATION_B:-$M/20260926072551_lightning_remediation_two_b_cluster_events_carry_a_version_a.sql}
+mine=${LIGHTNING_R2_MIGRATION_C:-$M/20260926072615_lightning_remediation_two_c_the_seat_is_the_anchor_and_the_p.sql}
+mine_d=${LIGHTNING_R2_MIGRATION_D:-$M/20260926072638_lightning_remediation_two_d_the_seat_triggers_keep_the_pool_.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$phase2" "$phase2r" \
-         "$phase3" "$phase3r" "$phase4" "$phase4r" "$phase5" "$phase5r" "$phase9" "$phase9r" "$mine"; do
+         "$phase3" "$phase3r" "$phase4" "$phase4r" "$phase5" "$phase5r" "$phase9" "$phase9r" \
+         "$mine_a" "$mine_b" "$mine" "$mine_d"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-r2-test.XXXXXX")
@@ -433,10 +442,14 @@ BEGIN
   IF v_t IS DISTINCT FROM 'ok 1' THEN
     RAISE EXCEPTION 'FAIL 02: an open session on the player''s own free seat was refused: %', v_t;
   END IF;
+  -- NO FOREIGN KEY, deliberately (section 15 proves what holds the anchor
+  -- instead): an anchor id that names no seat is not refused by the schema.
   v_t := public.fxr_probe(format('INSERT INTO public.lightning_pool_session (cluster_id, cluster_epoch, player_id, cash_player_session_id, state, anchor_seat_id) VALUES (%L, %s, %L, gen_random_uuid(), %L, gen_random_uuid())',
                                  v_g, v_e, v_j, 'active'));
-  IF v_t !~ '^23503' THEN
-    RAISE EXCEPTION 'FAIL 02: an anchor that is no seat was not refused by the foreign key: %', v_t;
+  IF v_t IS DISTINCT FROM 'ok 1'
+     OR EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.lightning_pool_session'::regclass
+                  AND contype = 'f' AND confrelid = 'public.table_seats'::regclass) THEN
+    RAISE EXCEPTION 'FAIL 02: the pool still carries a foreign key to the hot table table_seats: %', v_t;
   END IF;
   v_t := public.fxr_probe(format('INSERT INTO public.lightning_pool_session (cluster_id, cluster_epoch, player_id, cash_player_session_id, state) VALUES (%L, %s, %L, gen_random_uuid(), %L)',
                                  v_g, v_e, v_j, 'active'));
@@ -448,7 +461,8 @@ BEGIN
   -- GRANTS, BOTH WAYS.
   SELECT string_agg(p.oid::regprocedure::text, ', ') INTO v_t FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname IN ('fn_cash_table_observe_dealing_halt', 'fn_lightning_anchor_is_live_eligible',
-           'fn_lightning_pool_stack', 'fn_lightning_player_in_hand', 'fn_lightning_pool_enter', 'fn_lightning_form_hand')
+           'fn_lightning_pool_stack', 'fn_lightning_player_in_hand', 'fn_lightning_pool_enter', 'fn_lightning_form_hand',
+           'fn_cash_cluster_unfreeze')
      AND (NOT has_function_privilege('service_role', p.oid, 'EXECUTE')
           OR has_function_privilege('anon', p.oid, 'EXECUTE')
           OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
@@ -466,7 +480,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL 02: the definer set is wrong: only the two table_seats trigger functions may run as their owner';
   END IF;
 END $$;
-\echo '  ok  02 THE SCHEMA AND THE ESTATE  every pool session the ground left - thirty-six and more, across two Clusters - is anchored to a seat of its own player in its own Cluster, the departed player''s to the seat that left, and the player the old code never let in is swept into the pool through the new door; a second open session on one anchor is refused by lightning_pool_session_one_open_per_anchor while the same INSERT on the player''s own free seat is accepted, an anchor that is no seat is refused by the foreign key and a missing one by NOT NULL; service_role and no browser role executes each new function and the one ten-argument barrier; and only the two table_seats trigger functions run as their owner'
+\echo '  ok  02 THE SCHEMA AND THE ESTATE  every pool session the ground left - thirty-six and more, across two Clusters - is anchored to a seat of its own player in its own Cluster, the departed player''s to the seat that left, and the player the old code never let in is swept into the pool through the new door; a second open session on one anchor is refused by lightning_pool_session_one_open_per_anchor while the same INSERT on the player''s own free seat is accepted, a missing anchor is refused by NOT NULL, and there is no foreign key to the hot table table_seats; service_role and no browser role executes each new function and the one ten-argument barrier; and only the two table_seats trigger functions run as their owner'
 
 -- 03 DEFECT 1: A HALT IS A STOP ONLY ONCE THE ENGINE HAS SEEN IT ---------------
 DO $$
@@ -1137,6 +1151,16 @@ BEGIN
                       AND payload ->> 'to_mode' = 'frozen' AND request_id IS NOT NULL) THEN
     RAISE EXCEPTION 'FAIL 09: the freeze did not write its evidence: %', v_ev;
   END IF;
+  -- AND IT PAGES: one critical alert on the operator path, named by the
+  -- freeze's own evidence.
+  IF (v_r ->> 'alerted')::boolean IS DISTINCT FROM true
+     OR NOT EXISTS (SELECT 1 FROM public.financial_alerts fa
+                     WHERE fa.source = 'lightning_formation' AND fa.severity = 'critical' AND NOT fa.resolved
+                       AND fa.context ->> 'dedupe_key' = 'lightning_cluster_frozen:' || v_g
+                       AND fa.id::text = (SELECT payload ->> 'alert_id' FROM public.cash_cluster_events
+                                           WHERE game_id = v_g AND kind = 'cluster_frozen' ORDER BY at DESC LIMIT 1)) THEN
+    RAISE EXCEPTION 'FAIL 09: the freeze did not raise its alert on the operator path: %', v_r;
+  END IF;
   -- Frozen means frozen: the next formation is refused.
   v_r := public.fxr_form(v_g, public.fx9_candidates(v_g, 6));
   IF v_r ->> 'reason' IS DISTINCT FROM 'cluster_is_not_lightning' THEN
@@ -1147,7 +1171,11 @@ BEGIN
   -- A SERIALIZATION FAILURE, and a unique violation on an index two matchers
   -- race for, are retries, and the Cluster keeps dealing.
   PERFORM set_config('fxr.raise_hand_player', '40001', false);
+  v_n := (SELECT count(*) FROM public.financial_alerts);
   v_r := public.fxr_form(v_g, public.fx9_candidates(v_g, 6));
+  IF (SELECT count(*) FROM public.financial_alerts) IS DISTINCT FROM v_n THEN
+    RAISE EXCEPTION 'FAIL 09: a retried race raised an alert';
+  END IF;
   PERFORM set_config('fxr.raise_hand_player', '23505', false);
   PERFORM set_config('fxr.raise_constraint_hand_player', 'lightning_reservation_one_active_per_player', false);
   IF (v_r ->> 'retry')::boolean IS DISTINCT FROM true OR v_r ->> 'reason' IS DISTINCT FROM 'formation_refused' THEN
@@ -1182,7 +1210,7 @@ BEGIN
   END IF;
   UPDATE public.cash_games SET cluster_mode = 'lightning' WHERE id = v_g;
 END $$;
-\echo '  ok  09 DEFECT 7, AN IMPOSSIBLE STATE IS NOT RETRIED  a check_violation inside the atomic block now answers formation_invariant_failed with retry false, freezes the Cluster and its epoch through cluster_mode, leaves no instance, and writes stack_invariant_failed with the six players and cluster_frozen with the request, after which the Cluster forms nothing; a serialization failure and a unique violation on lightning_reservation_one_active_per_player are still retries on a Cluster that keeps dealing, while the same class on lightning_hand_pkey freezes; and a chip moved on a participant''s anchor during a formation is caught by the barrier''s own PLT02 comparison, rolled back and frozen with both money snapshots in the evidence'
+\echo '  ok  09 DEFECT 7, AN IMPOSSIBLE STATE IS NOT RETRIED  a check_violation inside the atomic block now answers formation_invariant_failed with retry false, freezes the Cluster and its epoch through cluster_mode, leaves no instance, writes stack_invariant_failed with the six players and cluster_frozen with the request, and raises one critical alert on the operator path (fn_raise_server_financial_alert) that its evidence names, after which the Cluster forms nothing; a serialization failure (which raises no alert) and a unique violation on lightning_reservation_one_active_per_player are still retries on a Cluster that keeps dealing, while the same class on lightning_hand_pkey freezes; and a chip moved on a participant''s anchor during a formation is caught by the barrier''s own PLT02 comparison, rolled back and frozen with both money snapshots in the evidence'
 
 -- 10 DEFECT 8: THE PASS TAKES THE CLUSTER FIRST, NEVER WAITS, AND IS BUDGETED ---
 DO $$
@@ -1496,10 +1524,174 @@ BEGIN
     RAISE EXCEPTION 'FAIL 14: no horse was ever seated in a formed hand';
   END IF;
 END $$;
-\echo '  ok  14 LAW 10.5, A HORSE IS A PLAYER  every eligible horse at a Lightning Cluster - converted, or seated after the conversion - holds an open pool session, a horse was formed into a hand with a position and a blind role and its anchor guarded (section 06), and not one body this file installs mentions is_horse (section 15)'
+\echo '  ok  14 LAW 10.5, A HORSE IS A PLAYER  every eligible horse at a Lightning Cluster - converted, or seated after the conversion - holds an open pool session, a horse was formed into a hand with a position and a blind role and its anchor guarded (section 06), and not one body these files install mentions is_horse (section 18)'
+
+-- 15 THE ANCHOR IS HELD WITHOUT A KEY ---------------------------------------------
+-- The buy-in's own order: delete the departed occupant's row of the chair,
+-- then seat the new player in it, then open his cash session. The departed
+-- human of section 04 anchored an exited session; his chair is bought again.
+DO $$
+DECLARE v_g uuid; v_main uuid; v_old uuid; v_n integer;
+BEGIN
+  SELECT game, a INTO v_g, v_main FROM r2 WHERE k = 'g3';
+  SELECT a INTO v_old FROM r2 WHERE k = 'j_human';
+  DELETE FROM public.table_seats WHERE table_id = v_main AND seat_number = 31 AND left_at IS NOT NULL;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n IS DISTINCT FROM 1 OR EXISTS (SELECT 1 FROM public.table_seats WHERE id = v_old) THEN
+    RAISE EXCEPTION 'FAIL 15: the departed occupant''s seat row was not deleted by the buy-in''s DELETE';
+  END IF;
+  INSERT INTO r2 (k, game, a) VALUES ('j_rebuy', v_g, public.fxr_join(v_g, v_main, 31, 175.00));
+END $$;
+DO $$
+DECLARE v_g uuid; v_seat uuid; v_old_ps uuid; v_t text; v_open uuid; v_mm uuid;
+BEGIN
+  SELECT game, a INTO v_g, v_seat FROM r2 WHERE k = 'j_rebuy';
+  IF public.fxr_anchor(v_g, (SELECT user_id FROM public.table_seats WHERE id = v_seat)) IS DISTINCT FROM v_seat THEN
+    RAISE EXCEPTION 'FAIL 15: the player who bought the chair again did not enter the pool through it';
+  END IF;
+  -- The exited session whose anchor is gone backs no stack.
+  SELECT id INTO v_old_ps FROM public.lightning_pool_session WHERE exit_reason = 'anchor_seat_left'
+     AND anchor_seat_id = (SELECT a FROM r2 WHERE k = 'j_human');
+  IF v_old_ps IS NULL OR public.fn_lightning_pool_stack(v_old_ps) IS DISTINCT FROM 0::numeric THEN
+    RAISE EXCEPTION 'FAIL 15: a session whose anchor row is gone does not answer a zero stack';
+  END IF;
+  -- A seat that anchors an OPEN session is not deleted; a seat that anchors
+  -- nothing is.
+  v_open := public.fxr_anchor(v_g, (SELECT user_id FROM public.table_seats WHERE id = v_seat));
+  v_t := public.fxr_try(format('DELETE FROM public.table_seats WHERE id = %L', v_open));
+  IF v_t !~ '^PLT01: LIGHTNING_ANCHOR_SEAT_IS_IN_THE_POOL' THEN
+    RAISE EXCEPTION 'FAIL 15: a seat anchoring an open pool session was deleted: %', v_t;
+  END IF;
+  SELECT a INTO v_mm FROM r2 WHERE k = 'j_mustmove';
+  IF public.fxr_probe(format('DELETE FROM public.table_seats WHERE id = %L', v_mm)) IS DISTINCT FROM 'ok 1' THEN
+    RAISE EXCEPTION 'FAIL 15: a seat anchoring nothing could not be deleted';
+  END IF;
+END $$;
+-- A TABLE STILL CASCADES: a table whose one seat anchored a session that has
+-- exited is deleted with its seats; the same table with the session still
+-- open is not.
+DO $$
+DECLARE v_g uuid; v_tb uuid; v_tb2 uuid;
+BEGIN
+  SELECT game INTO v_g FROM r2 WHERE k = 'g3';
+  -- Opened through the real door, so they are born halted like every table
+  -- of a Lightning Cluster.
+  v_tb := public.fn_cash_cluster_open_table(v_g, 'feeder', NULL, 'live', NULL);
+  v_tb2 := public.fn_cash_cluster_open_table(v_g, 'feeder', NULL, 'live', NULL);
+  INSERT INTO r2 (k, game, a, b) VALUES ('cascade', v_g, v_tb, public.fxr_join(v_g, v_tb, 1, 60.00));
+  INSERT INTO r2 (k, game, a, b) VALUES ('cascade_open', v_g, v_tb2, public.fxr_join(v_g, v_tb2, 1, 70.00));
+END $$;
+DO $$
+BEGIN
+  IF public.fxr_anchor((SELECT game FROM r2 WHERE k = 'cascade'), (SELECT user_id FROM public.table_seats WHERE id = (SELECT b FROM r2 WHERE k = 'cascade')))
+       IS DISTINCT FROM (SELECT b FROM r2 WHERE k = 'cascade') THEN
+    RAISE EXCEPTION 'FAIL 15: the cascade fixture''s player did not enter the pool';
+  END IF;
+  UPDATE public.table_seats SET left_at = clock_timestamp() WHERE id = (SELECT b FROM r2 WHERE k = 'cascade');
+END $$;
+DO $$
+DECLARE v_t text;
+BEGIN
+  v_t := public.fxr_try(format('DELETE FROM public.tables WHERE id = %L', (SELECT a FROM r2 WHERE k = 'cascade_open')));
+  IF v_t !~ '^PLT01: LIGHTNING_ANCHOR_SEAT_IS_IN_THE_POOL' THEN
+    RAISE EXCEPTION 'FAIL 15: a table cascaded away a seat anchoring an open session: %', v_t;
+  END IF;
+  DELETE FROM public.tables WHERE id = (SELECT a FROM r2 WHERE k = 'cascade');
+  IF EXISTS (SELECT 1 FROM public.table_seats WHERE id = (SELECT b FROM r2 WHERE k = 'cascade')) THEN
+    RAISE EXCEPTION 'FAIL 15: the table did not cascade to its departed seat';
+  END IF;
+  UPDATE public.table_seats SET left_at = clock_timestamp() WHERE id = (SELECT b FROM r2 WHERE k = 'cascade_open');
+END $$;
+\echo '  ok  15 THE ANCHOR IS HELD WITHOUT A KEY  in the buy-in''s own order the departed occupant''s row of a chair whose pool session has exited is deleted and the chair bought again, the new player entering the pool through it, and the exited session whose anchor is gone answers a zero stack; a seat anchoring an OPEN session is refused deletion by name while a seat anchoring nothing is deleted; and a table whose departed seat anchored an exited session cascades away while one whose seat anchors an open session is refused'
+
+-- 16 THE WAY OUT OF FROZEN ------------------------------------------------------------
+DO $$
+DECLARE v_g uuid; v_r jsonb; v_seats text; v_e integer; v_d jsonb;
+BEGIN
+  v_g := public.fx9_cluster('G11', 6, 40, true);
+  PERFORM public.fx9_seat(v_g, 16);
+  PERFORM public.fx9_seat(v_g, 2, 17, true);
+  PERFORM public.fx9_convert(v_g);
+  PERFORM public.fx9_pool(v_g);
+  -- A dealing hand and a reserved one, then a freeze.
+  v_r := public.fxr_form(v_g, public.fx9_candidates(v_g, 6));
+  v_d := public.fn_lightning_instance_begin_dealing((v_r ->> 'instance_id')::uuid);
+  PERFORM public.fxr_form(v_g, public.fx9_candidates(v_g, 6));
+  PERFORM set_config('fxr.raise_hand_player', '23514', false);
+  v_r := public.fxr_form(v_g, public.fx9_candidates(v_g, 6));
+  PERFORM set_config('fxr.raise_hand_player', '', false);
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'frozen' THEN
+    RAISE EXCEPTION 'FAIL 16: G11 did not freeze: %', v_r;
+  END IF;
+  INSERT INTO r2 (k, game) VALUES ('g11', v_g);
+END $$;
+DO $$
+DECLARE v_g uuid; v_mm uuid; v_r jsonb; v_seats text; v_e integer; v_op uuid := gen_random_uuid();
+BEGIN
+  SELECT game INTO v_g FROM r2 WHERE k = 'g11';
+  SELECT game INTO v_mm FROM r2 WHERE k = 'g5';
+  SELECT cluster_epoch INTO v_e FROM public.cash_games WHERE id = v_g;
+  SELECT md5(string_agg(ts.id || ':' || coalesce(ts.stack::text, 'null') || ':' || coalesce(ts.left_at::text, 'seated'), '|' ORDER BY ts.id))
+    INTO v_seats FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id WHERE tb.cluster_id = v_g;
+  -- The refusals: no reason, no operator, a Cluster that is not frozen.
+  IF public.fn_cash_cluster_unfreeze(v_g, v_op, '  ') ->> 'reason' IS DISTINCT FROM 'reason_required'
+     OR public.fn_cash_cluster_unfreeze(v_g, NULL, 'fxr') ->> 'reason' IS DISTINCT FROM 'operator_required'
+     OR public.fn_cash_cluster_unfreeze(v_mm, v_op, 'fxr') ->> 'reason' IS DISTINCT FROM 'not_frozen'
+     OR (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'frozen' THEN
+    RAISE EXCEPTION 'FAIL 16: the unfreeze did not refuse a missing reason, a missing operator or a Cluster that is not frozen';
+  END IF;
+  v_r := public.fn_cash_cluster_unfreeze(v_g, v_op, 'fxr: the evidence was read');
+  IF (v_r ->> 'unfrozen')::boolean IS DISTINCT FROM true
+     OR (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'must_move'
+     OR (SELECT cluster_epoch FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM v_e + 1
+     OR (SELECT mode FROM public.cash_cluster_epoch WHERE cluster_id = v_g AND ended_at IS NULL) IS DISTINCT FROM 'must_move'
+     OR EXISTS (SELECT 1 FROM public.lightning_instance WHERE cluster_id = v_g AND state IN ('forming', 'reserved', 'dealing', 'settling'))
+     OR EXISTS (SELECT 1 FROM public.lightning_reservation WHERE cluster_id = v_g AND state IN ('pending', 'committed'))
+     OR EXISTS (SELECT 1 FROM public.lightning_pool_session WHERE cluster_id = v_g AND exited_at IS NULL)
+     OR EXISTS (SELECT 1 FROM public.lightning_pool_slot WHERE cluster_id = v_g AND closed_at IS NULL)
+     OR EXISTS (SELECT 1 FROM public.tables WHERE cluster_id = v_g AND dealing_halted_at IS NOT NULL)
+     OR (v_r ->> 'instances_abandoned')::integer IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'FAIL 16: the unfreeze did not return the Cluster to must_move whole: %', v_r;
+  END IF;
+  IF (SELECT md5(string_agg(ts.id || ':' || coalesce(ts.stack::text, 'null') || ':' || coalesce(ts.left_at::text, 'seated'), '|' ORDER BY ts.id))
+        FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id WHERE tb.cluster_id = v_g) IS DISTINCT FROM v_seats THEN
+    RAISE EXCEPTION 'FAIL 16: the unfreeze moved a chip';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'cluster_unfrozen'
+                   AND payload ->> 'operator' = v_op::text AND payload ->> 'reason' = 'fxr: the evidence was read'
+                   AND (payload ->> 'pool_sessions_exited')::integer = 18)
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'instance_destroyed'
+          AND payload ->> 'reason' ~ '^cluster unfrozen by operator') IS DISTINCT FROM 2::bigint THEN
+    RAISE EXCEPTION 'FAIL 16: the unfreeze did not record who, why and what it undid';
+  END IF;
+  IF public.fn_cash_cluster_unfreeze(v_g, v_op, 'again') ->> 'reason' IS DISTINCT FROM 'not_frozen'
+     OR public.fxr_form(v_g, ARRAY(SELECT player_id FROM public.lightning_pool_session WHERE cluster_id = v_g LIMIT 6)) ->> 'reason'
+        IS DISTINCT FROM 'cluster_is_not_lightning' THEN
+    RAISE EXCEPTION 'FAIL 16: an unfrozen Cluster could be unfrozen again, or still forms Lightning hands';
+  END IF;
+END $$;
+\echo '  ok  16 THE WAY OUT OF FROZEN  a Cluster frozen with a dealing hand and a reserved one is refused an unfreeze without a reason, without an operator, and a Cluster that is not frozen is refused one; with both, fn_cash_cluster_unfreeze abandons both hands (instance_destroyed naming the operator), releases every reservation, exits all eighteen pool sessions and closes their slots, lifts every table''s halt, returns the Cluster to must_move at a new epoch, records cluster_unfrozen with the operator and the reason, leaves every seat''s stack byte-identical, and cannot be repeated'
+
+-- 17 A STRAY REQUEST SETTING CANNOT STOP A GAME BEING CREATED ----------------
+DO $$
+DECLARE v_g uuid; v_req uuid := gen_random_uuid();
+BEGIN
+  PERFORM set_config('ca.request_id', 'not-a-uuid', true);
+  v_g := public.fx9_cluster('G12', 6, 40, true);
+  IF NOT EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'cluster_epoch_started' AND request_id IS NULL) THEN
+    RAISE EXCEPTION 'FAIL 17: a game created under a non-uuid request setting did not record its genesis epoch';
+  END IF;
+  PERFORM set_config('ca.request_id', v_req::text, true);
+  v_g := public.fx9_cluster('G13', 6, 40, true);
+  IF NOT EXISTS (SELECT 1 FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'cluster_epoch_started' AND request_id = v_req) THEN
+    RAISE EXCEPTION 'FAIL 17: a uuid request setting was not carried onto the epoch event';
+  END IF;
+  PERFORM set_config('ca.request_id', '', true);
+END $$;
+\echo '  ok  17 A STRAY REQUEST SETTING  a cash game created while ca.request_id holds a value that is not a uuid is created, its genesis epoch recorded with no request, while one created under a real uuid carries it onto cluster_epoch_started'
 ASSERT
 
-# 15 EVERY LIVE PROOF, THIS FILE'S AND ITS FOUR PREDECESSORS'.
+# 18 EVERY LIVE PROOF, THESE FOUR FILES' AND THEIR FOUR PREDECESSORS'.
 #
 # Each `-- @live-proof:` expression is extracted from the file and evaluated
 # as code by fxr_eval. Every proof THIS file carries must be true. Every proof
@@ -1531,7 +1723,7 @@ gen_proofs() {
         expr=${expr/"AND p.proname NOT IN ('fn_cash_cluster_begin_pending_on'"/"AND p.proname !~ '^(fx9|fxr)_' AND p.proname NOT IN ('fn_cash_cluster_begin_pending_on'"}
         echo "narrowed $src:$n" >> "$fixture/narrowed.txt" ;;
     esac
-    case "$expr" in *'$lpq$'*) echo "FAIL 15: a proof carries the quoting tag"; exit 1 ;; esac
+    case "$expr" in *'$lpq$'*) echo "FAIL 18: a proof carries the quoting tag"; exit 1 ;; esac
     printf '%s\n' "INSERT INTO lp VALUES ('$src', $n, $lineno, public.fxr_eval(\$lpq\$${expr}\$lpq\$), public.fxr_eval(replace(\$lpq\$${expr}\$lpq\$, 'timestamp with time zone,text)', 'timestamp with time zone,text,uuid)')));"
   done < <(grep -n -- '^-- @live-proof: ' "$file")
 }
@@ -1552,7 +1744,7 @@ BEGIN
   UPDATE public.lightning_pool_slot SET closed_at = GREATEST(clock_timestamp(), opened_at), close_reason = 'pool_session_exited'
    WHERE cluster_id = v_g AND player_id = v_l AND closed_at IS NULL;
   UPDATE public.lightning_pool_session SET exited_at = GREATEST(clock_timestamp(), entered_at), state = 'closed',
-         exit_reason = 'fxr: left under the code before 20260926045132'
+         exit_reason = 'fxr: left under the code before remediation two'
    WHERE cluster_id = v_g AND player_id = v_l AND exited_at IS NULL;
   UPDATE public.table_seats SET left_at = clock_timestamp() WHERE id = (SELECT a FROM r2 WHERE k = 'j_nosession');
   -- and the stranger section 04 turned a seat over to, who has no cash session.
@@ -1560,19 +1752,22 @@ BEGIN
 END $$;
 CLEAN
   printf '%s\n' 'CREATE TEMP TABLE lp (src text, n integer, lineno integer, ok boolean, ok_rewritten boolean);'
+  gen_proofs mine_a "$mine_a"
+  gen_proofs mine_b "$mine_b"
   gen_proofs mine "$mine"
+  gen_proofs mine_d "$mine_d"
   gen_proofs p5 "$phase5"
   gen_proofs p5r "$phase5r"
   gen_proofs p9 "$phase9"
   gen_proofs p9r "$phase9r"
 } > "$fixture/live-proofs.sql"
 if [ "$(wc -l < "$fixture/narrowed.txt" | tr -d ' ')" != 2 ]; then
-  echo "FAIL 15: the caller-scan narrowing applied $(wc -l < "$fixture/narrowed.txt" | tr -d ' ') time(s), not twice"
+  echo "FAIL 18: the caller-scan narrowing applied $(wc -l < "$fixture/narrowed.txt" | tr -d ' ') time(s), not twice"
   exit 1
 fi
-mine_n=$(grep -c -- '^-- @live-proof: ' "$mine")
+mine_n=$(cat "$mine_a" "$mine_b" "$mine" "$mine_d" | grep -c -- '^-- @live-proof: ')
 if [ "$mine_n" -lt 25 ]; then
-  echo "FAIL 15: only $mine_n @live-proof lines in the file under test"
+  echo "FAIL 18: only $mine_n @live-proof lines in the file under test"
   exit 1
 fi
 cat >> "$fixture/live-proofs.sql" <<ASSERT
@@ -1580,22 +1775,22 @@ DO \$lp\$
 DECLARE v_bad text; v_expected text[] := string_to_array('${SUPERSEDED}', ' ');
 BEGIN
   SELECT string_agg(src || ' #' || n || ' (line ' || lineno || ')', ', ' ORDER BY src, n) INTO v_bad
-    FROM lp WHERE src = 'mine' AND ok IS DISTINCT FROM true;
-  IF v_bad IS NOT NULL OR (SELECT count(*) FROM lp WHERE src = 'mine') IS DISTINCT FROM ${mine_n}::bigint THEN
-    RAISE EXCEPTION 'FAIL 15: a proof of the file under test is not true: %', v_bad;
+    FROM lp WHERE src LIKE 'mine%' AND ok IS DISTINCT FROM true;
+  IF v_bad IS NOT NULL OR (SELECT count(*) FROM lp WHERE src LIKE 'mine%') IS DISTINCT FROM ${mine_n}::bigint THEN
+    RAISE EXCEPTION 'FAIL 18: a proof of the file under test is not true: %', v_bad;
   END IF;
   SELECT string_agg(src || '#' || n, ' ' ORDER BY src || '#' || n) INTO v_bad
-    FROM lp WHERE src <> 'mine' AND ok IS DISTINCT FROM true;
+    FROM lp WHERE src NOT LIKE 'mine%' AND ok IS DISTINCT FROM true;
   IF coalesce(v_bad, '') IS DISTINCT FROM coalesce((SELECT string_agg(x, ' ' ORDER BY x) FROM unnest(v_expected) x WHERE x <> ''), '') THEN
-    RAISE EXCEPTION 'FAIL 15: the predecessor proofs that are no longer true are [%], and the superseded list is [%]', v_bad, array_to_string(v_expected, ' ');
+    RAISE EXCEPTION 'FAIL 18: the predecessor proofs that are no longer true are [%], and the superseded list is [%]', v_bad, array_to_string(v_expected, ' ');
   END IF;
 END \$lp\$;
 SELECT string_agg(src || '#' || n || '=' || coalesce(ok_rewritten::text, 'error'), ' ' ORDER BY src, n) AS superseded_detail
-  FROM lp WHERE src <> 'mine' AND ok IS DISTINCT FROM true \gset
-\echo '  ok  15 EVERY LIVE PROOF  all ${mine_n} @live-proof expressions of the file under test are true, evaluated as code over the estate sections 00 to 14 built; every proof of the four Lightning files before it is still true except exactly the superseded list, each of which is now false; rewritten to the ten-argument barrier they evaluate as:' :superseded_detail
+  FROM lp WHERE src NOT LIKE 'mine%' AND ok IS DISTINCT FROM true \gset
+\echo '  ok  18 EVERY LIVE PROOF  all ${mine_n} @live-proof expressions of the four files under test are true, evaluated as code over the estate sections 00 to 17 built; every proof of the four Lightning files before them is still true except exactly the superseded list, each of which is now false; rewritten to the ten-argument barrier they evaluate as:' :superseded_detail
 ASSERT
 
-# 16 THE FILE IS RE-APPLIABLE: applied a second time over everything above,
+# 19 THE FILES ARE RE-APPLIABLE: applied a second time over everything above,
 # it changes no body, acl, comment, trigger, index, constraint, column or row.
 cat > "$fixture/precapture.sql" <<'ASSERT'
 CREATE TEMP TABLE cap (what text PRIMARY KEY, v text);
@@ -1627,7 +1822,7 @@ DECLARE v_bad text; v_n bigint;
 BEGIN
   SELECT count(*) INTO v_n FROM cap;
   IF v_n < 40 THEN
-    RAISE EXCEPTION 'FAIL 16: only % objects were captured, so the comparison proves little', v_n;
+    RAISE EXCEPTION 'FAIL 19: only % objects were captured, so the comparison proves little', v_n;
   END IF;
   SELECT string_agg(c.what, ', ') INTO v_bad FROM cap c
    WHERE c.v IS DISTINCT FROM CASE
@@ -1642,7 +1837,7 @@ BEGIN
      ELSE (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', substr(c.what, 6)), false, true, '')))[1]::text
    END;
   IF v_bad IS NOT NULL THEN
-    RAISE EXCEPTION 'FAIL 16: the second application changed: %', v_bad;
+    RAISE EXCEPTION 'FAIL 19: the second application changed: %', v_bad;
   END IF;
   -- Each re-cut is present exactly once.
   SELECT string_agg(q.what, ', ') INTO v_bad FROM (VALUES
@@ -1656,14 +1851,14 @@ BEGIN
     ('born halted', (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_cash_cluster_open_table(uuid,text,integer,text,uuid)'::regprocedure), 'BORN HALTED IN A CLUSTER', 'g')))
   ) q(what, n) WHERE q.n IS DISTINCT FROM 1::bigint;
   IF v_bad IS NOT NULL THEN
-    RAISE EXCEPTION 'FAIL 16: a re-cut is not present exactly once in: %', v_bad;
+    RAISE EXCEPTION 'FAIL 19: a re-cut is not present exactly once in: %', v_bad;
   END IF;
   -- And the estate still works: a Cluster still forms.
   IF (public.fxr_form((SELECT game FROM r2 WHERE k = 'g2'), public.fx9_candidates((SELECT game FROM r2 WHERE k = 'g2'), 6)) ->> 'formed')::boolean IS DISTINCT FROM true THEN
-    RAISE EXCEPTION 'FAIL 16: a Cluster cannot form a hand after the second application';
+    RAISE EXCEPTION 'FAIL 19: a Cluster cannot form a hand after the second application';
   END IF;
 END $$;
-\echo '  ok  16 THE FILE IS RE-APPLIABLE  applied a second time over every hand, pool session and event above, it leaves every captured body, acl and comment, every trigger, index, constraint, column and table acl of the lightning tables, table_seats, tables, cash_cluster_events, cash_cluster_conversion and the trigger register, and every row count, exactly as they were; each re-cut is present exactly once; and a Cluster still forms'
+\echo '  ok  19 THE FILES ARE RE-APPLIABLE  all four applied a second time over every hand, pool session and event above, it leaves every captured body, acl and comment, every trigger, index, constraint, column and table acl of the lightning tables, table_seats, tables, cash_cluster_events, cash_cluster_conversion and the trigger register, and every row count, exactly as they were; each re-cut is present exactly once; and a Cluster still forms'
 ASSERT
 
 # ONE psql SESSION: the fixtures, the twelve predecessor files and the ground,
@@ -1677,11 +1872,11 @@ set +e
   -f "$phase2" -f "$phase2r" -f "$phase3" -f "$phase3r" -f "$phase4" -f "$phase4r" -f "$phase5" -f "$phase5r" \
   -f "$p9_fixture" -f "$phase9" -f "$phase9r" -f "$r2_fixture" \
   -f "$fixture/ground.sql" \
-  -f "$mine" \
+  -f "$mine_a" -f "$mine_b" -f "$mine" -f "$mine_d" \
   -f "$fixture/assertions.sql" \
   -f "$fixture/live-proofs.sql" \
   -f "$fixture/precapture.sql" \
-  -f "$mine" \
+  -f "$mine_a" -f "$mine_b" -f "$mine" -f "$mine_d" \
   -f "$fixture/reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 psql_status=${PIPESTATUS[0]}
 set -e
@@ -1690,11 +1885,11 @@ if [ "$psql_status" != 0 ]; then
   exit 1
 fi
 
-# SEVENTEEN SECTIONS REPORTED, counted rather than eyeballed: a section deleted
+# TWENTY SECTIONS REPORTED, counted rather than eyeballed: a section deleted
 # during a refactor would not make psql fail, and the PASS line would still print.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 17 ]; then
-  echo "FAIL: $oks of the 17 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 20 ]; then
+  echo "FAIL: $oks of the 20 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning remediation two, 17 sections: on 20260926023047's own code every defect is reproduced first; then, applied over that estate, a conversion waits for a hand in flight and for every live engine to report its halt, a table is born halted in a halted Cluster, the pool session is anchored to a seat and follows it in and out through deferred WHEN-guarded triggers (horses exactly as humans), the pool's stack is the seat's, the formation filter is the population's predicate and the anchors are held FOR SHARE, a player in a live hand cannot be cashed out except by that hand's settlement at a few microseconds per ordinary seat update, nobody leaves a locked hand, begin_dealing abandons a formation whose world has moved, an impossible state freezes the Cluster while only a race is retried, the slot pass takes the Cluster row first and never waits, one failed abort costs one conversion, every specification event is written, formation is idempotent on its request id, history cannot be deleted and P2 ages a debt by debt_since; every @live-proof holds, exactly the superseded predecessor proofs are false, and the file is re-appliable"
+echo "PASS: Lightning remediation two, 4 files, 20 sections: on 20260926023047's own code every defect is reproduced first; then, applied over that estate, a conversion waits for a hand in flight and for every live engine to report its halt, a table is born halted in a halted Cluster, the pool session is anchored to a seat and follows it in and out through deferred WHEN-guarded triggers (horses exactly as humans), the pool's stack is the seat's, the formation filter is the population's predicate and the anchors are held FOR SHARE, a player in a live hand cannot be cashed out except by that hand's settlement at a few microseconds per ordinary seat update, nobody leaves a locked hand, begin_dealing abandons a formation whose world has moved, an impossible state freezes the Cluster while only a race is retried, the slot pass takes the Cluster row first and never waits, one failed abort costs one conversion, every specification event is written, formation is idempotent on its request id, history cannot be deleted and P2 ages a debt by debt_since; a seat that anchors an open session cannot be deleted while a departed one is bought again and a table still cascades, a frozen Cluster comes back to must_move through fn_cash_cluster_unfreeze with every stack byte-identical, and a stray request setting cannot stop a game being created; every @live-proof holds, exactly the superseded predecessor proofs are false, and all four files are re-appliable"

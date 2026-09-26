@@ -270,3 +270,93 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RETURN NULL;
 END $fx$;
+
+-- THE OPERATOR ALERT PATH, in production's shape (read 2026-09-26): the
+-- financial_alerts table and fn_raise_server_financial_alert verbatim, which
+-- the barrier calls when it freezes a Cluster. Production's AFTER triggers on
+-- the table (the incident bridge and the operational-source intake) are not
+-- reproduced; they act on the row this function writes, which is what the
+-- harness reads.
+CREATE TABLE IF NOT EXISTS public.financial_alerts (
+  id          uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  severity    text NOT NULL,
+  source      text NOT NULL,
+  message     text NOT NULL,
+  context     jsonb DEFAULT '{}'::jsonb,
+  resolved    boolean NOT NULL DEFAULT false,
+  resolved_at timestamptz,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  resolved_by uuid,
+  resolution  text
+);
+CREATE OR REPLACE FUNCTION public.fn_raise_server_financial_alert(p_severity text, p_source text, p_message text, p_context jsonb DEFAULT '{}'::jsonb, p_dedupe_key text DEFAULT NULL::text, p_entity_id text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_id     uuid;
+  v_sev    text;
+  v_source text;
+  v_key    text;
+  v_entity text;
+  v_recent integer;
+BEGIN
+  v_sev := lower(coalesce(p_severity, 'info'));
+  IF v_sev NOT IN ('critical', 'warning', 'info') THEN
+    v_sev := 'info';
+  END IF;
+
+  v_source := left(coalesce(nullif(p_source, ''), 'unknown'), 200);
+  v_entity := left(nullif(btrim(coalesce(p_entity_id, '')), ''), 200);
+  v_key    := left(nullif(btrim(coalesce(p_dedupe_key, '')), ''), 200);
+  IF v_key IS NULL THEN
+    v_key := v_entity;
+  END IF;
+
+  /* ONE OPEN ALERT PER THING THAT IS WRONG. Not per pass over it. */
+  IF v_key IS NOT NULL THEN
+    SELECT fa.id INTO v_id
+      FROM public.financial_alerts fa
+     WHERE fa.source = v_source
+       AND fa.resolved IS NOT TRUE
+       AND fa.context ->> 'dedupe_key' = v_key
+     ORDER BY fa.created_at DESC
+     LIMIT 1;
+    IF v_id IS NOT NULL THEN
+      RETURN v_id;
+    END IF;
+  END IF;
+
+  SELECT count(*) INTO v_recent
+    FROM public.financial_alerts
+   WHERE created_at > now() - interval '1 minute'
+     AND source = v_source
+     AND context ->> 'channel' = 'server_rpc';
+
+  IF v_recent >= 60 THEN
+    RETURN NULL;
+  END IF;
+
+  INSERT INTO public.financial_alerts (severity, source, message, context, resolved)
+  VALUES (
+    v_sev,
+    v_source,
+    left(coalesce(nullif(p_message, ''), '(no message)'), 4000),
+    coalesce(p_context, '{}'::jsonb)
+      || jsonb_build_object('channel', 'server_rpc')
+      || CASE WHEN v_key IS NULL THEN '{}'::jsonb
+              ELSE jsonb_build_object('dedupe_key', v_key) END
+      || CASE WHEN v_entity IS NULL THEN '{}'::jsonb
+              ELSE jsonb_build_object('entity_id', v_entity) END,
+    false
+  )
+  RETURNING id INTO v_id;
+
+  RETURN v_id;
+END;
+$function$
+
+;
+GRANT EXECUTE ON FUNCTION public.fn_raise_server_financial_alert(text, text, text, jsonb, text, text) TO service_role;

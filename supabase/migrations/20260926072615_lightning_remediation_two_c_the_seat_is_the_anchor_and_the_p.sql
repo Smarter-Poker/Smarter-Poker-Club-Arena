@@ -1,6 +1,6 @@
--- 20260926045132_lightning_phase_5_and_9_remediation_two_the_seat_is_the_anch.sql
+-- 20260926072615_lightning_remediation_two_c_the_seat_is_the_anchor_and_the_p.sql
 --
--- LIGHTNING PHASES 5 AND 9, REMEDIATION TWO: THE SEAT IS THE ANCHOR, THE POOL
+-- LIGHTNING REMEDIATION TWO, FILE C OF FOUR: THE SEAT IS THE ANCHOR, THE POOL
 -- FOLLOWS IT, AND A HALT IS A STOP ONLY ONCE THE ENGINE HAS SEEN IT.
 --
 -- 20260921151618 (conversion), 20260925204249 (halt, reaper), 20260925215731
@@ -14,6 +14,18 @@
 -- THE DESIGN RULE THIS FILE ENFORCES: the physical seat (table_seats) is the
 -- economic anchor and the pool is an overlay on it. Conversion, pool entry and
 -- formation move no chips; only settlement does.
+--
+-- THIS IS FILE C OF FOUR, and the other three exist for one reason: none of
+-- the hot tables may be locked by the same transaction as another. File A
+-- adds tables.dealing_halt_observed_at and file B the two cash_cluster_events
+-- columns, each alone; this file adds cold columns, functions, re-cuts and
+-- grants and takes no lock on table_seats, tables or cash_cluster_events (its
+-- SQL function bodies are created with check_function_bodies off, and its
+-- backfill and sweep run only on an estate that has something to backfill or
+-- sweep); file D creates the table_seats triggers. `tables` is read by the
+-- BEFORE triggers of table_seats, so a single file holding ACCESS EXCLUSIVE on
+-- `tables` while waiting for table_seats could deadlock a live settlement or
+-- buy-in holding them the other way round.
 --
 -- DEFECT 1 (P0). The commit could not see a hand in flight. It counted
 -- hand_history rows with ended_at IS NULL, and hand_history is written only at
@@ -34,7 +46,11 @@
 --
 -- DEFECT 2 (P1). Nothing took a player out of the pool, and nobody arriving
 -- after the conversion got in. lightning_pool_session.anchor_seat_id (NOT NULL,
--- a foreign key to table_seats, one open session per anchor) is written by the
+-- indexed, one open session per anchor, and deliberately NO foreign key: the
+-- buy-in deletes a departed occupant's seat row, tables and profiles cascade
+-- into table_seats, and CLAUDE.md rule 7 forbids a key to a hot table; file
+-- D's BEFORE DELETE guard refuses to delete a seat anchoring an OPEN session
+-- instead) is written by the
 -- conversion - the seat its DISTINCT ON (ts.user_id) already picks - and by
 -- the new fn_lightning_pool_enter. Two DEFERRED constraint triggers on
 -- table_seats, whose WHEN clauses admit only an arrival, a departure, a
@@ -77,8 +93,14 @@
 -- a unique violation on an index two matchers can race for. Anything else
 -- freezes the Cluster through its own cluster_mode ('frozen' - every
 -- formation, opening and deal refuses a Cluster that is not lightning), writes
--- stack_invariant_failed and cluster_frozen with the evidence, and answers
--- formation_invariant_failed with retry false.
+-- stack_invariant_failed and cluster_frozen with the evidence, raises a
+-- critical alert through fn_raise_server_financial_alert (the estate's
+-- operator path; its failure never costs the freeze), and answers
+-- formation_invariant_failed with retry false. The way back is the new
+-- fn_cash_cluster_unfreeze(cluster, operator, reason): only from frozen, with a
+-- reason, it abandons live instances, exits the pool, returns the Cluster to
+-- must_move at a new epoch with its halts lifted, records cluster_unfrozen and
+-- moves no chips.
 --
 -- DEFECT 8 (P2). fn_lightning_pool_slots_sync took the slots with no Cluster
 -- lock while formation takes the Cluster then the slots; it now takes
@@ -108,31 +130,26 @@
 -- by a trigger and is the P2 oldest-blind-debt-age tie-break in place of
 -- updated_at, which every formation moved.
 --
--- DEFECT 12. Proofs of the files before this one that it makes false are
+-- DEFECT 12. Proofs of the files before these four that they make false are
 -- listed in docs/changelog/2026-09-26-lightning-phase-5-9-remediation-2.md
 -- under Corrections, and the harness proves that exactly those, and no others,
 -- are false after it. Every proof below is containment: it names what this
 -- file put there, never the size of a set a later file may grow.
 --
--- @live-proof: (SELECT a.atttypid = 'timestamptz'::regtype FROM pg_attribute a WHERE a.attrelid = 'public.tables'::regclass AND a.attname = 'dealing_halt_observed_at' AND NOT a.attisdropped)
 -- @live-proof: (SELECT NOT p.prosecdef AND p.prorettype = 'timestamptz'::regtype AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND pg_get_functiondef(p.oid) ~ 'SET dealing_halt_observed_at = clock_timestamp\(\)' FROM pg_proc p WHERE p.oid = 'public.fn_cash_table_observe_dealing_halt(uuid)'::regprocedure)
 -- @live-proof: (SELECT s ~ 'FROM public\.hand_state_snapshots h' AND s ~ 'h\.is_complete = false' AND s !~ 'hand_history' AND s ~ 'halt_not_observed' AND s ~ 'public\.engine_table_leases l' AND s ~ 'fn_engine_lease_stale_seconds\(\)' AND s ~ 'tb\.dealing_halt_observed_at < tb\.dealing_halted_at' AND position('halt_not_observed' in s) < position('INSERT INTO public.lightning_pool_session' in s) FROM (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_commit_lightning(uuid,uuid)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') AS s) q)
 -- @live-proof: (SELECT s ~ 'state, entered_at, starting_stack, anchor_seat_id\)' AND s ~ 'ts\.stack, ts\.id' AND s ~ 'chips_at_commit = v_before' AND s ~ '''pool_player_joined''' AND s ~ 'ca\.request_id' FROM (SELECT pg_get_functiondef('public.fn_cash_cluster_commit_lightning(uuid,uuid)'::regprocedure) AS s) q)
 -- @live-proof: (SELECT s ~ 'WHERE id = p_game_id FOR SHARE' AND s ~ 'IF g\.cluster_mode IS DISTINCT FROM ''must_move'' THEN' AND s ~ 'THEN ''lightning_pending_on'' ELSE ''lightning'' END' FROM (SELECT pg_get_functiondef('public.fn_cash_cluster_open_table(uuid,text,integer,text,uuid)'::regprocedure) AS s) q)
 -- @live-proof: (SELECT s ~ 'SET chips_at_begin' FROM (SELECT pg_get_functiondef('public.fn_cash_cluster_begin_pending_on(uuid,uuid)'::regprocedure) AS s) q) AND (SELECT count(*) = 2 FROM pg_attribute a WHERE a.attrelid = 'public.cash_cluster_conversion'::regclass AND a.attname IN ('chips_at_begin', 'chips_at_commit') AND NOT a.attisdropped)
 -- @live-proof: (SELECT a.attnotnull AND a.atttypid = 'uuid'::regtype FROM pg_attribute a WHERE a.attrelid = 'public.lightning_pool_session'::regclass AND a.attname = 'anchor_seat_id' AND NOT a.attisdropped)
--- @live-proof: (SELECT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conrelid = 'public.lightning_pool_session'::regclass AND c.contype = 'f' AND c.confrelid = 'public.table_seats'::regclass AND c.convalidated AND pg_get_constraintdef(c.oid) ~ '^FOREIGN KEY \(anchor_seat_id\) REFERENCES (public\.)?table_seats\(id\)'))
 -- @live-proof: (SELECT i.indisunique AND pg_get_expr(i.indpred, i.indrelid) ~ 'exited_at IS NULL' AND pg_get_indexdef(i.indexrelid) ~ '\(anchor_seat_id\)' FROM pg_index i WHERE i.indexrelid = 'public.lightning_pool_session_one_open_per_anchor'::regclass)
 -- @live-proof: (SELECT p.prorettype = 'uuid'::regtype AND NOT p.prosecdef AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND pg_get_functiondef(p.oid) ~ 'fn_lightning_anchor_is_live_eligible\(s\.id, g\.id, s\.user_id\)' AND pg_get_functiondef(p.oid) ~ '''pool_player_joined''' AND pg_get_functiondef(p.oid) ~ 'fn_lightning_pool_slot_open\(v_ps, v_now\)' AND pg_get_functiondef(p.oid) ~ 'anchor_seat_id\)' FROM pg_proc p WHERE p.oid = 'public.fn_lightning_pool_enter(uuid,timestamp with time zone)'::regprocedure)
--- @live-proof: (SELECT count(*) = 2 AND bool_and(t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O' AND t.tgqual IS NOT NULL AND t.tgfoid = 'public.fn_table_seats_lightning_pool_follows_seat()'::regprocedure) FROM pg_trigger t WHERE t.tgrelid = 'public.table_seats'::regclass AND t.tgname IN ('trg_table_seats_lightning_pool_on_insert', 'trg_table_seats_lightning_pool_follows_seat'))
--- @live-proof: (SELECT pg_get_triggerdef(t.oid) ~ 'old\.left_at IS DISTINCT FROM new\.left_at' AND pg_get_triggerdef(t.oid) ~ 'old\.is_sitting_out IS DISTINCT FROM new\.is_sitting_out' AND pg_get_triggerdef(t.oid) ~ 'old\.leave_pending IS DISTINCT FROM new\.leave_pending' AND pg_get_triggerdef(t.oid) ~ 'COALESCE\(old\.stack' AND (t.tgtype::integer & 16) <> 0 FROM pg_trigger t WHERE t.tgrelid = 'public.table_seats'::regclass AND t.tgname = 'trg_table_seats_lightning_pool_follows_seat')
--- @live-proof: (SELECT (t.tgtype::integer & 2) <> 0 AND (t.tgtype::integer & 16) <> 0 AND (t.tgtype::integer & 4) = 0 AND t.tgenabled = 'O' AND pg_get_triggerdef(t.oid) ~ 'old\.stack IS DISTINCT FROM new\.stack' AND pg_get_triggerdef(t.oid) ~ 'old\.left_at IS DISTINCT FROM new\.left_at' AND t.tgfoid = 'public.fn_table_seats_lightning_anchor_guard()'::regprocedure FROM pg_trigger t WHERE t.tgrelid = 'public.table_seats'::regclass AND t.tgname = 'trg_table_seats_lightning_anchor_guard')
--- @live-proof: (SELECT p.prosecdef AND s ~ 'LIGHTNING_HAND_IN_PROGRESS' AND s ~ 'ERRCODE = ''PLT01''' AND s ~ 'ca\.lightning_settlement_hand' AND s ~ 'ps\.anchor_seat_id = OLD\.id AND ps\.exited_at IS NULL' AND position('ps.anchor_seat_id = OLD.id' in s) < position('fn_lightning_player_in_hand' in s) FROM pg_proc p, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE p.oid = 'public.fn_table_seats_lightning_anchor_guard()'::regprocedure)
+-- @live-proof: (SELECT p.prosecdef AND s ~ 'LIGHTNING_HAND_IN_PROGRESS' AND s ~ 'LIGHTNING_ANCHOR_SEAT_IS_IN_THE_POOL' AND s ~ 'TG_OP = ''DELETE''' AND s ~ 'ERRCODE = ''PLT01''' AND s ~ 'ca\.lightning_settlement_hand' AND s ~ 'ps\.anchor_seat_id = OLD\.id AND ps\.exited_at IS NULL' AND position('ps.anchor_seat_id = OLD.id' in s) < position('fn_lightning_player_in_hand' in s) FROM pg_proc p, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE p.oid = 'public.fn_table_seats_lightning_anchor_guard()'::regprocedure)
 -- @live-proof: (SELECT s ~ 'r\.state = ''committed''' AND s ~ 'i\.state IN \(''forming'', ''reserved'', ''dealing'', ''settling''\)' FROM (SELECT pg_get_functiondef('public.fn_lightning_player_in_hand(uuid,uuid)'::regprocedure) AS s) q)
 -- @live-proof: (SELECT s ~ 'ts\.stack' AND s ~ 'ts\.left_at IS NOT NULL' AND s ~ 'anchor_seat_id' AND s !~ 'starting_stack' AND s !~ 'net_result' FROM (SELECT regexp_replace(pg_get_functiondef('public.fn_lightning_pool_stack(uuid)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') AS s) q)
 -- @live-proof: (SELECT s ~ 'coalesce\(ts\.is_sitting_out, false\) = false' AND s ~ 'coalesce\(ts\.leave_pending, false\) = false' AND s ~ 'coalesce\(ts\.stack, 0\) > 0' AND s ~ 'ts\.left_at IS NULL' AND s ~ 'coalesce\(tb\.lifecycle, ''''\) <> ''closed''' FROM (SELECT pg_get_functiondef('public.fn_lightning_anchor_is_live_eligible(uuid,uuid,uuid)'::regprocedure) AS s) q)
 -- @live-proof: (SELECT count(*) >= 1 AND bool_and(pg_get_function_identity_arguments(p.oid) ~ 'p_request_id uuid' AND pg_get_functiondef(p.oid) ~ 'fn_lightning_anchor_is_live_eligible\(ps\.anchor_seat_id, g\.id, ps\.player_id\)' AND pg_get_functiondef(p.oid) ~ 'cps\.closed_at IS NULL' AND pg_get_functiondef(p.oid) ~ 'FROM public\.table_seats ts[^;]*FOR SHARE') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_lightning_form_hand')
--- @live-proof: (SELECT count(*) >= 1 AND bool_and(s ~ 'WHEN unique_violation OR check_violation OR foreign_key_violation OR not_null_violation OR SQLSTATE ''PLT02''' AND s ~ 'formation_invariant_failed' AND s ~ '''stack_invariant_failed''' AND s ~ '''cluster_frozen''' AND s ~ 'SET cluster_mode = ''frozen''' AND s !~ 'ERRCODE = ''check_violation''' AND s ~ 'lightning_reservation_one_active_per_player' AND position('INTO v_money_after' in s) < position('OR SQLSTATE ''PLT02''' in s)) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE n.nspname = 'public' AND p.proname = 'fn_lightning_form_hand')
+-- @live-proof: (SELECT count(*) >= 1 AND bool_and(s ~ 'WHEN unique_violation OR check_violation OR foreign_key_violation OR not_null_violation OR SQLSTATE ''PLT02''' AND s ~ 'formation_invariant_failed' AND s ~ '''stack_invariant_failed''' AND s ~ '''cluster_frozen''' AND s ~ 'SET cluster_mode = ''frozen''' AND s !~ 'ERRCODE = ''check_violation''' AND s ~ 'lightning_reservation_one_active_per_player' AND s ~ 'fn_raise_server_financial_alert\(' AND position('INTO v_money_after' in s) < position('OR SQLSTATE ''PLT02''' in s)) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE n.nspname = 'public' AND p.proname = 'fn_lightning_form_hand')
 -- @live-proof: (SELECT count(*) >= 1 AND bool_and(s ~ 'request_id_belongs_to_another_cluster' AND s ~ '''replayed'', true' AND s ~ 'lh\.request_id = p_request_id' AND s ~ '''hand_created''' AND s ~ '''participants''' AND s ~ '''pool_player_reserved''' AND s ~ '''instance_created''' AND s !~ 'lightning_hand_formed') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE n.nspname = 'public' AND p.proname = 'fn_lightning_form_hand')
 -- @live-proof: (SELECT i.indisunique AND pg_get_indexdef(i.indexrelid) ~ '\(request_id\)' FROM pg_index i WHERE i.indexrelid = 'public.lightning_hand_one_per_request'::regclass) AND (SELECT a.atttypid = 'uuid'::regtype FROM pg_attribute a WHERE a.attrelid = 'public.lightning_hand'::regclass AND a.attname = 'request_id' AND NOT a.attisdropped)
 -- @live-proof: (SELECT s ~ 'oh\.hand_id = OLD\.hand_id AND oh\.participants_locked_at IS NOT NULL' FROM (SELECT pg_get_functiondef('public.fn_lightning_hand_player_is_immutable()'::regprocedure) AS s) q) AND (SELECT s ~ 'NEW\.request_id IS DISTINCT FROM OLD\.request_id' FROM (SELECT pg_get_functiondef('public.fn_lightning_hand_is_immutable()'::regprocedure) AS s) q)
@@ -140,22 +157,28 @@
 -- @live-proof: (SELECT s ~ 'FOR UPDATE SKIP LOCKED' AND s ~ 'GREATEST\(p_now, sl\.opened_at\)' AND s ~ 'ca\.cluster_pass_deadline' AND position('FOR UPDATE SKIP LOCKED' in s) < position('UPDATE public.lightning_pool_slot' in s) FROM (SELECT pg_get_functiondef('public.fn_lightning_pool_slots_sync(uuid,timestamp with time zone)'::regprocedure) AS s) q)
 -- @live-proof: (SELECT position('lightning_cluster_stands_down' in s) > 0 AND position('lightning_cluster_stands_down' in s) < position('WHERE id = p_game_id FOR UPDATE' in s) FROM (SELECT regexp_replace(pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') AS s) q) AND (SELECT pg_get_functiondef('public.fn_cash_clusters_tick_all(jsonb)'::regprocedure) ~ 'ca\.cluster_pass_deadline')
 -- @live-proof: (SELECT s ~ 'EXCEPTION WHEN OTHERS THEN' AND s ~ 'lightning_pending_on_reap_failed' AND position('EXCEPTION WHEN OTHERS THEN' in s) < position('lightning_pending_on_reaped' in s) FROM (SELECT pg_get_functiondef('public.fn_cash_cluster_reap_stuck_conversions(interval,timestamp with time zone,integer)'::regprocedure) AS s) q)
--- @live-proof: (SELECT count(*) = 2 FROM pg_attribute a WHERE a.attrelid = 'public.cash_cluster_events'::regclass AND NOT a.attisdropped AND ((a.attname = 'event_version' AND a.attnotnull AND a.atttypid = 'smallint'::regtype) OR (a.attname = 'request_id' AND a.atttypid = 'uuid'::regtype)))
 -- @live-proof: (SELECT (SELECT count(*) FROM regexp_matches(pg_get_functiondef('public.fn_cash_cluster_epoch_follows_its_game()'::regprocedure), '''cluster_epoch_started''', 'g')) >= 2) AND (SELECT s ~ '''instance_completed''' AND s ~ '''instance_destroyed''' AND s ~ '''pool_player_released''' FROM (SELECT pg_get_functiondef('public.fn_lightning_instance_releases_its_reservations()'::regprocedure) AS s) q) AND (SELECT pg_get_functiondef('public.fn_lightning_instance_open(uuid,smallint,smallint,interval,timestamp with time zone)'::regprocedure) ~ '''instance_created''')
 -- @live-proof: (SELECT s ~ 'coalesce\(bl\.debt_since, sl\.opened_at\) ASC' AND s !~ 'bl\.updated_at' FROM (SELECT regexp_replace(pg_get_functiondef('public.fn_lightning_blind_order(uuid,integer,uuid[])'::regprocedure), '--[^' || chr(10) || ']*', '', 'g') AS s) q) AND EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'public.lightning_blind_ledger'::regclass AND t.tgname = 'trg_lightning_blind_ledger_tracks_debt_since' AND t.tgenabled = 'O' AND (t.tgtype::integer & 2) <> 0 AND (t.tgtype::integer & 4) <> 0 AND (t.tgtype::integer & 16) <> 0)
 -- @live-proof: (SELECT NOT has_table_privilege('service_role', 'public.lightning_hand', 'DELETE') AND NOT has_table_privilege('service_role', 'public.lightning_hand_player', 'DELETE') AND NOT has_table_privilege('service_role', 'public.lightning_instance', 'DELETE') AND NOT has_table_privilege('service_role', 'public.lightning_reservation', 'DELETE') AND NOT has_table_privilege('service_role', 'public.lightning_pool_slot', 'DELETE') AND NOT has_table_privilege('service_role', 'public.lightning_pool_session', 'DELETE') AND NOT has_table_privilege('service_role', 'public.lightning_blind_ledger', 'DELETE') AND NOT has_table_privilege('service_role', 'public.cash_cluster_conversion', 'DELETE') AND NOT has_table_privilege('service_role', 'public.cash_cluster_conversion', 'TRUNCATE'))
--- @live-proof: (SELECT count(*) = 3 FROM public.ca_declared_money_triggers d WHERE d.table_name = 'table_seats' AND d.trigger_name IN ('trg_table_seats_lightning_anchor_guard', 'trg_table_seats_lightning_pool_on_insert', 'trg_table_seats_lightning_pool_follows_seat'))
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname IN ('fn_cash_table_observe_dealing_halt', 'fn_lightning_anchor_is_live_eligible', 'fn_lightning_pool_stack', 'fn_lightning_player_in_hand', 'fn_lightning_pool_enter', 'fn_lightning_blind_ledger_debt_since', 'fn_table_seats_lightning_anchor_guard', 'fn_table_seats_lightning_pool_follows_seat', 'fn_lightning_form_hand') AND regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') ~ 'is_horse'))
+-- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conrelid = 'public.lightning_pool_session'::regclass AND c.contype = 'f' AND c.confrelid = 'public.table_seats'::regclass)) AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = 'public.lightning_pool_session_by_anchor_seat'::regclass AND pg_get_indexdef(i.indexrelid) ~ '\(anchor_seat_id\)')
+-- @live-proof: (SELECT p.prosecdef AND has_function_privilege('service_role', p.oid, 'EXECUTE') AND NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE') AND s ~ 'reason_required' AND s ~ 'not_frozen' AND s ~ 'FOR UPDATE' AND s ~ 'cluster_unfrozen' AND s ~ 'LIGHTNING_UNFREEZE_MOVED_MONEY' AND s ~ 'SET cluster_mode = ''must_move''' FROM pg_proc p, LATERAL (SELECT pg_get_functiondef(p.oid) AS s) q WHERE p.oid = 'public.fn_cash_cluster_unfreeze(uuid,uuid,text)'::regprocedure)
+-- @live-proof: (SELECT s ~ '::uuid END' AND s !~ 'nullif\(current_setting\(''ca\.request_id'', true\), ''''\)::uuid' FROM (SELECT pg_get_functiondef('public.fn_cash_cluster_epoch_follows_its_game()'::regprocedure) AS s) q)
 
 BEGIN;
 
 -- THE DDL DOES NOT QUEUE BEHIND THE ENGINE. Eight seconds, then a clean
--- refusal that changed nothing, to be re-run once and never in a loop. The
--- hot tables - table_seats, tables and cash_cluster_events - are touched only
--- in SECTION 9, the last thing before COMMIT, under a tighter wait, so the
--- locks their DDL takes are held for milliseconds rather than for the length
--- of this file.
+-- refusal that changed nothing, to be re-run once and never in a loop. This
+-- file takes no lock on table_seats, tables or cash_cluster_events: their
+-- columns are files A and B, their triggers file D.
 SET LOCAL lock_timeout = '8s';
+
+-- AND IT DOES NOT LOCK THE HOT TABLES BY VALIDATING A BODY. With
+-- check_function_bodies on, CREATE FUNCTION ... LANGUAGE sql parses its body
+-- and takes ACCESS SHARE on every relation it names - table_seats and tables
+-- among them - until COMMIT. Off for this transaction only: every body here is
+-- proved by scripts/dev/test-lightning-remediation-two.sh, which runs them.
+SET LOCAL check_function_bodies = off;
 
 -- ===========================================================================
 -- SECTION 1. THE COLD COLUMNS. Every table here is empty in production and
@@ -164,8 +187,14 @@ SET LOCAL lock_timeout = '8s';
 
 -- DEFECT 2: THE SEAT IS THE ANCHOR. Nullable at birth only so that a pool
 -- session written before this file can be anchored honestly before NOT NULL
--- goes on; the foreign key to table_seats is added in SECTION 9 with the other
--- hot-table DDL, because REFERENCES takes SHARE ROW EXCLUSIVE on table_seats.
+-- goes on. DELIBERATELY NO FOREIGN KEY to table_seats (CLAUDE.md, production
+-- DDL rule 7: nothing references a hot table): the buy-in deletes a departed
+-- occupant's seat row before it re-seats a chair (DELETE ... WHERE left_at IS
+-- NOT NULL), and tables and profiles cascade into table_seats, so a NO ACTION
+-- key would make every chair a pool member ever sat in unbuyable for ever. The
+-- anchor is protected where it matters instead: file D's BEFORE DELETE guard
+-- refuses to delete a seat that anchors an OPEN pool session, and
+-- fn_lightning_pool_stack answers 0 for an anchor that no longer exists.
 ALTER TABLE public.lightning_pool_session ADD COLUMN IF NOT EXISTS anchor_seat_id uuid;
 
 -- DEFECT 11: formation idempotency, the conversion's two chip totals, and the
@@ -182,6 +211,13 @@ ALTER TABLE public.lightning_blind_ledger ADD COLUMN IF NOT EXISTS debt_since ti
 -- this matches nothing there; an estate that does gets the truth, and a
 -- session with no seat anywhere in its Cluster is refused BY NAME rather than
 -- by the generic NOT NULL message, because nothing here will invent one.
+-- Guarded, so that on an estate with nothing to anchor - production - this
+-- statement never runs and never reads table_seats.
+DO $backfill$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.lightning_pool_session ps WHERE ps.anchor_seat_id IS NULL) THEN
+    RETURN;
+  END IF;
 UPDATE public.lightning_pool_session ps
    SET anchor_seat_id = (
      SELECT ts.id
@@ -196,6 +232,8 @@ UPDATE public.lightning_pool_session ps
                ts.joined_at, ts.id
       LIMIT 1)
  WHERE ps.anchor_seat_id IS NULL;
+END
+$backfill$;
 
 DO $anchor$
 BEGIN
@@ -209,9 +247,9 @@ $anchor$;
 ALTER TABLE public.lightning_pool_session ALTER COLUMN anchor_seat_id SET NOT NULL;
 
 -- ONE OPEN POOL SESSION PER ANCHOR SEAT, and the index-probe fast path of the
--- anchor guard in SECTION 9: a stack update on an ordinary seat asks this
--- partial index one question and gets no row. The plain index serves the
--- foreign key, so that a DELETE of a seat never scans this table.
+-- anchor guard in file D: a stack update on an ordinary seat asks one index
+-- one question and gets no row. The plain index serves every other lookup by
+-- anchor (the exit trigger, the delete guard, forensics).
 CREATE UNIQUE INDEX IF NOT EXISTS lightning_pool_session_one_open_per_anchor
   ON public.lightning_pool_session (anchor_seat_id) WHERE exited_at IS NULL;
 CREATE INDEX IF NOT EXISTS lightning_pool_session_by_anchor_seat
@@ -223,7 +261,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS lightning_hand_one_per_request
   ON public.lightning_hand (request_id);
 
 COMMENT ON COLUMN public.lightning_pool_session.anchor_seat_id IS
-  'The table_seats row this pool session is the overlay of. The seat is the economic anchor: fn_lightning_pool_stack reads its stack, trg_table_seats_lightning_anchor_guard refuses to change it while its player is in a Lightning hand, and when its left_at is set the session is exited and its slot closed. Written by fn_cash_cluster_commit_lightning (the seat its DISTINCT ON picked) and by fn_lightning_pool_enter. At most one open session per anchor (lightning_pool_session_one_open_per_anchor).';
+  'The table_seats row this pool session is the overlay of. The seat is the economic anchor: fn_lightning_pool_stack reads its stack (0 once it has left, turned over or gone), trg_table_seats_lightning_anchor_guard refuses to change it while its player is in a Lightning hand, trg_table_seats_lightning_anchor_delete_guard refuses to delete it while this session is open, and when its left_at is set the session is exited and its slot closed. No foreign key, by design: table_seats is a hot table whose departed rows the buy-in deletes. Written by fn_cash_cluster_commit_lightning (the seat its DISTINCT ON picked) and by fn_lightning_pool_enter. At most one open session per anchor (lightning_pool_session_one_open_per_anchor).';
 COMMENT ON COLUMN public.lightning_hand.request_id IS
   'The p_request_id fn_lightning_form_hand was called with, unique across hands (lightning_hand_one_per_request), so a retried formation answers with the hand it already formed instead of forming a second one. NULL when the caller supplied none. Immutable from birth.';
 COMMENT ON COLUMN public.cash_cluster_conversion.chips_at_begin IS
@@ -478,6 +516,22 @@ DECLARE
   v_cluster uuid;
   v_hand   uuid;
 BEGIN
+  -- A SEAT THAT ANCHORS AN OPEN POOL SESSION IS NOT DELETED (BEFORE DELETE,
+  -- file D). There is no foreign key to hold the anchor, by design; this is
+  -- what holds it. The buy-in's DELETE of a departed occupant's row is untouched:
+  -- a departure exits the session at the commit that records it, so by the
+  -- time anyone deletes that row it anchors nothing open.
+  IF TG_OP = 'DELETE' THEN
+    SELECT ps.id, ps.player_id, ps.cluster_id INTO v_ps, v_player, v_cluster
+      FROM public.lightning_pool_session ps
+     WHERE ps.anchor_seat_id = OLD.id AND ps.exited_at IS NULL;
+    IF v_ps IS NULL THEN
+      RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'LIGHTNING_ANCHOR_SEAT_IS_IN_THE_POOL: seat % anchors open pool session % of player % in Cluster %; a seat can be deleted once the pool session it anchors has exited',
+      OLD.id, v_ps, v_player, v_cluster USING ERRCODE = 'PLT01';
+  END IF;
+
   SELECT ps.id, ps.player_id, ps.cluster_id INTO v_ps, v_player, v_cluster
     FROM public.lightning_pool_session ps
    WHERE ps.anchor_seat_id = OLD.id AND ps.exited_at IS NULL;
@@ -587,6 +641,117 @@ BEGIN
 END
 $fn$;
 
+-- DEFECT 7, THE WAY BACK. A Cluster frozen by an impossible state stays
+-- frozen until an operator, having read the evidence, says why it may come
+-- back. This returns it to must_move at a new epoch: every live instance is
+-- abandoned (which hands its players back and records instance_destroyed),
+-- every open pool session is exited and its slot closed, every member table's
+-- Lightning halt is lifted so the tables deal cash again, and cluster_unfrozen
+-- records who, why and what was undone. It moves no chips: the seats' total is
+-- measured before and after and a difference raises. Not gated on the platform
+-- freeze - recovery is what the break is for.
+CREATE OR REPLACE FUNCTION public.fn_cash_cluster_unfreeze(p_game_id uuid, p_operator uuid, p_reason text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $fn$
+DECLARE
+  g            record;
+  v_reason     text := btrim(coalesce(p_reason, ''));
+  v_before     numeric;
+  v_after      numeric;
+  v_instances  integer := 0;
+  v_sessions   integer := 0;
+  v_slots      integer := 0;
+  v_tables     integer := 0;
+  v_epoch      integer;
+  i            record;
+BEGIN
+  IF v_reason = '' THEN
+    RETURN jsonb_build_object('ok', false, 'unfrozen', false, 'reason', 'reason_required');
+  END IF;
+  IF p_operator IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'unfrozen', false, 'reason', 'operator_required');
+  END IF;
+
+  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'unfrozen', false, 'reason', 'not_found');
+  END IF;
+  IF g.cluster_mode IS DISTINCT FROM 'frozen' THEN
+    RETURN jsonb_build_object('ok', false, 'unfrozen', false, 'reason', 'not_frozen',
+                              'cluster_mode', g.cluster_mode);
+  END IF;
+
+  SELECT coalesce(sum(ts.stack), 0) INTO v_before
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = g.id AND ts.left_at IS NULL;
+
+  FOR i IN
+    SELECT li.id FROM public.lightning_instance li
+     WHERE li.cluster_id = g.id AND li.state IN ('forming', 'reserved', 'dealing', 'settling')
+     ORDER BY li.id
+     FOR UPDATE
+  LOOP
+    UPDATE public.lightning_instance li
+       SET state = 'abandoned',
+           abandon_reason = 'cluster unfrozen by operator ' || p_operator || ': ' || v_reason,
+           completed_at = CASE WHEN li.started_at IS NOT NULL
+                               THEN GREATEST(clock_timestamp(), li.started_at) ELSE li.completed_at END
+     WHERE li.id = i.id;
+    v_instances := v_instances + 1;
+  END LOOP;
+
+  UPDATE public.lightning_pool_slot sl
+     SET closed_at = GREATEST(clock_timestamp(), sl.opened_at), close_reason = 'cluster_unfrozen',
+         updated_at = clock_timestamp()
+   WHERE sl.cluster_id = g.id AND sl.closed_at IS NULL;
+  GET DIAGNOSTICS v_slots = ROW_COUNT;
+
+  UPDATE public.lightning_pool_session ps
+     SET exited_at = GREATEST(clock_timestamp(), ps.entered_at), exit_reason = 'cluster_unfrozen',
+         state = 'closed', ending_stack = public.fn_lightning_pool_stack(ps.id), updated_at = clock_timestamp()
+   WHERE ps.cluster_id = g.id AND ps.exited_at IS NULL;
+  GET DIAGNOSTICS v_sessions = ROW_COUNT;
+
+  -- A NEW EPOCH IN must_move, so nothing formed at the frozen epoch can ever be
+  -- mistaken for the Cluster's present.
+  PERFORM set_config('ca.epoch_reason', 'unfrozen', true);
+  v_epoch := g.cluster_epoch + 1;
+  UPDATE public.cash_games SET cluster_mode = 'must_move', cluster_epoch = v_epoch, updated_at = now()
+   WHERE id = g.id;
+
+  UPDATE public.tables tb
+     SET dealing_halted_at = NULL, dealing_halted_reason = NULL
+   WHERE tb.cluster_id = g.id AND tb.dealing_halted_reason IN ('lightning', 'lightning_pending_on');
+  GET DIAGNOSTICS v_tables = ROW_COUNT;
+
+  SELECT coalesce(sum(ts.stack), 0) INTO v_after
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = g.id AND ts.left_at IS NULL;
+  IF v_after IS DISTINCT FROM v_before THEN
+    RAISE EXCEPTION 'LIGHTNING_UNFREEZE_MOVED_MONEY: cluster % chip total went from % to %', g.id, v_before, v_after
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  INSERT INTO public.cash_cluster_events (game_id, kind, payload, cluster_epoch)
+  VALUES (g.id, 'cluster_unfrozen', jsonb_build_object(
+    'cluster_id', g.id, 'cluster_epoch', v_epoch, 'epoch_before', g.cluster_epoch,
+    'from_mode', 'frozen', 'to_mode', 'must_move', 'operator', p_operator, 'reason', v_reason,
+    'instances_abandoned', v_instances, 'pool_sessions_exited', v_sessions, 'slots_closed', v_slots,
+    'tables_released', v_tables, 'chip_total', v_before, 'at', clock_timestamp()), v_epoch);
+
+  RETURN jsonb_build_object('ok', true, 'unfrozen', true, 'cluster_id', g.id, 'cluster_mode', 'must_move',
+                            'epoch_before', g.cluster_epoch, 'epoch_after', v_epoch,
+                            'instances_abandoned', v_instances, 'pool_sessions_exited', v_sessions,
+                            'slots_closed', v_slots, 'tables_released', v_tables, 'chip_total', v_before);
+END
+$fn$;
+
+COMMENT ON FUNCTION public.fn_cash_cluster_unfreeze(uuid, uuid, text) IS
+  'Operator recovery from cluster_mode frozen (set by fn_lightning_form_hand on an impossible state). Requires an operator id and a non-empty reason; only from frozen. Abandons every live instance, exits every open pool session and closes its slot, returns the Cluster to must_move at a new epoch, lifts every member table''s Lightning halt, and records cluster_unfrozen. Moves no chips (asserted). service_role only.';
+
 COMMENT ON FUNCTION public.fn_cash_table_observe_dealing_halt(uuid) IS
   'Called by the engine when its table is parked at the halt gate between hands. Stamps tables.dealing_halt_observed_at with clock_timestamp() if and only if the table is halted and this halt has not already been observed, and returns the stamp that stands (NULL when not halted). fn_cash_cluster_commit_lightning refuses (halt_not_observed) until every member table holding a live engine lease has dealing_halt_observed_at >= dealing_halted_at.';
 COMMENT ON FUNCTION public.fn_lightning_anchor_is_live_eligible(uuid, uuid, uuid) IS
@@ -600,7 +765,7 @@ COMMENT ON FUNCTION public.fn_lightning_pool_enter(uuid, timestamp with time zon
 COMMENT ON FUNCTION public.fn_lightning_blind_ledger_debt_since() IS
   'BEFORE INSERT OR UPDATE on lightning_blind_ledger: debt_since is set when an obligation first becomes unresolved, kept while it stays so, and cleared when it is resolved.';
 COMMENT ON FUNCTION public.fn_table_seats_lightning_anchor_guard() IS
-  'BEFORE UPDATE on table_seats, only when stack, left_at or user_id changes: refuses with LIGHTNING_HAND_IN_PROGRESS (SQLSTATE PLT01) a change to a seat that anchors an open pool session whose player is in a live Lightning hand, unless ca.lightning_settlement_hand names that hand. One index probe for every other seat.';
+  'BEFORE UPDATE on table_seats, only when stack, left_at or user_id changes: refuses with LIGHTNING_HAND_IN_PROGRESS (SQLSTATE PLT01) a change to a seat that anchors an open pool session whose player is in a live Lightning hand, unless ca.lightning_settlement_hand names that hand. BEFORE DELETE: refuses with LIGHTNING_ANCHOR_SEAT_IS_IN_THE_POOL (PLT01) the deletion of a seat that anchors an OPEN pool session. One index probe for every other seat.';
 COMMENT ON FUNCTION public.fn_table_seats_lightning_pool_follows_seat() IS
   'Deferred AFTER INSERT and AFTER UPDATE on table_seats: exits the pool session (and closes the slot) of an anchor that left or turned over, re-entering a player still seated elsewhere in the Cluster, and enters an eligible seat of a lightning-mode Cluster into the pool through fn_lightning_pool_enter.';
 
@@ -720,6 +885,8 @@ $b$  -- 2026-09-26: the replayed hand, the constraint a refusal names, and
   -- nothing else.
   v_replay    record;
   v_constraint text;
+  v_alert_id  uuid;
+  v_alert_error text;
   v_ttl       interval := GREATEST($b$,
 -- 3
 $b$    RETURN jsonb_build_object('ok', false, 'formed', false, 'retry', false,
@@ -881,6 +1048,22 @@ $b$      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_msg = MESSAGE
         UPDATE public.cash_games cg
            SET cluster_mode = 'frozen', updated_at = now()
          WHERE cg.id = g.id AND cg.cluster_mode = 'lightning';
+        -- THE PAGE. The estate's operator alert path: a critical
+        -- financial_alerts row, which the incident trigger turns into an
+        -- incident, deduplicated per Cluster. In its own sub-block, so that an
+        -- alert that cannot be written costs the page and never the freeze;
+        -- its failure is recorded in the freeze's own evidence instead.
+        BEGIN
+          v_alert_id := public.fn_raise_server_financial_alert(
+            'critical', 'lightning_formation',
+            format('LIGHTNING_CLUSTER_FROZEN: Cluster %s froze at epoch %s on %s: %s', g.id, v_epoch, v_sqlstate, v_msg),
+            jsonb_build_object('cluster_id', g.id, 'cluster_epoch', v_epoch, 'hand_id', v_hand,
+                               'sqlstate', v_sqlstate, 'constraint', v_constraint,
+                               'recovery', 'fn_cash_cluster_unfreeze(cluster_id, operator, reason)'),
+            'lightning_cluster_frozen:' || g.id, g.id::text);
+        EXCEPTION WHEN OTHERS THEN
+          GET STACKED DIAGNOSTICS v_alert_error = MESSAGE_TEXT;
+        END;
         INSERT INTO public.cash_cluster_events (game_id, kind, payload, cluster_epoch, request_id)
         VALUES
           (g.id, 'stack_invariant_failed', jsonb_build_object(
@@ -894,11 +1077,13 @@ $b$      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_msg = MESSAGE
           (g.id, 'cluster_frozen', jsonb_build_object(
              'cluster_id', g.id, 'cluster_epoch', v_epoch, 'from_mode', 'lightning', 'to_mode', 'frozen',
              'reason', 'stack_invariant_failed', 'sqlstate', v_sqlstate, 'message', v_msg,
-             'hand_id', v_hand, 'instance_id', v_instance, 'at', clock_timestamp()), v_epoch, p_request_id);
+             'hand_id', v_hand, 'instance_id', v_instance, 'alert_id', v_alert_id, 'alert_error', v_alert_error,
+             'at', clock_timestamp()), v_epoch, p_request_id);
         RETURN jsonb_build_object('ok', false, 'formed', false, 'retry', false, 'frozen', true,
                                   'reason', 'formation_invariant_failed',
                                   'sqlstate', v_sqlstate, 'message', v_msg, 'constraint', v_constraint,
-                                  'cluster_id', g.id, 'cluster_epoch', v_epoch);
+                                  'cluster_id', g.id, 'cluster_epoch', v_epoch,
+                                  'alerted', v_alert_id IS NOT NULL);
       END IF;
       -- Everything above is now rolled back. This INSERT is in the OUTER$b$,
 -- 18
@@ -971,7 +1156,7 @@ BEGIN
       'fn_lightning_anchor_is_live_eligible(ps.anchor_seat_id, g.id, ps.player_id)',
       'cps.closed_at IS NULL', 'ORDER BY ts.id
    FOR SHARE', 'formation_invariant_failed', 'stack_invariant_failed', 'cluster_frozen',
-      'SET cluster_mode = ''frozen''',
+      'SET cluster_mode = ''frozen''', 'fn_raise_server_financial_alert(',
       'hand_created', 'pool_player_reserved', 'instance_created', '''participants''',
       'timestamp with time zone,text,uuid)''::regprocedure',
       -- and every sibling the re-cut was written next to
@@ -1918,6 +2103,9 @@ END
 $recut_reap_conv$;
 
 -- DEFECT 10: cluster_epoch_started, from the one writer of cash_cluster_epoch.
+-- The request id is read from ca.request_id and cast only when it IS a uuid:
+-- this trigger fires on every cash_games insert and mode change, and a stray
+-- non-uuid value in that setting must never abort the creation of a game.
 DO $recut_epoch$
 DECLARE
   v_fn  constant regprocedure := 'public.fn_cash_cluster_epoch_follows_its_game()'::regprocedure;
@@ -1938,7 +2126,8 @@ $b$    ON CONFLICT (cluster_id, epoch) DO NOTHING;
       VALUES (NEW.id, 'cluster_epoch_started', jsonb_build_object(
         'cluster_id', NEW.id, 'cluster_epoch', NEW.cluster_epoch, 'previous_epoch', NULL,
         'mode', NEW.cluster_mode, 'started_by', 'genesis', 'at', clock_timestamp()),
-        NEW.cluster_epoch, nullif(current_setting('ca.request_id', true), '')::uuid);
+        NEW.cluster_epoch, CASE WHEN current_setting('ca.request_id', true) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             THEN current_setting('ca.request_id', true)::uuid END);
     END IF;
     RETURN NULL;$b$,
 $b$            coalesce(nullif(current_setting('ca.epoch_reason', true), ''), 'unstated'));
@@ -1949,7 +2138,8 @@ $b$            coalesce(nullif(current_setting('ca.epoch_reason', true), ''), 'u
       'mode', NEW.cluster_mode,
       'started_by', coalesce(nullif(current_setting('ca.epoch_reason', true), ''), 'unstated'),
       'at', clock_timestamp()),
-      NEW.cluster_epoch, nullif(current_setting('ca.request_id', true), '')::uuid);
+      NEW.cluster_epoch, CASE WHEN current_setting('ca.request_id', true) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             THEN current_setting('ca.request_id', true)::uuid END);
     RETURN NULL;$b$];
 BEGIN
   IF v_src ~ 'cluster_epoch_started' THEN
@@ -1966,6 +2156,8 @@ BEGIN
     EXECUTE v_new;
   END IF;
   IF (SELECT count(*) FROM regexp_matches(pg_get_functiondef(v_fn), '''cluster_epoch_started''', 'g')) <> 2
+     OR position('::uuid END' in pg_get_functiondef(v_fn)) = 0
+     OR pg_get_functiondef(v_fn) ~ 'nullif\(current_setting\(''ca\.request_id'', true\), ''''\)::uuid'
      OR position('CLUSTER_EPOCH_GOES_FORWARD' in pg_get_functiondef(v_fn)) = 0 THEN
     RAISE EXCEPTION 'the re-cut fn_cash_cluster_epoch_follows_its_game does not record cluster_epoch_started on both roads';
   END IF;
@@ -1978,6 +2170,8 @@ $recut_epoch$;
 
 REVOKE ALL ON FUNCTION public.fn_cash_table_observe_dealing_halt(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_cash_table_observe_dealing_halt(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_cluster_unfreeze(uuid, uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_unfreeze(uuid, uuid, text) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_lightning_anchor_is_live_eligible(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_lightning_anchor_is_live_eligible(uuid, uuid, uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_lightning_pool_stack(uuid) FROM PUBLIC, anon, authenticated;
@@ -2007,89 +2201,21 @@ REVOKE DELETE ON public.lightning_reservation, public.lightning_instance, public
 REVOKE TRUNCATE ON public.cash_cluster_conversion FROM service_role, anon, authenticated, PUBLIC;
 
 -- ===========================================================================
--- SECTION 9. THE HOT TABLES, LAST. table_seats is written by every hand,
--- tables is read by every engine loop and cash_cluster_events by every tick.
--- Each statement below takes a lock that blocks their writers (ADD COLUMN and
--- the constraint triggers take more), and a lock is held to COMMIT, so they
--- come after every function above and nothing slow follows them. A tighter
--- wait than the file's eight seconds: a DDL statement waiting on a hot table
--- makes every later writer wait behind it.
+-- SECTION 7. THE ONE-TIME SWEEP, AND THE READ-BACK.
 -- ===========================================================================
 
-SET LOCAL lock_timeout = '3s';
-
--- DEFECT 1.
-ALTER TABLE public.tables ADD COLUMN IF NOT EXISTS dealing_halt_observed_at timestamptz;
-
--- DEFECT 10. One ADD COLUMN per ALTER; a constant default is a catalogue
--- change, not a rewrite.
-ALTER TABLE public.cash_cluster_events ADD COLUMN IF NOT EXISTS event_version smallint NOT NULL DEFAULT 1;
-ALTER TABLE public.cash_cluster_events ADD COLUMN IF NOT EXISTS request_id uuid;
-
-DO $hot$
-BEGIN
-  -- DEFECT 2: the anchor is a real seat. The table is empty in production, so
-  -- validating it reads nothing.
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                  WHERE conrelid = 'public.lightning_pool_session'::regclass
-                    AND conname = 'lightning_pool_session_anchor_seat_fkey') THEN
-    ALTER TABLE public.lightning_pool_session
-      ADD CONSTRAINT lightning_pool_session_anchor_seat_fkey
-      FOREIGN KEY (anchor_seat_id) REFERENCES public.table_seats(id);
-  END IF;
-
-  -- DEFECT 4: the anchor guard. BEFORE UPDATE, and its WHEN clause admits only
-  -- a change to the stack, the departure or the occupant, so a row update that
-  -- touches none of them never reaches PL/pgSQL.
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.table_seats'::regclass
-                   AND tgname = 'trg_table_seats_lightning_anchor_guard') THEN
-    CREATE TRIGGER trg_table_seats_lightning_anchor_guard
-      BEFORE UPDATE ON public.table_seats
-      FOR EACH ROW
-      WHEN (OLD.stack IS DISTINCT FROM NEW.stack
-            OR OLD.left_at IS DISTINCT FROM NEW.left_at
-            OR OLD.user_id IS DISTINCT FROM NEW.user_id)
-      EXECUTE FUNCTION public.fn_table_seats_lightning_anchor_guard();
-  END IF;
-
-  -- DEFECT 2: the pool follows the seat, deferred to commit. The WHEN clauses
-  -- keep every ordinary stack update - a stack that stays above zero - from
-  -- queueing anything at all.
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.table_seats'::regclass
-                   AND tgname = 'trg_table_seats_lightning_pool_on_insert') THEN
-    CREATE CONSTRAINT TRIGGER trg_table_seats_lightning_pool_on_insert
-      AFTER INSERT ON public.table_seats
-      DEFERRABLE INITIALLY DEFERRED
-      FOR EACH ROW
-      WHEN (NEW.left_at IS NULL AND NEW.user_id IS NOT NULL AND coalesce(NEW.stack, 0) > 0
-            AND coalesce(NEW.is_sitting_out, false) = false
-            AND coalesce(NEW.leave_pending, false) = false)
-      EXECUTE FUNCTION public.fn_table_seats_lightning_pool_follows_seat();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.table_seats'::regclass
-                   AND tgname = 'trg_table_seats_lightning_pool_follows_seat') THEN
-    CREATE CONSTRAINT TRIGGER trg_table_seats_lightning_pool_follows_seat
-      AFTER UPDATE ON public.table_seats
-      DEFERRABLE INITIALLY DEFERRED
-      FOR EACH ROW
-      WHEN (OLD.left_at IS DISTINCT FROM NEW.left_at
-            OR OLD.user_id IS DISTINCT FROM NEW.user_id
-            OR OLD.is_sitting_out IS DISTINCT FROM NEW.is_sitting_out
-            OR OLD.leave_pending IS DISTINCT FROM NEW.leave_pending
-            OR (coalesce(OLD.stack, 0) > 0) IS DISTINCT FROM (coalesce(NEW.stack, 0) > 0))
-      EXECUTE FUNCTION public.fn_table_seats_lightning_pool_follows_seat();
-  END IF;
-END
-$hot$;
-
--- THE ONE-TIME SWEEP. Anybody already seated, eligible, at a table of a
--- Cluster that is lightning when this file is applied - a player who sat down
--- after the conversion while nothing let them in - is entered through the same
--- door the triggers use from now on. Production has no lightning Cluster, so
--- this enters nobody there; an estate that has one is made whole.
+-- Anybody already seated, eligible, at a table of a Cluster that is lightning
+-- when this file is applied - a player who sat down after the conversion
+-- while nothing let them in - is entered through the same door file D's
+-- triggers use from then on. Guarded on there being a lightning Cluster at
+-- all, so on production, which has none, it reads neither table_seats nor
+-- tables.
 DO $sweep$
 DECLARE s record;
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.cash_games WHERE cluster_mode = 'lightning') THEN
+    RETURN;
+  END IF;
   FOR s IN
     SELECT ts.id
       FROM public.table_seats ts
@@ -2106,54 +2232,17 @@ BEGIN
 END
 $sweep$;
 
--- THREE TRIGGERS ON A MONEY TABLE, DECLARED IN THE MIGRATION THAT CREATES THEM.
-INSERT INTO public.ca_declared_money_triggers (table_name, trigger_name, note) VALUES
-  ('table_seats', 'trg_table_seats_lightning_anchor_guard',
-   'Lightning remediation two (20260926045132). BEFORE UPDATE, WHEN stack, left_at or user_id changes: refuses (LIGHTNING_HAND_IN_PROGRESS, SQLSTATE PLT01) any change to a seat that anchors an open Lightning pool session whose player is in a live Lightning hand, unless ca.lightning_settlement_hand names that hand. Writes nothing; one index probe for every other seat.'),
-  ('table_seats', 'trg_table_seats_lightning_pool_on_insert',
-   'Lightning remediation two (20260926045132). Deferred AFTER INSERT, WHEN the seat is live eligible: enters the seat into the Lightning pool of a lightning-mode Cluster (fn_lightning_pool_enter). Writes lightning_pool_session, lightning_pool_slot and cash_cluster_events only; never a stack.'),
-  ('table_seats', 'trg_table_seats_lightning_pool_follows_seat',
-   'Lightning remediation two (20260926045132). Deferred AFTER UPDATE, WHEN left_at, user_id, is_sitting_out or leave_pending changes or the stack crosses zero: exits the pool session of an anchor that left or turned over and enters a seat that became eligible. Writes lightning_pool_session, lightning_pool_slot and cash_cluster_events only; never a stack.')
-ON CONFLICT (table_name, trigger_name) DO NOTHING;
-
-COMMENT ON COLUMN public.tables.dealing_halt_observed_at IS
-  'When the engine last reported, through fn_cash_table_observe_dealing_halt from its halt gate between hands, that it has seen this table''s dealing halt. A halt is a stop only once dealing_halt_observed_at >= dealing_halted_at; fn_cash_cluster_commit_lightning waits for that on every member table with a live engine lease.';
-COMMENT ON COLUMN public.cash_cluster_events.event_version IS
-  'The version of the payload shape of this event kind. 1 for every kind written today.';
-COMMENT ON COLUMN public.cash_cluster_events.request_id IS
-  'The request id of the call that wrote this event, when the caller supplied one: the formation''s p_request_id, the conversion''s p_request_id (and the epoch it opened). NULL otherwise.';
-
--- THE POST-APPLY READ-BACK OF THE HOT HALF. What the catalogue now says, not
--- what this file meant.
+-- THE READ-BACK: what the catalogue now says, asked of the catalogue alone.
 DO $readback$
 DECLARE
   v_bad text;
 BEGIN
   SELECT string_agg(q.what, '; ') INTO v_bad FROM (VALUES
-    ('tables.dealing_halt_observed_at', EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.tables'::regclass
-        AND attname = 'dealing_halt_observed_at' AND NOT attisdropped)),
-    ('cash_cluster_events.event_version NOT NULL DEFAULT 1', EXISTS (SELECT 1 FROM pg_attribute a
-        JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-        WHERE a.attrelid = 'public.cash_cluster_events'::regclass AND a.attname = 'event_version'
-          AND a.attnotnull AND pg_get_expr(d.adbin, d.adrelid) = '1')),
-    ('cash_cluster_events.request_id', EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.cash_cluster_events'::regclass
-        AND attname = 'request_id' AND NOT attisdropped)),
-    ('the anchor foreign key', EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.lightning_pool_session'::regclass
-        AND contype = 'f' AND confrelid = 'public.table_seats'::regclass AND convalidated)),
     ('anchor_seat_id NOT NULL', EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.lightning_pool_session'::regclass
         AND attname = 'anchor_seat_id' AND attnotnull)),
-    ('the guard fires before update only when stack, left_at or user_id moves', EXISTS (SELECT 1 FROM pg_trigger t
-        WHERE t.tgrelid = 'public.table_seats'::regclass AND t.tgname = 'trg_table_seats_lightning_anchor_guard'
-          AND (t.tgtype::integer & 2) <> 0 AND (t.tgtype::integer & 16) <> 0 AND t.tgenabled = 'O'
-          AND pg_get_triggerdef(t.oid) ~ 'old\.stack IS DISTINCT FROM new\.stack'
-          AND pg_get_triggerdef(t.oid) ~ 'old\.left_at IS DISTINCT FROM new\.left_at')),
-    ('the two deferred pool triggers', (SELECT count(*) = 2 FROM pg_trigger t
-        WHERE t.tgrelid = 'public.table_seats'::regclass
-          AND t.tgname IN ('trg_table_seats_lightning_pool_on_insert', 'trg_table_seats_lightning_pool_follows_seat')
-          AND t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O' AND t.tgqual IS NOT NULL)),
-    ('the three declarations', (SELECT count(*) = 3 FROM public.ca_declared_money_triggers
-        WHERE table_name = 'table_seats' AND trigger_name IN ('trg_table_seats_lightning_anchor_guard',
-          'trg_table_seats_lightning_pool_on_insert', 'trg_table_seats_lightning_pool_follows_seat'))),
+    ('no foreign key from the pool to table_seats', NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.lightning_pool_session'::regclass AND contype = 'f'
+          AND confrelid = 'public.table_seats'::regclass)),
     ('service_role may delete no Lightning history', NOT (
         has_table_privilege('service_role', 'public.lightning_hand', 'DELETE')
         OR has_table_privilege('service_role', 'public.lightning_hand_player', 'DELETE')
@@ -2169,14 +2258,14 @@ BEGIN
           AND p.proname IN ('fn_cash_table_observe_dealing_halt', 'fn_lightning_anchor_is_live_eligible',
                             'fn_lightning_pool_stack', 'fn_lightning_player_in_hand', 'fn_lightning_pool_enter',
                             'fn_lightning_blind_ledger_debt_since', 'fn_table_seats_lightning_anchor_guard',
-                            'fn_table_seats_lightning_pool_follows_seat')
-          AND pg_get_functiondef(p.oid) ~ 'is_horse')),
+                            'fn_table_seats_lightning_pool_follows_seat', 'fn_cash_cluster_unfreeze')
+          AND regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') ~ 'is_horse')),
     ('no browser role executes a new function', NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public' AND p.prokind = 'f'
           AND p.proname IN ('fn_cash_table_observe_dealing_halt', 'fn_lightning_anchor_is_live_eligible',
                             'fn_lightning_pool_stack', 'fn_lightning_player_in_hand', 'fn_lightning_pool_enter',
                             'fn_lightning_form_hand', 'fn_table_seats_lightning_anchor_guard',
-                            'fn_table_seats_lightning_pool_follows_seat')
+                            'fn_table_seats_lightning_pool_follows_seat', 'fn_cash_cluster_unfreeze')
           AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))))
   ) q(what, ok) WHERE q.ok IS DISTINCT FROM true;
   IF v_bad IS NOT NULL THEN

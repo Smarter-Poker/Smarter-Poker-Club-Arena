@@ -124,6 +124,59 @@ groups:
             unprocessed knockouts, one-player tables and table adoption.
           runbook: docs/changelog/2026-09-13-mtt-progress-monitoring.md
 
+      # THE FLEET, NOT THE EVENT (2026-09-26). MttPlayStopped above was loaded
+      # and FIRING for three days (483 five-minute samples, 2026-09-23 02:35 to
+      # 2026-09-26 02:30) at 89-116 stalled MTTs while the whole tournament
+      # fleet stood still, and nobody acted: permanently stuck events keep
+      # poker_mtt_stalled_running near 55 even when the fleet is healthy, so a
+      # count cannot tell one broken event from a stopped fleet, and an alarm
+      # that is always on is an alarm that gets muted (CLAUDE.md 10.84).
+      #
+      # This reads the SHARE of eligible MTTs that dealt a hand in the last 15
+      # minutes, from the same population on both sides of the division.
+      # Measured from hand_history and the live scrape:
+      #   * outage week, 2026-09-21 02:30 to 2026-09-26 01:30: 2-15 MTT events
+      #     dealing per 30 min against 89-116 stalled - a share of at most 0.13
+      #     outside three post-restart bursts;
+      #   * healthy, 2026-09-26 02:45 after the 02:00 restart: 68 progressing,
+      #     60 stalled - a share of 0.53.
+      # 0.25 is about twice the outage ceiling and half the healthy value. The
+      # population floor of 10 keeps a quiet hour with three events from
+      # paging on one slow table. 10 minutes, not longer, because on the outage
+      # night recovery windows raised the break guard every 15-45 minutes and a
+      # longer `for:` never survived the gaps between them.
+      #
+      # poker_mtt_progressing_running is published only by an engine built
+      # from TournamentMetrics.ts at or after this change AND a database
+      # carrying migration 20260926023322. Until both are live the series is
+      # absent and this rule cannot fire - check
+      # `curl -s engine.smarter.poker/metrics | grep poker_mtt_progressing_running`
+      # before relying on it.
+      - alert: MttFleetNotDealing
+        expr: |
+          (
+            poker_mtt_progressing_running
+              / clamp_min(poker_mtt_progressing_running + poker_mtt_stalled_running, 1)
+          ) < 0.25
+          and on(instance) (poker_mtt_progressing_running + poker_mtt_stalled_running) >= 10
+          and on(instance) (poker_tournament_metrics_stale_seconds < 300)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: 'Only {{ $value | humanizePercentage }} of running MTTs dealt a hand in 15 minutes'
+          description: |
+            Most RUNNING MTTs past their startup grace, not on a break and not
+            in an add-on have dealt no hand for their own event in 15 minutes.
+            This is the whole tournament fleet stopping, not one stuck event -
+            MttPlayStopped covers those. Compare poker_tournaments_owned with
+            poker_tournaments_running, read engine /health
+            quarantinedTournamentManagers and tournamentLease, and check
+            whether the last restart adopted its tournaments.
+          runbook: docs/changelog/2026-09-26-board-producers-and-the-fleet-alarm.md
+
       # A break flag must not make a stalled tournament invisible forever.
       # Ten extra minutes exceed the measured longest hand plus ordinary thaw;
       # use the later break/add-on end, including pre-countdown missing ends.

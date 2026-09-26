@@ -689,20 +689,14 @@ raise SystemExit(4)
   # refused when the database had never been asked. A missing helper is
   # UNKNOWN, and UNKNOWN has to say so in its own words (CLAUDE.md 10.86
   # rules 1 and 2). All four branches still refuse; only the message differs.
-  #
-  # STDOUT IS THE VERDICT AND NOTHING ELSE (2026-09-26). Every caller reads
-  # this function as `BREAK_REMAINING_MS="$(maintenance_certificate ...)"` and
-  # then does arithmetic on it, so the ONLY bytes it may print to stdout are
-  # the remaining-milliseconds figure. The helper announces its answer on
-  # stdout and the admission line below used to as well; the first admission
-  # that ever reached this branch (run 36211686180, 02:34:11Z, predecessor
-  # 778075b4) captured "[engine-release-inflight-hands] no hand in the air ...
-  # 294308" as the figure, `$(( ... / 1000 ))` refused it as a syntax error,
-  # and the transaction died before prepare. Nothing had been mutated, but a
-  # cutover every other gate had admitted was thrown away. Both now go to
-  # stderr, where the journal still records them.
+  # This whole function's stdout IS the caller's captured return value
+  # ($(maintenance_certificate ...)) - only the final printf below may ever
+  # write to it. The helper's own stdout is redirected here regardless of
+  # what it prints, so a future edit to it can never leak a second line into
+  # the caller's remaining-ms arithmetic the way this branch's own message
+  # once did (see the fixed echo two lines down).
   set +e
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" 1>&2
   local inflight_rc=$?
   set -e
   case "$inflight_rc" in

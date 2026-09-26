@@ -219,9 +219,18 @@ def main() -> None:
             )
         raise SystemExit(EXIT_HAND_IN_AIR)
 
+    # QUIET still writes to stderr, like every other outcome in this file.
+    # The caller invokes this script directly inside a command substitution
+    # that captures its OWN stdout as a numeric return value
+    # (engine-release-transaction.sh's `maintenance_certificate`); a stdout
+    # line here has nothing to do with that value and would concatenate into
+    # it, which is exactly what happened before this fix (see the paired
+    # bash correction in engine-release-transaction.sh's inflight_rc==0
+    # branch).
     print(
         f"[engine-release-inflight-hands] no hand in the air: zero incomplete hand "
-        f"snapshots written in the last {args.max_age_seconds}s"
+        f"snapshots written in the last {args.max_age_seconds}s",
+        file=sys.stderr,
     )
     raise SystemExit(EXIT_QUIET)
 

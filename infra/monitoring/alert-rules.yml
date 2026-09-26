@@ -32,7 +32,7 @@ groups:
             pm2-metrics has been unreachable for >1 minute. This means either
             the pm2 process is dead, the node is down, or the metrics module
             crashed. Player-facing impact: active tables cannot tick.
-          runbook: https://monitor.smarter.poker/runbooks/engine-down
+          runbook: 'docs/runbooks/engine-down.md'
 
       - alert: EngineHandsPerSecDropped
         # Hands/sec should average > 0.5 during business hours. A sustained

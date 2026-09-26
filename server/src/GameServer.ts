@@ -2227,12 +2227,7 @@ export class GameServer {
     }
     const completePhysicalMap = () => {
       if (!packet?.mixed) return true;
-      const global = [...this.tableEngines].filter(
-        ([, engine]) =>
-          engine.getEngineLeaseAuthority()?.scope === 'tournament' &&
-          (engine.getEngineLeaseAuthority() as { tournamentId?: string }).tournamentId ===
-            tournamentId
-      );
+      const global = this.tournamentEnginesOnFleet(tournamentId);
       return (
         global.length === packet.engines.length &&
         global.every(([id, engine]) =>
@@ -2323,16 +2318,46 @@ export class GameServer {
     return true;
   }
 
+  /**
+   * EVERY ENGINE OF ONE TOURNAMENT, READ FROM THE PROCESS ROOT (2026-09-26).
+   *
+   * Each tournament ServerTableEngine has every method bound to ITS OWN
+   * tournament's data authority (bindTournamentDataAuthorityMethods), and
+   * entering one authority while another manager's is active throws
+   * "Tournament data authority cannot be rebound inside another manager
+   * context". A scan of the whole fleet calls `getEngineLeaseAuthority()` on
+   * every engine, so from inside manager A it throws on the first engine that
+   * belongs to tournament B.
+   *
+   * That is exactly where `hasCompleteMixedF06PhysicalMap` ran: inside a
+   * TournamentManager's bound `staleness` check on the lease-lost retirement
+   * path. At 04:45:56Z on 2026-09-26 a lease loss on engine f1d956c3 sent every
+   * mixed-custody retirement into this throw, none of them could retire, and
+   * the fleet collapsed from ~550 hands/min to ~0 with 338 managers
+   * quarantined until the process was restarted.
+   *
+   * Reading which engines belong to a tournament is fleet-level bookkeeping,
+   * not one manager's data access, so it runs at the process root - the same
+   * boundary GameServer already uses for the maintenance thaw and the recovery
+   * window contract. Each engine then enters only its own authority, the
+   * caller's context is restored on return, and the predicate is unchanged.
+   */
+  private tournamentEnginesOnFleet(tournamentId: string): [string, ServerTableEngine][] {
+    return bindToProcessRoot(() =>
+      [...this.tableEngines].filter(([, engine]) => {
+        const authority = engine.getEngineLeaseAuthority();
+        return authority?.scope === 'tournament' && authority.tournamentId === tournamentId;
+      })
+    )();
+  }
+
   hasCompleteMixedF06PhysicalMap(
     tournamentId: string,
     manager: TournamentManager,
     originals: readonly (readonly [string, ServerTableEngine])[]
   ): boolean {
     const packet = this.drainedF06TournamentCustody?.get(tournamentId);
-    const global = [...this.tableEngines].filter(([, engine]) => {
-      const authority = engine.getEngineLeaseAuthority();
-      return authority?.scope === 'tournament' && authority.tournamentId === tournamentId;
-    });
+    const global = this.tournamentEnginesOnFleet(tournamentId);
     if (packet?.mixed && packet.manager === manager)
       return global.length === 0 && packet.engines === originals;
     return (

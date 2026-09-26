@@ -3522,6 +3522,74 @@ export abstract class ServerTableEngineBase {
           this.wakeClusterGame('seat_change');
         }
         firstWaitSweep = false;
+
+        /* ═══ THE QUIET TABLE HEARS THE CLUSTER'S HALT TOO ════════════════
+           (Lightning 2.0 Phase 5 remediation, 2026-09-25)
+
+           WHAT WAS WRONG. Phase 5 gave the DEALING loop a halt gate and left
+           this one alone, deliberately and with a stated reason: this loop's
+           only database read was `loadSeatedPlayers`, so it could never see
+           `dealing_halted_at` be set OR cleared, and gating it on a flag it
+           could never watch lift would have wedged a quiet table for ever.
+           The reasoning was sound; the conclusion was not, because the same
+           sentence also says this loop never observes the halt AT ALL - and
+           it goes on running `evictExpiredSitOuts`, which stands a player up
+           and CASHES THEM OUT, plus `executeIdleSeatMoves`,
+           `processPendingAddOns` and `restoreEntryHoldsFromSeats`.
+
+           THE CASE. A feeder holding one seated player who is sitting out,
+           four minutes into the five-minute eviction clock. The Cluster halts
+           every table; this engine is reaped and rebuilt; `start()` reads the
+           row and sets the lock correctly; the engine enters THIS loop - and
+           sixty seconds later cashes that player out, in the middle of a
+           transition whose whole promise is that it unseats nobody and moves
+           no chip. The stated "worst case 60 s" was only ever true of a table
+           that was already dealing; a table that went quiet before the halt
+           was raised had no worst case at all.
+
+           THE ANSWER TO THE WEDGE IS TO GIVE THE LOOP THE ROW, THEN GATE IT.
+           The read is `refreshRakeConfig` - the SAME throttled re-read the
+           dealing loop already uses, sharing RAKE_CONFIG_TTL_MS and the same
+           single writer `applyDealingHaltFromRow`, so there is no second
+           polling mechanism that could disagree with the first. It is asked
+           only of a CASH table that belongs to a Cluster, which is the only
+           population `dealing_halted_at` is ever written for and the same
+           guard `stopIfClusterTableClosed` already uses: a quiet TOURNAMENT
+           table makes no extra request whatsoever and its backoff is
+           untouched (theQuietTournamentTableBacksOff.law.test.ts), and a cash
+           table outside a Cluster makes none either. For a quiet Cluster
+           table the cost is one throttled rule read a minute beside a roster
+           read every five seconds.
+
+           AND THE GATE IS NOT `awaitPauseGate`, for the dealing loop's
+           reason: the writer is a transaction that committed and went home,
+           so nothing in this process will ever release that gate. This branch
+           POLLS - it re-reads on the next pass and leaves the moment the row
+           says it may, which is what makes the halt safe to honour here. */
+        if (!this.isTournamentTable() && this.tableInfo?.cluster_id) {
+          await this.refreshRakeConfig();
+          if (!this.lifecycleCanMutate()) return;
+        }
+        if (this.dealingHaltLock) {
+          this.setLoopPhase('cluster_dealing_halted');
+          /* Read-only, and the one thing a halted quiet table still owes a
+             client: someone opening it sees seats and stacks, not a spinner. */
+          try {
+            await this.broadcastCurrentState();
+          } catch {
+            /* an idle publish must never stall this loop */
+          }
+          if (!this.lifecycleCanMutate()) return;
+          /* A pass that re-read the row and the roster is as much progress as
+             an unchanged waiting sweep - and a table halted while its FSM is
+             still 'waiting' needs it, because GameServer's zombie reaper
+             would otherwise condemn it at 180s and rebuild it into the same
+             halt. (isPausedByDesign() now names the halt as well, so the
+             reaper stands down on the fact rather than on the stamp.) */
+          this.markProgress();
+          await this.waitForPlayersPause(ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS);
+          continue;
+        }
         /* A cash table below its deal minimum never reaches dealingLoop(). A
            bust rebuy can still be committed from the player's cashier while
            the table waits here, so this boundary must run the same exact,
@@ -6964,11 +7032,41 @@ export abstract class ServerTableEngineBase {
     // exists to make. The hold has a published deadline; when it expires the
     // table deals or it becomes a genuine stall, and either way the answer
     // arrives on its own.
+    //
+    // ── AND SO IS A CLUSTER'S HALT (Lightning 2.0 Phase 5, 2026-09-25) ──
+    //
+    // `dealingHaltLock` is a table stopped on purpose by an authority outside
+    // this process, which is the whole meaning of this predicate. It was the
+    // one next-hand owner missing from it.
+    //
+    // WHAT THE AUDIT CLAIMED AND WHAT IS ACTUALLY TRUE. The claim was that the
+    // deploy-restart gate "requires every table parked" and so could not open
+    // during a conversion. It is not so: MaintenanceBreak.unparkedTables()
+    // asks `isBetweenHands()` - are there cards in the air - precisely because
+    // `isPausedByDesign()` was once too loose for it (see the three-times-wrong
+    // note there). A halted table between hands never held that gate shut.
+    //
+    // The gap it does close is the readers that DO ask this: GameServer's
+    // zombie reaper via isParkedByDesign(), the drain's `atBoundary`, the turn
+    // watchdog and /health. A table halted while its FSM is still 'waiting' -
+    // the start-up wait loop, which now honours the halt - has no 'paused'
+    // state to show them, so without this line it reads as a table that ought
+    // to be dealing and is not. `pausedSinceMs` is deliberately NOT stamped
+    // for a polled lock, so `msPaused()` stays 0 and MAX_HEALTHY_PAUSE_MS
+    // cannot condemn a long conversion; the halt's own authority is the row,
+    // and a table that keeps re-reading it is not wedged.
+    //
+    // It changes nothing mid-hand: isParkedByDesign()'s mid-hand branch names
+    // only the fences a rebuild would lose, and the halt is not one of those -
+    // `start()` re-reads the row, so a replacement comes up halted. A hand
+    // that froze under a halt is still worked by the watchdog and still
+    // reaped, exactly as the 2026-09-11 note below demands.
     return (
       this.handForHandPaused ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused ||
+      this.dealingHaltLock ||
       (this.tournamentMovePauseOwners.size > 0 && this.handForHandResolve !== null) ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'

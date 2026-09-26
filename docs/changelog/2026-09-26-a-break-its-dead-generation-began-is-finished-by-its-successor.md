@@ -139,3 +139,15 @@ is recorded here for the owner of the movement lane.
 ## Measured after apply
 
 Recorded on the pull request.
+
+## Superseded (2026-09-26, later the same day)
+
+Migration `20260926092954` never reached production and never can: its
+pre-image pins `fn_f06_admit_parked_movement` md5 9bcb1b3b and
+`f06_movement_prior` md5 97c4a1af, and both were replaced at 09:35:51Z by
+`20260926091645_a_receipted_chip_is_movement_evidence`, which proves a begun
+break that never recorded an admission member by member from its winning
+receipts, live manifest chairs and durable purchase receipts. Break dce8ddb0
+finished through that door (state `acknowledged`, 8 members, 8 winners) and
+event 7c6277e7 completed. The file and its schema fragment are removed; the
+law test now pins the same law against the definitions production holds.

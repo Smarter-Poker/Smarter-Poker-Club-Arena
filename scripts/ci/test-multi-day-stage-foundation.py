@@ -449,7 +449,7 @@ def run_all(c, capability):
     # Declared live proofs are true on the installed schema.
     proofs = []
     for name in CANDIDATES:
-        proofs += re.findall(r'--\s*@live-proof:\s*(.+?)\s*$', (MIG / name).read_text(), re.M)
+        proofs += re.findall(r'^-- @live-proof: (.+?)\s*$', (MIG / name).read_text(), re.M)
     for proof in proofs:
         assert c.val('SELECT (%s)::text' % proof) == 'true', proof
     ok('every_live_proof_is_true', '%d proofs' % len(proofs))

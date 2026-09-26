@@ -23,3 +23,5 @@ bounded engine; that `cards_in_air`, the refusing bank classes (`unwritten`,
 `unreadable`, `bank_park_write_incomplete`) and any unknown reason still
 refuse, predecessor included; and that the database proof remains the only
 path that proceeds, with no bypass.
+
+Corrected 2026-09-26 (#5267): `stopped_bank_custody_stuck` is no longer admitted. Past the bound the engine still refuses under that name and the release refuses it too, from every serving release; what outlives the bound on a build with #5255 is a bank still not on disk. The exact-SHA raw-reason exception for predecessor `778075b4` is unchanged and still pinned here.

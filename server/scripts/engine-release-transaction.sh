@@ -579,9 +579,13 @@ health_instance() {
 # engine, which deals no hands. What a restart discards is the in-memory
 # time-bank mirror of seats that already stopped; the chips live in the
 # database. That is the class the legacy checkpoint guard already calls
-# DISPOSED. MaintenanceBreak now bounds it exactly like the F06 class and
-# retires it into stopped_bank_custody_stuck, which joins the allow-list
-# below. The RAW reason stays refused, with one self-retiring exception: when
+# DISPOSED. MaintenanceBreak now bounds it and, past the bound, reports it as
+# stopped_bank_custody_stuck - which STILL refuses and is NOT in the allow-list
+# below (corrected 2026-09-26, #5267): on a build with #5255 a terminal engine
+# persists its custody at every break announcement, so what outlives the bound
+# there is a write that keeps failing, a player's bank genuinely not on disk,
+# and nothing behind this script re-checks it on an ordinary cutover. The RAW
+# reason stays refused, with one self-retiring exception: when
 # the serving release is one of the exact predecessors that cannot present
 # the bounded class because the bound is not in that build, the raw reason is
 # admitted under the SAME database in-flight proof. The moment a bounded
@@ -636,7 +640,9 @@ if ok:
 # The BOUNDED classes: each is a blocker the engine itself has already aged
 # past MaintenanceBreak.F06_UNRESOLVED_GATE_MS (or is the live half of one
 # that the engine will age), raised only by a table that deals no hands.
-BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck","stopped_bank_custody_stuck"}
+# No bank or custody name may appear in this set (pinned by
+# theCertificateOpensBeforeTheFleetIsSwept and everyRestartBlockerDeclaresItsBound).
+BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
 # The one reason admitted UNBOUNDED, and only from these exact serving
 # releases: predecessors whose MaintenanceBreak counts
 # stopped_bank_custody_unconfirmed with no bound and can therefore never
@@ -689,13 +695,25 @@ raise SystemExit(4)
   # refused when the database had never been asked. A missing helper is
   # UNKNOWN, and UNKNOWN has to say so in its own words (CLAUDE.md 10.86
   # rules 1 and 2). All four branches still refuse; only the message differs.
+  #
+  # STDOUT IS THE VERDICT AND NOTHING ELSE (2026-09-26). Every caller reads
+  # this function as `BREAK_REMAINING_MS="$(maintenance_certificate ...)"` and
+  # then does arithmetic on it, so the ONLY bytes it may print to stdout are
+  # the remaining-milliseconds figure. The helper announces its answer on
+  # stdout and the admission line below used to as well; the first admission
+  # that ever reached this branch (run 36211686180, 02:34:11Z, predecessor
+  # 778075b4) captured "[engine-release-inflight-hands] no hand in the air ...
+  # 294308" as the figure, `$(( ... / 1000 ))` refused it as a syntax error,
+  # and the transaction died before prepare. Nothing had been mutated, but a
+  # cutover every other gate had admitted was thrown away. Both now go to
+  # stderr, where the journal still records them.
   set +e
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE"
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2
   local inflight_rc=$?
   set -e
   case "$inflight_rc" in
     0)
-      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above"
+      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above" >&2
       printf '%s\n' "$verdict"
       return 0
       ;;

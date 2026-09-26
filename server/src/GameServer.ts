@@ -21,9 +21,11 @@ import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorke
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 import {
   f06CustodyRefusalKey,
+  f06RecoveryDispositionOwner,
   prepareF06SuccessorAdmission,
   type DrainedF06Custody,
   type F06CustodyRefusal,
+  type F06RecoveryDispositionOwner,
 } from './tournament/drainedF06Custody.js';
 /**
  * GameServer — server-side game orchestration.
@@ -2627,6 +2629,7 @@ export class GameServer {
 
     const packet = this.drainedF06TournamentCustody?.get(tournamentId) ?? null;
     let recoveryRequired = false;
+    let dispositionOwner: F06RecoveryDispositionOwner = 'none_required';
     let mixedTerminalProof: unknown = null;
     if (mode === 'resume' || packet || durableMixed) {
       try {
@@ -2651,6 +2654,25 @@ export class GameServer {
         )
           throw new Error('f06_successor_admission_changed');
         recoveryRequired = state.recoveryRequired;
+        // Name who decides the reserved hand BEFORE anyone holds the event
+        // (see f06RecoveryDispositionOwner). An admission with no owner at
+        // all is refused here, inside this catch, so its lease is released.
+        dispositionOwner = f06RecoveryDispositionOwner({
+          recoveryRequired,
+          hasDrainedPacket: !!packet,
+          hasMixedTransfer: !!(durableMixed ?? packet?.mixed),
+          mode,
+        });
+        if (dispositionOwner === 'no_owner')
+          throw new Error('f06_recovery_disposition_owner_missing');
+        if (dispositionOwner === 'abandoned_generation_door') {
+          const pending = (state as { pendingTables?: readonly string[] }).pendingTables ?? [];
+          console.warn(
+            `[GameServer] tournament ${tournamentId.slice(0, 8)} is adopted with a reserved hand on ` +
+              `${pending.length} table(s) and no drained or mixed custody - resume() asks the ` +
+              `abandoned-generation door before any dealer is built`
+          );
+        }
         if (durableMixed || packet?.mixed) mixedTerminalProof = state.terminalProof;
         if (packet && !recoveryRequired) {
           // Terminal dispositions are monotonic. Retain the original objects,
@@ -2681,10 +2703,12 @@ export class GameServer {
     );
     this.tournamentEngines.set(tournamentId, manager);
     try {
-      if (recoveryRequired) {
+      if (dispositionOwner === 'drained_originals' || dispositionOwner === 'mixed_transfer') {
         manager.enterF06RecoveryOwnership();
         const transfer = durableMixed ?? packet?.mixed;
-        if (!transfer) return; // Existing strict recovery has its own disposition owner.
+        // A drained in-process packet: its original engine objects hold the
+        // live permits and are the only ones that can attest them.
+        if (!transfer) return;
         if (!mixedTerminalProof) throw new Error('f06_mixed_terminal_admission_missing');
         const canonical = transfer.canonical as { tables: { id: string }[] };
         if (!Array.isArray(canonical.tables)) throw new Error('f06_mixed_complete_map_missing');
@@ -4904,11 +4928,14 @@ export class GameServer {
              See ServerTableEngineBase.maintenanceDurabilityReason. */
           'stopped_bank_custody_unwritten',
           'stopped_bank_custody_unreadable',
-          /* The bounded case of the raw stopped-custody reason, added
-             2026-09-25 when 154 terminal tournament engines on 778075b4 held
-             every break shut: custody that has outlived the gate no longer
-             holds the certificate, and is still published here so a rule can
-             read it. See MaintenanceBreak.unparkedTables. */
+          /* The bounded case for this class, exactly as `f06_preparation_stuck`
+             is for the other: a terminal engine's stopped bank that outlived
+             STOPPED_CUSTODY_GATE_MS and stopped holding every other table's
+             restart certificate shut. Zero-seeded for the same reason as the
+             rest - a rule must be able to fire the FIRST time this becomes the
+             reason. The retired name `stopped_bank_custody_unconfirmed` is
+             deliberately absent: the census no longer emits it (see
+             MaintenanceBreak.unparkedTables). */
           'stopped_bank_custody_stuck',
           'unknown',
         ];

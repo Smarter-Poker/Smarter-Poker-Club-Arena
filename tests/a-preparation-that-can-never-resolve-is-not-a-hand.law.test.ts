@@ -183,7 +183,7 @@ describe('3. the release gate asks the database, and fails closed', () => {
     // to say what it now holds. Both preparation reasons are still in it; the
     // raw stopped-bank reason is NOT (see the law test named for that day).
     expect(TRANSACTION).toContain(
-      'BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck","stopped_bank_custody_stuck"}'
+      'BOUNDED_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}'
     );
     // An allow-list, so an unrecognised reason refuses. A deny-list would let
     // every reason a future engine invents through by default.
@@ -198,11 +198,9 @@ describe('3. the release gate asks the database, and fails closed', () => {
       TRANSACTION.indexOf('}', TRANSACTION.indexOf('BOUNDED_ONLY={')) + 1
     );
     const admitted = [...literal.matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]).sort();
-    expect(admitted).toEqual([
-      'f06_preparation_stuck',
-      'f06_preparation_unresolved',
-      'stopped_bank_custody_stuck',
-    ]);
+    // 2026-09-26 (#5267): stopped_bank_custody_stuck left the set again; past
+    // its bound it is a bank still not on disk, and it refuses.
+    expect(admitted).toEqual(['f06_preparation_stuck', 'f06_preparation_unresolved']);
   });
 
   it("requires the engine's own hands-in-flight witness to be present and zero", () => {

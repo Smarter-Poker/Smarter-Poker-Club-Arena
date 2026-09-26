@@ -1,0 +1,4 @@
+{
+  "_owner": "Supabase billing audit. Observed in production 2026-09-26T15:04:30.871388Z after one qualified apply, provider-assigned migration 20260926150415, exact 3018 source bytes MD5 cfa751faf120e0880b764e741af141fe. No profile WAL publication or browser EXECUTE grant.",
+  "functions": ["fn_publish_profile_appearance_change"]
+}

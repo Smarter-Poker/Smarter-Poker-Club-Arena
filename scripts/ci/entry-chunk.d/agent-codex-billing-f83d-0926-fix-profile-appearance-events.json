@@ -1,0 +1,4 @@
+{
+  "_owner": "Supabase billing audit: one small app-level appearance subscriber must remain mounted on every signed-in route, including tables that hide the main header. It reuses existing Broadcast/store dependencies and prevents duplicate subscriptions from per-table header copies.",
+  "modules": ["src/hooks/useHeaderAppearanceSync.ts"]
+}

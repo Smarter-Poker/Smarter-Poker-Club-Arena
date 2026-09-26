@@ -84,6 +84,41 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 };
 
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
+// Record only the expected cosmetic signal, never session/auth websocket frames.
+const appearanceSignalReceived = new WeakMap<Page, boolean>();
+function observeAppearanceSignal(page: Page, userId: string) {
+  appearanceSignalReceived.set(page, false);
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      try {
+        const frame = JSON.parse(String(payload));
+        const event = Array.isArray(frame) ? frame[3] : frame.event;
+        const body = Array.isArray(frame) ? frame[4] : frame.payload;
+        if (
+          event === 'broadcast' &&
+          body?.event === 'appearance_changed' &&
+          body?.payload?.user_id === userId
+        )
+          appearanceSignalReceived.set(page, true);
+      } catch {
+        /* Non-JSON websocket frames are unrelated to appearance. */
+      }
+    })
+  );
+}
+async function expectHeaderPortrait(page: Page, url: string) {
+  const portrait = page.locator('button[aria-label="My Profile"] span img').first();
+  await expect(portrait).toHaveAttribute('src', url, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  await expect
+    .poll(
+      () =>
+        portrait.evaluate(
+          (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+        ),
+      { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+    )
+    .toBe(true);
+}
 
 function preview(studio: Locator) {
   return studio.locator('.studio-game-preview');
@@ -223,6 +258,7 @@ async function signIn(
   account: TemporaryCustomizationAccount
 ) {
   const page = await context.newPage();
+  observeAppearanceSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
   const protectedURL = new URL('notifications', baseURL).toString();
@@ -412,6 +448,24 @@ test.describe('production Table Studio realtime contract', () => {
       // the exact same two-device/isolation proof without shared mutable state.
       primaryAccount = await createTemporaryCustomizationAccount(environment, 'theme-primary', 0);
       otherAccount = await createTemporaryCustomizationAccount(environment, 'theme-other', 0);
+      // The shared fixture sets an Arena avatar, but intentionally does not opt
+      // it into the global header. Establish this test's explicit baseline
+      // through each reserved player's own authenticated session before opening
+      // the receiving browsers; never depend on a production column default.
+      for (const account of [primaryAccount, otherAccount]) {
+        const baseline = await account.client
+          .from('profiles')
+          .update({ use_avatar_as_profile_pic: true })
+          .eq('id', account.id)
+          .select('arena_avatar_url,use_avatar_as_profile_pic');
+        if (baseline.error) throw baseline.error;
+        expect(baseline.data).toEqual([
+          {
+            arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
+            use_avatar_as_profile_pic: true,
+          },
+        ]);
+      }
       primaryDesktop = await browser.newContext({
         ...devices['Desktop Chrome'],
         baseURL,
@@ -443,6 +497,52 @@ test.describe('production Table Studio realtime contract', () => {
       otherOriginal = await captureState(otherStudio);
       const otherBefore = otherOriginal.appearance;
       console.log('[customization-realtime] account baselines captured');
+
+      // A third authenticated session makes the edit. Neither receiving browser
+      // is reloaded, focused, or sent an artificial bus event. Both must receive
+      // the real private database signal and render its authorized profile read.
+      const originalPortrait = '/avatars/table/free_samurai@2x.webp';
+      const changedPortrait = '/avatars/table/free_shark@2x.webp';
+      await expectHeaderPortrait(primaryPage, originalPortrait);
+      await expectHeaderPortrait(mobilePage, originalPortrait);
+      await expectHeaderPortrait(otherPage, originalPortrait);
+      appearanceSignalReceived.set(primaryPage, false);
+      appearanceSignalReceived.set(mobilePage, false);
+      const edited = await primaryAccount.client
+        .from('profiles')
+        .update({ arena_avatar_url: changedPortrait, use_avatar_as_profile_pic: true })
+        .eq('id', primaryUserId);
+      if (edited.error) throw edited.error;
+      await expect
+        .poll(() => appearanceSignalReceived.get(primaryPage!), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await expect
+        .poll(() => appearanceSignalReceived.get(mobilePage), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await expectHeaderPortrait(primaryPage, changedPortrait);
+      await expectHeaderPortrait(mobilePage, changedPortrait);
+      await expectHeaderPortrait(otherPage, originalPortrait);
+      const appearanceRows = await readServiceRows<{
+        arena_avatar_url: string;
+        use_avatar_as_profile_pic: boolean;
+      }>(
+        environment,
+        'profiles',
+        new URLSearchParams({
+          select: 'arena_avatar_url,use_avatar_as_profile_pic',
+          id: `eq.${primaryUserId}`,
+        })
+      );
+      expect(appearanceRows).toEqual([
+        { arena_avatar_url: changedPortrait, use_avatar_as_profile_pic: true },
+      ]);
+      console.log(
+        '[customization-realtime] profile signal reached both devices and preserved player isolation'
+      );
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
       await selectAsset(primaryStudio, 'Looks', primaryPreset);

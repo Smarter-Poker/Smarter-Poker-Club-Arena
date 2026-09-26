@@ -4874,7 +4874,7 @@ export class GameServer {
       // published so the next break answers that in one scrape. Labels are
       // the fixed reason set, zero-seeded, so a rule can read any of them
       // before it has ever been the reason.
-      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, unknown)',
+      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, f06_preparation_unresolved, f06_preparation_stuck, stopped_bank_custody_unwritten, stopped_bank_custody_unreadable, stopped_bank_custody_stuck, unknown)',
       '# TYPE poker_maintenance_unparked_tables gauge',
       ...(() => {
         const counts = (this.maintenanceBreak.snapshot().unparkedReasons ?? {}) as Record<
@@ -4904,6 +4904,15 @@ export class GameServer {
              See ServerTableEngineBase.maintenanceDurabilityReason. */
           'stopped_bank_custody_unwritten',
           'stopped_bank_custody_unreadable',
+          /* The bounded case for this class, exactly as `f06_preparation_stuck`
+             is for the other: a terminal engine's stopped bank that outlived
+             STOPPED_CUSTODY_GATE_MS and stopped holding every other table's
+             restart certificate shut. Zero-seeded for the same reason as the
+             rest - a rule must be able to fire the FIRST time this becomes the
+             reason. The retired name `stopped_bank_custody_unconfirmed` is
+             deliberately absent: the census no longer emits it (see
+             MaintenanceBreak.unparkedTables). */
+          'stopped_bank_custody_stuck',
           'unknown',
         ];
         for (const reason of Object.keys(counts)) {

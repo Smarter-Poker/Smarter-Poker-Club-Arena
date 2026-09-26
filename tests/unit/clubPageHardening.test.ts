@@ -78,30 +78,21 @@ describe('the wallet never renders a refusal as a balance', () => {
   });
 });
 
-describe('a realtime reconnect actually reconnects', () => {
-  it('scopes every channel topic to the epoch as well as the instance', () => {
-    /* supabase.channel(topic) RETURNS AN EXISTING CHANNEL when one with that
-       topic is still registered, and removeChannel only deregisters when the
-       server acknowledges the leave. React runs cleanup and setup back to back,
-       so a constant topic handed the rebuild the old, still-'leaving' channel —
-       and subscribe() does all of its work inside `if (state === 'closed')`, so
-       it registered no callback, never joined, and returned silently. No
-       SUBSCRIBED, no CHANNEL_ERROR, no CLOSED: nothing left to reconnect it. */
-    expect(WALLET).toMatch(
-      /const channelTopicSuffix = `\$\{instanceIdRef\.current\}-\$\{channelEpoch\}`/
+describe('wallet reads cannot enter a dead-channel reconnect loop', () => {
+  it('uses visible authenticated reads instead of unpublished row subscriptions', () => {
+    expect(WALLET).toContain('const fetchData = useVisibleRead(');
+    expect(WALLET).not.toContain('.channel(');
+    expect(WALLET).not.toContain('scheduleReconnect');
+    expect(WALLET).not.toContain('setChannelEpoch');
+    expect(WALLET).toContain(
+      'scopeKey: `${userId}:${clubId}:${resolvedId}:${variant}:${hasChipWallet}`'
     );
-    for (const topic of ['dynamic-wallet-', 'dynamic-wallet-club-', 'dynamic-wallet-union-']) {
-      expect(
-        WALLET.includes(`${topic}$`) === false || WALLET.includes('${channelTopicSuffix}`)'),
-        `${topic} must carry the epoch-scoped suffix`
-      ).toBeTruthy();
-    }
-    expect(WALLET.match(/\$\{channelTopicSuffix\}`\)/g) || []).toHaveLength(3);
   });
 
-  it('keeps the disposed guard that stops teardown from looping', () => {
-    expect(WALLET).toMatch(/let disposed = false;/);
-    expect(WALLET).toMatch(/disposed = true;/);
+  it('preserves shared requests and gives each request a bounded deadline', () => {
+    expect(WALLET).toContain('return dedupedFetch(');
+    expect(WALLET).toContain('.abortSignal(request.signal)');
+    expect(WALLET).toContain('.finally(() => clearTimeout(deadline))');
   });
 });
 

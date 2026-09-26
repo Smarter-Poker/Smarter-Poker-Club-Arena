@@ -310,6 +310,26 @@ test.describe('production Daily Missions certification', () => {
     let receiptBearingUiRowId: string | null = null;
     const report: JsonObject = {};
     const cleanupErrors: string[] = [];
+    // A run cancelled mid-certification (CI cancellation, a SIGTERM from the
+    // runner) still reaches this handler even though it never reaches the
+    // finally block's own cleanup below - Node delivers the signal, but the
+    // process is free to exit before an interrupted await resumes. Reading
+    // certificationHandHistoryId here is a closure read, so it always sees
+    // whatever the try block has assigned by the time the signal lands. This
+    // is a backstop for cancellation only: it cannot run after SIGKILL or a
+    // host loss, which is why the retention sweep fix in
+    // 20260926151328_prune_e2e_certification_hand_history_fixtures.sql exists
+    // as the durable backstop underneath it (board #5070).
+    const deleteFixtureOnSignal = () => {
+      if (!certificationHandHistoryId) return;
+      void deleteServiceRows(
+        environment,
+        'hand_history',
+        new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
+      ).catch(() => undefined);
+    };
+    process.once('SIGTERM', deleteFixtureOnSignal);
+    process.once('SIGINT', deleteFixtureOnSignal);
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -2039,6 +2059,8 @@ test.describe('production Daily Missions certification', () => {
         contentType: 'application/json',
       });
     } finally {
+      process.removeListener('SIGTERM', deleteFixtureOnSignal);
+      process.removeListener('SIGINT', deleteFixtureOnSignal);
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }

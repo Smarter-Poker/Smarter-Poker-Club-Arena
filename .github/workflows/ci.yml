@@ -64,10 +64,33 @@ on:
 # Historically, a superseded sha's run finished instead of dying early.
 # That is a few runner-minutes. The thing it buys is that no pull request can
 # be stranded by a check that will never speak again, which cost six of them.
+#
+# ── AND A DUPLICATE QUEUES, IT NEVER CANCELS (2026-09-26) ──────────────────
+#
+# `cancel-in-progress: true` on a sha-keyed group was meant to make a second
+# event for the same commit cheap. Measured on PR #5242 (head 6a4c6fdc17), it
+# did the opposite. Two pushes of that one commit landed in the same second
+# (push ids 44577774264 and 44577774629, both before=52a70166e2), so GitHub
+# opened two `synchronize` runs: 36154166920 and 36154167205. The newer one
+# cancelled the older, and the cancel reached only the four jobs that had not
+# started yet - `What changed` among them. Every heavy job below is written to
+# FAIL OPEN on `needs.changes.result != 'success'`, so the cancelled run then
+# ran the ENTIRE heavy matrix anyway (accounting until 15:50:47), its always()
+# gates reported `FIXTURE_GATE_COMPILATION_REQUIRED` in red because compilation
+# was `cancelled`, and the surviving run sat pending behind it for 25 minutes
+# before starting at 15:51. Push to green: 54 minutes, for one commit.
+#
+# With `false`, the second run waits and the first finishes untouched: no job
+# is cancelled, no gate reads a cancellation, and the first verdict arrives on
+# its own schedule. A third event for the same sha replaces the pending one,
+# which never started a job. The group key is unchanged, so a newer push still
+# cannot kill the run for the sha a required check is evaluated against, and
+# superseded heads are still retired by the bounded step in `changes`.
+# tests/ci-tells-the-truth-faster.law.test.ts pins both halves.
 # ═══════════════════════════════════════════════════════════════════════════
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
@@ -1223,12 +1246,43 @@ jobs:
         needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
-    name: Accounting transactions (PostgreSQL 17)
+    name: Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
     timeout-minutes: 40
+    # ── FOUR SHARDS, EVERY CASE (2026-09-26) ─────────────────────────────────
+    #
+    # This job was the critical path of every server-touching pull request:
+    # 29.5 minutes of one runner executing ~90 steps one after another (job
+    # 108270970154: Full weekly accounting 467s, Spin expiry 198s, BBJ 164s,
+    # MTT 109s, Diamond SQL 78s, F06 lanes 76s, and seventy smaller suites),
+    # while Production Build finished in 3, compilation in 7 and CSS Beat in 18.
+    # Queue wait was 2 seconds; the time was all serial execution.
+    #
+    # Every suite builds its own disposable PostgreSQL 17 cluster, so none
+    # depends on another's state. They are split across four runners by
+    # measured weight, each step keeping its own `if:` and evidence upload:
+    #   1  BBJ replay, accounting/Lightning/credit/cash-source suites, Spin expiry
+    #   2  Full weekly accounting activation and its retained evidence
+    #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance
+    #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast, V31
+    # Shards 3 and 4 build the native isolation tester because their suites
+    # need it (PG_ISOLATION_TESTER); 1 and 2 do not use it.
+    #
+    # Nothing is skipped and nothing is weakened: `fail-fast: false` lets
+    # every shard finish and report, and the required `Server Engine
+    # (typecheck + tests)` aggregate reads `needs.accounting_postgres.result`,
+    # which is `success` only when all four shards succeeded. Measured 29.5m
+    # before; expected ~9m after (the heaviest shard, 1, is ~8m of suites plus
+    # ~1m of checkout and PostgreSQL install).
+    # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
+    # every suite step belongs to exactly one shard.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     permissions:
       contents: read
       actions: read
@@ -1280,15 +1334,16 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
+        if: (matrix.shard == 3 || matrix.shard == 4)
         timeout-minutes: 6
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/build_pg17_isolationtester.py
       - name: Retain PostgreSQL isolation tool build evidence
-        if: always() && steps.pg17_isolation_tool.outcome != 'skipped'
+        if: always() && (matrix.shard == 3 || matrix.shard == 4) && steps.pg17_isolation_tool.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
-          name: pg17-isolation-tool-${{ github.run_id }}-${{ github.run_attempt }}
+          name: pg17-isolation-tool-${{ github.run_id }}-${{ github.run_attempt }}-shard${{ matrix.shard }}
           path: |
             artifacts/postgresql-17-isolationtester/*.log
             artifacts/postgresql-17-isolationtester/receipt.json
@@ -1296,11 +1351,13 @@ jobs:
           if-no-files-found: error
       - name: Bind BBJ qualification to the actual accounting job deadline
         id: bbj_timing
+        if: matrix.shard == 1
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/ci/probes/bbj-bank-replay/funded/current_ci.py --write-job-timing "$RUNNER_TEMP/bbj-job-timing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
       - name: BBJ bank replay identity and drift-safe installation
         id: bbj
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
@@ -1309,14 +1366,14 @@ jobs:
           python3 scripts/ci/test-bbj-bank-replay.py
       - name: Bind available BBJ receipts to this attempted invocation
         id: bbj_evidence
-        if: always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')
+        if: always() && matrix.shard == 1 && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')
         env:
           BBJ_STEP_OUTCOME: ${{ steps.bbj.outcome }}
           BBJ_TIMING_OUTCOME: ${{ steps.bbj_timing.outcome }}
           BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: python3 scripts/ci/probes/bbj-bank-replay/retain_evidence.py
       - name: Retain BBJ accounting receipts
-        if: always() && steps.bbj_evidence.outputs.ready == 'true'
+        if: always() && matrix.shard == 1 && steps.bbj_evidence.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: bbj-${{ github.run_id }}-${{ github.run_attempt }}-accounting_postgres-${{ github.sha }}
@@ -1324,105 +1381,130 @@ jobs:
           retention-days: 3
           if-no-files-found: error
       - name: Event-owned engine recovery database boundaries
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-engine-recovery-postgres.py
       - name: A member's club status is changed only by the server
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-member-status-server-owned.py
       # Depends on the capability registry migration 20260924025555, which
       # merges first; the harness exits 2 naming it when it is absent.
       - name: Multi-day stage foundation keeps every stack through a bag and a resume (needs capability registry 20260924025555)
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-multi-day-stage-foundation.py
       - name: Multi-day stage view shows each player only their own bag and the operator doors refuse without authority
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-multi-day-stage-view.py
       - name: Weekly union close rolls back failed stages and records scheduler results
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: A must_be_zero ledger account is checked by its balance, not an hour of flow
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-must-be-zero-balance-detector.py
       - name: The satellite seat preimage guard accepts the installed seat authority and refuses a broken contract
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-satellite-seat-preimage.py
       - name: Lightning Phase 2 domain schema carries its invariants as constraints
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase2-domain.sh
       - name: Lightning Phase 1 binds a cash session to its cluster without moving it
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase1-cluster-session.sh
       - name: Lightning Phase 2 remediation joins the hand to its cluster, its instance and its epoch
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase2-remediation.sh
       - name: Lightning Phase 3 opens a Lightning-capable game as a feeder and keeps it one
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-feeder-first.sh
       - name: Lightning Phase 3 remediation makes the front table the main game everywhere
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-remediation.sh
       - name: Lightning Phase 4 counts one live eligible population and the thresholds it is judged by
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-population.sh
       - name: Lightning Phase 4 remediation repairs the threshold reader, the verdict and the plan
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-remediation.sh
       - name: Lightning Phase 5 converts a must-move cluster in one transaction and stands the tick down
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase5-conversion.sh
       - name: Lightning Phase 9 forms a hand atomically and locks its participant set the moment it is complete
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-formation.sh
       - name: Credit invoices bill only uninvoiced drawn debt
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-credit-invoice-generation.sh
       - name: Accounting and Diamond entries commit exact invoices and private delivery receipts
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: /tmp
         run: bash scripts/dev/test-accounting-delivery.sh
       - name: Credit payments preserve scope cents replay and delivery atomicity
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-credit-invoice-payment.sh
       - name: Agent statements isolate clubs and use posted evidence
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
       - name: Cashier statements follow the trade ledger scope and export what is on screen
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-cashier-statements.sh
       - name: Accounting agreement changes preserve immutable observed history
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-accounting-agreement-history.sh
       - name: Clubs receive one exact weekly statement and private invoice discussions
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-club-weekly-summary.sh
       - name: One weekly accounting coordinator rolls back all financial stages and invoices
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-weekly-accounting-coordinator.sh
       - name: Full weekly accounting activation, rollback and concurrent authority
+        if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/union-accounting-scratch
@@ -1437,35 +1519,42 @@ jobs:
           bash scripts/dev/test-full-weekly-accounting-activation.sh \
             2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/full-weekly-accounting.log"
       - name: Cash commissions retain every contributor and exact source identity
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-cash-commission-sources.sh
       - name: Cash source refusals remain durable without partial payments
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-cash-source-refusals.sh
       - name: Legacy cash callers share the canonical source authority
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-cash-source-compatibility.sh
       - name: Tournament fees retain one authoritative earning and payment source
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-tournament-fee-sources.sh
       - name: Weekly accounting documents preserve exact scope and concurrent issuance
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-scope-weekly-accounting.sh
       - name: Union and standalone scopes share one weekly accounting authority
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-unified-weekly-accounting.sh
       - name: Push health uses exact addressable counts and receipt confirmations
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-push-health-reader.sh
       - name: Preserve weekly accounting qualification evidence
-        if: always()
+        if: always() && matrix.shard == 2
         uses: actions/upload-artifact@v4
         with:
           name: union-accounting-postgres-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1474,36 +1563,43 @@ jobs:
             ${{ runner.temp }}/union-accounting-results
           retention-days: 7
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
       - name: "Club membership cap: one count, one lock, one limit"
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-club-membership-cap.py --output artifacts/club-membership-cap
       - name: Capability registry and accepted-event continuation
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-capability-registry.py --output "$GITHUB_WORKSPACE/artifacts/capability-registry"
       - name: Kill pot table settings refuse what the engine cannot honour
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-kill-pot-table-settings.py
       - name: New seat occupants cannot inherit another player's sit-out state
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
       - name: "Tournament creation refuses what the client refuses"
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-tournament-creation-rules.py --output artifacts/tournament-creation-rules
       - name: Concurrent hands preserve shared F06 custody lanes
         id: f06_hand_authority
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-f06-shared-hand-lane.py
       - name: Retain F06 hand and generation disposition proof
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_hand_authority.outcome)
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_hand_authority.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: f06-hand-authority-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1512,12 +1608,13 @@ jobs:
           retention-days: 7
       - name: Original hand retention, accepted receipts and successor ownership
         id: hand_submission
+        if: matrix.shard == 3
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
         run: python3 scripts/ci/test-hand-submission.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission
       - name: Retain original hand and successor proof
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission.outcome)
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: hand-submission-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1525,11 +1622,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency
+        if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
       - name: Accepted eliminations preserve parked source custody
         id: f06_accepted_elimination
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1539,7 +1638,7 @@ jobs:
             --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
             --evidence "$RUNNER_TEMP/f06-accepted-elimination"
       - name: Retain accepted elimination custody evidence
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_accepted_elimination.outcome)
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_accepted_elimination.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: f06-accepted-elimination-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1548,6 +1647,7 @@ jobs:
           retention-days: 7
       - name: Original paid tournament entry retains its scoring custody
         id: original_paid_custody
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1556,7 +1656,7 @@ jobs:
           python3 scripts/ci/test-original-paid-custody.py \
             --pg-bin "$PG_BIN" --evidence "$RUNNER_TEMP/original-paid-custody"
       - name: Retain original paid custody evidence
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_paid_custody.outcome)
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_paid_custody.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: original-paid-custody-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1565,6 +1665,7 @@ jobs:
           retention-days: 7
       - name: Parked tables retain canonical movement custody
         id: f06_movement_admission
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1582,7 +1683,7 @@ jobs:
             --evidence "$RUNNER_TEMP/f06-movement-admission/drained-custody" \
             2>&1 | tee "$RUNNER_TEMP/f06-movement-admission/drained-custody.log"
       - name: Retain parked movement custody evidence
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_movement_admission.outcome)
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_movement_admission.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: f06-movement-admission-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1590,10 +1691,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Horse profile authority, API roles and concurrent writes
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-profile-authority.py
       - name: Horse commitment audit preserves formats and canonical roster identity
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: |
@@ -1603,59 +1706,70 @@ jobs:
             --allocation-parent /tmp \
             --output "$GITHUB_WORKSPACE/artifacts/horse-commitment-audit"
       - name: Tournament reminder receipts, rollback and overlapping consumers
+        if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: |
           npm ci --omit=optional --prefix scripts/ci/probes/chip-journal-atomicity/postgres-runtime
           bash scripts/dev/probe-tournament-reminders.sh
       - name: A bust is ranked by when it happened (knockout door, standings, place prepare)
+        if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
       - name: Satellite and deal ladders rank a same-hand bust by starting stack
+        if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-satellite-same-hand-bust-order-pg17.sh
 
       - name: Tournament blinds publish atomically across the field
+        if: matrix.shard == 3
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-atomic-tournament-blinds-pg17.py
 
       - name: Played tournament launch recovery preserves the original field
+        if: matrix.shard == 3
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-played-mtt-launch-pg17.py
 
       - name: Agent downline rake stays in overseer clubs
+        if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-index-writer-order.py --migration supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-index
 
       - name: Hand stat writers retain canonical order and rollback
         id: hand_stat_writer_order
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat
 
       - name: Rake attribution commits with its fee or rolls back together
         id: rake_attribution_atomic
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
 
       - name: Diamond health requires complete known comparisons
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-diamond-health-comparisons.py
 
       - name: A schedule keeps its time zone across daylight saving
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-schedule-time-zone.py --output artifacts/schedule-time-zone
@@ -1672,15 +1786,17 @@ jobs:
       # The wrapper names every runner EXPLICITLY, and the check before it fails
       # the job when tests/sql/ holds a runner the wrapper does not name.
       - name: Every Diamond SQL acceptance runner is listed
+        if: matrix.shard == 3
         run: node scripts/ci/check-diamond-runners-listed.mjs
       - name: Diamond Arena SQL acceptance on the isolated fixture
         id: diamond_sql_acceptance
+        if: matrix.shard == 3
         timeout-minutes: 15
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/run-diamond-sql-acceptance.py --evidence artifacts/diamond-sql-acceptance
       - name: Retain Diamond SQL acceptance evidence
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: diamond-sql-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1689,19 +1805,23 @@ jobs:
           if-no-files-found: error
 
       - name: Check composed alert fixture admission and cleanup guards
+        if: matrix.shard == 4
         run: python3 scripts/ci/test_production_alert_core_postgres.py
 
       - name: Qualify composed alert identity and wording through the real inbox
         id: production_alert_core
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-production-alert-core-postgres.py --output artifacts/production-alerts-sql/core
 
       - name: Check native evidence race transcript controls
+        if: matrix.shard == 4
         run: python3 -m unittest discover -s scripts/ci -p test_alert_evidence_wrapper.py
 
       - name: Duplicate, rake and Spin evidence retain original financial outcomes
         id: alert_evidence_postgres
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1709,6 +1829,7 @@ jobs:
 
       - name: Class4 wrapper and actual PostgreSQL hand outcome evidence
         id: class4_hand_outcome
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: |
@@ -1717,12 +1838,14 @@ jobs:
 
       - name: Build the exact native pg_cron used by cash failure qualification
         id: cash_pgcron_build
+        if: matrix.shard == 4
         timeout-minutes: 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/build_pg17_cash_pgcron.py
       - name: Cash checker evidence and real scheduler failure intake
         id: cash_native_failure
+        if: matrix.shard == 4
         timeout-minutes: 5
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1730,7 +1853,7 @@ jobs:
           python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py
           python3 scripts/ci/test-cash-failure-pgcron.py
       - name: Retain cash native scheduler qualification evidence
-        if: always() && steps.cash_pgcron_build.outcome != 'skipped'
+        if: always() && matrix.shard == 4 && steps.cash_pgcron_build.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: cash-native-pgcron-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1742,7 +1865,7 @@ jobs:
           if-no-files-found: error
 
       - name: Retain production alert SQL qualification evidence
-        if: always() && steps.hand_index_writer_order.outcome != 'skipped'
+        if: always() && matrix.shard == 4 && steps.hand_index_writer_order.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: production-alerts-sql-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1752,12 +1875,13 @@ jobs:
 
       - name: Spin expiry lock order and committed refund contracts
         id: spin_expiry_postgres
+        if: matrix.shard == 1
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-spin-expiry-postgres.py
 
       - name: Retain Spin expiry PostgreSQL evidence
-        if: always() && steps.spin_expiry_postgres.outcome != 'skipped'
+        if: always() && matrix.shard == 1 && steps.spin_expiry_postgres.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: spin-expiry-postgres-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1766,6 +1890,7 @@ jobs:
           if-no-files-found: warn
 
       - name: PKO heads follow exact accepted knockout dependencies
+        if: matrix.shard == 4
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1774,22 +1899,26 @@ jobs:
           bash scripts/dev/probe-causal-pko-predecessors-pg17.sh
 
       - name: Tournament residuals require complete bounty candidate coverage
+        if: matrix.shard == 4
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh
 
       - name: Tournament recovery preserves committed payout terms
+        if: matrix.shard == 4
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-committed-payout-terms-pg17.py
 
       - name: Manual tournament depth reaches the current creation authority
+        if: matrix.shard == 4
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
 
       - name: MTT preparation and actual activation preserve funded contracts
         id: mtt_preparation
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1805,7 +1934,7 @@ jobs:
             --work-parent "$RUNNER_TEMP" --deadline-seconds 600
 
       - name: Retain MTT preparation and activation receipts and exact native transcripts
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.mtt_preparation.outcome)
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.mtt_preparation.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1817,6 +1946,7 @@ jobs:
 
       - name: Satellite full-ticket completion preserves terminal receipts
         id: satellite_qualifiers
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1827,7 +1957,7 @@ jobs:
             --pg-bin "$PG_BIN"
 
       - name: Retain satellite qualifier receipts
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.satellite_qualifiers.outcome)
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.satellite_qualifiers.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: satellite-qualifiers-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1837,6 +1967,7 @@ jobs:
 
       - name: Original Breakfast witness preserves paid standings and terminal ownership
         id: breakfast_original_witness
+        if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
@@ -1846,7 +1977,7 @@ jobs:
             --pg-bin "$PG_BIN"
 
       - name: Retain original Breakfast witness qualification
-        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.breakfast_original_witness.outcome)
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.breakfast_original_witness.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: breakfast-original-witness-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1856,9 +1987,8 @@ jobs:
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
-          github.event_name == 'schedule' ||
-          needs.changes.result != 'success' ||
-          needs.changes.outputs.phase4 == 'true'
+          matrix.shard == 4 &&
+          (github.event_name == 'schedule' || needs.changes.result != 'success' || needs.changes.outputs.phase4 == 'true')
         env:
           PG17_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
@@ -2821,8 +2951,28 @@ jobs:
         run: |
           npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
           # Software WebGL must not compete with the other three browser workers.
-          # Keep the full real-scene transitions; this invocation has no retries.
-          npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line --retries=0
+          # Keep the full real-scene transitions.
+          #
+          # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
+          # with --retries=0, so a SwiftShader timing flake in one of its real
+          # WebGL scenes turned a required check red and blocked a merge over
+          # nothing in the diff. It gets the same single retry as the suites
+          # above. A case that fails and then passes is Playwright's `flaky`
+          # status: the JSON report below is read by the next step, which names
+          # every flaky case as a warning and in the job summary, so a retried
+          # pass is seen rather than counted as clean. A case that fails twice
+          # still fails the job.
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
+
+      # Reads the playfield invocation's JSON report and names every case that
+      # passed only on retry. Runs whether the suites passed or failed, and
+      # fails loudly if the suites reported success without a readable report.
+      - name: Name every Diamond playfield case that passed only on retry
+        if: ${{ always() && (steps.css-beats.outcome == 'success' || steps.css-beats.outcome == 'failure') }}
+        env:
+          PLAYFIELD_REPORT: ${{ runner.temp }}/diamond-playfield-report.json
+          SUITE_OUTCOME: ${{ steps.css-beats.outcome }}
+        run: node scripts/ci/playwright-flaky-summary.mjs
 
       # Capture the failed fixture before a later suite can clear its output.
       # These tests use the local build and synthetic data, without a login.

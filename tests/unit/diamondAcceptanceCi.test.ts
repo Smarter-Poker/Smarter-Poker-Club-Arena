@@ -183,7 +183,7 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     const steps = job.steps.filter((s: { id?: string }) => s.id === 'diamond_sql_acceptance');
     expect(steps).toHaveLength(1);
     const step = steps[0];
-    expect(step.if).toBeUndefined();
+    expect(step.if).toMatch(/^matrix\.shard == [1-4]$/); // its accounting shard, nothing else
     expect(step['continue-on-error']).toBeUndefined();
     expect(step.env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(step['timeout-minutes']).toBeGreaterThanOrEqual(10);

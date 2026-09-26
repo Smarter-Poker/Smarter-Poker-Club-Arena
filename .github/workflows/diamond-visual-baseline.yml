@@ -1,0 +1,148 @@
+name: Diamond Games Visual Baseline
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WHAT THE DIAMOND GAMES LOOK LIKE ON THIS PULL REQUEST (2026-09-26)
+#
+# Builds this commit, serves its fixture page (diamond-test.html: the real
+# game components with simulated rounds, no account, no wallet), runs
+# scripts/dev/diamond-test-shots.mjs for plinko, crash, crossing and mines at
+# 393 and 1280 wide through each phase, uploads every PNG as a workflow
+# artifact and lists them in the job summary.
+#
+# INFORMATIONAL, NOT A MERGE GATE, BY DESIGN. It is not in the ruleset and
+# nothing requires it, so it cannot block a merge. Its readers are the pull
+# request's own check list (a red run shows there) and the job summary. The
+# `paths:` filter is safe here for exactly that reason: a path filter strands
+# a REQUIRED check, and this is not one.
+#
+# IT IS NEVER SILENT. scripts/ci/diamond-visual-baseline.mjs fails the job,
+# naming the game, when the harness crashes or a game draws no idle frame or
+# too few frames: a check that quietly produces nothing is worse than none.
+#
+# Same browser route as the CSS Beat E2E job: GitHub-hosted ubuntu-latest,
+# Playwright's Chromium, SwiftShader WebGL. No new provider.
+# ═══════════════════════════════════════════════════════════════════════════
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/components/crash/**'
+      - 'src/components/plinko/**'
+      - 'src/components/games/**'
+      - 'src/components/wheel/**'
+      - 'src/pages/Diamond*'
+      - 'src/diamond-test.tsx'
+      - 'diamond-test.html'
+      - 'scripts/build-diamond-test.mjs'
+      - 'scripts/dev/diamond-test-shots.mjs'
+      - 'scripts/ci/diamond-visual-baseline.mjs'
+      - '.github/workflows/diamond-visual-baseline.yml'
+
+# A newer push supersedes older screenshots; nothing requires this check, so
+# cancelling a superseded run strands nothing.
+concurrency:
+  group: diamond-visual-baseline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shots:
+    name: Diamond games visual baseline (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # build:ci stamps build provenance, which reads full ancestry.
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # The CSS Beat E2E job installs with the same `npm ci --ignore-scripts`,
+      # so its warm tree is interchangeable with this one; restore it.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
+      # A throwaway bundle for the fixture page. Nothing here is published, so
+      # it runs build:ci's asset, bundle and fixture steps and deliberately not
+      # its provenance stamp: stamp-build-provenance.mjs accepts a PR validation
+      # identity only from ci.yml (GITHUB_WORKFLOW_REF), and a second workflow
+      # must not be able to mint one. Prerender, sitemap and the protected-
+      # features copy are publishing concerns the fixture page does not read.
+      - name: Build the fixture page
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
+        run: |
+          node scripts/generate-webp-media.mjs
+          node scripts/generate-customization-thumbnails.mjs
+          npx vite build
+          node scripts/build-diamond-test.mjs
+          node scripts/self-host-fonts.mjs
+          test -f dist/diamond-test.html
+
+      - name: Serve the fixture page
+        run: |
+          nohup npx vite preview --host 127.0.0.1 --port 4173 --strictPort \
+            > /tmp/diamond-baseline-preview.log 2>&1 &
+          echo $! > /tmp/diamond-baseline-preview.pid
+          for _ in $(seq 1 40); do
+            curl -sf http://127.0.0.1:4173/hub/club-arena/diamond-test.html > /dev/null && exit 0
+            sleep 0.5
+          done
+          echo "::error::the fixture page never answered at /hub/club-arena/diamond-test.html"
+          cat /tmp/diamond-baseline-preview.log
+          exit 1
+
+      - name: Screenshot all four games at 393 and 1280
+        id: shots
+        env:
+          BASELINE_ARTIFACT: diamond-visual-baseline-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+        run: node scripts/ci/diamond-visual-baseline.mjs http://127.0.0.1:4173/hub/club-arena test-results/diamond-visual-baseline
+
+      - name: Upload the frames
+        if: always() && steps.shots.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-visual-baseline-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: test-results/diamond-visual-baseline/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Stop the preview
+        if: always()
+        run: |
+          pid=$(cat /tmp/diamond-baseline-preview.pid 2>/dev/null || echo "")
+          [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+          exit 0

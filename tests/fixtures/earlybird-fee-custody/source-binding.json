@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "9786a63914be31e342f7bd030c7e31648d02d9c06b53636db5cf083494e08fd3",
-    "tests/unit/fixtureNativeCi.test.ts": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
+    "tests/unit/fixtureNativeCi.test.ts": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -39,6 +39,13 @@
       "to": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
       "on": "2026-09-23",
       "why": "Restamped 2026-09-23 (branch feat/cashier-phase5-statements, see cashier_statements_rebinding_20260923 in tests/fixtures/full-weekly-accounting/source-binding.json): 'cashier-statements' is added to fixtureDirectories and to requiredRunners in the restored provider accounting qualification describe, so the Phase 5 cashier statements fixture (tests/fixtures/cashier-statements) is a directory the native runner must cover and a runner CI must list. Two list entries are added; no assertion is removed or weakened, and no financial function, fixture body, assertion or captured definition of this fixture changed."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "d8d4891e82fd2d4500bdeae8d17c28d72e0a0efdffa09aa5eb6c458a71cfe4e7",
+      "to": "5fc93eb67c181b373d9c74b1ad07febe7fb559b8b7e8e0f0b123a3533853516a",
+      "on": "2026-09-26",
+      "why": "Restamped 2026-09-26 (branch agent/fable-p7/mobile-spins-phase-7, docs/changelog/2026-09-26-ci-tells-the-truth-faster.md). accounting_postgres now runs as four matrix shards, so each accounting suite step carries exactly one condition, `matrix.shard == N`; the step assertions that required no `if:` now require that condition and nothing else (ONLY_ITS_SHARD), the BBJ, isolation-tool and weekly evidence `if:` strings gained their shard, and the Diamond playfield invocation is pinned at --retries=1 with a JSON report read by the flaky-case summary. Every suite, its command, environment and evidence are unchanged. No accounting component, SQL, fixture, limit or assertion changed."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."

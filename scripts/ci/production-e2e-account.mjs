@@ -302,6 +302,65 @@ export async function cleanupStaleProductionE2EAccounts({
   return accounts.length;
 }
 
+/**
+ * Retire only clubs owned by the current reserved Create A Club certificate.
+ * The account namespace and club-name prefix are both mandatory so this door
+ * can never be pointed at a player or a pre-existing club by mistake.
+ */
+export async function retireProductionCreateClubFixtures({
+  environment = process.env,
+  fetchImpl = fetch,
+} = {}) {
+  const path = fixturePath(environment);
+  const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  if (!account?.id || !reserved(account.email || '')) {
+    throw new Error('Refusing to retire clubs outside the reserved post-deploy namespace.');
+  }
+  const configuration = requireEnvironment(environment);
+  const query = new URLSearchParams({
+    select: 'id,name,owner_id',
+    owner_id: `eq.${account.id}`,
+  });
+  const clubs = await serviceRequest(
+    configuration,
+    `/rest/v1/clubs?${query.toString()}`,
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(clubs))
+    throw new Error('Create Club fixture query returned a non-array body.');
+  for (const club of clubs) {
+    if (club.owner_id !== account.id || !String(club.name || '').startsWith('Club Create Cert ')) {
+      throw new Error(`Refusing to retire unrecognized club ${String(club.id || 'unknown')}.`);
+    }
+    const result = await serviceRequest(
+      configuration,
+      '/rest/v1/rpc/fn_ca_retire_certification_club',
+      {
+        method: 'POST',
+        body: JSON.stringify({ p_club_id: club.id, p_reason: 'ui-cert-cleanup' }),
+      },
+      fetchImpl
+    );
+    if (result?.success === false) {
+      throw new Error(`Certification club ${club.id} retirement was refused: ${result.error}`);
+    }
+  }
+  const remaining = await serviceRequest(
+    configuration,
+    `/rest/v1/clubs?${query.toString()}`,
+    {},
+    fetchImpl
+  );
+  if (Array.isArray(remaining) && remaining.length) {
+    throw new Error(`Certification left ${remaining.length} owned club fixture(s) behind.`);
+  }
+  console.log(
+    `[production-e2e-account] retired and verified ${clubs.length} Create Club fixture(s).`
+  );
+  return clubs.length;
+}
+
 export async function createProductionE2EAccount({
   environment = process.env,
   fetchImpl = fetch,
@@ -370,8 +429,11 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
+  if (command === 'retire-create-clubs') return retireProductionCreateClubFixtures();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
-  throw new Error('Usage: production-e2e-account.mjs <create|prepare-staff|cleanup>');
+  throw new Error(
+    'Usage: production-e2e-account.mjs <create|prepare-staff|retire-create-clubs|cleanup>'
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

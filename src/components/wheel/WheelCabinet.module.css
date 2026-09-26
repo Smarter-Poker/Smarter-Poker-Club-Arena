@@ -158,6 +158,8 @@
 }
 .secondary {
   background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
+  position: relative;
 }
 .primary {
   background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');

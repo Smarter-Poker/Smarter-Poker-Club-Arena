@@ -34,6 +34,10 @@ import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
 import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
+import { triggerHaptic } from '../../services/HapticService';
+import { TapHaptic } from '../haptics/TapHaptic';
+import { DeviceCheck } from '../device/DeviceCheck';
+import { vibrationHint } from '../device/deviceReport';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
@@ -163,6 +167,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   }, [tableSettings.show_stack_in_bb, tableSettingsLoading]);
   const [showTableSettings, setShowTableSettings] = useState(false);
+  const [showDeviceCheck, setShowDeviceCheck] = useState(false);
+  // What the Vibrations switch can do on this device, said under it
+  // (an iPhone browser can only buzz under a finger; some browsers never can).
+  const [vibrationNote] = useState(() => vibrationHint());
   const [showThemeSettings, setShowThemeSettings] = useState(false);
   const checkoutResumeHandledRef = useRef(false);
 
@@ -765,6 +773,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
        a mute set by the in-table switch, because the gate fails closed on
        `ca_vibration_enabled` and nothing here ever touched it. */
     setVibrationAllowed(newValue);
+    // Turned on: the player feels what they switched on, inside this tap
+    // (an iPhone browser feels the switch's own TapHaptic tick instead).
+    if (newValue) triggerHaptic('medium');
     /* 2026-08-26: the key was `vibrationsEnabled`, which is NOT a field of
        useTableSettings — the store calls it `isHapticEnabled` — so the
        whitelist at useTableSettings dropped this event silently and an open
@@ -1343,7 +1354,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
           {/* Vibrations Toggle */}
           <div className={styles.settingRow}>
-            <span className={styles.settingLabel}>Vibrations</span>
+            <span className={styles.settingLabel}>
+              Vibrations
+              {vibrationNote && <span className={styles.settingHint}>{vibrationNote}</span>}
+            </span>
             <button
               type="button"
               onClick={handleVibrationsToggle}
@@ -1355,6 +1369,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span className={styles.toggleTrack} aria-hidden="true">
                 <span className={styles.toggleThumb} />
               </span>
+              <TapHaptic ignorePreference radius="3px" />
             </button>
           </div>
 
@@ -1385,6 +1400,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span className={styles.navLabel}>Table Studio</span>
               <span className={styles.navDescription}>
                 Themes, Tables, Buttons, Backgrounds, And Card Backs
+              </span>
+            </span>
+            <span className={styles.navArrow} aria-hidden="true">
+              ›
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={styles.navItem}
+            onClick={() => setShowDeviceCheck(true)}
+            aria-label="Open Device Check"
+          >
+            <span>
+              <span className={styles.navLabel}>Device Check</span>
+              <span className={styles.navDescription}>
+                Test Vibration, Sound And Graphics On This Device
               </span>
             </span>
             <span className={styles.navArrow} aria-hidden="true">
@@ -1507,6 +1539,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           isVip={isVIP}
         />
       )}
+
+      <DeviceCheck isOpen={showDeviceCheck} onClose={() => setShowDeviceCheck(false)} />
 
       {/* Bible V8 §11.2: Theme Settings Modal */}
       <ThemeSettingsModal

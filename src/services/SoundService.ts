@@ -74,6 +74,7 @@
 import { reportError } from '../utils/errorReporter';
 import { isVibrationAllowed, fireVibration } from '../utils/vibrationGate';
 import { isSoundAllowed, persistSoundPreference } from '../utils/soundGate';
+import { applyAudioSession } from '../utils/audioSession';
 import { spinCelebration } from '../config/spinSpec';
 import { trackAudioContext } from '../lib/audioContexts';
 export const haptic = {
@@ -383,6 +384,8 @@ class SoundService {
     // Resume on the FIRST user gesture (the only place browsers allow it),
     // and again whenever the tab returns to the foreground.
     this.installUnlockListeners();
+    // Heard with the iPhone on silent while Sounds is on (utils/audioSession.ts).
+    applyAudioSession(this.enabled && isSoundAllowed());
     /* `restoreStoredConfig()` was called here. It is gone with the call: its
        body became empty on 2026-08-29 when the localStorage key it read
        (`sp_sound_settings`) turned out to be written by nothing anywhere in the
@@ -545,6 +548,7 @@ class SoundService {
     // only its own, so the two switches drifted and whichever was read last on
     // the next mount silently undid the other.
     persistSoundPreference(enabled);
+    applyAudioSession(enabled);
   }
 
   /**
@@ -554,6 +558,11 @@ class SoundService {
    */
   isEnabled(): boolean {
     return this.enabled && isSoundAllowed();
+  }
+
+  /** The audio engine's state, for the device check: 'running', 'suspended', 'closed' or 'unavailable'. */
+  audioState(): string {
+    return this.ctx ? this.ctx.state : 'unavailable';
   }
 
   /**

@@ -114,6 +114,7 @@
   overflow-wrap: anywhere;
 }
 .metrics button {
+  position: relative;
   color: inherit;
   background: var(--realism-panel-raised);
   border: 1px solid var(--realism-gunmetal-lit);
@@ -142,6 +143,8 @@
    player's hands are, so it should feel milled rather than printed. */
 .primary,
 .secondary {
+  /* Positioned for TapHaptic's switch, which covers the plate's face on an iPhone browser. */
+  position: relative;
   min-height: 52px;
   border-radius: 4px;
   font:

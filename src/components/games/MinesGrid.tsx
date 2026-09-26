@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { gameChips } from '../../utils/bonusGameBudget';
 import { soundService } from '../../services/SoundService';
+import { triggerHaptic } from '../../services/HapticService';
+import { TapHaptic } from '../haptics/TapHaptic';
 import styles from './MinesGrid.module.css';
 /**
  * The gem and the mine a tile turns over. The geometry is the original art; the
@@ -260,9 +262,15 @@ export default function MinesGrid({
                   disabled={!live}
                   aria-disabled={live ? refused : undefined}
                   onClick={() => {
-                    if (live && !refused) onPick(cell);
+                    if (!live || refused) return;
+                    // Inside the tap, where a phone allows a buzz: the pick is felt
+                    // the moment the finger lands (the gem or the mine is felt
+                    // again when the board shows it).
+                    triggerHaptic('selection');
+                    onPick(cell);
                   }}
                 >
+                  <TapHaptic disabled={!live || refused} radius="3px" />
                   {revealed ? (
                     <GemArt mine={mine} />
                   ) : (

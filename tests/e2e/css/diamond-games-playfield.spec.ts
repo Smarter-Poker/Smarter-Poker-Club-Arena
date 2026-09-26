@@ -839,3 +839,98 @@ for (const game of GAMES)
       'every ink on the panel is legible on the surface it is printed on'
     ).toEqual([]);
   });
+
+/**
+ * AN iPHONE BROWSER FEELS EVERY PLATE TAP, AND THE PLATES STILL PLAY
+ * (2026-09-26). iOS 26.5 left one web haptic: a finger landing on a real
+ * <input type="checkbox" switch>. So on an iPhone user agent every live tap
+ * target carries an invisible switch over its whole face (TapHaptic). This
+ * plays Mines with iPhone taps: the switch covers each live plate and tile
+ * exactly, is drawn on no disabled one, and a tap on it still starts the round,
+ * picks the tile and books the win.
+ */
+test('An iPhone browser gets a tap switch on every live Diamond control, and every tap still plays', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1',
+    viewport: { width: 393, height: 852 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  try {
+    const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
+    const bundle = await diamondTestFixture();
+    await page.route('**/*', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' })
+    );
+    await page.goto('http://diamond-test.local/diamond-test.html?game=mines');
+    await page.addStyleTag({ content: bundle.css });
+    await page.addScriptTag({ content: bundle.javascript });
+    await expect(page.locator('[data-game-console]')).toBeVisible();
+
+    /** Every console plate and tile, with whether it carries a switch that covers it exactly. */
+    const survey = () =>
+      page.evaluate(() =>
+        [
+          ...document.querySelectorAll<HTMLButtonElement>(
+            // The console's two plates, its pressable bays and the board's tiles.
+            '[data-game-console] button[data-plate], [data-game-console] dd > button, [data-game-console] button[aria-label^="Tile "]'
+          ),
+        ].map((button) => {
+          const input = button.querySelector<HTMLInputElement>(':scope > input[data-tap-haptic]');
+          const b = button.getBoundingClientRect();
+          const i = input?.getBoundingClientRect();
+          return {
+            name: button.getAttribute('aria-label') || button.textContent?.trim() || '',
+            live:
+              !button.disabled &&
+              button.getAttribute('aria-disabled') !== 'true' &&
+              getComputedStyle(button).pointerEvents !== 'none',
+            switched: Boolean(input),
+            isSwitch: input?.hasAttribute('switch') ?? false,
+            invisible: input ? getComputedStyle(input).opacity === '0' : true,
+            covers: i
+              ? Math.abs(i.left - b.left) < 1.5 &&
+                Math.abs(i.top - b.top) < 1.5 &&
+                Math.abs(i.width - b.width) < 1.5 &&
+                Math.abs(i.height - b.height) < 1.5
+              : false,
+          };
+        })
+      );
+    const check = async () => {
+      const controls = await survey();
+      expect(controls.length).toBeGreaterThan(3);
+      for (const c of controls) {
+        if (c.live) {
+          expect(c.switched, `${c.name} is live and has no tap switch`).toBe(true);
+          expect(c.isSwitch, `${c.name}'s switch is not a native switch`).toBe(true);
+          expect(c.covers, `${c.name}'s switch does not cover it`).toBe(true);
+          expect(c.invisible, `${c.name}'s switch is visible`).toBe(true);
+        } else expect(c.switched, `${c.name} is not live but carries a tap switch`).toBe(false);
+      }
+    };
+    await check();
+    // A tap lands on the switch (the topmost thing under the finger) and still plays.
+    await page.getByRole('button', { name: 'Start Test', exact: true }).tap();
+    await expect(page.getByRole('button', { name: 'Tile 2', exact: true })).toBeEnabled();
+    const hit = await page.evaluate(() => {
+      const tile = [...document.querySelectorAll('button')].find(
+        (b) => b.getAttribute('aria-label') === 'Tile 2'
+      )!;
+      const r = tile.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return top?.matches('input[data-tap-haptic]') && top.parentElement === tile;
+    });
+    expect(hit, 'the finger does not land on the tile switch').toBe(true);
+    await check();
+    await page.getByRole('button', { name: 'Tile 2', exact: true }).tap();
+    await expect(page.getByRole('button', { name: /^Tile 2, (Gem|Mine)$/ })).toBeVisible();
+    await check();
+  } finally {
+    await context.close();
+  }
+});

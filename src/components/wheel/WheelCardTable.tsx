@@ -5,6 +5,7 @@ import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import revealStyles from './WheelWinReveal.module.css';
+import { TapHaptic } from '../haptics/TapHaptic';
 import styles from './WheelCardTable.module.css';
 
 /**
@@ -197,6 +198,7 @@ export function WheelCardTable({
                 aria-label={cardControlName(pick, slot, sending)}
                 onClick={() => onPick(slot)}
               >
+                <TapHaptic disabled={revealed || waiting || held} radius="var(--realism-radius)" />
                 <span className={styles.rank}>{CARD_NAMES[slot - 1]}</span>
                 <WheelPrizeArt segment={DIAMOND_PRIZE} className={styles.art} />
                 <span className={styles.value}>

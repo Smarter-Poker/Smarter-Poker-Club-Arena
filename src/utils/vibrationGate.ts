@@ -87,6 +87,9 @@ export function isVibrationPreferred(): boolean {
   }
 }
 
+/** Fired on window whenever the Vibrations switch changes, so TapHaptic follows it live. */
+export const VIBRATION_PREFERENCE_EVENT = 'ca:vibration-preference';
+
 export function setVibrationAllowed(allowed: boolean): void {
   const val = allowed ? 'true' : 'false';
   /* The one function in this file, and in soundGate, that was not guarded.
@@ -100,6 +103,11 @@ export function setVibrationAllowed(allowed: boolean): void {
   } catch {
     /* private mode: the buzz still follows the in-memory decision this call
        came from; only the memory of it across a reload is lost. */
+  }
+  try {
+    window.dispatchEvent(new Event(VIBRATION_PREFERENCE_EVENT));
+  } catch {
+    /* no window (tests, SSR): nothing is listening */
   }
 }
 
@@ -237,6 +245,58 @@ export function isIosHapticSupported(): boolean {
   return v !== null && v >= IOS_HAPTIC_MIN_VERSION;
 }
 
+/* ===========================================================================
+   iOS 26.5 CLOSED THE SCRIPT PATH (checked 2026-09-26)
+   ===========================================================================
+   Dan, 2026-09-26: "there are no buzzing or haptics". iOS 26.5 stopped a
+   script-driven switch toggle from playing the haptic: `label.click()` below
+   still toggles the switch, and the phone stays still. What survives is a
+   REAL finger landing on a real `<input type="checkbox" switch>`. So on every
+   iPhone and iPad browser (never inside the app, which has the Taptic Engine
+   through @capacitor/haptics) the tap targets that should buzz carry an
+   invisible switch over their own face (src/components/haptics/TapHaptic.tsx):
+   the finger toggles it, iOS plays its tick, and the click goes on to the
+   button as before.
+
+   Safari 26 also froze the OS token in its user agent at 18_6, so the version
+   read above can no longer tell 26.5 from 18.6. It does not need to: the
+   overlay is harmless where the script path still works, and the script path
+   below stays for the beats no finger starts (a crash, a landing), which only
+   iOS 18.4 to 26.4 can still play.
+
+   One tap, one buzz: a finger on the switch marks the moment
+   (`markSwitchTap`), and a scripted buzz asked for inside that same tap is not
+   played a second time. */
+
+/** When a finger last toggled a TapHaptic switch (ms since epoch), or 0. */
+let lastSwitchTapAt = 0;
+/** A scripted buzz this soon after a real switch tap is the same tap. */
+export const SWITCH_TAP_WINDOW_MS = 250;
+
+/** A finger just toggled a TapHaptic switch, and iOS has already played the tick. */
+export function markSwitchTap(now: number = Date.now()): void {
+  lastSwitchTapAt = now;
+}
+
+/** True on an iPhone or iPad web browser (Safari, Chrome, a home-screen app), never inside the native app. */
+export function isIosWeb(): boolean {
+  return !isNativePlatform() && iosWebkitVersion() !== null;
+}
+
+/**
+ * Where a buzz on this device comes from, for the settings row and the device
+ * check: the app's haptic engine, the Vibration API (Android), taps on an
+ * iPhone browser, or nothing at all.
+ */
+export type VibrationPath = 'app' | 'vibrate-api' | 'ios-taps' | 'none';
+export function vibrationPath(): VibrationPath {
+  if (isNativePlatform()) return 'app';
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')
+    return 'vibrate-api';
+  if (iosWebkitVersion() !== null) return 'ios-taps';
+  return 'none';
+}
+
 /** Cache: null = not built yet, false = cannot build here. */
 let iosTrigger: HTMLLabelElement | null | false = null;
 
@@ -273,6 +333,8 @@ function getIosTrigger(): HTMLLabelElement | null {
  * every pattern we send is comfortably inside.
  */
 function fireIosHaptic(pattern: number | number[]): boolean {
+  // The finger already played this tick on a TapHaptic switch.
+  if (Date.now() - lastSwitchTapAt < SWITCH_TAP_WINDOW_MS) return true;
   const label = getIosTrigger();
   if (!label) return false;
   const list = typeof pattern === 'number' ? [pattern] : pattern;
@@ -341,10 +403,34 @@ export function fireVibration(pattern: number | number[]): boolean {
   }
 }
 
+/**
+ * THE DEVICE CHECK'S TEST BUZZ. The player pressed Test Vibration to find out
+ * what their device can do, so this asks the hardware directly and skips the
+ * Vibrations preference and the coalescing window (neither is the question).
+ * On an iPhone browser the finger's own tap on the button's TapHaptic switch
+ * is the buzz; this only reports whether that tap landed.
+ */
+export function fireTestVibration(pattern: number | number[]): boolean {
+  try {
+    if (isNativePlatform()) {
+      void import('../lib/native/haptics')
+        .then(({ nativeHaptic }) => nativeHaptic(pattern))
+        .catch(() => {});
+      return true;
+    }
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')
+      return navigator.vibrate(pattern);
+    return Date.now() - lastSwitchTapAt < SWITCH_TAP_WINDOW_MS;
+  } catch {
+    return false;
+  }
+}
+
 /** Test-only: forget the coalescing window between cases. */
 export function __resetVibrationCoalescing(): void {
   lastFireAt = 0;
   lastWeight = 0;
+  lastSwitchTapAt = 0;
   iosTrigger = null;
 }
 

@@ -342,6 +342,11 @@ EXCEPTION WHEN SQLSTATE '55000' THEN
  RETURN receipt||jsonb_build_object('reason',SQLERRM);
 END $function$;
 
+-- Reached only through fn_rakeback_recompute_periods; the owner alone executes
+-- it, exactly as installed (CREATE OR REPLACE keeps the ACL; this states it).
+REVOKE ALL ON FUNCTION public.fn_calculate_cash_rakeback_periods(uuid, date, date, uuid[])
+  FROM PUBLIC, anon, authenticated, service_role;
+
 DO $post$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure

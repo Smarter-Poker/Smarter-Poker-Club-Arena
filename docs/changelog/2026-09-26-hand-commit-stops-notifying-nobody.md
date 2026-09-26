@@ -77,3 +77,40 @@ notifying trigger.
 - **IO pressure behind the checkpoints**: four `daily-missions-outbox-minute`
   shards every minute (mean 5-6 s each), `sp_prune_hand_history_10m` (mean
   34 s), and the hourly checks that run into their 120 s timeouts.
+
+## Applied, and what it changed
+
+PR #5318 merged as `5c52999539`. `apply-merged-migration.yml` run 36232658405
+refused at 09:24:36 with `55P03 lock timeout` after 3 s, rolled back, nothing
+committed. Run 36232737035 committed in 112 ms at 09:26:12. Recorded version
+`20260926090827`, statement md5 `bee1f9ed020f44fa4daf88081d2e5b67` equals the
+file; the `@live-proof` reads true and the only trigger left on the table is
+`a0_finish_hand_post_commit_obligations`. The outbox kept draining: 15 rows,
+oldest 3 s, at 14.6 hands/s.
+
+Notify-lock waits over 1 s per minute: 243 (09:15), 354 (09:17), 231 (09:24)
+before; **0 in every minute from 09:26:13 to 09:32**, and 0 `COMMIT waiting`
+lock waits of any kind.
+
+## The next amplifier, now on its own
+
+With the NOTIFY gone, the global hand-number lock is the serializer left. At
+09:27 it logged 842 waits over 1 s and **408 lock timeouts in one minute**.
+`smarter_private.f06_allocate_number_above` carries `lock_timeout=2s`, so every
+waiter past 2 s is a refused hand start. The lock is transaction-scoped. It is
+held through the allocation's commit, and `nextval` assigns an xid whenever it
+WAL-logs, so during a flush stall one holder keeps every hand start in the
+fleet waiting.
+
+A fix that keeps the uniqueness proof:
+
+- Read `last_value` first.
+- If it is already at or above the floor, `nextval` can only return above the
+  floor, so take the lock SHARED. Shared holders never wait on each other.
+- Take it EXCLUSIVE only on the `setval` path, which has not fired in the
+  recorded DDL history.
+
+The function's definition is pinned by F06 preimages
+(`scripts/ci/probes/f06-shared-hand-lane/unsettled-preimages.json`, the
+full-weekly-accounting fixtures, `docs/audits/2026-09-12-f06-*`). The change
+belongs to F06 hand numbering with those pins moved in the same PR.

@@ -72,7 +72,12 @@ const certificateHelper = TRANSACTION.slice(
 function inflightHelper(rc: number): string {
   const dir = mkdtempSync(join(tmpdir(), 'inflight-'));
   const path = join(dir, 'engine-release-inflight-hands.py');
-  writeFileSync(path, `#!/bin/sh\nexit ${rc}\n`);
+  // Speaks on STDOUT exactly as the real helper does on its quiet answer, so a
+  // captured verdict polluted by helper output is reproducible here.
+  writeFileSync(
+    path,
+    `#!/bin/sh\necho "[engine-release-inflight-hands] no hand in the air: stand-in rc ${rc}"\nexit ${rc}\n`
+  );
   chmodSync(path, 0o755);
   return path;
 }
@@ -134,8 +139,9 @@ describe('1. the bounded stopped-bank class is admitted like the bounded prepara
   it('admits stopped_bank_custody_stuck with the database proof, from any serving release', () => {
     const result = certificate({ reasons: { stopped_bank_custody_stuck: 154 } });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('296000');
-    expect(result.stdout).toContain('the database confirms no hand is in the air');
+    expect(result.stdout.trim()).toBe('296000');
+    expect(result.stderr).toContain('the database confirms no hand is in the air');
+    expect(result.stdout.trim(), 'stdout is the verdict and nothing else').toMatch(/^\d+$/);
     expect(result.stderr).toContain("held shut only by {'stopped_bank_custody_stuck': 154}");
     // Never the predecessor sentence: this is the ordinary bounded path.
     expect(result.stderr).not.toContain('can never release');
@@ -158,6 +164,7 @@ describe('1. the bounded stopped-bank class is admitted like the bounded prepara
       const result = certificate({ reasons: { stopped_bank_custody_stuck: 154 }, inflightRc: rc });
       expect(result.status, `helper rc ${rc}`).not.toBe(0);
       expect(result.stdout).not.toContain('the database confirms');
+      expect(result.stderr).not.toContain('the database confirms');
     }
   });
 
@@ -181,7 +188,8 @@ describe('2. the raw reason is admitted from the exact predecessor only', () => 
       releaseSha: PREDECESSOR,
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('the database confirms no hand is in the air');
+    expect(result.stderr).toContain('the database confirms no hand is in the air');
+    expect(result.stdout.trim(), 'stdout is the verdict and nothing else').toMatch(/^\d+$/);
     expect(result.stderr).toContain(
       'restart certificate is held shut by stopped-bank custody the predecessor 778075b4 can never release; ' +
         'the bound that retires it is not in that release; consulting the database for hands actually in the air'
@@ -227,6 +235,7 @@ describe('2. the raw reason is admitted from the exact predecessor only', () => 
     });
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
     expect(result.stderr).not.toContain('can never release');
   });
 
@@ -268,6 +277,7 @@ describe('3. everything that refused still refuses', () => {
     const result = certificate({ reasons });
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
   });
 
   it.each([
@@ -281,6 +291,7 @@ describe('3. everything that refused still refuses', () => {
     const result = certificate({ reasons, releaseSha: PREDECESSOR });
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain('the database confirms');
+    expect(result.stderr).not.toContain('the database confirms');
   });
 
   it('a short window is still a missed opportunity, whoever is serving', () => {

@@ -689,13 +689,22 @@ raise SystemExit(4)
   # refused when the database had never been asked. A missing helper is
   # UNKNOWN, and UNKNOWN has to say so in its own words (CLAUDE.md 10.86
   # rules 1 and 2). All four branches still refuse; only the message differs.
+  #
+  # STDOUT IS THE VERDICT AND NOTHING ELSE (2026-09-26). Every caller captures
+  # this function as BREAK_REMAINING_MS="$(maintenance_certificate ...)" and
+  # then does arithmetic on it. The helper prints its "no hand in the air" line
+  # on stdout, and so did the confirmation below, so the first release ever
+  # admitted through this branch (36211686180, 16dfb5df) captured three lines,
+  # died at BREAK_END_EPOCH=$(( ... )) with "syntax error: operand expected",
+  # and recovered the old engine. Diagnostics go to stderr; stdout carries only
+  # the remaining-milliseconds verdict, exactly as on the certified path.
   set +e
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE"
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2
   local inflight_rc=$?
   set -e
   case "$inflight_rc" in
     0)
-      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above"
+      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above" >&2
       printf '%s\n' "$verdict"
       return 0
       ;;

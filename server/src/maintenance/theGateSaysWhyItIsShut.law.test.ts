@@ -25,6 +25,9 @@
  * can read one before it has ever been the reason.
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { MaintenanceBreak } from './MaintenanceBreak.js';
 
@@ -37,6 +40,7 @@ type Engine = {
   isMaintenanceStateDurable?: () => boolean;
   maintenanceDurabilityReason?: () => string | null;
   hasUnresolvedF06Preparation?: () => boolean;
+  hasUnretiredStoppedTimeBankCustody?: () => boolean;
 };
 
 /** A table with whatever answers the case needs. */
@@ -275,5 +279,166 @@ describe('one stuck F06 permit cannot hold the whole platform', () => {
     // is the same figure the reaper already uses for "no legitimate pause is
     // this long", and it costs at most two breaks rather than every break.
     expect(GATE).toBe(10 * 60_000);
+  });
+});
+
+/**
+ * THE SAME BOUND, APPLIED TO THE THIRD BLOCKER CLASS (2026-09-25)
+ * -----------------------------------------------------------------
+ * Engine 778075b4 had 20 tournament managers quarantined after lease loss.
+ * Their STOPPED tournament engines answered
+ * `hasUnretiredStoppedTimeBankCustody()` true for ever (the root cause is fixed
+ * engine-side in #5254, which that process was not running), and the branch
+ * above the F06 test counted them with no bound at all. `/health` showed, at
+ * EVERY break:
+ *
+ *   readyForRestart false, unparkedTables 154,
+ *   unparkedReasons { f06_preparation_stuck: 13, stopped_bank_custody_unconfirmed: 154 }
+ *
+ * Every `auto-deploy-hetzner` run since 15:59 UTC waited for a certificate that
+ * could not open, including the run carrying the fix. The reason is raised only
+ * by a TERMINAL engine, which deals no hands; what a restart discards is the
+ * in-memory mirror of banks whose seats already stopped, and the chips are in
+ * the database. Same bound, same clearing rule, same `_stuck` shape, and the
+ * table never stops being named.
+ */
+describe('a stopped bank that can never be released does not hold the whole platform', () => {
+  const GATE = MaintenanceBreak.F06_UNRESOLVED_GATE_MS;
+
+  function atClock(engines: Array<[string, Engine]>) {
+    let clock = 1_000_000;
+    const mb = new MaintenanceBreak({
+      engines: () => new Map(engines) as never,
+      isRunning: () => true,
+      now: () => clock,
+    } as never);
+    Object.assign(mb as never, { phase: 'counting_down', durableConfirmed: true });
+    return { mb, advance: (ms: number) => (clock += ms) };
+  }
+
+  const stoppedBank = (): Partial<Engine> => ({
+    hasUnretiredStoppedTimeBankCustody: () => true,
+  });
+
+  it('still shuts the gate while the custody could plausibly be confirmed', () => {
+    // Unchanged behaviour: a custody seconds old may be one a replacement
+    // engine is about to adopt, and the raw reason keeps its name.
+    const { mb, advance } = atClock([
+      ['a', table(stoppedBank())],
+      ['b', table()],
+    ]);
+    expect(mb.snapshot().unparkedTables).toBe(1);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_unconfirmed: 1 });
+    advance(GATE - 1000);
+    expect(mb.snapshot().unparkedTables).toBe(1);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_unconfirmed: 1 });
+    expect(reasons(mb).stopped_bank_custody_stuck ?? 0).toBe(0);
+  });
+
+  it('past the bound it is counted as stuck and no longer holds the certificate', () => {
+    // THE REGRESSION, BY NAME: 154 tables, every break, for ever. Past the
+    // bound the gate opens for the rest of the fleet, and the stuck table is
+    // still named under its own reason and in the same stuck counter the F06
+    // class uses, so /health and /metrics keep saying so.
+    const { mb, advance } = atClock([
+      ['a', table(stoppedBank())],
+      ['b', table(stoppedBank())],
+      ['c', table()],
+    ]);
+    expect(mb.snapshot().unparkedTables, 'shut while the custody is young').toBe(2);
+    advance(GATE + 1000);
+    expect(mb.snapshot().unparkedTables, 'the gate must no longer be shut by it').toBe(0);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_stuck: 2 });
+    expect(reasons(mb).stopped_bank_custody_unconfirmed ?? 0).toBe(0);
+    expect(mb.snapshot().f06StuckTables).toBe(2);
+  });
+
+  it('shares the stuck counter with the F06 class rather than inventing a second one', () => {
+    const { mb, advance } = atClock([
+      ['a', table(stoppedBank())],
+      ['b', table({ hasUnresolvedF06Preparation: () => true })],
+    ]);
+    mb.snapshot();
+    advance(GATE + 1000);
+    expect(mb.snapshot().unparkedTables).toBe(0);
+    expect(reasons(mb)).toMatchObject({
+      stopped_bank_custody_stuck: 1,
+      f06_preparation_stuck: 1,
+    });
+    expect(mb.snapshot().f06StuckTables).toBe(2);
+  });
+
+  it('a table whose custody clears does not inherit the old clock', () => {
+    // The clock is per table and per class. Custody that is retired (adopted,
+    // closed, or transferred) and later held again is a new custody and gets
+    // the full gate; it must not be past the bound the instant it appears.
+    let held = true;
+    const engine = table({ hasUnretiredStoppedTimeBankCustody: () => held });
+    const { mb, advance } = atClock([
+      ['a', engine],
+      ['b', table()],
+    ]);
+    mb.snapshot();
+    advance(GATE + 1000);
+    expect(mb.snapshot().unparkedTables).toBe(0);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_stuck: 1 });
+
+    held = false;
+    expect(mb.snapshot().unparkedTables).toBe(0);
+    expect(reasons(mb).stopped_bank_custody_stuck ?? 0).toBe(0);
+    expect(mb.snapshot().f06StuckTables).toBe(0);
+
+    held = true;
+    expect(mb.snapshot().unparkedTables, 'a fresh custody gets the full gate').toBe(1);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_unconfirmed: 1 });
+  });
+
+  it('the two classes keep separate clocks on the same table', () => {
+    // A table that held custody for the whole gate and only then raised a
+    // preparation must not have the preparation aged by the custody's clock.
+    let prepared = false;
+    const engine = table({
+      hasUnretiredStoppedTimeBankCustody: () => !prepared,
+      hasUnresolvedF06Preparation: () => prepared,
+    });
+    const { mb, advance } = atClock([['a', engine]]);
+    mb.snapshot();
+    advance(GATE + 1000);
+    expect(reasons(mb)).toMatchObject({ stopped_bank_custody_stuck: 1 });
+    prepared = true;
+    expect(mb.snapshot().unparkedTables, 'the preparation is young').toBe(1);
+    expect(reasons(mb)).toMatchObject({ f06_preparation_unresolved: 1 });
+  });
+
+  it('is one bound, declared once, and the same clearing rule', () => {
+    const src = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), './MaintenanceBreak.ts'),
+      'utf8'
+    );
+    // Both classes go through the same helper and the same constant; two
+    // copies of a bound drift, which is what left one class unbounded for 154
+    // tables while the other had been bounded since #4909.
+    expect(src).toContain('private stoppedBankCustodyHoldsGate(tableId: string): boolean {');
+    expect(src.match(/this\.holdsGateWithinBound\(/g)?.length).toBe(2);
+    expect(src.match(/MaintenanceBreak\.F06_UNRESOLVED_GATE_MS/g)?.length).toBeGreaterThanOrEqual(
+      2
+    );
+    const loop = src.slice(src.indexOf('if (engine.hasUnretiredStoppedTimeBankCustody?.()) {'));
+    const branch = loop.slice(0, loop.indexOf('if (engine.hasUnresolvedF06Preparation?.()) {'));
+    expect(branch).toContain('if (this.stoppedBankCustodyHoldsGate(tableId)) {');
+    expect(branch).toContain("count('stopped_bank_custody_unconfirmed');");
+    expect(branch).toContain("count('stopped_bank_custody_stuck');");
+    expect(branch).toContain('stuck += 1;');
+    // The unbounded form, in the exact shape that held 154 tables.
+    expect(branch).not.toMatch(
+      /hasUnretiredStoppedTimeBankCustody\?\.\(\)\) \{\s*out\.push\(tableId\);/
+    );
+    expect(src).toContain('for (const tableId of [...this.stoppedBankUnconfirmedSince.keys()]) {');
+    // Published zero-seeded, like the rest of the fixed reason set.
+    const gameServer = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../GameServer.ts'),
+      'utf8'
+    );
+    expect(gameServer).toContain("'stopped_bank_custody_stuck',");
   });
 });

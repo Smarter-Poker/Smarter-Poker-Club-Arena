@@ -105,7 +105,14 @@ const HEALTH_STATS_FIELDS = [
   'appliedMaxCatalogBytes',
   'maxCatalogBytes',
   'catalogBytes',
+  'segments',
+  'maxSegments',
+  'publishedSegments',
   'pendingSegments',
+  'retiredSegments',
+  'retiredRecords',
+  'compressedBytes',
+  'maxBytes',
   'records',
   'maxRecords',
   'maxRowid',
@@ -127,7 +134,17 @@ export interface HorseJournalHealth {
   appliedMaxCatalogBytes: number | null;
   maxCatalogBytes: number | null;
   catalogBytes: number | null;
+  /** The ring: segments held (published plus unpublished), its length, the
+   * published ones the ring may retire, the reserved but unpublished ones it
+   * never touches, and what it has retired since the catalog was created. */
+  segments: number | null;
+  maxSegments: number | null;
+  publishedSegments: number | null;
   pendingSegments: number | null;
+  retiredSegments: number | null;
+  retiredRecords: number | null;
+  compressedBytes: number | null;
+  maxBytes: number | null;
   records: number | null;
   maxRecords: number | null;
   maxRowid: number | null;
@@ -135,31 +152,77 @@ export interface HorseJournalHealth {
   /** Age of this report when it is read from a thread that does not own the
    * publisher (the main thread serving /health); null when read in place. */
   reportAgeMs: number | null;
+  /** One sentence: whether capture is running and why, with the ring's
+   * counts. Built on the reading thread from the finite fields above; never
+   * text from a writer. */
+  capture: string;
 }
 const EMPTY_HEALTH: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number] | 'statsAgeMs'> =
   {
     appliedMaxCatalogBytes: null,
     maxCatalogBytes: null,
     catalogBytes: null,
+    segments: null,
+    maxSegments: null,
+    publishedSegments: null,
     pendingSegments: null,
+    retiredSegments: null,
+    retiredRecords: null,
+    compressedBytes: null,
+    maxBytes: null,
     records: null,
     maxRecords: null,
     maxRowid: null,
     statsAgeMs: null,
   };
+/** The /health sentence. Whether capture is running, why it is or is not, and
+ * the ring's retained/published/unpublished/retired counts when the writer has
+ * reported them. Finite inputs only. */
+export function horseJournalCaptureLine(h: Omit<HorseJournalHealth, 'capture'>): string {
+  const counts =
+    h.segments === null
+      ? ''
+      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}`;
+  const ring = h.maxSegments === null ? 'a ring' : `a ring of ${h.maxSegments} segments`;
+  switch (h.mode) {
+    case 'ready':
+      return `running: the archive is ${ring}; the oldest published segment is retired when a new one needs its room;${counts}`;
+    case 'paused':
+      return h.pausedReason === 'archive_storage_capacity'
+        ? `not running: paused since ${h.pausedSince} because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute;${counts}`
+        : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment left to retire (only unpublished segments remain); asks again every minute;${counts}`;
+    case 'starting':
+      return 'not running yet: the writer has not said READY';
+    case 'recovering':
+      return 'not running: the writer is being restarted';
+    case 'failed':
+      return `not running: capture stopped for good at ${h.lastFailureReason} since ${h.failedSince};${counts}`;
+    case 'stopped':
+      return 'not running: the journal was stopped for shutdown';
+    case 'unavailable':
+      return `not running: the journal never started (${h.lastFailureReason})`;
+    case 'disabled':
+      return 'not running: no journal directory is configured';
+  }
+}
+const withCapture = (h: Omit<HorseJournalHealth, 'capture'>): HorseJournalHealth => ({
+  ...h,
+  capture: horseJournalCaptureLine(h),
+});
 const idleHealth = (
   mode: HorseJournalMode,
   lastFailureReason: HorseJournalFailureReason | null = null
-): HorseJournalHealth => ({
-  mode,
-  lastFailureReason,
-  pausedReason: null,
-  pausedSince: null,
-  failedSince: null,
-  queued: 0,
-  ...EMPTY_HEALTH,
-  reportAgeMs: null,
-});
+): HorseJournalHealth =>
+  withCapture({
+    mode,
+    lastFailureReason,
+    pausedReason: null,
+    pausedSince: null,
+    failedSince: null,
+    queued: 0,
+    ...EMPTY_HEALTH,
+    reportAgeMs: null,
+  });
 const isoTime = (ms: number | null): string | null => {
   if (ms === null || !Number.isFinite(ms)) return null;
   try {
@@ -624,7 +687,14 @@ export class HorseDecisionJournalPublisher {
       appliedMaxCatalogBytes: number('appliedMaxCatalogBytes'),
       maxCatalogBytes: number('maxCatalogBytes'),
       catalogBytes: number('catalogBytes'),
+      segments: number('segments'),
+      maxSegments: number('maxSegments'),
+      publishedSegments: number('publishedSegments'),
       pendingSegments: number('pendingSegments'),
+      retiredSegments: number('retiredSegments'),
+      retiredRecords: number('retiredRecords'),
+      compressedBytes: number('compressedBytes'),
+      maxBytes: number('maxBytes'),
       records: number('records'),
       maxRecords: number('maxRecords'),
       maxRowid: number('maxRowid'),
@@ -655,7 +725,7 @@ export class HorseDecisionJournalPublisher {
         /* the watchdog and exit handler own a dead writer, not a probe */
       }
     }
-    return {
+    return withCapture({
       mode: this.reportedMode(),
       lastFailureReason: this.lastFailureReason,
       pausedReason: this.pausedReason,
@@ -666,7 +736,7 @@ export class HorseDecisionJournalPublisher {
       ...(this.stats ?? {}),
       statsAgeMs: this.statsAt === null ? null : Math.max(0, Math.round(now - this.statsAt)),
       reportAgeMs: null,
-    };
+    });
   }
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
@@ -726,7 +796,7 @@ function horseJournalHealthFromReport(value: unknown): HorseJournalHealth | null
     typeof x === 'number' && Number.isSafeInteger(x) && x >= 0 ? x : null;
   const time = (x: unknown): string | null =>
     typeof x === 'string' && ISO_TIME.test(x) ? x : null;
-  const health: HorseJournalHealth = {
+  const health: Omit<HorseJournalHealth, 'capture'> = {
     mode: v.mode as HorseJournalMode,
     lastFailureReason: (HORSE_JOURNAL_FAILURE_REASONS as readonly unknown[]).includes(
       v.lastFailureReason
@@ -744,7 +814,8 @@ function horseJournalHealthFromReport(value: unknown): HorseJournalHealth | null
     reportAgeMs: null,
   };
   for (const key of HEALTH_STATS_FIELDS) health[key] = count(v[key]);
-  return health;
+  // The sentence is rebuilt here from those fields, never copied across.
+  return withCapture(health);
 }
 /** Called on the thread that serves /health with the owning thread's report. */
 export function relayHorseDecisionJournalHealth(report: unknown): void {

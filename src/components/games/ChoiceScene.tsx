@@ -22,6 +22,7 @@ import {
   APPROACH_REST_Z,
   APPROACH_COMMITTED,
   WALK_MS,
+  TRAFFIC_Z,
   type StreetState,
 } from '../../utils/crossingScene';
 import { CHOICE_MODE, ROAD_LADDERS_V4, type ChoiceGame } from '../../utils/diamondChoiceMath';
@@ -323,7 +324,6 @@ const ROAD_Z = { near: 14, far: -150 } as const;
 const ROAD_X = { left: -18, right: 60 } as const;
 const MARKINGS_FAR = -120;
 const EYES_FAR = -62;
-const TRAFFIC_Z = { near: 12, far: -40 } as const;
 const TRAFFIC_LAP = TRAFFIC_Z.near - TRAFFIC_Z.far;
 /** The x where each column of the road starts: the left pavement, sixteen streets, the right pavement. */
 /** The streets the scene builds: the starting shoulder and fifteen lanes. */
@@ -619,7 +619,7 @@ function windowsTexture(kit: SceneParts) {
   return kit.texture(texture);
 }
 /**
- * THE CITY, ONE MESH. About a hundred dark blocks in two rows along the far
+ * THE CITY, ONE MESH. About seventy-five dark blocks in two rows along the far
  * side of the highway, each its own width, depth and height, merged into one
  * geometry with its window texture scaled per building so a window is always
  * the same size and offset per building so no two light the same panes. The
@@ -1142,7 +1142,7 @@ function CrossingScene(props: Props) {
   const horned = useRef(false);
   // Held in a ref so the draw loop, which is mounted once, always calls the
   // live one without listing it as a dependency it cannot have.
-  const commit = useRef((next: Shown, moments: readonly CrossingMoment[]) => {
+  const commit = useRef((next: Shown, moments: readonly CrossingMoment[], instant = false) => {
     pending.current = null;
     shownRef.current = next;
     setShown(next);
@@ -1153,9 +1153,16 @@ function CrossingScene(props: Props) {
          light tick and buzz, a hit is the impact (with the horn, when there
          was no approach to sound it in) and a strong buzz, a booked win is the
          booked sting and a medium buzz. Reduced motion and a scene that cannot
-         draw commit through this same door, so they keep every beat. */
-      if (moment === 'landed') soundService.playCrossingLanded(next.step);
-      else if (moment === 'hit') {
+         draw commit through this same door, so they keep every beat.
+         Committed at once (reduced motion, or a scene that cannot draw), there
+         was no walk and no approach to hear, so the street still gets its
+         meaning in sound: one hoof step, and a safe street's squeal to a stop
+         before the landing tick (a hit carries its horn in the impact). */
+      if (instant && (moment === 'landed' || moment === 'hit')) soundService.playCrossingHoof(0);
+      if (moment === 'landed') {
+        if (instant) soundService.playCrossingBrake(getAnimationSpeed());
+        soundService.playCrossingLanded(next.step);
+      } else if (moment === 'hit') {
         soundService.playCrossingHit({ withHorn: !horned.current, speed: getAnimationSpeed() });
         horned.current = false;
       } else {
@@ -1197,14 +1204,21 @@ function CrossingScene(props: Props) {
     const next: Shown = { roundId: props.roundId ?? '', step, phase: props.phase };
     if (was.roundId === next.roundId && was.step === next.step && was.phase === next.phase) return;
     const advanced = next.roundId !== '' && next.roundId === was.roundId && next.phase !== 'idle';
-    commit.current(next, advanced ? momentsFor(was, next).moments : []);
+    commit.current(next, advanced ? momentsFor(was, next).moments : [], true);
   }, [failed, reducedMotion, props.roundId, props.phase, step]);
   useEffect(() => {
     const node = host.current;
     if (!node) return;
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      // alpha: the canvas stays transparent until its first frame, so the CSS
+      // placeholder under it shows while the programs compile; the scene's
+      // opaque background clears every drawn frame to alpha 1.
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: 'high-performance',
+        alpha: true,
+      });
     } catch (e) {
       setFailed(true);
       reportError(e, 'ChoiceScene.renderer');
@@ -1795,11 +1809,51 @@ function CrossingScene(props: Props) {
           })
         : null;
     watcher?.observe(node);
+    /* THE PROGRAMS ARE COMPILED BEFORE THE FIRST FRAME, NOT INSIDE IT
+       (2026-09-22). Every material here is a MeshPhysicalMaterial lit by a
+       shadow-casting key light, so the first renderer.render() compiles and
+       links the whole program set on the main thread - and that first frame
+       lands while the page is still animating the Double Down offer in.
+       compileAsync gives the work to the driver instead, and the scene simply
+       submits no frame until it answers. The clock below keeps running while
+       it waits, so the walk is not delayed, only unshown.
+       A renderer without compileAsync - an older three, a test double - draws
+       immediately, exactly as it did before. The same hold runs again when
+       the governor turns shadows off, since that re-links every material on
+       exactly the device that was just found too slow. */
+    let compiled = typeof renderer.compileAsync !== 'function';
+    let compileTimer = 0;
+    let compileStarted = false;
+    const compile = () => {
+      compileStarted = true;
+      if (typeof renderer.compileAsync !== 'function') return;
+      compiled = false;
+      clearTimeout(compileTimer);
+      let answered = false;
+      const ready = () => {
+        if (answered) return;
+        answered = true;
+        compiled = true;
+        needsDraw = true;
+        clearTimeout(compileTimer);
+      };
+      // Either answer releases the scene: a driver that refuses to compile
+      // ahead of time still renders, it just pays for it in the first frame.
+      void renderer.compileAsync(scene, camera).then(ready, ready);
+      compileTimer = window.setTimeout(ready, 1500);
+    };
     const governor = createQualityGovernor({
       intervalMs: 16,
       start: software ? FLOOR_TIER : undefined,
       apply: (tier) => {
-        applyQualityTier(renderer, scene, tier, node.clientWidth, node.clientHeight);
+        const relinked = applyQualityTier(
+          renderer,
+          scene,
+          tier,
+          node.clientWidth,
+          node.clientHeight
+        );
+        if (relinked && compileStarted) compile();
         needsDraw = true;
       },
     });
@@ -1816,35 +1870,15 @@ function CrossingScene(props: Props) {
     resize();
     const gpu = gpuFrameRenderer(renderer, scene, camera);
     const frames = {
-      render() {
+      /** intervalMs: the pace the loop is drawing at, so the governor judges it against that. */
+      render(intervalMs: number) {
         const submitted = gpu.render();
-        governor.frame(performance.now(), submitted);
+        governor.frame(performance.now(), submitted, intervalMs);
         return submitted;
       },
       dispose: gpu.dispose,
     };
-    /* THE PROGRAMS ARE COMPILED BEFORE THE FIRST FRAME, NOT INSIDE IT
-       (2026-09-22). Every material here is a MeshPhysicalMaterial lit by a
-       shadow-casting key light, so the first renderer.render() compiles and
-       links the whole program set on the main thread - and that first frame
-       lands while the page is still animating the Double Down offer in.
-       compileAsync gives the work to the driver instead, and the scene simply
-       submits no frame until it answers. The clock below keeps running while
-       it waits, so the walk is not delayed, only unshown.
-       A renderer without compileAsync - an older three, a test double - draws
-       immediately, exactly as it did before. */
-    let compiled = typeof renderer.compileAsync !== 'function';
-    let compileTimer = 0;
-    if (!compiled) {
-      const ready = () => {
-        compiled = true;
-        clearTimeout(compileTimer);
-      };
-      // Either answer releases the scene: a driver that refuses to compile
-      // ahead of time still renders, it just pays for it in the first frame.
-      void renderer.compileAsync(scene, camera).then(ready, ready);
-      compileTimer = window.setTimeout(ready, 1500);
-    }
+    compile();
     let raf = 0,
       last = 0,
       signature = '',
@@ -1953,7 +1987,8 @@ function CrossingScene(props: Props) {
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       const reduced = reducedRef.current;
-      if (document.hidden || now - last < (reduced ? 100 : animating ? 16 : 33)) return;
+      const pace = reduced ? 100 : animating ? 16 : 33;
+      if (document.hidden || now - last < pace) return;
       last = now;
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -2052,6 +2087,8 @@ function CrossingScene(props: Props) {
       });
       // A hoof on the road each time a pair of legs passes the vertical: the
       // gait above is two strides a street, so four steps, on the walk's clock.
+      // (Reduced motion commits a street at once, through commit below, which
+      // sounds one step for it.)
       if (hoofs < 4 && !reduced && walk >= (hoofs + 0.5) / 4) {
         soundService.playCrossingHoof(hoofs);
         hoofs = walk >= 1 ? 4 : hoofs + 1;
@@ -2155,7 +2192,8 @@ function CrossingScene(props: Props) {
         // Traffic runs faster and thicker the further down the road it is. The
         // lap is the visible road, TRAFFIC_Z.far to near; a car within five
         // units of the far end is scaled toward nothing, so it recedes into the
-        // haze rather than popping in or out of it.
+        // haze rather than popping in or out of it. Its pace follows Animation
+        // Speed like every other motion in the scene.
         const period = 330 - 130 * hazard;
         carTurn.setFromAxisAngle(up, i % 2 ? 0 : Math.PI);
         for (let n = 0; n < 2; n++) {
@@ -2163,7 +2201,9 @@ function CrossingScene(props: Props) {
           if (shown) {
             const z = reduced
               ? -3 - n * 12
-              : (((((now / period) * (i % 2 ? 1 : -1) + i * 3.13 + n * (TRAFFIC_LAP / 2)) %
+              : (((((now / (period * speed)) * (i % 2 ? 1 : -1) +
+                  i * 3.13 +
+                  n * (TRAFFIC_LAP / 2)) %
                   TRAFFIC_LAP) +
                   TRAFFIC_LAP) %
                   TRAFFIC_LAP) +
@@ -2226,7 +2266,8 @@ function CrossingScene(props: Props) {
            safe car's tyres squeal as it brakes and the other sounds its horn;
            the engine ends when it has stopped or struck (the strike itself is
            the 'hit' beat, told on the frame that shows it). Under reduced
-           motion there is no approach to hear, only the beats. */
+           motion there is no approach to hear; commit below still sounds the
+           step, the squeal of a safe street and the horn with the hit. */
         if (!reduced && !carDone && impact.t > 0) {
           if (outcome === 'safe' && impact.brake > 0) {
             carDone = true;
@@ -2280,7 +2321,7 @@ function CrossingScene(props: Props) {
       // Nothing is drawn before compileAsync answers, so no beat and no
       // completion lands on a frame the driver has not linked yet.
       const drawing = compiled && !p.paused && onScreen && (!reduced || needsDraw);
-      const submitted = compiled && (drawing ? frames.render() : true);
+      const submitted = compiled && (drawing ? frames.render(pace) : true);
       if (drawing) needsDraw = false;
       animating = !finished || lean > 0 || stepping;
       // A beat belongs to the frame that shows it: the same terminal-frame

@@ -22,6 +22,7 @@ import {
   CROSSING_CAMERA,
   COLLISION_DELAY_MS,
   STREET_WIDTH,
+  TRAFFIC_Z,
   WALK_MS,
   aimCrossingCamera,
   collisionAt,
@@ -36,11 +37,11 @@ import {
 const ASPECTS = [393 / 520, 0.6, 1, 16 / 9, 1500 / 760, 2.4];
 const FOCI = [0, streetCenter(1), streetCenter(5), streetCenter(12)];
 /**
- * The far end of the lane traffic (TRAFFIC_Z.far in ChoiceScene.tsx). The
+ * The far end of the lane traffic (TRAFFIC_Z.far, shared with the scene). The
  * asphalt itself now runs to z = -150 and into the haze; this is the far
  * line across the road that still has to print level and in frame.
  */
-const FAR_EDGE_Z = -40;
+const FAR_EDGE_Z = TRAFFIC_Z.far;
 /** Where the horizon must print: the sky above it takes roughly the top quarter. */
 const HORIZON_BAND = { lowest: 0.55, highest: 0.8 } as const;
 /** The painted street signs lie on the road at this depth. */

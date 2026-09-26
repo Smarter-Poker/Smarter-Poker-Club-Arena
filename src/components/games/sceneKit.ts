@@ -17,6 +17,8 @@ export const COMPILE_WAIT_MS = 1500;
  * Put a quality tier on a renderer: the pixel ratio (never above the device's
  * own), the shadow maps, and a re-link of every material so a shadow-map change
  * takes effect (three only re-reads shadowMap.enabled when a program is built).
+ * Returns true when the programs were marked for a re-link, so the caller can
+ * compile them ahead of the next frame (warmUp) instead of stalling inside it.
  */
 export function applyQualityTier(
   renderer: THREE.WebGLRenderer,
@@ -24,7 +26,7 @@ export function applyQualityTier(
   tier: QualityTier,
   width: number,
   height: number
-) {
+): boolean {
   const device = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
   renderer.setPixelRatio(Math.min(device, tier.ratio));
   renderer.setSize(width, height, false);
@@ -36,7 +38,9 @@ export function applyQualityTier(
           m.needsUpdate = true;
       }
     });
+    return true;
   }
+  return false;
 }
 
 /**
@@ -92,6 +96,10 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
     canvas,
     antialias: true,
     powerPreference: 'high-performance',
+    // Transparent until the first frame, so the CSS placeholder under the
+    // canvas shows while the programs compile. The scene's opaque background
+    // clears every drawn frame to alpha 1, so a drawn frame looks the same.
+    alpha: true,
   });
   renderer.setSize(width, height, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -107,10 +115,28 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
     typeof renderer.getContext === 'function' ? renderer.getContext() : null
   );
   let size = { width, height };
+  // Frames are held until the programs are linked: first when the caller
+  // draws for the first time (its scene is dressed by then, so every program
+  // it will use compiles), and again after a tier that turns shadows off,
+  // which re-links every material on exactly the device that was too slow.
+  let compiled = false;
+  let warming = false;
+  let stopWarmUp = () => {};
+  const startWarmUp = () => {
+    stopWarmUp();
+    compiled = false;
+    warming = true;
+    stopWarmUp = warmUp(renderer, scene, camera, () => {
+      compiled = true;
+    });
+  };
   const governor: QualityGovernor = createQualityGovernor({
     intervalMs: 30,
     start: software ? FLOOR_TIER : undefined,
-    apply: (tier) => applyQualityTier(renderer, scene, tier, size.width, size.height),
+    apply: (tier) => {
+      const relinked = applyQualityTier(renderer, scene, tier, size.width, size.height);
+      if (relinked && warming) startWarmUp();
+    },
   });
   scene.background = new THREE.Color(0x070b10);
   const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 150);
@@ -133,10 +159,6 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
   const frames = gpuFrameRenderer(renderer, scene, camera);
   // No frame is submitted until the programs are linked (or the wait runs
   // out), so the first frame a phone shows is a drawn one, not a compile stall.
-  let compiled = false;
-  const stopWarmUp = warmUp(renderer, scene, camera, () => {
-    compiled = true;
-  });
   return {
     renderer,
     scene,
@@ -147,10 +169,16 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
       size = { width: nextWidth, height: nextHeight };
       renderer.setSize(nextWidth, nextHeight, false);
     },
-    render() {
+    /**
+     * Draw one frame. intervalMs is the throttle the caller's loop is running
+     * at right now (a reduced-motion loop draws far less often), so the
+     * governor judges the frame against the pace it was asked for.
+     */
+    render(intervalMs?: number) {
+      if (!warming) startWarmUp();
       if (!compiled) return false;
       const submitted = frames.render();
-      governor.frame(performance.now(), submitted);
+      governor.frame(performance.now(), submitted, intervalMs);
       return submitted;
     },
     cleanup() {

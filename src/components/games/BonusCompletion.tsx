@@ -36,6 +36,7 @@ export default function BonusCompletion({
   proof,
   game,
   figure,
+  cap,
 }: {
   /** The route's club id, used for navigation. */
   clubId: string;
@@ -67,6 +68,8 @@ export default function BonusCompletion({
    * best bucket's multiplier for Plinko and the gems found for Mines.
    */
   figure?: number | null;
+  /** Crash: the round's own cap as a multiplier, so the crown goes to a round booked at it. */
+  cap?: number | null;
 }) {
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
@@ -161,7 +164,7 @@ export default function BonusCompletion({
             {game ? (
               // A receipt with an eyebrow is a round that was not won: the
               // same art, standing back.
-              <BonusReceiptArt game={game} figure={figure} dim={eyebrow !== undefined} />
+              <BonusReceiptArt game={game} figure={figure} cap={cap} dim={eyebrow !== undefined} />
             ) : (
               <WheelPrizeArt segment={{ kind: 'chips' }} className={styles.art} />
             )}

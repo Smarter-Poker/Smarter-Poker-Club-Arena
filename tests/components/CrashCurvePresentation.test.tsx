@@ -757,7 +757,21 @@ describe('the frame is alive between rounds (phase 2)', () => {
     expect(CSS).toContain(".frame[data-phase='idle']::after");
     expect(CSS).toContain('@keyframes launchBreathe');
     expect(CSS).toContain('@keyframes ledBreathe');
-    expect(CSS).toContain(".frame[data-reduced='true'] .launchLine");
+    expect(CSS).toContain(".frame[data-phase='idle'][data-reduced='true'] .launchLine");
+    // Only the idle frame breathes: the base rule carries no animation, so the
+    // line stays hidden over a flight and a result (a running animation would
+    // override its opacity: 0).
+    const baseRule = CSS.slice(
+      CSS.indexOf('\n.launchLine {'),
+      CSS.indexOf('}', CSS.indexOf('\n.launchLine {'))
+    );
+    expect(baseRule).toContain('opacity: 0;');
+    expect(baseRule).not.toContain('animation');
+    const idleRule = CSS.slice(
+      CSS.indexOf(".frame[data-phase='idle'] .launchLine {"),
+      CSS.indexOf('}', CSS.indexOf(".frame[data-phase='idle'] .launchLine {"))
+    );
+    expect(idleRule).toContain('animation: launchBreathe');
     expect(CSS).toContain(".frame[data-phase='idle'][data-reduced='true']::after");
     const breathe = CSS.slice(
       CSS.indexOf('@keyframes launchBreathe'),

@@ -3,8 +3,24 @@ import { multiplierLabel } from '../../utils/diamondGamesFairness';
 /** The four Diamond bonus games, by the name their routes and awards use. */
 export type BonusReceiptGame = 'crash' | 'plinko' | 'crossing' | 'mines';
 
-/** The most a Crash round can book, and the round that gets the crown. */
+/**
+ * The most a Crash round can book when the round's own cap is not known. The
+ * crown goes to a round booked at its own cap (cap_cents), which the server
+ * sets per award and clamps to this ceiling.
+ */
 export const CRASH_MAX_MULTIPLIER = 25;
+
+/** Whether a booked Crash figure reached its round's cap (both multipliers, compared in cents). */
+export function bookedAtCap(figure: number | null | undefined, cap: number | null | undefined) {
+  const value = Number(figure);
+  if (figure === null || figure === undefined || !Number.isFinite(value)) return false;
+  const ceiling = Number(cap);
+  const max =
+    cap !== null && cap !== undefined && Number.isFinite(ceiling) && ceiling > 1
+      ? ceiling
+      : CRASH_MAX_MULTIPLIER;
+  return Math.round(value * 100) >= Math.round(max * 100);
+}
 
 /**
  * The headline a receipt prints over its game's art: the booked multiplier for

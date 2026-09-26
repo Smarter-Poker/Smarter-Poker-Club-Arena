@@ -219,6 +219,18 @@ describe('a retried Diamond playfield pass is named, never hidden', () => {
     expect(reader.env!.PLAYFIELD_REPORT).toBe('${{ runner.temp }}/diamond-playfield-report.json');
   });
 
+  it('names a retried pass in the other CSS Beat suites too', () => {
+    const first = suite.run!.split('\n').find((l) => l.includes('tests/e2e/multi-table.spec.ts'))!;
+    expect(first).toContain('--retries=1');
+    expect(first).toContain('--reporter=line,json');
+    expect(first).toContain('PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json"');
+    const reader = beats[beats.indexOf(suite) + 2];
+    expect(reader.run).toBe('node scripts/ci/playwright-flaky-summary.mjs');
+    expect(reader.if).toContain('always()');
+    expect(reader.env!.PLAYFIELD_REPORT).toBe('${{ runner.temp }}/css-beats-report.json');
+    expect(reader.env!.SUITE_LABEL).toBeTruthy();
+  });
+
   const report = {
     suites: [
       {

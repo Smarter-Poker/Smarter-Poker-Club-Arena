@@ -90,13 +90,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   } catch (error) {
     if (outcome === 'failure') {
       console.log(
-        `::notice title=PLAYFIELD NOT REACHED::The suite step failed before the Diamond playfield invocation wrote its report (${error.message}). The failure above is the verdict.`
+        `::notice title=SUITE NOT REACHED::The suite step failed before the ${label} invocation wrote its report (${error.message}). The failure above is the verdict.`
       );
       write(`## ${label}\n\nNot reached: an earlier suite in the same step failed first.`);
       process.exit(0);
     }
     console.log(
-      `::error title=PLAYFIELD REPORT MISSING::The suite step reported ${outcome || 'an unknown outcome'} but left no readable report (${error.message}). A pass nobody can inspect is not a pass.`
+      `::error title=REPORT MISSING::${label}: the suite step reported ${outcome || 'an unknown outcome'} but left no readable report (${error.message}). A pass nobody can inspect is not a pass.`
     );
     process.exit(1);
   }

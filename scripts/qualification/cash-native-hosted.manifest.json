@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169356,
-      "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
+      "bytes": 169529,
+      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24407,
-      "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
+      "bytes": 24631,
+      "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -358,6 +358,77 @@
       }
     }
   },
+  "scoped_audit_reads_rebinding_20260927": {
+    "reason": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 168945,
+        "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 23714,
+        "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169118,
+        "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 23938,
+        "sha256": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded"
+      }
+    }
+  },
+  "scoped_audit_horse_admission_integration_20260927": {
+    "reason": "Merge protected d49fa1913c; preserve incoming horseAdmissionInputRouting and all existing qualification, add scoped read native enforcement. Historical bindings retained unchanged.",
+    "changed_files": {
+      ".github/workflows/ci.yml": {
+        "from": {
+          "bytes": 168945,
+          "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
+        },
+        "to": {
+          "bytes": 169118,
+          "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "from": {
+          "bytes": 23891,
+          "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+        },
+        "to": {
+          "bytes": 24115,
+          "sha256": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25"
+        }
+      }
+    }
+  },
+  "scoped_audit_profile_account_integration_20260927": {
+    "reason": "Integrate protected e62250b702 account sync native fixture beside scoped audit SELECT policy enforcement on accounting shard 4. Both actual native commands and assertions are retained.",
+    "changed_files": {
+      ".github/workflows/ci.yml": {
+        "from": {
+          "bytes": 169118,
+          "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+        },
+        "to": {
+          "bytes": 169345,
+          "sha256": "5a4ea09fa91a0946fd0736a766b55c8dbe6ecc9d872260db0c78f2d013ee26cd"
+        }
+      }
+    }
+  },
+  "scoped_audit_main_integration_20260927": {
+    "integration": "2026-09-27 scoped read native qualification with protected36bbcb23ad",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
+  },
   "certificationRetirementIntegration": {
     "reviewedOn": "2026-09-27",
     "reason": "Bind the reviewed reserved-identity retirement native-input selector and required shard-4 workflow step. No financial SQL, accounting fixture or existing assertion changes. docs/changelog/2026-09-27-certification-ledger-actors-are-retired.md",
@@ -398,5 +469,13 @@
         }
       }
     }
+  },
+  "scoped_audit_certification_integration_20260927": {
+    "integration": "2026-09-27 scoped reads with protected certification retirement 3be3efe7c2",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   }
 }

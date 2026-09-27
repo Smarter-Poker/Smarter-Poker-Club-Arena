@@ -1,3 +1,12 @@
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { supabaseServerHeaders } from '../../../scripts/ci/supabase-auth-headers.mjs';
+import {
+  requireCustomizationCertificationEnvironment,
+  readServiceRows,
+  insertServiceRows,
+  deleteServiceRows,
+} from '../support/temporaryCustomizationAccount';
 import { expect, test, type Response } from '@playwright/test';
 
 const clubId = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -79,5 +88,172 @@ test.describe('Visible achievement and rate history readers', () => {
     }
     await expect(page.getByText(`${expectedCount} Changes`, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  });
+  test('a reserved owner notification invalidates progress without inventing an unlock', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const fixturePath = process.env.E2E_TEST_ACCOUNT_FILE;
+    if (!fixturePath) throw new Error('The existing reserved account record is required.');
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    const ownerId = String(fixture.id || '');
+    const email = String(fixture.email || '');
+    if (
+      !/^[0-9a-f-]{36}$/i.test(ownerId) ||
+      !email.startsWith('ca-customization-cert-postdeploy-') ||
+      !email.endsWith('@example.invalid') ||
+      email !== process.env.SP_EMAIL ||
+      !Number.isFinite(Date.parse(fixture.createdAt)) ||
+      Math.abs(Date.now() - Date.parse(fixture.createdAt)) > 2 * 60 * 60_000
+    ) {
+      throw new Error('Refusing a notification fixture outside this run reserved identity.');
+    }
+    const environment = requireCustomizationCertificationEnvironment();
+    const identityResponse = await fetch(
+      `${environment.supabaseUrl}/auth/v1/admin/users/${ownerId}`,
+      { headers: supabaseServerHeaders(environment.serviceRoleKey) }
+    );
+    expect(identityResponse.status).toBe(200);
+    const identity = await identityResponse.json();
+    expect(identity.id).toBe(ownerId);
+    expect(identity.email).toBe(email);
+    const progressQuery = new URLSearchParams({
+      select: 'id,achievement_id,user_id,progress,unlocked_at',
+      user_id: `eq.${ownerId}`,
+      achievement_id: 'eq.hands_100',
+    });
+    const before = await readServiceRows<{ progress: number; unlocked_at: string | null }>(
+      environment,
+      'training_user_achievements',
+      progressQuery
+    );
+    expect(before.every((row) => !row.unlocked_at && Number(row.progress) < 100)).toBe(true);
+
+    const fixtureIds = [randomUUID(), randomUUID()];
+    const topic = `realtime:achievement-notifications-${ownerId}`;
+    let ownerJoin = false;
+    const delivered = new Set<string>();
+    const reads: Response[] = [];
+    let startedReads = 0;
+    page.on('request', (request) => {
+      if (
+        new URL(request.url()).pathname.endsWith('/rest/v1/training_user_achievements') &&
+        request.method() === 'GET'
+      )
+        startedReads++;
+    });
+    page.on('response', (response) => {
+      if (tableResponse(response, 'training_user_achievements')) reads.push(response);
+    });
+    page.on('websocket', (socket) => {
+      socket.on('framesent', ({ payload }) => {
+        try {
+          const frame = JSON.parse(String(payload));
+          const frameTopic = Array.isArray(frame) ? frame[2] : frame.topic;
+          const event = Array.isArray(frame) ? frame[3] : frame.event;
+          const body = Array.isArray(frame) ? frame[4] : frame.payload;
+          if (frameTopic === topic && event === 'phx_join') {
+            ownerJoin =
+              body?.config?.postgres_changes?.some(
+                (binding: any) =>
+                  binding.table === 'notifications' &&
+                  binding.event === 'INSERT' &&
+                  binding.filter === `user_id=eq.${ownerId}`
+              ) === true;
+          }
+        } catch {
+          /* Unrelated non-JSON frame. Never retain authentication payloads. */
+        }
+      });
+      socket.on('framereceived', ({ payload }) => {
+        try {
+          const frame = JSON.parse(String(payload));
+          const frameTopic = Array.isArray(frame) ? frame[2] : frame.topic;
+          const event = Array.isArray(frame) ? frame[3] : frame.event;
+          const body = Array.isArray(frame) ? frame[4] : frame.payload;
+          const row = body?.data?.record;
+          if (
+            frameTopic === topic &&
+            event === 'postgres_changes' &&
+            row?.user_id === ownerId &&
+            fixtureIds.includes(row?.id)
+          )
+            delivered.add(row.id);
+        } catch {
+          /* Unrelated non-JSON frame. */
+        }
+      });
+    });
+    try {
+      await page.goto('achievements', { waitUntil: 'domcontentloaded' });
+      await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+      await expect(
+        page.getByRole('button', { name: 'Open Getting Started', exact: true })
+      ).toBeVisible({ timeout: 30_000 });
+      await expect.poll(() => ownerJoin, { timeout: 20_000 }).toBe(true);
+      await expect.poll(() => reads.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+      for (const response of reads) {
+        expect(response.status()).toBe(200);
+        expect(new URL(response.url()).searchParams.get('user_id')).toBe(`eq.${ownerId}`);
+      }
+      // Initial load and subscription/rejoin reads have both completed.
+      await Promise.all(reads.map((response) => response.finished()));
+      const beforeWrongType = startedReads;
+      const notification = (id: string, type: string) => ({
+        id,
+        user_id: ownerId,
+        type,
+        title: 'Reserved Notification Read Certification',
+        message: 'Temporary In-App Carrier Fixture',
+        data: {
+          achievement_id: 'hands_100',
+          source: 'achievement-read-certification',
+          _push: 'in-app-only',
+        },
+      });
+      await insertServiceRows(environment, 'notifications', notification(fixtureIds[0], 'system'));
+      await expect.poll(() => delivered.has(fixtureIds[0]), { timeout: 15_000 }).toBe(true);
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      );
+      expect(startedReads).toBe(beforeWrongType);
+      const nextRead = page.waitForResponse(
+        (response) => tableResponse(response, 'training_user_achievements'),
+        { timeout: 15_000 }
+      );
+      await insertServiceRows(
+        environment,
+        'notifications',
+        notification(fixtureIds[1], 'achievement')
+      );
+      await expect.poll(() => delivered.has(fixtureIds[1]), { timeout: 15_000 }).toBe(true);
+      const response = await nextRead;
+      expect(response.status()).toBe(200);
+      expect(new URL(response.url()).searchParams.get('user_id')).toBe(`eq.${ownerId}`);
+      const rows = await response.json();
+      expect(rows.filter((row: any) => row.achievement_id === 'hands_100')).toEqual(before);
+      await expect(page.getByText('Achievement Unlocked!', { exact: true })).toHaveCount(0);
+      expect(
+        await readServiceRows(environment, 'training_user_achievements', progressQuery)
+      ).toEqual(before);
+    } finally {
+      const exactFixture = new URLSearchParams({
+        id: `in.(${fixtureIds.join(',')})`,
+        user_id: `eq.${ownerId}`,
+        'data->>source': 'eq.achievement-read-certification',
+      });
+      await deleteServiceRows(environment, 'notifications', exactFixture);
+      expect(
+        await readServiceRows(
+          environment,
+          'notifications',
+          new URLSearchParams({
+            select: 'id',
+            id: `in.(${fixtureIds.join(',')})`,
+            user_id: `eq.${ownerId}`,
+          })
+        )
+      ).toEqual([]);
+    }
   });
 });

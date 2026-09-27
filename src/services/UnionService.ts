@@ -11,7 +11,7 @@ import type { UnionSettlement } from '../utils/unionStatementReport';
 export type { UnionSettlement, ClubSettlementBreakdown } from '../utils/unionStatementReport';
 import { masterBus } from '../core/MasterBus';
 import { unionApi } from './UnionApiService';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -265,6 +265,9 @@ class UnionServiceClass {
    * Get union by ID
    */
   async getUnion(unionId: string): Promise<Union | null> {
+    // Route aliases are resolved by the caller. An unresolved alias identifies
+    // no union; it must not be sent into the UUID column as a failing request.
+    if (!isUUID(unionId)) return null;
     const { data, error } = await supabase
       .from('unions')
       .select(

@@ -105,6 +105,31 @@ describe('pre-archive certification identity retirement', () => {
     expect(migration).toContain('a.attnum = ANY (fk.conkey)');
     expect(migration).toContain("('ca_diamond_incidents', 'user_id')");
     expect(migration).toContain("('ca_diamond_journal_archive', 'user_id')");
+    expect(migration).toContain("('rakeback_stats_applied', 'user_id')");
     expect(migration).toContain('PREARCHIVE_CERTIFICATION_IDENTITY_UNEXPECTED_SURFACE');
+  });
+
+  it('scopes and restores parallel planning around the large rakeback surface only', () => {
+    const parallelStart = migration.indexOf(
+      "set_config('max_parallel_workers_per_gather', '8', true)"
+    );
+    const rakebackCount = migration.indexOf('FROM public.rakeback_stats_applied r');
+    const catalogLoop = migration.indexOf('FOR v_surface IN');
+    expect(parallelStart).toBeGreaterThan(-1);
+    expect(parallelStart).toBeLessThan(rakebackCount);
+    expect(rakebackCount).toBeLessThan(catalogLoop);
+    expect(migration).toContain('WHERE r.user_id = v_id');
+    expect(migration).toContain('IF v_rakeback_rows <> 0 THEN');
+    for (const [setting, oldVariable] of [
+      ['max_parallel_workers_per_gather', 'v_old_max_parallel'],
+      ['min_parallel_table_scan_size', 'v_old_min_parallel_scan'],
+      ['parallel_setup_cost', 'v_old_parallel_setup_cost'],
+      ['parallel_tuple_cost', 'v_old_parallel_tuple_cost'],
+    ]) {
+      expect(migration).toContain(`current_setting('${setting}')`);
+      const restore = migration.indexOf(`set_config('${setting}', ${oldVariable}, true)`);
+      expect(restore).toBeGreaterThan(rakebackCount);
+      expect(restore).toBeLessThan(catalogLoop);
+    }
   });
 });

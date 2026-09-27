@@ -43,7 +43,7 @@ HORSE_MANIFEST_SHA256 = '300b84d68730072e9c4efa66a2cff60df51c233918d91ccc458a18e
 _archive_spec = importlib.util.spec_from_file_location('spin_first_archived', ROOT / 'scripts/qualification/spin-first-archived.py')
 ARCHIVE = importlib.util.module_from_spec(_archive_spec)
 _archive_spec.loader.exec_module(ARCHIVE)
-ARCHIVE_MANIFEST_SHA256 = '6cb173bf2fbd02f40427ba79102a6244c6deccadd8d2ea483783a7e0d2d92863'
+ARCHIVE_MANIFEST_SHA256 = '2a18d025b6c98a99a62f8bca5ffc76d89cc5b73cf266f5828a2f705f71e70e06'
 FEE_MANIFEST_SHA256 = '235b524090286e316d902093a53be8a6948d5853ced8e621048ba249d6a4be14'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
@@ -1100,6 +1100,12 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                          + "'\nunix_socket_permissions=0700\nshared_buffers='32MB'\nwork_mem='4MB'\nmaintenance_work_mem='64MB'\nmax_connections=8"
                          + "\nautovacuum=off\nmax_worker_processes=0\nmax_parallel_workers=0\nmax_wal_senders=0\nwal_level=logical"
                          + "\nstatement_timeout='20s'\nlock_timeout='3s'\nidle_in_transaction_session_timeout='20s'\n")
+        if archive_image:
+            # Four bounded full-estate snapshots: conservative captured upper
+            # bound 1181 relation/index/sequence objects per client. With eight
+            # connections, 1024 lock slots each covers 4724 plus catalog locks.
+            with (data / 'postgresql.conf').open('a') as handle:
+                handle.write('max_locks_per_transaction=1024\n')
         pg_attempted = True
         command('pg_start', [str(PG / 'pg_ctl'), '-D', str(data), '-l', str(work / 'postgres.log'), '-w', '-t', '12', 'start'], timeout=15)
         original_pid = int((data / 'postmaster.pid').read_text().splitlines()[0])

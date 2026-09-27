@@ -22,10 +22,25 @@ and the separately recorded self-aborting financial probe.
 Qualification source and fixture-only edits previously did not select the
 required accounting job. The CI classifier now includes the first archived
 recovery modules, components, and complete fixture directory. The regression
-failed before the correction; all 632 tests in the maintained routing suite
+failed before the correction; all 635 tests in the maintained routing suite
 passed afterward, including real Git modified/deleted/renamed path checks.
-The added concurrency control file also reproduced a missed accounting route;
-its exact path now selects the same required job, with lookalike exclusions.
+The added concurrency and admission-lock control files also reproduced missed
+accounting routes; their exact paths now select the same required job, with
+lookalike exclusions. All 44 pinned recovery inputs select accounting checks.
+
+The isolated regression cases use the captured provider owners and actual
+maintenance, admission and manager locks. Sequence observation covers exactly
+the eight captured financial sequences and explicitly identifies exclusions.
+Failed concurrent tests release their owning transaction before draining blocked
+callers, retain the original failure, and independently verify backend cleanup.
+The 143 maintained wrapper controls pass on the prepared delivery source.
+The first archived native case passed actual maintenance/admission/manager
+locks, deferred commit, concurrent identical replay and different-operation
+refusal. Exactly 200 reached the original winner wallet; 24 remains held and
+accounting-incomplete. The isolated snapshot uses 1024 lock slots per transaction
+with eight connections, bounded from its captured relation/index inventory.
+Other images retain their original settings. Final integrated nine-case
+qualification and all production gates remain separate requirements.
 
 At preparation, connected rollback, committed replay, concurrent callers,
 failure atomicity, protected integration, installation and live financial proof

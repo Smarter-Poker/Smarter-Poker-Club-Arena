@@ -20,12 +20,14 @@ EVENT = '2aa4cba1-506f-426b-a1ba-d8e22e018533'
 SEED = ('full-columns.sql', 'first-captured-seed.sql', 'first-temporal-seed.sql')
 PROVIDER = ('full-functions.sql', 'fee-resolution-provider.sql', 'full-constraints.sql',
             'full-triggers.sql', 'full-access.sql', 'full-sequences.sql',
-            'full-indexes.sql', 'full-readback.sql', 'seating-receipts.sql', 'schema-authority.sql')
+            'full-indexes.sql', 'full-readback.sql', 'seating-receipts.sql', 'schema-authority.sql', 'first-manager-release-provider.sql')
+LOCKS = 'scripts/qualification/spin-first-archived-locks.py'
+LOCKS_TEST = 'scripts/qualification/test_first_archived_locks.py'
 CONCURRENCY = 'scripts/qualification/spin-first-archived-concurrency.py'
 CONCURRENCY_TEST = 'scripts/qualification/test_first_archived_concurrency.py'
 MIGRATION = 'supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql'
 COMPONENTS = tuple('supabase/components/spin-archived-first-'+n+'.sql' for n in ('witness','admission','bridge'))
-INPUTS = (MODULE, MANIFEST, CONCURRENCY, CONCURRENCY_TEST, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
+INPUTS = (MODULE, MANIFEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
           *(BASE+n for n in (*SEED, *PROVIDER, 'first-captured-state.json',
             'full-provider-catalog.json', 'full-authority-catalog.json',
             'index-sequence-catalog.json', 'fee-resolution-provider.json',
@@ -105,6 +107,7 @@ def body_plan(PG, source, execution, ordinary, tournament):
     plan.append(('archive_preimage_drift',sql_argv(PG,source,execution,BASE+'first-preimage-drift.sql')))
     plan.append(('archive_atomic_failures',sql_argv(PG,source,execution,BASE+'first-atomic-failures.sql')))
     plan.append(('archive_connected_rollback',sql_argv(PG,source,execution,BASE+'first-connected-probe.sql')))
+    plan.append(('archive_admission_locks',[sys.executable,'-B',str(source/LOCKS),'--psql',str(PG/'psql'),'--execution',execution]))
     plan.append(('archive_concurrency_commit',[sys.executable,'-B',str(source/CONCURRENCY),'--psql',str(PG/'psql'),'--execution',execution]))
     return plan
 
@@ -159,18 +162,27 @@ def validate_journal_and_chairs(state):
     require(all(type(state[k]) is int and state[k]==0 for k in ('history_count','atomic_commit_count')),'first invented history or atomic commit')
     old=indexed(state['seats_before']); new=indexed(state['seats_after'])
     require(set(old)==set(new) and len(old)==3,'first original chair identities differ')
-    allowed={'left_at','status','leave_pending','is_sitting_out','is_away','sit_out_at','scheduled_leave_hands','updated_at'}
+    allowed={'left_at','status','leave_pending','is_sitting_out','is_away','sit_out_at','scheduled_leave_hands','updated_at','terminal_closed_at','active_game_scope','active_parent_key'}
+    terminal=state['terminal']; completed=terminal.get('completed_at')
+    require(isinstance(completed,str) and completed and terminal.get('settled_at')==completed,
+            'first canonical completion time absent')
+    require(terminal.get('source_seat_count')==3 and sorted(terminal.get('source_seat_ids',[]))==sorted(old)
+            and terminal.get('released_seat_count')==1 and terminal.get('released_seat_ids')==[k for k,r in old.items() if r.get('left_at') is None],
+            'first canonical chair release receipt differs')
     for key,before in old.items():
         after=new[key]
         require({k:v for k,v in before.items() if k not in allowed}=={k:v for k,v in after.items() if k not in allowed},'first unrelated chair data changed')
         require(after.get('left_at') is not None and after.get('status')=='left'
                 and all(after.get(k) is False for k in ('leave_pending','is_sitting_out','is_away'))
                 and after.get('sit_out_at') is None and after.get('scheduled_leave_hands') is None,'first chair remains active')
+        require(after.get('terminal_closed_at')==completed and after.get('active_game_scope') is None
+                and after.get('active_parent_key') is None,'first chair closure marker or generated scope differs')
+        if before.get('left_at') is None: require(after['left_at']==completed,'first new departure differs from terminal')
         if before.get('left_at') is not None: require(before['left_at']==after['left_at'],'first original departure changed')
     table=state['primary_table']
     require(table.get('id')=='6eaddeaf-1511-4265-bb38-37811ae82ad9' and table.get('tournament_id')==EVENT
             and table.get('status')=='closed' and table.get('lifecycle')=='closed'
-            and type(table.get('current_players')) is int and table['current_players']==0,'first table did not close')
+            and table.get('terminal_closed_at')==completed and type(table.get('current_players')) is int and table['current_players']==0,'first table did not close')
 
 def validate_outputs(source,work,execution,tournament):
     funding=[decode(line) for line in (work/'archive_funding_observation.stdout').read_bytes().splitlines() if line.startswith(b'{')]
@@ -272,8 +284,14 @@ def validate_outputs(source,work,execution,tournament):
         validate_account_delta=staticmethod(validate_account_delta)
         validate_journal_and_chairs=staticmethod(validate_journal_and_chairs)
     result=verifier.validate_evidence(concurrent[0],execution,Oracle)
+    locks=[decode(line) for line in (work/'archive_admission_locks.stdout').read_bytes().splitlines() if line.startswith(b'{')]
+    require(len(locks)==1 and not (work/'archive_admission_locks.stderr').read_text().strip(),'first lock artifact absent or unexpected diagnostic')
+    spec=importlib.util.spec_from_file_location('first_archived_lock_oracle',source/LOCKS)
+    lock_verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(lock_verifier)
+    lock_result=lock_verifier.validate_evidence(locks[0],execution,Oracle)
+
     return {'diagnostic_passed':True,'stdout_sha256':digest(raw),
-            'committed_concurrency':result,
+            'committed_concurrency':result,'admission_locks':lock_result,
             'financial_qualified':False,'production_qualified':False,
             'committed_terminal_qualified':result['committed_terminal_qualified'],'concurrency_qualified':result['concurrency_qualified']}
 

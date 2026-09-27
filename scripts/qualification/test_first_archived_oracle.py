@@ -41,12 +41,13 @@ def envelopes():
         'recognition_count':0,'recognized_source_count':0,'rake_settlement_count':0}
     seats=[{'id':str(i),'table_id':'6eaddeaf-1511-4265-bb38-37811ae82ad9','stack':900 if i==1 else 0,'left_at':None if i==1 else 'original','status':'playing','leave_pending':False,'is_sitting_out':False,'is_away':False,'sit_out_at':None,'scheduled_leave_hands':None} for i in (1,2,3)]
     closed=copy.deepcopy(seats)
-    for row in closed:row.update(left_at=row['left_at'] or 'terminal',status='left')
+    for row in closed:row.update(left_at=row['left_at'] or 'terminal',status='left',terminal_closed_at='terminal',active_game_scope=None,active_parent_key=None)
     state.update(reserve_before=[{'id':'reserve','amount':276}],reserve_after=[{'id':'reserve','amount':276}],
         ledger_before=[{'id':'original','amount':100}],ledger_after=[{'id':'original','amount':100},
         {'id':'prize','amount':200,'tournament_id':A.EVENT,'club_id':CLUB,'category':'tournament_prize','from_type':'prize_liability','from_entity_id':A.EVENT,'to_type':'player_wallet','to_entity_id':WINNER}],
         seats_before=seats,seats_after=closed,history_count=0,atomic_commit_count=0,
-        primary_table={'id':'6eaddeaf-1511-4265-bb38-37811ae82ad9','tournament_id':A.EVENT,'status':'closed','lifecycle':'closed','current_players':0})
+        primary_table={'id':'6eaddeaf-1511-4265-bb38-37811ae82ad9','tournament_id':A.EVENT,'status':'closed','lifecycle':'closed','current_players':0,'terminal_closed_at':'terminal'})
+    state['terminal'].update(completed_at='terminal',settled_at='terminal',source_seat_count=3,source_seat_ids=['1','2','3'],released_seat_count=1,released_seat_ids=['1'])
     values=[{'stage':'first_archived_terminal_before_rollback','event':A.EVENT,'response':response},
         dict(state,stage='first_archived_state_before_rollback'),
         {'stage':'first_archived_after_rollback','economic_rows_unchanged':True,'admission_absent':True,'terminal_absent':True,'lease_absent':True}]
@@ -79,6 +80,10 @@ class FirstArchivedOracleTests(unittest.TestCase):
             control=importlib.util.module_from_spec(spec);spec.loader.exec_module(control)
             (work/'archive_concurrency_commit.stdout').write_text(json.dumps(control.valid())+'\n')
             (work/'archive_concurrency_commit.stderr').write_text('')
+            spec=importlib.util.spec_from_file_location('lock_control_envelope',Path(__file__).with_name('test_first_archived_locks.py'))
+            control=importlib.util.module_from_spec(spec);spec.loader.exec_module(control)
+            (work/'archive_admission_locks.stdout').write_text(json.dumps(control.valid())+'\n')
+            (work/'archive_admission_locks.stderr').write_text('')
             return A.validate_outputs(Path(__file__).resolve().parents[2],work,EXECUTION,A.EVENT)
 
     def test_protocol_shape_pass_is_not_financial_qualification(self):
@@ -100,6 +105,9 @@ class FirstArchivedOracleTests(unittest.TestCase):
             lambda v:v[1]['seats_after'][0].update(stack=0),
             lambda v:v[1]['seats_after'][1].update(left_at='rewritten'),
             lambda v:v[1]['primary_table'].update(status='running'),
+            lambda v:v[1]['seats_after'][0].update(active_game_scope='still-active'),
+            lambda v:v[1]['seats_after'][0].update(terminal_closed_at='other'),
+            lambda v:v[1]['terminal'].update(released_seat_ids=['2']),
             lambda v:v[1]['players'].append(copy.deepcopy(v[1]['players'][0])),
             lambda v:v[1]['players'][0].update(id='wrong'),
             lambda v:v[1]['players'][0].update(tournament_id='wrong'),

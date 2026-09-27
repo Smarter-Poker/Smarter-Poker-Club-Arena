@@ -131,14 +131,12 @@
       "md5": "ad0313532d2fac77c0b33444f0e36782"
     },
     "public.fn_active_maintenance_release_boundary()": {
-      "observed_at": "2026-09-26 21:43:57.26434+00",
       "identity": "public.fn_active_maintenance_release_boundary()",
-      "actual_identity": "fn_active_maintenance_release_boundary()",
       "owner": "postgres",
       "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "md5": "05b537b57c9f51a5164e20a1cd0e67e0",
       "proconfig": ["search_path=public, auth, pg_temp"],
-      "prosecdef": true,
-      "md5": "0d9548e27105b7172d83be4f7d10ea47"
+      "prosecdef": true
     },
     "public.fn_admin_holds_no_player_wallet()": {
       "observed_at": "2026-09-26 21:43:57.26434+00",
@@ -3690,6 +3688,14 @@
       "prosecdef": true,
       "md5": "642e80ef5bba363c8568d3335ed87635"
     },
+    "public.fn_platform_frozen()": {
+      "identity": "public.fn_platform_frozen()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "md5": "ec683805e052fceeae74789e82dce4cc",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": false
+    },
     "public.fn_accounting_tournament_fee_receipt_immutable()": {
       "identity": "public.fn_accounting_tournament_fee_receipt_immutable()",
       "owner": "postgres",
@@ -4209,14 +4215,6 @@
       "md5": "f660a8b47bf88a86f2e236a4794ed4e6",
       "proconfig": ["search_path=public, pg_temp", "TimeZone=UTC"],
       "prosecdef": true
-    },
-    "public.fn_platform_frozen()": {
-      "identity": "public.fn_platform_frozen()",
-      "owner": "postgres",
-      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
-      "md5": "ec683805e052fceeae74789e82dce4cc",
-      "proconfig": ["search_path=public, pg_temp"],
-      "prosecdef": false
     },
     "public.fn_seat_horse_in_seat_first_game(uuid,uuid)": {
       "identity": "public.fn_seat_horse_in_seat_first_game(uuid,uuid)",

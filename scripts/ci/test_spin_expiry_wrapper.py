@@ -28,6 +28,10 @@ ARCHIVE_CONCURRENCY_SPEC = importlib.util.spec_from_file_location('first_archive
 ARCHIVE_CONCURRENCY_MODULE = importlib.util.module_from_spec(ARCHIVE_CONCURRENCY_SPEC)
 ARCHIVE_CONCURRENCY_SPEC.loader.exec_module(ARCHIVE_CONCURRENCY_MODULE)
 FirstArchivedConcurrencyTests = ARCHIVE_CONCURRENCY_MODULE.FirstArchivedConcurrencyTests
+ARCHIVE_LOCK_SPEC = importlib.util.spec_from_file_location('first_archived_lock_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_locks.py')
+ARCHIVE_LOCK_MODULE = importlib.util.module_from_spec(ARCHIVE_LOCK_SPEC)
+ARCHIVE_LOCK_SPEC.loader.exec_module(ARCHIVE_LOCK_MODULE)
+FirstArchivedLockTests = ARCHIVE_LOCK_MODULE.FirstArchivedLockTests
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
@@ -2843,6 +2847,13 @@ class FirstArchivedTests(unittest.TestCase):
             self.assertEqual(W.qualification_leaf_limit(W.ARCHIVE.BASE+'full-provider-catalog.json'),3145728)
             self.assertEqual(W.qualification_leaf_limit(W.ARCHIVE.BASE+'full-functions.sql'),2097152)
 
+    def test_archive_lock_capacity_is_private_and_image_scoped(self):
+        source=Path(W.__file__).read_text()
+        block=source[source.index('        if archive_image:\n            # Four bounded'):source.index('        pg_attempted = True')]
+        self.assertIn("handle.write('max_locks_per_transaction=1024\\n')",block)
+        self.assertIn('max_connections=8',source)
+        self.assertEqual(source.count('max_locks_per_transaction=1024'),1)
+
     def test_exact_archive_sources_reject_each_changed_input(self):
         root=Path(__file__).resolve().parents[2]
         files={n:(root/n).read_bytes() for n in W.ARCHIVE.INPUTS}
@@ -2864,7 +2875,7 @@ class FirstArchivedTests(unittest.TestCase):
         self.assertLess(names.index('schema_prefix'),names.index('archive_original_seed'))
         self.assertLess(names.index('archive_original_seed'),names.index('schema_suffix_all_real_triggers'))
         self.assertLess(names.index('tested_role_readback'),names.index('archive_full_functions_sql'))
-        self.assertEqual(names[-4:],['archive_connected_rollback','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        self.assertEqual(names[-5:],['archive_connected_rollback','archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
         for forbidden in ('restore_preexisting_principals','current_catalog_readback','empty_provider_readback',
             'authentic_entry_provider_supplement','fee_actual_paid_entry','real_funded_paid_seat_fixture'):
             self.assertNotIn(forbidden,names)

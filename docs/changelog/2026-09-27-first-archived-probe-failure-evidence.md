@@ -109,3 +109,5 @@ blocked by that owner, releases only the synthetic replay barrier, retains the
 canonical PZ002 abort, then verifies the external commit and journal. Production
 lock timeouts and canonical locking remain unchanged. The original failed run
 and successful cleanup remain retained evidence, not a passing qualification.
+
+Native postabort qualification caught a reader projection mismatch: the canonical preimage function returns a nine-field attestation after internally checking eight captured rowsets. The reader now derives that exact attestation from the pinned original manifest, retaining strict funding and twenty nonbank rowset checks. A regression distinguishes the attestation from internal captured rows. Failed execution ba97e02d-762e-43e0-b65b-d86947335d99 remains retained; no production payment.

@@ -111,7 +111,13 @@ def expected_original(source_root):
     require(len(parts)==3,'original manifest JSON delimiter differs')
     original=decode_json(parts[1])
     require(original['tournament_id']==EVENT,'original manifest event differs')
-    return original['captured_preimage'],original['reviewed_fee_proof']
+    # Match the checksum-pinned owner's returned attestation, not its internal rowset.
+    attestation={'preimage_matched':True,'financial_authority':False,
+        'evidence_kind':original['evidence_kind'],'source_sha256':original['source_sha256'],
+        'tournament_id':original['tournament_id'],'original_atomic_commit':None,
+        'first_history':original['original_first_history'],'last_history':original['original_last_history'],
+        'original_result':original['original_result']}
+    return attestation,original['reviewed_fee_proof']
 
 def validate_receipt(detail,receipt,expected_preimage,expected_funding):
     require(isinstance(receipt,dict) and set(receipt)=={'query','query_sha256','original_output','evidence','validation'},'postabort receipt inventory differs')

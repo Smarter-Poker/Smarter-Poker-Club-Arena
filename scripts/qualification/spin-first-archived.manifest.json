@@ -9,12 +9,12 @@
       "sha256": "bd30972724bf39a8ff46e6ff18b433528d6f98c3bf567873e9f614934e9c0355"
     },
     "scripts/qualification/spin-first-archived-postabort.py": {
-      "bytes": 8292,
-      "sha256": "bb3467b5141d013c829f3a36739bae7b09ea4e51f33a45295cf12effb633c6e3"
+      "bytes": 8769,
+      "sha256": "632debfbc4de1a0aa0bb69dd6a90d64189af56563054f4ace28a64d25958453e"
     },
     "scripts/qualification/test_first_archived_postabort.py": {
-      "bytes": 7414,
-      "sha256": "948956c7cdb1966b8218a0d95d69b5002c4952ce5cde79d7740dc1a1b4efa39a"
+      "bytes": 8143,
+      "sha256": "7fdede3c3b88d52c034860b661e4826cf62cf61257b525616bf44acc77333f7e"
     },
     "scripts/qualification/fixtures/archived-spin/first-postabort-bank-readback.sql": {
       "bytes": 13161,

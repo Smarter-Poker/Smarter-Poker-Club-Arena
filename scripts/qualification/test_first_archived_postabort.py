@@ -88,6 +88,18 @@ class FirstArchivedPostabortTests(unittest.TestCase):
         self.assertIn("wait['waiting_xids']==[xid]",source)
         self.assertIn("external.start(update)",source)
 
+    def test_expected_preimage_is_owner_attestation_not_internal_rows(self):
+        root=Path(__file__).resolve().parents[2]
+        expected,funding=M.expected_original(root)
+        self.assertEqual(set(expected),{'preimage_matched','financial_authority','evidence_kind',
+            'source_sha256','tournament_id','original_atomic_commit','first_history','last_history','original_result'})
+        self.assertIs(expected['preimage_matched'],True)
+        self.assertIs(expected['financial_authority'],False)
+        self.assertIsNone(expected['original_atomic_commit'])
+        self.assertEqual(expected['tournament_id'],M.EVENT)
+        self.assertNotIn('chip_ledger',expected)
+        self.assertIsInstance(funding,dict)
+
     def test_sql_projection_is_one_materialized_row_source(self):
         self.assertEqual(M.QUERY.count('FROM public.union_wallets'),1)
         self.assertIn("'public.union_wallets',(SELECT coalesce(jsonb_agg(projection",M.QUERY)

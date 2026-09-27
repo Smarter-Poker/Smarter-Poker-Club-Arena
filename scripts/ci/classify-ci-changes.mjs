@@ -57,6 +57,8 @@ const backedPayoutScan =
   /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
+const settlementAttribution =
+  /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
 
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
@@ -240,6 +242,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||
+      matches(settlementAttribution) ||
       matches(certificationRetirement),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
@@ -274,6 +277,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||
+      matches(settlementAttribution) ||
       matches(certificationRetirement),
     phase4: phase4Changed,
     fixture: matches(fixture),

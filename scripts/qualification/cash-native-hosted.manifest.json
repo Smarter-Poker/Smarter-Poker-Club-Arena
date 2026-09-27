@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169700,
-      "sha256": "ff347050882fefa18e7011baa1bfbbbb806d412b32759cb46ea44547c13ab410"
+      "bytes": 169876,
+      "sha256": "2f1e8d6c55bb2241c5970f87cc6bb6b7913869245d049b87e2268a6afd4a5590"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24865,
-      "sha256": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785"
+      "bytes": 25127,
+      "sha256": "8113bd7b7c3b347b4fd2d3edd247118d97d63913adce0ca9c391cb8ba7145403"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -506,5 +506,42 @@
       }
     ],
     "status": "Exact source binding; hosted financial qualification remains required."
+  },
+  "settlementAttributionIntegration20260927": {
+    "reason": "Register the exact settlement-attribution native fixture and every maintained input in existing required accounting shard4. Existing runners, financial assertions, historical receipts and other pins remain unchanged. Cascade only the current nested binding bytes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "current": {
+          "bytes": 169705,
+          "sha256": "a041aacebb76da830085d19425a14bb838686807555422827d15841f46fdd1c8"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "current": {
+          "bytes": 24893,
+          "sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2"
+        }
+      }
+    ]
+  },
+  "backed_payout_settlement_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected settlement attribution and catalog 6e32e04f2f",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   }
 }

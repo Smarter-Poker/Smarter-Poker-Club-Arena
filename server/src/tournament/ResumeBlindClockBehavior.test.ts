@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { sliceBetween, sliceMethod } from '../testHelpers/sourceWindow.js';
+import { levelResumeRemainingMs } from './levelClockOutage.js';
 
 const source = readFileSync(
   path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
@@ -55,7 +56,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
 
 function harness(
   tournament: ReturnType<typeof fixture>,
-  opts: { maintenanceFrozen?: boolean | (() => boolean) } = {}
+  opts: { maintenanceFrozen?: boolean | (() => boolean); dealtAtMs?: number } = {}
 ) {
   const writes: Record<string, unknown>[] = [];
   const timers = new Set<{ callback: () => unknown; delay: number; unref: () => void }>();
@@ -92,6 +93,10 @@ function harness(
     'TournamentManagerBase',
     'reportError',
     'isMaintenanceFrozen',
+    // The restored clock decides its remainder through this law since
+    // 2026-09-27 (levelClockOutage.ts); the extracted block needs it in
+    // scope like every other import it uses.
+    'levelResumeRemainingMs',
     runtime
   )(
     supabase,
@@ -102,7 +107,8 @@ function harness(
       MAINTENANCE_THAW_WAIT_CEILING_MS: staticNumber('MAINTENANCE_THAW_WAIT_CEILING_MS'),
     },
     reportError,
-    maintenanceFrozen
+    maintenanceFrozen,
+    levelResumeRemainingMs
   );
   const state: any = {
     ...actual,
@@ -118,6 +124,14 @@ function harness(
     blindTimer: null,
     blindTimerStartedAt: 0,
     savedBlindTimerRemaining: 0,
+    /**
+     * The blind clock's witness (2026-09-27). 0 means this manager has no
+     * evidence its event has ever dealt, which is what a frozen event looks
+     * like; a test that is about an event still PLAYING states a recent hand
+     * through `dealtAtMs` below.
+     */
+    lastObservedHandCompletedAtMs: opts.dealtAtMs ?? 0,
+    seedDealingWitnessFromRows: vi.fn(async () => {}),
     prizePoolFinalized: true,
     addOnBreakActive: false,
     tableEngines: new Map(),
@@ -149,8 +163,23 @@ function harness(
 afterEach(() => vi.useRealTimers());
 
 describe('the persisted blind clock survives an engine restart during a break', () => {
+  /**
+   * AN OVERDUE LEVEL IS STILL DUE - FOR AN EVENT THAT WAS PLAYING (2026-07-24,
+   * narrowed 2026-09-27).
+   *
+   * Granting a fresh full level on every restart nearly froze escalation
+   * across a restart-heavy window, and that is still true of an event whose
+   * tables are dealing: its overdue level fires in a second, exactly as it
+   * always did. What changed is that the rule no longer applies to an event
+   * that was not dealing at all. After the 2026-09-18 lease-loss wave, "an
+   * overdue level stays due" meant a level four frozen days overdue came due
+   * the instant its manager armed the clock - see
+   * theClockDoesNotRunWhileNothingDeals.law.test.ts for the twenty-two events
+   * that escalated past the end of their structures at 13:24 on 2026-09-22.
+   * Both halves are pinned here so neither can be lost to the other.
+   */
   it.each([2400000, 2400001, 86400000])(
-    'does not grant a fresh level after an anchor is %i milliseconds old',
+    'a dealing event does not get a fresh level after an anchor is %i milliseconds old',
     async (elapsedMs) => {
       vi.useFakeTimers();
       const now = Date.parse('2026-09-10T12:00:00.000Z');
@@ -159,7 +188,9 @@ describe('the persisted blind clock survives an engine restart during a break', 
         on_break: false,
         level_started_at: new Date(now - elapsedMs).toISOString(),
       });
-      const { state } = harness(tournament);
+      // This event dealt a hand ten seconds ago: it is playing, and it owes
+      // its overdue level.
+      const { state } = harness(tournament, { dealtAtMs: now - 10_000 });
       await state.restore(tournament);
       expect(state.blindTimer.delay).toBe(1000);
       expect(state.currentLevel).toBe(0);
@@ -168,13 +199,50 @@ describe('the persisted blind clock survives an engine restart during a break', 
     }
   );
 
+  it.each([2400000, 2400001, 86400000])(
+    'an event that dealt nothing resumes its level whole after %i milliseconds',
+    async (elapsedMs) => {
+      vi.useFakeTimers();
+      const now = Date.parse('2026-09-10T12:00:00.000Z');
+      vi.setSystemTime(now);
+      const tournament = fixture({
+        on_break: false,
+        level_started_at: new Date(now - elapsedMs).toISOString(),
+      });
+      // No witness: nothing proves this event has dealt, which is exactly
+      // what a table wedged behind a dead generation's permit looks like.
+      const { state } = harness(tournament);
+      await state.restore(tournament);
+      // The level play stopped at, with a fresh full level - never a
+      // one-second fuse that escalates on the first hand back.
+      expect(state.blindTimer.delay).toBe(600000);
+      expect(state.currentLevel).toBe(0);
+      expect(state.advanceBlindLevel).not.toHaveBeenCalled();
+    }
+  );
+
   it('keeps an already overdue level due while restoring a recorded break', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));
+    const tournament = fixture({ level_started_at: '2026-09-09T11:50:00.000Z' });
+    const { state, writes } = harness(tournament, {
+      dealtAtMs: Date.parse('2026-09-09T12:54:30.000Z'),
+    });
+    await state.restore(tournament);
+    expect(state.savedBlindTimerRemaining).toBe(1000);
+    expect(state.blindTimer).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  it('restores a break on an event that dealt nothing without burning its level', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));
     const tournament = fixture({ level_started_at: '2026-09-09T11:50:00.000Z' });
     const { state, writes } = harness(tournament);
     await state.restore(tournament);
-    expect(state.savedBlindTimerRemaining).toBe(1000);
+    // Held for the break, and whole: arming would rewrite the anchor, so the
+    // remainder is saved rather than started (the 2026-08-25 rule, unchanged).
+    expect(state.savedBlindTimerRemaining).toBe(600000);
     expect(state.blindTimer).toBeNull();
     expect(writes).toEqual([]);
   });

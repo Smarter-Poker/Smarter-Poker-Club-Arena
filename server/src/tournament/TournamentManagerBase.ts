@@ -174,6 +174,7 @@ import {
   closeAbandonedGeneration,
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
+import { levelResumeRemainingMs } from './levelClockOutage.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -891,6 +892,13 @@ export abstract class TournamentManagerBase {
   protected lastObservedHandCompletedAtMs = 0;
   /** One line per held level, not one per recheck. */
   private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
+  /**
+   * Levels whose escalation past the end of the authored structure was held
+   * for an unproven chip supply. Announced once per level, for the same
+   * reason the stalled hold is: a hold nobody can read is a tournament whose
+   * blinds mysteriously stopped.
+   */
+  private readonly unprovenEscalationHoldAnnouncedFor = new Set<number>();
   /**
    * True once beginBreakCountdown has stamped an end time on THIS break.
    *
@@ -6365,11 +6373,38 @@ export abstract class TournamentManagerBase {
                   Math.min(Date.now(), breakEndsAt) - Math.max(levelStartedAt, breakStartedAt)
                 )
               : 0;
-          const elapsed = Date.now() - levelStartedAt - pausedMs;
-          // A persisted overdue level stays due, including after a long outage.
-          if (Number.isFinite(elapsed) && elapsed >= 0) {
-            remainingMs = Math.max(1000, durationMs - elapsed);
+          /**
+           * A LEVEL NOTHING WAS PLAYED IN WAS NEVER SPENT (2026-09-27).
+           *
+           * This used to read "a persisted overdue level stays due, including
+           * after a long outage" and floor the remainder at one second. After
+           * the 2026-09-18 lease-loss wave that meant a level four days
+           * overdue came due the instant its manager armed the clock, and the
+           * 13:24 recovery on 2026-09-22 escalated twenty-two events straight
+           * past the end of their structures. The credit is now measured
+           * against this event's own dealing (levelClockOutage.ts): an
+           * ordinary restart resumes mid-level exactly as before, and an
+           * outage resumes at the level play stopped at with a fresh full one.
+           *
+           * ONLY AN ALREADY-OVERDUE LEVEL IS WORTH A READ. A level still
+           * inside its own duration cannot be an outage under that law - its
+           * idle time is shorter than the level it is idle in - so it resumes
+           * exactly as it always did and costs this adoption nothing. The
+           * witness is fetched only for a level whose time has already run
+           * out, which is precisely the shape that used to floor at one
+           * second, and never for the ordinary restart this path serves.
+           */
+          if (Date.now() - levelStartedAt - pausedMs >= durationMs) {
+            await this.seedDealingWitnessFromRows();
+            this.assertLifecycleCurrent(lifecycle);
           }
+          remainingMs = levelResumeRemainingMs({
+            levelStartedAtMs: levelStartedAt,
+            lastDealtAtMs: this.lastObservedHandCompletedAtMs || null,
+            nowMs: Date.now(),
+            durationMs,
+            pausedMs,
+          });
         }
         if (tournament.on_break) {
           // Arming would rewrite level_started_at. A second restart during
@@ -8474,6 +8509,56 @@ export abstract class TournamentManagerBase {
    * Total chips the tournament has ever issued, or null when it cannot be
    * known. Never guessed: a null caps nothing.
    */
+  /**
+   * THE BLIND CLOCK'S WITNESS, READ FROM ROWS WHEN THE CLOCK IS ALREADY OVERDUE
+   * (2026-09-27).
+   *
+   * `lastObservedHandCompletedAtMs` is written by onHandComplete, so on a
+   * brand-new manager it is 0 until this event deals its next hand - which is
+   * exactly what a frozen event cannot do. resume() therefore had to decide
+   * "was this level spent on play?" with no knowledge of when this event last
+   * played, and its answer was to credit the elapsed wall time whatever had
+   * happened, which after a four-day freeze floors the remainder at one
+   * second.
+   *
+   * The event's most recent dealt hand is the evidence, and it is one index
+   * lookup on idx_hand_history_tournament_created. It is asked for only when
+   * the level is already past its own duration - the ordinary mid-level
+   * restart never pays for it - so a fleet-wide re-adoption adds at most one
+   * bounded read per genuinely overdue event.
+   *
+   * Horse hands are retained for eight days (hand_history_retention_policy),
+   * and this law's longest window is one level, so pruning can never make a
+   * dealing event look idle. An event frozen past that retention reads as
+   * never having dealt, which is the same answer by a different route.
+   *
+   * A high-water mark: a slower read never un-sees a hand this manager already
+   * watched land. An unreadable answer leaves the value alone and is never
+   * fatal to the adoption - it reads as "this event has not dealt", which
+   * grants a fresh full level and holds the in-flight clock, both of which are
+   * the safe direction.
+   */
+  protected async seedDealingWitnessFromRows(): Promise<void> {
+    try {
+      const { data, error } = await supabase
+        .from('hand_history')
+        .select('created_at')
+        .eq('tournament_id', this.tournamentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const dealtAt =
+        !error && data && typeof data.created_at === 'string' ? Date.parse(data.created_at) : NaN;
+      if (Number.isFinite(dealtAt) && dealtAt > this.lastObservedHandCompletedAtMs) {
+        this.lastObservedHandCompletedAtMs = dealtAt;
+      }
+    } catch (err) {
+      // Never let the clock's bookkeeping break an adoption that is otherwise
+      // sound: the value it would have set fails safe on its own.
+      reportError(err, 'Tournament.seed_dealing_witness');
+    }
+  }
+
   protected chipsInPlayEstimate(): number | null {
     const start = Number(this.tournamentCache?.starting_chips);
     if (!Number.isFinite(start) || start <= 0) return null;
@@ -8846,6 +8931,74 @@ export abstract class TournamentManagerBase {
        */
       while (nextLevel < blindStructure.length && blindStructure[nextLevel]?.isBreak) {
         nextLevel++;
+      }
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  PAST THE END OF THE STRUCTURE, AN ESCALATION NEEDS A PROVEN STACK
+       *  (2026-09-27)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Every level from here on is INVENTED. The structure the tournament
+       * was advertised with has run out, resolveBlindLevel derives the rest,
+       * and capLevelToChipsInPlay is the only thing that keeps a derived
+       * blind inside what the field can actually post. That cap has existed
+       * since 2026-08-31 and it measures against chipsInPlayEstimate(), which
+       * returns null - capping NOTHING - unless entrantCountForChipCap has
+       * been raised, and the only thing that raises it is refreshChipCapInputs
+       * inside the elimination sweep.
+       *
+       * THE CAP LOSES A RACE IT WAS NEVER TOLD IT WAS IN. A manager does wake
+       * its own sweep once when it adopts (2026-09-10), so the cap is armed
+       * shortly after adoption - asynchronously, through one bounded scheduler
+       * slot. The level clock is not asynchronous: resume() armed it inline,
+       * and an overdue level fired in a second. In a fleet-wide re-adoption
+       * the scheduler is the thing that is backed up - after the 06:57 boot on
+       * 2026-09-11 it held 553 of 597 managers, its oldest entry waiting up to
+       * 24 minutes - so the escalation ran while the sweep that would have
+       * armed the cap was still queued. 2026-09-22 13:24:
+       * `Auto-escalated blinds (level 45, structure has 40):
+       * 5000000/10000000 ante 4000000` on a $100 Freeroll whose players held
+       * 3,000-15,000 chips. Not one of them could post the ante, let alone
+       * the blind. The first hand at that level is every stack all-in before
+       * a card is read, and the event's result is decided by the order the
+       * cards happen to fall. That is not the tournament anybody entered.
+       *
+       * WHAT IT DOES INSTEAD: it holds the last level the structure actually
+       * authored, and says so once, until the chip supply is known. The hold
+       * releases itself - the adoption's own sweep arms the cap as soon as it
+       * reaches a slot, and the next wake escalates normally against a supply
+       * it can measure. Nothing new has to run for that to happen.
+       * Refusing is available and guessing is not - this is the same choice
+       * the abandoned-generation door makes when the rows do not prove the
+       * shape. A held level is a slow tournament that still plays out and
+       * still finishes on busts; an unpostable blind is a finished tournament
+       * with an invented winner, and there is no repair afterwards that gives
+       * the field back the event it was playing. Cost of holding wrongly: the
+       * blinds stay put for fifteen seconds at a time while a count is
+       * unreadable. Cost of escalating wrongly: measured above.
+       *
+       * An event still inside its authored structure is untouched: those
+       * levels were authored by a human and are played as written, capped or
+       * not. A pending publication is replayed rather than held - it may
+       * already have committed, and the fenced RPC is what decides that. An
+       * empty structure keeps its existing "Next blind level is missing"
+       * throw, which is a different defect with its own handling.
+       */
+      if (
+        blindStructure.length > 0 &&
+        nextLevel >= blindStructure.length &&
+        !this.pendingBlindTransition &&
+        this.chipsInPlayEstimate() === null
+      ) {
+        if (!this.unprovenEscalationHoldAnnouncedFor.has(this.currentLevel)) {
+          this.unprovenEscalationHoldAnnouncedFor.add(this.currentLevel);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${nextLevel} would be invented past the end of a ${blindStructure.length}-level structure, and this event's chips in play are unproven - holding level ${this.currentLevel} rather than escalating against an unknown stack`
+          );
+        }
+        deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
+        return;
       }
 
       /**

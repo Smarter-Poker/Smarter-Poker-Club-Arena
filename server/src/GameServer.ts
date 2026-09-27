@@ -237,6 +237,7 @@ import {
 } from './observability/engineInstruments.js';
 import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { decisionPipelineDistress } from './decisionPipelinePressure.js';
 import { isFleetWideStall } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
@@ -1567,6 +1568,15 @@ export class GameServer {
    * adjusts the other's budget. See tournamentResumeBudget.ts.
    */
   private tournamentResumeBudget: number = ENGINE_START_BUDGET_MAX;
+  /**
+   * Live horse-decision expiries as of the previous re-adoption pass, so only
+   * NEW ones count as distress (decisionPipelinePressure.ts). A recovery that
+   * expires in-flight decisions is not a recovery, and before 2026-09-27 the
+   * budget above could not see that happening: every resume on 2026-09-22
+   * 13:24 SUCCEEDED while the pipeline went to 1,320 expiries and 9,274 ms of
+   * queue age, so the pass was never distressed and the budget climbed.
+   */
+  private decisionPipelineExpiredBaseline: number = 0;
   /**
    * Distress since the last tournament pass, read and cleared once per pass:
    * a discovery resume that threw or had to schedule a retry, and each manager
@@ -8521,7 +8531,15 @@ export class GameServer {
       // the finally below on every path, as C20 does for the cash fleet.
       const resumeDistressSinceLastPass = this.tournamentResumeDistress;
       this.tournamentResumeDistress = 0;
-      let resumePassDistressed = resumeDistressSinceLastPass > 0;
+      // Horses are players: a table whose players cannot decide is not a
+      // recovered table. The pipeline's own health is a distress input to the
+      // same AIMD law, beside the resume outcomes (decisionPipelinePressure).
+      const decisionPressure = decisionPipelineDistress(
+        liveHorseDecisionWorkerStatus(),
+        this.decisionPipelineExpiredBaseline
+      );
+      this.decisionPipelineExpiredBaseline = decisionPressure.expiredBaseline;
+      let resumePassDistressed = resumeDistressSinceLastPass > 0 || decisionPressure.distressed;
       try {
         // The gateway silently caps a SELECT at 1,000 rows. On 2026-09-14
         // the exact RUNNING read returned 0-999/1283 and omitted an event whose

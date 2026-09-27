@@ -217,13 +217,31 @@ describe('the batch the sweep prepared is the batch it records', () => {
   it('closes the batch window with the pass and yields through the scheduler', async () => {
     threeBustsOfFour();
     const { manager, eliminated } = bustStageManager();
+    // Observe the window from inside the sweep: the sweep's own finally clears
+    // the deadline afterwards, so only the moment of closing can say whether
+    // the clock got its vote back.
+    const closings: Array<{ at: number; expired: boolean; allowed: boolean }> = [];
+    const close = TournamentManagerBase.prototype['closeEliminationMutationBatch'];
+    manager.closeEliminationMutationBatch = function (this: any) {
+      close.call(this);
+      closings.push({
+        at: Date.now(),
+        expired: this.eliminationWorkBudgetExpired(),
+        allowed: this.eliminationMutationAllowed(),
+      });
+    };
     await sweep(manager);
 
     expect(eliminated).toHaveLength(3);
+    // Reset at admission (deadline not yet expired), then closed after the batch.
+    expect(closings).toHaveLength(2);
+    expect(closings[0].expired).toBe(false);
+    expect(closings[1].at).toBeGreaterThanOrEqual(eliminated[2].at);
+    // The deadline had long passed: the moment the window closed the clock
+    // refused again, exactly as for every other stage.
+    expect(closings[1].expired).toBe(true);
+    expect(closings[1].allowed).toBe(false);
     expect(manager.eliminationMutationBatchIsOpen()).toBe(false);
-    // The deadline has long passed: outside the batch the clock refuses again.
-    expect(manager.eliminationWorkBudgetExpired()).toBe(true);
-    expect(manager.eliminationMutationAllowed()).toBe(false);
     // The pass recorded what it prepared and handed the slot back: the cursor
     // moved past the bust stage and the continuation was re-armed.
     expect(manager.eliminationSweepCursor.nextStage).toBe(2);

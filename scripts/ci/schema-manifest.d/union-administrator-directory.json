@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex-union-0927/fix/scoped-visible-operations",
+  "_comment": "Installed as 20260927170842; production catalog and byte-equal migration history read at 2026-09-27T17:08:57.199126+00:00. Function OID 63324634, definition MD5 1fa5505e38f60bf952c014d0257c6a7e. The fragment declares the installed object pending the base snapshot refresh; it does not replace live verification.",
+  "functions": ["fn_union_admin_directory"]
+}

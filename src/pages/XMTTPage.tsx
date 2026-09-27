@@ -15,10 +15,9 @@ import { isTournamentEntryUnavailable } from '../utils/tournamentPresentation';
  * well's painted pill slot rather than a coloured chip, and the two money
  * actions are the plates painted into the foot.
  *
- * Nothing about what the page DOES has changed: the club resolution, the
- * 30-second poll, the realtime and visibility refreshes, the shared
- * registration hook that owns the one buy-in confirmation, the waitlist calls
- * and the error banner are all exactly as they were.
+ * The approved artwork and registration commands stay intact. The visible
+ * lobby observes every 30 seconds and on existing events, with exact scoped
+ * counts, explicit 50-event expansion and owner-scoped waitlist batches.
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -37,13 +36,15 @@ import { compactChips, fmtChips } from '../utils/format';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
-import { clubGamesOrFilter } from '../utils/unionScope';
-import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
-import { resolvePageClubId } from '../utils/resolvePageClubId';
+import { useXmttLobby } from '../hooks/useXmttLobby';
+import {
+  readXmttWaitlistPositions,
+  type XmttTournament as Tournament,
+} from '../services/xmttLobbyReads';
 import {
   SpadeConsole,
   type ConsoleInk,
@@ -73,22 +74,6 @@ const STATUS_INK: Record<string, { ink: ConsoleInk; label: string }> = {
 
 function statusInk(status: string): { ink: ConsoleInk; label: string } {
   return STATUS_INK[status] ?? { ink: 'muted', label: status?.toUpperCase() || '-' };
-}
-
-interface Tournament {
-  format_contract?: unknown;
-  id: string;
-  name: string;
-  status: string;
-  type?: string;
-  /** The PRIZE half of the split. Never render it alone - see totalBuyIn. */
-  buy_in: number;
-  buy_in_fee?: number | null;
-  max_players: number | null;
-  registered_count?: number;
-  start_time?: string;
-  created_at: string;
-  prize_pool?: number;
 }
 
 interface TournamentDetail {
@@ -122,11 +107,16 @@ export default function XMTTPage() {
   const toast = useToast();
   const [searchParams] = useSearchParams();
 
-  const [clubId, setClubId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [filter, setFilter] = useState<'all' | 'registering' | 'running' | 'completed'>('all');
-  const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
+  const requestedClub = searchParams.get('club') || searchParams.get('clubId');
+  const lobby = useXmttLobby(user?.id, requestedClub, filter);
+  const { clubId, rows: tournaments, loading } = lobby;
+  const viewScope = JSON.stringify([user?.id, requestedClub, clubId, filter]);
+  const viewScopeRef = useRef(viewScope);
+  viewScopeRef.current = viewScope;
+  const [selection, setSelection] = useState<{ scope: string; id: string } | null>(null);
+  const selectedTournament = selection?.scope === viewScope ? selection.id : null;
+  const setSelectedTournament = (id: string) => setSelection({ scope: viewScope, id });
   const [detail, setDetail] = useState<TournamentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -134,111 +124,67 @@ export default function XMTTPage() {
   const mountedRef = useIsMounted();
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const loadTournaments = useCallback(
-    async (cId?: string) => {
-      const targetClub = cId || clubId;
-      if (!targetClub) return;
+  const loadTournaments = useCallback((_clubId?: string) => lobby.refresh(), [lobby.refresh]);
+  const detailRead = useRef(0);
+  const loadDetail = useCallback(
+    async (tournamentId: string, _cId?: string) => {
+      const generation = ++detailRead.current;
+      const scope = viewScope;
       try {
-        // P2-2: this filter was triple-broken. (1) The URL param may be the
-        // 6-digit integer club code, and eq('club_id', <int>) on a uuid
-        // column matches nothing. (2) Union tournaments carry the union
-        // container as club_id, so a plain club filter hid every union MTT.
-        // (3) The type filter used the SELECT alias 'type' (not a real
-        // column) with lowercase values - tournament_type holds 'MTT'.
-        const uuid = await resolveClubUUID(targetClub);
-        let query = supabase
-          .from('tournaments')
-          .select(
-            'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
-          )
-          .or(await clubGamesOrFilter(uuid))
-          .order('start_time', { ascending: false });
-
-        // Filter to MTT types (real column name, real uppercase values)
-        query = query.in('tournament_type', ['MTT', 'XMTT']);
-
-        const { data, error } = await query;
-        if (error) throw error;
-        if (mountedRef.current) setTournaments(data || []);
+        setDetailLoading(true);
+        setDetail(null);
+        const [tournamentRead, registrationRead] = await Promise.all([
+          supabase
+            .from('tournaments')
+            .select(
+              'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+            )
+            .eq('id', tournamentId)
+            .maybeSingle(),
+          supabase
+            .from('tournament_players')
+            .select(`*, profiles(${PLAYER_NAME_COLUMNS})`)
+            .eq('tournament_id', tournamentId),
+        ]);
+        if (tournamentRead.error) throw tournamentRead.error;
+        if (registrationRead.error) throw registrationRead.error;
+        const tourn = tournamentRead.data;
+        const regs = registrationRead.data;
+        if (
+          mountedRef.current &&
+          viewScopeRef.current === scope &&
+          generation === detailRead.current &&
+          tourn
+        ) {
+          setDetail({
+            tournament: tourn as Tournament,
+            registrations: (regs || []).map((r: any) => ({
+              user_id: r.user_id,
+              display_name: playerDisplayName(r.profiles),
+              username: r.profiles?.username,
+              chips: r.chips,
+            })),
+          });
+        }
       } catch (err: any) {
-        console.warn('[XMTT] Load fail:', err.message);
+        console.warn('[XMTT] Detail fail:', err.message);
+        if (
+          mountedRef.current &&
+          viewScopeRef.current === scope &&
+          generation === detailRead.current
+        )
+          setActionError('Tournament Details Unavailable. Please Try Again.');
+      } finally {
+        if (
+          mountedRef.current &&
+          viewScopeRef.current === scope &&
+          generation === detailRead.current
+        )
+          setDetailLoading(false);
       }
     },
-    [clubId]
+    [viewScope]
   );
-
-  const loadDetail = useCallback(async (tournamentId: string, _cId?: string) => {
-    try {
-      setDetailLoading(true);
-      const [{ data: tourn }, { data: regs }] = await Promise.all([
-        supabase
-          .from('tournaments')
-          .select(
-            'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
-          )
-          .eq('id', tournamentId)
-          .maybeSingle(),
-        supabase
-          .from('tournament_players')
-          .select(`*, profiles(${PLAYER_NAME_COLUMNS})`)
-          .eq('tournament_id', tournamentId),
-      ]);
-      if (mountedRef.current && tourn) {
-        setDetail({
-          tournament: tourn as Tournament,
-          registrations: (regs || []).map((r: any) => ({
-            user_id: r.user_id,
-            display_name: playerDisplayName(r.profiles),
-            username: r.profiles?.username,
-            chips: r.chips,
-          })),
-        });
-      }
-    } catch (err: any) {
-      console.warn('[XMTT] Detail fail:', err.message);
-    } finally {
-      if (mountedRef.current) setDetailLoading(false);
-    }
-  }, []);
-
-  // Init
-  useEffect(() => {
-    if (!user) return;
-    let isMounted = true;
-    const init = async () => {
-      /* Two faults here, both removed by the shared resolver:
-
-         1. The no-param fallback was `.limit(1)` with NO `.order()` — "a"
-            membership rather than "the" one, so a multi-club player could get
-            a different club's events on consecutive loads.
-         2. The param was stored RAW and un-resolved, leaving a slug or a
-            6-digit code in `clubId` state for later queries to choke on. The
-            resolver always hands back a UUID. */
-      const qClub = searchParams.get('club') || searchParams.get('clubId');
-      const targetClub = qClub
-        ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
-        : await resolvePageClubId({ userId: user.id });
-      if (targetClub && isMounted) {
-        setClubId(targetClub);
-        await loadTournaments(targetClub);
-        setLoading(false);
-      } else if (isMounted) {
-        toast.error('No club found.');
-        setLoading(false);
-      }
-    };
-    init();
-    return () => {
-      isMounted = false;
-    };
-  }, [user, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-poll every 30s
-  useEffect(() => {
-    if (!clubId) return;
-    const iv = setInterval(() => loadTournaments(clubId), 30000);
-    return () => clearInterval(iv);
-  }, [clubId, loadTournaments]);
 
   // Realtime refresh
   useEffect(() => {
@@ -281,6 +227,7 @@ export default function XMTTPage() {
    */
   const handleRegister = async (tournamentId: string) => {
     if (!user || !clubId) return;
+    const commandScope = viewScope;
     const t = tournaments.find((x) => x.id === tournamentId);
     if (!t) {
       setActionError('That Tournament Is No Longer Listed');
@@ -299,8 +246,7 @@ export default function XMTTPage() {
         buy_in_fee: Number(t.buy_in_fee ?? 0),
         start_time: (t as any).start_time ?? null,
         /* The player's OWN club, never the row's `club_id`: a union tournament
-           carries the union container in that column (see the note at the top
-           of loadTournaments), and handing a union id to the balance RPC reads
+           carries the union container in that column, and handing a union id to the balance RPC reads
            a wallet that does not exist. */
         club_id: clubId,
         bounty_amount: (t as any).is_bounty ? (t as any).bounty_amount || 0 : 0,
@@ -309,6 +255,7 @@ export default function XMTTPage() {
         status: t.status,
       },
       () => {
+        if (!mountedRef.current || viewScopeRef.current !== commandScope) return;
         loadTournaments(clubId);
         if (selectedTournament === tournamentId) loadDetail(tournamentId);
       }
@@ -317,27 +264,30 @@ export default function XMTTPage() {
 
   const handleUnregister = async (tournamentId: string) => {
     if (!user || !clubId) return;
+    const commandScope = viewScope;
     try {
       // unregisterPlayer handles buy-in refund, status validation, CAS deletion, and rollback
       const result = await tournamentService.unregisterPlayer(tournamentId, user.id);
+      if (!mountedRef.current || viewScopeRef.current !== commandScope) return;
       toast.success(tournamentUnregisterSuccessText(result));
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {
+      if (!mountedRef.current || viewScopeRef.current !== commandScope) return;
       setActionError(safeErrorMessage(err));
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     }
   };
 
-  // Waitlist state
-  const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
+  // Keep legacy exits available, but read only visible rows in owner-scoped batches.
+  const [waitlistState, setWaitlistState] = useState<{
+    scope: string;
+    positions: Record<string, number | null>;
+    error: boolean;
+  } | null>(null);
+  const waitlistPositions = waitlistState?.scope === viewScope ? waitlistState.positions : {};
   const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
-
-  /* The SET of tournaments on screen, as one comparable value.
-     Sorted, so a poll that hands back the same events in a different order is
-     not a change; memoized, so it is a new string only when the ids differ and
-     the effect below cannot chase its own identity. */
   const tournamentIdKey = useMemo(
     () =>
       tournaments
@@ -347,81 +297,77 @@ export default function XMTTPage() {
     [tournaments]
   );
   const userId = user?.id;
-
-  // Load legacy waitlist positions so their owners can leave.
-  //
-  // A COUNT IS NOT AN IDENTITY. This was keyed on `tournaments.length`, and the
-  // lobby is a live list: one tournament closing registration as another opens
-  // leaves the length at 6 and the ids completely different. The effect
-  // therefore did not re-run, the new tournament's position was never fetched,
-  // and the player queued for it had no "Leave Waitlist" button to press -
-  // on a queue they cannot otherwise get out of. Keyed on the ids themselves,
-  // which change exactly when the set changes.
-  //
-  // A MERGE NEVER FORGETS. `setWaitlistPositions(prev => ({ ...prev, ... }))`
-  // only ever ADDED keys, so a tournament that left the list kept its entry in
-  // the map for as long as the page stayed open. Combined with the above, the
-  // page could print "Position #4" for a tournament that had already finished.
-  // The map is rebuilt from this run's answers instead of merged into, so an
-  // event that is no longer listed has no position - and a player who is no
-  // longer on a waitlist loses the stale number rather than keeping it.
+  const [waitlistRetry, setWaitlistRetry] = useState(0);
   useEffect(() => {
     const ids = tournamentIdKey ? tournamentIdKey.split(',') : [];
-    if (!userId || ids.length === 0) {
-      // Preserve identity when it is already empty; a fresh {} here would be a
-      // new state value on every poll and re-render the whole lobby for it.
-      setWaitlistPositions((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+    if (!userId || !ids.length) {
+      setWaitlistState(null);
       return;
     }
-    // A superseded run must not land its answers on top of a newer one.
     let cancelled = false;
-    // Keep legacy queue exits available while registration stays unlimited.
-    void (async () => {
-      const entries = await Promise.all(
-        ids.map(async (id): Promise<[string, number | null]> => {
-          try {
-            const result = await tournamentService.getTournamentWaitlistPosition(id, userId);
-            return [id, result ? result.position : null];
-          } catch (e) {
-            reportError(e, 'XMTTPage.setWaitlistPositions');
-            // Non-critical - position just won't show
-            return [id, null];
-          }
-        })
-      );
-      if (cancelled || !mountedRef.current) return;
-      setWaitlistPositions(Object.fromEntries(entries));
-    })();
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 15_000);
+    void readXmttWaitlistPositions(ids, userId, controller.signal)
+      .then((positions) => {
+        if (controller.signal.aborted) throw new Error('Waitlist Read Cancelled');
+        if (!cancelled && viewScopeRef.current === viewScope)
+          setWaitlistState({ scope: viewScope, positions, error: false });
+      })
+      .catch((error) => {
+        if (cancelled || viewScopeRef.current !== viewScope) return;
+        reportError(error, 'XMTTPage.waitlist_positions');
+        // A failed read cannot erase a known legacy exit or claim that no queue exists.
+        setWaitlistState((previous) => ({
+          scope: viewScope,
+          positions:
+            previous?.scope === viewScope
+              ? Object.fromEntries(ids.map((id) => [id, previous.positions[id] ?? null]))
+              : {},
+          error: true,
+        }));
+      })
+      .finally(() => clearTimeout(deadline));
     return () => {
       cancelled = true;
+      clearTimeout(deadline);
+      controller.abort();
     };
-  }, [userId, tournamentIdKey, mountedRef]);
+  }, [userId, tournamentIdKey, viewScope, waitlistRetry]);
 
   const handleLeaveWaitlist = async (tournamentId: string) => {
     if (!user) return;
+    const commandScope = viewScope;
     setWaitlistProcessing(tournamentId);
     try {
       await tournamentService.leaveTournamentWaitlist(tournamentId, user.id);
-      setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: null }));
+      if (!mountedRef.current || viewScopeRef.current !== commandScope) return;
+      setWaitlistState((prev) =>
+        prev?.scope === viewScope
+          ? { ...prev, positions: { ...prev.positions, [tournamentId]: null } }
+          : prev
+      );
     } catch (err: any) {
+      if (!mountedRef.current || viewScopeRef.current !== commandScope) return;
       setActionError(safeErrorMessage(err));
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     } finally {
-      setWaitlistProcessing(null);
+      if (mountedRef.current && viewScopeRef.current === commandScope) setWaitlistProcessing(null);
     }
   };
 
-  const filtered =
-    filter === 'all'
-      ? tournaments
-      : tournaments.filter((t) => String(t.status).toLowerCase() === filter);
+  useEffect(() => {
+    clearTimeout(errorTimerRef.current);
+    setActionError(null);
+    setWaitlistProcessing(null);
+  }, [viewScope]);
+
+  const filtered = tournaments;
 
   if (loading) return <PageSkeleton variant="dashboard" />;
 
   /** The two plates a listed tournament offers. Both, or neither. */
   const platesFor = (t: Tournament): { secondary: PlateButtonProps; primary: PlateButtonProps } => {
-
     if (t.status !== 'registering') {
       return {
         secondary: {
@@ -486,7 +432,7 @@ export default function XMTTPage() {
   };
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-xmtt-total={lobby.total ?? undefined}>
       {/* ── The lobby head: title, filters, and the two ways out ─────────── */}
       <SpadeConsole
         as="section"
@@ -494,7 +440,7 @@ export default function XMTTPage() {
         eyebrow="Cross Club"
         title="XMTT Lobby"
         subtitle="Multi-Table Tournaments"
-        pill={`${filtered.length}`}
+        pill={lobby.total === null ? 'Unknown' : lobby.total.toLocaleString()}
         pillInk="blue"
         foot="foot"
       >
@@ -508,8 +454,7 @@ export default function XMTTPage() {
               onClick={() => setFilter(f)}
             >
               {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-              {f !== 'all' &&
-                ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
+              {f !== 'all' && ` (${lobby.counts?.[f]?.toLocaleString() ?? 'Unknown'})`}
             </button>
           ))}
         </nav>
@@ -523,6 +468,26 @@ export default function XMTTPage() {
           </Link>
         </p>
 
+        {lobby.error && (
+          <p role="alert" className="sc-copy">
+            {lobby.error}{' '}
+            <button type="button" className={styles.link} onClick={lobby.refresh}>
+              Try Again
+            </button>
+          </p>
+        )}
+        {waitlistState?.scope === viewScope && waitlistState.error && (
+          <p role="status" className="sc-copy">
+            Waitlist Status Unavailable.{' '}
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => setWaitlistRetry((value) => value + 1)}
+            >
+              Try Again
+            </button>
+          </p>
+        )}
         {actionError && (
           <div className={styles.error} role="alert">
             <span className={styles.actionError}>{actionError}</span>
@@ -543,10 +508,14 @@ export default function XMTTPage() {
           as="div"
           className={styles.card}
           eyebrow="Cross Club"
-          title="No Tournaments"
+          title={lobby.error ? 'Tournaments Unavailable' : 'No Tournaments'}
           foot="foot"
         >
-          <p className="sc-copy sc-copy--center">No MTT Tournaments Found For This Filter.</p>
+          <p className="sc-copy sc-copy--center">
+            {lobby.error
+              ? 'Tournament List Unavailable.'
+              : 'No MTT Tournaments Found For This Filter.'}
+          </p>
           <p className={styles.links}>
             <Link to="/" className={`${styles.link} sc-ink--blue`}>
               Go To Lobby
@@ -560,6 +529,7 @@ export default function XMTTPage() {
           return (
             <SpadeConsole
               key={t.id}
+              data-tournament-id={t.id}
               as="div"
               className={`${styles.card} ${selectedTournament === t.id ? styles.cardSelected : ''}`}
               eyebrow="Tournament"
@@ -607,6 +577,24 @@ export default function XMTTPage() {
             </SpadeConsole>
           );
         })
+      )}
+
+      {lobby.hasMore && (
+        <SpadeConsole as="section" className={styles.card} title="More Events" foot="foot">
+          <p className="sc-copy sc-copy--center" role="status">
+            Showing {tournaments.length.toLocaleString()} Of {lobby.total?.toLocaleString()}
+          </p>
+          <p className={styles.links}>
+            <button
+              type="button"
+              className={`${styles.link} sc-ink--blue`}
+              disabled={lobby.pending}
+              onClick={lobby.loadMore}
+            >
+              {lobby.pending ? 'Loading...' : 'Load More'}
+            </button>
+          </p>
+        </SpadeConsole>
       )}
 
       {/* ── The detail pane ──────────────────────────────────────────────── */}

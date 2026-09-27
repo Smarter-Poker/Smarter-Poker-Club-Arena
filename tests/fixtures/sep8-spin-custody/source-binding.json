@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "90ea9c22806a01675b42469601aa09eaaafb746164cc2032b376c1944f726381",
+    "scripts/ci/classify-ci-changes.mjs": "7d64b806a2c52ad8f264055e20d0ee9dd34408d085eb6b36e0af4fc9f95f2d12",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -309,6 +309,104 @@
         "scripts/ci/classify-ci-changes.mjs"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 source-only satellite audit index native qualification",
+      "why": "Add one required accounting shard4 native runner and its path admission; no financial component/assertion/captured baseline changed. Preserve every previous audit entry.",
+      "changes": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "previous": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+          "current": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb"
+        }
+      ]
+    },
+    {
+      "integration": "2026-09-27 finite recovery of the same interrupted satellite source index",
+      "why": "Also admit the maintained REINDEX CONCURRENTLY statement; native fixture reads its exact source and reproduces the ready/live invalid old-snapshot boundary. No financial function or previous history changed.",
+      "changes": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "previous": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb",
+          "current": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Add unchanged satellite pool-transfer audit native qualification to the required accounting shard; retain all historical bindings.",
+      "changes": [
+        {
+          "path": "scripts/ci/classify-ci-changes.mjs",
+          "previous_sha256": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2",
+          "sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7"
+        }
+      ]
+    },
+    {
+      "integration": "2026-09-27 Satellite audit indexes with protected meter reads eb6e949396",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Satellite and settlement conservation lookup index integration",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Conservation lookup integration with protected13ebc7240c",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/unit/fixtureNativeCi.test.ts"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Certification player lookup with protected meter reads eb6e949396",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Certification player lookup integration with protected13ebc7240c",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/unit/fixtureNativeCi.test.ts"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Four qualified lookup indexes: cleanup-consolidation",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Four qualified lookup indexes: current-main-integration",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Four qualified lookup indexes: bbj-main-integration",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
@@ -385,5 +483,35 @@
     "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "satellite_combined_main_integration_20260927": {
+    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
+    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
+    "updated_active_pins": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
+        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
+      }
+    ]
+  },
+  "settlement_conservation_index_20260927": {
+    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+      }
+    }
+  },
+  "certificationPlayerIndexIntegration20260927": {
+    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
+    "files": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
+        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+      }
+    ]
   }
 }

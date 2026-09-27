@@ -1091,8 +1091,7 @@ jobs:
   # This job is deliberately cheap (about 15s of tests) so there is never a
   # reason to skip it. It MUST stay blocking.
   # ═══════════════════════════════════════════════════════════════════════════
-  # ===========================================================================
-  # CLIENT UNIT TESTS - added 2026-08-20.
+  # ====================================================================  # CLIENT UNIT TESTS - added 2026-08-20.
   #
   # 2,398 tests across 185 files in tests/** ran in NO CI job. The comment on
   # the server job below spotted half of this ("the root vitest config only
@@ -1106,8 +1105,7 @@ jobs:
   #
   # The whole suite runs in 13s, so there is never a reason to skip it. It MUST
   # stay blocking.
-  # ===========================================================================
-  unit_shards:
+  # ====================================================================  unit_shards:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1387,10 +1385,21 @@ jobs:
       - name: Backed payout discovery preserves every conservation term
         if: matrix.shard == 4
         run: python3 scripts/ci/test-backed-payout-scan-postgres.py
+      - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-certification-player-index-postgres.py
 
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
+
+      - name: Satellite conservation keeps exact results through an online source index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-audit-index-postgres.py
+
+      - name: Satellite pool-transfer reads keep exact financial results
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-ledger-audit-index-postgres.py
 
       - name: Achievement and rate history reads enforce account and finance scope
         if: matrix.shard == 4
@@ -1407,6 +1416,10 @@ jobs:
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
+
+      - name: Settlement conservation preserves full results through a narrow online index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
 
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1

@@ -1,0 +1,13 @@
+-- Finite recovery of the SAME interrupted online source-index operation.
+-- Require durable absence of the original builder, exact invalid/ready/live
+-- index shape and owner, unchanged audit source, no transient ccnew/ccold
+-- siblings, completed original blocking snapshots, and full maintenance runway.
+-- Use the maintained direct/session connection with statement_timeout=6min
+-- and lock_timeout=180s so ordinary existing120s transactions can complete.
+-- No transaction wrapper, DROP, automatic retry or unobserved replacement.
+-- PostgreSQL17 native proof: a ready/live invalid partial index recovers while
+-- a second writer commits; a real old snapshot holds recovery beyond15s.
+-- REINDEX swaps physical OIDs; read back exact named replacement and validity.
+-- Any unknown acknowledgment or remaining transient index requires inspection
+-- of this SAME operation, never another invocation from a watcher or loop.
+REINDEX INDEX CONCURRENTLY public.idx_rake_records_satellite_seat_source;

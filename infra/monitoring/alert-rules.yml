@@ -2107,6 +2107,48 @@ groups:
             stale or missing mean the row is gone or past the audited window.
           runbook: docs/changelog/2026-09-12-a-lease-that-is-not-renewed-says-so.md
 
+      # ── THE SAFETY NET NOBODY TURNED ON ────────────────────────────────────
+      #
+      # docs/changelog/2026-09-24-lease-renewal-cannot-queue-behind-game-traffic.md
+      # built a dedicated Postgres session for lease heartbeats specifically so
+      # renewal cannot queue behind game traffic on the shared PostgREST pool.
+      # It is inert until ENGINE_PG_LISTEN_URL is set on the engine host - and
+      # nothing has checked whether that ever happened. It measured 0 twice:
+      # 2026-09-22 (1,616 lease_proof_expired in one minute, pool exhausted)
+      # and again live on production during
+      # docs/changelog/2026-09-26-a-heartbeat-nobody-answered-is-asked-again.md
+      # (04:45 UTC, 338 tournament managers fenced at once,
+      # poker_lease_heartbeat_session_enabled 0 on both scopes, 0 dedicated
+      # statements, all traffic on transport="shared"). Neither incident paged
+      # on the gap itself - both were found afterward from logs. This is the
+      # page for next time, so the third incident does not repeat the first
+      # two. NO BREAK GUARD: configuration does not flip during a restart the
+      # way traffic does (same reasoning as EngineReplacementWatchdogBlind
+      # above) - a 30m window rides past the few minutes any one boot's
+      # session takes to connect.
+      - alert: LeaseHeartbeatSessionNotConfigured
+        expr: |
+          min(poker_lease_heartbeat_session_enabled) == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: 'Dedicated lease-heartbeat session has been disabled for 30 minutes'
+          description: |
+            poker_lease_heartbeat_session_enabled has read 0 on at least one
+            scope (tournament or table) for 30 minutes straight. This means
+            ENGINE_PG_LISTEN_URL is not set (or the login role it names lacks
+            EXECUTE on heartbeat_table_leases_v4 /
+            heartbeat_tournament_leases_v4) on the engine host, so every lease
+            renewal rides the same shared PostgREST pool as game traffic - the
+            exact condition behind the 2026-09-22 and 2026-09-26 04:45
+            incidents. Check poker_lease_heartbeat_statements_total by
+            transport: if "dedicated" is 0 and everything is on "shared", set
+            ENGINE_PG_LISTEN_URL in /opt/club-arena/server/.env to the
+            Supavisor session-mode string (port 5432) and restart the engine.
+          runbook: docs/changelog/2026-09-24-lease-renewal-cannot-queue-behind-game-traffic.md
+
       - alert: HorseDecisionFallbacks
         # The worker failed or expired a job and the seat took the legal
         # check/fold. The path reported to external telemetry only before this release, so

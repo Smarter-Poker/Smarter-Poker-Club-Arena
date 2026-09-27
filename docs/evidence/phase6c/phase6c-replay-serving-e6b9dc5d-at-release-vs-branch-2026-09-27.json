@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "purpose": "The newest-2000 e6b9dc5d batch replayed twice: by the serving release itself (a detached checkout of e6b9dc5d, whose replay tool compares store row counts and loads no store) and by this branch at ec15b4da with the pinned store snapshots. Aggregate only.",
+  "atRelease": {
+    "replayEngineSha": "e6b9dc5d472a040a118f537f65203a6cae45ce80",
+    "commandLine": "node scripts/phase6c-replay.mjs <scratch>/journal-copy-e6b9dc5d-newest2000.ndjson --engine-sha e6b9dc5d472a040a118f537f65203a6cae45ce80 --limit 2000 --since 2026-09-27T20:57:00Z --label serving-e6b9dc5d-at-release --out <scratch>/at-release",
+    "total": 2000,
+    "reproduced": 1590,
+    "diverged": 3,
+    "refused": 407,
+    "reasons": {
+      "reproduced:clean": 1575,
+      "refused:reference_unavailable:chart_store": 197,
+      "refused:reference_unavailable:solver_store:postflop": 144,
+      "refused:replay_unsupported:DECIDE_DEEP": 66,
+      "reproduced:rng_after_differs": 14,
+      "diverged:action": 3,
+      "reproduced:receipt_digest_differs": 1
+    },
+    "latencyMs": {
+      "replayComputeMedian": 6.176875000000109,
+      "replayComputeP95": 17.534708000000023,
+      "originalComputeMedian": 24.164520000107586,
+      "originalComputeP95": 111.17726200027391,
+      "wallMedian": 6.501000000000204,
+      "wallP95": 17.88525000000027
+    }
+  },
+  "atBranch": {
+    "replayEngineSha": "ec15b4daff3a2224b592c753d7e193eeb094a824",
+    "total": 2000,
+    "reproduced": 1931,
+    "diverged": 3,
+    "refused": 66,
+    "reasons": {
+      "reproduced:clean": 1911,
+      "refused:replay_unsupported:DECIDE_DEEP": 66,
+      "reproduced:rng_after_differs": 19,
+      "diverged:action": 3,
+      "reproduced:receipt_digest_differs": 1
+    }
+  },
+  "comparison": {
+    "decisionsNotStoreRefusedAtRelease": 1659,
+    "identicalStatusReasonActionReceiptDigestAndRngAfter": 1659,
+    "different": 0,
+    "storeRefusedAtReleaseThenAtBranch": {
+      "reference_unavailable:solver_store:postflop -> reproduced:clean": 141,
+      "reference_unavailable:chart_store -> reproduced:clean": 195,
+      "reference_unavailable:solver_store:postflop -> reproduced:rng_after_differs": 3,
+      "reference_unavailable:chart_store -> reproduced:rng_after_differs": 2
+    }
+  }
+}

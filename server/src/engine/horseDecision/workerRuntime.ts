@@ -69,8 +69,8 @@ import {
   TOURNAMENT_CONTEXT_STATUSES,
 } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
-import { gtoChartCount } from '../GtoCharts.js';
-import { gtoPostflopCount } from '../GtoPostflop.js';
+import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
+import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
 import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
 import {
@@ -134,6 +134,13 @@ export interface HorseDecisionWorkerDependencies {
   saveRng(): number;
   restoreRng(state: number): void;
   governorScale(): number;
+  /**
+   * Run one decision at one governor scale and return that scale, which is the
+   * value journaled beside the decision (EquityLoadGovernor.withDecisionScale).
+   * Optional for injected test runtimes: without it the scale is read once,
+   * before the decision.
+   */
+  atGovernorScale?<T>(fn: () => T): { value: T; scale: number };
   workerReadiness(): HorseDecisionWorkerReadiness;
   /** This thread's decision journal report, relayed by STATUS to /health. */
   journalHealth?(): HorseJournalHealth | null;
@@ -144,6 +151,11 @@ export interface HorseDecisionWorkerDependencies {
 }
 
 let ownedServicesStarted = false;
+
+/** The exact chart and open-node stores this worker decides with (Phase 6C G4). */
+function horseSolverStoreIdentity() {
+  return { charts: gtoChartStoreIdentity(), postflop: gtoPostflopStoreIdentity() };
+}
 
 /**
  * Start every mutable service consumed by HorseLogic inside the worker that
@@ -159,6 +171,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         postflopV31: gtoPostflopV31Count(),
         postflopV31Dataset: gtoPostflopV31Dataset(),
       },
+      solverStoreIdentity: horseSolverStoreIdentity(),
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
     };
@@ -199,6 +212,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         postflopV31: gtoPostflopV31Count(),
         postflopV31Dataset: gtoPostflopV31Dataset(),
       },
+      solverStoreIdentity: horseSolverStoreIdentity(),
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
     };
@@ -238,6 +252,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   saveRng: saveFastRandom,
   restoreRng: restoreFastRandom,
   governorScale: () => equityGovernor.current(),
+  atGovernorScale: (fn) => equityGovernor.withDecisionScale(fn),
   journalHealth: horseDecisionJournalHealth,
   workerReadiness: () => ({
     solverStores: {
@@ -246,6 +261,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       postflopV31: gtoPostflopV31Count(),
       postflopV31Dataset: gtoPostflopV31Dataset(),
     },
+    solverStoreIdentity: horseSolverStoreIdentity(),
     solverPolicyArtifact: solverPolicyArtifactStatus(),
     governor: equityGovernor.snapshot(),
   }),
@@ -1349,6 +1365,13 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  /** One decision at one governor scale; that scale is the one journaled beside it. */
+  private atGovernorScale<T>(fn: () => T): { value: T; scale: number } {
+    if (this.deps.atGovernorScale) return this.deps.atGovernorScale(fn);
+    const scale = this.deps.governorScale();
+    return { value: fn(), scale };
+  }
+
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
     const planBinding = horsePlanBatchBindingFromRequest(request);
     const planContext = planBinding.planContext;
@@ -1361,20 +1384,25 @@ export class HorseDecisionWorkerRuntime {
     const startedAt = this.deps.now();
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
+    let governorScale: number;
     try {
       const player = deepFreeze(request.player);
       const gameState = deepFreeze(request.gameState);
       this.deps.noteFeature('phase5_canonical_state');
-      captured = this.deps.captureDecisionEffects(() =>
-        this.deps.decide(player, gameState, request.style, request.mods, {
-          ...request.opts,
-          decisionTimeMs: request.decisionTimeMs,
-          telemetry: true,
-          observeMind: true,
-          mindObservationHand: horseMindHandFromDecision(request),
-          mindPlanContext: planContext,
-        })
+      const run = this.atGovernorScale(() =>
+        this.deps.captureDecisionEffects(() =>
+          this.deps.decide(player, gameState, request.style, request.mods, {
+            ...request.opts,
+            decisionTimeMs: request.decisionTimeMs,
+            telemetry: true,
+            observeMind: true,
+            mindObservationHand: horseMindHandFromDecision(request),
+            mindPlanContext: planContext,
+          })
+        )
       );
+      captured = run.value;
+      governorScale = run.scale;
       rngAfter = this.deps.saveRng();
     } finally {
       this.deps.restoreRng(canonicalRng);
@@ -1423,7 +1451,6 @@ export class HorseDecisionWorkerRuntime {
     }
     this.secondLookReads.set(readKey, { at, frame: ambiguous ? null : readFrame });
     const computeMs = Math.max(0, this.deps.now() - startedAt);
-    const governorScale = this.deps.governorScale();
     this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
     try {
       if (this.deps.journalEnabled?.() ?? true)
@@ -1531,29 +1558,33 @@ export class HorseDecisionWorkerRuntime {
     this.deps.restoreRng(request.rngBefore);
     let decision;
     let rngAfter: number | null = null;
+    let governorScale!: number;
     try {
       const player = deepFreeze(request.player);
       const gameState = deepFreeze(request.gameState);
-      decision = HorseMind.runInSandbox(
-        readView,
-        () =>
-          this.deps.captureDecisionEffects(() =>
-            this.deps.decide(player, gameState, request.style, request.mods, {
-              ...request.opts,
-              decisionTimeMs: request.decisionTimeMs,
-              telemetry: false,
-              deepEquity: request.deepEquity,
-              observeMind: false,
-              mindPlanContext: planContext,
-            })
-          ).value
+      const run = this.atGovernorScale(() =>
+        HorseMind.runInSandbox(
+          readView,
+          () =>
+            this.deps.captureDecisionEffects(() =>
+              this.deps.decide(player, gameState, request.style, request.mods, {
+                ...request.opts,
+                decisionTimeMs: request.decisionTimeMs,
+                telemetry: false,
+                deepEquity: request.deepEquity,
+                observeMind: false,
+                mindPlanContext: planContext,
+              })
+            ).value
+        )
       );
+      decision = run.value;
+      governorScale = run.scale;
       rngAfter = this.deps.saveRng();
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
     const computeMs = Math.max(0, this.deps.now() - startedAt);
-    const governorScale = this.deps.governorScale();
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
     try {
@@ -1714,12 +1745,13 @@ export class HorseDecisionWorkerRuntime {
     const startedAt = this.deps.now();
     let cardIndex: number;
     let rngAfter: number;
+    let governorScale: number;
     try {
-      cardIndex = this.deps.decideDiscard(
-        request.cards,
-        request.communityCards,
-        request.gameVariant
+      const run = this.atGovernorScale(() =>
+        this.deps.decideDiscard(request.cards, request.communityCards, request.gameVariant)
       );
+      cardIndex = run.value;
+      governorScale = run.scale;
       rngAfter = this.deps.saveRng();
     } finally {
       this.deps.restoreRng(canonicalRng);
@@ -1728,7 +1760,6 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('pineapple discard worker returned an invalid card index');
     }
     const computeMs = Math.max(0, this.deps.now() - startedAt);
-    const governorScale = this.deps.governorScale();
     if (snapshot) {
       try {
         this.deps.journalDiscard?.({

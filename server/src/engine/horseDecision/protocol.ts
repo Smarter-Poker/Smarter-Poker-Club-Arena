@@ -25,6 +25,7 @@ import type { HorseMindDecisionEffect, ReadScope } from '../HorseMind.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
 import type { Card, HorseDecision, HorseStyle, SeatPlayer } from '../../types.js';
 import type { solverPolicyArtifactStatus } from '../../gto/SolverPolicyArtifactLoader.js';
+import type { HorseSolverStoreIdentity } from '../../gto/SolverStoreIdentity.js';
 import type { HorseJournalHealth } from '../../services/HorseDecisionJournal.js';
 
 export interface HorseDecisionFence {
@@ -302,6 +303,13 @@ export interface HorseDecisionWorkerReady {
     /** Exact promoted corpus currently owned by this worker; null iff empty. */
     postflopV31Dataset: { id: string; checksum: string } | null;
   };
+  /**
+   * Content identity (entry count, digest, source revision) of the chart and
+   * open-node stores this worker decides with. Journaled beside every decision
+   * so a replay can load the exact store, not merely one of the same size
+   * (Phase 6C G4). Optional on the wire: a worker built before it omits it.
+   */
+  solverStoreIdentity?: HorseSolverStoreIdentity;
   /** Worker-owned snapshot; the main-thread module store is intentionally empty. */
   solverPolicyArtifact: ReturnType<typeof solverPolicyArtifactStatus>;
   /** Governor for the worker event loop where live Monte Carlo actually runs. */

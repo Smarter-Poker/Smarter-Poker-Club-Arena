@@ -812,7 +812,6 @@ function runObservation({ loaded, sshTarget, sshKey, outDir, date }) {
     observation.declarationDigest === loaded.digest;
   mkdirSync(outDir, { recursive: true });
   const path = join(outDir, `population-observation-${date}.json`);
-  writeFileSync(path, JSON.stringify(result) + '\n');
   return { result, path };
 }
 
@@ -1109,6 +1108,19 @@ export function renderMarkdown(report, loaded) {
   return lines.join('\n');
 }
 
+/** Every evidence file is written in the repository's own Prettier output
+ * shape (its .prettierrc, resolved for the target path), so a rerun and a
+ * `prettier --check` see identical bytes and nothing needs an ignore entry. */
+export async function formatEvidence(path, text) {
+  const prettier = await import('prettier');
+  const config = (await prettier.resolveConfig(path)) ?? {};
+  return prettier.format(text, { ...config, filepath: path });
+}
+
+async function writeEvidence(path, text) {
+  writeFileSync(path, await formatEvidence(path, text));
+}
+
 function parseArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -1166,11 +1178,15 @@ async function main() {
     });
     observation = result;
     observationFile = path;
+    await writeEvidence(path, JSON.stringify(result, null, 2) + '\n');
   } else observation = JSON.parse(readFileSync(observationFile, 'utf8'));
   const report = buildReport({ loaded, observationFile, observation, commandLine, date });
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, `population-${date}.json`), JSON.stringify(report, null, 2) + '\n');
-  writeFileSync(join(outDir, `population-${date}.md`), renderMarkdown(report, loaded));
+  await writeEvidence(
+    join(outDir, `population-${date}.json`),
+    JSON.stringify(report, null, 2) + '\n'
+  );
+  await writeEvidence(join(outDir, `population-${date}.md`), renderMarkdown(report, loaded));
   process.stdout.write(
     JSON.stringify({
       declaredCells: report.summary.declaredCells,

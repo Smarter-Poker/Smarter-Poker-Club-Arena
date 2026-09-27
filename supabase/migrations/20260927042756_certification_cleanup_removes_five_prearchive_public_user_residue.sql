@@ -1,20 +1,19 @@
--- REMOVE SIX EXACT PRE-ARCHIVE CERTIFICATION PUBLIC-USER SHADOWS.
+-- REMOVE FIVE EXACT PRE-ARCHIVE CERTIFICATION PUBLIC-USER SHADOWS.
 --
 -- A complete reserved-identity readback after the archived September 6
--- correction found six older public.users-only shadows. Five came from the
--- August 31 customization certificate and one came from an earlier September
--- 6 post-deploy signup that failed while the platform was frozen. All six lost
--- Auth and profile state before audit/ledger actor archiving existed. They
--- have no authority, custody, gameplay, journal, archive, or asset surface;
--- the September 6 row retains only the byte-identified signup diagnostic that
--- explains its partial creation.
+-- correction found five older public.users-only shadows from the August 31
+-- customization certificate. All five lost Auth and profile state before
+-- audit/ledger actor archiving existed. They have no authority, custody,
+-- gameplay, journal, archive, or asset surface.
 --
 -- Do not widen cleanup_reserved_certification_account: it correctly refuses
 -- an Auth-less public.users row because it cannot verify a live certification
 -- marker. This one-time correction is pinned to all bytes that still exist,
 -- refuses a platform freeze or any newly appeared protected surface, removes
--- one exact diagnostic, and deletes exactly six exact public.users rows.
--- @live-proof: (SELECT NOT public.fn_platform_frozen() AND NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = ANY (ARRAY['27d04334-7317-4594-a132-24e7a9b40422','51511e89-f48f-49be-b89a-f5f47ce681db','60c13392-aebb-486e-86fb-9db3d2424a8a','7642a424-6111-45ca-898a-1e20180930d2','8ee8638a-b2ce-4fd2-9d9e-1fb28c6e533a','a28421ff-9f27-4a99-81dd-2e18884d616c']::uuid[])) AND NOT EXISTS (SELECT 1 FROM public.signup_errors e WHERE e.id = 9105 AND e.user_id = 'a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid))
+-- and deletes exactly five exact public.users rows. The separate September 6
+-- identity is intentionally excluded because it has protected diamond audit
+-- and archive testimony.
+-- @live-proof: (SELECT NOT public.fn_platform_frozen() AND NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = ANY (ARRAY['27d04334-7317-4594-a132-24e7a9b40422','51511e89-f48f-49be-b89a-f5f47ce681db','60c13392-aebb-486e-86fb-9db3d2424a8a','7642a424-6111-45ca-898a-1e20180930d2','8ee8638a-b2ce-4fd2-9d9e-1fb28c6e533a']::uuid[])))
 
 BEGIN;
 
@@ -31,12 +30,10 @@ DECLARE
     '51511e89-f48f-49be-b89a-f5f47ce681db'::uuid,
     '60c13392-aebb-486e-86fb-9db3d2424a8a'::uuid,
     '7642a424-6111-45ca-898a-1e20180930d2'::uuid,
-    '8ee8638a-b2ce-4fd2-9d9e-1fb28c6e533a'::uuid,
-    'a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid
+    '8ee8638a-b2ce-4fd2-9d9e-1fb28c6e533a'::uuid
   ];
   v_validated integer := 0;
   v_deleted integer := 0;
-  v_signup_deleted integer := 0;
 BEGIN
   IF public.fn_platform_frozen() THEN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_REFUSES_PLATFORM_FREEZE'
@@ -75,13 +72,7 @@ BEGIN
          'Certobsea331a93'::text,
          NULL::text,
          '2026-08-31T13:23:11.819467Z'::timestamptz,
-         '2026-08-31T13:23:11.819467Z'::timestamptz),
-        ('a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid,
-         'ca-customization-cert-postdeploy-1788659737460-da18c019-9c82-45d6-9fa1-d5e5a98f2a10@example.invalid'::text,
-         'PostDeploya98f2'::text,
-         NULL::text,
-         '2026-09-06T01:55:37.703383Z'::timestamptz,
-         '2026-09-06T01:55:37.703383Z'::timestamptz)
+         '2026-08-31T13:23:11.819467Z'::timestamptz)
       ) AS expected(id, email, username, avatar_url, created_at, updated_at)
      ORDER BY id
   LOOP
@@ -110,30 +101,7 @@ BEGIN
         USING ERRCODE = '55000';
     END IF;
 
-    -- One shadow retained the exact synthetic freeze diagnostic that caused
-    -- the partial signup. Validate that it is the sole diagnostic and that
-    -- every observed byte and timestamp still match. No mutation may happen
-    -- until all protected surfaces below have also been validated.
-    IF v_row.id = 'a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid THEN
-      IF (SELECT count(*) FROM public.signup_errors e WHERE e.user_id = v_row.id) <> 1
-         OR NOT EXISTS (
-           SELECT 1
-             FROM public.signup_errors e
-            WHERE e.id = 9105
-              AND e.user_id = v_row.id
-              AND e.email = v_row.email
-              AND e.trigger_name = 'handle_new_user_v2_create_wallet'
-              AND e.error_code = '55006'
-              AND e.occurred_at = '2026-09-06T01:55:37.703383Z'::timestamptz
-              AND e.raw_meta IS NULL
-              AND e.forwarded_to_sentry = '2026-09-06T02:00:37.028Z'::timestamptz
-              AND length(e.error_msg) = 132
-              AND md5(e.error_msg) = '7d0f88ba3a6d0777977b4dce80dc072a'
-         ) THEN
-        RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_SIGNUP_ERROR_CHANGED: %', v_row.id
-          USING ERRCODE = '55000';
-      END IF;
-    ELSIF EXISTS (SELECT 1 FROM public.signup_errors e WHERE e.user_id = v_row.id) THEN
+    IF EXISTS (SELECT 1 FROM public.signup_errors e WHERE e.user_id = v_row.id) THEN
       RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_IS_NOT_EMPTY: %', v_row.id
         USING ERRCODE = '55000';
     END IF;
@@ -205,7 +173,7 @@ BEGIN
     v_validated := v_validated + 1;
   END LOOP;
 
-  IF v_validated <> 6 THEN
+  IF v_validated <> 5 THEN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_VALIDATION_COUNT: %', v_validated
       USING ERRCODE = '55000';
   END IF;
@@ -272,25 +240,7 @@ BEGIN
   END LOOP;
 
   -- Every target and every protected surface has passed before the first
-  -- mutation. Remove the sole byte-pinned diagnostic, then the six locked
-  -- public.users preimages.
-  DELETE FROM public.signup_errors e
-   WHERE e.id = 9105
-     AND e.user_id = 'a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid
-     AND e.email = 'ca-customization-cert-postdeploy-1788659737460-da18c019-9c82-45d6-9fa1-d5e5a98f2a10@example.invalid'
-     AND e.trigger_name = 'handle_new_user_v2_create_wallet'
-     AND e.error_code = '55006'
-     AND e.occurred_at = '2026-09-06T01:55:37.703383Z'::timestamptz
-     AND e.raw_meta IS NULL
-     AND e.forwarded_to_sentry = '2026-09-06T02:00:37.028Z'::timestamptz
-     AND length(e.error_msg) = 132
-     AND md5(e.error_msg) = '7d0f88ba3a6d0777977b4dce80dc072a';
-  GET DIAGNOSTICS v_signup_deleted = ROW_COUNT;
-  IF v_signup_deleted <> 1 THEN
-    RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_SIGNUP_ERROR_DELETE_COUNT: %', v_signup_deleted
-      USING ERRCODE = '55000';
-  END IF;
-
+  -- mutation. Remove only the five locked public.users preimages.
   DELETE FROM public.users u
    USING (VALUES
      ('27d04334-7317-4594-a132-24e7a9b40422'::uuid,
@@ -317,12 +267,7 @@ BEGIN
       'ca-customization-cert-observer-1788182591387-e54338f8-4f35-49d1-829d-a776a331a933@example.invalid'::text,
       'Certobsea331a93'::text, NULL::text,
       '2026-08-31T13:23:11.819467Z'::timestamptz,
-      '2026-08-31T13:23:11.819467Z'::timestamptz),
-     ('a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid,
-      'ca-customization-cert-postdeploy-1788659737460-da18c019-9c82-45d6-9fa1-d5e5a98f2a10@example.invalid'::text,
-      'PostDeploya98f2'::text, NULL::text,
-      '2026-09-06T01:55:37.703383Z'::timestamptz,
-      '2026-09-06T01:55:37.703383Z'::timestamptz)
+      '2026-08-31T13:23:11.819467Z'::timestamptz)
    ) AS expected(id, email, username, avatar_url, created_at, updated_at)
    WHERE u.id = expected.id
      AND u.email = expected.email
@@ -332,20 +277,15 @@ BEGIN
      AND u.updated_at = expected.updated_at;
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
 
-  IF v_signup_deleted <> 1 OR v_deleted <> 6 OR EXISTS (
+  IF v_deleted <> 5 OR EXISTS (
     SELECT 1 FROM public.users u
      WHERE u.id = ANY (ARRAY[
        '27d04334-7317-4594-a132-24e7a9b40422',
        '51511e89-f48f-49be-b89a-f5f47ce681db',
        '60c13392-aebb-486e-86fb-9db3d2424a8a',
        '7642a424-6111-45ca-898a-1e20180930d2',
-       '8ee8638a-b2ce-4fd2-9d9e-1fb28c6e533a',
-       'a28421ff-9f27-4a99-81dd-2e18884d616c'
+       '8ee8638a-b2ce-4fd2-9d9e-1fb28c6e533a'
      ]::uuid[])
-  ) OR EXISTS (
-    SELECT 1 FROM public.signup_errors e
-     WHERE e.id = 9105
-       AND e.user_id = 'a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid
   ) THEN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_DELETE_COUNT: %', v_deleted
       USING ERRCODE = '55000';

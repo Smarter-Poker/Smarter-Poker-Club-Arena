@@ -1,10 +1,10 @@
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 4ea6af810..e8a2fa724 100644
+index 406d2218afe55f80579b2610d2e98c8050d4b4bf..48712c63aad47b53820b24f2c5f6c26e4ee0a5aa 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -1404,6 +1404,12 @@ jobs:
+@@ -1435,6 +1435,12 @@ jobs:
          if: matrix.shard == 4
-         run: python3 scripts/ci/test-settlement-attribution-postgres.py
+         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
  
 +      - name: The rakeback settler reads only what every writer has committed
 +        if: matrix.shard == 4
@@ -16,7 +16,7 @@ index 4ea6af810..e8a2fa724 100644
          if: matrix.shard == 1
          env:
 diff --git a/server/src/services/RakebackSettlerService.ts b/server/src/services/RakebackSettlerService.ts
-index 535856d86..72b5c61f7 100644
+index 535856d86dd4c088c5f0c61d1cff71879609f019..72b5c61f7a1b8f6bfb0c79aa799182def6c2634f 100644
 --- a/server/src/services/RakebackSettlerService.ts
 +++ b/server/src/services/RakebackSettlerService.ts
 @@ -34,6 +34,7 @@ import {
@@ -59,7 +59,7 @@ index 535856d86..72b5c61f7 100644
          .order('id', { ascending: true })
          .limit(FETCH_LIMIT);
 diff --git a/server/src/services/rakebackWatermark.test.ts b/server/src/services/rakebackWatermark.test.ts
-index 50463bb85..c5d472f34 100644
+index 50463bb85f557fd641cdbd825a1b3d5f0c3743a9..c5d472f34ad472585f13dfafb61d91324786886a 100644
 --- a/server/src/services/rakebackWatermark.test.ts
 +++ b/server/src/services/rakebackWatermark.test.ts
 @@ -76,6 +76,10 @@ interface Scenario {

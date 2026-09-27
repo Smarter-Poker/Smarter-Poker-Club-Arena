@@ -23,7 +23,7 @@
 ## Change #3 — Retain Regression Contracts
 
 **File:** `tests/unit/certificationCleanupRemovesFivePrearchivePublicUserResidue.test.ts`; `tests/unit/certificationIdentityArchiveRetirement.test.ts`
-**Lines:** 1-217 and 1-110; complete source-contract suites
+**Lines:** 1-214 and 1-110; complete source-contract suites
 **What existed:** The earlier contract covered the mixed six-row proposal and did not distinguish protected diamond testimony.
 **What changed:** Contracts now lock the five-row scope, exact username/avatar preimages, all catalog refusal surfaces, unchanged `public.users` delete graphs, immutable archive ACL/trigger/no-FK rules, archive-before-delete ordering, exact two-delete limit, and the prohibition on financial-row mutation.
 **Why:** Future edits must fail if they widen deletion, weaken immutability, or treat protected testimony as disposable residue.

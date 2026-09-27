@@ -20,6 +20,14 @@ from unittest.mock import Mock, patch
 SPEC = importlib.util.spec_from_file_location('spin_expiry_pg_wrapper', Path(__file__).with_name('test-spin-expiry-postgres.py'))
 W = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(W)
+ARCHIVE_TEST_SPEC = importlib.util.spec_from_file_location('first_archived_oracle_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_oracle.py')
+ARCHIVE_TEST_MODULE = importlib.util.module_from_spec(ARCHIVE_TEST_SPEC)
+ARCHIVE_TEST_SPEC.loader.exec_module(ARCHIVE_TEST_MODULE)
+FirstArchivedOracleTests = ARCHIVE_TEST_MODULE.FirstArchivedOracleTests
+ARCHIVE_CONCURRENCY_SPEC = importlib.util.spec_from_file_location('first_archived_concurrency_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_concurrency.py')
+ARCHIVE_CONCURRENCY_MODULE = importlib.util.module_from_spec(ARCHIVE_CONCURRENCY_SPEC)
+ARCHIVE_CONCURRENCY_SPEC.loader.exec_module(ARCHIVE_CONCURRENCY_MODULE)
+FirstArchivedConcurrencyTests = ARCHIVE_CONCURRENCY_MODULE.FirstArchivedConcurrencyTests
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
@@ -709,11 +717,11 @@ class MixedCurrentTests(unittest.TestCase):
 
     def test_all_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -1759,7 +1767,7 @@ class FixtureSourceTests(unittest.TestCase):
         files.update(lane_source_files())
         files.update(mixed_source_files())
         files.update({name: (Path(__file__).resolve().parents[2] / name).read_bytes()
-                      for name in (*W.FEE.INPUTS, *W.TERMINAL.INPUTS, *W.HORSE.INPUTS)})
+                      for name in (*W.FEE.INPUTS, *W.TERMINAL.INPUTS, *W.HORSE.INPUTS, *W.ARCHIVE.INPUTS)})
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -2817,3 +2825,87 @@ class FinalizedHorseTests(unittest.TestCase):
             target.write_bytes(target.read_bytes() * 2)
             with self.assertRaises(ValueError):
                 W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)
+
+
+class FirstArchivedTests(unittest.TestCase):
+    def test_archive_large_leaf_allowance_is_exact_and_still_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            leaf=Path(directory)/'bounded.sql'
+            leaf.write_bytes(b'x' * (1048576 + 1))
+            exact=W.ARCHIVE.BASE+'full-readback.sql'
+            self.assertEqual(W.read_regular(leaf,W.qualification_leaf_limit(exact)),leaf.read_bytes())
+            for name in (exact+'.other', 'other/full-readback.sql', W.ARCHIVE.BASE+'other.sql'):
+                with self.subTest(name=name), self.assertRaises(RuntimeError):
+                    W.read_regular(leaf,W.qualification_leaf_limit(name))
+            leaf.write_bytes(b'x' * (2097152 + 1))
+            with self.assertRaises(RuntimeError):
+                W.read_regular(leaf,W.qualification_leaf_limit(exact))
+            self.assertEqual(W.qualification_leaf_limit(W.ARCHIVE.BASE+'full-provider-catalog.json'),3145728)
+            self.assertEqual(W.qualification_leaf_limit(W.ARCHIVE.BASE+'full-functions.sql'),2097152)
+
+    def test_exact_archive_sources_reject_each_changed_input(self):
+        root=Path(__file__).resolve().parents[2]
+        files={n:(root/n).read_bytes() for n in W.ARCHIVE.INPUTS}
+        W.ARCHIVE.validate_sources(files)
+        for name in W.ARCHIVE.INPUTS:
+            changed=dict(files);changed[name]+=b' '
+            if name==W.ARCHIVE.MANIFEST:
+                self.assertNotEqual(W.digest(changed[name]),W.ARCHIVE_MANIFEST_SHA256)
+            else:
+                with self.subTest(name=name),self.assertRaises(ValueError):
+                    W.ARCHIVE.validate_sources(changed)
+
+    def test_archive_plan_restores_original_rows_before_triggers_and_no_synthetic_entry(self):
+        root=Path(__file__).resolve().parents[2]
+        plan=W.archive_stage_plan(Path('/qualified/pg17/bin'),root,EXECUTION,
+            '00000000-0000-4000-8000-000000000002',TOURNAMENT)
+        names=[name for name,_ in plan]
+        self.assertEqual(len(names),len(set(names)))
+        self.assertLess(names.index('schema_prefix'),names.index('archive_original_seed'))
+        self.assertLess(names.index('archive_original_seed'),names.index('schema_suffix_all_real_triggers'))
+        self.assertLess(names.index('tested_role_readback'),names.index('archive_full_functions_sql'))
+        self.assertEqual(names[-4:],['archive_connected_rollback','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        for forbidden in ('restore_preexisting_principals','current_catalog_readback','empty_provider_readback',
+            'authentic_entry_provider_supplement','fee_actual_paid_entry','real_funded_paid_seat_fixture'):
+            self.assertNotIn(forbidden,names)
+
+    def test_archive_complete_stage_identity_and_original_streams_fail_closed(self):
+        root=Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'source';work=Path(directory)/'work'
+            source.mkdir();work.mkdir()
+            leaf=source/W.ARCHIVE.BASE/'first-captured-state.json'
+            leaf.parent.mkdir(parents=True)
+            leaf.write_bytes((root/W.ARCHIVE.BASE/'first-captured-state.json').read_bytes())
+            (source/'inputs').mkdir()
+            schema=b'prefix\n'+W.MARKER+b'\nsuffix\n'
+            (source/'inputs/schema.sql').write_bytes(schema)
+            before,after=schema.split(W.MARKER)
+            (work/'schema-prefix.sql').write_bytes(before)
+            (work/'schema-suffix.sql').write_bytes(W.MARKER+after)
+            pg=Path('/qualified/pg17/bin');ordinary='00000000-0000-4000-8000-000000000002'
+            plan=W.archive_stage_plan(pg,source,EXECUTION,ordinary,TOURNAMENT)
+            stages=[]
+            for name,argv in plan:
+                code=3 if name=='pg_stopped_readback' else 0
+                row={'stage':name,'argv':argv,'pid':123,'returncode':code,'terminal_returncode':code}
+                for stream in ('stdout','stderr'):
+                    raw=(name+stream).encode();(work/(name+'.'+stream)).write_bytes(raw)
+                    row[stream+'_sha256']=W.digest(raw)
+                stages.append(row)
+            summary={'diagnostic_passed':True,'financial_qualified':False}
+            receipt={'stages':stages,'work_deadline_seconds':240,'cleanup_deadline_seconds':30,
+                     'first_archived_diagnostic':summary}
+            with patch.object(W.ARCHIVE,'validate_stages',return_value=summary):
+                W.validate_archive_stages(receipt,pg,source,EXECUTION,ordinary,TOURNAMENT)
+                changes=[]
+                x=copy.deepcopy(receipt);x['stages'].append(x['stages'][0]);changes.append(x)
+                x=copy.deepcopy(receipt);x['stages'].pop(8);changes.append(x)
+                for key,value in [('returncode',True),('terminal_returncode',1),('pid',0),
+                                  ('argv',['other endpoint']),('stdout_sha256','0'*64)]:
+                    x=copy.deepcopy(receipt);x['stages'][8][key]=value;changes.append(x)
+                x=copy.deepcopy(receipt);x['work_deadline_seconds']=999;changes.append(x)
+                x=copy.deepcopy(receipt);x['first_archived_diagnostic']={};changes.append(x)
+                for x in changes:
+                    with self.assertRaises(RuntimeError):
+                        W.validate_archive_stages(x,pg,source,EXECUTION,ordinary,TOURNAMENT)

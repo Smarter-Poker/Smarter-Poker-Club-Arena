@@ -40,6 +40,10 @@ _horse_spec = importlib.util.spec_from_file_location('spin_finalized_horse', ROO
 HORSE = importlib.util.module_from_spec(_horse_spec)
 _horse_spec.loader.exec_module(HORSE)
 HORSE_MANIFEST_SHA256 = '300b84d68730072e9c4efa66a2cff60df51c233918d91ccc458a18ea44602624'
+_archive_spec = importlib.util.spec_from_file_location('spin_first_archived', ROOT / 'scripts/qualification/spin-first-archived.py')
+ARCHIVE = importlib.util.module_from_spec(_archive_spec)
+_archive_spec.loader.exec_module(ARCHIVE)
+ARCHIVE_MANIFEST_SHA256 = '6cb173bf2fbd02f40427ba79102a6244c6deccadd8d2ea483783a7e0d2d92863'
 FEE_MANIFEST_SHA256 = '235b524090286e316d902093a53be8a6948d5853ced8e621048ba249d6a4be14'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
@@ -47,10 +51,10 @@ ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 OWNER = '47965354-0e56-43ef-931c-ddaab82af765'
 REFUND_ACTOR = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'
-IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE)
+IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE)
 CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
          'retention-completed': ()}
-CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE)})
+CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE)})
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
@@ -147,6 +151,7 @@ REPLACEMENTS.update({name: name for name in MIXED.INPUTS})
 REPLACEMENTS.update({name: name for name in FEE.INPUTS})
 REPLACEMENTS.update({name: name for name in TERMINAL.INPUTS})
 REPLACEMENTS.update({name: name for name in HORSE.INPUTS})
+REPLACEMENTS.update({name: name for name in ARCHIVE.INPUTS})
 LANE_CATALOG = {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
     'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
     'original_cohort_mismatch_reproduced':True,'reverse_prerequisite_refusals':4,
@@ -386,6 +391,15 @@ def safe_name(name):
             and all(part not in ('.', '..') for part in name.split('/'))
             and name != 'manifest.json', 'unsafe provider leaf')
     return name
+
+
+def qualification_leaf_limit(name):
+    # Exact finite archive leaves only; all other qualification sources stay 1MiB.
+    if name == ARCHIVE.BASE + 'full-provider-catalog.json':
+        return 3145728
+    if name in (ARCHIVE.BASE + 'full-functions.sql', ARCHIVE.BASE + 'full-readback.sql'):
+        return 2097152
+    return 1048576
 
 
 def read_regular(path, limit):
@@ -775,7 +789,7 @@ def source_packet():
     copied = dict(fixed)
     for name in REPLACEMENTS:
         owned_path(ROOT / name, ROOT)
-        actual = read_regular(ROOT / name, 1048576)
+        actual = read_regular(ROOT / name, qualification_leaf_limit(name))
         require(git_read('show', head + ':' + name) == actual, 'qualification source differs from checkout HEAD: ' + name)
         copied[name] = actual
     for name in ('scripts/ci/test-spin-expiry-postgres.py', 'scripts/ci/test_spin_expiry_wrapper.py'):
@@ -792,6 +806,8 @@ def source_packet():
     TERMINAL.validate_sources(copied, FEE)
     require(digest(copied[HORSE.MANIFEST]) == HORSE_MANIFEST_SHA256, 'horse manifest changed')
     HORSE.validate_sources(copied)
+    require(digest(copied[ARCHIVE.MANIFEST]) == ARCHIVE_MANIFEST_SHA256, 'first archived manifest changed')
+    ARCHIVE.validate_sources(copied)
     manifest = {'schemaVersion': 1, 'kind': 'spin-expiry-hosted-attempt',
                 'checkout': {'head': head, 'tree': tree}, 'fixtureManifestSha256': digest(raw),
                 'fixtureProvenance': fixture_manifest,
@@ -844,6 +860,8 @@ def verify_packet(source, raw, manifest):
     TERMINAL.validate_sources(files, FEE)
     require(digest(files[HORSE.MANIFEST]) == HORSE_MANIFEST_SHA256, 'horse manifest changed')
     HORSE.validate_sources(files)
+    require(digest(files[ARCHIVE.MANIFEST]) == ARCHIVE_MANIFEST_SHA256, 'first archived manifest changed')
+    ARCHIVE.validate_sources(files)
 
 
 def find_pg():
@@ -951,6 +969,7 @@ def retained_evidence(work, output, receipt, source_manifest):
 
 def qualify(args, allocation, manifest_bytes, manifest, PG):
     ROOT = allocation / 'source'
+    archive_image = args.image == ARCHIVE.IMAGE
     mixed_image = args.image in MIXED.IMAGES
     horse_image = args.image == HORSE.IMAGE
     terminal_image = args.image == TERMINAL.IMAGE
@@ -994,10 +1013,11 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                'catalog_slice_passed': False, 'retention_qualification': None,
                'completed_retention_qualification': None, 'mixed_pure_qualification': None,
                'receipt_lane_qualification': None, 'mixed_current_qualification': None,
-               'finalized_horse_qualification': None,
+               'finalized_horse_qualification': None, 'first_archived_diagnostic': None,
                'positive_fee_entry_qualification': None, 'positive_fee_terminal_qualification': None,
                'image': args.image, 'tournament': args.tournament, 'business_cases': [],
-               'qualification_scope': ('modeled closed-chair before/after admission only; provider/full financial/history/production unqualified' if horse_image
+               'qualification_scope': ('authentic first archived event rollback diagnostic only; full financial and production unqualified' if archive_image
+                                       else 'modeled closed-chair before/after admission only; provider/full financial/history/production unqualified' if horse_image
                                        else 'current paid launch and terminal with explicitly synthetic finish input; not gameplay or historical qualification' if terminal_image
                                        else 'genuine positive-fee entry and duplicate replay only; not gameplay, completion or historical qualification' if fee_image
                                        else 'synthetic current mixed terminal only; not paid-entry, positive-fee or historical qualification' if mixed_image
@@ -1095,7 +1115,10 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         command('create_sql_owner', bootstrap + ['-c', 'CREATE ROLE postgres NOSUPERUSER INHERIT LOGIN CREATEDB CREATEROLE REPLICATION BYPASSRLS'], timeout=5)
         command('create_database', [str(PG / 'createdb'), '-w', '-h', str(work / 'socket'), '-p', '5432', '-U', 'fixture_bootstrap', '-O', 'postgres', db], timeout=5)
         sql('schema_prefix', work / 'schema-prefix.sql')
-        if mixed_image:
+        if archive_image:
+            for stage, argv in ARCHIVE.seed_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
+                command(stage, argv, timeout=30)
+        elif mixed_image:
             for stage, argv in MIXED.seed_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
                 command(stage, argv, timeout=20)
         else:
@@ -1109,6 +1132,12 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('current_notification_supplement', ROOT / 'provider-supplement.sql')
         sql('current_tested_roles', ROOT / 'provider-roles.sql')
         sql('tested_role_readback', ROOT / 'provider-roles-check.sql')
+        if archive_image:
+            for stage, argv in ARCHIVE.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
+                command(stage, argv, timeout=30)
+            receipt['first_archived_diagnostic'] = ARCHIVE.validate_outputs(ROOT, work, args.execution, args.tournament)
+            persist()
+            return receipt
         sql('current_catalog_readback', ROOT / 'provider-check.sql')
         if args.image != 'retention-completed' and not mixed_image:
             sql('empty_provider_readback', ROOT / 'empty-provider-check.sql')
@@ -1261,7 +1290,8 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         except BaseException as error:
             receipt['source_stable'] = False
             receipt['source_readback_error'] = str(error)
-        success = ('finalized_horse_admission_passed_cleanup_observed' if horse_image
+        success = ('first_archived_diagnostic_passed_cleanup_observed' if archive_image
+                   else 'finalized_horse_admission_passed_cleanup_observed' if horse_image
                    else 'positive_fee_terminal_passed_cleanup_observed' if terminal_image
                    else 'positive_fee_entry_passed_cleanup_observed' if fee_image
                    else 'mixed_current_synthetic_passed_cleanup_observed' if mixed_image
@@ -1274,27 +1304,74 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
     return receipt
 
 
+def archive_stage_plan(PG, source, execution, ordinary, tournament):
+    # Reuse the exact maintained allocator commands. Archive restoration replaces
+    # the principals stage and the obsolete empty/baseline catalog assumptions.
+    base = FEE.allocation_plan(PG, source, execution, ordinary, tournament)
+    cutoff = [name for name, _ in base].index('current_catalog_readback')
+    plan = []
+    for name, argv in base[:cutoff]:
+        if name == 'restore_preexisting_principals':
+            plan.extend(ARCHIVE.seed_plan(PG, source, execution, ordinary, tournament))
+        else:
+            plan.append((name, argv))
+    plan.extend(ARCHIVE.body_plan(PG, source, execution, ordinary, tournament))
+    data = source.parent / 'work/data'
+    return plan + [('pg_stop_fast', [str(PG / 'pg_ctl'), '-D', str(data), '-w', '-t', '10', '-m', 'fast', 'stop']),
+                   ('pg_stopped_readback', [str(PG / 'pg_ctl'), '-D', str(data), 'status'])]
+
+
+def validate_archive_stages(receipt, PG, source, execution, ordinary, tournament):
+    plan = archive_stage_plan(PG, source, execution, ordinary, tournament)
+    stages = receipt['stages']
+    require([r.get('stage') for r in stages] == [n for n, _ in plan],
+            'archive complete allocation sequence differs')
+    require(receipt.get('work_deadline_seconds') == 240 and receipt.get('cleanup_deadline_seconds') == 30,
+            'archive original deadline differs')
+    work = source.parent / 'work'
+    schema = (source / 'inputs/schema.sql').read_bytes()
+    require(schema.count(MARKER) == 1, 'archive authentic trigger boundary differs')
+    prefix, suffix = schema.split(MARKER)
+    require((work / 'schema-prefix.sql').read_bytes() == prefix
+            and (work / 'schema-suffix.sql').read_bytes() == MARKER + suffix,
+            'archive original schema split differs')
+    for row, (name, argv) in zip(stages, plan):
+        code = 3 if name == 'pg_stopped_readback' else 0
+        require(row.get('argv') == argv and type(row.get('pid')) is int and row['pid'] > 0
+                and type(row.get('returncode')) is int and row['returncode'] == code
+                and type(row.get('terminal_returncode')) is int and row['terminal_returncode'] == code
+                and 'client_deadline_exceeded' not in row, 'archive stage identity or result differs: ' + name)
+        for stream in ('stdout','stderr'):
+            require(digest((work / (name + '.' + stream)).read_bytes()) == row.get(stream + '_sha256'),
+                    'archive original stream differs: ' + name)
+    summary = ARCHIVE.validate_stages(receipt, PG, source, execution, ordinary, tournament)
+    require(receipt.get('first_archived_diagnostic') == summary, 'archive summary differs from original')
+    return []
+
+
 def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_sha,
                      source, PG):
     require(image in IMAGES, 'unknown FIFO5 image')
     require(receipt.get('execution') == execution and receipt.get('source_manifest_sha256') == manifest_sha
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
+    archive_image = image == ARCHIVE.IMAGE
     mixed_image = image in MIXED.IMAGES
     horse_image = image == HORSE.IMAGE
     terminal_image = image == TERMINAL.IMAGE
     fee_image = image in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE)
-    if not mixed_image and not fee_image:
+    if not mixed_image and not fee_image and not archive_image:
         validate_pure_result(receipt.get('mixed_pure_qualification'))
     completed = image == 'retention-completed'
-    status = ('finalized_horse_admission_passed_cleanup_observed' if horse_image
+    status = ('first_archived_diagnostic_passed_cleanup_observed' if archive_image
+              else 'finalized_horse_admission_passed_cleanup_observed' if horse_image
               else 'positive_fee_terminal_passed_cleanup_observed' if terminal_image
                    else 'positive_fee_entry_passed_cleanup_observed' if fee_image
               else 'mixed_current_synthetic_passed_cleanup_observed' if mixed_image
               else 'retention_completed_eligibility_passed_cleanup_observed' if completed
               else 'business_scenario_passed_cleanup_observed')
     require(receipt.get('native_status') == status
-            and receipt.get('business_scenario_passed') is (not completed and not mixed_image and not fee_image) and receipt.get('cleanup_verified') is True
+            and receipt.get('business_scenario_passed') is (not completed and not mixed_image and not fee_image and not archive_image) and receipt.get('cleanup_verified') is True
             and receipt.get('cleanup_errors') == [] and receipt.get('source_stable') is True
             and 'failure' not in receipt, 'business scenario or cleanup did not qualify')
     require(receipt.get('full_qualification') is False and receipt.get('connected_services_qualified') is False
@@ -1314,6 +1391,14 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(endpoint_stage.get('returncode') == 0
             and endpoint_stage.get('argv') == server_endpoint_command(PG, source.parent / 'work/socket'),
             'server endpoint readback identity or outcome differs')
+    if archive_image:
+        require(all(receipt.get(key) is None for key in ('mixed_pure_qualification',
+                'receipt_lane_qualification','retention_qualification','completed_retention_qualification',
+                'mixed_current_qualification','positive_fee_entry_qualification','positive_fee_terminal_qualification',
+                'finalized_horse_qualification')) and receipt.get('business_cases') == []
+                and 'natural_aging' not in receipt, 'archive diagnostic claimed another image')
+        return validate_archive_stages(receipt, PG, source, execution, ordinary, tournament)
+    require(receipt.get('first_archived_diagnostic') is None, 'other image claimed archived diagnostic')
     if fee_image:
         require(all(receipt.get(key) is None for key in ('mixed_pure_qualification',
                     'receipt_lane_qualification', 'retention_qualification',
@@ -1477,7 +1562,7 @@ def run_image(image, PG, scratch=None):
         retained_evidence(allocation / 'work', output, receipt, manifest_bytes)
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
-        if image not in MIXED.IMAGES and image not in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE):
+        if image not in MIXED.IMAGES and image not in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE):
             pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
             pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
             require(digest(pure_original) == pure_stage['stdout_sha256']

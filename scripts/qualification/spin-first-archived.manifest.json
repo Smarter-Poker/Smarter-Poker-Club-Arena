@@ -1,0 +1,168 @@
+{
+  "image": "first-archived-spin",
+  "schemaVersion": 1,
+  "financial_qualified": false,
+  "production_qualified": false,
+  "files": {
+    "scripts/qualification/spin-first-archived.py": {
+      "bytes": 22523,
+      "sha256": "cfb97297e48c804030b24ce3a653b167c0df4aae9e1fcc9cef76b8f910e49a5a"
+    },
+    "scripts/qualification/spin-first-archived-concurrency.py": {
+      "bytes": 14297,
+      "sha256": "e49ac58f4cb79da8372393f7a1e1a1f0be025fa5ab8d74883ef1b92007225d43"
+    },
+    "scripts/qualification/test_first_archived_concurrency.py": {
+      "bytes": 4851,
+      "sha256": "0edc4bc515aa1518e0cb2e47d8bd502d7b5adda39d082a5ea81739838970a8f1"
+    },
+    "scripts/qualification/test_first_archived_oracle.py": {
+      "bytes": 11615,
+      "sha256": "781317bf47b83973c45cdb771618ad80f31cf9d539d745da66dc6ae17a410cb7"
+    },
+    "scripts/qualification/fixtures/archived-spin/seed-core/columns.sql": {
+      "bytes": 118777,
+      "sha256": "066dbb5d936fc3aebb43a54bd0c05cf28c750bdcf63830def5f0424e312ed944"
+    },
+    "scripts/qualification/fixtures/archived-spin/seed-core/catalog.json": {
+      "bytes": 336560,
+      "sha256": "a1918bfb2032a34996cc67607d9fcb4d988d183f13f7b7e921ed8975c3b18905"
+    },
+    "supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql": {
+      "bytes": 141080,
+      "sha256": "0ff4eb152b13c5015a551e508f2031a9ebf30f91a8018d9295de633dc3cdce5e"
+    },
+    "supabase/components/spin-archived-first-witness.sql": {
+      "bytes": 43621,
+      "sha256": "69a987d4e7a3808f37bb307d4c5c3aa9a1b1f5a3ad4fa04f8310ec4c64395c7d"
+    },
+    "supabase/components/spin-archived-first-admission.sql": {
+      "bytes": 17780,
+      "sha256": "1d37c0c5afbc22c1b4d7683bd4671c13e177ae9ee986b3f1141d6d033a18cc6c"
+    },
+    "supabase/components/spin-archived-first-bridge.sql": {
+      "bytes": 77934,
+      "sha256": "3288832c27e55e485c827f561464d1267af5a8c2c49250bbf4ffc70393492f98"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-columns.sql": {
+      "bytes": 829208,
+      "sha256": "3eb843ab987fea764a6bd78875a029a082e752430e3462001ad6127d193df04c"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-captured-seed.sql": {
+      "bytes": 7576,
+      "sha256": "48ebaadc12d387905ecbbde91d3f659fb69a32c07fe34ce5230ef0b83df7ddd5"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-temporal-seed.sql": {
+      "bytes": 862,
+      "sha256": "5eb8258251cd1fe03aa93fb5b4052688c94965c43226bc63e1b2ab713af92784"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-functions.sql": {
+      "bytes": 1486311,
+      "sha256": "ecffe1e8f95edf4c6f8dbc7cb53ca9989bab4500c31831b4c3212cff2c6e6435"
+    },
+    "scripts/qualification/fixtures/archived-spin/fee-resolution-provider.sql": {
+      "bytes": 29850,
+      "sha256": "7a4e43f6ec5f5d1ad6305390ab5d47dd740989fc2b1c0193185b55685dd8ce54"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-constraints.sql": {
+      "bytes": 473250,
+      "sha256": "24d61127ed80d5d9f377c51a22e347ce7954ac5ad58fe92835465acd6391e9a2"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-triggers.sql": {
+      "bytes": 153784,
+      "sha256": "201b52c81db752b5f72b3f643174fcad73d17d454479e152e953e0304388baa4"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-access.sql": {
+      "bytes": 483562,
+      "sha256": "73475a4ae041396d5b9493f80311fc3eb35bb043615540860f0ca0f663750449"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-sequences.sql": {
+      "bytes": 25203,
+      "sha256": "e2b44bdd3894e010b85487d17e46ff2cb5a92520114fd876d79a401b806de067"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-indexes.sql": {
+      "bytes": 291018,
+      "sha256": "aee4284284f46fc569213702688a3ce9b882620243a5688378e4cf19400cf6b6"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-readback.sql": {
+      "bytes": 1051459,
+      "sha256": "8ada16422b1c7997bc23a1b87656bcf2ea4109e02f196ee7b51eef97e7fbad46"
+    },
+    "scripts/qualification/fixtures/archived-spin/seating-receipts.sql": {
+      "bytes": 64396,
+      "sha256": "77802c93826c58ce5465504648edf2f695376e63cde1423ede8c69b80bc80b5d"
+    },
+    "scripts/qualification/fixtures/archived-spin/schema-authority.sql": {
+      "bytes": 8617,
+      "sha256": "dd5cf25eaf7523c94fc86b716246cf87c30ecec12d5e8c7486fac2121d2312ac"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-captured-state.json": {
+      "bytes": 72551,
+      "sha256": "e69f3da41ac8ee4c5b268b50f386fa63fd991af8c0b614ff17e255dc1967aee1"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-provider-catalog.json": {
+      "bytes": 2259682,
+      "sha256": "c8d2df255ca884a3d19819b1c9545dba6172520eda0fc293f299a70f5541c788"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-authority-catalog.json": {
+      "bytes": 216626,
+      "sha256": "0646f9417e3d54fc56bdd1ed07a47c0af3dacd9686a1062e5df1cf72e8d02bc7"
+    },
+    "scripts/qualification/fixtures/archived-spin/index-sequence-catalog.json": {
+      "bytes": 196023,
+      "sha256": "fc4bf9e20253e616e69a029eb1efd9a66d643a3444fcc843dae5af4604cd2e62"
+    },
+    "scripts/qualification/fixtures/archived-spin/fee-resolution-provider.json": {
+      "bytes": 31214,
+      "sha256": "28e8029822e5671cc3d0eb9c01266c83c3b2265e9ad9331847efdf425a37aac5"
+    },
+    "scripts/qualification/fixtures/archived-spin/seating-receipts.json": {
+      "bytes": 51940,
+      "sha256": "c078f075694de07b4f6b3a973f8b048c701b80902e650cbd85e92d675172c939"
+    },
+    "scripts/qualification/fixtures/archived-spin/schema-authority.json": {
+      "bytes": 2304,
+      "sha256": "e7b302efcaf3843ed9854740e63791fa2c84ad18d076d84ccbb02f18f0433d6a"
+    },
+    "scripts/qualification/fixtures/archived-spin/original-launch-refusal.sql": {
+      "bytes": 491,
+      "sha256": "977e43e68739614f59964073a381ca04660eec64bf8ce451951b3b6caf56bce8"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-connected-probe.sql": {
+      "bytes": 7544,
+      "sha256": "7f85c9f217b8b56db97425eb25de700a7768f1b25e61212e8202b45206399f29"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-temporal-state.json": {
+      "bytes": 5963,
+      "sha256": "29dea53b23a1a0f88f5d422861bd973a75f6273ad737344c3fc57649096954b8"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-temporal-refusal.sql": {
+      "bytes": 4313,
+      "sha256": "3b8d39a94ce5a4340bc35d761ee2b7f268267ce3cfca08121ebf695b82e01809"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-manager-state.json": {
+      "bytes": 1202,
+      "sha256": "d6e8322d12baec8579c19e332a8d971446559ee43275b20cff22ec31f440b1c8"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-manager-proof.sql": {
+      "bytes": 850,
+      "sha256": "d4d3b9623e49cd830096f47917df9c8e37519a5b0b51a6c375b3c521b29bfa9d"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-funding-observation.sql": {
+      "bytes": 1229,
+      "sha256": "4babe982d7e3818c13044da06c0b44b704474b899d5fd6621a65bdfdb1ddee1a"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-negative-cases.sql": {
+      "bytes": 11690,
+      "sha256": "d0f36ab10dc7c8db1ab2119da936130197c8d8bcc0e2473bb579801df9f35730"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql": {
+      "bytes": 6955,
+      "sha256": "dc225a794f80ff8694aad9039fa22e6b649a190246047f9b2350fd327eb9feac"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-preimage-drift.sql": {
+      "bytes": 4631,
+      "sha256": "d0f03472c93b739dee9c84023bd3d09d8c48127de183d757d461af47f520f6bb"
+    }
+  }
+}

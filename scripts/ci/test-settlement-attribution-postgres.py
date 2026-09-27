@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,3 +111,16 @@ finally:
         run([pg/'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])
     shutil.rmtree(cluster)
     shutil.rmtree(socket)
+
+# The unchanged section G counts share this maintained required native route.
+# Failure in either acceptance remains a failure of the existing accounting job.
+subprocess.run([sys.executable,
+    str(ROOT/'scripts/ci/fixtures/settlement-attribution/qualify-first-attempt-index.py'),
+    '--pg-bin', str(pg), '--scratch', args.scratch], check=True, env=env, timeout=120)
+
+# Exact all-player coverage and its fixed-width history access remain on the
+# existing required accounting route. Any failed native assertion fails CI.
+for fixture in ('qualify-coverage-history-index.py', 'qualify-coverage-receipt-index.py', 'qualify-receipt-visibility.py', 'qualify-atomic-coverage.py'):
+    subprocess.run([sys.executable,
+        str(ROOT/'scripts/ci/fixtures/settlement-attribution'/fixture),
+        '--pg-bin', str(pg), '--scratch', args.scratch], check=True, env=env, timeout=120)

@@ -1,0 +1,4 @@
+{
+  "_owner": "haptics-audit-fixes (2026-09-27): TapHaptic (about 60 lines, no dependencies beyond vibrationGate, already in first paint) and its 20-line stylesheet. The shared console plate (SpadeConsole's PlateButton, already in first paint) renders it for plates that commit a game action, so an iPhone browser's tap on Insure or Cash Out buzzes; it renders nothing anywhere else.",
+  "modules": ["src/components/haptics/TapHaptic.module.css", "src/components/haptics/TapHaptic.tsx"]
+}

@@ -7,10 +7,13 @@ import {
   type Page,
 } from '@playwright/test';
 import { rawProfileHeading } from './support/rawProfileHeading';
+import { readProfileInterfaceMode } from './support/profileInterfaceMode';
+import { walletPlayableAmount } from './support/walletPlayableAmount';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { observeAccountRealtime } from './support/accountRealtimeObservation';
+import { installAccountRealtimeInterruption } from './support/accountRealtimeInterruption';
 import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
@@ -487,6 +490,10 @@ test.describe('production Table Studio realtime contract', () => {
         baseURL,
         storageState: { cookies: [], origins: [] },
       });
+      const interruptPrimaryRealtime = await installAccountRealtimeInterruption(
+        primaryDesktop,
+        environment.supabaseUrl
+      );
       primaryMobile = await browser.newContext({
         ...devices['iPhone 13'],
         baseURL,
@@ -629,7 +636,7 @@ test.describe('production Table Studio realtime contract', () => {
         });
       }
       const otherName = await rawProfileHeading(otherPage);
-      const otherMode = await otherPage.locator('html').getAttribute('data-theme');
+      const otherMode = await readProfileInterfaceMode(otherPage, PRODUCTION_RESPONSE_TIMEOUT);
       await primaryPage.emulateMedia({ colorScheme: 'light' });
       await mobilePage.emulateMedia({ colorScheme: 'dark' });
       accountSignalReceived.set(primaryPage, false);
@@ -669,7 +676,7 @@ test.describe('production Table Studio realtime contract', () => {
       await primaryPage.emulateMedia({ colorScheme: 'dark' });
       await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'dark');
       await expect(otherPage.locator('#profile-heading')).toHaveText(otherName);
-      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode!);
+      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode);
       const accountReadback = await primaryAccount.client
         .from('profiles')
         .select('alias,settings')
@@ -767,11 +774,15 @@ test.describe('production Table Studio realtime contract', () => {
       const walletBefore = await persistedWallet();
       const beforeReconnect = { ...primaryObserved };
       await primaryDesktop.setOffline(true);
+      expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
+      await primaryDesktop.setOffline(false);
+      // Offline HTTP emulation can preserve an existing Chromium WebSocket.
+      // Interrupt the real connection explicitly; the SDK owns rejoin and the
+      // consumers must perform their own authoritative reads after it.
+      await interruptPrimaryRealtime();
       await expect
         .poll(() => primaryObserved.socketCloses, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
         .toBeGreaterThan(beforeReconnect.socketCloses);
-      expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
-      await primaryDesktop.setOffline(false);
       await expect
         .poll(() => primaryObserved.membershipSubscriptions, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
@@ -826,11 +837,12 @@ test.describe('production Table Studio realtime contract', () => {
         new URL('wallet', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href,
         { waitUntil: 'domcontentloaded' }
       );
-      await expect(
-        primaryPage.getByText('Playable Now', { exact: true }).locator('..').locator('dd')
-      ).toHaveText(Math.max(0, total - locked).toLocaleString(), {
-        timeout: PRODUCTION_RESPONSE_TIMEOUT,
-      });
+      await expect(walletPlayableAmount(primaryPage)).toHaveText(
+        Math.max(0, total - locked).toLocaleString(),
+        {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        }
+      );
       console.log(
         '[member-balance] authenticated own-row subscription and initial/reconnect reads reached the persistent wallet and rendered amount; no financial mutation induced'
       );

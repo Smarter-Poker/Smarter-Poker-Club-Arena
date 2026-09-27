@@ -12914,7 +12914,7 @@ function LiveTablePage({
              * with no table_seats row, so every seat-derived signal here says
              * "spectator" — while tournament_players says he has paid.
              */
-            if (userId) {
+            if (userId && isUUID(userId)) {
               const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
                 .select('status, table_id')
@@ -14729,7 +14729,10 @@ function LiveTablePage({
     if (!s) return;
     // Apply sound preference if changed
     if (typeof s.soundEnabled === 'boolean') {
-      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(s.soundEnabled));
+      // Through the engine, not a raw storage write (2026-09-26): setEnabled
+      // writes both sound keys AND returns the Safari audio session to
+      // "ambient" when sound goes off, so a player's music is not left paused.
+      soundService.setEnabled(s.soundEnabled);
     }
     // 2026-08-18: a `deckStyle` branch used to live here writing
     // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read

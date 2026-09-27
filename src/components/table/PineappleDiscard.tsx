@@ -27,6 +27,7 @@ import { cardWords } from '../../utils/cardWords';
 import { haptic } from '../../services/SoundService';
 import { serverNow } from '../../utils/serverClock';
 import './PineappleDiscard.css';
+import { TapHaptic } from '../haptics/TapHaptic';
 
 export interface PineappleDiscardProps {
   isOpen: boolean;
@@ -183,6 +184,7 @@ export function PineappleDiscard({
                 <span className="pineapple-discard__card-tag">
                   {isSelected ? 'DISCARD' : 'KEEP'}
                 </span>
+                <TapHaptic disabled={busy} radius="8px" />
               </button>
             );
           })}
@@ -209,6 +211,7 @@ export function PineappleDiscard({
             {bankArmed
               ? 'Time Bank Armed. It Starts When Your Clock Runs Out'
               : `Use Time Bank (${timeBanksRemaining})`}
+            <TapHaptic disabled={busy || bankArmed} />
           </button>
         )}
 
@@ -230,6 +233,7 @@ export function PineappleDiscard({
                    the sweep that found that one only looked at attributes, and
                    this is visible text. */
                 `Discard ${cardWords(cards[selected])}`}
+          <TapHaptic disabled={selected === null || busy} />
         </button>
       </div>
     </div>

@@ -7,6 +7,7 @@ contract. The actual HTTP call is qualified separately by the owning live job.
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import runpy
 import os
 from pathlib import Path
 import shutil
@@ -76,11 +77,15 @@ def refused(setup, reason, undo):
 
 try:
     assert ' 17.' in run([pg/'postgres', '--version'])
-    run([pg/'initdb', '-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
+    run([pg/'initdb', '-D', data, '-U', 'fixture_admin', '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
     with (data/'postgresql.conf').open('a') as conf:
         conf.write("\nlisten_addresses = ''\nunix_socket_directories = '" + str(socket) + "'\nautovacuum = off\n")
     start_attempted = True
     run([pg/'pg_ctl', '-D', data, '-l', cluster/'server.log', '-w', 'start'])
+    # A distinct bootstrap identity lets the final production-role fixture
+    # remove SUPERUSER from postgres (PostgreSQL forbids demoting bootstrap).
+    run([pg/'psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-At', '-h', socket,
+         '-U', 'fixture_admin', '-d', 'postgres'], 'CREATE ROLE postgres LOGIN SUPERUSER;')
     endpoint = json.loads(query("select json_build_object('address',inet_server_addr(),'data',current_setting('data_directory'),'listen',current_setting('listen_addresses'));"))
     assert endpoint == {'address': None, 'data': str(data), 'listen': ''}
     query((FIXTURE/'setup.sql').read_text())
@@ -229,6 +234,7 @@ try:
     if not args.original_only:
         assert query('SELECT count(*) FROM public.ca_test_account_ledger_actor_archive;') == '0'
         print('certification-retirement-archive-order-acceptance-passed')
+        runpy.run_path(str(FIXTURE/'qualify-protected-club.py'))['qualify'](ROOT, FIXTURE, query)
     print('certification-retirement-native-acceptance-passed')
 finally:
     if start_attempted and (data/'postmaster.pid').exists():

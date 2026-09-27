@@ -156,11 +156,11 @@ export default function JoinClubModal({
     if (!club) return;
     setPreview((current) => (current ? { ...current, membership_status: result.status } : current));
     if (result.status === 'pending') {
-      toast.success(`Request sent to ${club.name}. You can track or cancel it here.`);
+      toast.success(titleCase(`Request sent to ${club.name}. You can track or cancel it here.`));
       setStatusMessage('Application pending owner approval.');
       return;
     }
-    toast.success(`Welcome to ${club.name}!`);
+    toast.success(titleCase(`Welcome to ${club.name}!`));
     if (onSuccess) {
       onSuccess(club.id);
     } else {
@@ -297,7 +297,7 @@ export default function JoinClubModal({
             : preview?.membership_status
               ? 'Enter Club'
               : preview
-                ? `Confirm Join ${preview.name}`
+                ? `Confirm Join ${titleCase(preview.name)}`
                 : 'Verify A Club Code',
           ink: 'white' as const,
           onClick: handleJoin,
@@ -400,7 +400,9 @@ export default function JoinClubModal({
 
             {preview && (
               <section className={styles.preview} aria-label="Club Confirmation">
-                <h3 className={`${styles.previewName} sc-ink--silver`}>{preview.name}</h3>
+                <h3 className={`${styles.previewName} sc-ink--silver`}>
+                  {titleCase(preview.name)}
+                </h3>
                 <dl className={styles.facts}>
                   <div className={styles.fact}>
                     <dt className={`sc-label sc-ink--blue ${styles.factLabel}`}>Membership</dt>
@@ -416,7 +418,7 @@ export default function JoinClubModal({
                   </div>
                 </dl>
                 {preview.description && (
-                  <p className={`sc-copy ${styles.copy}`}>{preview.description}</p>
+                  <p className={`sc-copy ${styles.copy}`}>{titleCase(preview.description)}</p>
                 )}
               </section>
             )}

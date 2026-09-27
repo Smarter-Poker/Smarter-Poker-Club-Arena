@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/cowork/retire-prearchive-cert-residue - migration 20260927045612_archive_and_retire_prearchive_certification_identity, installed in production as version 20260927053325 with exact source MD5 eb33fb19734abcb9038e810f748db70a. Read-only catalog verification at 2026-09-27 13:50 UTC observed public.ca_test_account_identity_archive and public.fn_guard_test_account_identity_archive().",
+  "tables": ["ca_test_account_identity_archive"],
+  "functions": ["fn_guard_test_account_identity_archive"]
+}

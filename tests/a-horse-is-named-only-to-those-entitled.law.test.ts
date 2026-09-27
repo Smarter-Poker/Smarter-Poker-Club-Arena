@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 /**
  * A HORSE IS NAMED ONLY TO THOSE ENTITLED (binding)
@@ -30,15 +31,11 @@ import { describe, expect, it } from 'vitest';
  * record rather than a gap.
  */
 
-const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
-
-function allMigrations(): string {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
-    .join('\n');
-}
+// Read the immutable source fixture once, preserving the complete sorted text
+// and block boundaries every privacy assertion checks below.
+const SQL = migrationCorpus()
+  .map(({ sql }) => sql)
+  .join('\n');
 
 /** The Club Data player path, plus the cashier page that missed it. */
 const MUST_MASK = [
@@ -50,7 +47,7 @@ const MUST_MASK = [
 
 describe('a horse is named only to those entitled', () => {
   it('a migration exists that masks the four readers that leaked', () => {
-    const sql = allMigrations();
+    const sql = SQL;
     expect(sql).toContain('fn_can_see_horse_flag');
     for (const fn of MUST_MASK) {
       expect(sql, `${fn} is never masked in any migration`).toContain(fn);
@@ -58,7 +55,7 @@ describe('a horse is named only to those entitled', () => {
   });
 
   it.each(MUST_MASK)('%s is masked with the estate helper, not a local rule', (fn) => {
-    const sql = allMigrations();
+    const sql = SQL;
 
     // BOUNDED TO THIS ROUTINE'S BLOCK, and that is the whole difficulty.
     //
@@ -85,7 +82,7 @@ describe('a horse is named only to those entitled', () => {
     // The migration edits pg_get_functiondef output. If an upstream rename
     // makes the flag expression unmatchable, the replace becomes a no-op and
     // the routine ships unmasked. Every branch raises instead.
-    const sql = allMigrations();
+    const sql = SQL;
     for (const fn of MUST_MASK) {
       expect(sql, `${fn} has no assertion that its rewrite matched`).toMatch(
         new RegExp(`RAISE EXCEPTION '${fn}: horse flag expression not found'`)

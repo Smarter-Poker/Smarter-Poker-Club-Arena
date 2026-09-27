@@ -126,6 +126,7 @@ import {
   loadTimeBanksFromPark,
   type ParkedTimeBank,
   type StoppedCustodyParkOutcome,
+  type UnstartedPermitAttestation,
   supabase,
   atomicCashout,
   processLeavePending,
@@ -1878,9 +1879,10 @@ export abstract class ServerTableEngineBase {
     timestamp: number;
     delivered: boolean;
   }> = [];
-  // Post-hand scheduling callback. Settlement invokes it synchronously for a
-  // zero final stack even if a persistence mirror failed; consumers must stay
-  // fire-and-forget and independently verify durable authority.
+  // Post-hand scheduling callback. Settlement invokes it synchronously for
+  // every accepted hand (including a zero final stack whose persistence
+  // mirror failed); consumers must stay fire-and-forget, gate their own work
+  // on the stacks they are handed, and independently verify durable authority.
   protected handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
     | null = null;
@@ -7044,6 +7046,8 @@ export abstract class ServerTableEngineBase {
     if (!custody) return false;
     const tournamentId = this.engineLeaseTournamentId ?? this.tableInfo?.tournament_id ?? null;
     if (!tournamentId) return false;
+    const permit = this.f06CurrentPermit;
+    const unstartedPermit = this.unstartedPermitAttestation(custody.handNumber);
     const outcome = await parkStoppedTimeBankCustody({
       tableId: this.tableId,
       tournamentId,
@@ -7053,8 +7057,19 @@ export abstract class ServerTableEngineBase {
       disconnectStates: structuredClone(custody.disconnectStates),
       timeBanks: structuredClone(custody.banks) as Record<string, ParkedTimeBank>,
       engineInstance: `${INSTANCE_ID}:stopped_custody`,
+      unstartedPermit,
     });
     this.stoppedCustodyParkOutcome = outcome;
+    // The database closed the never-started permit in the park's own
+    // transaction; this engine's preparation is resolved exactly as it is
+    // after cancelF06PreparedHand, and no longer holds the restart gate.
+    if (
+      outcome.status === 'parked' &&
+      unstartedPermit !== null &&
+      outcome.unstartedPermitReleased === unstartedPermit.permitId &&
+      this.f06CurrentPermit === permit
+    )
+      this.f06CurrentPermit = null;
     if (generation !== this.maintenanceCheckpointGeneration) return true;
     if (this.stoppedTimeBankCustody !== custody) return true;
     if (outcome.status !== 'parked') return true;
@@ -7067,6 +7082,37 @@ export abstract class ServerTableEngineBase {
 
   /** The last answer a stopped-custody write got; diagnostics and tests only. */
   private stoppedCustodyParkOutcome: StoppedCustodyParkOutcome | null = null;
+
+  /**
+   * The one F06 permit this engine reserved above its custody and never
+   * started, attested by id and hand number for the park to release. A
+   * permit whose `start` ran (`attempted`) is never attested: that hand may
+   * have been dealt, and the park must keep refusing over it. A permit that
+   * never reached the database (`new`, `number_refused`) has no row to
+   * release. Everything is checked against this engine's own lease identity
+   * so a permit of another table or generation is never named.
+   */
+  private unstartedPermitAttestation(custodyHandNumber: number): UnstartedPermitAttestation | null {
+    const permit = this.f06CurrentPermit;
+    if (!permit) return null;
+    const phase = permit.recoveryState();
+    if (phase !== 'reserved' && phase !== 'unknown' && phase !== 'terminated') return null;
+    const { binding } = permit;
+    if (binding.table_id !== this.tableId) return null;
+    if (
+      this.engineLeaseGeneration === null ||
+      binding.lease_generation.toLowerCase() !== this.engineLeaseGeneration.toLowerCase()
+    )
+      return null;
+    if (
+      this.engineLeaseTournamentId === null ||
+      binding.tournament_id.toLowerCase() !== this.engineLeaseTournamentId.toLowerCase()
+    )
+      return null;
+    const handNumber = Number(binding.hand_number);
+    if (!Number.isSafeInteger(handNumber) || handNumber <= custodyHandNumber) return null;
+    return { permitId: binding.permit_id, handNumber };
+  }
 
   /**
    * A MANAGER'S STOP WRITES THE BANK DOWN BEFORE IT ASKS WHETHER IT IS

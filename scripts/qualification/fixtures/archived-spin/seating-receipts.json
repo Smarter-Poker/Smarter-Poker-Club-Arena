@@ -1,0 +1,1171 @@
+{
+  "sources": {
+    "horse-stage-plans-current.json": "1cd7e2c49a887b3547080df479e3df8084c5276308a70c5b5e300ebce9bec550",
+    "horse-stage-parent-current.json": "fbca75a8dd97144a2557f3a511e4f805f35ffd2e5040d2dfd83e78a9d0d6e8d4",
+    "horse-seating-receipts-current.json": "4ed75f4fb627a988e8cc28af699f9b89280f7014a87c74da81d5b663134505a6",
+    "horse-cash-epoch-current.json": "a2ff705ba5beb311d56f2e7190853b8f2a848278ce2224108f1df038a6248f99",
+    "horse-lightning-pool-current.json": "cffda3da715921c583b453dc2996a6a4b6a582f89a876e25549259623480b6ba"
+  },
+  "relations": [
+    {
+      "name": "tournament_stage_plans",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "capability_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rule_version",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "time_zone",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "stage_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "plan",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "plan_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "sealed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transaction_id",
+          "type": "xid8",
+          "default": "pg_current_xact_id()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_stage_plans_capability_id_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((capability_id = 'tournament.multi_day.single_flight'::text))"
+        },
+        {
+          "name": "tournament_stage_plans_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "tournament_stage_plans_plan_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((jsonb_typeof(plan) = 'object'::text))"
+        },
+        {
+          "name": "tournament_stage_plans_plan_hash_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((plan_hash ~ '^[0-9a-f]{32}$'::text))"
+        },
+        {
+          "name": "tournament_stage_plans_rule_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((rule_version = 'multi-day-v1'::text))"
+        },
+        {
+          "name": "tournament_stage_plans_stage_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((stage_count >= 2) AND (stage_count <= 14)))"
+        },
+        {
+          "name": "tournament_stage_plans_time_zone_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((btrim(time_zone) <> ''::text))"
+        },
+        {
+          "name": "tournament_stage_plans_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "tournament_stage_plans_no_truncate",
+          "enabled": "O",
+          "identity": "fn_multi_day_stage_rows_never_truncate()",
+          "definition": "CREATE TRIGGER tournament_stage_plans_no_truncate BEFORE TRUNCATE ON public.tournament_stage_plans FOR EACH STATEMENT EXECUTE FUNCTION fn_multi_day_stage_rows_never_truncate()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_multi_day_stage_rows_never_truncate()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'MULTI_DAY_STAGE_RECORD_IS_PERMANENT: TRUNCATE on % refused', TG_TABLE_NAME\n    USING ERRCODE = '55000';\nEND\n$function$\n"
+        },
+        {
+          "name": "tournament_stage_plans_rpc_owned",
+          "enabled": "O",
+          "identity": "fn_multi_day_stage_rows_are_rpc_owned()",
+          "definition": "CREATE TRIGGER tournament_stage_plans_rpc_owned BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_stage_plans FOR EACH ROW EXECUTE FUNCTION fn_multi_day_stage_rows_are_rpc_owned()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_multi_day_stage_rows_are_rpc_owned()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament uuid;\nBEGIN\n  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN\n    RAISE EXCEPTION 'MULTI_DAY_STAGE_RECORD_IS_PERMANENT: % on % refused', TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  v_tournament := NEW.tournament_id;\n  IF current_setting('app.multi_day_stage_writer', true) IS DISTINCT FROM v_tournament::text THEN\n    RAISE EXCEPTION 'MULTI_DAY_STAGE_WRITER_REQUIRED: % on % belongs to the stage RPCs', TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    RETURN NEW;\n  END IF;\n\n  IF TG_TABLE_NAME = 'tournament_stages' THEN\n    IF (NEW.tournament_id, NEW.stage_no, NEW.kind, NEW.day_no, NEW.end_after_level)\n       IS DISTINCT FROM (OLD.tournament_id, OLD.stage_no, OLD.kind, OLD.day_no, OLD.end_after_level)\n       OR NEW.schedule_generation < OLD.schedule_generation THEN\n      RAISE EXCEPTION 'MULTI_DAY_STAGE_STRUCTURE_IS_SEALED' USING ERRCODE = '55000';\n    END IF;\n    RETURN NEW;\n  ELSIF TG_TABLE_NAME = 'tournament_qualification_entitlements' THEN\n    IF OLD.state = 'active' AND NEW.state = 'consumed'\n       AND (NEW.id, NEW.tournament_id, NEW.user_id, NEW.source_stage_no, NEW.source_registration_id,\n            NEW.source_bag_row_id, NEW.stack, NEW.bounty_head, NEW.target_stage_no, NEW.created_at)\n           IS NOT DISTINCT FROM\n           (OLD.id, OLD.tournament_id, OLD.user_id, OLD.source_stage_no, OLD.source_registration_id,\n            OLD.source_bag_row_id, OLD.stack, OLD.bounty_head, OLD.target_stage_no, OLD.created_at) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'MULTI_DAY_ENTITLEMENT_IS_CONSUMED_ONCE' USING ERRCODE = '55000';\n  ELSIF TG_TABLE_NAME = 'tournament_stage_resume_receipts' THEN\n    IF (NEW.tournament_id, NEW.stage_no, NEW.resume_id, NEW.schedule_generation, NEW.first_level, NEW.claimed_at)\n       IS DISTINCT FROM\n       (OLD.tournament_id, OLD.stage_no, OLD.resume_id, OLD.schedule_generation, OLD.first_level, OLD.claimed_at)\n       OR OLD.completed_at IS NOT NULL THEN\n      RAISE EXCEPTION 'MULTI_DAY_RESUME_RECEIPT_IS_IMMUTABLE' USING ERRCODE = '55000';\n    END IF;\n    -- Exactly one of: completion, or a successor lease adopting it.\n    IF (NEW.completed_at IS NOT NULL AND NEW.lease_generation = OLD.lease_generation)\n       OR (NEW.completed_at IS NULL AND NEW.lease_generation IS DISTINCT FROM OLD.lease_generation) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'MULTI_DAY_RESUME_RECEIPT_IS_IMMUTABLE' USING ERRCODE = '55000';\n  END IF;\n\n  RAISE EXCEPTION 'MULTI_DAY_STAGE_RECEIPT_IS_APPEND_ONLY: UPDATE on % refused', TG_TABLE_NAME\n    USING ERRCODE = '55000';\nEND\n$function$\n"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_stage_plans_pkey",
+          "constraint": "tournament_stage_plans_pkey",
+          "definition": "CREATE UNIQUE INDEX tournament_stage_plans_pkey ON public.tournament_stage_plans USING btree (tournament_id)"
+        }
+      ],
+      "policies": null
+    },
+    {
+      "name": "tournament_stages",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "stage_no",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "day_no",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "end_after_level",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "scheduled_start_utc",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "schedule_generation",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'planned'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state_changed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_stages_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((day_no = stage_no))"
+        },
+        {
+          "name": "tournament_stages_check1",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((stage_no = 1) OR (scheduled_start_utc IS NOT NULL)))"
+        },
+        {
+          "name": "tournament_stages_end_after_level_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((end_after_level IS NULL) OR (end_after_level >= 1)))"
+        },
+        {
+          "name": "tournament_stages_kind_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((kind = 'day'::text))"
+        },
+        {
+          "name": "tournament_stages_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id, stage_no)"
+        },
+        {
+          "name": "tournament_stages_schedule_generation_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((schedule_generation >= 1))"
+        },
+        {
+          "name": "tournament_stages_stage_no_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((stage_no >= 1))"
+        },
+        {
+          "name": "tournament_stages_state_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((state = ANY (ARRAY['planned'::text, 'running'::text, 'day_ending'::text, 'bagged'::text, 'scheduled'::text, 'resuming'::text, 'closed'::text])))"
+        },
+        {
+          "name": "tournament_stages_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournament_stage_plans(tournament_id) ON DELETE RESTRICT"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "tournament_stages_no_truncate",
+          "enabled": "O",
+          "identity": "fn_multi_day_stage_rows_never_truncate()",
+          "definition": "CREATE TRIGGER tournament_stages_no_truncate BEFORE TRUNCATE ON public.tournament_stages FOR EACH STATEMENT EXECUTE FUNCTION fn_multi_day_stage_rows_never_truncate()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_multi_day_stage_rows_never_truncate()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'MULTI_DAY_STAGE_RECORD_IS_PERMANENT: TRUNCATE on % refused', TG_TABLE_NAME\n    USING ERRCODE = '55000';\nEND\n$function$\n"
+        },
+        {
+          "name": "tournament_stages_rpc_owned",
+          "enabled": "O",
+          "identity": "fn_multi_day_stage_rows_are_rpc_owned()",
+          "definition": "CREATE TRIGGER tournament_stages_rpc_owned BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_stages FOR EACH ROW EXECUTE FUNCTION fn_multi_day_stage_rows_are_rpc_owned()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_multi_day_stage_rows_are_rpc_owned()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament uuid;\nBEGIN\n  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN\n    RAISE EXCEPTION 'MULTI_DAY_STAGE_RECORD_IS_PERMANENT: % on % refused', TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  v_tournament := NEW.tournament_id;\n  IF current_setting('app.multi_day_stage_writer', true) IS DISTINCT FROM v_tournament::text THEN\n    RAISE EXCEPTION 'MULTI_DAY_STAGE_WRITER_REQUIRED: % on % belongs to the stage RPCs', TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    RETURN NEW;\n  END IF;\n\n  IF TG_TABLE_NAME = 'tournament_stages' THEN\n    IF (NEW.tournament_id, NEW.stage_no, NEW.kind, NEW.day_no, NEW.end_after_level)\n       IS DISTINCT FROM (OLD.tournament_id, OLD.stage_no, OLD.kind, OLD.day_no, OLD.end_after_level)\n       OR NEW.schedule_generation < OLD.schedule_generation THEN\n      RAISE EXCEPTION 'MULTI_DAY_STAGE_STRUCTURE_IS_SEALED' USING ERRCODE = '55000';\n    END IF;\n    RETURN NEW;\n  ELSIF TG_TABLE_NAME = 'tournament_qualification_entitlements' THEN\n    IF OLD.state = 'active' AND NEW.state = 'consumed'\n       AND (NEW.id, NEW.tournament_id, NEW.user_id, NEW.source_stage_no, NEW.source_registration_id,\n            NEW.source_bag_row_id, NEW.stack, NEW.bounty_head, NEW.target_stage_no, NEW.created_at)\n           IS NOT DISTINCT FROM\n           (OLD.id, OLD.tournament_id, OLD.user_id, OLD.source_stage_no, OLD.source_registration_id,\n            OLD.source_bag_row_id, OLD.stack, OLD.bounty_head, OLD.target_stage_no, OLD.created_at) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'MULTI_DAY_ENTITLEMENT_IS_CONSUMED_ONCE' USING ERRCODE = '55000';\n  ELSIF TG_TABLE_NAME = 'tournament_stage_resume_receipts' THEN\n    IF (NEW.tournament_id, NEW.stage_no, NEW.resume_id, NEW.schedule_generation, NEW.first_level, NEW.claimed_at)\n       IS DISTINCT FROM\n       (OLD.tournament_id, OLD.stage_no, OLD.resume_id, OLD.schedule_generation, OLD.first_level, OLD.claimed_at)\n       OR OLD.completed_at IS NOT NULL THEN\n      RAISE EXCEPTION 'MULTI_DAY_RESUME_RECEIPT_IS_IMMUTABLE' USING ERRCODE = '55000';\n    END IF;\n    -- Exactly one of: completion, or a successor lease adopting it.\n    IF (NEW.completed_at IS NOT NULL AND NEW.lease_generation = OLD.lease_generation)\n       OR (NEW.completed_at IS NULL AND NEW.lease_generation IS DISTINCT FROM OLD.lease_generation) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'MULTI_DAY_RESUME_RECEIPT_IS_IMMUTABLE' USING ERRCODE = '55000';\n  END IF;\n\n  RAISE EXCEPTION 'MULTI_DAY_STAGE_RECEIPT_IS_APPEND_ONLY: UPDATE on % refused', TG_TABLE_NAME\n    USING ERRCODE = '55000';\nEND\n$function$\n"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_stages_due_idx",
+          "constraint": null,
+          "definition": "CREATE INDEX tournament_stages_due_idx ON public.tournament_stages USING btree (scheduled_start_utc) WHERE (state = 'scheduled'::text)"
+        },
+        {
+          "name": "tournament_stages_pkey",
+          "constraint": "tournament_stages_pkey",
+          "definition": "CREATE UNIQUE INDEX tournament_stages_pkey ON public.tournament_stages USING btree (tournament_id, stage_no)"
+        }
+      ],
+      "policies": null
+    },
+    {
+      "name": "tournament_paid_stack_custody_receipts",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transaction_id",
+          "type": "xid8",
+          "default": "pg_current_xact_id()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "candidate_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entitlement_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_ledger_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_wallet_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "destination_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "destination_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "grant_chips",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "live_chips_before",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "funded_supply",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "scoring_excess",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "expected",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "assignment",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "original_paid_custody_completed",
+          "type": "t",
+          "validated": true,
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "tournament_paid_stack_custody_rec_destination_seat_number_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((destination_seat_number >= 1) AND (destination_seat_number <= 10)))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_candidate_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (candidate_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((scoring_excess = ((live_chips_before + grant_chips) - funded_supply)))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_check1",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((((state = 'reserved'::text) AND (assignment IS NULL) AND (completed_at IS NULL)) OR ((state = 'seated'::text) AND (assignment IS NOT NULL) AND (completed_at IS NOT NULL))))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_entitlement_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (entitlement_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_expected_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((jsonb_typeof(expected) = 'object'::text))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_funded_supply_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((funded_supply > (0)::numeric) AND (funded_supply < 'Infinity'::numeric)))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_grant_chips_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((grant_chips > (0)::numeric) AND (grant_chips = trunc(grant_chips)) AND (grant_chips < ('2147483648'::bigint)::numeric)))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_live_chips_before_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((live_chips_before >= (0)::numeric) AND (live_chips_before < 'Infinity'::numeric)))"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_source_ledger_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (source_ledger_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_source_wallet_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (source_wallet_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_state_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((state = ANY (ARRAY['reserved'::text, 'seated'::text])))"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "original_paid_custody_completed",
+          "enabled": "O",
+          "identity": "fn_ca_original_paid_stack_must_complete()",
+          "definition": "CREATE CONSTRAINT TRIGGER original_paid_custody_completed AFTER INSERT OR UPDATE ON public.tournament_paid_stack_custody_receipts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_original_paid_stack_must_complete()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_original_paid_stack_must_complete()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n IF NOT EXISTS(SELECT 1 FROM public.tournament_paid_stack_custody_receipts r\n WHERE r.id=NEW.id AND r.state='seated' AND r.assignment->>'ok'='true'\n AND r.assignment->>'tournament_id'=r.tournament_id::text\n AND r.assignment->>'user_id'=r.user_id::text\n AND r.assignment->>'table_id'=r.destination_table_id::text\n AND (r.assignment->>'seat_number')::integer=r.destination_seat_number\n AND (r.assignment->>'stack')::numeric=r.grant_chips) THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_INCOMPLETE' USING ERRCODE='55000';\n END IF;\n RETURN NULL;\nEND $function$\n"
+        },
+        {
+          "name": "original_paid_custody_immutable",
+          "enabled": "O",
+          "identity": "fn_ca_guard_original_paid_stack_receipt()",
+          "definition": "CREATE TRIGGER original_paid_custody_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_paid_stack_custody_receipts FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_original_paid_stack_receipt()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_guard_original_paid_stack_receipt()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n IF TG_OP='DELETE' OR TG_OP='TRUNCATE' THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';\n ELSIF TG_OP='INSERT' THEN\n  IF NEW.state IS DISTINCT FROM 'reserved' OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() THEN\n   RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_RESERVATION_REQUIRED' USING ERRCODE='55000';\n  END IF;\n ELSIF OLD.state IS DISTINCT FROM 'reserved' OR NEW.state IS DISTINCT FROM 'seated'\n OR OLD.transaction_id IS DISTINCT FROM pg_current_xact_id()\n OR (to_jsonb(NEW)-ARRAY['state','assignment','completed_at']) IS DISTINCT FROM\n    (to_jsonb(OLD)-ARRAY['state','assignment','completed_at']) THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';\n END IF;\n RETURN NEW;\nEND $function$\n"
+        },
+        {
+          "name": "original_paid_custody_no_truncate",
+          "enabled": "O",
+          "identity": "fn_ca_guard_original_paid_stack_receipt()",
+          "definition": "CREATE TRIGGER original_paid_custody_no_truncate BEFORE TRUNCATE ON public.tournament_paid_stack_custody_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_guard_original_paid_stack_receipt()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_guard_original_paid_stack_receipt()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n IF TG_OP='DELETE' OR TG_OP='TRUNCATE' THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';\n ELSIF TG_OP='INSERT' THEN\n  IF NEW.state IS DISTINCT FROM 'reserved' OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() THEN\n   RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_RESERVATION_REQUIRED' USING ERRCODE='55000';\n  END IF;\n ELSIF OLD.state IS DISTINCT FROM 'reserved' OR NEW.state IS DISTINCT FROM 'seated'\n OR OLD.transaction_id IS DISTINCT FROM pg_current_xact_id()\n OR (to_jsonb(NEW)-ARRAY['state','assignment','completed_at']) IS DISTINCT FROM\n    (to_jsonb(OLD)-ARRAY['state','assignment','completed_at']) THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';\n END IF;\n RETURN NEW;\nEND $function$\n"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_paid_stack_custody_receipts_candidate_id_key",
+          "constraint": "tournament_paid_stack_custody_receipts_candidate_id_key",
+          "definition": "CREATE UNIQUE INDEX tournament_paid_stack_custody_receipts_candidate_id_key ON public.tournament_paid_stack_custody_receipts USING btree (candidate_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_entitlement_id_key",
+          "constraint": "tournament_paid_stack_custody_receipts_entitlement_id_key",
+          "definition": "CREATE UNIQUE INDEX tournament_paid_stack_custody_receipts_entitlement_id_key ON public.tournament_paid_stack_custody_receipts USING btree (entitlement_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_pkey",
+          "constraint": "tournament_paid_stack_custody_receipts_pkey",
+          "definition": "CREATE UNIQUE INDEX tournament_paid_stack_custody_receipts_pkey ON public.tournament_paid_stack_custody_receipts USING btree (id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_source_ledger_id_key",
+          "constraint": "tournament_paid_stack_custody_receipts_source_ledger_id_key",
+          "definition": "CREATE UNIQUE INDEX tournament_paid_stack_custody_receipts_source_ledger_id_key ON public.tournament_paid_stack_custody_receipts USING btree (source_ledger_id)"
+        },
+        {
+          "name": "tournament_paid_stack_custody_receipts_source_wallet_id_key",
+          "constraint": "tournament_paid_stack_custody_receipts_source_wallet_id_key",
+          "definition": "CREATE UNIQUE INDEX tournament_paid_stack_custody_receipts_source_wallet_id_key ON public.tournament_paid_stack_custody_receipts USING btree (source_wallet_id)"
+        }
+      ],
+      "policies": null
+    },
+    {
+      "name": "tournament_stage_resume_receipts",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "stage_no",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "resume_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "lease_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "schedule_generation",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "first_level",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_stage_resume_receipts_first_level_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((jsonb_typeof(first_level) = 'object'::text))"
+        },
+        {
+          "name": "tournament_stage_resume_receipts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id, stage_no)"
+        },
+        {
+          "name": "tournament_stage_resume_receipts_resume_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (resume_id)"
+        },
+        {
+          "name": "tournament_stage_resume_receipts_tournament_id_stage_no_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id, stage_no) REFERENCES tournament_stages(tournament_id, stage_no) ON DELETE RESTRICT"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "tournament_stage_resume_receipts_no_truncate",
+          "enabled": "O",
+          "identity": "fn_multi_day_stage_rows_never_truncate()",
+          "definition": "CREATE TRIGGER tournament_stage_resume_receipts_no_truncate BEFORE TRUNCATE ON public.tournament_stage_resume_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_multi_day_stage_rows_never_truncate()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_multi_day_stage_rows_never_truncate()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'MULTI_DAY_STAGE_RECORD_IS_PERMANENT: TRUNCATE on % refused', TG_TABLE_NAME\n    USING ERRCODE = '55000';\nEND\n$function$\n"
+        },
+        {
+          "name": "tournament_stage_resume_receipts_rpc_owned",
+          "enabled": "O",
+          "identity": "fn_multi_day_stage_rows_are_rpc_owned()",
+          "definition": "CREATE TRIGGER tournament_stage_resume_receipts_rpc_owned BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_stage_resume_receipts FOR EACH ROW EXECUTE FUNCTION fn_multi_day_stage_rows_are_rpc_owned()",
+          "function_acl": "{postgres=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_multi_day_stage_rows_are_rpc_owned()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament uuid;\nBEGIN\n  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN\n    RAISE EXCEPTION 'MULTI_DAY_STAGE_RECORD_IS_PERMANENT: % on % refused', TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  v_tournament := NEW.tournament_id;\n  IF current_setting('app.multi_day_stage_writer', true) IS DISTINCT FROM v_tournament::text THEN\n    RAISE EXCEPTION 'MULTI_DAY_STAGE_WRITER_REQUIRED: % on % belongs to the stage RPCs', TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    RETURN NEW;\n  END IF;\n\n  IF TG_TABLE_NAME = 'tournament_stages' THEN\n    IF (NEW.tournament_id, NEW.stage_no, NEW.kind, NEW.day_no, NEW.end_after_level)\n       IS DISTINCT FROM (OLD.tournament_id, OLD.stage_no, OLD.kind, OLD.day_no, OLD.end_after_level)\n       OR NEW.schedule_generation < OLD.schedule_generation THEN\n      RAISE EXCEPTION 'MULTI_DAY_STAGE_STRUCTURE_IS_SEALED' USING ERRCODE = '55000';\n    END IF;\n    RETURN NEW;\n  ELSIF TG_TABLE_NAME = 'tournament_qualification_entitlements' THEN\n    IF OLD.state = 'active' AND NEW.state = 'consumed'\n       AND (NEW.id, NEW.tournament_id, NEW.user_id, NEW.source_stage_no, NEW.source_registration_id,\n            NEW.source_bag_row_id, NEW.stack, NEW.bounty_head, NEW.target_stage_no, NEW.created_at)\n           IS NOT DISTINCT FROM\n           (OLD.id, OLD.tournament_id, OLD.user_id, OLD.source_stage_no, OLD.source_registration_id,\n            OLD.source_bag_row_id, OLD.stack, OLD.bounty_head, OLD.target_stage_no, OLD.created_at) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'MULTI_DAY_ENTITLEMENT_IS_CONSUMED_ONCE' USING ERRCODE = '55000';\n  ELSIF TG_TABLE_NAME = 'tournament_stage_resume_receipts' THEN\n    IF (NEW.tournament_id, NEW.stage_no, NEW.resume_id, NEW.schedule_generation, NEW.first_level, NEW.claimed_at)\n       IS DISTINCT FROM\n       (OLD.tournament_id, OLD.stage_no, OLD.resume_id, OLD.schedule_generation, OLD.first_level, OLD.claimed_at)\n       OR OLD.completed_at IS NOT NULL THEN\n      RAISE EXCEPTION 'MULTI_DAY_RESUME_RECEIPT_IS_IMMUTABLE' USING ERRCODE = '55000';\n    END IF;\n    -- Exactly one of: completion, or a successor lease adopting it.\n    IF (NEW.completed_at IS NOT NULL AND NEW.lease_generation = OLD.lease_generation)\n       OR (NEW.completed_at IS NULL AND NEW.lease_generation IS DISTINCT FROM OLD.lease_generation) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'MULTI_DAY_RESUME_RECEIPT_IS_IMMUTABLE' USING ERRCODE = '55000';\n  END IF;\n\n  RAISE EXCEPTION 'MULTI_DAY_STAGE_RECEIPT_IS_APPEND_ONLY: UPDATE on % refused', TG_TABLE_NAME\n    USING ERRCODE = '55000';\nEND\n$function$\n"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_stage_resume_receipts_pkey",
+          "constraint": "tournament_stage_resume_receipts_pkey",
+          "definition": "CREATE UNIQUE INDEX tournament_stage_resume_receipts_pkey ON public.tournament_stage_resume_receipts USING btree (tournament_id, stage_no)"
+        },
+        {
+          "name": "tournament_stage_resume_receipts_resume_id_key",
+          "constraint": "tournament_stage_resume_receipts_resume_id_key",
+          "definition": "CREATE UNIQUE INDEX tournament_stage_resume_receipts_resume_id_key ON public.tournament_stage_resume_receipts USING btree (resume_id)"
+        }
+      ],
+      "policies": null
+    },
+    {
+      "name": "cash_cluster_epoch",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "cluster_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "epoch",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "mode",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "started_by",
+          "type": "text",
+          "default": "'genesis'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cash_cluster_epoch_belongs_to_a_cluster",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (cluster_id) REFERENCES cash_games(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "cash_cluster_epoch_ends_after_it_starts",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((ended_at IS NULL) OR (ended_at >= started_at)))"
+        },
+        {
+          "name": "cash_cluster_epoch_mode_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((mode = ANY (ARRAY['created'::text, 'opening'::text, 'must_move'::text, 'pending_on'::text, 'lightning'::text, 'pending_off'::text, 'draining'::text, 'paused'::text, 'frozen'::text, 'dead'::text])))"
+        },
+        {
+          "name": "cash_cluster_epoch_nonneg",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((epoch >= 0))"
+        },
+        {
+          "name": "cash_cluster_epoch_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (cluster_id, epoch)"
+        }
+      ],
+      "triggers": null,
+      "indexes": [
+        {
+          "name": "cash_cluster_epoch_current",
+          "constraint": null,
+          "definition": "CREATE UNIQUE INDEX cash_cluster_epoch_current ON public.cash_cluster_epoch USING btree (cluster_id) WHERE (ended_at IS NULL)"
+        },
+        {
+          "name": "cash_cluster_epoch_pkey",
+          "constraint": "cash_cluster_epoch_pkey",
+          "definition": "CREATE UNIQUE INDEX cash_cluster_epoch_pkey ON public.cash_cluster_epoch USING btree (cluster_id, epoch)"
+        }
+      ],
+      "policies": null
+    },
+    {
+      "name": "lightning_pool_session",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwxtm/postgres}",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cluster_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cluster_epoch",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cash_player_session_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'joining'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entered_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "exited_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "exit_reason",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "starting_stack",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ending_stack",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "net_result",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hands",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "fast_folds",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "normal_folds",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "fold_and_watch",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "showdowns",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hands_per_hour",
+          "type": "numeric(10,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "average_wait",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "p95_wait",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "p99_wait",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "anchor_seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "lightning_pool_session_counters_are_not_negative",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((hands >= 0) AND (fast_folds >= 0) AND (normal_folds >= 0) AND (fold_and_watch >= 0) AND (showdowns >= 0) AND (hands_per_hour >= (0)::numeric) AND (average_wait >= 0) AND (p95_wait >= 0) AND (p99_wait >= 0)))"
+        },
+        {
+          "name": "lightning_pool_session_epoch_nonneg",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((cluster_epoch >= 0))"
+        },
+        {
+          "name": "lightning_pool_session_exit_is_explained",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((((exited_at IS NULL) AND (exit_reason IS NULL)) OR ((exited_at IS NOT NULL) AND (exit_reason IS NOT NULL) AND (exited_at >= entered_at))))"
+        },
+        {
+          "name": "lightning_pool_session_identity",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (id, player_id, cluster_id, cluster_epoch)"
+        },
+        {
+          "name": "lightning_pool_session_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "lightning_pool_session_runs_in_a_declared_epoch",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (cluster_id, cluster_epoch) REFERENCES cash_cluster_epoch(cluster_id, epoch) ON DELETE RESTRICT"
+        },
+        {
+          "name": "lightning_pool_session_state_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((state = ANY (ARRAY['joining'::text, 'eligibility_check'::text, 'active'::text, 'sit_out'::text, 'disconnected'::text, 'leaving'::text, 'closed'::text])))"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "trg_lightning_pool_session_refuses_truncate",
+          "enabled": "O",
+          "identity": "fn_lightning_refuses_truncate()",
+          "definition": "CREATE TRIGGER trg_lightning_pool_session_refuses_truncate BEFORE TRUNCATE ON public.lightning_pool_session FOR EACH STATEMENT EXECUTE FUNCTION fn_lightning_refuses_truncate()",
+          "function_acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "function_owner": "postgres",
+          "function_definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_refuses_truncate()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- A STATEMENT-LEVEL BEFORE TRUNCATE trigger, because row triggers do not\n  -- fire on TRUNCATE and every immutability rule in Phase 9 is a row trigger.\n  -- It fires for every role, the owner included, and for a TRUNCATE that\n  -- arrives by CASCADE. History is closed, not deleted.\n  RAISE EXCEPTION 'LIGHTNING_HISTORY_IS_NOT_TRUNCATABLE: TRUNCATE of %.% was refused; row triggers do not fire on TRUNCATE, so it would erase in one statement every hand, participant, instance, reservation, slot, pool session or blind ledger row the row triggers exist to keep',\n    TG_TABLE_SCHEMA, TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';\nEND\n$function$\n"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "lightning_pool_session_by_anchor_seat",
+          "constraint": null,
+          "definition": "CREATE INDEX lightning_pool_session_by_anchor_seat ON public.lightning_pool_session USING btree (anchor_seat_id)"
+        },
+        {
+          "name": "lightning_pool_session_by_cash_session",
+          "constraint": null,
+          "definition": "CREATE INDEX lightning_pool_session_by_cash_session ON public.lightning_pool_session USING btree (cash_player_session_id)"
+        },
+        {
+          "name": "lightning_pool_session_by_epoch",
+          "constraint": null,
+          "definition": "CREATE INDEX lightning_pool_session_by_epoch ON public.lightning_pool_session USING btree (cluster_id, cluster_epoch)"
+        },
+        {
+          "name": "lightning_pool_session_identity",
+          "constraint": "lightning_pool_session_identity",
+          "definition": "CREATE UNIQUE INDEX lightning_pool_session_identity ON public.lightning_pool_session USING btree (id, player_id, cluster_id, cluster_epoch)"
+        },
+        {
+          "name": "lightning_pool_session_one_open",
+          "constraint": null,
+          "definition": "CREATE UNIQUE INDEX lightning_pool_session_one_open ON public.lightning_pool_session USING btree (player_id, cluster_id) WHERE (exited_at IS NULL)"
+        },
+        {
+          "name": "lightning_pool_session_one_open_per_anchor",
+          "constraint": null,
+          "definition": "CREATE UNIQUE INDEX lightning_pool_session_one_open_per_anchor ON public.lightning_pool_session USING btree (anchor_seat_id) WHERE (exited_at IS NULL)"
+        },
+        {
+          "name": "lightning_pool_session_open_by_cluster",
+          "constraint": null,
+          "definition": "CREATE INDEX lightning_pool_session_open_by_cluster ON public.lightning_pool_session USING btree (cluster_id, cluster_epoch) WHERE (exited_at IS NULL)"
+        },
+        {
+          "name": "lightning_pool_session_pkey",
+          "constraint": "lightning_pool_session_pkey",
+          "definition": "CREATE UNIQUE INDEX lightning_pool_session_pkey ON public.lightning_pool_session USING btree (id)"
+        }
+      ],
+      "policies": null
+    }
+  ],
+  "full_financial_qualification": false
+}

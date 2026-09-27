@@ -1,0 +1,180 @@
+{
+  "history": {
+    "table": {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=rxt/postgres",
+        "authenticated=rxt/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "oid": "17592",
+      "rls": true,
+      "kind": "r",
+      "rows": 2362200,
+      "force": false,
+      "owner": "postgres",
+      "pages": 684681,
+      "options": [
+        "autovacuum_enabled=true",
+        "autovacuum_vacuum_scale_factor=0.0",
+        "autovacuum_vacuum_threshold=2000",
+        "autovacuum_analyze_scale_factor=0.0",
+        "autovacuum_analyze_threshold=2000",
+        "autovacuum_vacuum_insert_threshold=10000",
+        "autovacuum_vacuum_insert_scale_factor=0.0",
+        "autovacuum_vacuum_cost_delay=2",
+        "autovacuum_vacuum_cost_limit=2000"
+      ],
+      "allvisible": 674655
+    },
+    "columns": [
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "notnull": false
+      },
+      {
+        "name": "hand_number",
+        "type": "integer",
+        "notnull": false
+      },
+      {
+        "name": "id",
+        "type": "uuid",
+        "notnull": true
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "notnull": false
+      }
+    ],
+    "indexes": [
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "immediate": true,
+        "definition": "CREATE UNIQUE INDEX hand_history_pkey ON public.hand_history USING btree (id)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_created ON public.hand_history USING btree (created_at DESC)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_tournament_created ON public.hand_history USING btree (tournament_id, created_at DESC) WHERE (tournament_id IS NOT NULL)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_table_handnum ON public.hand_history USING btree (table_id, hand_number DESC)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "immediate": true,
+        "definition": "CREATE UNIQUE INDEX uq_hand_history_global_hand_number ON public.hand_history USING btree (hand_number) WHERE (hand_number >= 1000000)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_hand_number_lookup ON public.hand_history USING btree (hand_number)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_players_gin ON public.hand_history USING gin (players jsonb_path_ops) WITH (fastupdate='on', gin_pending_list_limit='32768')"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_cash_rake_unbanked ON public.hand_history USING btree (created_at) WHERE ((tournament_id IS NULL) AND (rake_amount > (0)::numeric))"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_human_created ON public.hand_history USING btree (created_at) WHERE has_human"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_table_created_id ON public.hand_history USING btree (table_id, created_at, id)"
+      },
+      {
+        "live": true,
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_hand_history_bomb_pot_created ON public.hand_history USING btree (created_at) WHERE (bomb_pot IS NOT NULL)"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "hand_history_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "zz_ca_bomb_hand_keeps_its_award_units",
+        "type": "t",
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+      },
+      {
+        "name": "ca_hand_facts_hand_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (hand_id) REFERENCES hand_history(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ca_hand_notes_hand_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (hand_id) REFERENCES hand_history(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ca_hand_flags_hand_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (hand_id) REFERENCES hand_history(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "hand_history_kill_pot_is_object",
+        "type": "c",
+        "definition": "CHECK (((kill_pot IS NULL) OR (jsonb_typeof(kill_pot) = 'object'::text))) NOT VALID"
+      }
+    ]
+  },
+  "retention": {
+    "md5": "f75b94afaf46ff91db120bc34e1dc2ae",
+    "signature": "sp_prune_hand_history(integer)",
+    "definition": "CREATE OR REPLACE FUNCTION public.sp_prune_hand_history(p_batch integer DEFAULT 2500)\n RETURNS integer\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_budget constant interval := interval '20 seconds';\n  v_deadline timestamptz := clock_timestamp()+v_budget;\n  v_days integer;\n  v_window interval;\n  v_doomed uuid[];\n  v_keepers uuid[];\n  v_deleted integer := 0;\n  v_round integer;\nBEGIN\n  SELECT greatest(coalesce(horse_retention_days,8),1)\n    INTO v_days FROM public.hand_history_retention_policy LIMIT 1;\n  IF v_days IS NULL THEN v_days := 8; END IF;\n  v_window := make_interval(days=>v_days);\n\n  LOOP\n    v_doomed := NULL;\n    v_keepers := NULL;\n    WITH candidates AS (\n      SELECT hh.id,hh.players\n        FROM public.hand_history hh\n       WHERE hh.has_human IS DISTINCT FROM true\n         AND hh.reported IS NOT true\n         AND hh.created_at<now()-v_window\n         AND NOT EXISTS (\n           SELECT 1 FROM public.bbj_payouts bp\n            WHERE bp.table_id=hh.table_id AND bp.hand_number=hh.hand_number)\n         AND NOT EXISTS (\n           SELECT 1 FROM public.hand_projection_outbox o WHERE o.hand_id=hh.id)\n         AND NOT EXISTS (\n           SELECT 1 FROM public.tournament_knockout_candidates c\n            WHERE c.hand_id=hh.id AND c.state='pending')\n         -- A hand whose F06 permit is still 'reserved' is unresolved, and this\n         -- row is original evidence for it:\n         -- smarter_private.f06_retired_origin_snapshot and\n         -- smarter_private.f06_retained_mtt_abort_snapshot both read\n         -- public.hand_history and public.hand_atomic_commits. All four DELETEs\n         -- below key off the ids chosen here, so excluding the hand at this one\n         -- point retains its history, atomic commit, rake attribution and\n         -- player-index rows together. Excluding it from the candidate set\n         -- rather than from each DELETE also keeps it out of v_keepers, so no\n         -- has_human=true is written that would retain it past its permit, and\n         -- it never consumes a p_batch slot. Retention ends when the permit\n         -- leaves 'reserved'; every other row prunes on the same boundary as\n         -- before. The lookup goes through the SECURITY DEFINER helper added by\n         -- migration 20260920232341, because this function is SECURITY INVOKER\n         -- and its search_path does not include smarter_private.\n         AND NOT smarter_private.f06_hand_cards_unresolved(hh.table_id,hh.hand_number::bigint)\n         -- AND the hand that IS the table's current movement boundary, for a\n         -- table F06 can still be asked to move. The guard above protects the\n         -- unresolved HAND -- which never started and has no row here -- so it\n         -- reached straight past the hands the table already dealt, and\n         -- smarter_private.f06_movement_prior loads the last of those by\n         -- max(hand_number) and validates its post-commit payload hash,\n         -- request hash and stack receipt out of it. Delete it and that table\n         -- raises F06_MOVEMENT_PRIOR_INCOMPLETE for ever: on 2026-09-25 one\n         -- seated player in a RUNNING freeroll was about six retention runs\n         -- from exactly that. One hand per live table, and it stops being the\n         -- boundary as soon as the table deals another. Migration\n         -- 20260925210126.\n         AND NOT smarter_private.f06_movement_boundary_retained(hh.table_id,hh.hand_number::bigint)\n         -- Missing/blank classification or conflicting ownership stays retained.\n         -- A known Spin's history remains evidence until canonical terminal\n         -- state commits; do not require a first legacy receipt to exist.\n         AND EXISTS (\n           SELECT 1 FROM public.tables tb\n           LEFT JOIN public.tournaments t ON t.id=tb.tournament_id\n            WHERE tb.id=hh.table_id\n              AND (hh.tournament_id IS NULL\n                   OR hh.tournament_id=tb.tournament_id)\n              AND (\n                (hh.tournament_id IS NULL AND tb.tournament_id IS NULL)\n                OR (\n                  t.id IS NOT NULL\n                  AND NULLIF(btrim(t.variant::text),'') IS NOT NULL\n                  AND NULLIF(btrim(t.tournament_type::text),'') IS NOT NULL\n                  AND (\n                    (lower(t.variant::text)<>'spin'\n                     AND upper(t.tournament_type::text)<>'SPIN')\n                    OR (upper(COALESCE(t.status::text,''))='COMPLETED'\n                        AND EXISTS (\n                          SELECT 1 FROM public.tournament_terminal_settlements terminal\n                           WHERE terminal.tournament_id=t.id))\n                    OR (upper(COALESCE(t.status::text,'')) IN ('CANCELLED','CANCELED')\n                        AND EXISTS (\n                          SELECT 1 FROM public.tournament_cancellation_receipts cancellation\n                           WHERE cancellation.tournament_id=t.id))\n                  )\n                )\n              )\n         )\n       ORDER BY hh.created_at\n       LIMIT p_batch\n       FOR UPDATE SKIP LOCKED\n    ), classified AS (\n      SELECT c.id,\n        CASE\n          WHEN jsonb_typeof(c.players) IS DISTINCT FROM 'array' THEN true\n          WHEN jsonb_array_length(c.players)=0 THEN true\n          ELSE EXISTS (\n            SELECT 1\n              FROM jsonb_array_elements(c.players) e\n              LEFT JOIN public.profiles p ON p.id=(CASE\n                WHEN length(e.value->>'userId')=36\n                 AND (e.value->>'userId') ~\n                   '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n                THEN (e.value->>'userId')::uuid END)\n             WHERE p.id IS NULL OR p.is_horse IS NOT true)\n        END AS is_human\n        FROM candidates c\n    )\n    SELECT array_agg(id) FILTER (WHERE is_human IS false),\n           array_agg(id) FILTER (WHERE is_human IS DISTINCT FROM false)\n      INTO v_doomed,v_keepers FROM classified;\n\n    EXIT WHEN v_doomed IS NULL AND v_keepers IS NULL;\n    IF v_keepers IS NOT NULL AND cardinality(v_keepers)>0 THEN\n      UPDATE public.hand_history SET has_human=true WHERE id=ANY(v_keepers);\n    END IF;\n    IF v_doomed IS NOT NULL AND cardinality(v_doomed)>0 THEN\n      -- A RECORDED EARNING SOURCE IS NOT HAND HISTORY (2026-09-25).\n      -- This line used to delete the pruned hands rake attributions, and\n      -- every run of sp_prune_hand_history_10m raised\n      -- recorded_cash_earning_source_is_immutable for it: the trigger\n      -- accounting_cash_source_immutable refuses to move an attribution once\n      -- accounting_cash_accrual_batches holds a batch for its rake record.\n      -- The trigger is right and the DELETE was never required: there is no\n      -- foreign key from rake_attributions.hand_id to hand_history.id. It\n      -- also fired trg_ca_club_rake_daily_user_del, which would have\n      -- decremented the per-club per-user daily rake rollup - the rakeback\n      -- basis - for every horse in every pruned hand (CLAUDE.md 10.5).\n      -- Retention is a storage decision about hand HISTORY (10.5, eight\n      -- days); the money ledger is not pruned, so attributions are kept.\n      DELETE FROM public.ca_hand_player_idx WHERE hand_id=ANY(v_doomed);\n      DELETE FROM public.hand_atomic_commits WHERE hand_id=ANY(v_doomed);\n      DELETE FROM public.hand_history WHERE id=ANY(v_doomed);\n      GET DIAGNOSTICS v_round=ROW_COUNT;\n      v_deleted := v_deleted+v_round;\n    END IF;\n    EXIT WHEN clock_timestamp()>=v_deadline;\n  END LOOP;\n  RETURN v_deleted;\nEND;\n$function$\n"
+  }
+}

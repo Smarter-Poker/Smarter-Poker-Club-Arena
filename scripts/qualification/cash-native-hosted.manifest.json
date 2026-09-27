@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171068,
-      "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+      "bytes": 171471,
+      "sha256": "0b0f9de940aa5f2f1922fc553976d08c5abe84f9c883d2cec973de6f0f08bcc7"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -917,5 +917,20 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "pushEnrollmentBrowserGate20260927": {
+    "reason": "Add the client-only push enrollment opt-in browser gate (npm run test:e2e:push-enrollment, a local harness with no login and no production data) after the existing financial-decisions browser step in ci.yml. No accounting runner, fixture, assertion or routing changes.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 171068,
+        "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+      }
+    },
+    "updated": {
+      ".github/workflows/ci.yml": {
+        "bytes": 171471,
+        "sha256": "0b0f9de940aa5f2f1922fc553976d08c5abe84f9c883d2cec973de6f0f08bcc7"
+      }
+    }
   }
 }

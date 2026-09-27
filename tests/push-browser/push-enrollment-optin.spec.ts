@@ -68,7 +68,7 @@ async function open(page: Page, uid: string) {
   await expect(page.getByRole('button', { name: 'Harness Join Club' })).toBeVisible();
 }
 
-const card = (page: Page) => page.getByRole('dialog', { name: 'Enable notifications' });
+const card = (page: Page) => page.getByRole('dialog', { name: 'Enable Notifications' });
 
 async function requests(page: Page) {
   return (await (await page.request.get('/__harness/requests')).json()) as Array<{

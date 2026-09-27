@@ -58,7 +58,7 @@ describe('FirstRunPushPrompt', () => {
       await vi.advanceTimersByTimeAsync(20_000);
     });
 
-    expect(screen.queryByRole('dialog', { name: 'Enable notifications' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Enable Notifications' })).not.toBeInTheDocument();
     expect(localStorage.getItem('sp_firstrun_notif_v2_player-1')).toBeTruthy();
   });
 
@@ -175,5 +175,5 @@ async function settle(ms: number) {
 }
 
 function dialog() {
-  return screen.queryByRole('dialog', { name: 'Enable notifications' });
+  return screen.queryByRole('dialog', { name: 'Enable Notifications' });
 }

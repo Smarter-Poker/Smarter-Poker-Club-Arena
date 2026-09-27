@@ -348,7 +348,7 @@ export default function FirstRunPushPrompt() {
       className={modal ? 'ca-push-prompt' : 'ca-push-prompt ca-push-prompt--card'}
       role="dialog"
       aria-modal={modal ? 'true' : 'false'}
-      aria-label="Enable notifications"
+      aria-label="Enable Notifications"
       data-push-nudge={moment}
       onClick={modal ? handleDismiss : undefined}
     >

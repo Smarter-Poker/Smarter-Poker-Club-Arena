@@ -1,0 +1,30 @@
+{
+  "source_sha256": "965ad8297b3a4c64b0ff8a0a81c399a7becc57a88bc358f70cb8fc1dbfc9cf38",
+  "columns": [
+    {
+      "name": "cluster_mode",
+      "type": "text",
+      "default": "'must_move'::text",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "lightning_enabled",
+      "type": "boolean",
+      "default": "false",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "cluster_epoch",
+      "type": "integer",
+      "default": "0",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    }
+  ],
+  "full_financial_qualification": false
+}

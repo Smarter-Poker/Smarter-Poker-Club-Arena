@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
+    "scripts/ci/classify-ci-changes.mjs": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -120,6 +120,12 @@
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
+      "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
+      "sha256": "ebf30e23ed473fe33954db0e84f5d8f40995851c977b4cc528db2fcee6655c63",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
       "from": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
       "to": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
       "on": "2026-09-26",
@@ -127,10 +133,23 @@
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "ebf30e23ed473fe33954db0e84f5d8f40995851c977b4cc528db2fcee6655c63",
+      "to": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
+      "reason": "Integrate main ad23d8350 discovery routing with horse admission enforcement, preserving both current contracts and all historical records."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
       "from": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
       "to": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
       "on": "2026-09-27",
       "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
+      "to": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25",
+      "on": "2026-09-27",
+      "why": "Integrate protected main d49fa1913c horse-admission regression routing with scoped achievement and rate-history read qualification. Preserve both classifier branches, every prior audit entry, all financial fixture assertions and incoming test bindings."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."

@@ -57,7 +57,13 @@ BANK_FAULT_INSERT="""  -- ISOLATED QUALIFICATION FAULT ONLY: derived bytes, neve
   IF phase=0 THEN
    UPDATE public.union_wallets SET rake_wallet=rake_wallet+1
     WHERE union_id='fade0000-0000-0000-0000-000000000001'::uuid;
-   IF NOT FOUND THEN RAISE EXCEPTION 'ISOLATED_BANK_FAULT_TARGET_ABSENT'; END IF;
+   IF NOT FOUND THEN
+    -- Synthetic fault row, created only inside the transaction being aborted.
+    INSERT INTO public.union_wallets(id,union_id,chip_balance,rake_wallet,bbj_wallet,
+      promo_wallet,insurance_wallet,spin_reserve_wallet)
+    VALUES ('341f02a3-4655-420c-b43b-3930b6d9ad8f'::uuid,
+      'fade0000-0000-0000-0000-000000000001'::uuid,0,1,0,0,0,0);
+   END IF;
   END IF;
 """
 
@@ -88,13 +94,22 @@ def parse_bank_fault(raw,A):
         and d['production_settlement_complete'] is False,'bank fault identity/scope differs')
     require(isinstance(d['transaction_id'],str) and re.fullmatch(r'[1-9][0-9]{0,19}',d['transaction_id'])
         and int(d['transaction_id'])<2**64,'bank fault transaction identity malformed')
-    require(isinstance(d['before'],list) and len(d['before'])==1 and isinstance(d['inside'],list)
-        and len(d['inside'])==1,'bank fault wallet cardinality differs')
-    row=d['before'][0];require(isinstance(row,dict) and row.get('union_id')=='fade0000-0000-0000-0000-000000000001'
-        and row.get('id')=='059bb325-6eeb-4bbd-957d-3a82e755bb0c'
-        and type(row.get('rake_wallet')) in (int,Decimal),'bank fault original wallet differs')
-    expected=copy.deepcopy(row);expected['rake_wallet']+=1
-    require(d['inside']==[expected],'bank fault did not retain exact own +1 mutation')
+    require(isinstance(d['before'],list) and len(d['before']) in (0,1)
+        and isinstance(d['inside'],list) and len(d['inside'])==1,'bank fault wallet cardinality differs')
+    financial={'chip_balance','rake_wallet','bbj_wallet','promo_wallet','insurance_wallet','spin_reserve_wallet'}
+    def exact_wallet(row):
+        require(isinstance(row,dict) and set(row)==financial|{'id','union_id'}
+            and row['union_id']=='fade0000-0000-0000-0000-000000000001'
+            and all(type(row[k]) in (int,Decimal) for k in financial),'bank fault wallet projection differs')
+    exact_wallet(d['inside'][0])
+    if d['before']:
+        row=d['before'][0];exact_wallet(row)
+        require(row['id']=='059bb325-6eeb-4bbd-957d-3a82e755bb0c','bank fault original wallet differs')
+        expected=copy.deepcopy(row);expected['rake_wallet']+=1
+    else:
+        expected=dict.fromkeys(financial,0)
+        expected.update(id=OPERATION,union_id='fade0000-0000-0000-0000-000000000001',rake_wallet=1)
+    require(d['inside']==[expected],'bank fault did not retain exact own update or synthetic insert')
     return d
 
 def validate_bank_fault(f,A):
@@ -106,14 +121,14 @@ def validate_bank_fault(f,A):
         'derived fault source changed')
     d=parse_bank_fault(f['original_output'],A);require(d==f['detail'],'bank fault retained detail differs')
     observed=f['before']['rows']['public.union_wallets']
-    require(isinstance(observed,list) and len(observed)==1,'bank fault independent original wallet absent')
-    projection={k:v for k,v in observed[0].items() if k in ('id','user_id','club_id','union_id')
-        or re.search(r'(balance|treasury|wallet|chip_pool|locked_chips|held_chips|credit_|diamonds|total_deposited|total_drawn|seeded_amount|surplus_returned|seed_returned_amount)',k)}
-    require(d['before']==[projection],'bank fault diagnostic before differs from independent wallet')
+    require(isinstance(observed,list) and len(observed) in (0,1),'bank fault independent wallet cardinality differs')
+    projection=[{k:v for k,v in row.items() if k in ('id','user_id','club_id','union_id')
+        or re.search(r'(balance|treasury|wallet|chip_pool|locked_chips|held_chips|credit_|diamonds|total_deposited|total_drawn|seeded_amount|surplus_returned|seed_returned_amount)',k)} for row in observed]
+    require(d['before']==projection,'bank fault diagnostic before differs from independent wallet')
     require(f['before']['rows']==f['after']['rows'],'bank fault left durable rows')
     require(f['transaction_status']=={'transaction_id':d['transaction_id'],'status':'aborted'},'bank fault actual transaction not aborted')
-    require(f['rollback_output'] and not re.search(r'(?:ERROR|WARNING|FATAL|PANIC):',f['rollback_output']),
-        'bank fault explicit rollback absent/failed')
+    require(f['rollback_output']=='true',
+        'bank fault post-rollback unassigned transaction marker absent/failed')
     for phase in ('before','after'):require(set(f[phase]['sequences'])==set(C.SEQUENCES),'bank fault sequence observation missing')
     return d
 
@@ -149,7 +164,8 @@ def run(args,e,sessions,deadline,R,A):
     fault['derived_sha256']=hashlib.sha256(derived.encode()).hexdigest()
     e['bank_fault']=fault;fault['original_output']=worker.command(derived)
     fault['detail']=parse_bank_fault(fault['original_output'],A)
-    fault['rollback_output']=worker.command('ROLLBACK;');worker.no_errors(fault['rollback_output'])
+    fault['rollback_output']=worker.command('ROLLBACK; SELECT to_jsonb(pg_current_xact_id_if_assigned() IS NULL);')
+    worker.no_errors(fault['rollback_output'])
     fault['after']=observer.json(snapshot)
     xid=fault['detail']['transaction_id']
     fault['transaction_status']=observer.json("SELECT jsonb_build_object('transaction_id','"+xid+"','status',pg_xact_status('"+xid+"'::xid8));")

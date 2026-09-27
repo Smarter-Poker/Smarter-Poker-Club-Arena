@@ -149,8 +149,8 @@
       "sha256": "68d6b67148658468f15545a383f298c224ec42182af8f4df7564507315ed4e6e"
     },
     "scripts/qualification/spin-first-archived-production-probe.py": {
-      "bytes": 16836,
-      "sha256": "441a22ab4464f01b2c070446f1518047031b9487183845692fa4e7cefa386eec"
+      "bytes": 17681,
+      "sha256": "0e24c3ce46b3cfde8160a49498e18265e1f0b9cb7b6b525d536262d909522d82"
     },
     "scripts/qualification/spin-first-archived.py": {
       "bytes": 25589,
@@ -169,8 +169,8 @@
       "sha256": "e1ed1c62d6cf485326bcc6344d2275f4da814b8f311375d7aa3fedf6e878ae5f"
     },
     "scripts/qualification/test_first_archived_production_probe.py": {
-      "bytes": 7606,
-      "sha256": "4fd9a4ca4372e32ff15f31646bc73ecf8f85dc4a774c230ebdc255a82452523b"
+      "bytes": 9313,
+      "sha256": "f33819ce5b9311d4b78f044f572deb919736fb491238ae41db73257c33aa7eb9"
     },
     "supabase/components/spin-archived-first-admission.sql": {
       "bytes": 17780,

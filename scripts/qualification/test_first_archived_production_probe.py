@@ -15,7 +15,7 @@ NOTICE='NOTICE:  00000: pre-cutover fee 6d13847d-cbe2-473c-94e5-34dad1ce3efb lef
 
 def valid():
     c=T.valid();before=copy.deepcopy(c['before']);before['rows'].update({'public.hand_history':[],'public.hand_atomic_commits':[]})
-    bank=[{'id':'059bb325-6eeb-4bbd-957d-3a82e755bb0c','union_id':'fade0000-0000-0000-0000-000000000001','rake_wallet':24}]
+    bank=[{'id':'059bb325-6eeb-4bbd-957d-3a82e755bb0c','union_id':'fade0000-0000-0000-0000-000000000001','rake_wallet':24,'chip_balance':0,'bbj_wallet':0,'promo_wallet':0,'insurance_wallet':0,'spin_reserve_wallet':0}]
     before['rows']['public.union_wallets']=copy.deepcopy(bank)
     c['accounts_before']['public.union_wallets']=copy.deepcopy(bank)
     c['accounts_after']['public.union_wallets']=copy.deepcopy(bank)
@@ -30,7 +30,7 @@ def valid():
         'backend_cleanup':{'backends':0,'locks':0},'backend_cleanup_observations':[{'backends':0,'locks':0}],
         'verifier_client':{'client_exit':0},'cleanup_transcript':'original','transcripts':{k:'original' for k in p}})
     source=(P.ROOT/P.PROBE).read_text();derived=P.bank_fault_source(source)
-    bank_before=[{'id':'059bb325-6eeb-4bbd-957d-3a82e755bb0c','union_id':'fade0000-0000-0000-0000-000000000001','rake_wallet':24}]
+    bank_before=[{'id':'059bb325-6eeb-4bbd-957d-3a82e755bb0c','union_id':'fade0000-0000-0000-0000-000000000001','rake_wallet':24,'chip_balance':0,'bbj_wallet':0,'promo_wallet':0,'insurance_wallet':0,'spin_reserve_wallet':0}]
     bank_inside=copy.deepcopy(bank_before);bank_inside[0]['rake_wallet']+=1
     diagnostic={'operation':P.OPERATION,'event':P.C.EVENT,'transaction_id':'10001','isolation':'read committed',
         'relation':'public.union_wallets','before':bank_before,'inside':bank_inside,
@@ -38,7 +38,7 @@ def valid():
     fault_raw=NOTICE+'\nERROR:  P0001: PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets\nDETAIL:  '+json.dumps(diagnostic)+'\n'
     result['bank_fault']={'kind':'isolated-derived-own-bank-mutation','production_sql':False,'base_probe_sha256':P.PROBE_SHA,
         'derived_source':derived,'derived_sha256':P.hashlib.sha256(derived.encode()).hexdigest(),'before':copy.deepcopy(before),'after':copy.deepcopy(before),
-        'original_output':fault_raw,'detail':diagnostic,'rollback_output':'ROLLBACK\n','transaction_status':{'transaction_id':'10001','status':'aborted'}}
+        'original_output':fault_raw,'detail':diagnostic,'rollback_output':'true','transaction_status':{'transaction_id':'10001','status':'aborted'}}
     return result
 
 
@@ -73,7 +73,9 @@ class FirstArchivedProductionProbeTests(unittest.TestCase):
             lambda f:f.update(original_output=f['original_output'].replace(NOTICE,'')),
             lambda f:f['transaction_status'].update(status='committed'),
             lambda f:f['transaction_status'].update(transaction_id='10002'),
-            lambda f:f['after']['rows'].update(changed=True),lambda f:f.update(rollback_output='ERROR: refused')]
+            lambda f:f['after']['rows'].update(changed=True),lambda f:f.update(rollback_output='ERROR: refused'),
+            lambda f:f.update(rollback_output=''),lambda f:f.update(rollback_output='false'),
+            lambda f:f.update(rollback_output='1'),lambda f:f.update(rollback_output='true\ntrue')]
         for i,change in enumerate(changes):
             d=valid();change(d['bank_fault'])
             with self.subTest(i=i),self.assertRaises((ValueError,KeyError)):P.validate_evidence(d,d['execution'],A)
@@ -82,6 +84,26 @@ class FirstArchivedProductionProbeTests(unittest.TestCase):
             d=valid();f=d['bank_fault'];f['detail'][key]=value
             f['original_output']=NOTICE+'\nERROR:  P0001: PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets\nDETAIL:  '+json.dumps(f['detail'])+'\n'
             with self.subTest(key=key),self.assertRaises(ValueError):P.validate_evidence(d,d['execution'],A)
+
+    def test_absent_wallet_synthetic_insert_is_exact_and_rolled_back(self):
+        d=valid();f=d['bank_fault']
+        for phase in ('before','after'):f[phase]['rows']['public.union_wallets']=[]
+        f['detail']['before']=[]
+        row={k:0 for k in ('chip_balance','rake_wallet','bbj_wallet','promo_wallet','insurance_wallet','spin_reserve_wallet')}
+        row.update(id=P.OPERATION,union_id='fade0000-0000-0000-0000-000000000001',rake_wallet=1)
+        f['detail']['inside']=[row]
+        def render(f):
+            f['original_output']=NOTICE+'\nERROR:  P0001: PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets\nDETAIL:  '+json.dumps(f['detail'])+'\n'
+        render(f);P.validate_bank_fault(f,A)
+        changes=[lambda f:f['detail']['inside'][0].update(id='wrong'),
+            lambda f:f['detail']['inside'][0].update(chip_balance=1),
+            lambda f:f['detail']['inside'][0].update(rake_wallet=True),
+            lambda f:f['detail']['inside'][0].pop('bbj_wallet'),
+            lambda f:f['detail']['inside'].append(copy.deepcopy(row)),
+            lambda f:f['after']['rows'].update(changed=True)]
+        for i,change in enumerate(changes):
+            altered=copy.deepcopy(f);change(altered);render(altered)
+            with self.subTest(i=i),self.assertRaises(ValueError):P.validate_bank_fault(altered,A)
 
     def test_injection_is_only_after_canonical_call_and_role_restoration(self):
         source=(P.ROOT/P.PROBE).read_text();derived=P.bank_fault_source(source)

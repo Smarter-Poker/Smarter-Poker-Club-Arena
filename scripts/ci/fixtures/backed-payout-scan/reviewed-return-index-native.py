@@ -5,7 +5,7 @@ def qualify(context):
     q=context['query'];f=context['FIXTURE'];root=context['ROOT'];outcome=context['outcome']
     pg=context['pg'];socket=context['socket'];env=context['env']
     pin=json.loads((f/'reviewed-return-index-expectations.json').read_text());name=pin['name']
-    migration=(root/'supabase/migrations/20260927164203_reviewed_overlay_returns_use_their_exact_partial_ledger_inde.sql').read_text()
+    migration=(root/'supabase/migrations/20260927170830_reviewed_overlay_returns_use_their_exact_partial_ledger_index.sql').read_text()
     online=(f/'reviewed-return-index-build-online.sql').read_text();recovery=(f/'reviewed-return-index-recover-online.sql').read_text()
     # Production postgres is NOSUPERUSER BYPASSRLS with pg_monitor USAGE
     # (read-only catalog verified 2026-09-27). Match that observer authority.

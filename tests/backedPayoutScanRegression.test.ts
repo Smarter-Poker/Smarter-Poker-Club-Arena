@@ -43,7 +43,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-build-online.sql',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-recover-online.sql',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-expectations.json',
-    'supabase/migrations/20260927164203_reviewed_overlay_returns_use_their_exact_partial_ledger_inde.sql',
+    'supabase/migrations/20260927170830_reviewed_overlay_returns_use_their_exact_partial_ledger_index.sql',
     'scripts/ci/test-backed-payout-scan-postgres.py',
     'scripts/ci/fixtures/backed-payout-scan/baseline.json',
     'scripts/ci/fixtures/backed-payout-scan/batch-selection.sql',
@@ -126,7 +126,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
       'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-build-online.sql'
     );
     const verifier = read(
-      'supabase/migrations/20260927164203_reviewed_overlay_returns_use_their_exact_partial_ledger_inde.sql'
+      'supabase/migrations/20260927170830_reviewed_overlay_returns_use_their_exact_partial_ledger_index.sql'
     );
     const pins = JSON.parse(
       read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-expectations.json')

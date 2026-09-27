@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171068,
-      "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+      "bytes": 171232,
+      "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27619,
-      "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+      "bytes": 27841,
+      "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -917,5 +917,30 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171232,
+          "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 27841,
+          "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
+        }
+      }
+    }
   }
 }

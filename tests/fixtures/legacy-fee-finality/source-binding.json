@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+    "scripts/ci/classify-ci-changes.mjs": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -440,5 +440,14 @@
     "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
+      }
+    }
   }
 }

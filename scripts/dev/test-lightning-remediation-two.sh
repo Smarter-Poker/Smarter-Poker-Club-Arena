@@ -132,7 +132,7 @@ DO $$
 DECLARE
   v_g uuid; v_g2 uuid; v_g7a uuid; v_g7b uuid; v_g8 uuid; v_main uuid; v_req uuid := gen_random_uuid();
   v_r jsonb; v_h uuid; v_i uuid; v_p uuid[]; v_p2 uuid[]; v_q uuid; v_l uuid; v_x uuid; v_seat uuid;
-  v_u uuid; v_ui uuid; v_t text; v_feeder uuid; v_n integer;
+  v_u uuid; v_ui uuid; v_t text; v_feeder uuid; v_n integer; v_reserved_horse uuid;
 BEGIN
   -- NOTHING OF THIS FILE EXISTS YET.
   IF to_regprocedure('public.fn_lightning_pool_enter(uuid,timestamp with time zone)') IS NOT NULL
@@ -149,6 +149,15 @@ BEGIN
   v_g := public.fx9_cluster('G1', 6, 40, true);
   PERFORM public.fx9_seat(v_g, 16);
   PERFORM public.fx9_seat(v_g, 2, 17, true);
+  -- Section 05 needs a horse who is neither this section's top-up nor its
+  -- departure. Pool entry times tie within the conversion transaction, so
+  -- random session UUID order can otherwise choose BOTH horses for those
+  -- two roles. Reserve one fixture identity, not a gameplay exclusion.
+  SELECT ts.user_id INTO STRICT v_reserved_horse
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = v_g AND ts.horse_id IS NOT NULL
+   ORDER BY ts.seat_number, ts.id LIMIT 1;
+  INSERT INTO r2 (k, game, a) VALUES ('g1_reserved_horse', v_g, v_reserved_horse);
   v_main := public.fxr_main(v_g);
   v_r := public.fn_cash_cluster_begin_pending_on(v_g, v_req);
   IF (v_r ->> 'ok')::boolean IS DISTINCT FROM true THEN
@@ -192,6 +201,7 @@ BEGIN
   -- (a top-up); the pool's copy does not move.
   SELECT ps.player_id INTO v_q FROM public.lightning_pool_session ps
    WHERE ps.cluster_id = v_g AND ps.exited_at IS NULL AND ps.player_id <> ALL (v_p)
+     AND ps.player_id <> v_reserved_horse
    ORDER BY ps.entered_at, ps.id LIMIT 1;
   UPDATE public.table_seats SET stack = stack + 25 WHERE user_id = v_q AND left_at IS NULL;
   IF public.fn_lightning_pool_stack((SELECT id FROM public.lightning_pool_session WHERE player_id = v_q AND exited_at IS NULL))
@@ -204,6 +214,7 @@ BEGIN
   -- non-participant leaves; a new player sits down after the conversion.
   SELECT ps.player_id INTO v_l FROM public.lightning_pool_session ps
    WHERE ps.cluster_id = v_g AND ps.exited_at IS NULL AND ps.player_id <> ALL (v_p) AND ps.player_id <> v_q
+     AND ps.player_id <> v_reserved_horse
    ORDER BY ps.entered_at, ps.id LIMIT 1;
   UPDATE public.table_seats SET left_at = clock_timestamp() WHERE user_id = v_l AND left_at IS NULL;
   INSERT INTO r2 (k, game, a) VALUES ('g1_left', v_g, v_l);
@@ -801,6 +812,7 @@ BEGIN
   SELECT ts.user_id INTO v_horse FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
     JOIN public.lightning_pool_slot sl ON sl.player_id = ts.user_id AND sl.cluster_id = v_g AND sl.closed_at IS NULL
    WHERE tb.cluster_id = v_g AND ts.horse_id IS NOT NULL AND ts.left_at IS NULL
+     AND ts.user_id = (SELECT a FROM r2 WHERE k = 'g1_reserved_horse')
      AND NOT public.fn_lightning_player_in_hand(ts.user_id, v_g)
      AND ts.user_id NOT IN (v_l, v_q)
    ORDER BY ts.seat_number LIMIT 1;

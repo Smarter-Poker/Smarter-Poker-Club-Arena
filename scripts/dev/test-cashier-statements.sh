@@ -107,3 +107,7 @@ plan_check 'Scan( Backward)? using [a-z_]+ on chip_transactions terminal ' \
 plan_check 'Scan using ux_chip_transactions_idempotency_key on chip_transactions represented' \
   "represented" \
   'plan: the idempotency anti-join uses the partial unique index'
+
+# The maintained online-index companion and short recording migration also
+# retain the complete role/accounting oracle and realistic receipt-range plans.
+python3 "$root/tests/fixtures/cashier-statements/totals-index-native.py"

@@ -1,4 +1,4 @@
-# First archived Spin probe preserves bank-failure evidence
+# First archived Spin probe preserves genuine failure evidence
 
 The first production rollback probe failed at its unchanged bank comparison on
 2026-09-27 at approximately 14:04 UTC. Its `P0001` named `public.union_wallets`
@@ -33,3 +33,29 @@ oldest alert remain unresolved; additional diagnostics are not a settlement.
 
 Source reread: verified after edit. Compiler and connected qualification:
 pending on this follow-up candidate.
+
+## Management transport correction
+
+A read-only production transport check on September 27 retained ERROR and
+DETAIL but omitted a preceding NOTICE. Requiring that omitted NOTICE could
+never verify the financial probe through this transport. The probe now invokes
+the pinned original fee-capture owner separately under its actual service
+context, inside an exception subtransaction before canonical completion. It
+captures the real SQLSTATE, message and exception context and proves that the
+provisional batch/source rows rolled back immediately. Unexpected success or
+any different error aborts the entire probe. The final DETAIL identifies this
+separate invocation honestly and binds it to the canonical admission's
+transaction. It does not reconstruct the missing original canonical NOTICE.
+
+Native qualification still requires that original canonical NOTICE separately.
+The explicit management reader requires the structured refusal instead, and
+rejects missing or altered evidence. Connected isolated cases verify release of
+the original rake-row and fee locks before canonical completion, unexpected
+success and missing-function refusals, full retained row rollback, and the
+actual aborted transaction status. Derived fault SQL is separately identified
+and source-bound; none is a production input. No sequence rollback is claimed.
+
+The expected error precedes the reconciliation insert in the pinned owner.
+That relation is not added to the finite fixture or claimed snapshotted. The
+unavailable original fee terms and the original bank mismatch remain unresolved.
+No installed function, migration, fee disposition or isolation policy changes.

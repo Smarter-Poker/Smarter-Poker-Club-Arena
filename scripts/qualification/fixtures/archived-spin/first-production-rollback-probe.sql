@@ -27,6 +27,8 @@ DECLARE
  accounts jsonb; expected_accounts jsonb; row_before jsonb; row_after jsonb;
  terminal jsonb; escrow jsonb; custody jsonb; accounting jsonb; admission jsonb; lease jsonb;
  expected_amount numeric; added jsonb;
+ fee_diagnostic jsonb; fee_state text; fee_message text; fee_context text;
+ fee_capture_before jsonb; fee_capture_after jsonb; fee_owner_md5 text;
 BEGIN
  PERFORM set_config('lock_timeout','3s',true);
  PERFORM set_config('TimeZone','UTC',true);
@@ -74,7 +76,45 @@ BEGIN
   EXECUTE 'SET LOCAL ROLE service_role';
   IF current_user<>'service_role' OR auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'PROBE_SERVICE_CONTEXT'; END IF;
   PERFORM smarter_private.fn_smarter_data_api_pre_request();
-  IF phase=0 THEN response:=public.fn_complete_first_archived_spin(operation,source_sha);
+  IF phase=0 THEN
+   -- Separate nested qualification of the original capture owner. This is not
+   -- the canonical close's NOTICE, nor a separate HTTP/PostgREST request.
+   IF current_user IS DISTINCT FROM 'service_role' OR auth.role() IS DISTINCT FROM 'service_role'
+    THEN RAISE EXCEPTION 'PROBE_FEE_DIAGNOSTIC_CALLER'; END IF;
+   SELECT md5(pg_get_functiondef('public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)'::regprocedure)) INTO fee_owner_md5;
+   IF fee_owner_md5 IS DISTINCT FROM 'b7e0c1cae9d65b9a0b3560dc3280991a'
+    OR NOT EXISTS(SELECT 1 FROM public.rake_records WHERE id='6d13847d-cbe2-473c-94e5-34dad1ce3efb'::uuid
+      AND tournament_id=event AND source='fn_spin_book_entry' AND is_tournament AND rake_amount=24)
+    THEN RAISE EXCEPTION 'PROBE_FEE_DIAGNOSTIC_SOURCE'; END IF;
+   SELECT jsonb_build_object('batches',(SELECT coalesce(jsonb_agg(to_jsonb(x) ORDER BY x.rake_record_id),'[]'::jsonb)
+     FROM public.accounting_tournament_fee_batches x WHERE x.tournament_id=event),
+     'sources',(SELECT coalesce(jsonb_agg(to_jsonb(x) ORDER BY x.id),'[]'::jsonb)
+     FROM public.accounting_tournament_fee_sources x WHERE x.tournament_id=event)) INTO fee_capture_before;
+   IF fee_capture_before IS DISTINCT FROM '{"batches":[],"sources":[]}'::jsonb
+    THEN RAISE EXCEPTION 'PROBE_FEE_DIAGNOSTIC_PRIOR_CAPTURE'; END IF;
+   BEGIN
+    PERFORM public.fn_ca_capture_tournament_fee_from_recorded_evidence('6d13847d-cbe2-473c-94e5-34dad1ce3efb'::uuid);
+    RAISE EXCEPTION 'PROBE_FEE_CAPTURE_UNEXPECTED_SUCCESS' USING ERRCODE='PZ004';
+   EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS fee_state=RETURNED_SQLSTATE,fee_message=MESSAGE_TEXT,fee_context=PG_EXCEPTION_CONTEXT;
+    IF fee_state IS DISTINCT FROM '23514' OR fee_message IS DISTINCT FROM 'cash_commission_earning_club_not_observed'
+     THEN RAISE; END IF;
+    IF fee_context IS NULL OR strpos(fee_context,'fn_ca_capture_tournament_fee_from_recorded_evidence')=0
+      OR strpos(fee_context,'fn_accounting_earning_contract')=0
+     THEN RAISE EXCEPTION 'PROBE_FEE_DIAGNOSTIC_CONTEXT'; END IF;
+   END;
+   SELECT jsonb_build_object('batches',(SELECT coalesce(jsonb_agg(to_jsonb(x) ORDER BY x.rake_record_id),'[]'::jsonb)
+     FROM public.accounting_tournament_fee_batches x WHERE x.tournament_id=event),
+     'sources',(SELECT coalesce(jsonb_agg(to_jsonb(x) ORDER BY x.id),'[]'::jsonb)
+     FROM public.accounting_tournament_fee_sources x WHERE x.tournament_id=event)) INTO fee_capture_after;
+   IF fee_capture_after IS DISTINCT FROM fee_capture_before OR current_user IS DISTINCT FROM 'service_role'
+     OR auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'PROBE_FEE_DIAGNOSTIC_SUBTRANSACTION_CHANGED'; END IF;
+   fee_diagnostic:=jsonb_build_object('kind','separate_original_capture_refusal',
+    'operation',operation,'event',event,'transaction_id',pg_current_xact_id()::text,
+    'rake_record_id','6d13847d-cbe2-473c-94e5-34dad1ce3efb','sqlstate',fee_state,
+    'message',fee_message,'context',fee_context,'owner_md5',fee_owner_md5,
+    'invoker_role',current_user,'auth_role',auth.role(),'before',fee_capture_before,'after',fee_capture_after);
+   response:=public.fn_complete_first_archived_spin(operation,source_sha);
   ELSE replay:=public.fn_complete_first_archived_spin(operation,source_sha); END IF;
   SET CONSTRAINTS ALL IMMEDIATE;
   EXECUTE format('SET LOCAL ROLE %I',original_role);
@@ -136,7 +176,7 @@ BEGIN
    RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='PROBE_BANK_OR_RESERVE_CHANGED: '||name,
     DETAIL=jsonb_build_object('operation',operation,'event',event,
      'transaction_id',txid_current()::text,'isolation',current_setting('transaction_isolation'),
-     'relation',name,'before',before_state->name,'inside',inside_state->name,
+     'relation',name,'before',before_state->name,'inside',inside_state->name,'fee_capture_diagnostic',fee_diagnostic,
      'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
   END IF;
  END LOOP;
@@ -187,6 +227,7 @@ BEGIN
  OR terminal->'released_seat_ids' IS DISTINCT FROM '["fd0e0c3a-1efa-4262-8122-4c05e328f9ac"]'::jsonb THEN RAISE EXCEPTION 'PROBE_TERMINAL_CHAIR_RECEIPT'; END IF;
  RAISE EXCEPTION USING ERRCODE='PZ002', MESSAGE='FIRST_ARCHIVED_ROLLBACK_PROVED:'||operation::text,
  DETAIL=jsonb_build_object('operation',operation,'event',event,'response',response,'before',before_state,'inside',inside_state,
+ 'fee_capture_diagnostic',fee_diagnostic,
  'same_operation_replay_unchanged',true,'transaction_will_abort_now',true,'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
 END
 $probe$;

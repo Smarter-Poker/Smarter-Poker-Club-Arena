@@ -1,0 +1,26 @@
+CREATE ROLE anon;
+CREATE ROLE authenticated;
+CREATE ROLE service_role BYPASSRLS;
+CREATE SCHEMA extensions;
+CREATE SCHEMA auth;
+CREATE SCHEMA cron;
+GRANT USAGE ON SCHEMA public, extensions, auth TO anon, authenticated, service_role;
+GRANT USAGE ON SCHEMA cron TO authenticated, service_role;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+GRANT EXECUTE ON FUNCTION auth.uid() TO anon,authenticated,service_role;
+-- Type-compatible geography stand-in: these tests change no spatial expressions.
+CREATE TYPE geography;
+CREATE FUNCTION geography_in(cstring) RETURNS geography LANGUAGE internal IMMUTABLE STRICT AS 'point_in';
+CREATE FUNCTION geography_out(geography) RETURNS cstring LANGUAGE internal IMMUTABLE STRICT AS 'point_out';
+CREATE TYPE geography (INPUT=geography_in,OUTPUT=geography_out,INTERNALLENGTH=16,ALIGNMENT=double);
+CREATE CAST (point AS geography) WITHOUT FUNCTION;
+CREATE CAST (geography AS point) WITHOUT FUNCTION;
+CREATE FUNCTION st_makepoint(double precision,double precision) RETURNS point LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT point($1,$2) $$;
+CREATE FUNCTION st_setsrid(point,integer) RETURNS point LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT $1 $$;
+CREATE FUNCTION st_distance(geography,geography) RETURNS double precision LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT $1::point <-> $2::point $$;
+CREATE FUNCTION st_dwithin(geography,geography,double precision) RETURNS boolean LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT ($1::point <-> $2::point)<=$3 $$;
+CREATE TABLE cron.job(jobid bigint,jobname text,schedule text,command text,active boolean);
+INSERT INTO cron.job VALUES (17,'home-trending-refresh','*/15 * * * *','SELECT public.fn_refresh_trending_home_groups();',true), (20,'pnm-locations-refresh','*/30 * * * *','SELECT public.fn_refresh_active_poker_locations();',true);
+GRANT SELECT ON cron.job TO authenticated, service_role;
+CREATE TABLE public.v_system_health_cron(failures_24h bigint);
+GRANT SELECT ON public.v_system_health_cron TO authenticated, service_role;

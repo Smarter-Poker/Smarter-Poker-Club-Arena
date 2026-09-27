@@ -98,20 +98,11 @@ describe('a failed fetch never destroys a good balance', () => {
 });
 
 describe('balance changes reach the player on every page', () => {
-  it('subscribes to wallets globally in PostgresSyncHooks', () => {
-    expect(SYNC_HOOKS).toMatch(/table:\s*'wallets'/);
-  });
-
-  it('scopes that subscription to the user, not the whole table', () => {
-    // The 2026-04 billing incident was UNFILTERED table-wide listeners. A
-    // filtered one is cheap; an unfiltered one must never come back.
-    const at = SYNC_HOOKS.indexOf("table: 'wallets'");
-    const walletsBlock = sliceEnclosingBlock(SYNC_HOOKS, "table: 'wallets'");
-    expect(walletsBlock).toMatch(/filter:\s*`user_id=eq\.\$\{userId\}`/);
-  });
-
-  it('emits BALANCE_UPDATED so the debounced global sync refetches once', () => {
-    expect(SYNC_HOOKS).toMatch(/'wallet_balance',\s*'BALANCE_UPDATED'/);
+  it('uses the live membership pool globally, never the frozen wallet table', () => {
+    expect(codeOnly(SYNC_HOOKS)).not.toMatch(/table:\s*'wallets'/);
+    const membershipBlock = sliceEnclosingBlock(SYNC_HOOKS, "table: 'club_members'");
+    expect(membershipBlock).toMatch(/filter:\s*`user_id=eq\.\$\{userId\}`/);
+    expect(SYNC_HOOKS).toContain("'wallet_balance', 'BALANCE_UPDATED'");
   });
 });
 

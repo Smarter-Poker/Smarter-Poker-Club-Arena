@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   state: { user: { id: 'player-a' } as { id: string } | null, updateTotalChips: vi.fn() },
   read: vi.fn(),
   report: vi.fn(),
-  listeners: new Map<string, () => void>(),
+  walletRead: vi.fn().mockResolvedValue(undefined),
+  listeners: new Map<string, (event?: any) => void>(),
 }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
@@ -25,6 +26,9 @@ vi.mock('../../src/stores/useUserStore', () => ({
 }));
 vi.mock('../../src/services/WalletService', () => ({
   WalletService: { readPlayerBalance: mocks.read },
+}));
+vi.mock('../../src/stores/useWalletStore', () => ({
+  useWalletStore: { getState: () => ({ loadBalances: mocks.walletRead }) },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
 import { useGlobalBalanceSync, GlobalBalanceSync } from '../../src/core/useGlobalBalanceSync';
@@ -122,4 +126,29 @@ describe('global balance read ownership', () => {
     );
     expect(mocks.state.updateTotalChips).not.toHaveBeenCalled();
   });
+});
+
+it('refreshes the persistent wallet store from real balance events without a header', async () => {
+  mocks.read.mockResolvedValue({ balance: 80 });
+  await act(async () => {
+    renderHook(() => useGlobalBalanceSync());
+  });
+  expect(mocks.walletRead).toHaveBeenCalledWith('player-a', { force: false });
+  await act(async () =>
+    mocks.listeners.get('BALANCE_UPDATED')!({ payload: { userId: 'player-a' } })
+  );
+  expect(mocks.walletRead).toHaveBeenLastCalledWith('player-a', { force: true });
+});
+it('ignores balance events explicitly belonging to another account', async () => {
+  mocks.read.mockResolvedValue({ balance: 80 });
+  await act(async () => {
+    renderHook(() => useGlobalBalanceSync());
+  });
+  mocks.walletRead.mockClear();
+  mocks.read.mockClear();
+  await act(async () =>
+    mocks.listeners.get('BALANCE_UPDATED')!({ payload: { userId: 'player-b' } })
+  );
+  expect(mocks.walletRead).not.toHaveBeenCalled();
+  expect(mocks.read).not.toHaveBeenCalled();
 });

@@ -129,6 +129,29 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(spec).not.toContain('MTT_HUD_CASE_TIMEOUT_MS');
   });
 
+  it('bounds cold readiness separately while preserving live continuity checks', () => {
+    const tournament = spec.slice(
+      spec.indexOf('async function certifyReadOnlyTournamentFormat('),
+      spec.indexOf("test.describe('production mobile WebKit live-table realtime continuity'")
+    );
+    const initial = tournament.indexOf('await whileInitialTableConnects(');
+    const navigation = tournament.indexOf('page.goto(`table/${candidate.id}`');
+    const budget = tournament.indexOf(
+      'remainingInitialTableReadinessMs(navigationStartedAt, CONNECT_DEADLINE_MS)'
+    );
+    const continuity = tournament.indexOf('await whileConnectionBannerStaysHidden(');
+    expect(initial).toBeGreaterThan(-1);
+    expect(navigation).toBeGreaterThan(initial);
+    expect(budget).toBeGreaterThan(navigation);
+    expect(continuity).toBeGreaterThan(budget);
+    expect(spec).toContain('const CONNECT_DEADLINE_MS = 12_000');
+    expect(tournament.slice(0, initial)).toContain("type: 'SUBSCRIBED'");
+    expect(tournament.slice(0, initial)).toContain("type: 'SNAPSHOT'");
+    const cash = spec.slice(spec.indexOf("test('an already-running table stays live"));
+    expect(cash).not.toContain('whileInitialTableConnects(');
+    expect(cash).toContain('initial live-table connection');
+  });
+
   it('observes tournament routes directly and refuses participation mutations', () => {
     expect(spec).toContain('page.goto(`table/${candidate.id}`');
     expect(spec).toContain('isSpectatorParticipationMutation(');

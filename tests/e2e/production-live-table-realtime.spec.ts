@@ -12,6 +12,7 @@ import {
   installLiveTablePresentationJournal,
   liveTablePresentationEvidence,
   whileConnectionBannerStaysHidden,
+  whileInitialTableConnects,
   type CausalHandCycle,
 } from './support/liveTableRealtime';
 import {
@@ -23,6 +24,7 @@ import { createProgressSilenceGuard } from './support/progressSilence';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { remainingObservationMs } from './support/observationDeadline';
 import { assertInitialTableOwnership } from './support/initialTableOwnership';
+import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
   createHudClockReader,
   hudEventObservationMs,
@@ -608,7 +610,7 @@ async function certifyReadOnlyTournamentFormat(
       ),
     ]);
 
-    await whileConnectionBannerStaysHidden(
+    await whileInitialTableConnects(
       page,
       (async () => {
         await Promise.all([
@@ -630,6 +632,12 @@ async function certifyReadOnlyTournamentFormat(
           page.locator('.table-surface'),
           `${candidate.name} live felt never rendered`
         ).toBeVisible({ timeout: 20_000 });
+        // Cold entry may honestly say Connecting before its first state. The
+        // actual subscription, snapshot, mounted felt and cleared status must
+        // still finish inside the same original navigation deadline.
+        await expect(banner).toBeHidden({
+          timeout: remainingInitialTableReadinessMs(navigationStartedAt, CONNECT_DEADLINE_MS),
+        });
       })(),
       `${candidate.name} initial live-table connection`
     );

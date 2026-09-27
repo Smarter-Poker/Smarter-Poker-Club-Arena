@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const certificationEnabled = process.env.E2E_NEW_CLUB_CERT === '1';
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test.describe('Production Create A Club Certificate', () => {
   // A retry is a second real side effect, not another observation. The
@@ -75,8 +76,23 @@ test.describe('Production Create A Club Certificate', () => {
     await submit.click();
     const response = await createResponse;
     expect(response.ok(), `create RPC returned ${response.status()}`).toBe(true);
+    const responseBody = (await response.json()) as unknown;
+    const createdClub = (Array.isArray(responseBody) ? responseBody[0] : responseBody) as {
+      id?: unknown;
+      slug?: unknown;
+    } | null;
+    const createdClubRef =
+      typeof createdClub?.slug === 'string' && createdClub.slug.length > 0
+        ? createdClub.slug
+        : typeof createdClub?.id === 'string'
+          ? createdClub.id
+          : '';
+    expect(createdClubRef, 'create RPC did not return a club route identity').not.toBe('');
 
-    await expect(page).toHaveURL(/\/clubs\/[0-9a-f-]{36}(?:[/?#]|$)/i, { timeout: 60_000 });
+    await expect(page).toHaveURL(
+      new RegExp(`/clubs/${escapeRegExp(createdClubRef)}(?:[/?#]|$)`, 'i'),
+      { timeout: 60_000 }
+    );
     await expect(page.getByText(clubName, { exact: false }).first()).toBeVisible({
       timeout: 60_000,
     });
@@ -85,7 +101,7 @@ test.describe('Production Create A Club Certificate', () => {
     });
     // Prove the painted opening-bank command, not the hidden screen-reader
     // wallet announcement that happens to contain the same number.
-    await expect(page.getByLabel(/^100,000(?:\.00)? Club Bank Chips$/)).toBeVisible({
+    await expect(page.getByLabel(/^100K Club Bank Chips$/)).toBeVisible({
       timeout: 60_000,
     });
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });

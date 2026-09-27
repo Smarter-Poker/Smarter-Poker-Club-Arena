@@ -10,7 +10,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[3]
 PG = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-MIGRATION = ROOT / 'supabase/migrations/20260926221856_cashier_receipt_totals_use_a_covered_club_time_range.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927001937_cashier_receipt_totals_use_a_covered_club_time_range.sql'
 ONLINE = ROOT / 'scripts/ops/build-cashier-totals-index-concurrently.sql'
 FIXTURE = ROOT / 'tests/fixtures/cashier-statements'
 BASE = ROOT / 'supabase/migrations/20260923131325_cashier_statements_read_every_wallet_in_one_keyset.sql'

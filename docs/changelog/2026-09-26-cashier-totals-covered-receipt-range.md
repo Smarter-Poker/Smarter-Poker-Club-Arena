@@ -66,9 +66,13 @@ Installation follows the maintained online snapshot-index pattern:
    existing authorized cashier browser test. Source/native success alone is
    not installation or live acceptance.
 
-The reserved migration version is `20260926221856`. Provider-assigned history
-alignment, production installation and browser acceptance must be recorded from
-their actual outcomes. The source candidate does not claim they already ran.
+The online index completed through the owned native TLS session at September27
+00:19:09 UTC. Catalog readback reported valid/ready/live and 65,765,376 bytes.
+The short settings migration was installed once at 00:19:37 UTC under actual
+provider history `20260927001937`; its 4,776 SQL bytes remain unchanged. Readback
+verified all four options plus the existing freeze setting and unchanged cashier
+RPC OIDs, ACLs and definition hashes. Source filenames match actual history;
+neither migration may be replayed. Production browser acceptance is separate.
 
 The maintenance-caller prerequisite was installed once on September 27 at
 00:18:20 UTC under provider history `20260927001820`. Readback retained its OID,

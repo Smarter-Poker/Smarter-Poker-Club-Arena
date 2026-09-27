@@ -5,7 +5,7 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const migration = read(
-  'supabase/migrations/20260926221856_cashier_receipt_totals_use_a_covered_club_time_range.sql'
+  'supabase/migrations/20260927001937_cashier_receipt_totals_use_a_covered_club_time_range.sql'
 );
 const onlinePath = 'scripts/ops/build-cashier-totals-index-concurrently.sql';
 const online = read(onlinePath)

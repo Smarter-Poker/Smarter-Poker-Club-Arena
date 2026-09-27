@@ -284,8 +284,8 @@ export default function TournamentResultsPage() {
         }
       }
 
-      const { data, error } = await query.abortSignal(signal);
-      if (error) throw error;
+      const { data, error: listErr } = await query.abortSignal(signal);
+      if (listErr) throw listErr;
       return (
         (data ?? []) as unknown as Array<CompletedTournament & { tournament_players?: unknown }>
       ).map(({ tournament_players: _tp, ...t }) => t as CompletedTournament);

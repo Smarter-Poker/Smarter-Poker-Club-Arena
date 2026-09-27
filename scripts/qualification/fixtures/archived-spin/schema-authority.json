@@ -1,0 +1,66 @@
+{
+  "schemas": [
+    {
+      "observed_at": "2026-09-26 21:48:58.769834+00",
+      "nspname": "auth",
+      "owner": "supabase_admin",
+      "acl": "{supabase_admin=UC/supabase_admin,anon=U/supabase_admin,authenticated=U/supabase_admin,service_role=U/supabase_admin,supabase_auth_admin=UC/supabase_admin,dashboard_user=UC/supabase_admin,postgres=U/supabase_admin}"
+    },
+    {
+      "observed_at": "2026-09-26 21:48:58.769834+00",
+      "nspname": "extensions",
+      "owner": "postgres",
+      "acl": "{postgres=UC/postgres,anon=U/postgres,authenticated=U/postgres,service_role=U/postgres,dashboard_user=UC/postgres}"
+    },
+    {
+      "observed_at": "2026-09-26 21:48:58.769834+00",
+      "nspname": "public",
+      "owner": "pg_database_owner",
+      "acl": "{pg_database_owner=UC/pg_database_owner,=U/pg_database_owner,postgres=U/pg_database_owner,anon=U/pg_database_owner,authenticated=U/pg_database_owner,service_role=U/pg_database_owner}"
+    },
+    {
+      "observed_at": "2026-09-26 21:48:58.769834+00",
+      "nspname": "smarter_private",
+      "owner": "postgres",
+      "acl": "{postgres=UC/postgres,anon=U/postgres,authenticated=U/postgres,service_role=U/postgres}"
+    }
+  ],
+  "roles": [
+    {
+      "observed_at": "2026-09-26 21:50:22.294965+00",
+      "rolname": "dashboard_user",
+      "rolsuper": false,
+      "rolinherit": true,
+      "rolcreaterole": true,
+      "rolcreatedb": true,
+      "rolcanlogin": false,
+      "rolreplication": true,
+      "rolbypassrls": false,
+      "rolconnlimit": -1,
+      "rolconfig": null,
+      "memberships": null
+    },
+    {
+      "observed_at": "2026-09-26 21:50:22.294965+00",
+      "rolname": "supabase_admin",
+      "rolsuper": true,
+      "rolinherit": true,
+      "rolcreaterole": true,
+      "rolcreatedb": true,
+      "rolcanlogin": true,
+      "rolreplication": true,
+      "rolbypassrls": true,
+      "rolconnlimit": -1,
+      "rolconfig": [
+        "search_path=\"$user\", public, auth, extensions",
+        "log_statement=none",
+        "statement_timeout=0"
+      ],
+      "memberships": null
+    }
+  ],
+  "sources": {
+    "first-schema-authority.json": "5e128625d1c84428cd01451596a85dc7cedddeea0c4a22db796d7ffd6a7e9448",
+    "first-extra-schema-roles.json": "a2924bd3df279011a5e26ceed3327e8b6617fc401fe4e78dd5cb1502ddf2185d"
+  }
+}

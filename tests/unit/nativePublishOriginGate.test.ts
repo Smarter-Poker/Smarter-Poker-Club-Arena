@@ -129,7 +129,10 @@ describe('native publishing requires the exact origin verification', () => {
     expect(mismatched.error).toBeUndefined();
     expect(mismatched.status).toBe(1);
     expect(mismatched.output).toBe('');
-  });
+    // Two real child processes each retain their 5s bound. The parent also
+    // needs assertion/cleanup time; a 5s parent can expire before either
+    // child reports its authoritative outcome under full-suite contention.
+  }, 15_000);
 
   it('the local template and publisher do not accept paid error telemetry configuration', () => {
     const template = readFileSync(join(root, '.env.example'), 'utf8');

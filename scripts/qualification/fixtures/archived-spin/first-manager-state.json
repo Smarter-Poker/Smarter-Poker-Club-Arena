@@ -1,0 +1,14 @@
+{
+  "raw_capture_sha256": "84330fd12849fa7112defd40174209a8d2729840fabe4e6d9c22d604a5836427",
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT jsonb_build_object('observed_at',now(),'event','2aa4cba1-506f-426b-a1ba-d8e22e018533','cohort',smarter_private.f06_retired_origin_cohort('2aa4cba1-506f-426b-a1ba-d8e22e018533'::uuid),'origins',(SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]') FROM smarter_private.f06_retired_manager_origins x WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533'),'transfers',(SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]') FROM smarter_private.f06_manager_custody_transfers x WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533'),'admissions',(SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]') FROM smarter_private.f06_manager_custody_admissions x WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533')) evidence; COMMIT;",
+  "evidence": {
+    "event": "2aa4cba1-506f-426b-a1ba-d8e22e018533",
+    "cohort": null,
+    "origins": [],
+    "transfers": [],
+    "admissions": [],
+    "observed_at": "2026-09-26T22:17:54.511656+00:00"
+  },
+  "scope": "Only first event custody absence; not a global empty-table claim.",
+  "financial_qualified": false
+}

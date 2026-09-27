@@ -33,6 +33,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scoped_tournament_diagnostic:
+    name: Explicit tournament runtime observation
+    # Only a deliberate bounded request. The existing hourly observer never
+    # invokes this job, and the request cannot choose a host or command.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.client_payload.tournament_diagnostic != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Read existing authenticated diagnostic endpoint
+        env:
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+        run: node scripts/ci/read-scoped-tournament-diagnostic.mjs
+      - name: Retain bounded runtime evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoped-tournament-diagnostic-${{ github.run_id }}
+          path: artifacts/tournament-diagnostic/observation.json
+          retention-days: 3
+          if-no-files-found: error
+
   client_release:
     name: Production is serving main
     # STAYS ON GITHUB'S POOL, deliberately (2026-09-03). The publisher runs on

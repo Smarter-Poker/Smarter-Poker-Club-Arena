@@ -88,6 +88,9 @@
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
+-- 407 door calls measured at 11.8 + 4.8 + 5.0 s in the rolled-back probes;
+-- a role default of 8 s would cut the first event short.
+SET LOCAL statement_timeout = '120s';
 
 DO $pre$
 BEGIN

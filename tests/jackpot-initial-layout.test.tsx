@@ -466,3 +466,19 @@ it('does not let a retired A request settle a later A after an A to B to A switc
   expect(screen.queryByText('87,654 Chips')).not.toBeInTheDocument();
   expect(root(container)).toHaveAttribute('data-initial-layout', 'settled');
 });
+
+it.each(['fn_bbj_pool_facts', 'fn_bbj_my_contribution', 'fn_bbj_promo_facts'])(
+  'reports a returned %s failure instead of rendering invented successful totals',
+  async (rpc) => {
+    if (rpc === 'fn_bbj_promo_facts') promo = deferred();
+    else requests[rpc] = deferred();
+    const { container } = render(<Page />);
+    await waitFor(() => expect(io.rpc).toHaveBeenCalledWith(rpc, expect.any(Object)));
+    const response = { data: null, error: { message: 'statement timeout', code: '57014' } };
+    await act(async () => (rpc === 'fn_bbj_promo_facts' ? promo : requests[rpc]).resolve(response));
+    await screen.findByText('Could Not Load The Jackpot');
+    expect(screen.queryByText('Jackpot Display')).not.toBeInTheDocument();
+    expect(root(container)).toHaveAttribute('data-initial-layout', 'settled');
+    expect(io.toast.error).toHaveBeenCalledWith('Failed to load jackpot data.');
+  }
+);

@@ -17,6 +17,7 @@ const {
   requestFromDeclaration,
   requestFromReport,
   serializePopulation,
+  strataCount,
   validateDeclaration,
 } = selector;
 
@@ -303,6 +304,66 @@ describe('Phase 6D declaration enforcement', () => {
       declaration,
     });
     expect(eleven.rejectReason).toBe('undeclared_cell');
+  });
+});
+
+describe('Phase 6D serving-release declaration of 2026-09-27', () => {
+  const servingPath = new URL(
+    '../../../../docs/evidence/phase6d/population-declaration-2026-09-27.json',
+    import.meta.url
+  ).pathname;
+  const serving = loadDeclaration(servingPath);
+
+  it('admits the serving release only, over a window from its start minute', () => {
+    const d = serving.declaration;
+    expect(d.admittedReleases.map((r: { sha: string }) => r.sha)).toEqual([
+      '6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4',
+    ]);
+    expect(d.servingRelease.sha).toBe('6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4');
+    expect(d.window.start).toBe('2026-09-27T16:06:00Z');
+    expect(d.window.startMs).toBe(Date.parse('2026-09-27T16:06:00Z'));
+    expect(d.window.endMs).toBe(Date.parse(d.window.end));
+    expect(strataCount(d)).toBe(Math.ceil((d.window.endMs - d.window.startMs) / 3_600_000));
+    expect(strataCount(loaded.declaration)).toBe(24);
+  });
+
+  it('keeps the cells and targets of the 2026-09-26 declaration', () => {
+    expect(declaredCells(serving.declaration).size).toBe(3969);
+    expect(serving.declaration.population).toEqual(loaded.declaration.population);
+    expect(serving.declaration.chain).toEqual(loaded.declaration.chain);
+    expect(serving.declaration.selection.handsPerStratum).toBe(
+      loaded.declaration.selection.handsPerStratum
+    );
+  });
+
+  it('refuses the earlier releases, a moved window and a window longer than a day', () => {
+    const request = {
+      declarationDigest: serving.digest,
+      window: { ...serving.declaration.window },
+      targetPerCell: 3,
+      handsPerStratum: serving.declaration.selection.handsPerStratum,
+      releases: ['6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4'],
+      servingRelease: '6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4',
+    };
+    expect(enforceDeclaration(serving, request)).toBe(true);
+    expect(() =>
+      enforceDeclaration(serving, {
+        ...request,
+        releases: [...request.releases, '4946473bb65a27d964a3ad9401eaf4948014a0a8'],
+      })
+    ).toThrow(/not admitted/);
+    expect(() =>
+      enforceDeclaration(serving, {
+        ...request,
+        window: { ...request.window, endMs: request.window.endMs + 60_000 },
+      })
+    ).toThrow(/window differs/);
+    const long = structuredClone(serving.declaration);
+    long.window.endMs = long.window.startMs + 25 * 3_600_000;
+    expect(() => validateDeclaration(long)).toThrow(/at most 24 hours/);
+    const reversed = structuredClone(serving.declaration);
+    reversed.window.endMs = reversed.window.startMs;
+    expect(() => validateDeclaration(reversed)).toThrow(/at most 24 hours/);
   });
 });
 

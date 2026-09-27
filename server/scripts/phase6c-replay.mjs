@@ -6,8 +6,13 @@
  *        [--out <dir>] [--charts <json>] [--store-snapshot <json>]... [--store-pins <json>]
  *        [--negative-controls K] [--full-verdicts <path>] [--label <name>] [--note <text>]...
  *
+ *   node scripts/phase6c-replay.mjs <journal-path|copy> --engine-sha <sha>
+ *        --population <phase6d population json> [--out <dir>] ...
+ *
  * Replays the predeclared batch (the newest N journaled decisions at or after
- * --since, in journal order) through HorseDecisionReplay and writes one JSON
+ * --since, in journal order; or, with --population, exactly the decisions a
+ * Phase 6D population admitted, in its chain order) through
+ * HorseDecisionReplay and writes one JSON
  * and one Markdown evidence file under docs/evidence/phase6c/. The batch rule,
  * the exact command line, the SHA of the code that ran, the release each
  * record was made by, the solver-store identities, the coverage matrix and the
@@ -28,8 +33,9 @@
  * network, no plan effect is applied and no table is touched.
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, relative } from 'node:path';
+import { basename, dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
 
@@ -55,6 +61,7 @@ function parseArgs(argv) {
     notes: [],
     engineSha: null,
     journal: null,
+    population: null,
   };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
@@ -71,6 +78,7 @@ function parseArgs(argv) {
     else if (a === '--full-verdicts') out.fullVerdicts = resolve(next());
     else if (a === '--label') out.label = next();
     else if (a === '--note') out.notes.push(next());
+    else if (a === '--population') out.population = resolve(next());
     else rest.push(a);
   }
   out.journal = rest[0] ? resolve(rest[0]) : null;
@@ -84,13 +92,29 @@ function parseArgs(argv) {
     out.negativeControls < 0
   )
     throw new Error(
-      'usage: phase6c-replay.mjs <journal-path|copy> --engine-sha <40-hex sha> --limit N [--since <iso>] [--out <dir>] [--charts <json>] [--store-snapshot <json>]... [--store-pins <json>] [--negative-controls K] [--full-verdicts <path>] [--label <name>] [--note <text>]'
+      'usage: phase6c-replay.mjs <journal-path|copy> --engine-sha <40-hex sha> (--limit N [--since <iso>] | --population <json>) [--out <dir>] [--charts <json>] [--store-snapshot <json>]... [--store-pins <json>] [--negative-controls K] [--full-verdicts <path>] [--label <name>] [--note <text>]'
     );
   if (out.since !== null && !Number.isFinite(Date.parse(out.since)))
     throw new Error('--since must be an ISO timestamp');
+  if (out.population && out.since !== null)
+    throw new Error('--population selects its own decisions; --since does not apply');
   if (out.fullVerdicts && !relative(repoRoot, out.fullVerdicts).startsWith('..'))
     throw new Error('--full-verdicts must be outside the repository (it carries ids and cards)');
   return out;
+}
+
+/** The decisions a Phase 6D population admitted, in its chain order. A
+ * population written before chains carried their journal decision id cannot
+ * name its decisions and is refused rather than approximated. */
+function populationDecisionIds(report) {
+  const chains = Array.isArray(report?.chains) ? report.chains : null;
+  if (!chains || report.stage !== '6D')
+    throw new Error('--population is not a Phase 6D population');
+  const ids = chains.map((c) => c.decisionId);
+  if (ids.some((id) => typeof id !== 'string' || !/^[0-9a-f]{64}$/.test(id)))
+    throw new Error('--population chains do not carry their journal decision ids');
+  if (new Set(ids).size !== ids.length) throw new Error('--population names a decision twice');
+  return ids;
 }
 
 /** Decision-code files (engine and gto sources, tests and this replay module
@@ -383,7 +407,18 @@ async function main() {
     const source = openHorseJournalSource(args.journal);
     const sinceMs = args.since ? Date.parse(args.since) : 0;
     const startedAt = new Date();
-    const batch = source.newestDecisions(args.limit, sinceMs);
+    let populationText = null;
+    let populationMissing = 0;
+    let batch;
+    if (args.population) {
+      populationText = readFileSync(args.population, 'utf8');
+      batch = [];
+      populationDecisionIds(JSON.parse(populationText)).forEach((id, index) => {
+        const record = source.recordById(id);
+        if (record && record.kind === 'decision') batch.push({ ordinal: index + 1, record });
+        else populationMissing++;
+      });
+    } else batch = source.newestDecisions(args.limit, sinceMs);
     const releasesInBatch = [
       ...new Set(batch.map((row) => row.record.sourceRelease).filter((r) => typeof r === 'string')),
     ];
@@ -569,7 +604,10 @@ async function main() {
       evidenceShape:
         'aggregate: no decision, hand, player or table id and no cards; decisions are rows keyed by batch position',
       commandLine,
-      batchRule: `newest ${args.limit} journaled decision records${args.since ? ` at or after ${args.since}` : ''}, in journal order`,
+      batchRule: args.population
+        ? `every decision admitted by the Phase 6D population ${basename(args.population)} (sha256 ${createHash('sha256').update(populationText).digest('hex')}), in its chain order; ${populationMissing} of them not found in the source`
+        : `newest ${args.limit} journaled decision records${args.since ? ` at or after ${args.since}` : ''}, in journal order`,
+      populationRecordsMissing: args.population ? populationMissing : null,
       source: source.describe().replace(/ndjson copy \S+/, 'ndjson copy'),
       servingEngineSha: args.engineSha,
       replayEngineSha: engineSha,

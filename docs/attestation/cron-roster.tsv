@@ -4,7 +4,7 @@
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
 # observed_at: 2026-09-24T02:47:08Z
-# active: 121
+# active: 122
 # retained-inactive: 2	the two bust sweeps, restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -30,6 +30,11 @@
 # fn_ca_cron_health() was read, and it returned 132 jobs, identical to the
 # previous body; this body is that reading minus those eleven rows, which is
 # what production holds once that migration is applied.
+# 2026-09-27: 121 -> 122. horse-stackoff-audit-20m was scheduled by migration
+# 20260927221321_horse_stackoff_audit_runs_on_its_own_schedule. It drives the
+# deep-stack one-pair commitment detector, which writes only its own three
+# tables and moves no chips. It is a measurement sweep, not a repair job: the
+# argument is in that migration header and in the 2026-09-27 changelog.
 # jobname	schedule
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
@@ -112,6 +117,7 @@ home-member-strike-decay	30 4 * * *
 home-trending-refresh	*/15 * * * *
 home-view-log-prune	0 3 * * *
 home-weekly-snapshots	30 0 * * 1
+horse-stackoff-audit-20m	7,27,47 * * * *
 index-usage-snapshot-daily	41 */2 * * *
 index-usage-snapshot-prune-daily	17 5 * * *
 leaderboard-payout-waterfall-daily	20 0 * * *

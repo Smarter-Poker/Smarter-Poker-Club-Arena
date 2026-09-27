@@ -1805,6 +1805,13 @@ jobs:
             --pg-bin "$PG_BIN" --source-root "$GITHUB_WORKSPACE" \
             --allocation-parent /tmp \
             --output "$GITHUB_WORKSPACE/artifacts/horse-commitment-audit"
+      - name: Deep-stack one-pair commitment detector controls
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B scripts/ci/test-horse-stackoff-detector.py \
+            --pg-bin "$PG_BIN" --source-root "$GITHUB_WORKSPACE"
       - name: Tournament reminder receipts, rollback and overlapping consumers
         if: matrix.shard == 3
         env:

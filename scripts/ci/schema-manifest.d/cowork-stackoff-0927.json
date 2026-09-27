@@ -1,0 +1,63 @@
+{
+  "_owner": "agent/cowork-claude-stackoff-0927/feat/deep-stack-one-pair-commitment",
+  "tables": ["horse_stackoff_audit_days", "horse_stackoff_reviews", "horse_stackoff_audit_gaps"],
+  "functions": [
+    "fn_horse_stackoff_audit_step",
+    "fn_ca_holdem_commit_pair_class",
+    "fn_ca_hand_commit_street"
+  ],
+  "columns": {
+    "horse_stackoff_audit_days": [
+      "day",
+      "pass",
+      "after_created_at",
+      "after_hand_id",
+      "started_at",
+      "last_batch_at",
+      "finished_at",
+      "candidate_hands",
+      "horse_seats",
+      "deep_seats",
+      "stackoff_seats",
+      "tagged_seats",
+      "unreadable_seats",
+      "hand_gaps",
+      "out_of_scope_hands",
+      "deep_bb_floor",
+      "commit_fraction_floor",
+      "pot_filter_bb",
+      "source_coverage",
+      "identity_basis"
+    ],
+    "horse_stackoff_reviews": [
+      "hand_id",
+      "horse_user_id",
+      "table_id",
+      "tournament_id",
+      "played_at",
+      "captured_at",
+      "source_payload_hash",
+      "game_variant",
+      "format",
+      "seats",
+      "big_blind",
+      "start_bb",
+      "effective_bb",
+      "committed_bb",
+      "commit_fraction",
+      "all_in",
+      "commit_street",
+      "hand_category",
+      "pair_class",
+      "pair_rank",
+      "kicker",
+      "net_bb",
+      "is_win",
+      "detector_tag",
+      "existing_leak_tags",
+      "review_row_present",
+      "reasons"
+    ],
+    "horse_stackoff_audit_gaps": ["hand_id", "played_at", "reasons", "observed_at"]
+  }
+}

@@ -63,8 +63,13 @@ let requests = '';
 let states = '';
 const commits: string[] = [];
 
+// A pre-push hook exports GIT_DIR and friends; the disposable history must
+// never resolve to the repository being pushed.
+const cleanEnv = (): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+
 const git = (...args: string[]) => {
-  const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+  const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: cleanEnv() });
   expect(result.status, result.stderr).toBe(0);
   return result.stdout.trim();
 };
@@ -145,7 +150,7 @@ newer_release_awaiting_certificate`,
       encoding: 'utf8',
       timeout: 20_000,
       env: {
-        ...process.env,
+        ...cleanEnv(),
         ROOT_REQUESTS: requests,
         ROOT_REPO: repo,
         STATES: states,
@@ -257,7 +262,7 @@ done
       encoding: 'utf8',
       timeout: 30_000,
       env: {
-        ...process.env,
+        ...cleanEnv(),
         ROOT_REQUESTS: requests,
         ROOT_REPO: repo,
         STATES: states,
@@ -382,7 +387,7 @@ curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper()}
 maintenance_certificate 260000`,
     ],
-    { encoding: 'utf8', timeout: 10_000, env: { ...process.env, PROBE_BODY: body } }
+    { encoding: 'utf8', timeout: 10_000, env: { ...cleanEnv(), PROBE_BODY: body } }
   );
 };
 

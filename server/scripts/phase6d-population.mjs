@@ -66,9 +66,9 @@ export function validateDeclaration(d) {
     !Number.isSafeInteger(w.startMs) ||
     !Number.isSafeInteger(w.endMs) ||
     w.endMs <= w.startMs ||
-    w.endMs - w.startMs !== 24 * HOUR_MS
+    w.endMs - w.startMs > 24 * HOUR_MS
   )
-    fail('window must be exactly 24 hours of epoch milliseconds');
+    fail('window must be epoch milliseconds, at most 24 hours long');
   if (!SHA40.test(d.servingRelease?.sha ?? '')) fail('servingRelease.sha');
   if (!Array.isArray(d.admittedReleases) || !d.admittedReleases.length) fail('admittedReleases');
   for (const r of d.admittedReleases) if (!SHA40.test(r?.sha ?? '')) fail('admittedReleases sha');
@@ -86,6 +86,12 @@ export function validateDeclaration(d) {
     fail('bounds.maxHandsInspected');
   if (!Number.isSafeInteger(s?.bounds?.observerDeadlineSeconds)) fail('observerDeadlineSeconds');
   return true;
+}
+
+/** Hourly strata from the window start; the last one ends at the window end.
+ * A 24-hour window has 24 strata; a shorter window has one per started hour. */
+export function strataCount(declaration) {
+  return Math.ceil((declaration.window.endMs - declaration.window.startMs) / HOUR_MS);
 }
 
 /** The finite declared cell set: the axis product with the one stated
@@ -481,7 +487,16 @@ async function observe(declarationB64) {
     const maxRowid = catalog
       .prepare('SELECT COALESCE(max(rowid),0) AS rowid FROM archive_events')
       .get().rowid;
+    // The archive is a ring (#5355): the oldest segments are retired, so the
+    // catalog's rowids start above 1 and every probe lands on a rowid that exists.
+    const minRowid = catalog
+      .prepare('SELECT COALESCE(min(rowid),0) AS rowid FROM archive_events')
+      .get().rowid;
     output.maxRowid = maxRowid;
+    output.minRowid = minRowid;
+    const existingAtOrAfter = catalog.prepare(
+      'SELECT rowid FROM archive_events WHERE rowid >= ? ORDER BY rowid LIMIT 1'
+    );
     const rowMeta = catalog.prepare(
       `SELECT e.hand_key, e.ordinal, s.sha, s.compressed_sha, s.bytes, s.decoded_bytes, s.records
        FROM archive_events e JOIN archive_segments s ON s.sha = e.segment_sha WHERE e.rowid = ?`
@@ -506,23 +521,29 @@ async function observe(declarationB64) {
       return parsed.atMs;
     };
     const lowerBound = (t) => {
-      let lo = 1,
+      let lo = Math.max(1, Number(minRowid)),
         hi = maxRowid + 1;
       while (lo < hi) {
         const mid = Math.floor((lo + hi) / 2);
-        if (atMsOf(mid) < t) lo = mid + 1;
+        const row = Number(existingAtOrAfter.get(mid).rowid);
+        if (atMsOf(row) < t) lo = row + 1;
         else hi = mid;
       }
       return lo;
     };
-    output.archiveFirstAtMs = maxRowid ? atMsOf(1) : null;
+    try {
+      // The oldest segment may be retired by the ring while this reads.
+      output.archiveFirstAtMs = maxRowid ? atMsOf(Number(minRowid)) : null;
+    } catch {
+      output.archiveFirstAtMs = null;
+    }
     output.archiveLastAtMs = maxRowid ? atMsOf(maxRowid) : null;
     const handRows = catalog.prepare(
       'SELECT rowid, hand_key FROM archive_events WHERE rowid >= ? AND rowid < ? ORDER BY rowid LIMIT 4096'
     );
     let handsTotal = 0;
     const windowEnd = declaration.window.endMs;
-    outer: for (let h = 0; h < 24; h++) {
+    outer: for (let h = 0; h < strataCount(declaration); h++) {
       const startMs = declaration.window.startMs + h * HOUR_MS;
       const endMs = Math.min(startMs + HOUR_MS, windowEnd);
       const stratum = {
@@ -915,6 +936,7 @@ export function buildReport({ loaded, observationFile, observation, commandLine,
       observedAt: remote.observedAt ?? null,
       finishedAt: remote.finishedAt ?? null,
       storage: remote.storage ?? null,
+      minRowid: remote.minRowid ?? null,
       maxRowid: remote.maxRowid ?? null,
       firstRecordAt: remote.archiveFirstAtMs
         ? new Date(remote.archiveFirstAtMs).toISOString()
@@ -977,7 +999,7 @@ export function renderMarkdown(report, loaded) {
   lines.push('## Archive state seen by the observer');
   lines.push('');
   lines.push(
-    `Status ${a.status}${a.reason ? ` (${a.reason})` : ''}; observed ${a.observedAt ?? 'never'} to ${a.finishedAt ?? 'never'}; stop reason ${a.stopReason ?? 'none'}. Catalog max rowid ${a.maxRowid ?? 'unknown'}; first archived record ${a.firstRecordAt ?? 'unknown'}; last archived record ${a.lastRecordAt ?? 'unknown'}.`
+    `Status ${a.status}${a.reason ? ` (${a.reason})` : ''}; observed ${a.observedAt ?? 'never'} to ${a.finishedAt ?? 'never'}; stop reason ${a.stopReason ?? 'none'}. Catalog rowids ${a.minRowid ?? 'unknown'} to ${a.maxRowid ?? 'unknown'}; first archived record ${a.firstRecordAt ?? 'unknown'}; last archived record ${a.lastRecordAt ?? 'unknown'}.`
   );
   const windowEnd = d.window.end;
   if (a.lastRecordAt && Date.parse(a.lastRecordAt) < Date.parse(windowEnd))
@@ -999,7 +1021,7 @@ export function renderMarkdown(report, loaded) {
   if (a.storage) lines.push('', 'Storage: `' + JSON.stringify(a.storage) + '`');
   if (a.counts) lines.push('', 'Counts: `' + JSON.stringify(a.counts) + '`');
   lines.push('');
-  lines.push('## Strata (24 hourly, walked in rowid order)');
+  lines.push(`## Strata (${strataCount(d)} hourly, walked in rowid order)`);
   lines.push('');
   lines.push(
     '| Stratum | Start | First rowid | Next rowid | Hands read | Preflop decisions | Admitted | Status |'

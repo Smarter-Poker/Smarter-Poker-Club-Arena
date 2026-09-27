@@ -107,17 +107,26 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(tournamentHelper).toContain('did not recover exactly one multiplexed transport');
     expect(tournamentHelper).toContain('const observationDeadline = Date.now() + testInfo.timeout');
     expect(tournamentHelper.match(/remainingObservationMs\(observationDeadline\)/g)).toHaveLength(
-      4
+      2
     );
-    // Both existing causal hand waits plus clock qualification and the natural
-    // two-context HUD witness consume this same deadline, never fresh budgets.
+    // Both causal hands use the remaining case budget. After recovery the
+    // clock reader and event witness receive the same absolute deadline.
     expect(tournamentHelper).toContain('waitForSharedNaturalLevel(');
-    expect(tournamentHelper).toContain(
-      'reader.clocks([id], remainingObservationMs(observationDeadline))'
-    );
+    expect(tournamentHelper).toContain('reader.clocks([candidate.id], observationDeadline)');
+    const recovered = tournamentHelper.indexOf('did not recover exactly one multiplexed transport');
+    const clock = tournamentHelper.indexOf('await createHudClockReader()');
+    const level = tournamentHelper.indexOf('await waitForSharedNaturalLevel(');
+    expect(recovered).toBeGreaterThan(-1);
+    expect(clock).toBeGreaterThan(recovered);
+    expect(level).toBeGreaterThan(clock);
+    expect(tournamentHelper.slice(clock)).not.toContain('setOffline(true)');
+    expect(tournamentHelper).toContain('hudEventObservationMs(hudClock, observationDeadline)');
+    expect(tournamentHelper).toContain('hudSince = hudClock.observedAt');
+    expect(tournamentHelper).toContain('hudBaseline = hudClock.levelIndex');
     expect(spec).toContain('const MAX_GAMEPLAY_SILENCE_MS = 45_000');
     expect(spec).toContain('test.setTimeout(300_000)');
     expect(spec).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    expect(spec).not.toContain('MTT_HUD_CASE_TIMEOUT_MS');
   });
 
   it('observes tournament routes directly and refuses participation mutations', () => {

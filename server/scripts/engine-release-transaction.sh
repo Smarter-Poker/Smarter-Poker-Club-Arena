@@ -274,6 +274,16 @@ PREPARED=0
 MUTATION_STARTED=0
 LEGACY_CHECKPOINT_INTENT_FILE="$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"
 LEGACY_CHECKPOINT_ATTEMPTED=0
+# THE NEWEST WAITING RELEASE TAKES THE BREAK (2026-09-27). This run's marker
+# says "my immutable image is built and I am waiting at the certificate". It is
+# never left over from an earlier invocation of the same run key (a systemd
+# retry starts again from the build), so it is removed here, before anything
+# else, and again on every exit. Only newer_release_awaiting_certificate reads
+# it, and only to let an OLDER target stand aside for this one.
+AWAITING_CERTIFICATE_FILE="$REQUEST_ROOT/$RUN_ID.awaiting-certificate"
+[[ "$AWAITING_CERTIFICATE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.awaiting-certificate$ ]] \
+  || die 'unsafe awaiting-certificate marker path'
+rm -f -- "$AWAITING_CERTIFICATE_FILE"
 # THE ONE-SHOT IS DURABLE; THIS VARIABLE IS NOT. A boot-resumed or re-entered
 # unit is a fresh process and starts it back at 0, so process memory alone
 # cannot answer "has this run key already opened the checkpoint". On 2026-09-21
@@ -293,6 +303,9 @@ recover_on_exit() {
   local rc=$? recovery_deadline recovery_remaining non_break_deadline
   trap - EXIT HUP INT TERM
   set +e
+  # A run that is leaving no longer waits at the certificate; an older target
+  # must not keep standing aside for it while systemd schedules a retry.
+  rm -f -- "$AWAITING_CERTIFICATE_FILE"
   recovery_deadline="${BREAK_END_EPOCH:-0}"
   if [ "$recovery_deadline" -le "$(date +%s)" ]; then
     # Recovery is deliberately allowed after the immutable release mutation
@@ -662,6 +675,19 @@ ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)
 if ok:
     print(remaining)
     raise SystemExit(0)
+# NAME A SHUT CERTIFICATE WHILE IT STILL MATTERS (2026-09-27). Every refusal
+# below this line used to be silent, so in the part of the break where a
+# cutover could still be admitted the journal said nothing at all, and the
+# first line anyone saw was "below the 260000ms budget" some 40 seconds in.
+# That is how six weeks of stopped-custody refusals (630 tables, then 6) read
+# as "the certificate arrives too late" (runs 36233878494, 36233889941). The
+# verdict and exit codes are unchanged; this only says why, on stderr, unless
+# the database admission further down actually admits.
+_admitted=[False]
+def _name_the_shut_certificate():
+    if not _admitted[0]:
+        sys.stderr.write("[engine-release-transaction] the restart certificate is shut with %dms of the break left: unparkedTables=%r unparkedReasons=%r handsInFlightTotal=%r\n" % (remaining, m.get("unparkedTables"), m.get("unparkedReasons"), d.get("handsInFlightTotal")))
+__import__("atexit").register(_name_the_shut_certificate)
 # ── Refusing. Is this "a hand is in the air", or "a preparation that can never
 # resolve in this process"? Those are different facts and only the first is a
 # reason not to restart. See the block comment above this function.
@@ -696,6 +722,7 @@ for k,v in reasons.items():
 hands=d.get("handsInFlightTotal")
 if not isinstance(hands,int) or isinstance(hands,bool) or hands!=0: raise SystemExit(1)
 sys.stderr.write("[engine-release-transaction] restart certificate is held shut only by " + repr(reasons) + "; consulting the database for hands actually in the air\n")
+_admitted[0]=True
 print(remaining)
 raise SystemExit(4)
 ')"
@@ -839,6 +866,7 @@ RECOVERY_ADMISSION_MISSED=0
 RECOVERY_NEXT_EVALUATION=0
 RECOVERY_DEFER_SECONDS=60
 RECOVERY_DEFERRED_TO=''
+BREAK_DEFERRED_TO=''
 RECOVERY_REFUSED_STUCK=0
 RECOVERY_UNCERTIFIED_BREAKS=1
 # Calibrated on production, 2026-09-26: 209d1b45 dealt normally (liveness ok,
@@ -919,6 +947,53 @@ newer_release_in_flight() {
     [ "$run" != "$RUN_ID" ] || continue
     other="$(head -n 1 -- "$request" 2>/dev/null)" || continue
     [[ "$other" =~ ^[0-9a-f]{40}$ ]] && [ "$other" != "$SHA" ] || continue
+    state="$(systemctl show "club-arena-engine-release-v1@$run.service" \
+      -p ActiveState --value 2>/dev/null || true)"
+    case "$state" in active|activating|reloading) ;; *) continue ;; esac
+    timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+      git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$other" 2>/dev/null || continue
+    printf '%s %s\n' "$run" "$other"
+    return 0
+  done
+  return 1
+}
+
+# THE NEWEST WAITING RELEASE TAKES THE BREAK (2026-09-27)
+# ────────────────────────────────────────────────────────
+# Measured at the 15:55Z break on 2026-09-27, the first hourly cutover since
+# 2026-09-26 14:06Z: runs 36328195568 (4946473b), 36328946522 (6b6eabb1) and
+# 36329422702 (c8cbe6e6) were ALL built and ALL admitted by the same
+# certificate at 15:55:03-15:55:06 with ~297000ms left. The oldest happened to
+# take the engine lock first and sealed 4946473b at 15:56:44. The two newer
+# ones, which contain it, then read 194653ms and 193966ms under the lock -
+# below the 245000ms floor - and had to wait for the next hour. So the one
+# window an hour shipped the LEAST code it could have, and every fix merged
+# after 4946473b (#5413's lease fix among them) stayed off production for
+# another hour. With N releases queued, a lock race can cost up to N hours.
+#
+# A newer protected-main target contains every older one (squash merges on a
+# linear main), and once it seals, the older transactions stand down on their
+# own through source_target_is_current ("target ... is stale"). So an older
+# target that finds a NEWER target already waiting at this same certificate -
+# image built, unit live, marker naming exactly the SHA of that run's durable
+# request - stands aside and keeps waiting instead of racing it for the lock.
+# Nothing is relaxed: the newer release still passes every certificate, lock,
+# rollback, candidate and database proof itself, and if it leaves (sealed,
+# failed or rolled back) its marker leaves with it and this release is back to
+# exactly the admission it had before.
+newer_release_awaiting_certificate() {
+  local marker run other request state
+  for marker in "$REQUEST_ROOT"/*.awaiting-certificate; do
+    [ -f "$marker" ] && [ ! -L "$marker" ] || continue
+    run="${marker##*/}"
+    run="${run%.awaiting-certificate}"
+    [[ "$run" =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || continue
+    [ "$run" != "$RUN_ID" ] || continue
+    other="$(head -n 1 -- "$marker" 2>/dev/null)" || continue
+    [[ "$other" =~ ^[0-9a-f]{40}$ ]] && [ "$other" != "$SHA" ] || continue
+    # The marker may only speak for the run's own immutable request.
+    request="$(head -n 1 -- "$REQUEST_ROOT/$run.request" 2>/dev/null)" || continue
+    [ "$request" = "$other" ] || continue
     state="$(systemctl show "club-arena-engine-release-v1@$run.service" \
       -p ActiveState --value 2>/dev/null || true)"
     case "$state" in active|activating|reloading) ;; *) continue ;; esac
@@ -1538,6 +1613,16 @@ if URGENT_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
   echo "[engine-release-transaction] a commit in $URGENT_HIGH_WATER..$SHA carries '$RECOVERY_URGENT_TRAILER'; this release may ask for an off-cycle window without waiting for evidence"
 fi
 
+# Built, fresh and about to wait at the certificate: say so for older targets.
+# Best effort by design - a marker that cannot be written only means an older
+# release keeps racing this one, which is the behaviour before 2026-09-27.
+if printf '%s\n' "$SHA" > "$AWAITING_CERTIFICATE_FILE.$$" 2>/dev/null \
+  && mv -f -- "$AWAITING_CERTIFICATE_FILE.$$" "$AWAITING_CERTIFICATE_FILE" 2>/dev/null; then
+  :
+else
+  rm -f -- "$AWAITING_CERTIFICATE_FILE.$$" 2>/dev/null || true
+  echo "[engine-release-transaction] WARN: could not record that $SHA is waiting at the certificate; older releases will not stand aside for it" >&2
+fi
 while :; do
   [ "$(date +%s)" -lt "$CERTIFICATE_DEADLINE" ] \
     || die 'the engine did not present a restart certificate with enough proof time remaining'
@@ -1591,6 +1676,15 @@ while :; do
     continue
   fi
 
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" != 1 ] && NEWER_WAITING="$(newer_release_awaiting_certificate)"; then
+    if [ "$BREAK_DEFERRED_TO" != "$NEWER_WAITING" ]; then
+      BREAK_DEFERRED_TO="$NEWER_WAITING"
+      echo "[engine-release-transaction] newer release ${NEWER_WAITING#* } (run ${NEWER_WAITING%% *}) contains $SHA and is waiting at this certificate; standing aside so the break ships the newest code"
+    fi
+    bounded_sleep 5
+    continue
+  fi
+  BREAK_DEFERRED_TO=''
   acquire_engine_lock 'maintenance cutover'
   source_target_is_current
   if EXACT_INSTANCE="$(exact_runtime_instance)"; then

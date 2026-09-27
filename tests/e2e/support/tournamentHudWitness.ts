@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
+import { remainingObservationMs } from './observationDeadline';
 
 type Row = Record<string, unknown>;
 export type HudClock = {
@@ -37,15 +38,14 @@ export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudCl
     }
   }
   if (!Array.isArray(levels) || !levels.length) return null;
-  // The next advertised interval may differ from the current one. If the
-  // first boundary occurs during the deliberate outage, BOTH receivers need
-  // the following level_up. Refuse either upcoming break rather than assume
-  // a break emits the same event. The HUD uses the final duration past schedule.
+  // Called only AFTER the mandatory hand/offline/rejoin proof. Both observers
+  // remain online from this baseline, so one future named level_up is needed.
+  // Refuse an upcoming break; it is not the same event as a blind level.
   const schedule = levels;
   const at = (offset: number) => schedule[Math.min(levelIndex + offset, schedule.length - 1)];
   const level = at(0);
   const next = at(1);
-  if (!level || !next || level.isBreak || next.isBreak || at(2)?.isBreak) return null;
+  if (!level || !next || level.isBreak || next.isBreak) return null;
   const durationMs = (entry: Row) => {
     const minutes = Number(entry.durationMinutes ?? entry.duration_minutes);
     return (minutes > 0 ? minutes * 60 : Number(entry.duration)) * 1000;
@@ -54,16 +54,16 @@ export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudCl
   const nextIntervalMs = durationMs(next);
   const startedAt = Date.parse(String(row.level_started_at));
   const remainingMs = startedAt + intervalMs - now;
-  // Existing outage gates allow 10s to show loss + 10s to close the old socket
-  // + 12s to recover. Two boundaries must be farther apart than that 32s gap.
-  // The 60s reserve covers those 32s, the 15s rendered-level assertion and 13s
-  // of setup slack. Navigation still consumes the original fixed deadline.
-  const requiredObservationMs = remainingMs + nextIntervalMs + 60_000;
+  // Keep the original 60s reserve: 15s for event delivery, 15s for both
+  // rendered assertions and 30s for final health/evidence/cleanup. The outage
+  // and peer setup have already consumed the case's ONE fixed deadline.
+  const requiredObservationMs = remainingMs + 60_000;
   if (
     !Number.isFinite(intervalMs) ||
     intervalMs <= 0 ||
     !Number.isFinite(nextIntervalMs) ||
     nextIntervalMs <= 32_000 ||
+    !Number.isFinite(budgetMs) ||
     requiredObservationMs > budgetMs ||
     !Number.isFinite(startedAt) ||
     startedAt > now ||
@@ -80,6 +80,15 @@ export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudCl
     requiredObservationMs,
     observedAt: now,
   };
+}
+
+/** Clock reads and rendered setup never restart the case or event budget. */
+export function hudEventObservationMs(clock: HudClock, deadline: number, now = Date.now()): number {
+  const eventDeadline = clock.observedAt + clock.remainingMs + 15_000;
+  const budget = Math.min(eventDeadline - now, remainingObservationMs(deadline, now) - 45_000);
+  if (!Number.isFinite(budget) || budget <= 0)
+    throw new Error('The recovered HUD has no reserved time for its natural level event');
+  return budget;
 }
 
 /** A separate LOCAL session of the existing reserved fixture, never a service/owner read. */
@@ -112,7 +121,7 @@ export async function createHudClockReader() {
   }> = [];
   return {
     qualifications,
-    async clocks(tableIds: string[], budgetMs: number): Promise<Map<string, HudClock>> {
+    async clocks(tableIds: string[], deadline: number): Promise<Map<string, HudClock>> {
       const tables = await client.from('tables').select('id,tournament_id').in('id', tableIds);
       if (tables.error) throw tables.error;
       const ids = [...new Set((tables.data || []).map((row) => row.tournament_id).filter(Boolean))];
@@ -125,6 +134,8 @@ export async function createHudClockReader() {
         .in('id', ids);
       if (tournaments.error) throw tournaments.error;
       const now = Date.now();
+      // Auth and both database reads consume the original deadline too.
+      const budgetMs = remainingObservationMs(deadline, now);
       const clocks = new Map<string, HudClock>();
       for (const table of tables.data || []) {
         const row = tournaments.data?.find((entry) => entry.id === table.tournament_id);
@@ -211,13 +222,13 @@ export function waitForSharedNaturalLevel(
     const abort = () => finish(undefined, new Error('HUD observation retired'));
     const inspect = () => {
       if (signal.aborted) return abort();
-      const level = read();
-      if (level) return finish(level);
       if (Date.now() >= deadline)
         return finish(
           undefined,
           new Error('Qualified MTT produced no shared natural level transition')
         );
+      const level = read();
+      if (level) return finish(level);
       timer = setTimeout(inspect, 50);
     };
     signal.addEventListener('abort', abort, { once: true });

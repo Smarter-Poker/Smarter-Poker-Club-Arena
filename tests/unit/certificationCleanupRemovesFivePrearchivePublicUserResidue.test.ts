@@ -53,6 +53,7 @@ describe('pre-archive certification public-user residue cleanup', () => {
     expect(migration.trimStart()).toMatch(/^--[\s\S]*\nBEGIN;/);
     expect(migration.trimEnd()).toMatch(/COMMIT;$/);
     expect(migration).toContain("SET LOCAL statement_timeout = '15min'");
+    expect(migration).toContain('SET LOCAL max_parallel_workers_per_gather = 8');
     expect(migration).toContain('IF public.fn_platform_frozen() THEN');
     expect(migration).toContain(
       'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_REFUSES_PLATFORM_FREEZE'
@@ -143,7 +144,8 @@ describe('pre-archive certification public-user residue cleanup', () => {
       'FROM pg_catalog.pg_constraint fk',
       "fk.contype = 'f'",
       'a.attnum = ANY (fk.conkey)',
-      "c.relname <> 'signup_errors'",
+      "('signup_errors', 'user_id')",
+      "('rakeback_stats_applied', 'user_id')",
       "'SELECT EXISTS (SELECT 1 FROM public.%I WHERE %I = ANY ($1))'",
     ]) {
       expect(migration).toContain(contract);
@@ -154,6 +156,18 @@ describe('pre-archive certification public-user residue cleanup', () => {
     );
     expect(lastValidation).toBeGreaterThan(-1);
     expect(lastValidation).toBeLessThan(migration.indexOf('DELETE FROM public.users u'));
+  });
+
+  it('guards the unindexed ten-million-row rakeback surface with a bounded parallel count', () => {
+    expect(migration).toContain('FROM public.rakeback_stats_applied r');
+    expect(migration).toContain('WHERE r.user_id = ANY (v_target_ids)');
+    expect(migration).toContain('IF v_rakeback_rows <> 0 THEN');
+    expect(migration).toContain(
+      'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_IS_NOT_EMPTY: rakeback_stats_applied.user_id'
+    );
+    expect(migration.indexOf('FROM public.rakeback_stats_applied r')).toBeLessThan(
+      migration.indexOf('DELETE FROM public.users u')
+    );
   });
 
   it('refuses a changed public-users delete graph before the first mutation', () => {

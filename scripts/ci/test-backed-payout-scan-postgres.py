@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -176,6 +177,7 @@ try:
         values.append(value); print(json.dumps({'selection':label,'eligible_fixture_events':12080,'positive':value,'seconds':round(elapsed,3)}))
     assert values[0]==values[1], 'large data candidate mismatch'
     print('backed-payout-scan-native-acceptance-passed')
+    runpy.run_path(str(FIXTURE/'reviewed-return-native.py'))['qualify'](globals())
 finally:
     if started and (data/'postmaster.pid').exists():run([pg/'pg_ctl','-D',data,'-m','fast','-w','stop'])
     shutil.rmtree(cluster)

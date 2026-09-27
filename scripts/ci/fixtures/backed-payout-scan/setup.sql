@@ -12,8 +12,10 @@ CREATE TABLE public.rake_records(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY 
 CREATE INDEX ON public.rake_records(tournament_id);
 CREATE INDEX idx_rake_records_club_data_tournament_window ON public.rake_records USING btree (created_at, tournament_id) INCLUDE (rake_amount, metadata) WHERE (is_tournament AND (rake_amount <> (0)::numeric) AND (tournament_id IS NOT NULL));
 CREATE TABLE public.chip_ledger(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
- tournament_id uuid,amount numeric,category text,to_type text);
+ tournament_id uuid,amount numeric,category text,to_type text,
+ from_type text,from_entity_id uuid,metadata jsonb);
 CREATE INDEX ON public.chip_ledger(tournament_id);
+CREATE INDEX idx_chip_ledger_tournament_category ON public.chip_ledger USING btree (tournament_id, category) WHERE (tournament_id IS NOT NULL);
 CREATE TABLE public.tournament_guarantee_overlays(tournament_id uuid PRIMARY KEY,amount numeric);
 CREATE TABLE public.tournament_conservation_baseline(tournament_id uuid PRIMARY KEY,amount numeric);
 CREATE TABLE public.tournament_payouts(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -11,6 +11,13 @@ const name = 'fn_tournament_conservation_delta';
 const migrationPath =
   'supabase/migrations/20260927050956_batch_backed_payout_shortfall_discovery_without_changing_set.sql';
 const migration = read(migrationPath);
+const successorPath =
+  'supabase/migrations/20260927163648_backed_payout_discovery_follows_reviewed_overlay_returns.sql';
+const successor = read(successorPath);
+const successorScalar = read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql');
+const successorPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json')
+);
 const fixture = JSON.parse(read('scripts/ci/fixtures/backed-payout-scan/baseline.json'));
 let declaredFunctions: (sql: string) => { name: string; header: string; body: string }[];
 let stripComments: (sql: string) => string;
@@ -26,6 +33,12 @@ beforeAll(async () => {
 describe('backed payout discovery is the same accounting question in a batch', () => {
   it.each([
     migrationPath,
+    successorPath,
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-cases.sql',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-batch-selection.sql',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json',
     'scripts/ci/test-backed-payout-scan-postgres.py',
     'scripts/ci/fixtures/backed-payout-scan/baseline.json',
     'scripts/ci/fixtures/backed-payout-scan/batch-selection.sql',
@@ -73,6 +86,36 @@ describe('backed payout discovery is the same accounting question in a batch', (
     expect(scan).toContain('ORDER BY t.ended_at ASC NULLS LAST');
   });
 
+  it('binds the reviewed return successor to native parity and exact installed prerequisites', () => {
+    expect(createHash('md5').update(successorScalar).digest('hex')).toBe(
+      successorPins.scalarDefinitionMD5
+    );
+    for (const key of ['scalarDefinitionMD5', 'batchDefinitionMD5', 'previousBatchDefinitionMD5'])
+      expect(successor).toContain(successorPins[key]);
+    const scan = read(
+      'scripts/ci/fixtures/backed-payout-scan/reviewed-return-batch-selection.sql'
+    ).trimEnd();
+    expect(successor).toContain('$scan$' + scan + '$scan$');
+    expect(scan).toContain(
+      'GREATEST(COALESCE(l.overlay, 0), COALESCE(o.amount, 0)) - COALESCE(ro.returned, 0)'
+    );
+    expect(scan).toContain('l.from_entity_id = l.tournament_id');
+    expect(scan).toContain("l.metadata->>'kind' = 'reviewed_void_overlay_return'");
+    expect(scan).not.toContain('is_horse');
+    expect(successor).not.toMatch(/\b(?:GRANT|REVOKE|cron\.(?:schedule|alter_job|unschedule))\b/i);
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'reviewed-return-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-native.py');
+    for (const proof of [
+      'original-formula-red-reproduced',
+      'whole successor caller differs',
+      'successor transaction rollback',
+      'fresh statement missed committed return',
+    ])
+      expect(native).toContain(proof);
+  });
+
   it('requires renewed batch qualification when the maintained scalar formula changes', () => {
     const declarations = migrationCorpus().flatMap(({ name: file, sql }) =>
       declaredFunctions(sql)
@@ -80,10 +123,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
         .map((fn) => ({ file, ...fn }))
     );
     const latest = declarations.at(-1)!;
-    const baseline = declaredFunctions(
-      fixture.functions.find((fn: { signature: string }) => fn.signature === name + '(uuid)')
-        .definition
-    )[0];
+    const baseline = declaredFunctions(successorScalar)[0];
     const normalize = (body: string) => stripComments(body).replace(/\s+/g, ' ').trim();
     expect(normalize(latest.body), latest.file).toBe(normalize(baseline.body));
     // A dynamic patch is also a formula change: future pg_get_functiondef
@@ -91,7 +131,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
     const laterDynamic = migrationCorpus().filter(
       ({ name: file, sql }) =>
         file > latest.file &&
-        file !== migrationPath.split('/').at(-1) &&
+        ![migrationPath, successorPath].some((path) => file === path.split('/').at(-1)) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
     );

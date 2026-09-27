@@ -983,6 +983,22 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-first-archived.py',
+  'scripts/qualification/spin-first-archived.manifest.json',
+  'scripts/qualification/spin-first-archived-races.py',
+  'scripts/qualification/spin-first-archived-concurrency.py',
+  'scripts/qualification/spin-first-archived-locks.py',
+  'scripts/qualification/spin-first-archived-production-probe.py',
+  'scripts/qualification/test_first_archived_oracle.py',
+  'scripts/qualification/test_first_archived_concurrency.py',
+  'scripts/qualification/test_first_archived_locks.py',
+  'scripts/qualification/test_first_archived_production_probe.py',
+  'scripts/qualification/fixtures/archived-spin/first-connected-probe.sql',
+  'scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql',
+  'supabase/components/spin-archived-first-witness.sql',
+  'supabase/components/spin-archived-first-admission.sql',
+  'supabase/components/spin-archived-first-bridge.sql',
+  'supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql',
   'scripts/qualification/spin-finalized-horse-admission.py',
   'scripts/qualification/spin-finalized-horse-admission.manifest.json',
   'scripts/qualification/spin-horse-admission-race.py',
@@ -1181,6 +1197,13 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
 
   it.each([
     'docs/spin-expiry-plan.md',
+    'scripts/qualification/spin-first-archived.py.bak',
+    'scripts/qualification/test_first_archived_oracle.py.bak',
+    'scripts/qualification/test_first_archived_concurrency.py.bak',
+    'scripts/qualification/test_first_archived_locks.py.bak',
+    'scripts/qualification/test_first_archived_production_probe.py.bak',
+    'scripts/qualification/fixtures/archived-spin-notes/input.sql',
+    'supabase/components/spin-archived-first-admission.sql.bak',
     'scripts/qualification/spin-finalized-horse-admission.py.bak',
     'scripts/qualification/spin-horse-admission-race.py.bak',
     'scripts/qualification/spin-horse-platform-paid-entry.sql.bak',

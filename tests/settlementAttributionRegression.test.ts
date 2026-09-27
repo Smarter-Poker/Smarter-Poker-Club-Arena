@@ -118,6 +118,7 @@ describe('atomic coverage counts the exact all-player receipt population', () =>
     'qualify-coverage-history-index.py',
     'qualify-atomic-coverage.py',
     'qualify-coverage-receipt-index.py',
+    'qualify-receipt-visibility.py',
     'coverage-receipt-preflight.sql',
     'build-coverage-receipt-index.sql',
     'recover-coverage-receipt-index.sql',
@@ -180,11 +181,37 @@ describe('atomic coverage counts the exact all-player receipt population', () =>
       'REINDEX INDEX CONCURRENTLY public.idx_hand_history_time_identity;'
     );
   });
-  it('executes both finite native qualifications through the existing runner', () => {
+  it('changes only two receipt maintenance thresholds while preserving source and authority', () => {
+    const names = readdirSync('supabase/migrations').filter((p) =>
+      p.endsWith('_atomic_receipt_visibility_follows_the_original_hand_maintena.sql')
+    );
+    expect(names).toHaveLength(1);
+    const sql = read('supabase/migrations/' + names[0]);
+    expect(sql).toContain('autovacuum_vacuum_threshold=20000');
+    expect(sql).toContain('autovacuum_vacuum_insert_threshold=10000');
+    expect(sql).toContain('ATOMIC_RECEIPT_MAINTENANCE_OPTIONS_CHANGED');
+    expect(sql).toContain('ATOMIC_RECEIPT_MAINTENANCE_SOURCE_CHANGED');
+    expect(sql).toContain('ATOMIC_RECEIPT_MAINTENANCE_CATALOG_CHANGED');
+    expect(sql.match(/ALTER TABLE/g)).toHaveLength(1);
+    expect(sql).not.toMatch(
+      /CREATE(?: OR REPLACE)? FUNCTION|DELETE FROM|UPDATE public|INSERT INTO|GRANT\s|REVOKE\s|cron\.|VACUUM\s*\(/i
+    );
+    const native = read(fixture + 'qualify-receipt-visibility.py');
+    for (const assertion of [
+      'NOSUPERUSER BYPASSRLS',
+      'REPEATABLE READ',
+      'automaticVacuumObserved',
+      'snapshotAndWriterRowsPreserved',
+      'financialBodiesExecuted',
+    ])
+      expect(native).toContain(assertion);
+  });
+  it('executes every finite native qualification through the existing runner', () => {
     const runner = read('scripts/ci/test-settlement-attribution-postgres.py');
     expect(runner).toContain('qualify-coverage-history-index.py');
     expect(runner).toContain('qualify-atomic-coverage.py');
     expect(runner).toContain('qualify-coverage-receipt-index.py');
+    expect(runner).toContain('qualify-receipt-visibility.py');
     expect(runner).toContain('check=True, env=env, timeout=120');
     const native = read(fixture + 'qualify-atomic-coverage.py');
     expect(native).toContain('NOSUPERUSER BYPASSRLS');

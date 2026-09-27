@@ -120,7 +120,7 @@ subprocess.run([sys.executable,
 
 # Exact all-player coverage and its fixed-width history access remain on the
 # existing required accounting route. Any failed native assertion fails CI.
-for fixture in ('qualify-coverage-history-index.py', 'qualify-coverage-receipt-index.py', 'qualify-atomic-coverage.py'):
+for fixture in ('qualify-coverage-history-index.py', 'qualify-coverage-receipt-index.py', 'qualify-receipt-visibility.py', 'qualify-atomic-coverage.py'):
     subprocess.run([sys.executable,
         str(ROOT/'scripts/ci/fixtures/settlement-attribution'/fixture),
         '--pg-bin', str(pg), '--scratch', args.scratch], check=True, env=env, timeout=120)

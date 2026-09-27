@@ -215,6 +215,8 @@ try:
         "import{readFileSync}from'node:fs';import{splitConcurrentPreamble}from'"+(ROOT/'scripts/ci/migration-concurrent-preamble.mjs').as_uri()+"';console.log(JSON.stringify(splitConcurrentPreamble(readFileSync(process.argv[1],'utf8')+String.fromCharCode(10)+'BEGIN;'+String.fromCharCode(10)+'COMMIT;')));", ONLINE]))
     assert split['ok'] and len(split['indexes']) == 2, split
     body = migration
+    live_proof = re.search(r"^-- @live-proof: (.+)$", migration, re.M).group(1)
+    assert q("SELECT "+live_proof)=='f'
     assert not re.search(r'^\s*(?:CREATE\s+INDEX|REINDEX)', body, re.I|re.M)
     q(body, 'BBJ_METER_READ_INDEX_NOT_QUALIFIED')
     assert state() == before
@@ -245,6 +247,7 @@ try:
             q(index['statement'])
             if number==0:
                 q(body,'BBJ_METER_READ_INDEX_NOT_QUALIFIED')
+                assert q("SELECT "+live_proof)=='f'
     report['indexBytes'] = json.loads(q("SELECT coalesce(jsonb_object_agg(relname,pg_relation_size(oid)),'{}'::jsonb) FROM pg_class WHERE relname IN ('chip_ledger_bbj_to_pool_meter','chip_ledger_bbj_from_pool_meter')"))
     q('VACUUM (ANALYZE) chip_ledger;')
     if not args.baseline:
@@ -255,6 +258,7 @@ try:
         q('REVOKE EXECUTE ON FUNCTION fn_bbj_reconcile(uuid) FROM anon;')
         q(body)
         q(body)  # Verification-only body is idempotent; no money/function write.
+        assert q("SELECT "+live_proof)=='t'
     after = state()
     assert after == before, 'index installation must not change any financial function byte or authority'
     assert [measure(n) for n in (1,2,3,4)] == performance_rows
@@ -309,6 +313,7 @@ try:
     release(reader)
     assert q("SELECT NOT indisvalid AND indisready AND indislive FROM pg_index WHERE indexrelid="+quote('public.'+name)+"::regclass")=='t'
     q(body,'BBJ_METER_READ_INDEX_NOT_QUALIFIED')
+    assert q("SELECT "+live_proof)=='f'
     invalid_oid=q("SELECT "+quote('public.'+name)+"::regclass::oid")
     reader=snapshot()
     recovery=session("SET statement_timeout='6min'; SET lock_timeout='180s'; REINDEX INDEX CONCURRENTLY public."+name+";")
@@ -321,11 +326,13 @@ try:
     release(reader)
     assert recovery.wait(timeout=60)==0,recovery.stderr.read()
     q(body)
+    assert q("SELECT "+live_proof)=='t'
     recovered_oid=q("SELECT "+quote('public.'+name)+"::regclass::oid")
     assert invalid_oid!=recovered_oid
     for flag in ('indisvalid','indisready','indislive'):
         q("UPDATE pg_index SET "+flag+"=false WHERE indexrelid="+quote('public.'+name)+"::regclass")
         q(body,'BBJ_METER_READ_INDEX_NOT_QUALIFIED')
+        assert q("SELECT "+live_proof)=='f'
         q("UPDATE pg_index SET "+flag+"=true WHERE indexrelid="+quote('public.'+name)+"::regclass")
     assert state()==before and measure(1)==committed
     report['recovery']={'oldIndexOid':invalid_oid,'newIndexOid':recovered_oid,'heldSnapshotSeconds':time.monotonic()-held_at,'financialFunctionUnchanged':True,'concurrentWriteCommitted':True}

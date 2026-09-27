@@ -1,5 +1,6 @@
 -- Verify two separately built online BBJ indexes. No build or financial write.
 -- See scripts/ops/build-bbj-audit-indexes-concurrently.sql for the exact build.
+-- @live-proof: (SELECT count(*) = 2 FROM (VALUES ('chip_ledger_bbj_to_pool_meter', 'CREATE INDEX chip_ledger_bbj_to_pool_meter ON public.chip_ledger USING btree (to_entity_id, created_at) WHERE ((to_type = ''bbj_pool''::text) AND ((to_label ~~ ''bbj_pools.%''::text) OR (from_label ~~ ''bbj_pools.%''::text)))'), ('chip_ledger_bbj_from_pool_meter', 'CREATE INDEX chip_ledger_bbj_from_pool_meter ON public.chip_ledger USING btree (from_entity_id, created_at) WHERE ((from_type = ''bbj_pool''::text) AND ((to_label ~~ ''bbj_pools.%''::text) OR (from_label ~~ ''bbj_pools.%''::text)))') ) AS w(name, definition) JOIN pg_class c ON c.oid = to_regclass('public.' || w.name) JOIN pg_index i ON i.indexrelid = c.oid WHERE i.indisvalid AND i.indisready AND i.indislive AND i.indrelid = 'public.chip_ledger'::regclass AND pg_get_indexdef(c.oid) = w.definition)
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '8s';

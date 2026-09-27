@@ -51,6 +51,10 @@ describe('BBJ meter reads only the labelled pool journal without changing its pr
   it('separates the exact nonblocking online build from one guarded verification transaction', () => {
     const split = splitConcurrentPreamble(online + '\nBEGIN;\nCOMMIT;');
     expect(migration).not.toMatch(/^\s*(?:CREATE\s+INDEX|REINDEX)/im);
+    const proof = /^-- @live-proof: (.+)$/m.exec(migration)?.[1];
+    expect(proof).toContain('count(*) = 2');
+    expect(proof).toContain('i.indisvalid AND i.indisready AND i.indislive');
+    expect(proof).toContain('pg_get_indexdef(c.oid) = w.definition');
     expect(split.ok).toBe(true);
     if (!split.ok) throw new Error(split.reason);
     expect(split.indexes.map((index) => [index.name, index.table])).toEqual([

@@ -32,6 +32,10 @@ ARCHIVE_LOCK_SPEC = importlib.util.spec_from_file_location('first_archived_lock_
 ARCHIVE_LOCK_MODULE = importlib.util.module_from_spec(ARCHIVE_LOCK_SPEC)
 ARCHIVE_LOCK_SPEC.loader.exec_module(ARCHIVE_LOCK_MODULE)
 FirstArchivedLockTests = ARCHIVE_LOCK_MODULE.FirstArchivedLockTests
+ARCHIVE_PROBE_SPEC = importlib.util.spec_from_file_location('first_archived_production_probe_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_production_probe.py')
+ARCHIVE_PROBE_MODULE = importlib.util.module_from_spec(ARCHIVE_PROBE_SPEC)
+ARCHIVE_PROBE_SPEC.loader.exec_module(ARCHIVE_PROBE_MODULE)
+FirstArchivedProductionProbeTests = ARCHIVE_PROBE_MODULE.FirstArchivedProductionProbeTests
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
@@ -2875,7 +2879,7 @@ class FirstArchivedTests(unittest.TestCase):
         self.assertLess(names.index('schema_prefix'),names.index('archive_original_seed'))
         self.assertLess(names.index('archive_original_seed'),names.index('schema_suffix_all_real_triggers'))
         self.assertLess(names.index('tested_role_readback'),names.index('archive_full_functions_sql'))
-        self.assertEqual(names[-5:],['archive_connected_rollback','archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        self.assertEqual(names[-6:],['archive_connected_rollback','archive_production_probe','archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
         for forbidden in ('restore_preexisting_principals','current_catalog_readback','empty_provider_readback',
             'authentic_entry_provider_supplement','fee_actual_paid_entry','real_funded_paid_seat_fixture'):
             self.assertNotIn(forbidden,names)

@@ -72,10 +72,6 @@ class FirstArchivedOracleTests(unittest.TestCase):
             (work/'archive_atomic_failures.stderr').write_text(NOTICE)
             (work/'archive_connected_rollback.stdout').write_text('\n'.join(map(json.dumps,values))+'\n')
             (work/'archive_connected_rollback.stderr').write_text(stderr)
-            if receipt_change:
-                name,key,value=receipt_change
-                path=work/(name+'.stdout'); receipt=json.loads(path.read_text());receipt[key]=value
-                path.write_text(json.dumps(receipt)+'\n')
             spec=importlib.util.spec_from_file_location('concurrency_control_envelope',Path(__file__).with_name('test_first_archived_concurrency.py'))
             control=importlib.util.module_from_spec(spec);spec.loader.exec_module(control)
             (work/'archive_concurrency_commit.stdout').write_text(json.dumps(control.valid())+'\n')
@@ -84,6 +80,14 @@ class FirstArchivedOracleTests(unittest.TestCase):
             control=importlib.util.module_from_spec(spec);spec.loader.exec_module(control)
             (work/'archive_admission_locks.stdout').write_text(json.dumps(control.valid())+'\n')
             (work/'archive_admission_locks.stderr').write_text('')
+            spec=importlib.util.spec_from_file_location('production_probe_control_envelope',Path(__file__).with_name('test_first_archived_production_probe.py'))
+            control=importlib.util.module_from_spec(spec);spec.loader.exec_module(control)
+            (work/'archive_production_probe.stdout').write_text(json.dumps(control.valid())+'\n')
+            (work/'archive_production_probe.stderr').write_text('')
+            if receipt_change:
+                name,key,value=receipt_change
+                path=work/(name+'.stdout'); receipt=json.loads(path.read_text());receipt[key]=value
+                path.write_text(json.dumps(receipt)+'\n')
             return A.validate_outputs(Path(__file__).resolve().parents[2],work,EXECUTION,A.EVENT)
 
     def test_protocol_shape_pass_is_not_financial_qualification(self):
@@ -144,7 +148,11 @@ class FirstArchivedOracleTests(unittest.TestCase):
             ('archive_atomic_failures','deferred_admission_requires_terminal',False),
             ('archive_atomic_failures','sequence_rollback_claimed',True),
             ('archive_preimage_drift','changed_parent_refused',False),
-            ('archive_preimage_drift','whole_rows_unchanged_inside_and_after',False)]:
+            ('archive_preimage_drift','whole_rows_unchanged_inside_and_after',False),
+            ('archive_production_probe','original_probe_output',''),
+            ('archive_production_probe','cleanup_verified',False),
+            ('archive_production_probe','production_qualified',True),
+            ('archive_production_probe','probe_sha256','wrong')]:
             with self.subTest(name=name,key=key):
                 with self.assertRaises(ValueError):self.check(envelopes(),receipt_change=(name,key,value))
 

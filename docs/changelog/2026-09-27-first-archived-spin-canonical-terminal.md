@@ -22,18 +22,18 @@ and the separately recorded self-aborting financial probe.
 Qualification source and fixture-only edits previously did not select the
 required accounting job. The CI classifier now includes the first archived
 recovery modules, components, and complete fixture directory. The regression
-failed before the correction; all 635 tests in the maintained routing suite
+failed before the correction; all 638 tests in the maintained routing suite
 passed afterward, including real Git modified/deleted/renamed path checks.
 The added concurrency and admission-lock control files also reproduced missed
 accounting routes; their exact paths now select the same required job, with
-lookalike exclusions. All 44 pinned recovery inputs select accounting checks.
+lookalike exclusions. All 47 pinned recovery inputs select accounting checks.
 
 The isolated regression cases use the captured provider owners and actual
 maintenance, admission and manager locks. Sequence observation covers exactly
 the eight captured financial sequences and explicitly identifies exclusions.
 Failed concurrent tests release their owning transaction before draining blocked
 callers, retain the original failure, and independently verify backend cleanup.
-The 143 maintained wrapper controls pass on the prepared delivery source.
+The 145 maintained wrapper controls pass on the prepared delivery source.
 The first archived native case passed actual maintenance/admission/manager
 locks, deferred commit, concurrent identical replay and different-operation
 refusal. Exactly 200 reached the original winner wallet; 24 remains held and
@@ -46,3 +46,12 @@ At preparation, connected rollback, committed replay, concurrent callers,
 failure atomicity, protected integration, installation and live financial proof
 are tracked separately in the Production Alerts checkpoint. This source file
 does not certify completion of those gates or close the incident.
+
+The exact production rollback probe is now rehearsed inside the existing isolated
+provider before the commit and concurrency cases. It requires the intentional
+PZ002 abort, the original fee refusal, unchanged durable table rows, and actual
+client/backend disposal. Its initial CASE-expression syntax failure was preserved
+and corrected in the maintained SQL. All 43 stages then passed with 294 relations
+compared before and after rollback. Sequence allocations are observed without a
+rollback claim. Production-probe-only test edits now select accounting CI; the
+missed route failed before correction and passed afterward.

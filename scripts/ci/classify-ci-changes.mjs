@@ -37,7 +37,7 @@ const spinExpiry =
 // The first archived recovery uses the same required PostgreSQL job. Include
 // input-only edits and removals, rather than relying on a simultaneous driver edit.
 const firstArchivedSpin =
-  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks)\.py$|fixtures\/archived-spin\/))/;
+  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks|production_probe)\.py$|fixtures\/archived-spin\/))/;
 
 // Production Alert SQL inputs select the existing accounting checks.
 const productionAlertsSql =

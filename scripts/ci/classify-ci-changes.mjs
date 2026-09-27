@@ -57,6 +57,8 @@ const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
+const settlementAttribution =
+  /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
 
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
@@ -240,6 +242,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(settlementAttribution) ||
       matches(certificationRetirement),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
@@ -274,6 +277,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(settlementAttribution) ||
       matches(certificationRetirement),
     phase4: phase4Changed,
     fixture: matches(fixture),

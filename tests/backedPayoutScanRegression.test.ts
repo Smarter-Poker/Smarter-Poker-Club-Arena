@@ -14,6 +14,16 @@ const migration = read(migrationPath);
 const successorPath =
   'supabase/migrations/20260927163648_backed_payout_discovery_follows_reviewed_overlay_returns.sql';
 const successor = read(successorPath);
+const inlinePins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/wallet-inline-expectations.json')
+);
+const inlinePath = inlinePins.migration;
+const inlineMigration = read(inlinePath);
+const incomePins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/seat-income-expectations.json')
+);
+const incomePath = incomePins.migration;
+const incomeMigration = read(incomePath);
 const successorScalar = read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql');
 const successorPins = JSON.parse(
   read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json')
@@ -34,6 +44,13 @@ describe('backed payout discovery is the same accounting question in a batch', (
   it.each([
     migrationPath,
     successorPath,
+    inlinePath,
+    incomePath,
+    'scripts/ci/fixtures/backed-payout-scan/seat-income-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/seat-income-expectations.json',
+    'scripts/ci/fixtures/backed-payout-scan/seat-income-cases.sql',
+    'scripts/ci/fixtures/backed-payout-scan/wallet-inline-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/wallet-inline-expectations.json',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-native.py',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-cases.sql',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql',
@@ -164,6 +181,99 @@ describe('backed payout discovery is the same accounting question in a batch', (
       expect(native).toContain(proof);
   });
 
+  it('inlines only the single-use wallet receipt read and retains every financial byte', () => {
+    const original = fixture.functions.find((fn: { signature: string }) =>
+      fn.signature.startsWith('fn_pay_backed')
+    ).definition;
+    const scan = read(
+      'scripts/ci/fixtures/backed-payout-scan/reviewed-return-batch-selection.sql'
+    ).trimEnd();
+    const start = original.indexOf('    SELECT t.id, t.name, t.club_id, t.prize_pool,');
+    const end = original.indexOf('\n  LOOP', start);
+    const before = original.slice(0, start) + scan + original.slice(end);
+    const after = before.replace(inlinePins.oldToken, inlinePins.newToken);
+    expect(before.split(inlinePins.oldToken)).toHaveLength(2);
+    expect(createHash('md5').update(before).digest('hex')).toBe(inlinePins.beforeDefinitionMD5);
+    expect(createHash('md5').update(after).digest('hex')).toBe(inlinePins.afterDefinitionMD5);
+    for (const digest of [
+      inlinePins.beforeDefinitionMD5,
+      inlinePins.afterDefinitionMD5,
+      inlinePins.scalarDefinitionMD5,
+    ])
+      expect(inlineMigration).toContain(digest);
+    expect(inlineMigration).toContain(
+      "replace(v_old,'wallet_receipts AS MATERIALIZED (','wallet_receipts AS NOT MATERIALIZED (')"
+    );
+    expect(inlineMigration).not.toMatch(
+      /\b(?:GRANT|REVOKE|cron\.(?:schedule|alter_job|unschedule))\b/i
+    );
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'wallet-inline-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/wallet-inline-native.py');
+    for (const proof of [
+      'original-spool-red-reproduced',
+      'whole inline caller differs',
+      'inline transaction rollback',
+      'inline fresh statement misses wallet or return receipt',
+    ])
+      expect(native).toContain(proof);
+  });
+
+  it('bounds only incoming satellite keys using the existing expression index', () => {
+    const original = fixture.functions.find((fn: { signature: string }) =>
+      fn.signature.startsWith('fn_pay_backed')
+    ).definition;
+    const scan = read(
+      'scripts/ci/fixtures/backed-payout-scan/reviewed-return-batch-selection.sql'
+    ).trimEnd();
+    const start = original.indexOf('    SELECT t.id, t.name, t.club_id, t.prize_pool,');
+    const end = original.indexOf('\n  LOOP', start);
+    const before = (original.slice(0, start) + scan + original.slice(end)).replace(
+      inlinePins.oldToken,
+      inlinePins.newToken
+    );
+    const a = before.indexOf('    ), seat_income AS MATERIALIZED (');
+    const b = before.indexOf('    ), seat_outgoing AS MATERIALIZED (', a);
+    const income = before.slice(a, b);
+    expect(createHash('md5').update(income).digest('hex')).toBe(incomePins.incomeBeforeMD5);
+    expect(income.split(incomePins.oldPredicate)).toHaveLength(2);
+    const after =
+      before.slice(0, a) +
+      income.replace(incomePins.oldPredicate, incomePins.newPredicate) +
+      before.slice(b);
+    expect(createHash('md5').update(before).digest('hex')).toBe(incomePins.beforeDefinitionMD5);
+    expect(createHash('md5').update(after).digest('hex')).toBe(incomePins.afterDefinitionMD5);
+    for (const digest of [
+      incomePins.beforeDefinitionMD5,
+      incomePins.afterDefinitionMD5,
+      incomePins.scalarDefinitionMD5,
+      incomePins.indexDefinitionMD5,
+    ])
+      expect(incomeMigration).toContain(digest);
+    expect(createHash('md5').update(incomePins.indexDefinition).digest('hex')).toBe(
+      incomePins.indexDefinitionMD5
+    );
+    expect(stripComments(incomeMigration)).not.toMatch(
+      /\b(?:GRANT|REVOKE|CREATE INDEX|ALTER INDEX|DROP INDEX|cron\.(?:schedule|alter_job|unschedule))\b/i
+    );
+    expect(incomeMigration).toContain('substring(v_old FROM v_end)');
+    expect(incomePins.newPredicate).not.toContain('::uuid');
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'seat-income-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/seat-income-native.py');
+    for (const proof of [
+      'original-heap-read-red-reproduced',
+      'whole incoming caller differs',
+      'incoming rows changed',
+      'outgoing bytes changed',
+      'income fresh statement misses payout or ticket state',
+      'income transaction rollback',
+    ])
+      expect(native).toContain(proof);
+  });
+
   it('requires renewed batch qualification when the maintained scalar formula changes', () => {
     const declarations = migrationCorpus().flatMap(({ name: file, sql }) =>
       declaredFunctions(sql)
@@ -179,7 +289,9 @@ describe('backed payout discovery is the same accounting question in a batch', (
     const laterDynamic = migrationCorpus().filter(
       ({ name: file, sql }) =>
         file > latest.file &&
-        ![migrationPath, successorPath].some((path) => file === path.split('/').at(-1)) &&
+        ![migrationPath, successorPath, inlinePath, incomePath].some(
+          (path) => file === path.split('/').at(-1)
+        ) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
     );

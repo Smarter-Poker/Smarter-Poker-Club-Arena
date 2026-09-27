@@ -1384,9 +1384,21 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
 
+      - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-certification-player-index-postgres.py
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
+
+      - name: Satellite conservation keeps exact results through an online source index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-audit-index-postgres.py
+
+      - name: Satellite pool-transfer reads keep exact financial results
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-ledger-audit-index-postgres.py
 
       - name: Achievement and rate history reads enforce account and finance scope
         if: matrix.shard == 4
@@ -1396,9 +1408,17 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-audit-reads.py
 
+      - name: BBJ cumulative and recent reads preserve all financial outcomes
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-bbj-cumulative-reads.py
+
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
+
+      - name: Settlement conservation preserves full results through a narrow online index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
 
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
@@ -1437,6 +1457,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-settlement-suspense-restatement.py
+      - name: Jackpot facts preserve exact totals through the covering contribution index
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-bbj-contribution-cover-postgres.py
       - name: The satellite seat preimage guard accepts the installed seat authority and refuses a broken contract
         if: matrix.shard == 4
         env:

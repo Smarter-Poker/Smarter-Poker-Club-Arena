@@ -36,6 +36,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 const ROOT = join(__dirname, '..');
 const SRC = join(ROOT, 'src');
@@ -58,6 +59,13 @@ const FILES = sourceFiles(SRC).map((f) => ({
   path: relative(ROOT, f).split('\\').join('/'),
   body: code(readFileSync(f, 'utf8')),
 }));
+
+// Preserve lexical filename ordering and both declaration/rewrite forms.
+const searchPlayerDefinitions = migrationCorpus().filter(({ sql }) =>
+  /CREATE OR REPLACE FUNCTION\s+public\.fn_search_players|proname\s*=\s*'fn_search_players'/.test(
+    sql
+  )
+);
 
 /**
  * THE SURVIVORS, each one checked and each one NOT a profiles name.
@@ -246,20 +254,12 @@ describe('the arena is always the alias', () => {
        cannot be the check here. Whoever rewrites this function next gets told
        by CI: keep fn_arena_name in the payload, or your migration is the one
        that undid it. */
-    const dir = join(ROOT, 'supabase', 'migrations');
-    const defining = readdirSync(dir)
-      .filter((f) => f.endsWith('.sql'))
-      .filter((f) =>
-        /CREATE OR REPLACE FUNCTION\s+public\.fn_search_players|proname\s*=\s*'fn_search_players'/.test(
-          readFileSync(join(dir, f), 'utf8')
-        )
-      )
-      .sort();
+    const defining = searchPlayerDefinitions;
     expect(defining.length, 'no migration defines fn_search_players any more').toBeGreaterThan(0);
     const last = defining[defining.length - 1];
     expect(
-      readFileSync(join(dir, last), 'utf8'),
-      `${last} is the newest migration touching fn_search_players and it does not mention ` +
+      last.sql,
+      `${last.name} is the newest migration touching fn_search_players and it does not mention ` +
         'fn_arena_name. A rewrite that drops the resolver silently re-leaks every player’s ' +
         'real name into search results. Emit fn_arena_name(...) as display_name.'
     ).toMatch(/fn_arena_name/);

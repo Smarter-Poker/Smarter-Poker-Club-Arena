@@ -157,6 +157,23 @@ describe('QuarantinedTournamentManagers', () => {
     expect(held.snapshot(6_000)[0]).toMatchObject({ custodyRefusal: null, attempts: 1 });
   });
 
+  it('amend keeps what an already-charged attempt learned without charging it again', () => {
+    const held = new QuarantinedTournamentManagers();
+    held.record('t1', 'retry', 1_000, owner);
+    expect(held.amend('t1', owner, 'transfer:packet_not_current')).toBe(true);
+    expect(held.amend('t1', owner)).toBe(true);
+    expect(held.snapshot(2_000)[0]).toMatchObject({
+      custodyRefusal: 'transfer:packet_not_current',
+      attempts: 1,
+      dueAtMs: 1_000 + QUARANTINE_FIRST_RETRY_MS,
+    });
+    // Identity-exact: a stranger and an empty slot change nothing.
+    expect(held.amend('t1', other, null)).toBe(false);
+    expect(held.amend('t2', owner, null)).toBe(false);
+    expect(held.snapshot(2_000)[0].custodyRefusal).toBe('transfer:packet_not_current');
+    expect(held.has('t2')).toBe(false);
+  });
+
   it('the snapshot carries the age and the reason an operator needs', () => {
     const held = new QuarantinedTournamentManagers();
     held.record('t1', 'GameServer.tournament_lease_lost_stop_failed', 1_000, owner);

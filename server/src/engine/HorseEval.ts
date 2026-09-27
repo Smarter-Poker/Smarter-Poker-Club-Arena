@@ -2129,6 +2129,18 @@ export function equitySampleSizeOfLastCall(): number {
   return lastEquitySampleSize;
 }
 
+/**
+ * Running totals of the work simulateEquity has done in this process: calls
+ * and the iterations they were granted after every trim. Monotonic, never
+ * reset; a reader takes two snapshots and subtracts. Phase 6C replay reports
+ * the difference around one decision as that decision's equity work.
+ */
+let equityCallsTotal = 0;
+let equitySamplesTotal = 0;
+export function equityWorkCounters(): { calls: number; samples: number } {
+  return { calls: equityCallsTotal, samples: equitySamplesTotal };
+}
+
 /** One range-conditioned showdown sampled inside the canonical equity pass. */
 export interface HorseEquityOutcomeSample {
   continuationStreets?: TournamentContinuationStreet[];
@@ -2224,6 +2236,8 @@ export function simulateEquity(
   // Recorded after every trim, so it is the budget actually spent rather than
   // the one requested. See equitySampleSizeOfLastCall above.
   lastEquitySampleSize = iterations;
+  equityCallsTotal++;
+  equitySamplesTotal += iterations;
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));

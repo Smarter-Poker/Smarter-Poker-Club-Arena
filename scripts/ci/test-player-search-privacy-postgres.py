@@ -123,22 +123,44 @@ try:
     wildcard = json.loads(as_viewer("SELECT public.fn_search_players('%f');"))
     assert wildcard['total'] == 0 and wildcard['items'] == [], wildcard
 
-    # Click-time access independently rejects deleted and closed tables even
-    # if a caller held an older search card. The mismatched table is itself a
-    # valid table for another event; the search assertion above proves the
-    # target's stale tournament-player association cannot expose it.
+    # Click-time access independently rejects deleted, closed, ended, and
+    # mismatched tournament tables even if a caller held an older search card.
     for table_id in (
         '30000000-0000-0000-0000-000000000001',
         '30000000-0000-0000-0000-000000000002',
+        '30000000-0000-0000-0000-000000000003',
+        '30000000-0000-0000-0000-000000000005',
     ):
         access = json.loads(as_viewer(
-            "SELECT public.fn_get_table_watch_access('" + table_id + "');"
+            "SELECT public.fn_get_table_watch_access('" + table_id + "', "
+            "'20000000-0000-0000-0000-000000000002');"
         ))
         assert access == {'found': False, 'action': 'unavailable', 'can_watch': False}, access
 
+    # Add one genuinely live, same-club tournament seat only after the search
+    # privacy assertions above. The positive case proves the target-aware RPC
+    # accepts the exact current player/table/tournament association.
+    query("""
+      INSERT INTO public.tables (
+        id, club_id, tournament_id, name, game_variant, game_type,
+        small_blind, big_blind, status, is_deleted, is_anonymous, restrict_observers
+      ) VALUES (
+        '30000000-0000-0000-0000-000000000004',
+        'a0000000-0000-0000-0000-000000000004',
+        '40000000-0000-0000-0000-000000000002',
+        'Live Tournament Table', 'NLH', 'NLH', 10, 20, 'running', false, false, false
+      );
+      INSERT INTO public.tournament_players (user_id, tournament_id, table_id, status)
+      VALUES (
+        '20000000-0000-0000-0000-000000000002',
+        '40000000-0000-0000-0000-000000000002',
+        '30000000-0000-0000-0000-000000000004', 'playing'
+      );
+    """)
     live_access = json.loads(as_viewer(
         "SELECT public.fn_get_table_watch_access("
-        "'30000000-0000-0000-0000-000000000003');"
+        "'30000000-0000-0000-0000-000000000004', "
+        "'20000000-0000-0000-0000-000000000002');"
     ))
     assert live_access['found'] is True, live_access
     assert live_access['can_watch'] is False, live_access
@@ -158,11 +180,11 @@ try:
 
     watch_acl = query("""
       SELECT NOT has_function_privilege('anon',
-               'public.fn_get_table_watch_access(uuid)', 'EXECUTE')
+               'public.fn_get_table_watch_access(uuid,uuid)', 'EXECUTE')
          AND has_function_privilege('authenticated',
-               'public.fn_get_table_watch_access(uuid)', 'EXECUTE')
+               'public.fn_get_table_watch_access(uuid,uuid)', 'EXECUTE')
         FROM pg_proc
-       WHERE oid = 'public.fn_get_table_watch_access(uuid)'::regprocedure;
+       WHERE oid = 'public.fn_get_table_watch_access(uuid,uuid)'::regprocedure;
     """)
     assert watch_acl == 't', watch_acl
 

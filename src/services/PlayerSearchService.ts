@@ -201,9 +201,13 @@ export async function searchPlayers(options: {
 }
 
 /** Revalidate a search result at click time so stale presence or membership cannot route access. */
-export async function getTableWatchAccess(tableId: string): Promise<TableWatchAccess> {
+export async function getTableWatchAccess(
+  tableId: string,
+  targetUserId?: string
+): Promise<TableWatchAccess> {
   const { data, error } = await supabase.rpc('fn_get_table_watch_access', {
     p_table_id: tableId,
+    p_target_user_id: targetUserId || null,
   });
   if (error || !data || typeof data !== 'object') {
     throw new Error(error?.message || 'Could not verify table access.');

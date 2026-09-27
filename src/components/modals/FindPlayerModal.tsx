@@ -252,12 +252,12 @@ export default function FindPlayerModal({
     runSearch(value);
   };
 
-  const handleTableClick = async (table: PlayerSearchTable) => {
+  const handleTableClick = async (table: PlayerSearchTable, targetUserId: string) => {
     if (verifyingTableId) return;
     setVerifyingTableId(table.table_id);
     setError(null);
     try {
-      const access = await PlayerSearchService.getTableWatchAccess(table.table_id);
+      const access = await PlayerSearchService.getTableWatchAccess(table.table_id, targetUserId);
       if (access.can_watch) {
         haptic.success();
         ClubEntryTrustService.track('find', 'watch_opened', {
@@ -606,7 +606,7 @@ export default function FindPlayerModal({
                             <button
                               key={table.id}
                               className={styles.tableRow}
-                              onClick={() => void handleTableClick(table)}
+                              onClick={() => void handleTableClick(table, player.id)}
                               disabled={verifyingTableId !== null}
                             >
                               <span

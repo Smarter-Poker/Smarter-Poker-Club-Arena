@@ -18,7 +18,12 @@ BEGIN;
 
 -- Click-time access is authoritative. A stale search card must never route an
 -- observer to a closed table merely because the row still exists.
-CREATE OR REPLACE FUNCTION public.fn_get_table_watch_access(p_table_id uuid)
+DROP FUNCTION IF EXISTS public.fn_get_table_watch_access(uuid);
+
+CREATE OR REPLACE FUNCTION public.fn_get_table_watch_access(
+  p_table_id uuid,
+  p_target_user_id uuid DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -30,19 +35,29 @@ DECLARE
   v_table record;
   v_membership text;
   v_seated boolean := false;
+  v_target_present boolean := true;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'Authentication required' USING ERRCODE = '28000';
   END IF;
 
-  SELECT t.id, t.club_id, t.restrict_observers, c.name AS club_name,
+  SELECT t.id, t.club_id, t.tournament_id, t.restrict_observers, c.name AS club_name,
          c.club_id AS club_number, c.slug, c.requires_approval
     INTO v_table
     FROM public.tables t
     JOIN public.clubs c ON c.id = t.club_id
+    LEFT JOIN public.tournaments tr
+      ON tr.id = t.tournament_id AND tr.club_id = t.club_id
    WHERE t.id = p_table_id
      AND lower(coalesce(t.status::text, '')) IN ('waiting', 'running', 'active')
-     AND coalesce(t.is_deleted, false) = false;
+     AND coalesce(t.is_deleted, false) = false
+     AND (
+       t.tournament_id IS NULL
+       OR (
+         tr.id IS NOT NULL
+         AND lower(coalesce(tr.status::text, '')) IN ('running', 'in_progress', 'active')
+       )
+     );
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('found', false, 'can_watch', false, 'action', 'unavailable');
@@ -52,6 +67,33 @@ BEGIN
     SELECT 1 FROM public.table_seats ts
      WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL
   ) INTO v_seated;
+
+  IF p_target_user_id IS NOT NULL THEN
+    SELECT CASE
+      WHEN v_table.tournament_id IS NULL THEN EXISTS (
+        SELECT 1
+          FROM public.table_seats ts
+         WHERE ts.table_id = p_table_id
+           AND ts.user_id = p_target_user_id
+           AND ts.left_at IS NULL
+      )
+      ELSE EXISTS (
+        SELECT 1
+          FROM public.tournament_players tp
+          JOIN public.tournaments tr
+            ON tr.id = tp.tournament_id AND tr.club_id = v_table.club_id
+         WHERE tp.user_id = p_target_user_id
+           AND tp.table_id = p_table_id
+           AND tp.tournament_id = v_table.tournament_id
+           AND tp.status = 'playing'
+           AND lower(coalesce(tr.status::text, '')) IN ('running', 'in_progress', 'active')
+      )
+    END INTO v_target_present;
+
+    IF NOT v_target_present THEN
+      RETURN jsonb_build_object('found', false, 'can_watch', false, 'action', 'unavailable');
+    END IF;
+  END IF;
 
   SELECT cm.status INTO v_membership
     FROM public.club_members cm
@@ -83,8 +125,9 @@ BEGIN
 END;
 $watch$;
 
-REVOKE ALL ON FUNCTION public.fn_get_table_watch_access(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.fn_get_table_watch_access(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_get_table_watch_access(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_get_table_watch_access(uuid, uuid)
+  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_search_players(
   p_query text,
@@ -232,6 +275,7 @@ BEGIN
                SELECT 1 FROM public.table_seats ts
                JOIN public.tables t ON t.id = ts.table_id
                 WHERE ts.user_id = s.id AND ts.left_at IS NULL
+                  AND t.tournament_id IS NULL
                   AND t.status IN ('waiting', 'running') AND coalesce(t.is_deleted, false) = false
              ) OR EXISTS (
                SELECT 1 FROM public.tournament_players tp

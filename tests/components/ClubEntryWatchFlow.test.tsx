@@ -180,6 +180,9 @@ describe('Club Entry live-watch handoff', () => {
         watchTableId: 'live-table-1',
       })
     );
-    expect(PlayerSearchService.getTableWatchAccess).toHaveBeenCalledWith('live-table-1');
+    expect(PlayerSearchService.getTableWatchAccess).toHaveBeenCalledWith(
+      'live-table-1',
+      'player-1'
+    );
   });
 });

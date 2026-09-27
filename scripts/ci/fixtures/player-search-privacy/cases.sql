@@ -35,7 +35,9 @@ INSERT INTO public.tournaments (
   ('40000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002',
    'Running Event', 'NLH', 'NLH', 25, 'running'),
   ('40000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000004',
-   'Other Event', 'NLH', 'NLH', 25, 'running');
+   'Other Event', 'NLH', 'NLH', 25, 'running'),
+  ('40000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000004',
+   'Ended Event', 'NLH', 'NLH', 25, 'completed');
 
 INSERT INTO public.tables (
   id, club_id, tournament_id, name, game_variant, game_type, small_blind, big_blind,
@@ -49,6 +51,9 @@ INSERT INTO public.tables (
    'closed', false, false, false),
   ('30000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000004',
    '40000000-0000-0000-0000-000000000002', 'Mismatched Table', 'NLH', 'NLH', 10, 20,
+   'running', false, false, false),
+  ('30000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000004',
+   '40000000-0000-0000-0000-000000000003', 'Ended Tournament Table', 'NLH', 'NLH', 10, 20,
    'running', false, false, false);
 
 INSERT INTO public.tournament_players (user_id, tournament_id, table_id, status) VALUES
@@ -58,3 +63,13 @@ INSERT INTO public.tournament_players (user_id, tournament_id, table_id, status)
    '30000000-0000-0000-0000-000000000002', 'playing'),
   ('20000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001',
    '30000000-0000-0000-0000-000000000003', 'playing');
+
+INSERT INTO public.tournament_players (user_id, tournament_id, table_id, status) VALUES
+  ('20000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000003',
+   '30000000-0000-0000-0000-000000000005', 'playing');
+
+-- A lingering seat on an ended tournament must never make the target appear
+-- to be playing through the cash-table presence branch.
+INSERT INTO public.table_seats (table_id, user_id, club_id, left_at) VALUES
+  ('30000000-0000-0000-0000-000000000005', '20000000-0000-0000-0000-000000000002',
+   'a0000000-0000-0000-0000-000000000004', NULL);

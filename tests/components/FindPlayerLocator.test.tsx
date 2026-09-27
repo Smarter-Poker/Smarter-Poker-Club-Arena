@@ -260,6 +260,10 @@ describe('Find A Player locator', () => {
           watchTableId: 'live-table-2',
         })
       );
+      expect(PlayerSearchService.getTableWatchAccess).toHaveBeenCalledWith(
+        'live-table-2',
+        'player-1'
+      );
     });
   });
 

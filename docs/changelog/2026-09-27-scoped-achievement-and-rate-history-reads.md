@@ -8,4 +8,6 @@ The exact SQL is exercised on private PostgreSQL 17 with the captured production
 
 Installation and protected delivery are recorded separately in the billing task checkpoint; this source entry is not a live completion certificate.
 
+Final integrated qualification exposed a five-second timeout in the existing seat-exit source law under concurrent migration-file reads. Its immutable migration fixture now uses the existing memoized corpus helper once per test file; all matching definitions, dollar-quote checks and consumer/cleanup assertions remain unchanged. No assertion or timeout was relaxed.
+
 The installed history version is `20260927003247`; the source filename is aligned without altering the 3,698 SQL bytes (SHA256 `c72abf9faa861d8d06d62ae8894520fdf0a99ff7482335ae672a173220ddf771`). The first installation attempt deadlocked with an existing horse-claim transaction and fully rolled back. After verifying absent history/unchanged policies and completion of that blocker, one diagnosed retry succeeded; catalog readback retained both helpers and all grants. Never replay this migration.

@@ -18,21 +18,18 @@
  * stay conditional on the consumer, so no future wrapper, from any branch,
  * can turn a missing trigger back into a refused finish.
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { migrationsMentioning } from './helpers/migrationCorpus';
 
-const MIGRATIONS = resolve(__dirname, '..', 'supabase', 'migrations');
+// Load the immutable source fixture once. Each assertion still inspects every
+// matching definition, without rereading the entire migration tree per test.
+const closeMigrations = migrationsMentioning('fn_ca_close_tournament_seat_exit_authority');
 const DEFINES_CLOSE =
   /CREATE OR REPLACE FUNCTION public\.fn_ca_close_tournament_seat_exit_authority\(/;
 
 function newestCloseDefinition(): { file: string; body: string } {
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
   let found: { file: string; body: string } | null = null;
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS, file), 'utf8');
+  for (const { name: file, sql } of closeMigrations) {
     const at = sql.search(DEFINES_CLOSE);
     if (at < 0) continue;
     // The function body runs to the closing dollar-quote tag it opened with.

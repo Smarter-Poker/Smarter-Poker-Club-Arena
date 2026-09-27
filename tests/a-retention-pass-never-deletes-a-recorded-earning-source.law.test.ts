@@ -61,14 +61,45 @@ const codeOnly = (sql: string): string =>
 
 const version = (m: MigrationFile): string => m.name.slice(0, m.name.indexOf('_'));
 
-/** Any migration that (re)defines the retention pass. */
+/** A literal digest comparison only observes the installed pruner. Leave
+ * every other mention visible, including CREATE/ALTER, a definition loaded
+ * for dynamic replacement, malformed fingerprints and mixed read/write SQL.
+ * This is a syntax distinction, not an exemption by migration name or date.
+ */
 const redefinesThePruner = (m: MigrationFile): boolean =>
-  /sp_prune_hand_history/.test(codeOnly(m.sql));
+  /sp_prune_hand_history/.test(
+    codeOnly(m.sql).replace(
+      /md5\s*\(\s*pg_get_functiondef\s*\(\s*'public\.sp_prune_hand_history\(integer\)'\s*::\s*regprocedure\s*\)\s*\)\s+IS\s+DISTINCT\s+FROM\s+'[a-f0-9]{32}'/gi,
+      ''
+    )
+  );
 
 const deletesAnAttribution = (sql: string): boolean =>
   /DELETE\s+FROM\s+(?:public\.)?rake_attributions/i.test(sql);
 
 describe('a retention pass never deletes a recorded earning source', () => {
+  it('distinguishes a literal installed-source fingerprint from a retention rewrite', () => {
+    const observation =
+      "md5(pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure)) " +
+      "IS DISTINCT FROM 'f75b94afaf46ff91db120bc34e1dc2ae'";
+    const reads = `DO $$ BEGIN IF ${observation} THEN RAISE EXCEPTION 'source changed'; END IF; END $$;`;
+    const migration = (sql: string): MigrationFile => ({ name: '20990101000000_case.sql', sql });
+    expect(redefinesThePruner(migration(reads))).toBe(false);
+    expect(redefinesThePruner(migration(reads.replace(/ /g, '\n')))).toBe(false);
+    for (const mutation of [
+      'CREATE OR REPLACE FUNCTION public.sp_prune_hand_history(integer) RETURNS void AS $$ DELETE FROM public.rake_attributions $$ LANGUAGE sql;',
+      "ALTER FUNCTION public.sp_prune_hand_history(integer) SET statement_timeout='1s';",
+      "v_before:=pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure); EXECUTE replace(v_before,'horse_retention_days','7');",
+      "EXECUTE 'ALTER FUNCTION public.sp_prune_hand_history(integer) SET statement_timeout=''1s''';",
+    ]) {
+      expect(redefinesThePruner(migration(mutation)), mutation).toBe(true);
+      expect(redefinesThePruner(migration(reads + mutation)), mutation).toBe(true);
+    }
+    expect(
+      redefinesThePruner(migration(reads.replace('f75b94afaf46ff91db120bc34e1dc2ae', 'unknown')))
+    ).toBe(true);
+  });
+
   it('the removing migration is in the repo and explains itself', () => {
     const m = migrationCorpus().find((f) => f.name.startsWith(BINDS_FROM));
     expect(m, `migration ${BINDS_FROM} must be recorded in supabase/migrations`).toBeTruthy();

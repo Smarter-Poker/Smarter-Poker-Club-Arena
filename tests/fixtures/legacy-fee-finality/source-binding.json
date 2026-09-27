@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "93f933702e61db3d0de02ae9f03cf4fd57762cfab2ccb18704c495f1824e3d6d",
+    "scripts/ci/classify-ci-changes.mjs": "1b5229c1009b367decedd6114c9a107e95bf4ae32920481bb3fb8d430cae96b2",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -195,16 +195,16 @@
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
       "from": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
-      "to": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8",
+      "to": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785",
       "on": "2026-09-27",
-      "why": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged."
+      "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding."
     },
     {
-      "integration": "2026-09-27 BBJ contribution cover with protected main6e32e04f2f",
+      "integration": "2026-09-27 backed payout discovery with protected settlement attribution and catalog 6e32e04f2f",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
       ],
-      "why": "Preserve both native checks, all accounting assertions and both parent histories; bind exact integrated workflow, classifier and nested source maps."
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "date": "2026-09-27",
@@ -214,7 +214,7 @@
       "why": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records."
     },
     {
-      "integration": "2026-09-27 BBJ contribution cover with protected meter reads eb6e949396",
+      "integration": "2026-09-27 backed payout discovery with protected BBJ indexes eb6e949396",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
       ],
@@ -240,6 +240,34 @@
       ]
     },
     {
+      "integration": "2026-09-27 backed payout discovery with protected archived Spin 593f355b75",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+      "to": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8",
+      "on": "2026-09-27",
+      "why": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged."
+    },
+    {
+      "integration": "2026-09-27 BBJ contribution cover with protected main6e32e04f2f",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Preserve both native checks, all accounting assertions and both parent histories; bind exact integrated workflow, classifier and nested source maps."
+    },
+    {
+      "integration": "2026-09-27 BBJ contribution cover with protected meter reads eb6e949396",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
       "integration": "2026-09-27 BBJ contribution cover integration with protected13ebc7240c",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
@@ -247,7 +275,7 @@
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
-      "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+      "integration": "2026-09-27 backed payout discovery with protected native backend disposal a5b2b5f8",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
       ],
@@ -343,7 +371,28 @@
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
+      "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
       "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
       ],
@@ -480,5 +529,10 @@
     "updatedPins": [
       "scripts/ci/classify-ci-changes.mjs"
     ]
+  },
+  "unionProtectedMainSecondIntegration20260927": {
+    "head": "017704800e6255899c709fd60b56f27b968a558d",
+    "protectedMain": "24185120457a44014a52ea1860e647b0a921184a",
+    "reason": "Preserve both source maps and qualification histories; the integrated workflow and classifier retain the union directory and backed payout native routes. Only reviewed integrated bytes are rebound; no financial assertions change."
   }
 }

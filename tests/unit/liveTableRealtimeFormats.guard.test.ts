@@ -117,7 +117,11 @@ describe('the production realtime certificate covers every live-game lane', () =
     );
     expect(spec).toContain('const MAX_GAMEPLAY_SILENCE_MS = 45_000');
     expect(spec).toContain('test.setTimeout(300_000)');
-    expect(spec).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    // The MTT case carries its natural HUD witness's budget; the others keep 300s + 90s.
+    expect(spec).toContain('const MTT_HUD_CASE_TIMEOUT_MS = 900_000');
+    expect(spec).toContain(
+      "(gameFormat === 'mtt' ? MTT_HUD_CASE_TIMEOUT_MS : testInfo.timeout) + CAUSAL_HAND_TIMEOUT_MS"
+    );
   });
 
   it('observes tournament routes directly and refuses participation mutations', () => {

@@ -1,115 +1,124 @@
 # Horse Brain Phase 6: Gate Reconciliation Across 6A, 6B, 6C and 6D
 
-Written 2026-09-27 against the Phase 6D declaration of 2026-09-26; the file names keep the
-declaration date. Horse Brain only. Every cell carries exactly one status from the handoff
-vocabulary (section 8 of `horse-brain-continuation-command.md`): verified now, historical
-only, implemented but unverified, defective, unavailable external input, not applicable with
-reason. Nothing here is averaged into a percentage, and no stage is declared complete.
+First written 2026-09-27 against the Phase 6D declaration of 2026-09-26, and updated the same
+day after journal capture resumed on the serving release 6b6eabb1 and the 6B and 6C lanes
+reported. The file name keeps its first date. Horse Brain only. Every cell carries exactly one
+status from the handoff vocabulary (section 8 of `horse-brain-continuation-command.md`):
+verified now, historical only, implemented but unverified, defective, unavailable external
+input, not applicable with reason. Nothing here is averaged into a percentage, and no stage is
+declared complete.
 
 ## Sources Read
 
-| Source                                                                                    | What it says at the time of writing                                                                                                                    |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CURRENT-DELIVERY.json` `phase6Build` (file time 2026-09-26T14:08:06Z, reread 2026-09-27) | `status` = `gates_1_3_passed_gate_4_pending_first_certificate_on_an_engine_with_5329_and_5340`; `readyFor6B` = false                                   |
-| `DELIVERY-VERIFICATION.md`, section "The containing release sealed, September 25"         | gate 1 passed, gate 2 passed, gate 3 passed on 778075b4; gate 4 open                                                                                   |
-| Engine `/health`, read over ssh 2026-09-27T14:26:11Z                                      | `releaseSha` f2e484a3d1a674f329d923b30394fd65f5aff50e; `horseJournal.mode` paused, `pausedReason` archive_segments, `pausedSince` 2026-09-26T14:13:54Z |
-| `docs/evidence/phase6d/population-2026-09-26.json` and `.md`                              | predeclared population run 2026-09-27T15:18Z to 15:23Z, qualified execution true                                                                       |
-| `git merge-base --is-ancestor`, run 2026-09-27                                            | f2e484a3 contains 563fac93 and f1059b99 (Phase 6A); it does not contain ee7f3a03 (#5329), bc0cde52 (#5340) or 9e275e1c (#5355)                         |
+| Source                                                                                                  | What it says at the time of writing                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Engine `/health` and `docker inspect club-arena-engine`, read over ssh 2026-09-27T16:47:12Z             | `releaseSha` 6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4, container started 16:06:56Z; `horseJournal.mode` ready, capture running as a ring of 500000 segments |
+| `docs/evidence/phase6d/population-2026-09-27.{json,md}`                                                 | serving-release population, declaration committed 16:49:15Z, qualified execution 16:49:23Z to 16:49:59Z                                                     |
+| `docs/evidence/phase6d/population-2026-09-26.{json,md}`                                                 | the 2026-09-26 declaration's run, all chains from 778075b4                                                                                                  |
+| `docs/horse-brain-phase6b-route-proof-2026-09-26.md` (merged #5417, c8cbe6e6)                           | 6B tests and the bounded route proof on 778075b4                                                                                                            |
+| `docs/horse-brain-phase6c-replay-protocol-2026-09-26.md`, section 10, on PR #5456 (head 2a6b2bb6, open) | 6C serving-release replay batch on 6b6eabb1 and the 6C lane's per-gate statuses                                                                             |
+| `CURRENT-DELIVERY.json` `phase6Build` and the coordinator's certificate record                          | 6A gates 1 to 3 passed; the certificate for 6b6eabb1, run 36332268785, did not pass the MTT case                                                            |
+| `git merge-base --is-ancestor`, run 2026-09-27                                                          | 6b6eabb1 contains 563fac93 and f1059b99 (6A), ee7f3a03 (#5329), bc0cde52 (#5340) and 9e275e1c (#5355); it does not contain c8cbe6e6 (#5417)                 |
 
 ## Status Matrix
 
-| Stage | G1                         | G2                         | G3                         | G4                         | G5                         | G6                         | G7                         | G8                         | G9                         | G10                        |
-| ----- | -------------------------- | -------------------------- | -------------------------- | -------------------------- | -------------------------- | -------------------------- | -------------------------- | -------------------------- | -------------------------- | -------------------------- |
-| 6A    | not applicable with reason | historical only            | not applicable with reason | verified now               | historical only            | historical only            | verified now               | not applicable with reason | not applicable with reason | implemented but unverified |
-| 6B    | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified |
-| 6C    | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified | implemented but unverified |
-| 6D    | historical only            | historical only            | historical only            | verified now               | historical only            | historical only            | verified now               | implemented but unverified | not applicable with reason | defective                  |
+| Stage | G1                         | G2           | G3                         | G4                         | G5              | G6              | G7           | G8                         | G9                         | G10                        |
+| ----- | -------------------------- | ------------ | -------------------------- | -------------------------- | --------------- | --------------- | ------------ | -------------------------- | -------------------------- | -------------------------- |
+| 6A    | not applicable with reason | verified now | not applicable with reason | verified now               | verified now    | verified now    | verified now | not applicable with reason | not applicable with reason | implemented but unverified |
+| 6B    | verified now               | verified now | verified now               | verified now               | historical only | historical only | verified now | not applicable with reason | not applicable with reason | implemented but unverified |
+| 6C    | implemented but unverified | verified now | verified now               | implemented but unverified | verified now    | verified now    | verified now | verified now               | not applicable with reason | verified now               |
+| 6D    | verified now               | verified now | verified now               | verified now               | verified now    | verified now    | verified now | implemented but unverified | not applicable with reason | verified now               |
 
 ## Phase 6A (1 of 4)
 
-The four-gate record, as `CURRENT-DELIVERY.json` and `DELIVERY-VERIFICATION.md` state it:
+The four-gate record: gates 1 (containing release sealed on 778075b4), 2 (original 16-record
+segment custody) and 3 (finite natural observation, 3 hands on 778075b4) passed, as
+`CURRENT-DELIVERY.json` and `DELIVERY-VERIFICATION.md` record. Gate 4, the exact-engine
+post-deployment certificate, has not passed; its current state is in G10 below.
 
-| 6A gate                         | Record  | Evidence                                                                                                                   |
-| ------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 1 containing release            | passed  | 778075b4 sealed 2026-09-25, receipt `ca_engine_deploy_attempts` shipped=true, ancestry of 563fac93 and f1059b99            |
-| 2 catalog custody               | passed  | `outputs/phase6a/catalog-custody-20260925T154725Z.json`, original 16-record segment 3f8211a4 indexed and no longer pending |
-| 3 finite natural observation    | passed  | `outputs/phase6a/phase6a-natural-archive-20260925T203106554415Z.json`, 3 completed hands on 778075b4, status qualified     |
-| 4 post-deployment certification | pending | `gates_1_3_passed_gate_4_pending_first_certificate_on_an_engine_with_5329_and_5340`                                        |
-
-| Gate                       | Status                     | Evidence                                                                                                                                                                              |
-| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G1 Domain                  | not applicable with reason | 6A owns context-to-receipt provenance; the atlas domain matrix is stage 6B (`docs/horse-brain-phase6-build-plan-2026-09-18.md`, 6A and 6B sections)                                   |
-| G2 Inputs                  | historical only            | gate 3 cohort on 778075b4 verified request lifecycles and v2 context receipts; the serving f2e484a3 has written no journal record, so no current natural input receipt exists         |
-| G3 Computation             | not applicable with reason | 6A adds no calculation; `HorsePhase6Attribution.ts` records the lookup actually performed; calculation qualification is 6B and 6C                                                     |
-| G4 Immutable authority     | verified now               | `/health` 2026-09-27 serves f2e484a3, which contains 563fac93 and f1059b99; the 6D observer confirmed image eaa22515 carries that revision label before and after its read            |
-| G5 Reachability            | historical only            | gate 3 cohort and 459 complete five-link chains in the 6D population, all produced by 778075b4; zero by the serving release                                                           |
-| G6 Outcome receipts        | historical only            | the 6D population distinguishes atlas_evaluated 212, unavailable 215, bypassed 63 attribution receipts on 778075b4 (counts of chains, not rates)                                      |
-| G7 Independent correctness | verified now               | rerun 2026-09-27 on this branch: `TournamentBrainContextCache.test.ts` 25, `TournamentBlindSnapshot.test.ts` 22, `HorsePhase6Tournament.test.ts` 43, all passed                       |
-| G8 Performance and replay  | not applicable with reason | original-input replay and latency measurement are stage 6C by the build plan                                                                                                          |
-| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate; Phases 7 to 15 are excluded from this stage                                                                                       |
-| G10 Publication and use    | implemented but unverified | `CURRENT-DELIVERY.json` phase6Build.status `gates_1_3_passed_gate_4_pending_first_certificate_on_an_engine_with_5329_and_5340`; the serving f2e484a3 contains neither #5329 nor #5340 |
+| Gate                       | Status                     | Evidence                                                                                                                                                                        |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | not applicable with reason | 6A owns context-to-receipt provenance; the atlas domain matrix is stage 6B (`docs/horse-brain-phase6-build-plan-2026-09-18.md`)                                                 |
+| G2 Inputs                  | verified now               | 6D serving-release population: request link present on 148 of 148 admitted 6b6eabb1 chains, 139 of them carrying v2 context receipts, each matching its snapshot                |
+| G3 Computation             | not applicable with reason | 6A adds no calculation; `HorsePhase6Attribution.ts` records the lookup actually performed; calculation qualification is 6B and 6C                                               |
+| G4 Immutable authority     | verified now               | `/health` 2026-09-27T16:47Z serves 6b6eabb1, which contains 563fac93 and f1059b99; the 6D observer confirmed image 5a705fd5 carries that revision before and after its read     |
+| G5 Reachability            | verified now               | 80 complete five-link chains from 6b6eabb1 in the 2026-09-27 population (request, calculation, reference, accepted action, completed hand)                                      |
+| G6 Outcome receipts        | verified now               | the 2026-09-27 population distinguishes atlas_evaluated 51, unavailable 64 and bypassed 33 attribution receipts on 6b6eabb1 (counts of chains)                                  |
+| G7 Independent correctness | verified now               | rerun 2026-09-27: `TournamentBrainContextCache.test.ts` 25, `TournamentBlindSnapshot.test.ts` 22, `HorsePhase6Tournament.test.ts` 43, all passed                                |
+| G8 Performance and replay  | not applicable with reason | original-input replay and latency measurement are stage 6C by the build plan                                                                                                    |
+| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                              |
+| G10 Publication and use    | implemented but unverified | certificate for 6b6eabb1 run 36332268785 passed SPIN, SNG and the cash network-loss case and failed the MTT case on HUD-clock qualification budget (fixed in PR #5451, pending) |
 
 ## Phase 6B (2 of 4)
 
-Another lane is building 6B today. These rows are left for the coordinator; no status is
-guessed from the earlier slice already on main.
+From merged #5417 (c8cbe6e6), `docs/horse-brain-phase6b-route-proof-2026-09-26.md`.
 
-| Gate                       | Status                     | Evidence                |
-| -------------------------- | -------------------------- | ----------------------- |
-| G1 Domain                  | implemented but unverified | pending PR from lane 6B |
-| G2 Inputs                  | implemented but unverified | pending PR from lane 6B |
-| G3 Computation             | implemented but unverified | pending PR from lane 6B |
-| G4 Immutable authority     | implemented but unverified | pending PR from lane 6B |
-| G5 Reachability            | implemented but unverified | pending PR from lane 6B |
-| G6 Outcome receipts        | implemented but unverified | pending PR from lane 6B |
-| G7 Independent correctness | implemented but unverified | pending PR from lane 6B |
-| G8 Performance and replay  | implemented but unverified | pending PR from lane 6B |
-| G9 Learning and promotion  | implemented but unverified | pending PR from lane 6B |
-| G10 Publication and use    | implemented but unverified | pending PR from lane 6B |
+| Gate                       | Status                     | Evidence                                                                                                                                                        |
+| -------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | verified now               | `TOURNAMENT_PREFLOP_ATLAS_DOMAIN` descriptor; 215,424-coordinate totality loop, `HorsePhase6Tournament.test.ts` (44)                                            |
+| G2 Inputs                  | verified now               | real-consumer checks: validator, worker, HorseLogic and HorsePreflop read the one domain, `HorsePhase6RouteRefusal.test.ts` (22), `workerRuntime.test.ts` (156) |
+| G3 Computation             | verified now               | arithmetic at all 17 anchors under 3 ante modes and M boundaries 1, 5, 10, 20, 40 with half-M hysteresis, `HorsePhase6TournamentArithmetic.test.ts` (70)        |
+| G4 Immutable authority     | verified now               | frozen descriptor, domain digest 4a8918a0 recomputed on the deployed build and matched                                                                          |
+| G5 Reachability            | historical only            | route proof on 778075b4: 34,697 tournament preflop decisions matching their snapshot                                                                            |
+| G6 Outcome receipts        | historical only            | route proof on 778075b4: 1,338 cells observed, 4,305 unobserved, 0 mismatches                                                                                   |
+| G7 Independent correctness | verified now               | literal oracle rows; named mismatch refusal at the matcher and the live worker client, `HorsePhase6RouteRefusal.test.ts` (22)                                   |
+| G8 Performance and replay  | not applicable with reason | original-input replay and latency belong to 6C                                                                                                                  |
+| G9 Learning and promotion  | not applicable with reason | no candidate activation in 6B                                                                                                                                   |
+| G10 Publication and use    | implemented but unverified | until a release containing c8cbe6e6 serves; 6b6eabb1 does not contain it                                                                                        |
 
 ## Phase 6C (3 of 4)
 
-Another lane is building 6C today. These rows are left for the coordinator.
+From PR #5456 (open, head 2a6b2bb6), section 10 of
+`docs/horse-brain-phase6c-replay-protocol-2026-09-26.md`: the serving-release batch on 6b6eabb1,
+the newest 200 decisions in 16:06Z to 16:41Z, 159 reproduced, 0 diverged, 41 refused by name
+(34 `reference_unavailable:solver_store:postflop`, 4 `reference_unavailable:chart_store`, 3
+`replay_unsupported:DECIDE_DEEP`). The statuses below are the 6C lane's, cited as that section
+states them; they become main's record when #5456 merges.
 
-| Gate                       | Status                     | Evidence                |
-| -------------------------- | -------------------------- | ----------------------- |
-| G1 Domain                  | implemented but unverified | pending PR from lane 6C |
-| G2 Inputs                  | implemented but unverified | pending PR from lane 6C |
-| G3 Computation             | implemented but unverified | pending PR from lane 6C |
-| G4 Immutable authority     | implemented but unverified | pending PR from lane 6C |
-| G5 Reachability            | implemented but unverified | pending PR from lane 6C |
-| G6 Outcome receipts        | implemented but unverified | pending PR from lane 6C |
-| G7 Independent correctness | implemented but unverified | pending PR from lane 6C |
-| G8 Performance and replay  | implemented but unverified | pending PR from lane 6C |
-| G9 Learning and promotion  | implemented but unverified | pending PR from lane 6C |
-| G10 Publication and use    | implemented but unverified | pending PR from lane 6C |
+| Gate                       | Status                     | Evidence                                                                                                                                |
+| -------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | section 10: the batch covers the observed variants and streets and names every unreplayed cell; the replay coverage matrix is 6D work   |
+| G2 Inputs                  | verified now               | section 10: 197 of 200 serving-release records rebuilt from the record digest and decision key; 3 deep second looks refused by name     |
+| G3 Computation             | verified now               | section 10: pot odds, M state, ante mode, atlas coordinate and route re-derived independently, agreed on 159 of 159                     |
+| G4 Immutable authority     | implemented but unverified | section 10: chart and postflop stores identified by row count only and not loaded offline (unavailable external input for 38 decisions) |
+| G5 Reachability            | verified now               | section 10: replay runs through the production worker runtime and HorseLogic on records 6b6eabb1 produced                               |
+| G6 Outcome receipts        | verified now               | section 10: every verdict is reproduced, diverged or refused with a finite reason                                                       |
+| G7 Independent correctness | verified now               | section 10: the verifier imports no production policy module; substituted action, RNG stream and stale M controls fail                  |
+| G8 Performance and replay  | verified now               | section 10: 159 of 159 replayable decisions reproduced exactly at the recorded release, latency and work recorded per decision          |
+| G9 Learning and promotion  | not applicable with reason | section 10: 6C learns and promotes nothing                                                                                              |
+| G10 Publication and use    | verified now               | section 10: the replay code merged in #5412 (4946473b) is contained in 6b6eabb1 and replayed that release's natural records             |
 
 ## Phase 6D (4 of 4)
 
-| Gate                       | Status                     | Evidence                                                                                                                                                                                                                                                                                                                      |
-| -------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G1 Domain                  | historical only            | 3969 declared cells; 193 observed (cash 20, mtt 173), 3776 unobserved; sng, spin and hu_sng 0 observed; branch open_facing and table size 10 never reached; all from 778075b4                                                                                                                                                 |
-| G2 Inputs                  | historical only            | request link present on 490 of 490 admitted chains (lifecycle digest equals the decision snapshot digest), all on 778075b4                                                                                                                                                                                                    |
-| G3 Computation             | historical only            | calculation link present on 490 of 490 (decision receipt, sampling state and compute metadata validated by the image's own validators)                                                                                                                                                                                        |
-| G4 Immutable authority     | verified now               | declaration sha256 6274176c committed before any record was read; the selector refuses an edited or uncommitted declaration and any drifted rerun; observer image eaa22515 equals the serving identity before and after, 2026-09-27                                                                                           |
-| G5 Reachability            | historical only            | 459 chains with all five links present (request, calculation, reference, accepted action, completed hand), all on 778075b4                                                                                                                                                                                                    |
-| G6 Outcome receipts        | historical only            | 31 incomplete chains name their gap: missing:accepted_action:second_look_unchanged 13, missing:hand_binding:observation_identity_unavailable 18, missing:hand_binding:execution_unavailable 13 (the 13 retired turns carry both marks)                                                                                        |
-| G7 Independent correctness | verified now               | `server/src/services/horseDecisionJournal/phase6dPopulation.test.ts`, 9 tests with explicit fixture predicates, passed 2026-09-27; the live link predicates are the image's validators, not an independent oracle                                                                                                             |
-| G8 Performance and replay  | implemented but unverified | frozen population declared (24 hourly strata, 400 hands per stratum, target 3 per cell); latency and original-input replay depend on the pending PR from lane 6C                                                                                                                                                              |
-| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                                                                                                            |
-| G10 Publication and use    | defective                  | the serving release f2e484a3 has zero natural receipts: journal archiving stopped at 2026-09-25T19:34:05Z with 500000 of 500000 segments and `/health.horseJournal` paused on archive_segments since 2026-09-26T14:13:54Z; the root fix #5355 (9e275e1c, the archive becomes a ring) is merged but not in the serving release |
+From the serving-release population `docs/evidence/phase6d/population-2026-09-27.{json,md}`:
+declaration `population-declaration-2026-09-27.json` (sha256 b08e3ad3) committed at 16:49:15Z
+before any record was read, window 2026-09-27T16:06:00Z to 16:49:00Z, 6b6eabb1 only admitted,
+the same 3969 cells, target 3 per cell and 400 hands per stratum as the 2026-09-26 declaration.
 
-## What The 6D Population Shows And Does Not Show
+| Gate                       | Status                     | Evidence                                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | verified now               | 67 declared cells observed on 6b6eabb1 (cash 3, mtt 39, spin 17, hu_sng 8), 3902 unobserved and listed; sng 0 observed; branches open_facing, overcall and squeeze and table sizes 9 and 10 never reached                                   |
+| G2 Inputs                  | verified now               | request link present on 148 of 148 admitted chains (lifecycle digest equals the decision snapshot digest)                                                                                                                                   |
+| G3 Computation             | verified now               | calculation link present on 148 of 148 (decision receipt, sampling state and compute metadata validated by the serving image's validators)                                                                                                  |
+| G4 Immutable authority     | verified now               | declaration committed before the read; the selector refuses an edited or uncommitted declaration and any drifted rerun; observer image 5a705fd5 equals the serving identity before and after                                                |
+| G5 Reachability            | verified now               | 80 chains from 6b6eabb1 with request, calculation, reference, accepted action and completed hand all present                                                                                                                                |
+| G6 Outcome receipts        | verified now               | 68 incomplete chains name their gap: missing:accepted_hand 54, missing:execution_witness 35, missing:hand_binding:no_witness 14, missing:accepted_action:second_look_unchanged 1 (a chain can carry two marks); all 68 are tournament hands |
+| G7 Independent correctness | verified now               | `phase6dPopulation.test.ts`, 12 tests with explicit fixture predicates, passed 2026-09-27; the live link predicates are the image's validators, not an independent oracle                                                                   |
+| G8 Performance and replay  | implemented but unverified | frozen population declared and walked; replay and latency on the same release are reported by the open PR #5456                                                                                                                             |
+| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                          |
+| G10 Publication and use    | verified now               | the serving release 6b6eabb1 produced natural accepted receipts: 148 admitted preflop chains, 80 complete, read from its own archive at 16:49Z                                                                                              |
 
-- The run is `node server/scripts/phase6d-population.mjs run --declaration docs/evidence/phase6d/population-declaration-2026-09-26.json --out docs/evidence/phase6d --date 2026-09-26`. It walked 2000 hands in strata 1 to 5; stratum 0 and strata 6 to 23 hold no archived records.
-- Of 14141 decision records read, 6249 were postflop and fill no cell; 7892 preflop decisions were classified; 490 were admitted up to the target of 3 per cell; the rest are counted as overflow per cell.
-- 7888 unarchived records sit in the legacy journal store, which is itself at its byte limit. The declared selection walks archived events only, so they are outside this population by declaration, not by choice after reading.
-- Every admitted chain comes from 778075b4. It is production evidence for that release inside the window, not evidence for the serving revision.
+## What The Two 6D Populations Show And Do Not Show
+
+- Serving release, 2026-09-27: `node server/scripts/phase6d-population.mjs run --declaration docs/evidence/phase6d/population-declaration-2026-09-27.json --out docs/evidence/phase6d --date 2026-09-27`. One stratum (16:06Z to 16:49Z) of 400 hands, which reached decisions from 16:14:55Z to 16:21:07Z. Of 911 decision records read, 406 were postflop; 505 preflop decisions were classified, all by 6b6eabb1; 148 were admitted up to the target, the rest counted as overflow per cell.
+- The 68 incomplete chains are all mtt, spin or hu_sng hands from 16:17Z to 16:21Z whose completed-hand record or execution witness was absent from the archive at the read, about half an hour after those decisions. This lane records the gap; it does not diagnose or repair it, and it certifies nothing for those hands.
+- 2026-09-26 declaration (window 2026-09-25T14:28:38Z to 2026-09-26T14:28:38Z): 193 cells observed, 3776 unobserved, 490 chains admitted, 459 complete, all from 778075b4, because the journal archive stopped at 500000 of 500000 segments at 2026-09-25T19:34:05Z. That run stays historical only; #5355's ring removed the cause and the serving release archives again.
 - No cell is filled, estimated or inferred from a neighbour. Unobserved means unobserved.
 
 ## Remaining Dependencies
 
-1. 6A gate 4: an exact-engine post-deployment certificate on an engine containing #5329 and #5340, as `CURRENT-DELIVERY.json` states.
-2. 6D G10: a release containing #5355 so the journal archives again; then a new declaration, committed before any read, for a window on that serving release.
-3. 6B and 6C rows: the coordinator replaces the pending pointers with the lanes' PR evidence.
-4. Phase 7 and later are not certified by any of this.
+1. 6A G10: a passing exact-engine certificate; the MTT HUD-clock budget fix is PR #5451, pending.
+2. 6B G10: a serving release containing c8cbe6e6.
+3. 6C: PR #5456 merged, so section 10 becomes main's record.
+4. 6D: the 68 tournament chains whose completed hand or witness was absent at the read need their owner's diagnosis; a later declaration can walk more of the serving window.
+5. Phase 7 and later are not certified by any of this.

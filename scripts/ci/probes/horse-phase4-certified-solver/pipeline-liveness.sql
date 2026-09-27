@@ -12,6 +12,28 @@ DECLARE
   y64 text := repeat('b',64);
   x40 text := repeat('c',40);
 BEGIN
+  -- 2026-09-27 (CLAUDE.md 10.86 rule 1): a pipeline that was NEVER COMMISSIONED
+  -- must not be reported as three critical outages, and must go back to being
+  -- reported as an outage the moment it IS commissioned. Both directions are
+  -- pinned. Which one is live depends on whether this database has an approved
+  -- input bundle and any heartbeat history yet, so the probe asserts the correct
+  -- answer for the state it actually finds instead of hard-coding today's.
+  findings := public.fn_audit_solver_pipeline_liveness(current_date);
+  IF NOT EXISTS (SELECT 1 FROM public.gto_v31_input_bundles WHERE approval_status='approved')
+     AND NOT EXISTS (SELECT 1 FROM public.solver_worker_heartbeats)
+     AND NOT EXISTS (SELECT 1 FROM public.solver_compact_heartbeats) THEN
+    IF jsonb_array_length(findings) <> 1
+       OR findings->0->>'code' <> 'solver_pipeline_not_commissioned'
+       OR findings->0->>'severity' <> 'note'
+       OR EXISTS (SELECT 1 FROM jsonb_array_elements(findings) f
+                   WHERE f->>'severity'='critical') THEN
+      RAISE EXCEPTION 'an uncommissioned solver pipeline was not named as uncommissioned: %',findings;
+    END IF;
+  ELSIF EXISTS (SELECT 1 FROM jsonb_array_elements(findings) f
+                 WHERE f->>'code'='solver_pipeline_not_commissioned') THEN
+    RAISE EXCEPTION 'a commissioned solver pipeline was reported as never commissioned: %',findings;
+  END IF;
+
   IF NOT public.fn_solver_ingress_claim('M1','55555555-5555-4555-8555-555555555555',
       'worker_heartbeat',now(),z64) THEN
     RAISE EXCEPTION 'signed ingress nonce was not claimed';
@@ -224,6 +246,11 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(findings) f WHERE f->>'code'='solver_pipeline_live')
      OR EXISTS (SELECT 1 FROM jsonb_array_elements(findings) f WHERE f->>'severity'='critical') THEN
     RAISE EXCEPTION 'healthy liveness audit was not healthy: %',findings;
+  END IF;
+  -- Heartbeats exist by this point, so the uncommissioned name must be gone.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(findings) f
+              WHERE f->>'code'='solver_pipeline_not_commissioned') THEN
+    RAISE EXCEPTION 'a live pipeline with heartbeats was still called never commissioned: %',findings;
   END IF;
 
   h2 := h2 || jsonb_build_object(

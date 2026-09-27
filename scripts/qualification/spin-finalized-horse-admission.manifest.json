@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "image": "finalized-horse-admission",
+  "current_provider_qualified": false,
+  "full_financial_qualification": false,
+  "historical_qualification": false,
+  "production_qualification": false,
+  "files": {
+    "scripts/qualification/spin-finalized-horse-admission.py": {
+      "bytes": 21339,
+      "sha256": "2ddf42788ee7e0fa026c22850e31ab398899ea85fa4ab5ac79a51596f8aaee4c"
+    },
+    "supabase/migrations/20260926143705_finalized_horse_seating_preserves_existing_custody.sql": {
+      "bytes": 2784,
+      "sha256": "c0205292d976ab12d5ca95e2bffafd56cb34d568ddcd4a1e6ddd6c922fba47bb"
+    },
+    "scripts/qualification/spin-horse-admission-race.py": {
+      "bytes": 8317,
+      "sha256": "5f211801e7745d0baa11c7c3e80575adabefdf7221d880e7088b4c0987752cb3"
+    },
+    "scripts/qualification/spin-expiry-business-races.py": {
+      "bytes": 26932,
+      "sha256": "619267d012bb64257d639006c133d03c95f16c7e243b334e6af661d5900b95c5"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "bytes": 3095,
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12"
+    },
+    "scripts/qualification/spin-horse-platform-paid-entry.sql": {
+      "bytes": 51413,
+      "sha256": "c7084da03b7305c9707c58fdfdf6111cc60596276d46ad0d1556fad8e6ad6dc8"
+    },
+    "scripts/qualification/fixtures/spin-paid-terminal/execute.sql": {
+      "bytes": 11627,
+      "sha256": "71620e54be91255b2f29bdeb864fa944d54cdea8ad4798e672f8194aed6e50de"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/owner-capture.json": {
+      "bytes": 22958,
+      "sha256": "0c79f16e3edecd5c55a8c984f14b852fd97c165e2cca81d0c039548458d5bebc"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/provider.sql": {
+      "bytes": 10687,
+      "sha256": "3626802587173e96ecfb98a2ae8c1fb6cd19d93a1392eeddf64194795ed9226f"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/prestart-seat.sql": {
+      "bytes": 5792,
+      "sha256": "e85454527cb17e9ceeee0c9774fc8a551ca2fefa5e59baf5f2b00376f147c082"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/closed-seat.sql": {
+      "bytes": 6959,
+      "sha256": "a41a4823c4bf7a915408b2f5028441497def9ef3e44f6cb7cb4ae2adddfaf37f"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/launch.sql": {
+      "bytes": 8282,
+      "sha256": "454e3dc59ec01976544ad816a108a0fa1a82414fb94392aeab58600ee767a734"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/fee-resolution-provider.sql": {
+      "bytes": 29850,
+      "sha256": "7a4e43f6ec5f5d1ad6305390ab5d47dd740989fc2b1c0193185b55685dd8ce54"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/fee-resolution-provider.json": {
+      "bytes": 31214,
+      "sha256": "28e8029822e5671cc3d0eb9c01266c83c3b2265e9ad9331847efdf425a37aac5"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/generate-fee-resolution-provider.py": {
+      "bytes": 2736,
+      "sha256": "ecddf604fbe5e08c5306507eef69088b72e317bb6f44c2c37f6022c28cb3d9e9"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/fee-custody-provider.sql": {
+      "bytes": 5819,
+      "sha256": "f1926eeb17c93bf3ce4b0201dfae4f14be3ced7f9433a8f32018d35ef38a807f"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/fee-custody-provider.json": {
+      "bytes": 7948,
+      "sha256": "3b225c186f5f68b29e33a3f700c05d46762b7d96b13421ca5c32bc4b513860d7"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/generate-fee-custody-provider.py": {
+      "bytes": 2848,
+      "sha256": "e6c490cc0353fc389253686557604326f9497e1fdde66963edb8f95bd5d64ad7"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/core-leaves.json": {
+      "bytes": 9215,
+      "sha256": "79ea04747cb91c65744eb5ec7b03073d7a69903b54cf093a0fcef9591e453239"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/core-leaves.sql": {
+      "bytes": 11363,
+      "sha256": "65a7448e706840db9406734cbd90230e99cf36adfa249da4216ceabf536d0af9"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/seating-receipts.json": {
+      "bytes": 51940,
+      "sha256": "c078f075694de07b4f6b3a973f8b048c701b80902e650cbd85e92d675172c939"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/seating-receipts.sql": {
+      "bytes": 64396,
+      "sha256": "77802c93826c58ce5465504648edf2f695376e63cde1423ede8c69b80bc80b5d"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/generate-seating-receipts.py": {
+      "bytes": 5809,
+      "sha256": "e1b2ae514ee2b5a07b73588588b9caaa49c4cd9acab966ec0c0879570cc91c29"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/cash-cluster-columns.json": {
+      "bytes": 644,
+      "sha256": "a1f7a588f52a1065dd1ad9a50e8191a6f1ee9d1a4e130653c7696752ef24402d"
+    },
+    "scripts/qualification/fixtures/finalized-horse-admission/cash-cluster-columns.sql": {
+      "bytes": 2567,
+      "sha256": "16b3b0ca4dcce6228c05f1cc2e8d1d752273c1d40952b80850c715d75e7d0316"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/generate.py": {
+      "bytes": 10432,
+      "sha256": "49c943173c232e127abda239776a2b5d38ce2ea7493e3dec41a7c26e822051be"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/catalog.json": {
+      "bytes": 336560,
+      "sha256": "a1918bfb2032a34996cc67607d9fcb4d988d183f13f7b7e921ed8975c3b18905"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/columns.sql": {
+      "bytes": 118777,
+      "sha256": "066dbb5d936fc3aebb43a54bd0c05cf28c750bdcf63830def5f0424e312ed944"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/constraints.sql": {
+      "bytes": 32948,
+      "sha256": "f475e0f53c10350655a6653fdabac00ac0640eb7d4fbeadacbd71052e226d065"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/triggers.sql": {
+      "bytes": 266026,
+      "sha256": "8a03b4aa527513c21b6e1391bc89d91c55a07c73556b89202037858802c46c1c"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/readback.sql": {
+      "bytes": 150350,
+      "sha256": "ca592b513195f01852da972ba06283262c4447dba8090c3ffa9eff7331b28b2e"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/indexes.sql": {
+      "bytes": 30582,
+      "sha256": "82e935a1a6b85c91d99a7bc37fd0de60e3176f83f27f1ff5c03b2e3fbff45c7f"
+    },
+    "scripts/qualification/fixtures/archived-spin-core-provider/indexes-readback.sql": {
+      "bytes": 18713,
+      "sha256": "dc1f2474be442383afcac5e888ec6a7d3c762a1bfa3d13e420c87c2a09493e4c"
+    }
+  }
+}

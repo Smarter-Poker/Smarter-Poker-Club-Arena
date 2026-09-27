@@ -983,6 +983,18 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-finalized-horse-admission.py',
+  'scripts/qualification/spin-finalized-horse-admission.manifest.json',
+  'scripts/qualification/spin-horse-admission-race.py',
+  'scripts/qualification/spin-horse-platform-paid-entry.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/prestart-seat.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/closed-seat.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/provider.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/owner-capture.json',
+  'scripts/qualification/fixtures/archived-spin-core-provider/generate.py',
+  'scripts/qualification/fixtures/archived-spin-core-provider/catalog.json',
+  'scripts/qualification/fixtures/archived-spin-core-provider/readback.sql',
+  'supabase/migrations/20260926143705_finalized_horse_seating_preserves_existing_custody.sql',
   'scripts/qualification/spin-paid-terminal.py',
   'scripts/qualification/spin-paid-terminal.md',
   'scripts/qualification/spin-paid-terminal.hosted.manifest.json',
@@ -1169,6 +1181,11 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
 
   it.each([
     'docs/spin-expiry-plan.md',
+    'scripts/qualification/spin-finalized-horse-admission.py.bak',
+    'scripts/qualification/spin-horse-admission-race.py.bak',
+    'scripts/qualification/spin-horse-platform-paid-entry.sql.bak',
+    'scripts/qualification/fixtures/finalized-horse-admission-notes/input.sql',
+    'scripts/qualification/fixtures/archived-spin-core-provider-notes/input.sql',
     'supabase/components/spin-mixed-basis-current-terminal.sql.bak',
     'supabase/components/spin-mixed-basis-current-terminal.rollback.sql.bak',
     'scripts/qualification/spin-positive-fee-entry.py.bak',

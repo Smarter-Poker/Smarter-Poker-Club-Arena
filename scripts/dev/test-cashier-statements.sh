@@ -111,3 +111,6 @@ plan_check 'Scan using ux_chip_transactions_idempotency_key on chip_transactions
 # The maintained online-index companion and short recording migration also
 # retain the complete role/accounting oracle and realistic receipt-range plans.
 python3 "$root/tests/fixtures/cashier-statements/totals-index-native.py"
+
+# Qualify the unchanged Cashier ledger range, permissions and online recovery.
+python3 "$root/tests/fixtures/cashier-statements/ledger-cover-native.py"

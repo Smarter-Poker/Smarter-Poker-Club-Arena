@@ -1,0 +1,11 @@
+# 2026-09-27: Cover the existing Cashier ledger totals range
+
+The default seven-day Cashier Statements totals request still exceeded its unchanged eight-second limit after mirrored receipt identities were batched. The exact dynamic-query plan then showed 26,227 buffers in the ledger range, retaining 9,936 rows and rejecting 16,792 by status/category. The omission lookup used only 254 buffers. A later warm whole-function read succeeded, which does not establish cold-loading availability.
+
+The candidate adds a concurrent partial index for that exact posted/category predicate. Club and time keys cover only the ledger ID, amount and directional UUIDs. Long labels, types, metadata, descriptions and idempotency keys remain outside the index tuple. Every accounting function, scope, filter, output, grant, timeout, retention rule and financial row stays unchanged. Optional filters may still require heap reads.
+
+The short recording migration refuses any source, authority, column or index-shape drift and requires the exact valid/ready/live online result. A maintained separate single-statement concurrent build and explicit interrupted-build recovery use the existing native session route; neither runs in a transaction or retry loop. Actual production installation and browser acceptance remain separate.
+
+The existing required Cashier native lane runs the installed whole accounting oracle, all scope/filter comparisons, signed/NULL/category/status/time boundaries, wide text, actual NOSUPERUSER owner and browser denial, real concurrent writers, and interrupted build plus old-snapshot recovery. Native timing and buffer results are local evidence only, never billing savings or production latency guarantees.
+
+Native PG17 passed the full finite acceptance: the unchanged 13,766-row projection used 16,002 buffers before and 178 after, and the complete unchanged helper used 17,592 before and 1,796 after. These are synthetic local measurements; a first production cold call and the actual browser request still require verification. The authenticated fixture uses a real NOSUPERUSER/BYPASSRLS owner and the existing full accounting oracle; it does not recreate production financial write triggers.

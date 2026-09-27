@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { rawProfileHeading } from './support/rawProfileHeading';
+import { readProfileInterfaceMode } from './support/profileInterfaceMode';
 import { walletPlayableAmount } from './support/walletPlayableAmount';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
@@ -635,7 +636,7 @@ test.describe('production Table Studio realtime contract', () => {
         });
       }
       const otherName = await rawProfileHeading(otherPage);
-      const otherMode = await otherPage.locator('html').getAttribute('data-theme');
+      const otherMode = await readProfileInterfaceMode(otherPage, PRODUCTION_RESPONSE_TIMEOUT);
       await primaryPage.emulateMedia({ colorScheme: 'light' });
       await mobilePage.emulateMedia({ colorScheme: 'dark' });
       accountSignalReceived.set(primaryPage, false);
@@ -675,7 +676,7 @@ test.describe('production Table Studio realtime contract', () => {
       await primaryPage.emulateMedia({ colorScheme: 'dark' });
       await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'dark');
       await expect(otherPage.locator('#profile-heading')).toHaveText(otherName);
-      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode!);
+      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode);
       const accountReadback = await primaryAccount.client
         .from('profiles')
         .select('alias,settings')

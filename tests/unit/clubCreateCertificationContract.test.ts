@@ -77,7 +77,7 @@ describe('Create Club production certification contract', () => {
 
   it('archives the exact ledger actor before a reserved certification identity is removed', () => {
     const migration = read(
-      'supabase/migrations/20260927004356_certification_accounts_archive_ledger_actor_before_deletion.sql'
+      'supabase/migrations/20260927032422_certification_accounts_archive_ledger_actor_before_deletion.sql'
     );
 
     expect(migration).toContain("md5(v_old) <> 'a600217942966c122d7f245d64df96aa'");

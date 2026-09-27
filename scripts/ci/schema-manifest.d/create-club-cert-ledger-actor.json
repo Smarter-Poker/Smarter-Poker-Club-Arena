@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/cowork/fix-create-club-cert-actor-cleanup. Observed live after Supabase migration 20260927032422_certification_accounts_archive_ledger_actor_before_deletion: private immutable actor archive and its mutation guard.",
+  "tables": ["ca_test_account_ledger_actor_archive"],
+  "functions": ["fn_guard_test_account_ledger_actor_archive"]
+}

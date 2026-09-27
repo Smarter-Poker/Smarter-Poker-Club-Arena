@@ -17,3 +17,9 @@ are unchanged. This is diagnostic evidence, not a repair of a stuck tournament
 or permission to release a retained owner. It cannot retrospectively inspect a
 prior process after replacement; a production restart must never be used merely
 to acquire this missing observation.
+
+The local full client suite also exposed a five-second source-law timeout in
+the notification finding guard. It now loads the existing complete, ordered
+migration corpus once, preserving the latest-definition selection, every
+assertion and the existing timeout. The prior failing run remains recorded;
+the changed candidate requires a fresh full result.

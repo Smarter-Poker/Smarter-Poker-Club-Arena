@@ -877,9 +877,11 @@ describe('a tournament pays every place or none', () => {
       expect(path).not.toMatch(/settleTournamentPlacesAtomically\(/);
       expect(path).not.toMatch(/settleTournamentObligation\(/);
     }
-    expect(REQUEST_TERMINAL).toContain("supabase.rpc('fn_complete_tournament_terminal'");
+    expect(REQUEST_TERMINAL).toContain("terminalAuthority.rpc('fn_complete_tournament_terminal'");
     expect(REQUEST_TERMINAL).toContain('verifyTournamentCompletionReceipt(');
-    expect(REQUEST_TERMINAL).toContain("supabase.rpc('fn_resolve_tournament_terminal_outcome'");
+    expect(REQUEST_TERMINAL).toContain(
+      "terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'"
+    );
     expect(REQUEST_TERMINAL).toMatch(
       /if \(receipt && proposalIdentityIsExact\(data\)\) return receipt/
     );

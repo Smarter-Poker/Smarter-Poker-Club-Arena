@@ -97,6 +97,8 @@
 }
 
 .pineapple-discard__card {
+  /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -144,6 +146,8 @@
 }
 
 .pineapple-discard__confirm {
+  /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
+  position: relative;
   margin-top: 12px;
   width: 100%;
   padding: 11px;
@@ -172,6 +176,8 @@
    Below the cards and above Discard, so the destructive button stays the one
    under the thumb and the extra-time button cannot be hit by accident. */
 .pineapple-discard__timebank {
+  /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
+  position: relative;
   margin-top: 12px;
   width: 100%;
   padding: 9px;

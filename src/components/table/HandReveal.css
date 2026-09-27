@@ -118,6 +118,8 @@
 }
 
 .hand-reveal__btn {
+  /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
+  position: relative;
   flex: 1;
   padding: 10px 12px;
   border: none;

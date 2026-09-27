@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ServerTableEngine } from '../engine/ServerTableEngine.js';
+import { F06HandPermit } from '../services/F06HandPermit.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { tournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
 
@@ -30,6 +32,123 @@ function original(n: number, stop = () => Promise.resolve()) {
   };
 }
 afterEach(() => vi.restoreAllMocks());
+
+describe('retained movement diagnostics', () => {
+  it('reads the original permit and boundary without authority, mutation or binding disclosure', () => {
+    const value = manager();
+    const rpc = vi.fn(),
+      current = vi.fn(() => true);
+    const permit = new F06HandPermit(
+      {
+        tournament_id: id(1),
+        lease_generation: id(2),
+        table_id: id(100),
+        lifecycle: '4',
+        permit_id: id(101),
+        hand_number: '20',
+        custody_id: id(102),
+      },
+      rpc,
+      current
+    );
+    const engine = original(100) as any;
+    engine.f06CurrentPermit = permit;
+    engine.claimedTournamentMovePauseOwners = new Set(['original-owner']);
+    engine.tournamentMoveOperations = new Map();
+    engine.getF06RetainedPermit = ServerTableEngine.prototype.getF06RetainedPermit;
+    engine.hasClaimedTournamentMoveBoundary =
+      ServerTableEngine.prototype.hasClaimedTournamentMoveBoundary;
+    value.tableEngines.set(id(100), engine);
+    value.noteSeatMoveQuarantineRefusal('recovery:claimed_move_boundary');
+    const result = value.getLifecycleDiagnosticSnapshot({ tableIds: [id(100)] });
+    expect(result.seatMoveQuarantineRefusal).toBe('recovery:claimed_move_boundary');
+    expect(result.originals[0].movement).toEqual({
+      claimedBoundary: true,
+      retainedPermit: { status: 'retained', phase: 'new' },
+    });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(current).not.toHaveBeenCalled();
+    expect(permit.recoveryState()).toBe('new');
+    expect(engine.f06CurrentPermit).toBe(permit);
+    expect(engine.claimedTournamentMovePauseOwners.size).toBe(1);
+    expect(JSON.stringify(result)).not.toContain(id(101));
+    expect(JSON.stringify(result)).not.toContain(id(102));
+    expect(Object.isFrozen(result.originals[0].movement)).toBe(true);
+    expect(Object.isFrozen(result.originals[0].movement.retainedPermit)).toBe(true);
+  });
+
+  it.each(['new', 'reserved', 'unknown', 'attempted', 'terminated', 'number_refused'])(
+    'retains observed %s distinctly from unavailable',
+    (phase) => {
+      const value = manager();
+      value.tableEngines.set(id(100), {
+        ...original(100),
+        getF06RetainedPermit: () => ({ phase }),
+        hasClaimedTournamentMoveBoundary: () => false,
+      });
+      expect(value.getLifecycleDiagnosticSnapshot().originals[0].movement).toEqual({
+        claimedBoundary: false,
+        retainedPermit: { status: 'retained', phase },
+      });
+    }
+  );
+
+  it('distinguishes no permit from absent, throwing or malformed original getters', () => {
+    const value = manager();
+    const absent = {
+      claimedBoundary: null,
+      retainedPermit: { status: 'unavailable', phase: null },
+    };
+    value.tableEngines.set(id(100), original(100));
+    expect(value.getLifecycleDiagnosticSnapshot().originals[0].movement).toEqual(absent);
+    const engine = {
+      ...original(100),
+      getF06RetainedPermit: () => null,
+      hasClaimedTournamentMoveBoundary: () => false,
+    };
+    value.tableEngines.set(id(100), engine);
+    expect(value.getLifecycleDiagnosticSnapshot().originals[0].movement).toEqual({
+      claimedBoundary: false,
+      retainedPermit: { status: 'none', phase: null },
+    });
+    engine.getF06RetainedPermit = (() => {
+      throw new Error('private diagnostic detail');
+    }) as any;
+    expect(value.getLifecycleDiagnosticSnapshot().originals[0].movement).toEqual({
+      claimedBoundary: false,
+      retainedPermit: { status: 'unavailable', phase: null },
+    });
+    engine.getF06RetainedPermit = (() => ({ phase: 'sensitive-unknown-value' })) as any;
+    engine.hasClaimedTournamentMoveBoundary = (() => 'yes') as any;
+    const result = value.getLifecycleDiagnosticSnapshot();
+    expect(result.originals[0].movement).toEqual(absent);
+    expect(JSON.stringify(result)).not.toContain('sensitive');
+    expect(
+      value.getLifecycleDiagnosticSnapshot({ tableIds: [id(999)] }).originals[0].movement
+    ).toEqual(absent);
+  });
+
+  it('reads the retained original without calling a replacement or recovery', async () => {
+    const value = manager();
+    const old = {
+      ...original(100),
+      getF06RetainedPermit: vi.fn(() => ({ phase: 'reserved' })),
+      hasClaimedTournamentMoveBoundary: vi.fn(() => true),
+      replayF06OriginalPermit: vi.fn(),
+    };
+    value.tableEngines.set(id(100), old);
+    await value.stop();
+    const replacement = { ...original(999), getF06RetainedPermit: vi.fn(() => null) };
+    value.tableEngines.set(id(100), replacement);
+    const result = value.getLifecycleDiagnosticSnapshot({ tableIds: [id(100)] });
+    expect(result.originals[0].movement.retainedPermit).toEqual({
+      status: 'retained',
+      phase: 'reserved',
+    });
+    expect(replacement.getF06RetainedPermit).not.toHaveBeenCalled();
+    expect(old.replayF06OriginalPermit).not.toHaveBeenCalled();
+  });
+});
 
 describe('manager lifecycle diagnostics on the selected non-F06 base', () => {
   it.each([34, 36, 37, 45])(

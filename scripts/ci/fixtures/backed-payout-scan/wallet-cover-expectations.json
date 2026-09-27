@@ -2,6 +2,6 @@
   "name": "idx_wallet_tx_tournament_receipts_cover",
   "definition": "CREATE INDEX idx_wallet_tx_tournament_receipts_cover ON public.wallet_transactions USING btree (related_entity_id) INCLUDE (type, category, amount) WHERE ((related_entity_id IS NOT NULL) AND (((type = 'debit'::text) AND (category = ANY (ARRAY['tournament_buyin'::text, 'rebuy'::text, 'addon'::text]))) OR ((type = 'credit'::text) AND (category = ANY (ARRAY['refund'::text, 'prize'::text, 'bounty'::text])))))",
   "definitionMD5": "bf79245c5b9d386e2f8dd8e3efe85036",
-  "migration": "supabase/migrations/20260927173601_backed_payout_wallet_receipts_use_a_partial_cover.sql",
+  "migration": "supabase/migrations/20260927181709_backed_payout_wallet_receipts_use_a_partial_cover.sql",
   "predicate": "related_entity_id IS NOT NULL AND ((type = 'debit' AND category IN ('tournament_buyin','rebuy','addon')) OR (type = 'credit' AND category IN ('refund','prize','bounty')))"
 }

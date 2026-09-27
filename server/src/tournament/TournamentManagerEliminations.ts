@@ -1786,13 +1786,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
 
-    // The database owns the canonical window. Its policy deliberately folds
-    // zero-valued settings through NULLIF fallbacks, extends the cap through
-    // configured add-on levels, and closes at the exact boundary. Duplicating
-    // only part of that policy here caused eligible horses to be silently
-    // eliminated. The RPC is the cheap, authoritative refusal.
-
     try {
+      // Ask the same policy the purchase door uses, once for this input batch.
+      // A finalized/closed event cannot accept a new purchase. Repeatedly
+      // asking its money door for every horse acquires the settlement lane
+      // and burns the bust budget before ordinary eliminations can run.
+      // This is not an elimination decision or a replacement receipt: the
+      // caller still reads durable prompts and the atomic elimination door.
+      const { data: window, error: windowError } = await supabase.rpc(
+        'fn_ca_tournament_rebuy_window',
+        { p_tournament_id: this.tournamentId }
+      );
+      if (!this.eliminationMutationAllowed()) return { rebought, answered };
+      if (
+        !windowError &&
+        window?.open === false &&
+        ['tournament_not_rebuyable', 'rebuy_window_closed'].includes(window.reason)
+      )
+        return { rebought, answered };
+      // Open, malformed or unreadable policy retains the original purchase
+      // authority, including its exact receipt replay and fresh locked checks.
       const { data: horseRows, error: horseErr } = await supabase
         .from('profiles')
         .select('id')

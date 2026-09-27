@@ -11,7 +11,7 @@ const oldRead = read(prefix + 'read-before.sql');
 const newRead = read(prefix + 'read-after.sql');
 const after = read(prefix + 'function-after.sql');
 const migration = read(
-  'supabase/migrations/20260927162106_chip_store_coverage_aggregates_recent_ledger_once.sql'
+  'supabase/migrations/20260927162949_chip_store_coverage_aggregates_recent_ledger_once.sql'
 );
 const md5 = (s: string) => createHash('md5').update(s).digest('hex');
 

@@ -17,7 +17,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/chip-store-coverage'
-MIGRATION = ROOT / 'supabase/migrations/20260927162106_chip_store_coverage_aggregates_recent_ledger_once.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927162949_chip_store_coverage_aggregates_recent_ledger_once.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--baseline', action='store_true', help='Predecessor must fail the one-scan gate.')

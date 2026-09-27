@@ -1,0 +1,41 @@
+Parsed test spec with 3 sessions
+
+starting permutation: a_begin a_hand b_claim a_row_available a_rollback baseline_state
+step a_begin: 
+ BEGIN;
+
+step a_hand: 
+ SELECT public.fn_ca_share_settlement_lane_for_table('b7300000-0000-4000-8000-000000000004');
+
+fn_ca_share_settlement_lane_for_table
+-------------------------------------
+                                     
+(1 row)
+
+b: NOTICE:  LANE_BASELINE_REFUSED
+step b_claim: 
+ SELECT elimination_lane_native.claim(false);
+
+claim
+-----
+     
+(1 row)
+
+a: NOTICE:  LANE_ROW_AVAILABLE
+step a_row_available: 
+ DO $$ BEGIN
+ PERFORM 1 FROM public.tournaments WHERE id='b7200000-0000-4000-8000-000000000004' FOR UPDATE NOWAIT;
+ IF NOT FOUND THEN RAISE EXCEPTION 'synthetic event missing'; END IF;
+ RAISE NOTICE 'LANE_ROW_AVAILABLE'; END $$;
+
+step a_rollback: 
+ ROLLBACK;
+
+observer: NOTICE:  LANE_BASELINE_ROLLBACK_PROVEN
+step baseline_state: 
+ DO $$ BEGIN
+ IF (SELECT count(*) FROM public.tournament_knockout_candidates WHERE hand_number=9720004 AND state='pending')<>1
+ OR (SELECT count(*) FROM public.tournament_players WHERE tournament_id='b7200000-0000-4000-8000-000000000004' AND status='playing' AND chips=0)<>1
+ OR EXISTS(SELECT 1 FROM smarter_private.f06_elimination_dispatch) THEN RAISE EXCEPTION 'baseline refusal leaked effect'; END IF;
+ RAISE NOTICE 'LANE_BASELINE_ROLLBACK_PROVEN'; END $$;
+

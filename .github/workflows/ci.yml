@@ -1722,6 +1722,25 @@ jobs:
           path: ${{ runner.temp }}/f06-accepted-elimination/
           if-no-files-found: error
           retention-days: 7
+      - name: Ordinary elimination takes its canonical lane before rows
+        id: elimination_canonical_lane
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 tests/operations/elimination-canonical-lane-results.test.py
+          python3 scripts/ci/test-elimination-canonical-lane.py \
+            --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
+            --evidence "$RUNNER_TEMP/elimination-canonical-lane"
+      - name: Retain complete ordinary elimination lane proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.elimination_canonical_lane.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: elimination-canonical-lane-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/elimination-canonical-lane/
+          if-no-files-found: error
+          retention-days: 7
       - name: Original paid tournament entry retains its scoring custody
         id: original_paid_custody
         if: matrix.shard == 3

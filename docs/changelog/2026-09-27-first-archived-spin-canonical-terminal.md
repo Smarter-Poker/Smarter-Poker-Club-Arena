@@ -64,3 +64,15 @@ original external evidence and every executable definition remain unchanged.
 Reviewed routing pins were updated with per-binding audit records. The publisher
 contract test retained both 5-second child bounds and gained a 15-second parent
 budget for two child calls plus cleanup after a reproduced full-suite timeout.
+
+Final local candidate c3efab8941952c61013c06ef0b52913817924eed passed all nine
+PostgreSQL cases, independently checked against 214 source inputs per case,
+797 evidence leaves and 386 executed stages. All 1,965 client test files and
+28,974 tests passed. The exact installation was then applied once; provider
+history version 20260927041537 contains the complete statement with SHA256
+2f474595a7d4f88cd70a52ba95d4616fb8f91cc53681146ec09f1738bc51878c.
+Live readback matched all ten function bodies and permissions, the empty
+admission table and its three enabled triggers, and the original event/funding
+evidence. The task-owned schema fragment records those installed objects.
+Installation performed no financial invocation; the production abort probe,
+payment, unresolved fee evidence and incident closure remain separate gates.

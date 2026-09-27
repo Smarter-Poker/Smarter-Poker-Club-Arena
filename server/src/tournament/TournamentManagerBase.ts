@@ -493,17 +493,48 @@ export abstract class TournamentManagerBase {
     const selected = tableIds.map((tableId) => {
       const engine = originals.get(tableId);
       let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+      let claimedBoundary: boolean | null = null;
+      let retainedPermit: Readonly<{
+        status: 'retained' | 'none' | 'unavailable';
+        phase: string | null;
+      }> = Object.freeze({ status: 'unavailable', phase: null });
       if (engine) {
         try {
           snapshot = engine.getLifecycleDiagnosticSnapshot();
         } catch {
           /* unknown */
         }
+        // These existing getters inspect only this exact local original.
+        // Never invoke an authority check, RPC, recovery or release here.
+        try {
+          const claimed = engine.hasClaimedTournamentMoveBoundary();
+          if (typeof claimed === 'boolean') claimedBoundary = claimed;
+        } catch {
+          /* unavailable is not an unclaimed boundary */
+        }
+        try {
+          const permit = engine.getF06RetainedPermit();
+          if (permit === null) {
+            retainedPermit = Object.freeze({ status: 'none', phase: null });
+          } else if (
+            permit &&
+            ['new', 'reserved', 'unknown', 'attempted', 'terminated', 'number_refused'].includes(
+              permit.phase
+            )
+          ) {
+            // The binding contains custody identifiers; the phase is enough
+            // to distinguish this refusal and never exports that binding.
+            retainedPermit = Object.freeze({ status: 'retained', phase: permit.phase });
+          }
+        } catch {
+          /* unavailable is not an absent permit */
+        }
       }
       return Object.freeze({
         tableId,
         availability: snapshot ? ('observed' as const) : ('unavailable' as const),
         engine: snapshot,
+        movement: Object.freeze({ claimedBoundary, retainedPermit }),
         session: null,
         sessionCoverage: 'unavailable_on_selected_base' as const,
       });
@@ -519,6 +550,8 @@ export abstract class TournamentManagerBase {
       authorityExpired: this.tournamentLeaseAuthorityExpired,
       stopPending: this.teardownPromise !== null,
       schedulerPendingCount: this.eliminationSchedulerJobs.size,
+      seatMoveQuarantineRefusal: this.seatMoveQuarantineRefusal(),
+      absentSeatMoveRefusalMeans: 'unobserved_or_cleared' as const,
       lifecyclePendingCount: this.lifecycleJobs.size,
       schedulerRecent: Object.freeze(
         boundedDiagnosticEntries(this.eliminationSchedulerJobs, 32).map((job) =>

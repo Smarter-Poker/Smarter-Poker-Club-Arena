@@ -1583,6 +1583,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-club-weekly-summary.sh
+      - name: Owner accounting copies reach Production Alerts, never the owner's phone
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-accounting-push-bridge.sh
       - name: One weekly accounting coordinator rolls back all financial stages and invoices
         if: matrix.shard == 1
         env:

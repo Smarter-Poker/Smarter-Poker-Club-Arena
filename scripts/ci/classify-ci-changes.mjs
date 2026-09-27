@@ -64,10 +64,24 @@ const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
+const settlementConservationIndex =
+  /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
+
+// Sparse satellite receipt reads qualify their actual online index and audit.
+const satelliteAuditIndex =
+  /^(scripts\/(?:ci\/(?:test-satellite-audit-index-postgres\.py$|fixtures\/satellite-audit-index\/)|ops\/(?:build|recover)-satellite-audit-index-concurrently\.sql$)|tests\/satelliteAuditIndexRegression\.test\.ts$)/;
+
+// The same audit's pool-transfer fallback also owns a sparse entity index.
+const satelliteLedgerAuditIndex =
+  /^(scripts\/(?:ci\/(?:test-satellite-ledger-audit-index-postgres\.py$|fixtures\/satellite-ledger-audit-index\/)|ops\/build-satellite-ledger-audit-index-concurrently\.sql$)|tests\/satelliteLedgerAuditIndexRegression\.test\.ts$)/;
 
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
   /^(scripts\/ci\/(?:test-certification-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/certification-retirement\/)|tests\/unit\/productionE2EAccount\.test\.ts$)/;
+
+// Actual reserved cleanup/FK access must retain native concurrency qualification.
+const certificationPlayerIndex =
+  /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
 
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
@@ -249,7 +263,11 @@ export function classifyChangedPaths(paths) {
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
-      matches(certificationRetirement),
+      matches(settlementConservationIndex) ||
+      matches(certificationRetirement) ||
+      matches(satelliteAuditIndex) ||
+      matches(satelliteLedgerAuditIndex) ||
+      matches(certificationPlayerIndex),
     tests:
       bbjFixture ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
@@ -286,7 +304,11 @@ export function classifyChangedPaths(paths) {
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
-      matches(certificationRetirement),
+      matches(settlementConservationIndex) ||
+      matches(certificationRetirement) ||
+      matches(satelliteAuditIndex) ||
+      matches(satelliteLedgerAuditIndex) ||
+      matches(certificationPlayerIndex),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

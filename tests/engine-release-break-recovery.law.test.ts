@@ -9,6 +9,11 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
 const supervisor = read('server/scripts/engine-supervisor.sh');
 const recovery = read('server/scripts/engine-release-recover.sh');
+// The real shell fixture already owns a 20-second absolute deadline. Bound its
+// process, then leave finite outer headroom for process cleanup and assertions.
+const desiredRecoveryDeadlineSeconds = 20;
+const desiredRecoveryProcessTimeoutMs = (desiredRecoveryDeadlineSeconds + 1) * 1000;
+const desiredRecoveryTestTimeoutMs = desiredRecoveryProcessTimeoutMs + 5000;
 
 describe('engine release recovery stays inside one honest break boundary', () => {
   it('bounds every protected-main Git read and the pending-owner read', () => {
@@ -95,28 +100,26 @@ describe('engine release recovery stays inside one honest break boundary', () =>
     expect(recovery).toContain('bounded_recovery_command "$SUPERVISOR_BUDGET"');
   });
 
-  // These two run the real engine-supervisor.sh against stubbed binaries. Solo
-  // they take ~1.1-1.6s; under a loaded shared workstation (load average 10-18,
-  // pre-push on 2026-09-27) they took 5.3s and 7.3s and hit vitest's default
-  // 5000ms. The budget bounds the child, not the assertions.
-  it('force-desired mode evicts a still-authorized pending candidate and proves exact local and public health', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-force-desired-'));
-    try {
-      const bin = join(sandbox, 'bin');
-      const state = join(sandbox, 'state');
-      const control = join(sandbox, 'control');
-      mkdirSync(bin);
-      mkdirSync(state);
-      mkdirSync(control);
-      const desiredSha = 'a'.repeat(40);
-      const desiredImage = `sha256:${'b'.repeat(64)}`;
-      const candidateImage = `sha256:${'c'.repeat(64)}`;
-      const switched = join(state, 'desired');
-      const curlLog = join(state, 'curl.log');
+  it(
+    'force-desired mode evicts a still-authorized pending candidate and proves exact local and public health',
+    () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-force-desired-'));
+      try {
+        const bin = join(sandbox, 'bin');
+        const state = join(sandbox, 'state');
+        const control = join(sandbox, 'control');
+        mkdirSync(bin);
+        mkdirSync(state);
+        mkdirSync(control);
+        const desiredSha = 'a'.repeat(40);
+        const desiredImage = `sha256:${'b'.repeat(64)}`;
+        const candidateImage = `sha256:${'c'.repeat(64)}`;
+        const switched = join(state, 'desired');
+        const curlLog = join(state, 'curl.log');
 
-      writeFileSync(
-        join(control, 'engine-release-seal.py'),
-        `#!/usr/bin/env bash
+        writeFileSync(
+          join(control, 'engine-release-seal.py'),
+          `#!/usr/bin/env bash
 case "$1" in
   get)
     case "$2" in
@@ -131,18 +134,18 @@ case "$1" in
   *) exit 3 ;;
 esac
 `
-      );
-      chmodSync(join(control, 'engine-release-seal.py'), 0o755);
-      writeFileSync(
-        join(control, 'engine-up.sh'),
-        `#!/usr/bin/env bash
+        );
+        chmodSync(join(control, 'engine-release-seal.py'), 0o755);
+        writeFileSync(
+          join(control, 'engine-up.sh'),
+          `#!/usr/bin/env bash
 touch '${switched}'
 `
-      );
-      chmodSync(join(control, 'engine-up.sh'), 0o755);
-      writeFileSync(
-        join(bin, 'docker'),
-        `#!/usr/bin/env bash
+        );
+        chmodSync(join(control, 'engine-up.sh'), 0o755);
+        writeFileSync(
+          join(bin, 'docker'),
+          `#!/usr/bin/env bash
 set -eu
 if [ "$1" = info ]; then exit 0; fi
 if [ "$1" = image ] && [ "$2" = inspect ]; then
@@ -170,51 +173,60 @@ fi
 if [ "$1" = start ] || [ "$1" = update ] || [ "$1" = tag ]; then exit 0; fi
 exit 4
 `
-      );
-      chmodSync(join(bin, 'docker'), 0o755);
-      writeFileSync(
-        join(bin, 'curl'),
-        `#!/usr/bin/env bash
+        );
+        chmodSync(join(bin, 'docker'), 0o755);
+        writeFileSync(
+          join(bin, 'curl'),
+          `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${curlLog}'
 printf '%s\n%s' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","instanceId":"12345-deadbeef"}' '503'
 `
-      );
-      chmodSync(join(bin, 'curl'), 0o755);
-      writeFileSync(join(bin, 'logger'), '#!/usr/bin/env bash\nexit 0\n');
-      chmodSync(join(bin, 'logger'), 0o755);
-      writeFileSync(
-        join(bin, 'timeout'),
-        '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
-      );
-      chmodSync(join(bin, 'timeout'), 0o755);
+        );
+        chmodSync(join(bin, 'curl'), 0o755);
+        writeFileSync(join(bin, 'logger'), '#!/usr/bin/env bash\nexit 0\n');
+        chmodSync(join(bin, 'logger'), 0o755);
+        writeFileSync(
+          join(bin, 'timeout'),
+          '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+        );
+        chmodSync(join(bin, 'timeout'), 0o755);
 
-      const result = spawnSync('bash', [join(root, 'server/scripts/engine-supervisor.sh')], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH ?? ''}`,
-          ENGINE_CONTROL_DIR: control,
-          ENGINE_SUPERVISOR_LOCK_HELD: '1',
-          ENGINE_SUPERVISOR_FORCE_DESIRED: '1',
-          ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH: '1',
-          ENGINE_RECOVERY_DEADLINE_EPOCH: String(Math.floor(Date.now() / 1000) + 20),
-          ENGINE_URL: 'https://engine.example.invalid',
-          STATE_DIR: state,
-          TEXTFILE_DIR: state,
-          AUTOHEAL_CONTAINER: 'sp-autoheal',
-        },
-      });
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      expect(result.stdout).toContain('force-desired recovery is evicting every unsealed runtime');
-      expect(result.stdout).toContain('is live and exact locally and publicly as 12345-deadbeef');
-      expect(readFileSync(curlLog, 'utf8')).toContain('http://127.0.0.1:8080/health');
-      expect(readFileSync(curlLog, 'utf8')).toContain(
-        'https://engine.example.invalid/health?nocache='
-      );
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
-  }, 60_000);
+        const result = spawnSync('bash', [join(root, 'server/scripts/engine-supervisor.sh')], {
+          encoding: 'utf8',
+          timeout: desiredRecoveryProcessTimeoutMs,
+          killSignal: 'SIGKILL',
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH ?? ''}`,
+            ENGINE_CONTROL_DIR: control,
+            ENGINE_SUPERVISOR_LOCK_HELD: '1',
+            ENGINE_SUPERVISOR_FORCE_DESIRED: '1',
+            ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH: '1',
+            ENGINE_RECOVERY_DEADLINE_EPOCH: String(
+              Math.floor(Date.now() / 1000) + desiredRecoveryDeadlineSeconds
+            ),
+            ENGINE_URL: 'https://engine.example.invalid',
+            STATE_DIR: state,
+            TEXTFILE_DIR: state,
+            AUTOHEAL_CONTAINER: 'sp-autoheal',
+          },
+        });
+        expect(result.error, `${result.stdout}\n${result.stderr}`).toBeUndefined();
+        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+        expect(result.stdout).toContain(
+          'force-desired recovery is evicting every unsealed runtime'
+        );
+        expect(result.stdout).toContain('is live and exact locally and publicly as 12345-deadbeef');
+        expect(readFileSync(curlLog, 'utf8')).toContain('http://127.0.0.1:8080/health');
+        expect(readFileSync(curlLog, 'utf8')).toContain(
+          'https://engine.example.invalid/health?nocache='
+        );
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    },
+    desiredRecoveryTestTimeoutMs
+  );
 
   it('forces desired recovery even when abort returns an uncertain failure', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-abort-uncertain-'));
@@ -284,5 +296,5 @@ exit 0
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  }, 60_000);
+  });
 });

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169345,
-      "sha256": "5a4ea09fa91a0946fd0736a766b55c8dbe6ecc9d872260db0c78f2d013ee26cd"
+      "bytes": 169529,
+      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24256,
-      "sha256": "7b441a659fcbb897312b02521160d67ac3fb2d6cd449a83f0eed29169713ca52"
+      "bytes": 24631,
+      "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -428,5 +428,54 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
+  },
+  "certificationRetirementIntegration": {
+    "reviewedOn": "2026-09-27",
+    "reason": "Bind the reviewed reserved-identity retirement native-input selector and required shard-4 workflow step. No financial SQL, accounting fixture or existing assertion changes. docs/changelog/2026-09-27-certification-ledger-actors-are-retired.md",
+    "files": {
+      ".github/workflows/ci.yml": {
+        "from": {
+          "bytes": 169172,
+          "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+        },
+        "to": {
+          "bytes": 169356,
+          "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "from": {
+          "bytes": 23891,
+          "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+        },
+        "to": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        }
+      }
+    }
+  },
+  "certificationRetirementMainIntegration": {
+    "reason": "Integrate protected main36bb including cashier input routing, while preserving reserved-identity native qualification. Existing financial definitions, assertions and all historical binding records remain unchanged.",
+    "files": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "from": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        },
+        "to": {
+          "bytes": 24407,
+          "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
+        }
+      }
+    }
+  },
+  "scoped_audit_certification_integration_20260927": {
+    "integration": "2026-09-27 scoped reads with protected certification retirement 3be3efe7c2",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   }
 }

@@ -56,6 +56,10 @@ const discoveryPrivacy =
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 
+// Reserved identity retirement must always run its real-role native fixture.
+const certificationRetirement =
+  /^(scripts\/ci\/(?:test-certification-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/certification-retirement\/)|tests\/unit\/productionE2EAccount\.test\.ts$)/;
+
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
   // calls must also discard inherited index/object/config overrides so a
@@ -232,7 +236,8 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
-      matches(scopedAuditReads),
+      matches(scopedAuditReads) ||
+      matches(certificationRetirement),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
@@ -264,7 +269,8 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
-      matches(scopedAuditReads),
+      matches(scopedAuditReads) ||
+      matches(certificationRetirement),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

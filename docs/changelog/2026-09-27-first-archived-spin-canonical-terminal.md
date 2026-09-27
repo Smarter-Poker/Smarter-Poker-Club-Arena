@@ -55,3 +55,12 @@ and corrected in the maintained SQL. All 43 stages then passed with 294 relation
 compared before and after rollback. Sequence allocations are observed without a
 rollback claim. Production-probe-only test edits now select accounting CI; the
 missed route failed before correction and passed afterward.
+
+Final prechecks required explicit unchanged owner/ACL declarations for the three
+replaced functions. The migration now refuses ACL drift before replacement and
+asserts the same complete ACL afterward. Its isolated 43-stage run passed. One
+unused personal reporter field was omitted from the maintained catalog projection;
+original external evidence and every executable definition remain unchanged.
+Reviewed routing pins were updated with per-binding audit records. The publisher
+contract test retained both 5-second child bounds and gained a 15-second parent
+budget for two child calls plus cleanup after a reproduced full-suite timeout.

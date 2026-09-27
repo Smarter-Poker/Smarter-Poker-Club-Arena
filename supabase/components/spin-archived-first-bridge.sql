@@ -1,5 +1,22 @@
 -- Candidate bridge: exact-source guards; native financial qualification pending.
 BEGIN;
+-- Exact installed authority captured 2026-09-27T03:20:30Z. Refuse drift before replacement.
+DO $bridge_acl$
+DECLARE target record; actual_owner text; actual_acl text[];
+BEGIN
+ FOR target IN SELECT * FROM (VALUES
+  ('public.fn_prove_played_launch_recovery(uuid,timestamp with time zone)', ARRAY['postgres=X/postgres','service_role=X/postgres']::text[]),
+  ('public.fn_settle_tournament_places(uuid,uuid)', ARRAY['postgres=X/postgres','service_role=X/postgres']::text[]),
+  ('public.fn_ca_tournament_terminal_receipt(uuid,uuid)', ARRAY['postgres=X/postgres']::text[])
+ ) AS expected(signature,acl) LOOP
+  SELECT pg_get_userbyid(p.proowner),ARRAY(SELECT a::text FROM unnest(coalesce(p.proacl,acldefault('f',p.proowner))) a ORDER BY a::text)
+   INTO actual_owner,actual_acl FROM pg_proc p WHERE p.oid=target.signature::regprocedure;
+  IF actual_owner IS DISTINCT FROM 'postgres' OR actual_acl IS DISTINCT FROM target.acl THEN
+   RAISE EXCEPTION 'ARCHIVED_SPIN_BRIDGE_ACL_CHANGED: %',target.signature;
+  END IF;
+ END LOOP;
+END;
+$bridge_acl$;
 DO $fee_source$ BEGIN IF md5(pg_get_functiondef('public.fn_ca_legacy_spin_original_fee_proof(uuid)'::regprocedure)) IS DISTINCT FROM 'f5aff07c84bade11fc68e063e0998400' THEN RAISE EXCEPTION 'ARCHIVED_SPIN_PROVIDER_SOURCE_CHANGED: original fee proof'; END IF; END $fee_source$;
 
 DO $guard$ BEGIN IF md5(pg_get_functiondef('public.fn_prove_played_launch_recovery(uuid,timestamp with time zone)'::regprocedure)) IS DISTINCT FROM 'c2fc5742cb5e6596aa7eea1f256d72e6' THEN RAISE EXCEPTION 'ARCHIVED_SPIN_PROVIDER_SOURCE_CHANGED: fn_prove_played_launch_recovery(uuid,timestamp with time zone)'; END IF; END $guard$;
@@ -1637,4 +1654,27 @@ BEGIN
 END;
 $function$;
 
+-- CREATE OR REPLACE retains ACLs; explicitly preserve the observed authority
+-- so the maintained installation and its security checks describe the same grants.
+REVOKE ALL ON FUNCTION public.fn_prove_played_launch_recovery(uuid,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_prove_played_launch_recovery(uuid,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_terminal_receipt(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+DO $bridge_acl$
+DECLARE target record; actual_owner text; actual_acl text[];
+BEGIN
+ FOR target IN SELECT * FROM (VALUES
+  ('public.fn_prove_played_launch_recovery(uuid,timestamp with time zone)', ARRAY['postgres=X/postgres','service_role=X/postgres']::text[]),
+  ('public.fn_settle_tournament_places(uuid,uuid)', ARRAY['postgres=X/postgres','service_role=X/postgres']::text[]),
+  ('public.fn_ca_tournament_terminal_receipt(uuid,uuid)', ARRAY['postgres=X/postgres']::text[])
+ ) AS expected(signature,acl) LOOP
+  SELECT pg_get_userbyid(p.proowner),ARRAY(SELECT a::text FROM unnest(coalesce(p.proacl,acldefault('f',p.proowner))) a ORDER BY a::text)
+   INTO actual_owner,actual_acl FROM pg_proc p WHERE p.oid=target.signature::regprocedure;
+  IF actual_owner IS DISTINCT FROM 'postgres' OR actual_acl IS DISTINCT FROM target.acl THEN
+   RAISE EXCEPTION 'ARCHIVED_SPIN_BRIDGE_ACL_CHANGED: %',target.signature;
+  END IF;
+ END LOOP;
+END;
+$bridge_acl$;
 COMMIT;

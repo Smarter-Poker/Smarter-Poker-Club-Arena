@@ -93,8 +93,8 @@
       "sha256": "aee4284284f46fc569213702688a3ce9b882620243a5688378e4cf19400cf6b6"
     },
     "scripts/qualification/fixtures/archived-spin/full-provider-catalog.json": {
-      "bytes": 2259682,
-      "sha256": "c8d2df255ca884a3d19819b1c9545dba6172520eda0fc293f299a70f5541c788"
+      "bytes": 2259629,
+      "sha256": "527cd99e8758f43e2b4d20d984fbabf198ad4e31a4d59d618925abc39c5435fd"
     },
     "scripts/qualification/fixtures/archived-spin/full-readback.sql": {
       "bytes": 1051459,
@@ -177,16 +177,16 @@
       "sha256": "1d37c0c5afbc22c1b4d7683bd4671c13e177ae9ee986b3f1141d6d033a18cc6c"
     },
     "supabase/components/spin-archived-first-bridge.sql": {
-      "bytes": 77934,
-      "sha256": "3288832c27e55e485c827f561464d1267af5a8c2c49250bbf4ffc70393492f98"
+      "bytes": 80662,
+      "sha256": "f601b4b6374097add147f003881a997a673e59cdcee7734a1383aecfb223671c"
     },
     "supabase/components/spin-archived-first-witness.sql": {
       "bytes": 43621,
       "sha256": "69a987d4e7a3808f37bb307d4c5c3aa9a1b1f5a3ad4fa04f8310ec4c64395c7d"
     },
     "supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql": {
-      "bytes": 141080,
-      "sha256": "0ff4eb152b13c5015a551e508f2031a9ebf30f91a8018d9295de633dc3cdce5e"
+      "bytes": 143809,
+      "sha256": "2f474595a7d4f88cd70a52ba95d4616fb8f91cc53681146ec09f1738bc51878c"
     }
   }
 }

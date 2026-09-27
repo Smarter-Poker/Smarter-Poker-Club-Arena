@@ -1408,6 +1408,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-audit-reads.py
 
+      - name: BBJ cumulative and recent reads preserve all financial outcomes
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-bbj-cumulative-reads.py
+
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 170898,
-      "sha256": "0296ae051f308a2605ca7f63aa9913cdd669a33dd7846cd3086b348b088da69d"
+      "bytes": 171068,
+      "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27553,
-      "sha256": "b63708196732eace92954384a99912dd576e72f5f7f7ecb47afaf08e8f83bce5"
+      "bytes": 27619,
+      "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -857,6 +857,61 @@
   },
   "conservation_20260927_current_main_integration": {
     "integration": "2026-09-27 Four qualified lookup indexes: current-main-integration",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "bbjCumulativeReadQualification20260927": {
+    "reason": "Add required native qualification for the one-statement BBJ cumulative/recent read split; preserve every existing qualification route and historical assertion. Exact reviewed CI/classifier bytes and nested bindings only.",
+    "updates": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 169880,
+          "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
+        },
+        "after": {
+          "bytes": 170050,
+          "sha256": "e064736b4171df5b9d0bf25660eac28c1a5602a59eed8d8d3cc80b2b2f9695d6"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 25086,
+          "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+        },
+        "after": {
+          "bytes": 25152,
+          "sha256": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
+        }
+      }
+    }
+  },
+  "bbjCumulativeIntegration20260927": {
+    "protectedMain": "13ebc7240c4ae89607a3b722a068e36e63550b74",
+    "ownParent": "8cdc721f3456e87e2d902a32589970922b11c132",
+    "reason": "Retain both complete qualification histories and map entries; resolve only conflicting pins to actual integrated classifier and nested bindings. No assertions removed.",
+    "updates": {
+      "files/scripts/ci/classify-ci-changes.mjs/bytes": {
+        "own": 25152,
+        "protectedMain": 25600,
+        "integrated": 25666
+      },
+      "files/scripts/ci/classify-ci-changes.mjs/sha256": {
+        "own": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb",
+        "protectedMain": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
+        "integrated": "8d146d60454aac30fec70cf21fc71d151ef76d92d59c494a7448e762751646ce"
+      }
+    }
+  },
+  "bbjCumulativeCoverIntegration20260927": {
+    "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
+    "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
+    "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "conservation_20260927_bbj_main_integration": {
+    "integration": "2026-09-27 Four qualified lookup indexes: bbj-main-integration",
     "changed_files": [
       ".github/workflows/ci.yml",
       "scripts/ci/classify-ci-changes.mjs"

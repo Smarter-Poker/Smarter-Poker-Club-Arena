@@ -12,7 +12,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/satellite-audit-index'
 PG = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
-MIGRATION = ROOT / 'supabase/migrations/20260927050112_satellite_pool_ledger_lookup_uses_partial_entity_index.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927050901_satellite_pool_ledger_lookup_uses_partial_entity_index.sql'
 ONLINE = ROOT / 'scripts/ops/build-satellite-ledger-audit-index-concurrently.sql'
 cluster = Path(tempfile.mkdtemp(prefix='satellite-ledger-', dir=os.environ.get('TMPDIR')))
 socket = Path(tempfile.mkdtemp(prefix='sat-ledger-sock-', dir='/tmp'))

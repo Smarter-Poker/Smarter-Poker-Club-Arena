@@ -1,0 +1,49 @@
+{
+  "_owner": "agent/codex-billing-privacy-f83d/fix/private-discovery-cache",
+  "_comment": "Installed once as provider migration 20260926220706. Public cached discovery names are now security-invoker/barrier views with current privacy checks. information_schema readback 2026-09-26T22:10:50.496527Z confirmed these names and columns. Private caches are intentionally outside the public snapshot.",
+  "tables": ["mv_active_poker_locations", "mv_home_groups_trending"],
+  "columns": {
+    "mv_active_poker_locations": [
+      "source",
+      "entity_id",
+      "name",
+      "slug",
+      "venue_type",
+      "city",
+      "state",
+      "country",
+      "lat",
+      "lng",
+      "location_geog",
+      "photo_url",
+      "tagline",
+      "activity_score",
+      "has_tournaments",
+      "is_verified",
+      "poker_tables",
+      "stakes_cash",
+      "games_offered",
+      "member_count",
+      "games_hosted",
+      "is_private",
+      "refreshed_at"
+    ],
+    "mv_home_groups_trending": [
+      "group_id",
+      "name",
+      "city",
+      "state",
+      "is_private",
+      "profile_photo_url",
+      "tags",
+      "location_geog",
+      "member_count",
+      "games_hosted",
+      "view_count",
+      "share_click_count",
+      "recent_rsvps_30d",
+      "trending_score",
+      "last_activity_at"
+    ]
+  }
+}

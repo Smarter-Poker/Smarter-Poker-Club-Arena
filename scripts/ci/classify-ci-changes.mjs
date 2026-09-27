@@ -50,6 +50,10 @@ const class4HandOutcome =
 const cashEvidence =
   /^(supabase\/components\/(?:cash-pot-check-evidence|cash-failed-run-intake)(?:\.rollback)?\.sql$|scripts\/operational-alerts\/cash-pot-failed-run-intake\.(?:sql|md)$|scripts\/qualification\/(?:cash-native-hosted\.manifest\.json$|cash-pot-check-connected\.sql$|cash-pot-check-evidence(?:\.sql|\.md|\.manifest\.json|-concurrency\.spec)$|cash-pot-failed-run-intake\.sql$|fixtures\/(?:cash-pot-check-evidence|cash-pot-failed-run-intake|cash-native-pgcron)\/)|scripts\/ci\/(?:build_pg17_cash_pgcron|test-cash-failure-pgcron|test_cash_native_pgcron)\.py$)/;
 
+// The discovery privacy fixture must execute even when only its inputs change.
+const discoveryPrivacy =
+  /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
+
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
   // calls must also discard inherited index/object/config overrides so a
@@ -224,7 +228,8 @@ export function classifyChangedPaths(paths) {
       matches(productionAlertCore) ||
       matches(alertEvidence) ||
       matches(class4HandOutcome) ||
-      matches(cashEvidence),
+      matches(cashEvidence) ||
+      matches(discoveryPrivacy),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
@@ -254,7 +259,8 @@ export function classifyChangedPaths(paths) {
       matches(productionAlertCore) ||
       matches(alertEvidence) ||
       matches(class4HandOutcome) ||
-      matches(cashEvidence),
+      matches(cashEvidence) ||
+      matches(discoveryPrivacy),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

@@ -69,3 +69,9 @@ Installation follows the maintained online snapshot-index pattern:
 The reserved migration version is `20260926221856`. Provider-assigned history
 alignment, production installation and browser acceptance must be recorded from
 their actual outcomes. The source candidate does not claim they already ran.
+
+The maintenance-caller prerequisite was installed once on September 27 at
+00:18:20 UTC under provider history `20260927001820`. Readback retained its OID,
+owner, ACLs and search path; definition MD5 is
+`05b537b57c9f51a5164e20a1cd0e67e0`. The source filename is aligned to that
+actual record with unchanged 4,410 SQL bytes; it must not be replayed.

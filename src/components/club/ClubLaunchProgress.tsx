@@ -114,10 +114,10 @@ const withSkip = (ids: readonly string[], taskId: string): string[] =>
  * browser are moved to the server once, and removed here only when every one
  * of them landed.
  *
- * Any error or unreadable answer is reported and falls back to today's local
- * behaviour: the skips come from and go to this browser, `completedAt` reads
- * null (not latched) and `complete` asks nothing. No timer, no polling, no
- * retry loop: the next page load asks again.
+ * Any error or unreadable answer is reported and falls back to local skips,
+ * but leaves `completedAt` unknown. The lobby therefore fails closed instead
+ * of redrawing a checklist that may already be permanently complete. No
+ * timer, polling or retry loop: the next page load asks again.
  *
  * Without `server` (standalone callers), skips are stored per club AND per
  * viewer in this browser, exactly as before. Storage is wrapped, every
@@ -166,7 +166,7 @@ export function useClubLaunchSkips(
         answer = parsed;
       } catch (error) {
         reportError(error, 'ClubLaunchSkips.server_read_failed');
-        apply({ skippedIds: local, completedAt: null, source: 'local' });
+        apply({ skippedIds: local, completedAt: undefined, source: 'local' });
         return;
       }
       const known = answer;

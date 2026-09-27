@@ -447,7 +447,7 @@ describe('the checklist is finished once (server latch, 2026-09-23)', () => {
     ).toBeTruthy();
   });
 
-  it('falls back to today behaviour when the store cannot answer, and says so', async () => {
+  it('fails closed when the store cannot answer, so a completed checklist cannot redraw', async () => {
     h.stateReplies = [
       Promise.resolve({
         data: null,
@@ -457,13 +457,11 @@ describe('the checklist is finished once (server latch, 2026-09-23)', () => {
     localStorage.setItem(SKIP_KEY, JSON.stringify(['identity']));
     await mountLobby();
 
-    expect(screen.getByText('New Club Opening Checklist')).toBeTruthy();
+    expect(screen.queryByText('New Club Opening Checklist')).toBeNull();
     expect(reportError).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'PGRST202' }),
       'ClubLaunchSkips.server_read_failed'
     );
-    const row = screen.getByText('Choose A Club Profile Picture').closest('article') as HTMLElement;
-    expect(within(row).getByText('Skipped')).toBeTruthy();
     expect(h.skipCalls).toEqual([]);
   });
 });

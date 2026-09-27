@@ -40,7 +40,7 @@ def qualify(q, run, argv, fixture, root, online, index_migration):
     original = q("SELECT jsonb_build_object('oid',oid,'acl',proacl,'config',proconfig,'owner',proowner,'definer',prosecdef) FROM pg_proc WHERE oid='fn_active_maintenance_release_boundary()'::regprocedure")
     original_definition = q("SELECT pg_get_functiondef('fn_active_maintenance_release_boundary()'::regprocedure)")
     dependency_catalog = q("SELECT jsonb_agg(jsonb_build_object('oid',oid,'def',pg_get_functiondef(oid),'acl',proacl,'config',proconfig)) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('fn_entry_purchases_frozen','fn_platform_frozen','fn_ca_break_window_refuses_migrations','fn_ca_break_window_ddl_guard')")
-    migration = (root / 'supabase/migrations/20260927001258_maintenance_release_boundary_trusts_supported_database_role_.sql').read_text()
+    migration = (root / 'supabase/migrations/20260927001820_maintenance_release_boundary_trusts_supported_database_role.sql').read_text()
     q(migration.replace('COMMIT;', 'ROLLBACK;'))
     assert q("SELECT pg_get_functiondef('fn_active_maintenance_release_boundary()'::regprocedure)") == original_definition
     q("UPDATE pg_proc SET prosrc=prosrc||E'\n-- local source drift' WHERE oid='fn_active_maintenance_release_boundary()'::regprocedure")

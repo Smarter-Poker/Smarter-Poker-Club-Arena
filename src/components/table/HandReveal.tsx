@@ -20,6 +20,7 @@ import { masterBus } from '../../core/MasterBus';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
 import './HandReveal.css';
+import { TapHaptic } from '../haptics/TapHaptic';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -248,9 +249,11 @@ export function HandReveal({
             <>
               <button className="hand-reveal__btn hand-reveal__btn--muck" onClick={handleMuck}>
                 Muck
+                <TapHaptic />
               </button>
               <button className="hand-reveal__btn hand-reveal__btn--show" onClick={handleShow}>
                 Show Cards
+                <TapHaptic />
               </button>
             </>
           )}
@@ -269,6 +272,7 @@ export function HandReveal({
               disabled={userDiamonds < revealCost}
             >
               Reveal ({revealCost})
+              <TapHaptic disabled={userDiamonds < revealCost} />
             </button>
           )}
           {!isWinner && !revealed && !mucked && typeof onPayReveal !== 'function' && (

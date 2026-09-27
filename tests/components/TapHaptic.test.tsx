@@ -170,6 +170,13 @@ describe('every host is a box the switch can cover', () => {
     ['src/components/table/ActionPanel.css', '.raise-preset'],
     ['src/components/table/ActionPanel.css', '.raise-confirm'],
     ['src/components/device/DeviceCheck.module.css', '.test,\n.copy,\n.ask button'],
+    ['src/components/table/PineappleDiscard.css', '.pineapple-discard__card'],
+    ['src/components/table/PineappleDiscard.css', '.pineapple-discard__timebank'],
+    ['src/components/table/PineappleDiscard.css', '.pineapple-discard__confirm'],
+    ['src/components/table/HandReveal.css', '.hand-reveal__btn'],
+    ['src/components/table/PreActionBar.css', '.pre-action-btn'],
+    ['src/components/table/ActionPanel.css', '.raise-adjust'],
+    ['src/components/console/SpadeConsole.css', '.sc-plate'],
   ])('%s %s is positioned', (file, selector) => {
     expect(block(css(file), selector)).toMatch(/position:\s*(relative|absolute)/);
   });

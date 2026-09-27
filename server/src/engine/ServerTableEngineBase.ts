@@ -1878,9 +1878,10 @@ export abstract class ServerTableEngineBase {
     timestamp: number;
     delivered: boolean;
   }> = [];
-  // Post-hand scheduling callback. Settlement invokes it synchronously for a
-  // zero final stack even if a persistence mirror failed; consumers must stay
-  // fire-and-forget and independently verify durable authority.
+  // Post-hand scheduling callback. Settlement invokes it synchronously for
+  // every accepted hand (including a zero final stack whose persistence
+  // mirror failed); consumers must stay fire-and-forget, gate their own work
+  // on the stacks they are handed, and independently verify durable authority.
   protected handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
     | null = null;

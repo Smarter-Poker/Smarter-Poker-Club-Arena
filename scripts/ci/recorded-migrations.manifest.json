@@ -234,6 +234,17 @@
       "recoveredFrom": "File bytes equal the installed schema_migrations statements; public.fn_ca_migration_text(20260927150429) returned MD5 e5155bf7efde88d48b1185fdafe379f7 and byte_len 8624 on 2026-09-27 at 15:15 UTC.",
       "refusedBy": [],
       "liveVerdict": "Installed once after independent PostgreSQL 17 accounting, authorization, snapshot and drift qualification. This dynamic replacement has no statically parsed new object or @live-proof line and cannot be edited after installation. Live readback retains fn_cashier_statement_rows OID 54141976, postgres owner, postgres-only EXECUTE, SECURITY DEFINER, STABLE and public, pg_temp search path; definition MD5 is 49e310be00e91afc9a9b7582bb048184. Nine other guarded Cashier functions remained unchanged at installation. Only authorized all-scope totals precompute existing receipt omissions; no grants, triggers, financial rows, indexes or timeout changed. The first whole production read still exceeded 8 seconds and a later warm whole read passed; authenticated browser availability remains unresolved. This records immutable installed SQL, not completion or permission to replay it."
+    },
+    {
+      "version": "20260927154806",
+      "name": "open_week_pages_lock_the_recompute_request_after_calculation",
+      "file": "supabase/migrations/20260927154806_open_week_pages_lock_the_recompute_request_after_calculation.sql",
+      "md5": "9084e25e2ff1315f8ff6bd58977a2852",
+      "appliedToProductionAt": "2026-09-27T15:48:06Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "refusedBy": ["check-definer-authorization: writer rule"],
+      "liveVerdict": "Read production 2026-09-27T16:32:59.773775Z: history 20260927154806 is exactly 12452 bytes, MD5 9084e25e2ff1315f8ff6bd58977a2852. The migration replaces the existing fn_rakeback_recompute_periods(uuid,date,date,uuid[]) without changing grants. Its original server-only authority remains: OID 14328564, owner postgres, SECURITY DEFINER, ACL {postgres=X/postgres,service_role=X/postgres}, anon/authenticated EXECUTE false and service_role true; configuration {search_path=public,statement_timeout=300s}; installed definition MD5 7b5688a846bd8cea792abd1d5bcd774a. The text-only guard assumes missing REVOKE in CREATE OR REPLACE means browser access; the actual preserved ACL denies it. No function, permission or installed migration bytes were changed to record this evidence."
     }
   ]
 }

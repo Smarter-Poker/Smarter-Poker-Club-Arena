@@ -2409,6 +2409,24 @@ export class GameServer {
     )();
   }
 
+  /**
+   * THE MIXED RECOVERY'S OWN FLEET CHECK READS AT THE PROCESS ROOT (2026-09-27).
+   *
+   * The mixed-custody admission's `current()` asked every table engine in the
+   * process for its lease authority, inline. That closure is re-checked by
+   * `reservation.assertCurrent` from inside `manager.recoverMixedF06Custody`,
+   * i.e. inside that manager's bound data authority, so the first engine of
+   * ANY other tournament threw "Tournament data authority cannot be rebound
+   * inside another manager context" - the class `tournamentEnginesOnFleet`
+   * closed for the physical-map check on 2026-09-26, left open here. On engine
+   * e6b9dc5d every one of the 70 stranded mixed events voided by
+   * 20260927145449 was retained on `GameServer.mixed_original_recovery_retained`
+   * with that throw and none resumed. Same predicate, read at the root.
+   */
+  noTournamentEngineOnFleet(tournamentId: string): boolean {
+    return this.tournamentEnginesOnFleet(tournamentId).length === 0;
+  }
+
   hasCompleteMixedF06PhysicalMap(
     tournamentId: string,
     manager: TournamentManager,
@@ -2831,10 +2849,7 @@ export class GameServer {
           this.durableMixedF06Custody.get(tournamentId) === transfer &&
           (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet &&
           (!packet || packet.current()) &&
-          [...this.tableEngines.values()].every((engine) => {
-            const authority = engine.getEngineLeaseAuthority();
-            return authority?.scope !== 'tournament' || authority.tournamentId !== tournamentId;
-          });
+          this.noTournamentEngineOnFleet(tournamentId);
         const reservation = this.tournamentRetirementCustody.reserveMixed(
           transfer.transferId,
           canonical.tables.map((table) => table.id),

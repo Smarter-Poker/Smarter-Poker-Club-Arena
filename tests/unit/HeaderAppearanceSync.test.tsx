@@ -10,6 +10,7 @@ const model = vi.hoisted(() => ({
     refreshAppearance: vi.fn().mockResolvedValue(undefined),
   },
 }));
+vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: vi.fn() } }));
 vi.mock('../../src/stores/useUserStore', () => ({
   useUserStore: (select: any) => select({ user: model.userId ? { id: model.userId } : null }),
 }));

@@ -1697,6 +1697,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-profile-appearance-postgres.py
+      - name: Private account signals preserve source and owner isolation
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-profile-account-postgres.py
       - name: Parked tables retain canonical movement custody
         id: f06_movement_admission
         if: matrix.shard == 3

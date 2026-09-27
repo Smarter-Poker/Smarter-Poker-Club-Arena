@@ -8,8 +8,9 @@
  *  and lets agents distribute promo chips to their downline players.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { masterBus } from '../../core/MasterBus';
@@ -53,6 +54,8 @@ interface DownlinePlayer {
   profiles?: { display_name?: string; username?: string; avatar_url?: string } | null;
 }
 
+type DownlineEvent = { kind: 'remove' } | { kind: 'balance'; value: number };
+
 interface AgentPromoPanelProps {
   clubId: string;
   userId: string;
@@ -66,9 +69,13 @@ export default function AgentPromoPanel({
   role,
   onDistribute,
 }: AgentPromoPanelProps) {
-  const [promoBalance, setPromoBalance] = useState(0);
+  const [promoBalance, setPromoBalance] = useState<number | null>(null);
   const [downline, setDownline] = useState<DownlinePlayer[]>([]);
+  const downlineRef = useRef<DownlinePlayer[]>([]);
+  const downlineEventsRef = useRef(new Map<string, DownlineEvent>());
   const [loading, setLoading] = useState(true);
+  const [balanceError, setBalanceError] = useState(false);
+  const [downlineError, setDownlineError] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [distributing, setDistributing] = useState(false);
@@ -102,22 +109,54 @@ export default function AgentPromoPanel({
     }, 3000);
   };
 
-  const loadData = useCallback(async () => {
-    if (!clubId || !userId || !isAgent) return;
-    setLoading(true);
-    try {
-      const { data: agent } = await supabase
+  const readScope = `${clubId}:${userId}:${role}`;
+  const scopeRef = useRef(readScope);
+  scopeRef.current = readScope;
+  const refreshBalance = useVisibleRead({
+    scopeKey: readScope,
+    enabled: Boolean(clubId && userId && isAgent),
+    read: async (signal) => {
+      const { data: agent, error } = await supabase
         .from('agents')
         .select('id, promo_wallet_balance')
         .eq('club_id', clubId)
         .eq('user_id', userId)
+        .abortSignal(signal)
         .maybeSingle();
-      if (!isMounted.current) return;
-      setPromoBalance(Number(agent?.promo_wallet_balance) || 0);
-
-      /* EVERY player under this agent, not the first thousand (2026-08-27).
-         A truncated list is a player who can never be sent a promo and who
-         does not appear to exist on this panel. */
+      const value = agent?.promo_wallet_balance;
+      if (
+        error ||
+        !agent ||
+        value === null ||
+        value === undefined ||
+        String(value).trim() === '' ||
+        !Number.isFinite(Number(value))
+      )
+        throw error || new Error('Promo Balance Is Unavailable');
+      return Number(value);
+    },
+    onData: (value) => {
+      setPromoBalance(value);
+      setBalanceError(false);
+    },
+    onError: (error) => {
+      reportError(error, 'AgentPromoPanel.Balance');
+      setBalanceError(true);
+    },
+    onReset: () => {
+      setPromoBalance(null);
+      setBalanceError(false);
+    },
+  });
+  const refreshDownline = useVisibleRead({
+    scopeKey: readScope,
+    enabled: Boolean(clubId && userId && isAgent),
+    intervalMs: 60_000,
+    read: async (signal) => {
+      // Events arriving after this snapshot starts must survive its delayed
+      // response. This map belongs to one read, never another account's read.
+      const events = new Map<string, DownlineEvent>();
+      downlineEventsRef.current = events;
       const players = await fetchAllRows<{ user_id: string; chip_balance: number }>(
         (from, to) =>
           supabase
@@ -126,86 +165,152 @@ export default function AgentPromoPanel({
             .eq('club_id', clubId)
             .eq('agent_id', userId)
             .eq('role', 'player')
-            .order('chip_balance', { ascending: false })
-            .range(from, to),
+            .order('user_id', { ascending: true })
+            .range(from, to)
+            .abortSignal(signal),
         { label: 'AgentPromoPanel.players' }
       );
-      // Batch-fetch profiles (no FK between club_members → profiles)
       const playerProfileMap: Record<string, any> = {};
-      if (players && players.length > 0) {
-        const pIds = players.map((p: any) => p.user_id);
-        const { data: profiles } = await supabase
+      // Bounded ID lists avoid an oversized URL for a large downline.
+      for (let start = 0; start < players.length; start += 100) {
+        signal.throwIfAborted();
+        const { data: profiles, error } = await supabase
           .from('profiles')
           .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
-          .in('id', pIds);
-        if (profiles) {
-          for (const pr of profiles) playerProfileMap[pr.id] = pr;
-        }
+          .in(
+            'id',
+            players.slice(start, start + 100).map((player) => player.user_id)
+          )
+          .abortSignal(signal);
+        if (error) throw error;
+        for (const profile of profiles || []) playerProfileMap[profile.id] = profile;
       }
-      const downlineData = (players || []).map((p: any) => ({
-        ...p,
-        profiles: playerProfileMap[p.user_id] || {
-          display_name: null,
-          username: 'Unknown',
-          avatar_url: null,
-        },
-      }));
-      if (isMounted.current) setDownline(downlineData as DownlinePlayer[]);
-    } catch (e) {
-      reportError(e, 'AgentPromoPanel.Load_error');
-    } finally {
-      if (isMounted.current) setLoading(false);
-    }
-  }, [clubId, userId, isAgent]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // MasterBus: Auto-refresh on local data mutations
+      return {
+        players: players.map((player) => ({
+          ...player,
+          profiles: playerProfileMap[player.user_id] || null,
+        })),
+        events,
+      };
+    },
+    onData: ({ players, events }) => {
+      const current = players
+        .flatMap((player) => {
+          const event = events.get(player.user_id);
+          if (event?.kind === 'remove') return [];
+          return [
+            {
+              ...player,
+              chip_balance: event?.kind === 'balance' ? event.value : player.chip_balance,
+            },
+          ];
+        })
+        .sort((a, b) => b.chip_balance - a.chip_balance);
+      downlineRef.current = current;
+      setDownline(current);
+      setDownlineError(false);
+      setLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'AgentPromoPanel.Downline');
+      setDownlineError(true);
+      setLoading(false);
+    },
+    onReset: () => {
+      downlineRef.current = [];
+      downlineEventsRef.current = new Map();
+      setDownline([]);
+      setDownlineError(false);
+      setLoading(true);
+      setSelectedPlayer(null);
+      setAmount('');
+      setDistributing(false);
+      setToast(null);
+    },
+  });
+  const loadData = () => {
+    refreshBalance();
+    refreshDownline();
+  };
   useMasterBusSubscription('DATA_MUTATED', (payload) => {
     const relevant = ['promo_distributed', 'promo_granted', 'chips_distributed', 'chips_minted'];
-    const action = String(payload?.action || '');
-    if (relevant.includes(action)) loadData();
+    if (relevant.includes(String(payload?.action || ''))) loadData();
   });
-
-  // Realtime Sync: Listen for REMOTE balance changes (via masterBus channel manager)
   useEffect(() => {
     if (!clubId || !userId || !isAgent) return;
+    let active = true;
+    const scope = readScope;
     const channelKey = `agent-promo-${clubId}-${userId}`;
-    const channel = masterBus
+    masterBus
       .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${userId}` },
-        (payload) => {
-          if (payload.new?.club_id === clubId && isMounted.current)
-            setPromoBalance(Number(payload.new?.promo_wallet_balance) || 0);
-        }
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'club_members', filter: `agent_id=eq.${userId}` },
-        () => {
-          if (isMounted.current) loadData();
+        (payload) => {
+          if (!active || scopeRef.current !== scope) return;
+          if (!['INSERT', 'UPDATE', 'DELETE'].includes(payload.eventType)) return;
+          const deleted = payload.eventType === 'DELETE';
+          const row = deleted ? payload.old : payload.new;
+          // Default replica identity is (club_id,user_id). DELETE filtering
+          // and old non-key fields cannot establish membership in this list.
+          if (row?.club_id !== clubId || typeof row.user_id !== 'string') return;
+          const known = downlineRef.current.find((player) => player.user_id === row.user_id);
+          const membershipKnown =
+            (typeof row.agent_id === 'string' || row.agent_id === null) &&
+            typeof row.role === 'string';
+          if (deleted || (membershipKnown && (row.agent_id !== userId || row.role !== 'player'))) {
+            downlineEventsRef.current.set(row.user_id, { kind: 'remove' });
+            if (known) {
+              const remaining = downlineRef.current.filter(
+                (player) => player.user_id !== row.user_id
+              );
+              downlineRef.current = remaining;
+              setDownline(remaining);
+              setSelectedPlayer((selected) => (selected === row.user_id ? null : selected));
+            }
+            return;
+          }
+          const value = row.chip_balance;
+          if (
+            !known ||
+            !membershipKnown ||
+            !['number', 'string'].includes(typeof value) ||
+            String(value).trim() === '' ||
+            !Number.isFinite(Number(value))
+          ) {
+            refreshDownline();
+            return;
+          }
+          const balance = Number(value);
+          // Heartbeats and unrelated membership fields do not reload all
+          // players and profiles. The delivered new row already has the chips.
+          downlineEventsRef.current.set(row.user_id, { kind: 'balance', value: balance });
+          if (known.chip_balance === balance) return;
+          const players = downlineRef.current
+            .map((player) =>
+              player.user_id === row.user_id ? { ...player, chip_balance: balance } : player
+            )
+            .sort((a, b) => (b.chip_balance ?? 0) - (a.chip_balance ?? 0));
+          downlineRef.current = players;
+          setDownline(players);
         }
       )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'AgentPromoPanel._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[AgentPromoPanel] Realtime channel timed out');
-        }
+      .subscribe((status: string, error?: Error) => {
+        if (!active || scopeRef.current !== scope) return;
+        if (status === 'SUBSCRIBED') refreshDownline();
+        if (status === 'CHANNEL_ERROR' && error) reportError(error, 'AgentPromoPanel.Channel');
       });
-
     return () => {
+      active = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId, userId, isAgent, loadData]);
+  }, [clubId, userId, isAgent, readScope, refreshDownline]);
 
   const handleDistribute = async () => {
-    if (!selectedPlayer || !amount) return;
+    if (!selectedPlayer || !amount || promoBalance === null || balanceError || downlineError)
+      return;
+    const scope = readScope;
+    const current = () => isMounted.current && scopeRef.current === scope;
     const amt = Math.floor(Number(amount));
     if (!amt || !Number.isFinite(amt) || amt <= 0) {
       showToast('Enter a positive amount', 'error');
@@ -232,6 +337,7 @@ export default function AgentPromoPanel({
     // SETTLEMENT FREEZE CHECK — block during active settlements
     try {
       const lockResult = await checkSettlementLock(clubId);
+      if (!current()) return;
       if (lockResult.locked) {
         showToast('Settlement in progress - distributions frozen', 'error');
         if (isMounted.current) setDistributing(false);
@@ -242,6 +348,7 @@ export default function AgentPromoPanel({
       // Fail-open: allow distribution if settlement check fails
     }
 
+    if (!current()) return;
     try {
       /**
        * THE POOL THIS PANEL DISPLAYS IS NOW THE POOL IT SPENDS (audit
@@ -271,6 +378,7 @@ export default function AgentPromoPanel({
         p_reason: 'Promo Distribution From The Agent Panel',
         p_op_id: opIdRef.current,
       });
+      if (!current()) return;
       if (error) throw error;
       const res = (Array.isArray(data) ? data[0] : data) as {
         success?: boolean;
@@ -290,10 +398,11 @@ export default function AgentPromoPanel({
         lastDistributeRef.current = Date.now();
       }
     } catch (e: unknown) {
+      if (!current()) return;
       const msg = e instanceof Error ? e.message : 'Distribution failed';
       showToast(msg, 'error');
     } finally {
-      if (isMounted.current) setDistributing(false);
+      if (current()) setDistributing(false);
     }
   };
 
@@ -334,7 +443,11 @@ export default function AgentPromoPanel({
         >
           <div style={{ fontSize: 10, color: FB.promo, fontWeight: 600 }}>PROMO BALANCE</div>
           <div style={{ fontSize: 18, fontWeight: 800, color: FB.promo }}>
-            {promoBalance.toLocaleString()}
+            {balanceError
+              ? 'Unavailable'
+              : promoBalance === null
+                ? 'Loading...'
+                : promoBalance.toLocaleString()}
           </div>
         </div>
       </div>
@@ -355,7 +468,11 @@ export default function AgentPromoPanel({
         </div>
       )}
 
-      {loading ? (
+      {balanceError || downlineError ? (
+        <div role="alert">
+          Promo Data Could Not Be Refreshed. <button onClick={loadData}>Try Again</button>
+        </div>
+      ) : loading || promoBalance === null ? (
         <div style={{ padding: '12px 0' }}>
           {Array.from({ length: 3 }).map((_, i) => (
             <div

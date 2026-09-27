@@ -217,7 +217,9 @@ describe('the two other definers that answered anybody stay shut', () => {
 
 describe('the client only ever asks about itself', () => {
   it('unsettledCommission takes the caller id and passes it straight through', () => {
-    expect(SERVICE).toMatch(/async unsettledCommission\(clubId: string, userId: string\)/);
+    expect(SERVICE).toMatch(
+      /async unsettledCommission\(clubId: string, userId: string, signal\?: AbortSignal\)/
+    );
     expect(SERVICE).toMatch(/p_user_id: userId,/);
   });
 
@@ -259,6 +261,6 @@ describe('the client only ever asks about itself', () => {
     // back.
     expect(DASHBOARD).toMatch(/activeTab === 'summary' && !summary && \(/);
     expect(DASHBOARD).toMatch(/Your Commission Summary Could Not Be Loaded\./);
-    expect(DASHBOARD).toMatch(/onClick=\{\(\) => loadDataRef\.current\(\)\}/);
+    expect(DASHBOARD).toMatch(/onClick=\{\(\) => refresh\(\)\}/);
   });
 });

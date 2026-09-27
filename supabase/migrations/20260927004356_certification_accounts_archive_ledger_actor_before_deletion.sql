@@ -153,7 +153,7 @@ DECLARE
   v_old text := pg_get_functiondef(v_fn);
   v_new text;
 BEGIN
-  IF md5(v_old) <> 'f525ae6f43f60a993524f9e43ecfba71' THEN
+  IF md5(v_old) <> 'a600217942966c122d7f245d64df96aa' THEN
     RAISE EXCEPTION 'CERT_ACCOUNT_LEDGER_ACTOR_PREIMAGE_CHANGED: %', md5(v_old)
       USING ERRCODE = '55000';
   END IF;
@@ -168,8 +168,7 @@ BEGIN
 
   v_new := replace(
     v_new,
-    $$  SELECT count(*) INTO v_audit_count
-    FROM public.audit_trail WHERE actor_id = p_user_id;$$,
+    $$  -- Preserve immutable ledger actors. The Auth API owns credential/session$$,
     $$  -- Refuse every financial row except the exact Create Club opening
   -- grant contract or one of the two pre-contract certification-only opening
   -- variants. Namespace admission alone is not enough: an unrelated mint or
@@ -255,8 +254,7 @@ BEGIN
     RAISE EXCEPTION 'Reserved Certification Ledger Actor % Was Not Detached', p_user_id;
   END IF;
 
-  SELECT count(*) INTO v_audit_count
-    FROM public.audit_trail WHERE actor_id = p_user_id;$$
+  -- Preserve immutable ledger actors. The Auth API owns credential/session$$
   );
 
   IF v_new = v_old

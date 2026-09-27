@@ -80,7 +80,7 @@ describe('Create Club production certification contract', () => {
       'supabase/migrations/20260927004356_certification_accounts_archive_ledger_actor_before_deletion.sql'
     );
 
-    expect(migration).toContain("md5(v_old) <> 'f525ae6f43f60a993524f9e43ecfba71'");
+    expect(migration).toContain("md5(v_old) <> 'a600217942966c122d7f245d64df96aa'");
     expect(migration).toContain('CREATE TABLE public.ca_test_account_ledger_actor_archive');
     expect(migration).toContain('to_jsonb(l)');
     expect(migration).toContain('ALTER COLUMN performed_by DROP NOT NULL');
@@ -101,7 +101,7 @@ describe('Create Club production certification contract', () => {
       migration.indexOf('INSERT INTO public.ca_test_account_ledger_actor_archive')
     ).toBeLessThan(migration.indexOf('UPDATE public.chip_ledger'));
     expect(migration.indexOf('UPDATE public.chip_ledger')).toBeLessThan(
-      migration.lastIndexOf('SELECT count(*) INTO v_audit_count')
+      migration.lastIndexOf('-- Preserve immutable ledger actors.')
     );
     expect(migration).toContain('v_ledger_archived_count <> v_ledger_count');
     expect(migration).toContain('Reserved Certification Ledger Actor Archive Copied');

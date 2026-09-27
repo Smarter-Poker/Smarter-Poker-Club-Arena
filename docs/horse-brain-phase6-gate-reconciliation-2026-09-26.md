@@ -13,7 +13,7 @@ reason. Nothing here is averaged into a percentage, and no stage is declared com
 | `CURRENT-DELIVERY.json` `phase6Build` (file time 2026-09-26T14:08:06Z, reread 2026-09-27) | `status` = `gates_1_3_passed_gate_4_pending_first_certificate_on_an_engine_with_5329_and_5340`; `readyFor6B` = false                                   |
 | `DELIVERY-VERIFICATION.md`, section "The containing release sealed, September 25"         | gate 1 passed, gate 2 passed, gate 3 passed on 778075b4; gate 4 open                                                                                   |
 | Engine `/health`, read over ssh 2026-09-27T14:26:11Z                                      | `releaseSha` f2e484a3d1a674f329d923b30394fd65f5aff50e; `horseJournal.mode` paused, `pausedReason` archive_segments, `pausedSince` 2026-09-26T14:13:54Z |
-| `docs/evidence/phase6d/population-2026-09-26.json` and `.md`                              | predeclared population run 2026-09-27T14:44Z to 14:48Z, qualified execution true                                                                       |
+| `docs/evidence/phase6d/population-2026-09-26.json` and `.md`                              | predeclared population run 2026-09-27T15:18Z to 15:23Z, qualified execution true                                                                       |
 | `git merge-base --is-ancestor`, run 2026-09-27                                            | f2e484a3 contains 563fac93 and f1059b99 (Phase 6A); it does not contain ee7f3a03 (#5329), bc0cde52 (#5340) or 9e275e1c (#5355)                         |
 
 ## Status Matrix

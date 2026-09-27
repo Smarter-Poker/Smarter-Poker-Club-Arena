@@ -1,7 +1,7 @@
 {
   "reportVersion": 1,
   "stage": "6D",
-  "generatedAt": "2026-09-27T14:48:46.004Z",
+  "generatedAt": "2026-09-27T15:23:15.790Z",
   "commandLine": "node server/scripts/phase6d-population.mjs run --declaration docs/evidence/phase6d/population-declaration-2026-09-26.json --out docs/evidence/phase6d --date 2026-09-26",
   "declaration": {
     "path": "population-declaration-2026-09-26.json",
@@ -33,9 +33,9 @@
   "servingRelease": "f2e484a3d1a674f329d923b30394fd65f5aff50e",
   "observationFile": "population-observation-2026-09-26.json",
   "observer": {
-    "containerName": "horse-phase6d-population-20260927t144411682z",
-    "startedAt": "2026-09-27T14:44:11.686Z",
-    "finishedAt": "2026-09-27T14:48:45.983Z",
+    "containerName": "horse-phase6d-population-20260927t151847467z",
+    "startedAt": "2026-09-27T15:18:47.468Z",
+    "finishedAt": "2026-09-27T15:23:15.433Z",
     "qualifiedExecution": true,
     "sshExitCode": 0,
     "executionStatus": null,
@@ -47,13 +47,13 @@
     "oomKilled": false,
     "observerRemoved": true,
     "sameServingIdentityAfter": true,
-    "scriptSha256": "99a503dc5856df95f951c8d1e8c2c3269f28a2a3763358616b99759d4dd2d46c"
+    "scriptSha256": "2ec6cd4f04a5c2b6c4788d5a6de469dc32c5b213d247956ee4064dd53ceec929"
   },
   "archive": {
     "status": "observed",
     "reason": null,
-    "observedAt": "2026-09-27T14:44:13.048Z",
-    "finishedAt": "2026-09-27T14:48:45.266Z",
+    "observedAt": "2026-09-27T15:18:48.713Z",
+    "finishedAt": "2026-09-27T15:23:14.875Z",
     "storage": {
       "legacy": {
         "bytes": 67107868,
@@ -498,11 +498,7 @@
       "observed": 3,
       "overflow": 765,
       "status": "observed 3/3",
-      "chains": [
-        4,
-        5,
-        9
-      ]
+      "chains": [4, 5, 9]
     },
     "cash|none|2|none|bypass": {
       "format": "cash",
@@ -514,9 +510,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        347
-      ]
+      "chains": [347]
     },
     "cash|none|2|per_player|normal": {
       "format": "cash",
@@ -528,11 +522,7 @@
       "observed": 3,
       "overflow": 114,
       "status": "observed 3/3",
-      "chains": [
-        10,
-        11,
-        12
-      ]
+      "chains": [10, 11, 12]
     },
     "cash|none|2|big_blind|normal": {
       "format": "cash",
@@ -544,11 +534,7 @@
       "observed": 3,
       "overflow": 119,
       "status": "observed 3/3",
-      "chains": [
-        65,
-        66,
-        111
-      ]
+      "chains": [65, 66, 111]
     },
     "cash|none|2|big_blind|bypass": {
       "format": "cash",
@@ -560,9 +546,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        488
-      ]
+      "chains": [488]
     },
     "cash|none|3|none|normal": {
       "format": "cash",
@@ -574,11 +558,7 @@
       "observed": 3,
       "overflow": 314,
       "status": "observed 3/3",
-      "chains": [
-        13,
-        14,
-        22
-      ]
+      "chains": [13, 14, 22]
     },
     "cash|none|3|per_player|normal": {
       "format": "cash",
@@ -590,11 +570,7 @@
       "observed": 3,
       "overflow": 113,
       "status": "observed 3/3",
-      "chains": [
-        34,
-        35,
-        36
-      ]
+      "chains": [34, 35, 36]
     },
     "cash|none|3|big_blind|normal": {
       "format": "cash",
@@ -606,11 +582,7 @@
       "observed": 3,
       "overflow": 20,
       "status": "observed 3/3",
-      "chains": [
-        151,
-        152,
-        153
-      ]
+      "chains": [151, 152, 153]
     },
     "cash|none|4|none|normal": {
       "format": "cash",
@@ -622,11 +594,7 @@
       "observed": 3,
       "overflow": 627,
       "status": "observed 3/3",
-      "chains": [
-        1,
-        2,
-        3
-      ]
+      "chains": [1, 2, 3]
     },
     "cash|none|4|per_player|normal": {
       "format": "cash",
@@ -638,11 +606,7 @@
       "observed": 3,
       "overflow": 46,
       "status": "observed 3/3",
-      "chains": [
-        174,
-        175,
-        176
-      ]
+      "chains": [174, 175, 176]
     },
     "cash|none|4|per_player|bypass": {
       "format": "cash",
@@ -654,10 +618,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        317,
-        318
-      ]
+      "chains": [317, 318]
     },
     "cash|none|4|big_blind|normal": {
       "format": "cash",
@@ -669,11 +630,7 @@
       "observed": 3,
       "overflow": 27,
       "status": "observed 3/3",
-      "chains": [
-        267,
-        268,
-        269
-      ]
+      "chains": [267, 268, 269]
     },
     "cash|none|5|none|normal": {
       "format": "cash",
@@ -685,11 +642,7 @@
       "observed": 3,
       "overflow": 566,
       "status": "observed 3/3",
-      "chains": [
-        15,
-        16,
-        17
-      ]
+      "chains": [15, 16, 17]
     },
     "cash|none|5|per_player|normal": {
       "format": "cash",
@@ -701,11 +654,7 @@
       "observed": 3,
       "overflow": 23,
       "status": "observed 3/3",
-      "chains": [
-        446,
-        447,
-        448
-      ]
+      "chains": [446, 447, 448]
     },
     "cash|none|5|big_blind|normal": {
       "format": "cash",
@@ -717,11 +666,7 @@
       "observed": 3,
       "overflow": 19,
       "status": "observed 3/3",
-      "chains": [
-        240,
-        241,
-        242
-      ]
+      "chains": [240, 241, 242]
     },
     "cash|none|6|none|normal": {
       "format": "cash",
@@ -733,11 +678,7 @@
       "observed": 3,
       "overflow": 2480,
       "status": "observed 3/3",
-      "chains": [
-        6,
-        7,
-        8
-      ]
+      "chains": [6, 7, 8]
     },
     "cash|none|6|per_player|normal": {
       "format": "cash",
@@ -749,11 +690,7 @@
       "observed": 3,
       "overflow": 53,
       "status": "observed 3/3",
-      "chains": [
-        228,
-        229,
-        230
-      ]
+      "chains": [228, 229, 230]
     },
     "cash|none|7|none|normal": {
       "format": "cash",
@@ -765,11 +702,7 @@
       "observed": 3,
       "overflow": 11,
       "status": "observed 3/3",
-      "chains": [
-        282,
-        283,
-        284
-      ]
+      "chains": [282, 283, 284]
     },
     "cash|none|8|none|normal": {
       "format": "cash",
@@ -781,11 +714,7 @@
       "observed": 3,
       "overflow": 36,
       "status": "observed 3/3",
-      "chains": [
-        459,
-        460,
-        461
-      ]
+      "chains": [459, 460, 461]
     },
     "cash|none|9|none|normal": {
       "format": "cash",
@@ -797,11 +726,7 @@
       "observed": 3,
       "overflow": 66,
       "status": "observed 3/3",
-      "chains": [
-        329,
-        330,
-        331
-      ]
+      "chains": [329, 330, 331]
     },
     "mtt|unopened|3|per_player|normal": {
       "format": "mtt",
@@ -813,10 +738,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        257,
-        286
-      ]
+      "chains": [257, 286]
     },
     "mtt|unopened|3|per_player|bypass": {
       "format": "mtt",
@@ -828,11 +750,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        255,
-        271,
-        300
-      ]
+      "chains": [255, 271, 300]
     },
     "mtt|unopened|3|per_player|fallback": {
       "format": "mtt",
@@ -844,11 +762,7 @@
       "observed": 3,
       "overflow": 23,
       "status": "observed 3/3",
-      "chains": [
-        134,
-        202,
-        322
-      ]
+      "chains": [134, 202, 322]
     },
     "mtt|unopened|3|big_blind|normal": {
       "format": "mtt",
@@ -860,10 +774,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        250,
-        251
-      ]
+      "chains": [250, 251]
     },
     "mtt|unopened|3|big_blind|bypass": {
       "format": "mtt",
@@ -875,11 +786,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        231,
-        259,
-        275
-      ]
+      "chains": [231, 259, 275]
     },
     "mtt|unopened|4|per_player|normal": {
       "format": "mtt",
@@ -891,11 +798,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        420,
-        421,
-        430
-      ]
+      "chains": [420, 421, 430]
     },
     "mtt|unopened|4|per_player|bypass": {
       "format": "mtt",
@@ -907,9 +810,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        61
-      ]
+      "chains": [61]
     },
     "mtt|unopened|4|per_player|fallback": {
       "format": "mtt",
@@ -921,11 +822,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        181,
-        417,
-        418
-      ]
+      "chains": [181, 417, 418]
     },
     "mtt|unopened|4|big_blind|normal": {
       "format": "mtt",
@@ -937,11 +834,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        218,
-        221,
-        238
-      ]
+      "chains": [218, 221, 238]
     },
     "mtt|unopened|4|big_blind|bypass": {
       "format": "mtt",
@@ -953,11 +846,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        217,
-        265,
-        276
-      ]
+      "chains": [217, 265, 276]
     },
     "mtt|unopened|5|per_player|normal": {
       "format": "mtt",
@@ -969,11 +858,7 @@
       "observed": 3,
       "overflow": 30,
       "status": "observed 3/3",
-      "chains": [
-        116,
-        118,
-        141
-      ]
+      "chains": [116, 118, 141]
     },
     "mtt|unopened|5|per_player|bypass": {
       "format": "mtt",
@@ -985,11 +870,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        29,
-        31,
-        117
-      ]
+      "chains": [29, 31, 117]
     },
     "mtt|unopened|5|per_player|fallback": {
       "format": "mtt",
@@ -1001,11 +882,7 @@
       "observed": 3,
       "overflow": 29,
       "status": "observed 3/3",
-      "chains": [
-        30,
-        402,
-        403
-      ]
+      "chains": [30, 402, 403]
     },
     "mtt|unopened|5|big_blind|normal": {
       "format": "mtt",
@@ -1017,11 +894,7 @@
       "observed": 3,
       "overflow": 10,
       "status": "observed 3/3",
-      "chains": [
-        432,
-        433,
-        442
-      ]
+      "chains": [432, 433, 442]
     },
     "mtt|unopened|5|big_blind|bypass": {
       "format": "mtt",
@@ -1033,11 +906,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        443,
-        449,
-        454
-      ]
+      "chains": [443, 449, 454]
     },
     "mtt|unopened|5|big_blind|fallback": {
       "format": "mtt",
@@ -1049,9 +918,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        425
-      ]
+      "chains": [425]
     },
     "mtt|unopened|6|per_player|normal": {
       "format": "mtt",
@@ -1063,11 +930,7 @@
       "observed": 3,
       "overflow": 29,
       "status": "observed 3/3",
-      "chains": [
-        84,
-        125,
-        144
-      ]
+      "chains": [84, 125, 144]
     },
     "mtt|unopened|6|per_player|bypass": {
       "format": "mtt",
@@ -1079,11 +942,7 @@
       "observed": 3,
       "overflow": 14,
       "status": "observed 3/3",
-      "chains": [
-        122,
-        123,
-        124
-      ]
+      "chains": [122, 123, 124]
     },
     "mtt|unopened|6|per_player|fallback": {
       "format": "mtt",
@@ -1095,11 +954,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        301,
-        302,
-        370
-      ]
+      "chains": [301, 302, 370]
     },
     "mtt|unopened|6|big_blind|normal": {
       "format": "mtt",
@@ -1111,11 +966,7 @@
       "observed": 3,
       "overflow": 3,
       "status": "observed 3/3",
-      "chains": [
-        260,
-        407,
-        467
-      ]
+      "chains": [260, 407, 467]
     },
     "mtt|unopened|6|big_blind|bypass": {
       "format": "mtt",
@@ -1127,11 +978,7 @@
       "observed": 3,
       "overflow": 1,
       "status": "observed 3/3",
-      "chains": [
-        468,
-        474,
-        475
-      ]
+      "chains": [468, 474, 475]
     },
     "mtt|unopened|6|big_blind|fallback": {
       "format": "mtt",
@@ -1143,11 +990,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        339,
-        361,
-        375
-      ]
+      "chains": [339, 361, 375]
     },
     "mtt|unopened|7|per_player|normal": {
       "format": "mtt",
@@ -1159,11 +1002,7 @@
       "observed": 3,
       "overflow": 24,
       "status": "observed 3/3",
-      "chains": [
-        76,
-        78,
-        79
-      ]
+      "chains": [76, 78, 79]
     },
     "mtt|unopened|7|per_player|bypass": {
       "format": "mtt",
@@ -1175,9 +1014,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        77
-      ]
+      "chains": [77]
     },
     "mtt|unopened|7|per_player|fallback": {
       "format": "mtt",
@@ -1189,11 +1026,7 @@
       "observed": 3,
       "overflow": 73,
       "status": "observed 3/3",
-      "chains": [
-        49,
-        96,
-        97
-      ]
+      "chains": [49, 96, 97]
     },
     "mtt|unopened|7|big_blind|normal": {
       "format": "mtt",
@@ -1205,11 +1038,7 @@
       "observed": 3,
       "overflow": 172,
       "status": "observed 3/3",
-      "chains": [
-        67,
-        68,
-        69
-      ]
+      "chains": [67, 68, 69]
     },
     "mtt|unopened|7|big_blind|bypass": {
       "format": "mtt",
@@ -1221,11 +1050,7 @@
       "observed": 3,
       "overflow": 1,
       "status": "observed 3/3",
-      "chains": [
-        290,
-        335,
-        356
-      ]
+      "chains": [290, 335, 356]
     },
     "mtt|unopened|7|big_blind|fallback": {
       "format": "mtt",
@@ -1237,11 +1062,7 @@
       "observed": 3,
       "overflow": 39,
       "status": "observed 3/3",
-      "chains": [
-        363,
-        364,
-        365
-      ]
+      "chains": [363, 364, 365]
     },
     "mtt|unopened|8|per_player|normal": {
       "format": "mtt",
@@ -1253,11 +1074,7 @@
       "observed": 3,
       "overflow": 60,
       "status": "observed 3/3",
-      "chains": [
-        107,
-        137,
-        138
-      ]
+      "chains": [107, 137, 138]
     },
     "mtt|unopened|8|per_player|bypass": {
       "format": "mtt",
@@ -1269,10 +1086,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        136,
-        208
-      ]
+      "chains": [136, 208]
     },
     "mtt|unopened|8|per_player|fallback": {
       "format": "mtt",
@@ -1284,11 +1098,7 @@
       "observed": 3,
       "overflow": 134,
       "status": "observed 3/3",
-      "chains": [
-        55,
-        56,
-        57
-      ]
+      "chains": [55, 56, 57]
     },
     "mtt|unopened|8|big_blind|normal": {
       "format": "mtt",
@@ -1300,11 +1110,7 @@
       "observed": 3,
       "overflow": 208,
       "status": "observed 3/3",
-      "chains": [
-        23,
-        24,
-        72
-      ]
+      "chains": [23, 24, 72]
     },
     "mtt|unopened|8|big_blind|bypass": {
       "format": "mtt",
@@ -1316,11 +1122,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        441,
-        455,
-        456
-      ]
+      "chains": [441, 455, 456]
     },
     "mtt|unopened|8|big_blind|fallback": {
       "format": "mtt",
@@ -1332,11 +1134,7 @@
       "observed": 3,
       "overflow": 14,
       "status": "observed 3/3",
-      "chains": [
-        309,
-        310,
-        311
-      ]
+      "chains": [309, 310, 311]
     },
     "mtt|unopened|9|per_player|normal": {
       "format": "mtt",
@@ -1348,11 +1146,7 @@
       "observed": 3,
       "overflow": 85,
       "status": "observed 3/3",
-      "chains": [
-        40,
-        155,
-        156
-      ]
+      "chains": [40, 155, 156]
     },
     "mtt|unopened|9|per_player|bypass": {
       "format": "mtt",
@@ -1364,10 +1158,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        328,
-        355
-      ]
+      "chains": [328, 355]
     },
     "mtt|unopened|9|per_player|fallback": {
       "format": "mtt",
@@ -1379,11 +1170,7 @@
       "observed": 3,
       "overflow": 12,
       "status": "observed 3/3",
-      "chains": [
-        37,
-        38,
-        39
-      ]
+      "chains": [37, 38, 39]
     },
     "mtt|limp_facing|3|per_player|normal": {
       "format": "mtt",
@@ -1395,10 +1182,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        258,
-        287
-      ]
+      "chains": [258, 287]
     },
     "mtt|limp_facing|3|big_blind|normal": {
       "format": "mtt",
@@ -1410,9 +1194,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        252
-      ]
+      "chains": [252]
     },
     "mtt|limp_facing|3|big_blind|fallback": {
       "format": "mtt",
@@ -1424,9 +1206,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        232
-      ]
+      "chains": [232]
     },
     "mtt|limp_facing|4|per_player|fallback": {
       "format": "mtt",
@@ -1438,11 +1218,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        62,
-        182,
-        183
-      ]
+      "chains": [62, 182, 183]
     },
     "mtt|limp_facing|4|big_blind|normal": {
       "format": "mtt",
@@ -1454,10 +1230,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        222,
-        239
-      ]
+      "chains": [222, 239]
     },
     "mtt|limp_facing|5|per_player|normal": {
       "format": "mtt",
@@ -1469,9 +1242,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        279
-      ]
+      "chains": [279]
     },
     "mtt|limp_facing|6|big_blind|normal": {
       "format": "mtt",
@@ -1483,9 +1254,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        261
-      ]
+      "chains": [261]
     },
     "mtt|limp_facing|7|big_blind|normal": {
       "format": "mtt",
@@ -1497,9 +1266,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        291
-      ]
+      "chains": [291]
     },
     "mtt|three_bet_facing|2|per_player|fallback": {
       "format": "mtt",
@@ -1511,10 +1278,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        440,
-        484
-      ]
+      "chains": [440, 484]
     },
     "mtt|three_bet_facing|3|per_player|fallback": {
       "format": "mtt",
@@ -1526,10 +1290,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        325,
-        334
-      ]
+      "chains": [325, 334]
     },
     "mtt|three_bet_facing|4|big_blind|normal": {
       "format": "mtt",
@@ -1541,9 +1302,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        246
-      ]
+      "chains": [246]
     },
     "mtt|three_bet_facing|5|per_player|normal": {
       "format": "mtt",
@@ -1555,11 +1314,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        395,
-        396,
-        397
-      ]
+      "chains": [395, 396, 397]
     },
     "mtt|three_bet_facing|5|per_player|fallback": {
       "format": "mtt",
@@ -1571,10 +1326,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        481,
-        482
-      ]
+      "chains": [481, 482]
     },
     "mtt|three_bet_facing|6|per_player|normal": {
       "format": "mtt",
@@ -1586,11 +1338,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        387,
-        388,
-        389
-      ]
+      "chains": [387, 388, 389]
     },
     "mtt|three_bet_facing|6|big_blind|normal": {
       "format": "mtt",
@@ -1602,9 +1350,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        411
-      ]
+      "chains": [411]
     },
     "mtt|three_bet_facing|6|big_blind|fallback": {
       "format": "mtt",
@@ -1616,11 +1362,7 @@
       "observed": 3,
       "overflow": 3,
       "status": "observed 3/3",
-      "chains": [
-        344,
-        345,
-        346
-      ]
+      "chains": [344, 345, 346]
     },
     "mtt|three_bet_facing|7|per_player|normal": {
       "format": "mtt",
@@ -1632,11 +1374,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        82,
-        83,
-        132
-      ]
+      "chains": [82, 83, 132]
     },
     "mtt|three_bet_facing|7|per_player|fallback": {
       "format": "mtt",
@@ -1648,11 +1386,7 @@
       "observed": 3,
       "overflow": 6,
       "status": "observed 3/3",
-      "chains": [
-        191,
-        192,
-        193
-      ]
+      "chains": [191, 192, 193]
     },
     "mtt|three_bet_facing|7|big_blind|normal": {
       "format": "mtt",
@@ -1664,11 +1398,7 @@
       "observed": 3,
       "overflow": 24,
       "status": "observed 3/3",
-      "chains": [
-        235,
-        236,
-        237
-      ]
+      "chains": [235, 236, 237]
     },
     "mtt|three_bet_facing|7|big_blind|fallback": {
       "format": "mtt",
@@ -1680,11 +1410,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        367,
-        368,
-        369
-      ]
+      "chains": [367, 368, 369]
     },
     "mtt|three_bet_facing|8|per_player|normal": {
       "format": "mtt",
@@ -1696,11 +1422,7 @@
       "observed": 3,
       "overflow": 10,
       "status": "observed 3/3",
-      "chains": [
-        188,
-        189,
-        190
-      ]
+      "chains": [188, 189, 190]
     },
     "mtt|three_bet_facing|8|per_player|fallback": {
       "format": "mtt",
@@ -1712,11 +1434,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        170,
-        171,
-        172
-      ]
+      "chains": [170, 171, 172]
     },
     "mtt|three_bet_facing|8|big_blind|normal": {
       "format": "mtt",
@@ -1728,11 +1446,7 @@
       "observed": 3,
       "overflow": 17,
       "status": "observed 3/3",
-      "chains": [
-        73,
-        74,
-        75
-      ]
+      "chains": [73, 74, 75]
     },
     "mtt|three_bet_facing|8|big_blind|fallback": {
       "format": "mtt",
@@ -1744,11 +1458,7 @@
       "observed": 3,
       "overflow": 3,
       "status": "observed 3/3",
-      "chains": [
-        350,
-        351,
-        352
-      ]
+      "chains": [350, 351, 352]
     },
     "mtt|three_bet_facing|9|per_player|normal": {
       "format": "mtt",
@@ -1760,11 +1470,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        113,
-        114,
-        386
-      ]
+      "chains": [113, 114, 386]
     },
     "mtt|cold_call|3|per_player|fallback": {
       "format": "mtt",
@@ -1776,11 +1482,7 @@
       "observed": 3,
       "overflow": 9,
       "status": "observed 3/3",
-      "chains": [
-        323,
-        332,
-        353
-      ]
+      "chains": [323, 332, 353]
     },
     "mtt|cold_call|5|per_player|normal": {
       "format": "mtt",
@@ -1792,11 +1494,7 @@
       "observed": 3,
       "overflow": 21,
       "status": "observed 3/3",
-      "chains": [
-        319,
-        320,
-        336
-      ]
+      "chains": [319, 320, 336]
     },
     "mtt|cold_call|5|per_player|fallback": {
       "format": "mtt",
@@ -1808,11 +1506,7 @@
       "observed": 3,
       "overflow": 8,
       "status": "observed 3/3",
-      "chains": [
-        457,
-        477,
-        478
-      ]
+      "chains": [457, 477, 478]
     },
     "mtt|cold_call|6|per_player|fallback": {
       "format": "mtt",
@@ -1824,11 +1518,7 @@
       "observed": 3,
       "overflow": 3,
       "status": "observed 3/3",
-      "chains": [
-        304,
-        305,
-        371
-      ]
+      "chains": [304, 305, 371]
     },
     "mtt|cold_call|6|big_blind|normal": {
       "format": "mtt",
@@ -1840,11 +1530,7 @@
       "observed": 3,
       "overflow": 1,
       "status": "observed 3/3",
-      "chains": [
-        408,
-        409,
-        410
-      ]
+      "chains": [408, 409, 410]
     },
     "mtt|cold_call|6|big_blind|fallback": {
       "format": "mtt",
@@ -1856,11 +1542,7 @@
       "observed": 3,
       "overflow": 7,
       "status": "observed 3/3",
-      "chains": [
-        340,
-        341,
-        342
-      ]
+      "chains": [340, 341, 342]
     },
     "mtt|cold_call|7|per_player|normal": {
       "format": "mtt",
@@ -1872,11 +1554,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        98,
-        130,
-        131
-      ]
+      "chains": [98, 130, 131]
     },
     "mtt|cold_call|7|per_player|fallback": {
       "format": "mtt",
@@ -1888,11 +1566,7 @@
       "observed": 3,
       "overflow": 30,
       "status": "observed 3/3",
-      "chains": [
-        50,
-        51,
-        52
-      ]
+      "chains": [50, 51, 52]
     },
     "mtt|cold_call|7|big_blind|normal": {
       "format": "mtt",
@@ -1904,11 +1578,7 @@
       "observed": 3,
       "overflow": 89,
       "status": "observed 3/3",
-      "chains": [
-        147,
-        148,
-        149
-      ]
+      "chains": [147, 148, 149]
     },
     "mtt|cold_call|7|big_blind|fallback": {
       "format": "mtt",
@@ -1920,11 +1590,7 @@
       "observed": 3,
       "overflow": 27,
       "status": "observed 3/3",
-      "chains": [
-        366,
-        390,
-        462
-      ]
+      "chains": [366, 390, 462]
     },
     "mtt|cold_call|8|per_player|normal": {
       "format": "mtt",
@@ -1936,11 +1602,7 @@
       "observed": 3,
       "overflow": 25,
       "status": "observed 3/3",
-      "chains": [
-        105,
-        160,
-        161
-      ]
+      "chains": [105, 160, 161]
     },
     "mtt|cold_call|8|per_player|fallback": {
       "format": "mtt",
@@ -1952,11 +1614,7 @@
       "observed": 3,
       "overflow": 73,
       "status": "observed 3/3",
-      "chains": [
-        58,
-        59,
-        90
-      ]
+      "chains": [58, 59, 90]
     },
     "mtt|cold_call|8|big_blind|normal": {
       "format": "mtt",
@@ -1968,11 +1626,7 @@
       "observed": 3,
       "overflow": 125,
       "status": "observed 3/3",
-      "chains": [
-        25,
-        26,
-        27
-      ]
+      "chains": [25, 26, 27]
     },
     "mtt|cold_call|8|big_blind|bypass": {
       "format": "mtt",
@@ -1984,9 +1638,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        378
-      ]
+      "chains": [378]
     },
     "mtt|cold_call|8|big_blind|fallback": {
       "format": "mtt",
@@ -1998,11 +1650,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        312,
-        313,
-        348
-      ]
+      "chains": [312, 313, 348]
     },
     "mtt|cold_call|9|per_player|normal": {
       "format": "mtt",
@@ -2014,11 +1662,7 @@
       "observed": 3,
       "overflow": 54,
       "status": "observed 3/3",
-      "chains": [
-        46,
-        47,
-        112
-      ]
+      "chains": [46, 47, 112]
     },
     "mtt|cold_call|9|per_player|fallback": {
       "format": "mtt",
@@ -2030,11 +1674,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        43,
-        44,
-        45
-      ]
+      "chains": [43, 44, 45]
     },
     "mtt|overcall|8|per_player|fallback": {
       "format": "mtt",
@@ -2046,9 +1686,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        91
-      ]
+      "chains": [91]
     },
     "mtt|overcall|8|big_blind|normal": {
       "format": "mtt",
@@ -2060,11 +1698,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        224,
-        225,
-        249
-      ]
+      "chains": [224, 225, 249]
     },
     "mtt|overcall|9|per_player|fallback": {
       "format": "mtt",
@@ -2076,9 +1710,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        100
-      ]
+      "chains": [100]
     },
     "mtt|squeeze|6|big_blind|fallback": {
       "format": "mtt",
@@ -2090,10 +1722,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        343,
-        394
-      ]
+      "chains": [343, 394]
     },
     "mtt|squeeze|7|per_player|normal": {
       "format": "mtt",
@@ -2105,11 +1734,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        185,
-        307,
-        308
-      ]
+      "chains": [185, 307, 308]
     },
     "mtt|squeeze|7|per_player|fallback": {
       "format": "mtt",
@@ -2121,11 +1746,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        485,
-        486,
-        487
-      ]
+      "chains": [485, 486, 487]
     },
     "mtt|squeeze|7|big_blind|normal": {
       "format": "mtt",
@@ -2137,11 +1758,7 @@
       "observed": 3,
       "overflow": 11,
       "status": "observed 3/3",
-      "chains": [
-        166,
-        167,
-        169
-      ]
+      "chains": [166, 167, 169]
     },
     "mtt|squeeze|7|big_blind|fallback": {
       "format": "mtt",
@@ -2153,11 +1770,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        391,
-        392,
-        479
-      ]
+      "chains": [391, 392, 479]
     },
     "mtt|squeeze|8|per_player|normal": {
       "format": "mtt",
@@ -2169,10 +1782,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        214,
-        215
-      ]
+      "chains": [214, 215]
     },
     "mtt|squeeze|8|per_player|fallback": {
       "format": "mtt",
@@ -2184,11 +1794,7 @@
       "observed": 3,
       "overflow": 8,
       "status": "observed 3/3",
-      "chains": [
-        92,
-        93,
-        94
-      ]
+      "chains": [92, 93, 94]
     },
     "mtt|squeeze|8|big_blind|normal": {
       "format": "mtt",
@@ -2200,11 +1806,7 @@
       "observed": 3,
       "overflow": 20,
       "status": "observed 3/3",
-      "chains": [
-        196,
-        226,
-        227
-      ]
+      "chains": [196, 226, 227]
     },
     "mtt|squeeze|8|big_blind|fallback": {
       "format": "mtt",
@@ -2216,11 +1818,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        314,
-        315,
-        316
-      ]
+      "chains": [314, 315, 316]
     },
     "mtt|squeeze|9|per_player|normal": {
       "format": "mtt",
@@ -2232,11 +1830,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        104,
-        158,
-        159
-      ]
+      "chains": [104, 158, 159]
     },
     "mtt|squeeze|9|per_player|fallback": {
       "format": "mtt",
@@ -2248,11 +1842,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        101,
-        102,
-        103
-      ]
+      "chains": [101, 102, 103]
     },
     "mtt|reshove|4|per_player|normal": {
       "format": "mtt",
@@ -2264,11 +1854,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        437,
-        438,
-        439
-      ]
+      "chains": [437, 438, 439]
     },
     "mtt|reshove|4|big_blind|normal": {
       "format": "mtt",
@@ -2280,11 +1866,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        219,
-        220,
-        243
-      ]
+      "chains": [219, 220, 243]
     },
     "mtt|reshove|5|per_player|normal": {
       "format": "mtt",
@@ -2296,11 +1878,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        121,
-        143,
-        177
-      ]
+      "chains": [121, 143, 177]
     },
     "mtt|reshove|5|per_player|fallback": {
       "format": "mtt",
@@ -2312,10 +1890,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        33,
-        480
-      ]
+      "chains": [33, 480]
     },
     "mtt|reshove|5|big_blind|normal": {
       "format": "mtt",
@@ -2327,11 +1902,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        450,
-        451,
-        452
-      ]
+      "chains": [450, 451, 452]
     },
     "mtt|reshove|5|big_blind|fallback": {
       "format": "mtt",
@@ -2343,9 +1914,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        429
-      ]
+      "chains": [429]
     },
     "mtt|reshove|6|per_player|normal": {
       "format": "mtt",
@@ -2357,11 +1926,7 @@
       "observed": 3,
       "overflow": 16,
       "status": "observed 3/3",
-      "chains": [
-        179,
-        194,
-        195
-      ]
+      "chains": [179, 194, 195]
     },
     "mtt|reshove|6|per_player|fallback": {
       "format": "mtt",
@@ -2373,10 +1938,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        303,
-        306
-      ]
+      "chains": [303, 306]
     },
     "mtt|reshove|6|big_blind|normal": {
       "format": "mtt",
@@ -2388,11 +1950,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        469,
-        470,
-        471
-      ]
+      "chains": [469, 470, 471]
     },
     "mtt|reshove|6|big_blind|fallback": {
       "format": "mtt",
@@ -2404,10 +1962,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        376,
-        393
-      ]
+      "chains": [376, 393]
     },
     "mtt|reshove|7|per_player|normal": {
       "format": "mtt",
@@ -2419,11 +1974,7 @@
       "observed": 3,
       "overflow": 8,
       "status": "observed 3/3",
-      "chains": [
-        80,
-        186,
-        187
-      ]
+      "chains": [80, 186, 187]
     },
     "mtt|reshove|7|per_player|fallback": {
       "format": "mtt",
@@ -2435,10 +1986,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        233,
-        253
-      ]
+      "chains": [233, 253]
     },
     "mtt|reshove|7|big_blind|normal": {
       "format": "mtt",
@@ -2450,11 +1998,7 @@
       "observed": 3,
       "overflow": 13,
       "status": "observed 3/3",
-      "chains": [
-        70,
-        168,
-        270
-      ]
+      "chains": [70, 168, 270]
     },
     "mtt|reshove|7|big_blind|fallback": {
       "format": "mtt",
@@ -2466,11 +2010,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        464,
-        466,
-        483
-      ]
+      "chains": [464, 466, 483]
     },
     "mtt|reshove|8|per_player|normal": {
       "format": "mtt",
@@ -2482,11 +2022,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        139,
-        199,
-        209
-      ]
+      "chains": [139, 199, 209]
     },
     "mtt|reshove|8|per_player|fallback": {
       "format": "mtt",
@@ -2498,9 +2034,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        198
-      ]
+      "chains": [198]
     },
     "mtt|reshove|8|big_blind|normal": {
       "format": "mtt",
@@ -2512,11 +2046,7 @@
       "observed": 3,
       "overflow": 13,
       "status": "observed 3/3",
-      "chains": [
-        197,
-        206,
-        207
-      ]
+      "chains": [197, 206, 207]
     },
     "mtt|reshove|8|big_blind|fallback": {
       "format": "mtt",
@@ -2528,9 +2058,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        349
-      ]
+      "chains": [349]
     },
     "mtt|reshove|9|per_player|normal": {
       "format": "mtt",
@@ -2542,11 +2070,7 @@
       "observed": 3,
       "overflow": 7,
       "status": "observed 3/3",
-      "chains": [
-        157,
-        247,
-        248
-      ]
+      "chains": [157, 247, 248]
     },
     "mtt|blind_vs_blind|2|per_player|normal": {
       "format": "mtt",
@@ -2558,11 +2082,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        133,
-        256,
-        274
-      ]
+      "chains": [133, 256, 274]
     },
     "mtt|blind_vs_blind|2|per_player|bypass": {
       "format": "mtt",
@@ -2574,11 +2094,7 @@
       "observed": 3,
       "overflow": 16,
       "status": "observed 3/3",
-      "chains": [
-        20,
-        54,
-        95
-      ]
+      "chains": [20, 54, 95]
     },
     "mtt|blind_vs_blind|2|per_player|fallback": {
       "format": "mtt",
@@ -2590,11 +2106,7 @@
       "observed": 3,
       "overflow": 48,
       "status": "observed 3/3",
-      "chains": [
-        18,
-        173,
-        280
-      ]
+      "chains": [18, 173, 280]
     },
     "mtt|blind_vs_blind|2|big_blind|bypass": {
       "format": "mtt",
@@ -2606,11 +2118,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        200,
-        205,
-        210
-      ]
+      "chains": [200, 205, 210]
     },
     "mtt|blind_vs_blind|3|per_player|fallback": {
       "format": "mtt",
@@ -2622,11 +2130,7 @@
       "observed": 3,
       "overflow": 11,
       "status": "observed 3/3",
-      "chains": [
-        135,
-        357,
-        359
-      ]
+      "chains": [135, 357, 359]
     },
     "mtt|blind_vs_blind|4|per_player|normal": {
       "format": "mtt",
@@ -2638,11 +2142,7 @@
       "observed": 3,
       "overflow": 1,
       "status": "observed 3/3",
-      "chains": [
-        419,
-        422,
-        431
-      ]
+      "chains": [419, 422, 431]
     },
     "mtt|blind_vs_blind|4|big_blind|normal": {
       "format": "mtt",
@@ -2654,9 +2154,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        277
-      ]
+      "chains": [277]
     },
     "mtt|blind_vs_blind|4|big_blind|bypass": {
       "format": "mtt",
@@ -2668,9 +2166,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        298
-      ]
+      "chains": [298]
     },
     "mtt|blind_vs_blind|5|per_player|normal": {
       "format": "mtt",
@@ -2682,9 +2178,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        373
-      ]
+      "chains": [373]
     },
     "mtt|blind_vs_blind|5|per_player|fallback": {
       "format": "mtt",
@@ -2696,11 +2190,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        404,
-        415,
-        416
-      ]
+      "chains": [404, 415, 416]
     },
     "mtt|blind_vs_blind|5|big_blind|normal": {
       "format": "mtt",
@@ -2712,9 +2202,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        489
-      ]
+      "chains": [489]
     },
     "mtt|blind_vs_blind|5|big_blind|bypass": {
       "format": "mtt",
@@ -2726,9 +2214,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        444
-      ]
+      "chains": [444]
     },
     "mtt|blind_vs_blind|6|per_player|normal": {
       "format": "mtt",
@@ -2740,11 +2226,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        145,
-        326,
-        374
-      ]
+      "chains": [145, 326, 374]
     },
     "mtt|blind_vs_blind|6|per_player|bypass": {
       "format": "mtt",
@@ -2756,11 +2238,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        126,
-        163,
-        212
-      ]
+      "chains": [126, 163, 212]
     },
     "mtt|blind_vs_blind|7|per_player|fallback": {
       "format": "mtt",
@@ -2772,11 +2250,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        213,
-        266,
-        278
-      ]
+      "chains": [213, 266, 278]
     },
     "mtt|blind_vs_blind|7|big_blind|normal": {
       "format": "mtt",
@@ -2788,11 +2262,7 @@
       "observed": 3,
       "overflow": 6,
       "status": "observed 3/3",
-      "chains": [
-        129,
-        234,
-        385
-      ]
+      "chains": [129, 234, 385]
     },
     "mtt|blind_vs_blind|7|big_blind|bypass": {
       "format": "mtt",
@@ -2804,9 +2274,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        254
-      ]
+      "chains": [254]
     },
     "mtt|blind_vs_blind|8|per_player|normal": {
       "format": "mtt",
@@ -2818,11 +2286,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        108,
-        178,
-        211
-      ]
+      "chains": [108, 178, 211]
     },
     "mtt|blind_vs_blind|8|per_player|fallback": {
       "format": "mtt",
@@ -2834,11 +2298,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        154,
-        281,
-        285
-      ]
+      "chains": [154, 281, 285]
     },
     "mtt|blind_vs_blind|8|big_blind|normal": {
       "format": "mtt",
@@ -2850,11 +2310,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        273,
-        358,
-        377
-      ]
+      "chains": [273, 358, 377]
     },
     "mtt|blind_vs_blind|8|big_blind|bypass": {
       "format": "mtt",
@@ -2866,9 +2322,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        423
-      ]
+      "chains": [423]
     },
     "mtt|blind_vs_blind|9|per_player|normal": {
       "format": "mtt",
@@ -2880,11 +2334,7 @@
       "observed": 3,
       "overflow": 1,
       "status": "observed 3/3",
-      "chains": [
-        41,
-        216,
-        453
-      ]
+      "chains": [41, 216, 453]
     },
     "mtt|bb_defense|2|per_player|bypass": {
       "format": "mtt",
@@ -2896,11 +2346,7 @@
       "observed": 3,
       "overflow": 7,
       "status": "observed 3/3",
-      "chains": [
-        19,
-        21,
-        115
-      ]
+      "chains": [19, 21, 115]
     },
     "mtt|bb_defense|2|per_player|fallback": {
       "format": "mtt",
@@ -2912,11 +2358,7 @@
       "observed": 3,
       "overflow": 19,
       "status": "observed 3/3",
-      "chains": [
-        398,
-        406,
-        414
-      ]
+      "chains": [398, 406, 414]
     },
     "mtt|bb_defense|3|per_player|fallback": {
       "format": "mtt",
@@ -2928,11 +2370,7 @@
       "observed": 3,
       "overflow": 13,
       "status": "observed 3/3",
-      "chains": [
-        324,
-        333,
-        354
-      ]
+      "chains": [324, 333, 354]
     },
     "mtt|bb_defense|4|big_blind|bypass": {
       "format": "mtt",
@@ -2944,9 +2382,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        299
-      ]
+      "chains": [299]
     },
     "mtt|bb_defense|5|per_player|normal": {
       "format": "mtt",
@@ -2958,11 +2394,7 @@
       "observed": 3,
       "overflow": 9,
       "status": "observed 3/3",
-      "chains": [
-        321,
-        337,
-        338
-      ]
+      "chains": [321, 337, 338]
     },
     "mtt|bb_defense|5|per_player|fallback": {
       "format": "mtt",
@@ -2974,11 +2406,7 @@
       "observed": 3,
       "overflow": 6,
       "status": "observed 3/3",
-      "chains": [
-        405,
-        458,
-        472
-      ]
+      "chains": [405, 458, 472]
     },
     "mtt|bb_defense|5|big_blind|normal": {
       "format": "mtt",
@@ -2990,9 +2418,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        490
-      ]
+      "chains": [490]
     },
     "mtt|bb_defense|5|big_blind|bypass": {
       "format": "mtt",
@@ -3004,9 +2430,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        445
-      ]
+      "chains": [445]
     },
     "mtt|bb_defense|6|per_player|normal": {
       "format": "mtt",
@@ -3018,11 +2442,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        88,
-        89,
-        327
-      ]
+      "chains": [88, 89, 327]
     },
     "mtt|bb_defense|6|per_player|bypass": {
       "format": "mtt",
@@ -3034,9 +2454,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        127
-      ]
+      "chains": [127]
     },
     "mtt|bb_defense|6|per_player|fallback": {
       "format": "mtt",
@@ -3048,9 +2466,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        372
-      ]
+      "chains": [372]
     },
     "mtt|bb_defense|6|big_blind|normal": {
       "format": "mtt",
@@ -3062,9 +2478,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        476
-      ]
+      "chains": [476]
     },
     "mtt|bb_defense|6|big_blind|fallback": {
       "format": "mtt",
@@ -3076,9 +2490,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        362
-      ]
+      "chains": [362]
     },
     "mtt|bb_defense|7|per_player|normal": {
       "format": "mtt",
@@ -3090,9 +2502,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        99
-      ]
+      "chains": [99]
     },
     "mtt|bb_defense|7|per_player|fallback": {
       "format": "mtt",
@@ -3104,11 +2514,7 @@
       "observed": 3,
       "overflow": 9,
       "status": "observed 3/3",
-      "chains": [
-        53,
-        110,
-        146
-      ]
+      "chains": [53, 110, 146]
     },
     "mtt|bb_defense|7|big_blind|normal": {
       "format": "mtt",
@@ -3120,11 +2526,7 @@
       "observed": 3,
       "overflow": 24,
       "status": "observed 3/3",
-      "chains": [
-        71,
-        150,
-        201
-      ]
+      "chains": [71, 150, 201]
     },
     "mtt|bb_defense|7|big_blind|fallback": {
       "format": "mtt",
@@ -3136,11 +2538,7 @@
       "observed": 3,
       "overflow": 2,
       "status": "observed 3/3",
-      "chains": [
-        463,
-        465,
-        473
-      ]
+      "chains": [463, 465, 473]
     },
     "mtt|bb_defense|8|per_player|normal": {
       "format": "mtt",
@@ -3152,11 +2550,7 @@
       "observed": 3,
       "overflow": 9,
       "status": "observed 3/3",
-      "chains": [
-        106,
-        109,
-        140
-      ]
+      "chains": [106, 109, 140]
     },
     "mtt|bb_defense|8|per_player|fallback": {
       "format": "mtt",
@@ -3168,11 +2562,7 @@
       "observed": 3,
       "overflow": 15,
       "status": "observed 3/3",
-      "chains": [
-        60,
-        164,
-        180
-      ]
+      "chains": [60, 164, 180]
     },
     "mtt|bb_defense|8|big_blind|normal": {
       "format": "mtt",
@@ -3184,11 +2574,7 @@
       "observed": 3,
       "overflow": 28,
       "status": "observed 3/3",
-      "chains": [
-        28,
-        128,
-        162
-      ]
+      "chains": [28, 128, 162]
     },
     "mtt|bb_defense|8|big_blind|bypass": {
       "format": "mtt",
@@ -3200,9 +2586,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        424
-      ]
+      "chains": [424]
     },
     "mtt|bb_defense|8|big_blind|fallback": {
       "format": "mtt",
@@ -3214,9 +2598,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        360
-      ]
+      "chains": [360]
     },
     "mtt|bb_defense|9|per_player|normal": {
       "format": "mtt",
@@ -3228,11 +2610,7 @@
       "observed": 3,
       "overflow": 11,
       "status": "observed 3/3",
-      "chains": [
-        42,
-        48,
-        165
-      ]
+      "chains": [42, 48, 165]
     },
     "mtt|multiway_all_in|3|per_player|normal": {
       "format": "mtt",
@@ -3244,9 +2622,7 @@
       "observed": 1,
       "overflow": 0,
       "status": "observed 1/3",
-      "chains": [
-        272
-      ]
+      "chains": [272]
     },
     "mtt|multiway_all_in|3|per_player|bypass": {
       "format": "mtt",
@@ -3258,10 +2634,7 @@
       "observed": 2,
       "overflow": 0,
       "status": "observed 2/3",
-      "chains": [
-        203,
-        204
-      ]
+      "chains": [203, 204]
     },
     "mtt|multiway_all_in|4|per_player|fallback": {
       "format": "mtt",
@@ -3273,11 +2646,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        63,
-        64,
-        184
-      ]
+      "chains": [63, 64, 184]
     },
     "mtt|multiway_all_in|4|big_blind|normal": {
       "format": "mtt",
@@ -3289,11 +2658,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        223,
-        244,
-        245
-      ]
+      "chains": [223, 244, 245]
     },
     "mtt|multiway_all_in|5|per_player|normal": {
       "format": "mtt",
@@ -3305,11 +2670,7 @@
       "observed": 3,
       "overflow": 16,
       "status": "observed 3/3",
-      "chains": [
-        119,
-        120,
-        142
-      ]
+      "chains": [119, 120, 142]
     },
     "mtt|multiway_all_in|5|per_player|fallback": {
       "format": "mtt",
@@ -3321,11 +2682,7 @@
       "observed": 3,
       "overflow": 3,
       "status": "observed 3/3",
-      "chains": [
-        32,
-        412,
-        413
-      ]
+      "chains": [32, 412, 413]
     },
     "mtt|multiway_all_in|5|big_blind|normal": {
       "format": "mtt",
@@ -3337,11 +2694,7 @@
       "observed": 3,
       "overflow": 3,
       "status": "observed 3/3",
-      "chains": [
-        434,
-        435,
-        436
-      ]
+      "chains": [434, 435, 436]
     },
     "mtt|multiway_all_in|5|big_blind|fallback": {
       "format": "mtt",
@@ -3353,11 +2706,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        426,
-        427,
-        428
-      ]
+      "chains": [426, 427, 428]
     },
     "mtt|multiway_all_in|6|per_player|normal": {
       "format": "mtt",
@@ -3369,11 +2718,7 @@
       "observed": 3,
       "overflow": 20,
       "status": "observed 3/3",
-      "chains": [
-        85,
-        86,
-        87
-      ]
+      "chains": [85, 86, 87]
     },
     "mtt|multiway_all_in|6|big_blind|normal": {
       "format": "mtt",
@@ -3385,11 +2730,7 @@
       "observed": 3,
       "overflow": 9,
       "status": "observed 3/3",
-      "chains": [
-        262,
-        263,
-        264
-      ]
+      "chains": [262, 263, 264]
     },
     "mtt|multiway_all_in|7|per_player|normal": {
       "format": "mtt",
@@ -3401,11 +2742,7 @@
       "observed": 3,
       "overflow": 0,
       "status": "observed 3/3",
-      "chains": [
-        81,
-        288,
-        289
-      ]
+      "chains": [81, 288, 289]
     },
     "mtt|multiway_all_in|7|big_blind|normal": {
       "format": "mtt",
@@ -3417,11 +2754,7 @@
       "observed": 3,
       "overflow": 4,
       "status": "observed 3/3",
-      "chains": [
-        292,
-        293,
-        294
-      ]
+      "chains": [292, 293, 294]
     },
     "mtt|multiway_all_in|8|big_blind|normal": {
       "format": "mtt",
@@ -3433,11 +2766,7 @@
       "observed": 3,
       "overflow": 1,
       "status": "observed 3/3",
-      "chains": [
-        399,
-        400,
-        401
-      ]
+      "chains": [399, 400, 401]
     },
     "mtt|multiway_all_in|8|big_blind|bypass": {
       "format": "mtt",
@@ -3449,11 +2778,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        379,
-        380,
-        381
-      ]
+      "chains": [379, 380, 381]
     },
     "mtt|multiway_all_in|8|big_blind|fallback": {
       "format": "mtt",
@@ -3465,11 +2790,7 @@
       "observed": 3,
       "overflow": 5,
       "status": "observed 3/3",
-      "chains": [
-        382,
-        383,
-        384
-      ]
+      "chains": [382, 383, 384]
     },
     "mtt|multiway_all_in|9|per_player|normal": {
       "format": "mtt",
@@ -3481,11 +2802,7 @@
       "observed": 3,
       "overflow": 7,
       "status": "observed 3/3",
-      "chains": [
-        295,
-        296,
-        297
-      ]
+      "chains": [295, 296, 297]
     }
   },
   "unobservedCells": [
@@ -8461,10 +7778,7 @@
       "at": "2026-09-25T15:47:26.824Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -8506,10 +7820,7 @@
       "at": "2026-09-25T15:47:27.957Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -8551,10 +7862,7 @@
       "at": "2026-09-25T15:47:32.298Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -8596,10 +7904,7 @@
       "at": "2026-09-25T15:47:37.762Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -8641,10 +7946,7 @@
       "at": "2026-09-25T15:47:39.437Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -15742,10 +15044,7 @@
       "at": "2026-09-25T15:49:27.845Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -15787,10 +15086,7 @@
       "at": "2026-09-25T15:49:34.787Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -15832,10 +15128,7 @@
       "at": "2026-09-25T15:49:37.026Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -16969,10 +16262,7 @@
       "at": "2026-09-25T16:28:24.948Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -17014,10 +16304,7 @@
       "at": "2026-09-25T16:28:28.689Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -19873,10 +19160,7 @@
       "at": "2026-09-25T16:30:43.434Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -22438,10 +21722,7 @@
       "at": "2026-09-25T17:29:36.126Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -22483,10 +21764,7 @@
       "at": "2026-09-25T17:29:52.322Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -25132,10 +24410,7 @@
       "at": "2026-09-25T18:29:15.208Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -25177,10 +24452,7 @@
       "at": "2026-09-25T18:29:17.106Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -25222,10 +24494,7 @@
       "at": "2026-09-25T18:29:18.629Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -25267,10 +24536,7 @@
       "at": "2026-09-25T18:29:19.932Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {
@@ -25312,10 +24578,7 @@
       "at": "2026-09-25T18:29:22.633Z",
       "review": {
         "status": "incomplete",
-        "gaps": [
-          "binding_unavailable",
-          "unmatched_horse_action"
-        ]
+        "gaps": ["binding_unavailable", "unmatched_horse_action"]
       },
       "complete": false,
       "links": {

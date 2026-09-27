@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
+    "scripts/ci/classify-ci-changes.mjs": "dfde977eb6986f47e6b706a42ae07d412910bea3901ab4c6d8d4e361d0156add",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "7bdf38e1033eb9449b1e7a6fd6bff398e800145923c220290c79bb12ab291cc0",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "c7d0b31470602bb1ffe280acc0dbf26b43e66389757914a583a7481471d47580",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "b253e5cd0cdce9a7129ecc85a72187e6eb29e52c1cd425ffc4b514f94793350f",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "b345c627fc4d15eff0dfd03162f8331501ce7b1f4c3fcfd0971ea653882c8fc6",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1981,6 +1981,33 @@
       "from": "87920c73ba5e7391e421dfc55d07ccc3d3c989b08c41d56c1454786b2542f331",
       "to": "b253e5cd0cdce9a7129ecc85a72187e6eb29e52c1cd425ffc4b514f94793350f",
       "reason": "Integrate main ad23d8350 discovery routing with horse admission enforcement, preserving both current contracts and all historical records."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
+      "sha256": "69907f18b8a43eeab81bd4324e1196a3bf3de1248fae9bd2efd01e76eda8fa90",
+      "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "previous_sha256": "67cfcd5d3c35291f76769beb438a2d4d1b08a81d2daf5525b4e207cbc6e9f33b",
+      "sha256": "d8eb930731db404028318d6d2bd03f305475f9d3c2bf773ea00c573992ed7963",
+      "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "previous_sha256": "dada847d5b52b67a2434ee0d683629d169768b26cf1604e683eb1c56bb78c540",
+      "sha256": "d503beb5ab0d87281750df96399d2d517e03b21b3071997b29162fd087d11da5",
+      "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
+    },
+    {
+      "integration": "2026-09-27 cashier online-index qualification with current protected main94c3205",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Preserve both cashier routing and protected horse admission routing; financial SQL and all historical assertions unchanged. Nested hashes reflect this exact integrated metadata."
     }
   ],
   "tournament_rake_club_successor_20260921": {

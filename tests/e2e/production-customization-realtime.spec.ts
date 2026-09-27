@@ -9,6 +9,7 @@ import {
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import { observeAccountRealtime } from './support/accountRealtimeObservation';
 import {
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
@@ -84,6 +85,8 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 };
 
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
+const PRESENCE_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+const accountObservations = new WeakMap<Page, ReturnType<typeof observeAccountRealtime>>();
 // Record only the expected cosmetic signal, never session/auth websocket frames.
 const appearanceSignalReceived = new WeakMap<Page, boolean>();
 const accountSignalReceived = new WeakMap<Page, boolean>();
@@ -266,6 +269,7 @@ async function signIn(
   account: TemporaryCustomizationAccount
 ) {
   const page = await context.newPage();
+  accountObservations.set(page, observeAccountRealtime(page, account.id, PRESENCE_UNION_ID));
   observeAppearanceSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
@@ -674,6 +678,188 @@ test.describe('production Table Studio realtime contract', () => {
       });
       console.log(
         '[account-realtime] private metadata and preferences reached both devices, Auto followed each device, and the other player stayed isolated'
+      );
+
+      // Use the existing public union, not a newly created club or a funded
+      // membership. Refuse before navigation if it is absent: this legacy page
+      // otherwise attempts an unrelated Midway provisioning path.
+      const publicUnion = await primaryAccount.client
+        .from('unions')
+        .select('id,is_public')
+        .eq('id', PRESENCE_UNION_ID)
+        .maybeSingle();
+      if (publicUnion.error) throw publicUnion.error;
+      expect(publicUnion.data).toEqual({ id: PRESENCE_UNION_ID, is_public: true });
+      const primaryObserved = accountObservations.get(primaryPage)!;
+      const otherObserved = accountObservations.get(otherPage)!;
+      const onlineCount = primaryPage
+        .getByText('Online Now', { exact: true })
+        .locator('..')
+        .locator('span')
+        .first();
+      const openUnion = (page: Page) =>
+        page.goto(
+          new URL(`unions/${PRESENCE_UNION_ID}`, baseURL.endsWith('/') ? baseURL : `${baseURL}/`)
+            .href,
+          { waitUntil: 'domcontentloaded', timeout: PRODUCTION_RESPONSE_TIMEOUT }
+        );
+      await openUnion(primaryPage);
+      await expect
+        .poll(() => primaryObserved.peers.has(primaryUserId), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await openUnion(otherPage);
+      await expect
+        .poll(() => primaryObserved.peers.has(otherAccount!.id), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await expect
+        .poll(
+          async () =>
+            (await onlineCount.innerText()) === primaryObserved.peers.size.toLocaleString(),
+          { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+        )
+        .toBe(true);
+      const quietTracks = primaryObserved.presenceTracks;
+      const quietHeartbeats = primaryObserved.heartbeats;
+      expect(quietTracks).toBeGreaterThan(0);
+      // This interval IS the assertion: the removed producer fired every 60s.
+      // SDK heartbeats must continue while the unchanged Presence stays quiet.
+      await primaryPage.waitForTimeout(65_000);
+      expect(primaryObserved.presenceTracks).toBe(quietTracks);
+      expect(primaryObserved.heartbeats).toBeGreaterThan(quietHeartbeats);
+
+      await otherPage.goto(
+        new URL('profile', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href,
+        { waitUntil: 'domcontentloaded' }
+      );
+      await expect
+        .poll(() => otherObserved.presenceLeaves, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => primaryObserved.peers.has(otherAccount!.id), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(false);
+      await expect
+        .poll(
+          async () =>
+            (await onlineCount.innerText()) === primaryObserved.peers.size.toLocaleString(),
+          { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+        )
+        .toBe(true);
+
+      // Read-only balance acceptance. No financial update is induced to make
+      // a cross-device event appear. Prove the real own-row subscription and
+      // authorized reads, retention while offline, then reads after rejoin.
+      await expect
+        .poll(() => primaryObserved.membershipSubscriptions, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => primaryObserved.membershipReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => primaryObserved.balanceReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(0);
+      const persistedWallet = () =>
+        primaryPage!.evaluate(() => JSON.parse(localStorage.getItem('wallet-store') || '{}').state);
+      await expect
+        .poll(async () => (await persistedWallet())?._balancesUserId, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(primaryUserId);
+      const walletBefore = await persistedWallet();
+      const beforeReconnect = { ...primaryObserved };
+      await primaryDesktop.setOffline(true);
+      await expect
+        .poll(() => primaryObserved.socketCloses, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.socketCloses);
+      expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
+      await primaryDesktop.setOffline(false);
+      await expect
+        .poll(() => primaryObserved.presenceTracks, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.presenceTracks);
+      await expect
+        .poll(() => primaryObserved.membershipSubscriptions, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBeGreaterThan(beforeReconnect.membershipSubscriptions);
+      await expect
+        .poll(() => primaryObserved.membershipReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.membershipReads);
+      await expect
+        .poll(() => primaryObserved.balanceReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.balanceReads);
+      await expect
+        .poll(async () => (await persistedWallet())._balancesAt, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBeGreaterThan(walletBefore._balancesAt);
+      await expect
+        .poll(() => primaryObserved.peers.has(primaryUserId), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await expect
+        .poll(
+          async () =>
+            (await onlineCount.innerText()) === primaryObserved.peers.size.toLocaleString(),
+          { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+        )
+        .toBe(true);
+      console.log(
+        '[presence-realtime] real joins, leave and rejoin reached the count; unchanged Presence stayed quiet for 65s while SDK heartbeats continued'
+      );
+
+      const authorizedMembers = await primaryAccount.client
+        .from('club_members')
+        .select('chip_balance,promo_balance,locked_chips')
+        .eq('user_id', primaryUserId);
+      const authorizedAgents = await primaryAccount.client
+        .from('agents')
+        .select('agent_wallet_balance')
+        .eq('user_id', primaryUserId);
+      if (authorizedMembers.error) throw authorizedMembers.error;
+      if (authorizedAgents.error) throw authorizedAgents.error;
+      const total = (authorizedMembers.data || []).reduce(
+        (sum, row) => sum + Number(row.chip_balance || 0),
+        0
+      );
+      const locked = (authorizedMembers.data || []).reduce(
+        (sum, row) => sum + Number(row.locked_chips || 0),
+        0
+      );
+      const promo = (authorizedMembers.data || []).reduce(
+        (sum, row) => sum + Number(row.promo_balance || 0),
+        0
+      );
+      const business = (authorizedAgents.data || []).reduce(
+        (sum, row) => sum + Number(row.agent_wallet_balance || 0),
+        0
+      );
+      const walletAfter = await persistedWallet();
+      expect(walletAfter.balances.PLAYER).toMatchObject({
+        total,
+        locked,
+        available: Math.max(0, total - locked),
+      });
+      expect(walletAfter.balances.PROMO).toMatchObject({ total: promo, available: promo });
+      expect(walletAfter.balances.BUSINESS).toMatchObject({ total: business, available: business });
+      await primaryPage.goto(
+        new URL('wallet', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href,
+        { waitUntil: 'domcontentloaded' }
+      );
+      await expect(
+        primaryPage.getByText('Playable Now', { exact: true }).locator('..').locator('dd')
+      ).toHaveText(Math.max(0, total - locked).toLocaleString(), {
+        timeout: PRODUCTION_RESPONSE_TIMEOUT,
+      });
+      console.log(
+        '[member-balance] authenticated own-row subscription and initial/reconnect reads reached the persistent wallet and rendered amount; no financial mutation induced'
       );
     } catch (error) {
       journeyFailure = error;

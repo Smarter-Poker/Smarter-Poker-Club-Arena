@@ -62,6 +62,10 @@ const settlementAttribution =
 const certificationRetirement =
   /^(scripts\/ci\/(?:test-certification-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/certification-retirement\/)|tests\/unit\/productionE2EAccount\.test\.ts$)/;
 
+// Actual reserved cleanup/FK access must retain native concurrency qualification.
+const certificationPlayerIndex =
+  /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
+
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
   // calls must also discard inherited index/object/config overrides so a
@@ -240,7 +244,8 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
-      matches(certificationRetirement),
+      matches(certificationRetirement) ||
+      matches(certificationPlayerIndex),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
@@ -274,7 +279,8 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
-      matches(certificationRetirement),
+      matches(certificationRetirement) ||
+      matches(certificationPlayerIndex),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

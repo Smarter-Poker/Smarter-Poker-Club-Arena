@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-relfreeze/fix/release-freeze-0927 - migration 20260927144106_an_abandoned_reservation_is_not_a_hand_after_custody. public.fn_park_stopped_time_bank_custody no longer reads a 'reserved' permit of the caller's own tournament and generation as a hand after custody; every other refusal is unchanged.",
+  "functions": ["fn_park_stopped_time_bank_custody"]
+}

@@ -126,6 +126,7 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(spec).toContain('const MAX_GAMEPLAY_SILENCE_MS = 45_000');
     expect(spec).toContain('test.setTimeout(300_000)');
     expect(spec).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    expect(spec).not.toContain('MTT_HUD_CASE_TIMEOUT_MS');
   });
 
   it('observes tournament routes directly and refuses participation mutations', () => {

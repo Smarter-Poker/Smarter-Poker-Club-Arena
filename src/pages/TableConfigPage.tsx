@@ -18,6 +18,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { useVisibleRead } from '../hooks/useVisibleRead';
+import { useUserStore } from '../stores/useUserStore';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
@@ -534,6 +536,11 @@ export default function TableConfigPage({
   const autoNameRef = useRef<string>('');
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const templateUserId = useUserStore((state) => state.user?.id);
+  const templateScope = JSON.stringify([clubId, templateUserId]);
+  const templateScopeRef = useRef(templateScope);
+  templateScopeRef.current = templateScope;
+  const templateRevision = useRef(0);
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -627,82 +634,41 @@ export default function TableConfigPage({
     );
   }, [seatCap, sngSeatCap]);
 
-  // Fetch templates for this club on mount
-  useEffect(() => {
-    let isMounted = true;
-    const fetchTemplates = async () => {
-      if (!clubId) return;
-      try {
-        const resolvedId = await resolveClubUUID(clubId);
-        const { data, error } = await supabase
-          .from('table_templates')
-          .select('id, name, game_type, game_mode, config, club_id, is_deleted, created_at')
-          .eq('club_id', resolvedId)
-          .eq('is_deleted', false)
-          .order('created_at', { ascending: false });
-
-        if (!isMounted) return;
-        if (error) throw error;
-        setTemplates(data || []);
-      } catch (err) {
-        if (isMounted) reportError(err, 'TableConfigPage.Failed_to_fetch_templates');
-      }
-    };
-    fetchTemplates();
-    return () => {
-      isMounted = false;
-    };
-  }, [clubId]);
-
-  // ── Realtime: live template updates ──
-  useEffect(() => {
-    if (!clubId) return;
-    let isMounted = true;
-    const channelKey = `table-config-${clubId}`;
-
-    const setupRealtime = async () => {
-      const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted) return;
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'table_templates',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            supabase
-              .from('table_templates')
-              .select('id, name, game_type, game_mode, config, club_id, is_deleted, created_at')
-              .eq('club_id', resolvedId)
-              .eq('is_deleted', false)
-              .order('created_at', { ascending: false })
-              .then(({ data }) => {
-                if (isMounted && data) setTemplates(data);
-              });
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'TableConfigPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[TableConfigPage] Realtime channel timed out');
-          }
-        });
-    };
-
-    setupRealtime().catch((e) => console.warn('[TableConfigPage] Realtime setup failed:', e));
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [clubId]);
+  // table_templates has no WAL publication. Catalog reads belong to the
+  // visible tournament form; they never rewrite the operator's draft.
+  const refreshTemplates = useVisibleRead<{ rows: TableTemplate[]; revision: number }>({
+    scopeKey: templateScope,
+    enabled: Boolean(clubId) && canBuildHere && config.gameMode !== 'regular',
+    intervalMs: 60_000,
+    onReset: () => {
+      templateRevision.current += 1;
+      setTemplates([]);
+      setSavingTemplate(false);
+    },
+    read: async (signal) => {
+      const revision = templateRevision.current;
+      const resolvedId = await resolveClubUUID(clubId!);
+      signal.throwIfAborted();
+      if (!resolvedId) throw new Error('Club could not be resolved');
+      const { data, error } = await supabase
+        .from('table_templates')
+        .select('id, name, game_type, game_mode, config, club_id, is_deleted, created_at')
+        .eq('club_id', resolvedId)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false })
+        .abortSignal(signal);
+      if (error) throw error;
+      return { rows: data || [], revision };
+    },
+    onData: ({ rows, revision }) => {
+      // A confirmed local save outranks any older read already in flight.
+      if (revision === templateRevision.current) setTemplates(rows);
+    },
+    onError: (error) => {
+      reportError(error, 'TableConfigPage.Failed_to_fetch_templates');
+      toast.error('Could Not Refresh Templates. Reopen This View To Retry.');
+    },
+  });
 
   // ── Next Step (Satellite): load candidate target tournaments once the
   // toggle is on, mirroring CreateTournamentModal's satellite picker. ──
@@ -852,6 +818,7 @@ export default function TableConfigPage({
       return;
     }
 
+    const saveScope = templateScope;
     setSavingTemplate(true);
     try {
       const {
@@ -878,13 +845,16 @@ export default function TableConfigPage({
       if (error) throw error;
       if (!data) throw new Error('Template save returned no data');
 
-      setTemplates((prev) => [data, ...prev]);
+      if (templateScopeRef.current !== saveScope) return;
+      templateRevision.current += 1;
+      setTemplates((prev) => [data, ...prev.filter((row) => row.id !== data.id)]);
+      refreshTemplates();
       toast.success('Template saved! You can now duplicate this table easily.');
     } catch (err) {
       reportError(err, 'TableConfigPage.Failed_to_save_template');
-      toast.error('Failed to save template');
+      if (templateScopeRef.current === saveScope) toast.error('Failed to save template');
     } finally {
-      setSavingTemplate(false);
+      if (templateScopeRef.current === saveScope) setSavingTemplate(false);
     }
   };
 

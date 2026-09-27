@@ -1,0 +1,106 @@
+# First archived Spin terminal recovery
+
+The oldest production alert includes a played Spin whose full hand rows expired
+before its canonical terminal was recorded. Original retained database evidence
+records a sole winner, the original second and third places, three 100-chip
+entries, a 200-chip prize draw, and 24 chips of unresolved fee custody. Treating
+the event as unplayed would refund the wrong amounts through the wrong path.
+
+The finite recovery admission binds the authentic source, original event state,
+funding evidence and operation identity, acquires the existing service lease,
+and calls the actual launch and terminal owners in one transaction. A deferred
+constraint prevents admission without the matching canonical terminal. No hand
+history or atomic certificate is fabricated. The fee remains unresolved unless
+the actual fee authority has qualifying evidence. Player result finality does
+not imply accounting completion.
+
+The installation migration packages the three reviewed components in one DDL
+transaction. It installs the service-only entry point and does not invoke a
+payout. Production invocation requires qualified source, unchanged live state,
+and the separately recorded self-aborting financial probe.
+
+Qualification source and fixture-only edits previously did not select the
+required accounting job. The CI classifier now includes the first archived
+recovery modules, components, and complete fixture directory. The regression
+failed before the correction; all 638 tests in the maintained routing suite
+passed afterward, including real Git modified/deleted/renamed path checks.
+The added concurrency and admission-lock control files also reproduced missed
+accounting routes; their exact paths now select the same required job, with
+lookalike exclusions. All 47 pinned recovery inputs select accounting checks.
+
+The isolated regression cases use the captured provider owners and actual
+maintenance, admission and manager locks. Sequence observation covers exactly
+the eight captured financial sequences and explicitly identifies exclusions.
+Failed concurrent tests release their owning transaction before draining blocked
+callers, retain the original failure, and independently verify backend cleanup.
+The 145 maintained wrapper controls pass on the prepared delivery source.
+The first archived native case passed actual maintenance/admission/manager
+locks, deferred commit, concurrent identical replay and different-operation
+refusal. Exactly 200 reached the original winner wallet; 24 remains held and
+accounting-incomplete. The isolated snapshot uses 1024 lock slots per transaction
+with eight connections, bounded from its captured relation/index inventory.
+Other images retain their original settings. Final integrated nine-case
+qualification and all production gates remain separate requirements.
+
+At preparation, connected rollback, committed replay, concurrent callers,
+failure atomicity, protected integration, installation and live financial proof
+are tracked separately in the Production Alerts checkpoint. This source file
+does not certify completion of those gates or close the incident.
+
+The exact production rollback probe is now rehearsed inside the existing isolated
+provider before the commit and concurrency cases. It requires the intentional
+PZ002 abort, the original fee refusal, unchanged durable table rows, and actual
+client/backend disposal. Its initial CASE-expression syntax failure was preserved
+and corrected in the maintained SQL. All 43 stages then passed with 294 relations
+compared before and after rollback. Sequence allocations are observed without a
+rollback claim. Production-probe-only test edits now select accounting CI; the
+missed route failed before correction and passed afterward.
+
+Final prechecks required explicit unchanged owner/ACL declarations for the three
+replaced functions. The migration now refuses ACL drift before replacement and
+asserts the same complete ACL afterward. Its isolated 43-stage run passed. One
+unused personal reporter field was omitted from the maintained catalog projection;
+original external evidence and every executable definition remain unchanged.
+Reviewed routing pins were updated with per-binding audit records. The publisher
+contract test retained both 5-second child bounds and gained a 15-second parent
+budget for two child calls plus cleanup after a reproduced full-suite timeout.
+
+Final local candidate c3efab8941952c61013c06ef0b52913817924eed passed all nine
+PostgreSQL cases, independently checked against 214 source inputs per case,
+797 evidence leaves and 386 executed stages. All 1,965 client test files and
+28,974 tests passed. The exact installation was then applied once; provider
+history version 20260927041537 contains the complete statement with SHA256
+2f474595a7d4f88cd70a52ba95d4616fb8f91cc53681146ec09f1738bc51878c.
+Live readback matched all ten function bodies and permissions, the empty
+admission table and its three enabled triggers, and the original event/funding
+evidence. The task-owned schema fragment records those installed objects.
+Installation performed no financial invocation; the production abort probe,
+payment, unresolved fee evidence and incident closure remain separate gates.
+
+# Hosted source custody correction
+
+Hosted run 36294168233 preserved a failed first-archived-spin result: the
+financial, rollback and concurrency stages passed, but the parent Python
+verifier's dynamic imports wrote bytecode into its sealed source packet.
+Child-process environment settings did not govern those in-process imports.
+The wrapper now disables bytecode writes before loading any oracle; the exact
+inventory and byte checks remain unchanged. A plain-Python subprocess regression
+reproduced four added cache files before the correction and passes afterward.
+All 146 wrapper controls pass. The original failed artifact remains retained;
+fresh native and hosted qualification are required before settlement.
+
+# Protected-main integration
+
+Main 6e32e04f2 adds the settlement-attribution qualifier to accounting shard 4
+and its input classifier while this change adds archived Spin qualification.
+The integration preserves both routes and both complete binding audit histories.
+Four shared metadata files now pin the exact combined classifier, workflow and
+nested bindings. No financial fixture, installed migration or oracle changed.
+The prior 8690 hosted nine-image evidence remains retained; the merged candidate
+must pass its own required checks before protected delivery.
+
+The subsequent integration with main eb6e94939 also retains the BBJ scoped-ledger
+qualification in shard 4. Both parents' added audit records are preserved, with
+only current classifier and dependent metadata pins updated. The 214 archived
+Spin inputs are unchanged. Hosted run 36297476620 passed for b501 before this
+new integration; its nine original cases remain separately retained and reviewed.

@@ -103,7 +103,7 @@ out={"ok":False}
 try:
  h=json.loads(r.stdout)
  j=h.get("horseJournal") or {}
- out={"ok":True,"releaseSha":h.get("releaseSha"),"horseJournal":{k:j.get(k) for k in ("mode","pausedReason","pausedSince","failedSince","lastFailureReason","records","maxRowid","pendingSegments","queued")}}
+ out={"ok":True,"releaseSha":h.get("releaseSha"),"horseJournal":{k:j.get(k) for k in ("mode","pausedReason","pausedSince","failedSince","lastFailureReason","records","maxRowid","pendingSegments","queued","publishers")}}
 except Exception:
  pass
 print(json.dumps(out))

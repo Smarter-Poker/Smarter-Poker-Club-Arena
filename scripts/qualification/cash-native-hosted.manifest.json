@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171239,
-      "sha256": "67f42670082fbdef8e18ddd9695c4dc786fbab06590e6797caff12ffb15237a7"
+      "bytes": 171413,
+      "sha256": "5fddece294f2e71c6ef63212b9b07eb22edd541ddab9321a123a892249cd605f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27853,
-      "sha256": "7d64b806a2c52ad8f264055e20d0ee9dd34408d085eb6b36e0af4fc9f95f2d12"
+      "bytes": 28099,
+      "sha256": "435c5a885105eb907a267df7ee8e81a57f7beff0ac2c50ae898095be2f9fff48"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -982,6 +982,58 @@
   },
   "backed_payout_current_main_integration_20260927_1620": {
     "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 25920,
+          "sha256": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8"
+        },
+        "after": {
+          "bytes": 26166,
+          "sha256": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
+        }
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "before": {
+          "bytes": 170130,
+          "sha256": "09c86c4be8d6cac4e833b62af4c6882f0d606c3bfb32655297da6cfb10f5ed91"
+        },
+        "after": {
+          "bytes": 170305,
+          "sha256": "fa23bffe179b315d15ad3fe4223b53637bd4163249b32abcd544e88d213a31aa"
+        }
+      }
+    ]
+  },
+  "stranded_player_current_main_integration_20260927": {
+    "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "stranded_player_current_main_integration_20260927_1610": {
+    "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_current_main_integration_20260927_1732": {
+    "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
     "changed_files": [
       ".github/workflows/ci.yml",
       "scripts/ci/classify-ci-changes.mjs"

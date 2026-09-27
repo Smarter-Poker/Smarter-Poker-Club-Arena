@@ -79,3 +79,14 @@ The maintenance-caller prerequisite was installed once on September 27 at
 owner, ACLs and search path; definition MD5 is
 `05b537b57c9f51a5164e20a1cd0e67e0`. The source filename is aligned to that
 actual record with unchanged 4,410 SQL bytes; it must not be replayed.
+
+The required native lane exposed an unrelated nondeterministic fixture failure
+before reaching Cashier: Lightning remediation section 05 could have no free
+horse. G1 has two horses, and its earlier top-up and departure assignments tied
+on entry time and were ordered by random session UUIDs. Both assignments could
+consume those two identities. The fixture now reserves one existing horse for
+the later candidate/seat-guard case and explicitly uses that same identity.
+No Lightning migration, gameplay code or assertion changes. The original fails
+with the same section-05 message under deterministic horse-first ordering;
+the repaired normal fixture and that same adversarial ordering each pass all
+20 real PostgreSQL sections, including horse and human financial parity.

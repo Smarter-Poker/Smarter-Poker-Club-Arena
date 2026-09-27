@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const CLUB_ID = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 
 test.describe('Visible catalog production reads', () => {
   test.describe.configure({ timeout: 150_000 });
@@ -73,6 +73,7 @@ test.describe('Visible catalog production reads', () => {
       url.searchParams.get('club_id') === `eq.${CLUB_ID}` &&
       url.searchParams.get('is_deleted') === 'eq.false';
     await page.goto(`clubs/${CLUB_ID}/create-table/nlh`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'MTT', exact: true })).toBeVisible();
     const firstRead = read(page, 'table_templates', match);
     await page.getByRole('button', { name: 'MTT', exact: true }).click();
     const first = await firstRead;

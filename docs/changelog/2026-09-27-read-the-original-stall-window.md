@@ -1,0 +1,9 @@
+# Read the original stalled-table interval
+
+The manual scoped log reader observed at15:22 could not include the six selected table stops at14:32–14:35 because it always read the most recent fifteen minutes. It also discarded the actual `ServerTableEngine.<table UUID>.watchdog_kill` header. The existing durable recovery rows independently identify those six kills as `tournament_table_zombie`; they do not identify every original recovery refusal or prove why ownership remains retained.
+
+The existing manual dispatch can now supply `tournament_log_window_start` as an exact UTC second (`YYYY-MM-DDTHH:MM:SSZ`). It selects precisely fifteen completed minutes beginning within the last24hours. The host revalidates that interval. The default last-fifteen-minute behavior remains available. Command, host, account and container are fixed; input remains bounded to20,000lines,8MiB and20seconds. The outer reader verifies the returned interval as well as the unchanged host/public process identity.
+
+The actual watchdog header is normalized to `ServerTableEngine.watchdog_kill` only when its own table UUID is selected. Only explicitly named reasons, selected UUIDs, timestamps and the existing symbolic error families leave the host. Arbitrary messages, players, stacks, SQL arguments and credentials remain excluded. Historical per-record process identity remains unproven even when the currently observed process is stable.
+
+Regression: the old reader fails the historical-window test and loses the real watchdog record. Native tests exercise the real bounded subprocess, historical remote entry, invalid/injected/old/future windows, unselected identities, secret redaction, output caps, configured host pinning, requested-window mismatch and ephemeral-key cleanup. This is a read-only delivery tool, not a table recovery, certificate, restart or financial operation.

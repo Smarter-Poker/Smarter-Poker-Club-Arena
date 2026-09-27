@@ -1388,6 +1388,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
 
+      - name: Achievement and rate history reads enforce account and finance scope
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-scoped-audit-reads.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

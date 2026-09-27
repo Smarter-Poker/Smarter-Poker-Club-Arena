@@ -124,6 +124,19 @@ describe('Create Club production certification contract', () => {
     expect(migration).not.toContain("SET performed_by = '00000000-0000-0000-0000-000000000001'");
   });
 
+  it('sets the guarded maintenance reason before detaching an archived actor', () => {
+    const migration = read(
+      'supabase/migrations/20260927034804_certification_actor_detachment_sets_its_guard_marker.sql'
+    );
+
+    expect(migration).toContain("md5(v_old) <> '3f4d071ce514645f1881c31856a92e72'");
+    expect(migration).toContain("'certification-cleanup:20260927034716:' || p_user_id::text");
+    expect(migration.indexOf("PERFORM set_config(\n+    'app.ledger_maintenance'")).toBeLessThan(
+      migration.indexOf('UPDATE public.chip_ledger')
+    );
+    expect(migration).not.toContain('DELETE FROM public.chip_ledger');
+  });
+
   it('targets the unique keyboard-enabled action-bar control', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
     expect(spec).toContain("getByTitle('Create A Club (C)', { exact: true })");

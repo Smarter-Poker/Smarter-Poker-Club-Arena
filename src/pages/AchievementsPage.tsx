@@ -38,9 +38,9 @@
  * surface. It is cut as a groove in the glass - a black line with a light lip
  * and a solid lit-blue fill - not a rounded bar with a gradient.
  *
- * Every handler, ref, timer and subscription below is untouched: the realtime
- * unlock channel, the 5s auto-hide, the HAND_COMPLETED debounce, the SWR cache,
- * the haptic and the achievement fanfare all behave exactly as before.
+ * The approved art, five-second unlock display, local hand debounce, owner
+ * cache, haptic and fanfare remain. Read delivery below is scoped to the
+ * signed-in account and the published owner notification feed.
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -58,9 +58,8 @@ import { achievementService } from '../services/AchievementService';
 import { haptic } from '../services/HapticService';
 import { soundService } from '../services/SoundService';
 import './AchievementsPage.css';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { useIsMounted } from '../hooks/useIsMounted';
-import { retryFetch } from '../utils/retryFetch';
+import { useVisibleRead } from '../hooks/useVisibleRead';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import { reportError } from '../utils/errorReporter';
@@ -84,27 +83,33 @@ const RARITY_INK: Record<string, ConsoleInk> = {
 };
 
 /** Animated count-up hook */
-function useAnimatedCount(target: number, duration = 600) {
-  const [count, setCount] = useState(0);
-  const prevRef = useRef(0);
+function useAnimatedCount(target: number, owner: string, duration = 600) {
+  const [value, setValue] = useState({ owner, count: 0 });
+  const prevRef = useRef({ owner, count: 0 });
   useEffect(() => {
-    const start = prevRef.current;
+    const start = prevRef.current.owner === owner ? prevRef.current.count : 0;
     const diff = target - start;
-    if (diff === 0) return;
+    if (diff === 0) {
+      setValue({ owner, count: target });
+      prevRef.current = { owner, count: target };
+      return;
+    }
     const startTime = Date.now();
+    let frame: number;
     const tick = () => {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(1, elapsed / duration);
       // ease-out quad
       const ease = 1 - (1 - progress) * (1 - progress);
       const current = Math.round(start + diff * ease);
-      setCount(current);
-      if (progress < 1) requestAnimationFrame(tick);
-      else prevRef.current = target;
+      setValue({ owner, count: current });
+      if (progress < 1) frame = requestAnimationFrame(tick);
+      else prevRef.current = { owner, count: target };
     };
-    requestAnimationFrame(tick);
-  }, [target, duration]);
-  return count;
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, owner, duration]);
+  return value.owner === owner ? value.count : 0;
 }
 
 // ── SWR Cache ──
@@ -369,129 +374,63 @@ export default function AchievementsPage() {
   useEffect(() => {
     document.title = 'Achievements | Smarter Poker';
   }, []);
-  useVisibilityRefresh(() => loadAchievements());
   const { user } = useAuthUser();
   const toast = useToast();
   const [category, setCategory] = useState<AchievementCategory>('all');
-  const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [storedAchievements, setAchievements] = useState<Achievement[]>([]);
+  const [isLoading, setLoading] = useState(true);
+  const [storedError, setLoadError] = useState<string | null>(null);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const userId = user?.id || '';
+  const scopeRef = useRef(userId);
+  scopeRef.current = userId;
+  const achievements = useMemo(
+    () => (loadedScope === userId ? storedAchievements : []),
+    [loadedScope, userId, storedAchievements]
+  );
+  const loading = loadedScope !== userId || isLoading;
+  const loadError = loadedScope === userId ? storedError : null;
+  const [storedStreak, setDailyStreak] = useState<number | null>(null);
+  const dailyStreak = loadedScope === userId ? storedStreak : null;
 
-  const [newUnlock, setNewUnlock] = useState<Achievement | null>(null);
+  const [storedUnlock, setNewUnlock] = useState<Achievement | null>(null);
+  const newUnlock = loadedScope === userId ? storedUnlock : null;
   const [visibleBadges, setVisibleBadges] = useState(new Set<number>());
-  const [sharingAchievement, setSharingAchievement] = useState<Achievement | null>(null);
-  const [selectedAchievement, setSelectedAchievement] = useState<Achievement | null>(null);
+  const [storedSharing, setSharingAchievement] = useState<Achievement | null>(null);
+  const sharingAchievement = loadedScope === userId ? storedSharing : null;
+  const [storedSelection, setSelectedAchievement] = useState<Achievement | null>(null);
+  const selectedAchievement = loadedScope === userId ? storedSelection : null;
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadAchievementsRef = useRef<(() => Promise<void>) | null>(null);
-  const isMounted = useIsMounted();
+  const pendingUnlocks = useRef(new Set<string>());
+  const celebratedUnlocks = useRef(new Set<string>());
 
-  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
-  useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 5000);
-    return () => clearTimeout(timeout);
-  }, []);
-
-  useEffect(() => {
-    if (user?.id) {
-      loadAchievements();
-
-      // Fetch real daily login streak from profiles
-      Promise.resolve(
-        supabase.from('profiles').select('login_streak').eq('id', user.id).maybeSingle()
+  // Progress before an unlock produces no notification. Observe it only while
+  // this page is visible; the low-write owner feed invalidates unlocks at once.
+  const loadAchievements = useVisibleRead({
+    scopeKey: userId,
+    enabled: Boolean(userId),
+    intervalMs: 60_000,
+    read: async (signal) => {
+      const [userAchievements, streakResult] = await Promise.all([
+        achievementService.getUserAchievements(userId, { signal }),
+        supabase
+          .from('profiles')
+          .select('login_streak')
+          .eq('id', userId)
+          .abortSignal(signal)
+          .maybeSingle(),
+      ]);
+      if (streakResult.error) throw streakResult.error;
+      const streakValue = streakResult.data?.login_streak;
+      const streak = streakValue === null || streakValue === undefined ? null : Number(streakValue);
+      if (
+        streak !== null &&
+        (!['number', 'string'].includes(typeof streakValue) ||
+          (typeof streakValue === 'string' && !streakValue.trim()) ||
+          !Number.isFinite(streak) ||
+          streak < 0)
       )
-        .then(({ data }) => {
-          if (isMounted.current && data) {
-            setDailyStreak(data.login_streak || 0);
-          }
-        })
-        .catch((err: unknown) => {
-          console.warn('[AchievementsPage] login_streak fetch failed:', err);
-        });
-
-      // Subscribe to real-time achievement unlocks
-      const channelKey = `user-achievements-${user.id}`;
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'training_user_achievements',
-            filter: `user_id=eq.${user.id}`,
-          },
-          async (payload) => {
-            if (!isMounted.current) return;
-            const newRow = payload.new as any;
-            if (!newRow || !newRow.achievement_id) return;
-
-            // Always reload the list so progress bars visually increment immediately
-            if (loadAchievementsRef.current) {
-              await loadAchievementsRef.current();
-            }
-
-            // Celebration Logic: Only trigger if the row has an unlocked_at date
-            if (!newRow.unlocked_at) return;
-
-            // If we have old row data, ensure we don't celebrate twice for the same achievement
-            const oldRow = payload.old as any;
-            if (payload.eventType === 'UPDATE' && oldRow && oldRow.unlocked_at) return;
-
-            // New achievement unlocked!
-            const achievementId = newRow.achievement_id;
-            const achievement = ACHIEVEMENTS.find((a) => a.id === achievementId);
-            if (achievement) {
-              setNewUnlock({
-                ...achievement,
-                progress: 100,
-                unlocked: true,
-                unlockedAt: newRow.unlocked_at,
-              });
-
-              // Auto-hide after 5 seconds (clear previous timer)
-              if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
-              unlockTimerRef.current = setTimeout(() => setNewUnlock(null), 5000);
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'AchievementsPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[AchievementsPage] Realtime channel timed out');
-          }
-        });
-
-      return () => {
-        masterBus.removeRegisteredChannel(channelKey);
-        if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
-      };
-    }
-  }, [user?.id]);
-
-  const loadingRef = useRef(false);
-
-  const loadAchievements = async () => {
-    if (!user?.id) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoadError(null);
-    // SWR: show cached instantly
-    const cached = getCachedAch(user.id);
-    if (cached && cached.length > 0) {
-      setAchievements(cached);
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-    try {
-      // Get user's achievements from AchievementService with retry
-      const userAchievements = await retryFetch(
-        () => achievementService.getUserAchievements(user?.id || ''),
-        { maxRetries: 2 }
-      );
+        throw new Error('Login streak was not valid');
       const allAchievements = achievementService.getAll();
 
       // Create a map of user progress
@@ -514,41 +453,90 @@ export default function AchievementsPage() {
         return {
           ...a,
           progress: pct,
-          unlocked: rawProgress >= requirement,
+          unlocked: Boolean(userProgress?.unlockedAt) || rawProgress >= requirement,
           unlockedAt: userProgress?.unlockedAt,
         };
       });
 
-      if (isMounted.current) {
-        setAchievements(merged);
-        setCachedAch(user?.id || '', merged);
+      return { merged, streak };
+    },
+    onData: ({ merged, streak }) => {
+      setAchievements(merged);
+      setCachedAch(userId, merged);
+      setDailyStreak(streak);
+      setLoadError(null);
+      setLoading(false);
+      setLoadedScope(userId);
+      // Notification rows are invalidations, not authority to award or unlock.
+      // Duplicate server/client notifications celebrate this stored unlock once.
+      for (const id of pendingUnlocks.current) {
+        const achievement = merged.find(
+          (item) => item.id === id && item.unlocked && item.unlockedAt
+        );
+        if (!achievement) continue;
+        pendingUnlocks.current.delete(id);
+        if (celebratedUnlocks.current.has(id)) continue;
+        celebratedUnlocks.current.add(id);
+        setNewUnlock(achievement);
+        if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+        unlockTimerRef.current = setTimeout(() => setNewUnlock(null), 5000);
       }
-    } catch (error) {
+    },
+    onError: (error) => {
       reportError(error, 'AchievementsPage.Failed_to_load_achievements');
-      if (isMounted.current) setLoadError('Achievement progress could not be loaded.');
-      if (isMounted.current) toast?.error('Failed to load achievements');
-    } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
-    }
-  };
-
-  // Store loadAchievements in ref for use in realtime callbacks
-  useEffect(() => {
-    loadAchievementsRef.current = loadAchievements;
+      setLoadError('Achievement progress could not be loaded.');
+      setLoading(false);
+      setLoadedScope(userId);
+      toast?.error('Failed to load achievements');
+    },
+    onReset: () => {
+      const cached = userId ? getCachedAch(userId) : null;
+      setAchievements(Array.isArray(cached) ? cached : []);
+      setLoading(Boolean(userId) && !(Array.isArray(cached) && cached.length));
+      setLoadError(null);
+      setLoadedScope(userId);
+      setDailyStreak(null);
+      setNewUnlock(null);
+      setSharingAchievement(null);
+      setSelectedAchievement(null);
+      pendingUnlocks.current.clear();
+      celebratedUnlocks.current.clear();
+      if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    },
   });
 
-  // ── Bus Listener: refresh achievements when engine completes a hand ──
-  useEffect(() => {
-    const unsub = masterBus.subscribeDebounced(
-      'HAND_COMPLETED',
-      () => {
-        if (loadAchievementsRef.current) loadAchievementsRef.current();
-      },
-      3000
-    );
-    return unsub;
-  }, []);
+  useMasterBusChannel({
+    channelName: userId ? `achievement-notifications-${userId}` : null,
+    table: 'notifications',
+    filter: userId ? `user_id=eq.${userId}` : null,
+    event: 'INSERT',
+    enabled: Boolean(userId),
+    onPayload: (payload) => {
+      if (scopeRef.current !== userId) return;
+      const row = payload?.new;
+      if (row?.user_id !== userId || row?.type !== 'achievement') return;
+      const id = row.data?.achievement_id ?? row.metadata?.achievement_id;
+      if (typeof id !== 'string' || !ACHIEVEMENTS.some((item) => item.id === id)) return;
+      if (celebratedUnlocks.current.has(id)) return;
+      pendingUnlocks.current.add(id);
+      loadAchievements();
+    },
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED' && scopeRef.current === userId) loadAchievements();
+    },
+  });
+
+  useEffect(
+    () => () => {
+      if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    },
+    []
+  );
+
+  useEffect(
+    () => masterBus.subscribeDebounced('HAND_COMPLETED', loadAchievements, 3000),
+    [loadAchievements]
+  );
 
   const [sortMode, setSortMode] = useState<SortMode>('default');
 
@@ -576,8 +564,8 @@ export default function AchievementsPage() {
   }, [achievements, category, sortMode]);
 
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
-  const animatedUnlocked = useAnimatedCount(unlockedCount);
-  const animatedTotal = useAnimatedCount(achievements.length);
+  const animatedUnlocked = useAnimatedCount(unlockedCount, userId);
+  const animatedTotal = useAnimatedCount(achievements.length, userId);
 
   // Category counts for filter chips
   const getCatCount = useCallback(
@@ -603,8 +591,6 @@ export default function AchievementsPage() {
       /* no audio support */
     }
   }, [newUnlock]);
-
-  const [dailyStreak, setDailyStreak] = useState(0);
 
   const heatmapData = useMemo(() => {
     const days: Record<string, number> = {};
@@ -634,9 +620,9 @@ export default function AchievementsPage() {
   }, [filteredAchievements.length]);
 
   const milestones = [
-    { day: 7, reward: '1K Chips', unlocked: dailyStreak >= 7 },
-    { day: 30, reward: '100 Diamonds', unlocked: dailyStreak >= 30 },
-    { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak >= 100 },
+    { day: 7, reward: '1K Chips', unlocked: dailyStreak !== null && dailyStreak >= 7 },
+    { day: 30, reward: '100 Diamonds', unlocked: dailyStreak !== null && dailyStreak >= 30 },
+    { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak !== null && dailyStreak >= 100 },
   ];
 
   const hasBadges = !loading && !loadError && filteredAchievements.length > 0;
@@ -652,7 +638,11 @@ export default function AchievementsPage() {
         metrics={[
           { label: 'Unlocked', value: animatedUnlocked, tone: 'live' },
           { label: 'Total', value: animatedTotal },
-          { label: 'Login Streak', value: `${dailyStreak} days`, tone: 'attention' },
+          {
+            label: 'Login Streak',
+            value: dailyStreak === null ? 'Unavailable' : `${dailyStreak} days`,
+            tone: 'attention',
+          },
         ]}
       />
 
@@ -661,14 +651,14 @@ export default function AchievementsPage() {
         className="ach-console"
         eyebrow="Rewards Circuit"
         title="Daily Login Streak"
-        pill={`${dailyStreak} Days`}
-        pillInk={dailyStreak > 0 ? 'gold' : 'muted'}
+        pill={dailyStreak === null ? 'Unavailable' : `${dailyStreak} Days`}
+        pillInk={dailyStreak !== null && dailyStreak > 0 ? 'gold' : 'muted'}
         foot="foot"
       >
         <p className="sc-copy">Log In Every Day To Claim Milestone Rewards!</p>
 
         <div className="ach-streak">
-          <StreakFire streakCount={dailyStreak} size="lg" showLabel />
+          <StreakFire streakCount={dailyStreak ?? 0} size="lg" showLabel />
         </div>
 
         <div className="ach-rows">

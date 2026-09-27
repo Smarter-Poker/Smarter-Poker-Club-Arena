@@ -34,6 +34,11 @@ const accounting =
 const spinExpiry =
   /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention|spin-mixed-basis-(?:receipt-lane|current-receipt-lane|current-terminal))(?:\.rollback)?\.sql$|supabase\/components\/spin-mixed-basis-evidence\.sql$|scripts\/qualification\/(?:spin-mixed-basis-(?:shape\.sql|evidence\.preimage\.sql|pure\.(?:sql|hosted\.manifest\.json))$|spin-finalized-horse-admission\.(?:py|manifest\.json)$|spin-horse-admission-race\.py$|spin-horse-platform-paid-entry\.sql$|spin-paid-terminal\.(?:py|md|hosted\.manifest\.json)$|spin-positive-fee-entry(?:-oracle)?\.py$|spin-positive-fee-entry\.(?:md|hosted\.manifest\.json)$|spin-mixed-positive-fee-entry\.sql$|spin-mixed-current(?:-(?:races|assertions))?\.py$|spin-mixed-current\.(?:md|hosted\.manifest\.json)$|spin-receipt-lane(?:-compactor)?\.(?:sql|py|md|hosted\.manifest\.json)$|spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/(?:finalized-horse-admission|archived-spin-core-provider|spin-history-retention|spin-receipt-lane|spin-mixed-current|spin-mixed-positive-fee|spin-paid-terminal)\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
 
+// The first archived recovery uses the same required PostgreSQL job. Include
+// input-only edits and removals, rather than relying on a simultaneous driver edit.
+const firstArchivedSpin =
+  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks|production_probe)\.py$|fixtures\/archived-spin\/))/;
+
 // Production Alert SQL inputs select the existing accounting checks.
 const productionAlertsSql =
   /^(scripts\/ci\/(?:test-(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\.py$|probes\/(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\/)|tests\/tournament-rake-attribution-retries-inside-its-own-transaction\.law\.test\.ts$)/;
@@ -234,6 +239,7 @@ export function classifyChangedPaths(paths) {
         /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
       ) ||
       matches(spinExpiry) ||
+      matches(firstArchivedSpin) ||
       matches(productionAlertsSql) ||
       matches(productionAlertCore) ||
       matches(alertEvidence) ||
@@ -270,6 +276,7 @@ export function classifyChangedPaths(paths) {
       horsePriority ||
       matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/) ||
       matches(spinExpiry) ||
+      matches(firstArchivedSpin) ||
       matches(productionAlertsSql) ||
       matches(productionAlertCore) ||
       matches(alertEvidence) ||

@@ -17,8 +17,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 25513,
-      "sha256": "f23a52c4d84bc6c32f9b0b388b884ffe979eb8dc021038ff4c2a4a91d7e7cc96"
+      "bytes": 26027,
+      "sha256": "3efe51c9d31d59b8b925b0f63282c23fbe4acb63afccfc22797963b3d9cb9fe5"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 93278,
-      "sha256": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b"
+      "bytes": 94734,
+      "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
     }
   },
   "nativePgCron": {
@@ -583,6 +583,92 @@
     "changed_files": [
       ".github/workflows/ci.yml",
       "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "firstArchivedSpinRouting": {
+    "reason": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only.",
+    "files": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 24407,
+          "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
+        },
+        "after": {
+          "bytes": 24921,
+          "sha256": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 93278,
+          "sha256": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b"
+        },
+        "after": {
+          "bytes": 94734,
+          "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+        }
+      }
+    }
+  },
+  "productionAlertsIntegration20260927": {
+    "integration": "2026-09-27 Production Alerts with protected main 8b0c54fdc",
+    "why": "Preserve both parents complete historical audit records, scoped audit routing and archived Spin routing; repin actual integrated workflow/classifier and nested metadata only. No captured financial input or assertion changed.",
+    "files": [
+      {
+        "binding": "scripts/qualification/cash-native-hosted.manifest.json",
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 24921,
+          "sha256": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4"
+        },
+        "after": {
+          "bytes": 25145,
+          "sha256": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+        }
+      }
+    ]
+  },
+  "productionAlertsSettlementIntegration20260927": {
+    "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 25145,
+          "sha256": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+        },
+        "current": {
+          "bytes": 25407,
+          "sha256": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
+        }
+      }
+    ]
+  },
+  "productionAlertsBbjIntegration20260927": {
+    "reason": "Preserve protected main eb6e94939 BBJ scoped-ledger qualification and Production Alerts archived Spin routing, retaining both parents complete audit histories. Rebind exact integrated classifier/workflow and nested metadata only; no qualified Spin input or assertion changes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 25407,
+          "sha256": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
+        },
+        "current": {
+          "bytes": 25600,
+          "sha256": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+        }
+      }
+    ]
+  },
+  "certification_player_13eb_integration_20260927": {
+    "integration": "2026-09-27 Certification player lookup integration with protected13ebc7240c",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/unit/fixtureNativeCi.test.ts"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   }

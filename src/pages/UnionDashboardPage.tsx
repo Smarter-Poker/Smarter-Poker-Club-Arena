@@ -21,7 +21,7 @@ import { formatWeeklyChips } from '../services/ClubWeeklyAccountingReader';
 import './AdminDashboardPage.css';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useVisibleRead } from '../hooks/useVisibleRead';
 import { fmt, timeAgo } from '../utils/format';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import UnionTreasuryDetailModal, {
@@ -334,12 +334,15 @@ export default function UnionDashboardPage() {
   >([]);
 
   // Applications
-  const [apps, setApps] = useState<UnionApp[]>([]);
+  const [loadedApps, setApps] = useState<UnionApp[]>([]);
+  const [appsOwner, setAppsOwner] = useState<string | null>(null);
+  const [appsError, setAppsError] = useState<string | null>(null);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
   const [appsFilter, setAppsFilter] = useState('pending');
   const [appsLoaded, setAppsLoaded] = useState(false);
 
   // Leave requests (IMPROVE 2026-07-21)
-  const [leaveReqs, setLeaveReqs] = useState<
+  const [loadedLeaveReqs, setLeaveReqs] = useState<
     Array<{ id: string; club_name?: string; reason?: string | null; requested_at: string }>
   >([]);
 
@@ -377,6 +380,12 @@ export default function UnionDashboardPage() {
 
   const mountedRef = useIsMounted();
 
+  const dashboardKey = JSON.stringify([user?.id, unionRef, routeUnionId]);
+  const dashboardKeyRef = useRef(dashboardKey);
+  dashboardKeyRef.current = dashboardKey;
+  const dashboardDataKey = useRef<string | null>(null);
+  const [dashboardReadError, setDashboardReadError] = useState<string | null>(null);
+
   // Auto-clear success
   useEffect(() => {
     if (!success) return;
@@ -394,17 +403,6 @@ export default function UnionDashboardPage() {
     return () => clearTimeout(t);
   }, [error, union]);
 
-  // ── Cache Invalidation on Union Change ─────────────────────
-  useEffect(() => {
-    setAppsLoaded(false);
-    setApps([]);
-  }, [unionId]);
-
-  // ── Invalidate Apps Cache on Filter Change ─────────────────
-  useEffect(() => {
-    setAppsLoaded(false);
-  }, [appsFilter]);
-
   // Route changes are allowed to supersede an in-flight union load. A boolean
   // lock dropped the new request entirely, then let the old union paint under
   // the new URL. A monotonically increasing request version makes every state
@@ -415,6 +413,8 @@ export default function UnionDashboardPage() {
   // workspaces in the same session must never keep the first union's cached ID.
   useEffect(() => {
     ++dashLoadVersion.current;
+    dashboardDataKey.current = null;
+    setDashboardReadError(null);
     setUnionId(routeUnionId || null);
     setAuthorizedScope(null);
     setUnion(null);
@@ -439,16 +439,16 @@ export default function UnionDashboardPage() {
   }, [routeUnionId, unionRef, user?.id]);
 
   // ── Load Dashboard ─────────────────────────────────────────
-  const loadDashboard = useCallback(
-    async (uid?: string | null) => {
+  const readDashboard = useCallback(
+    async (signal: AbortSignal) => {
       const requestVersion = ++dashLoadVersion.current;
-      const isCurrent = () => mountedRef.current && dashLoadVersion.current === requestVersion;
+      const isCurrent = () =>
+        mountedRef.current &&
+        !signal.aborted &&
+        dashboardKeyRef.current === dashboardKey &&
+        dashLoadVersion.current === requestVersion;
       try {
-        if (isCurrent()) {
-          setLoading(true);
-          setError(null);
-        }
-        const id = uid;
+        const id = routeUnionId;
 
         if (!id || !user?.id) return;
 
@@ -456,19 +456,29 @@ export default function UnionDashboardPage() {
         // The old routed branch skipped this entirely: owners lost their lead
         // controls and any signed-in user could read a union's operations page.
         const [unionResult, operatorResult] = await Promise.all([
-          supabase.from('unions').select(UNION_DASHBOARD_ROW_SELECT).eq('id', id).maybeSingle(),
+          supabase
+            .from('unions')
+            .select(UNION_DASHBOARD_ROW_SELECT)
+            .eq('id', id)
+            .abortSignal(signal)
+            .maybeSingle(),
           // This SECURITY DEFINER predicate is the canonical owner/admin check.
           // Reading union_admins directly is not equivalent: its RLS policy is
           // scoped to club members, while an appointed union admin does not
           // have to hold a club membership row.
-          supabase.rpc('fn_is_union_operator', {
-            p_union_id: id,
-            p_user_id: user.id,
-          }),
+          supabase
+            .rpc('fn_is_union_operator', {
+              p_union_id: id,
+              p_user_id: user.id,
+            })
+            .abortSignal(signal),
         ]);
+        if (!isCurrent()) return;
         if (unionResult.error) throw unionResult.error;
         if (operatorResult.error) throw operatorResult.error;
         if (!unionResult.data) throw new Error('Union Not Found');
+        if (unionResult.data.id !== id || typeof operatorResult.data !== 'boolean')
+          throw new Error('Union Authority Is Unavailable');
 
         const authorizedRole = unionResult.data.owner_id === user.id ? 'union_lead' : 'union_admin';
         if (operatorResult.data !== true) {
@@ -485,28 +495,42 @@ export default function UnionDashboardPage() {
           setAdminRole(authorizedRole);
           setAuthorizedScope({ userId: user.id, unionId: id });
         }
-        await loadUnionData(id, requestVersion, unionResult.data as UnionRow, authorizedRole);
-      } catch (err: any) {
+        await loadUnionData(
+          id,
+          requestVersion,
+          unionResult.data as UnionRow,
+          authorizedRole,
+          signal,
+          dashboardKey
+        );
         if (isCurrent()) {
-          setAuthorizedScope(null);
-          setUnion(null);
-          setAdminRole(null);
-          setError(safeErrorMessage(err));
+          dashboardDataKey.current = dashboardKey;
+          setError(null);
+          setDashboardReadError(null);
         }
+      } catch (err: any) {
+        if (isCurrent()) throw err;
       } finally {
         if (isCurrent()) setLoading(false);
       }
     },
-    [user?.id]
+    [user?.id, routeUnionId, dashboardKey]
   );
 
   const loadUnionData = async (
     uid: string,
     requestVersion: number,
     authorizedUnionRow: UnionRow,
-    authorizedRole: 'union_lead' | 'union_admin'
+    authorizedRole: 'union_lead' | 'union_admin',
+    signal: AbortSignal,
+    requestKey: string
   ) => {
-    const isCurrent = () => mountedRef.current && dashLoadVersion.current === requestVersion;
+    const isCurrent = () =>
+      mountedRef.current &&
+      !signal.aborted &&
+      dashboardKeyRef.current === requestKey &&
+      dashLoadVersion.current === requestVersion;
+    signal.throwIfAborted();
     // The authority read supplied this same row. Reusing it avoids a duplicate
     // network round trip and guarantees no protected state paints first.
     const unionRow = authorizedUnionRow;
@@ -519,16 +543,20 @@ export default function UnionDashboardPage() {
     const { data: unionClubs, error: unionClubsError } = await supabase
       .from('union_clubs')
       .select('*, clubs:club_id(*)')
-      .eq('union_id', uid);
+      .eq('union_id', uid)
+      .abortSignal(signal);
     if (unionClubsError) throw unionClubsError;
+    if (!Array.isArray(unionClubs)) throw new Error('Union Clubs Are Unavailable');
     const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
       // UNION AUDIT FIX 2026-07-21: live column is club_commission_rate
       // (commission_rate never existed on union_clubs — reads were undefined).
-      club_commission_rate: uc.club_commission_rate || 0.9,
+      club_commission_rate: uc.club_commission_rate ?? 0.9,
     }));
     if (isCurrent()) setClubs(enrichedClubs);
+
+    if (!isCurrent()) return;
 
     // Load agents across clubs
     let loadedAgents: UnionAgent[] = [];
@@ -538,19 +566,26 @@ export default function UnionDashboardPage() {
          (is_bot mirrors profiles.is_horse and must not reach a player), and
          PostgREST expands `*` to every column, withheld ones included - which
          fails the whole read with 42501. This page uses exactly these. */
-      const { data: agentRows } = await supabase
+      const { data: agentRows, error: agentError } = await supabase
         .from('club_members')
         .select('user_id, club_id, role, status, commission_rate')
         .in('club_id', clubIds)
-        .in('role', ['agent', 'sub_agent', 'super_agent']);
+        .in('role', ['agent', 'sub_agent', 'super_agent'])
+        .abortSignal(signal);
+
+      if (agentError) throw agentError;
+      if (!Array.isArray(agentRows)) throw new Error('Union Agents Are Unavailable');
 
       // Batch-fetch profiles (no FK between club_members and profiles)
       if (agentRows && agentRows.length > 0) {
         const agentUserIds = [...new Set(agentRows.map((a: any) => a.user_id))];
-        const { data: agentProfiles } = await supabase
+        const { data: agentProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
-          .in('id', agentUserIds);
+          .in('id', agentUserIds)
+          .abortSignal(signal);
+        if (profilesError) throw profilesError;
+        if (!Array.isArray(agentProfiles)) throw new Error('Union Profiles Are Unavailable');
         const agentProfileMap: Record<string, any> = {};
         if (agentProfiles) {
           for (const p of agentProfiles) agentProfileMap[p.id] = p;
@@ -563,14 +598,41 @@ export default function UnionDashboardPage() {
 
       loadedAgents = agentRows || [];
       if (isCurrent()) setAgents(loadedAgents);
-    }
+    } else if (isCurrent()) setAgents([]);
 
-    // Load admins
-    const { data: adminRows } = await supabase
-      .from('union_admins')
-      .select(`*, profile:user_id(${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url)`)
-      .eq('union_id', uid);
-    if (isCurrent()) setAdmins(adminRows || []);
+    if (!isCurrent()) return;
+
+    // The raw table exposes only self. The directory binds its caller server-side.
+    const { data: adminRows, error: adminError } = await supabase
+      .rpc('fn_union_admin_directory', { p_union_id: uid })
+      .abortSignal(signal);
+    if (adminError) throw adminError;
+    if (
+      !Array.isArray(adminRows) ||
+      adminRows.some(
+        (row) =>
+          !row ||
+          row.union_id !== uid ||
+          typeof row.user_id !== 'string' ||
+          !['union_lead', 'union_admin'].includes(row.role) ||
+          typeof row.created_at !== 'string' ||
+          typeof row.display_name !== 'string'
+      )
+    )
+      throw new Error('Union Administrators Are Unavailable');
+    if (isCurrent())
+      setAdmins(
+        adminRows.map((row) => ({
+          ...row,
+          profile: {
+            display_name: row.display_name,
+            username: row.username,
+            avatar_url: row.avatar_url,
+          },
+        }))
+      );
+
+    if (!isCurrent()) return;
 
     // Load wallets
     const { data: walletRow, error: walletError } = await supabase
@@ -584,21 +646,41 @@ export default function UnionDashboardPage() {
         'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements, created_at'
       )
       .eq('union_id', uid)
+      .abortSignal(signal)
       .maybeSingle();
     if (walletError) throw walletError;
+    if (
+      !walletRow ||
+      walletRow.union_id !== uid ||
+      (
+        [
+          'chip_balance',
+          'rake_wallet',
+          'bbj_wallet',
+          'promo_wallet',
+          'insurance_wallet',
+          'spin_reserve_wallet',
+          'total_rake_collected',
+          'total_settlements',
+        ] as const
+      ).some((key) => typeof walletRow[key] !== 'number' || !Number.isFinite(walletRow[key]))
+    )
+      throw new Error('Union Wallets Are Unavailable');
     if (isCurrent()) setWallets(walletRow);
 
     // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
     // bbj_pools row (engine-fed contributions + manual funding + payouts) —
     // NOT in union_wallets.bbj_wallet. Load it for the BBJ tiles.
-    const { data: poolRow } = await supabase
+    const { data: poolRow, error: poolError } = await supabase
       .from('bbj_pools')
       .select(
         'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount, mini_enabled, mini_reserve_floor'
       )
       .eq('union_id', uid)
       .eq('status', 'active')
+      .abortSignal(signal)
       .maybeSingle();
+    if (poolError) throw poolError;
     if (isCurrent()) setBbjPool(poolRow);
 
     // 2026-08-19: the comment here claimed "settlement_periods is a global
@@ -617,7 +699,9 @@ export default function UnionDashboardPage() {
     periodQuery = unionClubIds.length
       ? periodQuery.in('club_id', unionClubIds)
       : periodQuery.eq('union_id', uid);
-    const { data: periods } = await periodQuery;
+    const { data: periods, error: periodsError } = await periodQuery.abortSignal(signal);
+    if (periodsError) throw periodsError;
+    if (!Array.isArray(periods)) throw new Error('Union Settlement Periods Are Unavailable');
     if (isCurrent()) setRecentPeriods(periods || []);
 
     // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
@@ -625,28 +709,47 @@ export default function UnionDashboardPage() {
     // app: a union admin could not see what was collected, what was paid, or
     // why a period was parked for review. A money process nobody can inspect
     // is a money process nobody trusts.
-    const { data: pnlRows } = await supabase
+    const { data: pnlRows, error: pnlError } = await supabase
       .from('union_pnl_settlements')
       .select(
         'id, period_start, period_end, status, total_collected, total_paid, total_unpaid, club_results, settled_at'
       )
       .eq('union_id', uid)
       .order('period_start', { ascending: false })
+      .abortSignal(signal)
       .limit(12);
+    if (pnlError) throw pnlError;
+    if (!Array.isArray(pnlRows)) throw new Error('Union Settlements Are Unavailable');
     if (isCurrent()) setPnlSettlements(pnlRows || []);
   };
 
-  // ── Initial Load ───────────────────────────────────────────
-  useEffect(() => {
-    if (!user?.id) return;
-    // A slug has a route identity before it has a database UUID. Never fall
-    // back to discovering an arbitrary union while that route is resolving.
-    if (unionRef && !routeUnionId) {
-      setLoading(true);
-      return;
-    }
-    void loadDashboard(routeUnionId);
-  }, [user?.id, loadDashboard, routeUnionId, unionRef]);
+  // This view's old five WAL listeners cannot deliver unpublished tables.
+  // A visible operations view observes its authoritative scoped reads only.
+  const refreshDashboard = useVisibleRead({
+    scopeKey: dashboardKey,
+    enabled: !!user?.id && !!routeUnionId,
+    intervalMs: 60_000,
+    read: readDashboard,
+    onData: () => {},
+    onError: (err) => {
+      reportError(err, 'UnionDashboardPage.Refresh');
+      if (dashboardDataKey.current === dashboardKey) {
+        setDashboardReadError('Union Data Could Not Be Refreshed. Last Known Values Are Shown.');
+      } else {
+        setAuthorizedScope(null);
+        setUnion(null);
+        setAdminRole(null);
+        setError(safeErrorMessage(err));
+      }
+      setLoading(false);
+    },
+  });
+  const loadDashboard = useCallback(
+    (uid?: string | null) => {
+      if (uid === routeUnionId) refreshDashboard();
+    },
+    [routeUnionId, refreshDashboard]
+  );
 
   const authorizedUnionId =
     user?.id &&
@@ -657,56 +760,106 @@ export default function UnionDashboardPage() {
       ? unionId
       : null;
 
-  // ── Load Applications ──────────────────────────────────────
-  const loadApps = useCallback(async () => {
-    if (!authorizedUnionId) return;
-    try {
-      // UNION AUDIT FIX 2026-07-21: the direct select used columns that do not
-      // exist (applicant_id/notes/created_at vs live applicant_user_id/message/
-      // applied_at) AND union_applications RLS only lets the APPLICANT read —
-      // union leads always saw an empty tab. The union-application API lists
-      // with the service role after a union-lead auth check.
-      const result = await unionApi.listApplications(authorizedUnionId, appsFilter);
-      const rows = ((result.applications as any[]) || []).map((a) => ({
-        id: a.id,
-        union_id: a.union_id,
-        club_name: a.club_name,
-        club_id: a.club_id,
-        applicant_id: a.applicant_user_id,
-        status: a.status,
-        notes: a.message ?? a.review_note ?? null,
-        created_at: a.applied_at,
-      }));
-      if (mountedRef.current) {
-        setApps(rows);
-        setAppsLoaded(true);
-      }
-    } catch (_e) {
-      /* silent */
-    }
-  }, [authorizedUnionId, appsFilter]);
+  const applicationsKey = JSON.stringify([dashboardKey, authorizedUnionId, appsFilter]);
+  const applicationsKeyRef = useRef(applicationsKey);
+  applicationsKeyRef.current = applicationsKey;
+  const apps = appsOwner === applicationsKey ? loadedApps : [];
+  const [leaveOwner, setLeaveOwner] = useState<string | null>(null);
+  const leaveKey = JSON.stringify([dashboardKey, authorizedUnionId]);
+  const leaveKeyRef = useRef(leaveKey);
+  leaveKeyRef.current = leaveKey;
+  const leaveReqs = leaveOwner === leaveKey ? loadedLeaveReqs : [];
 
-  // ── Load leave requests (IMPROVE 2026-07-21) ───────────────
-  const loadLeaveReqs = useCallback(async () => {
-    if (!authorizedUnionId) return;
-    try {
-      const result = await unionApi.listLeaveRequests(authorizedUnionId);
-      if (mountedRef.current) {
-        setLeaveReqs((result.leaveRequests as any[]) || []);
+  // Refresh the actual application list, including while another device acts.
+  // Scope includes account, union AND filter; a late result cannot repaint it.
+  const loadApps = useVisibleRead({
+    scopeKey: applicationsKey,
+    enabled: tab === 'applications' && !!authorizedUnionId,
+    intervalMs: 60_000,
+    read: async (signal) => {
+      const result = await unionApi.listApplications(authorizedUnionId!, appsFilter, signal);
+      if (
+        !Array.isArray(result.applications) ||
+        result.applications.some(
+          (a) =>
+            !a ||
+            a.union_id !== authorizedUnionId ||
+            typeof a.id !== 'string' ||
+            typeof a.status !== 'string' ||
+            (appsFilter !== 'all' && a.status !== appsFilter)
+        )
+      )
+        throw new Error('Union Applications Are Unavailable');
+      return {
+        key: applicationsKey,
+        rows: result.applications.map((a) => ({
+          id: a.id,
+          union_id: a.union_id,
+          club_name: a.club_name,
+          club_id: a.club_id,
+          applicant_id: a.applicant_user_id,
+          status: a.status,
+          notes: a.message ?? a.review_note ?? null,
+          created_at: a.applied_at,
+        })) as UnionApp[],
+      };
+    },
+    onData: ({ key, rows }) => {
+      if (applicationsKeyRef.current !== key) return;
+      setApps(rows);
+      setAppsOwner(key);
+      setAppsLoaded(true);
+      setAppsError(null);
+    },
+    onError: (err) => {
+      if (applicationsKeyRef.current !== applicationsKey) return;
+      reportError(err, 'UnionDashboardPage.Applications');
+      setAppsError('Applications Could Not Be Refreshed. Please Try Again.');
+      setAppsLoaded(true);
+    },
+    onReset: () => {
+      if (appsOwner !== applicationsKey) {
+        setApps([]);
+        setAppsOwner(null);
+        setAppsLoaded(false);
       }
-    } catch (_e) {
-      /* silent — non-leads may not have access */
-    }
-  }, [authorizedUnionId]);
-
-  // ── Tab-based lazy loading ─────────────────────────────────
-  useEffect(() => {
-    if (!authorizedUnionId) return;
-    if (tab === 'applications' && !appsLoaded) {
-      loadApps();
-      loadLeaveReqs();
-    }
-  }, [tab, authorizedUnionId, appsLoaded, loadApps, loadLeaveReqs]);
+      setAppsError(null);
+    },
+  });
+  const loadLeaveReqs = useVisibleRead({
+    scopeKey: leaveKey,
+    enabled: tab === 'applications' && !!authorizedUnionId,
+    intervalMs: 60_000,
+    read: async (signal) => {
+      const result = await unionApi.listLeaveRequests(authorizedUnionId!, signal);
+      if (
+        !Array.isArray(result.leaveRequests) ||
+        result.leaveRequests.some(
+          (row) => !row || row.union_id !== authorizedUnionId || typeof row.id !== 'string'
+        )
+      )
+        throw new Error('Union Leave Requests Are Unavailable');
+      return { key: leaveKey, rows: result.leaveRequests as typeof loadedLeaveReqs };
+    },
+    onData: ({ key, rows }) => {
+      if (leaveKeyRef.current !== key) return;
+      setLeaveReqs(rows);
+      setLeaveOwner(key);
+      setLeaveError(null);
+    },
+    onError: (err) => {
+      if (leaveKeyRef.current !== leaveKey) return;
+      reportError(err, 'UnionDashboardPage.LeaveRequests');
+      setLeaveError('Leave Requests Could Not Be Refreshed. Please Try Again.');
+    },
+    onReset: () => {
+      if (leaveOwner !== leaveKey) {
+        setLeaveReqs([]);
+        setLeaveOwner(null);
+      }
+      setLeaveError(null);
+    },
+  });
 
   // ── Retained union rakeback history ──────────────────────────
   const rakebackScope = useCashoutScope(user?.id, JSON.stringify([unionRef, authorizedUnionId]));
@@ -801,83 +954,6 @@ export default function UnionDashboardPage() {
     ];
     return () => unsubs.forEach((u) => u());
   }, [authorizedUnionId, loadDashboard]);
-
-  // ── Supabase Realtime — cross-user WebSocket updates ──
-  useEffect(() => {
-    if (!authorizedUnionId) return;
-    const channelKey = `union-dashboard-${authorizedUnionId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'union_clubs',
-          filter: `union_id=eq.${authorizedUnionId}`,
-        },
-        () => loadDashboard(authorizedUnionId)
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'union_applications',
-          filter: `union_id=eq.${authorizedUnionId}`,
-        },
-        () => loadDashboard(authorizedUnionId)
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'union_admins',
-          filter: `union_id=eq.${authorizedUnionId}`,
-        },
-        () => loadDashboard(authorizedUnionId)
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'union_wallets',
-          filter: `union_id=eq.${authorizedUnionId}`,
-        },
-        () => loadDashboard(authorizedUnionId)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${authorizedUnionId}` },
-        () => loadDashboard(authorizedUnionId)
-      )
-      /* THE LIVE JACKPOT TICK MOVED OFF REALTIME (BBJ phase 3.2, 2026-09-06).
-         `bbj_pools` updates on every raked hand at every union club - 40,219
-         updates in twenty-four hours, measured on production - and six
-         surfaces held a subscription to it so that a figure could be exact to
-         the second. The tiles now follow the same shared ten-second poll every
-         other jackpot surface uses (the effect below), which also stops this
-         dashboard paying for the firehose while it sits open in a background
-         tab. Everything else on the row still arrives through loadDashboard. */
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'UnionDashboardPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[UnionDashboardPage] Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [authorizedUnionId, authorizedScope?.userId, loadDashboard, routeUnionId, user?.id]);
-
-  // ── Visibility Refresh — refresh on tab focus after 30s ──
-  useVisibilityRefresh(() => {
-    if (authorizedUnionId) void loadDashboard(authorizedUnionId);
-  });
 
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';
@@ -1030,6 +1106,14 @@ export default function UnionDashboardPage() {
     <div className="admin-page" data-arena-surface="union-operations">
       <div className="admin-container">
         {error && <div className="admin-error-banner">{error}</div>}
+        {dashboardReadError && (
+          <div className="admin-error-banner" role="alert">
+            {dashboardReadError}{' '}
+            <button className="admin-btn admin-btn-ghost" onClick={refreshDashboard}>
+              Retry
+            </button>
+          </div>
+        )}
         {success && <div className="admin-success-banner">{success}</div>}
 
         <CasinoSurfaceHeader
@@ -1544,7 +1628,7 @@ export default function UnionDashboardPage() {
                           className="admin-btn admin-btn-ghost admin-btn-sm"
                           onClick={() => {
                             setEditCommClub(club);
-                            setEditCommRate(String((club.club_commission_rate || 0.9) * 100));
+                            setEditCommRate(String((club.club_commission_rate ?? 0.9) * 100));
                           }}
                         >
                           Edit Rate
@@ -2682,6 +2766,16 @@ export default function UnionDashboardPage() {
           {/* ══════ TAB: APPLICATIONS ══════ */}
           {tab === 'applications' && (
             <div className="admin-tab-content">
+              {appsError && (
+                <div className="admin-error-banner" role="alert">
+                  {appsError}
+                </div>
+              )}
+              {leaveError && (
+                <div className="admin-error-banner" role="alert">
+                  {leaveError}
+                </div>
+              )}
               {!appsLoaded && (
                 <div
                   style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}
@@ -2709,8 +2803,8 @@ export default function UnionDashboardPage() {
                 <button
                   className="admin-btn admin-btn-ghost"
                   onClick={() => {
-                    setAppsLoaded(false);
                     loadApps();
+                    loadLeaveReqs();
                   }}
                 >
                   Refresh

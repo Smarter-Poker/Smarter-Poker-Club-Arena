@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171577,
-      "sha256": "ef32fdee01090806c3bc6aced5c87e3fdffa5dc4b34f0d3168b95f229dd6fab3"
+      "bytes": 171751,
+      "sha256": "9d8631b56c0de762584c89305eec4723589c3b665fb01df252a89505713c514e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 28321,
-      "sha256": "3a4f734e05e483a762bc1c86ec04d8ed2caa6915bb4bc7e6adb2fe62529f6026"
+      "bytes": 28564,
+      "sha256": "a4c58592235f0678e836dc10e655efc78361efed4b76eca25d32daad2edb3913"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -918,30 +918,19 @@
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   },
-  "chipStoreCoverageQualification20260927": {
-    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
-    "updates": {
+  "unionDirectoryReadQualification20260927": {
+    "reason": "Add caller-bound read-only union administrator native qualification to existing accounting shard 4 and classify each isolated fixture input. Every previous rule, path and audit record remains; no financial fixture assertion changes.",
+    "previous": {
       ".github/workflows/ci.yml": {
-        "before": {
-          "bytes": 171068,
-          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
-        },
-        "after": {
-          "bytes": 171232,
-          "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
-        }
+        "bytes": 171068,
+        "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "before": {
-          "bytes": 27619,
-          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
-        },
-        "after": {
-          "bytes": 27841,
-          "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
-        }
+        "bytes": 27619,
+        "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
       }
-    }
+    },
+    "qualification": "Exact changed source reviewed; binding validity is separate from actual native and required hosted outcomes."
   },
   "strandedPlayerReadQualification20260927": {
     "status": "source_changed_native_pass_hosted_pending",
@@ -987,9 +976,9 @@
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   },
-  "coverageProtectedMainIntegration20260927": {
+  "unionProtectedMainIntegration20260927": {
     "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
-    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "sourceParent": "3c62c29b645e7a432e82ccf4f0cdba6529381647",
     "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
     "updatedPins": [
       ".github/workflows/ci.yml",
@@ -1074,9 +1063,53 @@
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   },
+  "unionProtectedMainSecondIntegration20260927": {
+    "head": "017704800e6255899c709fd60b56f27b968a558d",
+    "protectedMain": "24185120457a44014a52ea1860e647b0a921184a",
+    "reason": "Preserve both source maps and qualification histories; the integrated workflow and classifier retain the union directory and backed payout native routes. Only reviewed integrated bytes are rebound; no financial assertions change."
+  },
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171232,
+          "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 27841,
+          "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
+        }
+      }
+    }
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ]
+  },
   "coverageProtectedMainSecondIntegration20260927": {
     "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
     "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
     "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
+  },
+  "unionCoverageIntegration20260927": {
+    "sourceHead": "ee6258a5cd848dd0e81333a68b19594bde04f187",
+    "protectedMain": "ae13e348224e175c19111517544386dc50b06241",
+    "scope": "Preserve both union directory and chip-store coverage native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
   }
 }

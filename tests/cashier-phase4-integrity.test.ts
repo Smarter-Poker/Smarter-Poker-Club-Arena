@@ -71,9 +71,11 @@ describe('cashier integrity and wallet launcher', () => {
     expect(union).toContain('const dashLoadVersion = useRef(0)');
     expect(union).toContain('const requestVersion = ++dashLoadVersion.current');
     expect(union).toContain('dashLoadVersion.current === requestVersion');
-    expect(union).toContain(
-      'loadUnionData(id, requestVersion, unionResult.data as UnionRow, authorizedRole)'
+    expect(union.replace(/\s+/g, '')).toContain(
+      'loadUnionData(id,requestVersion,unionResult.dataasUnionRow,authorizedRole,signal,dashboardKey)'
     );
+    expect(union).toContain('dashboardKeyRef.current === requestKey');
+    expect(union).toContain('!signal.aborted');
     expect(union).toContain("unionResult.data.owner_id === user.id ? 'union_lead'");
     expect(union).toContain("setError('You are not a union admin or owner.')");
   });

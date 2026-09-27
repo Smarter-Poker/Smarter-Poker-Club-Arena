@@ -27,11 +27,12 @@ interface ApiResult {
 async function callUnionApi<T = Record<string, unknown>>(
   endpoint: 'manage-union' | 'union-wallet' | 'union-application',
   body: Record<string, unknown>,
-  opts: { idempotent?: boolean; idempotencyKey?: string } = {}
+  opts: { idempotent?: boolean; idempotencyKey?: string; signal?: AbortSignal } = {}
 ): Promise<ApiResult & T> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  opts.signal?.throwIfAborted();
   const token = session?.access_token;
   if (!token) throw new Error('Not authenticated');
 
@@ -50,11 +51,13 @@ async function callUnionApi<T = Record<string, unknown>>(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    ...(opts.signal ? { signal: opts.signal } : {}),
   });
   const data = await response
     .json()
     .catch(() => ({ success: false, error: `HTTP ${response.status}` }));
-  if (!data.success) {
+  opts.signal?.throwIfAborted();
+  if (!data.success || (opts.idempotent === false && !response.ok)) {
     const error = new Error(
       data.error || `Union API request failed (HTTP ${response.status})`
     ) as Error & {
@@ -120,8 +123,12 @@ export const unionApi = {
       message: reason,
     });
   },
-  listLeaveRequests(unionId: string) {
-    return callUnionApi('manage-union', { action: 'list_leave', unionId }, { idempotent: false });
+  listLeaveRequests(unionId: string, signal?: AbortSignal) {
+    return callUnionApi(
+      'manage-union',
+      { action: 'list_leave', unionId },
+      { idempotent: false, signal }
+    );
   },
   approveLeave(unionId: string, leaveRequestId: string) {
     return callUnionApi('manage-union', { action: 'approve_leave', unionId, leaveRequestId });
@@ -141,11 +148,11 @@ export const unionApi = {
       { idempotent: false }
     );
   },
-  listApplications(unionId: string, statusFilter = 'pending') {
+  listApplications(unionId: string, statusFilter = 'pending', signal?: AbortSignal) {
     return callUnionApi(
       'union-application',
       { action: 'list', unionId, statusFilter },
-      { idempotent: false }
+      { idempotent: false, signal }
     );
   },
   approveApplication(unionId: string, applicationId: string, commissionRate?: number) {

@@ -72,7 +72,8 @@ const BASELINE = new Map<string, number>([
   ['src/services/AgentService.ts', 7],
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
-  ['src/pages/UnionDashboardPage.tsx', 7],
+  // Visible dashboard reads now bind agent/profile/admin/pool/settlement errors.
+  ['src/pages/UnionDashboardPage.tsx', 2],
   ['src/services/UnionService.ts', 11],
   ['src/pages/AdminDashboardPage.tsx', 6],
   ['src/services/ClubsService.ts', 5],

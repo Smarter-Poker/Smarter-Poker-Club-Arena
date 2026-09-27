@@ -33,6 +33,7 @@ vi.mock('@/lib/supabase', () => ({
       let orderColumn = 'period_start';
       const query = {
         select: () => query,
+        abortSignal: () => query,
         eq: (column: string, value: unknown) => {
           fixture.eq(column, value);
           filters.push((row) => row[column] === value);
@@ -75,18 +76,17 @@ vi.mock('@/lib/supabase', () => ({
     rpc: (...args: unknown[]) => fixture.rpc(...args),
   },
 }));
-vi.mock('@/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: fixture.user }) }));
+// The predecessor's unpublished WAL channel cannot deliver this fixture.
 vi.mock('@/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: () => {} }));
-vi.mock('@/hooks/useVisibilityRefresh', () => ({
-  useVisibilityRefresh: (refresh: () => void) => {
-    fixture.refresh = refresh;
-  },
-}));
+vi.mock('@/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: fixture.user }) }));
 vi.mock('@/components/common/Toast', () => ({ useToast: () => fixture.toast }));
 vi.mock('@/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('@/core/MasterBus', () => ({
   masterBus: {
-    subscribeDebounced: () => () => {},
+    subscribeDebounced: (_event: string, refresh: () => void) => {
+      fixture.refresh = refresh;
+      return () => {};
+    },
     emit: (...args: unknown[]) => fixture.emit(...args),
   },
 }));
@@ -423,4 +423,66 @@ describe('RakebackPage retains its loading, empty, error and account states', ()
       expect(screen.queryByText('Your Rate')).toBeNull();
     }
   );
+});
+
+describe('RakebackPage visible external availability', () => {
+  it('discovers an external period after 60 seconds without a balance event or navigation', async () => {
+    await openPage([]);
+    expect(readyValue()).toBe('0');
+    fixture.result.data = [period('external', 'club-other', '2026-09-08', 17)];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999);
+    });
+    expect(readyValue()).toBe('0');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(readyValue()).toBe('17');
+    expect(fixture.from).toHaveBeenCalledTimes(4);
+    expect(fixture.rpc).not.toHaveBeenCalled();
+  });
+
+  it('pauses hidden and offline views and rereads on return', async () => {
+    await openPage([]);
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      fixture.result.data = [period('external', 'club-other', '2026-09-08', 17)];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(180_000);
+      });
+      expect(fixture.from).toHaveBeenCalledTimes(2);
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(fixture.from).toHaveBeenCalledTimes(2);
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(readyValue()).toBe('17');
+      expect(fixture.from).toHaveBeenCalledTimes(4);
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    }
+  });
+
+  it('retains the last known amount and reports a malformed refresh instead of replacing it with zero', async () => {
+    await openPage([period('initial', 'club-own', '2026-09-08', 9)]);
+    fixture.result.data = [
+      { ...period('bad', 'club-own', '2026-09-08', 0), rakeback_earned: null },
+    ];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(readyValue()).toBe('9');
+    expect(
+      screen.getByText('Rakeback Data Could Not Be Refreshed. Please Try Again.')
+    ).toBeVisible();
+  });
 });

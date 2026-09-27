@@ -17,6 +17,7 @@ describe('UnionApiService idempotency identity', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         status: 200,
+        ok: true,
         json: () => Promise.resolve({ success: true }),
       })
     );
@@ -81,4 +82,38 @@ describe('UnionApiService idempotency identity', () => {
       ).rejects.toMatchObject({ definitive: false, status });
     }
   );
+  it('forwards cancellation only to the read and never adds an idempotency key', async () => {
+    const controller = new AbortController();
+    await unionApi.listApplications('union-id', 'approved', controller.signal);
+    expect(fetch).toHaveBeenCalledWith('/api/club-arena/union-application', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', unionId: 'union-id', statusFilter: 'approved' }),
+    });
+  });
+
+  it('does not dispatch a read whose owner retired while authentication was pending', async () => {
+    let resolve!: (value: unknown) => void;
+    getSession.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const controller = new AbortController();
+    const request = unionApi.listLeaveRequests('union-id', controller.signal);
+    controller.abort();
+    resolve({ data: { session: { access_token: 'test-token' } } });
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses a failed read response even when a malformed body says success', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ success: true, applications: [] }),
+    } as Response);
+    await expect(unionApi.listApplications('union-id')).rejects.toMatchObject({ status: 500 });
+  });
 });

@@ -1,0 +1,84 @@
+{
+  "tables": [
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=rxtm/postgres",
+        "authenticated=rxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "training_user_achievements",
+      "force": false,
+      "owner": "postgres"
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=rxt/postgres",
+        "authenticated=rxt/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "rake_rate_audit",
+      "force": false,
+      "owner": "postgres"
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=rxt/postgres",
+        "authenticated=rxt/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "commission_rate_audit",
+      "force": false,
+      "owner": "postgres"
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "ALL",
+      "qual": "true",
+      "roles": ["service_role"],
+      "tablename": "commission_rate_audit",
+      "permissive": "PERMISSIVE",
+      "policyname": "commission_rate_audit_service_role_all",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = rake_rate_audit.club_id) AND (cm.user_id = ( SELECT ( SELECT auth.uid() AS uid) AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text])))))",
+      "roles": ["authenticated"],
+      "tablename": "rake_rate_audit",
+      "permissive": "PERMISSIVE",
+      "policyname": "rake_rate_audit_club_admin_read",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "true",
+      "roles": ["service_role"],
+      "tablename": "rake_rate_audit",
+      "permissive": "PERMISSIVE",
+      "policyname": "rake_rate_audit_service_role_all",
+      "schemaname": "public",
+      "with_check": "true"
+    }
+  ],
+  "functions": [
+    {
+      "md5": "fae59a344dc9040e81cda02fb9fee97f",
+      "name": "ca_can_view_club_finances",
+      "definition": "CREATE OR REPLACE FUNCTION public.ca_can_view_club_finances(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT\n    session_user IN ('postgres', 'supabase_admin')\n    OR coalesce(auth.role(), '') = 'service_role'\n    OR (\n      auth.uid() IS NOT NULL\n      AND (\n        EXISTS (\n          SELECT 1 FROM club_members cm\n           WHERE cm.club_id = p_club_id\n             AND cm.user_id = auth.uid()\n             AND coalesce(cm.status, 'active') NOT IN ('banned', 'suspended')\n             AND cm.role IN ('owner', 'co_owner', 'admin', 'super_agent')\n        )\n        OR EXISTS (SELECT 1 FROM clubs c WHERE c.id = p_club_id AND c.owner_id = auth.uid())\n        OR EXISTS (SELECT 1 FROM profiles pr WHERE pr.id = auth.uid() AND coalesce(pr.is_admin, false))\n      )\n    );\n$function$\n"
+    },
+    {
+      "md5": "ed89787c7b832e76a886734e16a27c3d",
+      "name": "fn_is_platform_admin",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_is_platform_admin()\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_role text;\nBEGIN\n  IF auth.uid() IS NULL THEN RETURN false; END IF;\n  SELECT role INTO v_role FROM public.profiles WHERE id = auth.uid();\n  RETURN v_role IN ('admin', 'superadmin', 'god');\nEND;\n$function$\n"
+    }
+  ]
+}

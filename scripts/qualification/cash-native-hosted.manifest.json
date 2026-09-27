@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169172,
-      "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+      "bytes": 169356,
+      "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24032,
-      "sha256": "dfde977eb6986f47e6b706a42ae07d412910bea3901ab4c6d8d4e361d0156add"
+      "bytes": 24407,
+      "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -355,6 +355,47 @@
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 23401,
         "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
+      }
+    }
+  },
+  "certificationRetirementIntegration": {
+    "reviewedOn": "2026-09-27",
+    "reason": "Bind the reviewed reserved-identity retirement native-input selector and required shard-4 workflow step. No financial SQL, accounting fixture or existing assertion changes. docs/changelog/2026-09-27-certification-ledger-actors-are-retired.md",
+    "files": {
+      ".github/workflows/ci.yml": {
+        "from": {
+          "bytes": 169172,
+          "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+        },
+        "to": {
+          "bytes": 169356,
+          "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "from": {
+          "bytes": 23891,
+          "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+        },
+        "to": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        }
+      }
+    }
+  },
+  "certificationRetirementMainIntegration": {
+    "reason": "Integrate protected main36bb including cashier input routing, while preserving reserved-identity native qualification. Existing financial definitions, assertions and all historical binding records remain unchanged.",
+    "files": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "from": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        },
+        "to": {
+          "bytes": 24407,
+          "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
+        }
       }
     }
   }

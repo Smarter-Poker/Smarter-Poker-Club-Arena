@@ -1,0 +1,5 @@
+{
+  "_owner": "Supabase billing audit supporting browser-certification cleanup repair; installed once as 20260927032118 on 2026-09-27.",
+  "_comment": "Read-only service-only completion and bounded stale inventory preserve immutable ledger identities; original cleanup signature remains unchanged. Provider readback, not a new table or financial write.",
+  "functions": ["fn_ca_certification_identity_retired", "fn_ca_stale_certification_accounts"]
+}

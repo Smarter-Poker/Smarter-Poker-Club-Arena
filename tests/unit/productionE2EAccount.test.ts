@@ -34,6 +34,157 @@ function environment(directory: string) {
 describe('post-deploy production account', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('retires a ledger actor through Auth and verifies the retained identity', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-retirement-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-ledger@example.invalid',
+    };
+    const calls: string[] = [];
+    let prepared = false;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(`${init?.method || 'GET'} ${url}`);
+      if (url.endsWith('/rpc/cleanup_reserved_certification_account')) {
+        if (!prepared) {
+          prepared = true;
+          return Response.json({
+            success: false,
+            reason: 'auth_soft_delete_required',
+            user_id: USER_ID,
+            email: record.email,
+          });
+        }
+        return Response.json({
+          success: true,
+          disposition: 'retained_ledger_actor',
+          user_id: USER_ID,
+        });
+      }
+      if (init?.method === 'DELETE') {
+        expect(JSON.parse(String(init.body))).toEqual({ should_soft_delete: true });
+        return Response.json({ id: USER_ID, deleted_at: '2026-09-27T01:00:00Z' });
+      }
+      return Response.json({ id: USER_ID, deleted_at: '2026-09-27T01:00:00Z' });
+    });
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, record })
+    ).resolves.toBe(true);
+    expect(calls.map((call) => call.split(' ')[0])).toEqual(['POST', 'DELETE', 'POST', 'GET']);
+  });
+
+  it('retains the record after an unknown Auth response and recovers by reading its outcome', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-retirement-unknown-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-ledger@example.invalid',
+    };
+    const path = join(directory, 'club-arena-production-e2e-account.json');
+    writeFileSync(path, JSON.stringify(record));
+    let retired = false;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith('/rpc/cleanup_reserved_certification_account')) {
+        return Response.json(
+          retired
+            ? { success: true, disposition: 'retained_ledger_actor', user_id: USER_ID }
+            : {
+                success: false,
+                reason: 'auth_soft_delete_required',
+                user_id: USER_ID,
+                email: record.email,
+              }
+        );
+      }
+      if (init?.method === 'DELETE') {
+        retired = true;
+        throw new Error('lost acknowledgment');
+      }
+      return Response.json({ id: USER_ID, deleted_at: '2026-09-27T01:00:00Z' });
+    });
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('lost acknowledgment');
+    expect(existsSync(path)).toBe(true);
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toBe(true);
+    expect(existsSync(path)).toBe(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(1);
+  });
+
+  it.each(['identity', 'unfinished', 'auth-readback'])(
+    'refuses %s retirement evidence without deleting its local record',
+    async (failure) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-retirement-refusal-'));
+      const env = environment(directory);
+      const record = {
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-ledger@example.invalid',
+      };
+      const path = join(directory, 'club-arena-production-e2e-account.json');
+      writeFileSync(path, JSON.stringify(record));
+      let prepared = false;
+      const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (String(input).endsWith('/rpc/cleanup_reserved_certification_account')) {
+          if (!prepared) {
+            prepared = true;
+            return Response.json({
+              success: false,
+              reason: 'auth_soft_delete_required',
+              user_id: USER_ID,
+              email: failure === 'identity' ? 'person@example.com' : record.email,
+            });
+          }
+          return Response.json(
+            failure === 'unfinished'
+              ? { success: false, reason: 'custody_changed' }
+              : { success: true, disposition: 'retained_ledger_actor' }
+          );
+        }
+        return Response.json({
+          id: USER_ID,
+          ...(failure === 'auth-readback' && init?.method !== 'DELETE'
+            ? {}
+            : { deleted_at: '2026-09-27T01:00:00Z' }),
+        });
+      });
+      await expect(
+        cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock })
+      ).rejects.toThrow(/retirement/i);
+      expect(existsSync(path)).toBe(true);
+      if (failure === 'identity')
+        expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(
+          0
+        );
+    }
+  );
+
+  it('keeps the stale-account limit and refuses a too-young fixture from its inventory', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-stale-bounds-'));
+    const env = environment(directory);
+    const row = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-ledger@example.invalid',
+      created_at: '2026-09-27T01:00:00Z',
+    };
+    const tooMany = vi.fn(async () => Response.json(Array.from({ length: 21 }, () => row)));
+    await expect(
+      cleanupStaleProductionE2EAccounts({ environment: env, fetchImpl: tooMany })
+    ).rejects.toThrow('more than 20');
+    expect(tooMany).toHaveBeenCalledTimes(1);
+    const young = vi.fn(async () => Response.json([row]));
+    await expect(
+      cleanupStaleProductionE2EAccounts({
+        environment: env,
+        fetchImpl: young,
+        now: Date.parse(row.created_at),
+      })
+    ).rejects.toThrow('invalid stale');
+    expect(young).toHaveBeenCalledTimes(1);
+  });
+
   it('creates one normalized reserved identity, exports it, then proves hard deletion', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-'));
     const env = environment(directory);
@@ -43,7 +194,7 @@ describe('post-deploy production account', () => {
       if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST') {
         return Response.json({ id: USER_ID });
       }
-      if (url.includes('/rest/v1/profiles?select=id%2Cemail%2Ccreated_at')) {
+      if (url.includes('/rest/v1/rpc/fn_ca_stale_certification_accounts')) {
         return Response.json([]);
       }
       if (url.includes('/rest/v1/profiles?select=id,arena_avatar_url')) {
@@ -236,6 +387,18 @@ describe('post-deploy production account', () => {
     });
   });
 
+  it('treats retirement as a no-op when provisioning never created a fixture record', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-no-create-club-'));
+    const env = environment(directory);
+    const fetchMock = vi.fn();
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refuses to retire an owned club outside the exact certificate prefix', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-create-refusal-'));
     const env = environment(directory);
@@ -264,7 +427,7 @@ describe('post-deploy production account', () => {
     const email = 'ca-customization-cert-postdeploy-orphan@example.invalid';
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes('/rest/v1/profiles?')) {
+      if (url.includes('/rest/v1/rpc/fn_ca_stale_certification_accounts')) {
         return Response.json([{ id: USER_ID, email, created_at: '2026-01-01T00:00:00.000Z' }]);
       }
       if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
@@ -285,8 +448,9 @@ describe('post-deploy production account', () => {
       })
     ).resolves.toBe(1);
     const query = decodeURIComponent(String(fetchMock.mock.calls[0]?.[0]));
-    expect(query).toContain('email=like.ca-customization-cert-postdeploy-*');
-    expect(query).toContain('created_at=lte.');
+    expect(query).toContain('/rpc/fn_ca_stale_certification_accounts');
+    const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T23:20:00.000Z' });
   });
 
   it('waits out the maintenance freeze instead of abandoning the fixture', async () => {

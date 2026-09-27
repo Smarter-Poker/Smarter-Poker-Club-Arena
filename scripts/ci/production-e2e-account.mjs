@@ -135,7 +135,7 @@ export async function cleanupProductionE2EAccount({
       { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
       fetchImpl
     );
-    if (result?.success === true) break;
+    if (result?.success === true || result?.reason === 'auth_soft_delete_required') break;
     if (result?.reason !== 'platform_is_frozen' || attempt === 36) {
       throw new Error(
         `Guarded test-account sweep refused ${account.id}: ${String(result?.reason || 'unknown')}`
@@ -144,11 +144,42 @@ export async function cleanupProductionE2EAccount({
     console.log('[production-e2e-account] platform freeze is active; cleanup will retry.');
     await wait(10_000);
   }
+  if (result?.reason === 'auth_soft_delete_required') {
+    if (result.user_id !== account.id || result.email !== account.email) {
+      throw new Error('Reserved ledger actor retirement did not match the owned fixture.');
+    }
+    // Use GoTrue's supported transaction: retain the UUID, clear credentials
+    // and revoke only this disposable identity's sessions/refresh tokens.
+    // An unknown response retains the fixture record; the next cleanup reads
+    // the durable terminal state before deciding whether any action remains.
+    await serviceRequest(
+      configuration,
+      `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
+      { method: 'DELETE', body: JSON.stringify({ should_soft_delete: true }) },
+      fetchImpl
+    );
+    result = await serviceRequest(
+      configuration,
+      '/rest/v1/rpc/cleanup_reserved_certification_account',
+      { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
+      fetchImpl
+    );
+    if (result?.success !== true || result?.disposition !== 'retained_ledger_actor') {
+      throw new Error(`Reserved ledger actor ${account.id} retirement is not verified.`);
+    }
+  }
   const verification = await fetchImpl(
     `${configuration.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
     { headers: headers(configuration.serviceRoleKey) }
   );
-  if (verification.status !== 404) {
+  const retained = result?.disposition === 'retained_ledger_actor';
+  if (retained) {
+    const body = await responseBody(verification);
+    const user = body?.user || body;
+    if (verification.status !== 200 || user?.id !== account.id || !user?.deleted_at) {
+      throw new Error(`Reserved ledger actor ${account.id} Auth retirement is not verified.`);
+    }
+  } else if (verification.status !== 404) {
     const body = await responseBody(verification);
     throw new Error(
       `Reserved account ${account.id} remains after cleanup (${verification.status}): ` +
@@ -156,7 +187,11 @@ export async function cleanupProductionE2EAccount({
     );
   }
   if (!record && existsSync(path)) unlinkSync(path);
-  console.log('[production-e2e-account] reserved account hard-deleted and absence verified.');
+  console.log(
+    retained
+      ? '[production-e2e-account] reserved ledger actor retained; Auth retirement verified.'
+      : '[production-e2e-account] reserved account hard-deleted and absence verified.'
+  );
   return true;
 }
 
@@ -273,17 +308,10 @@ export async function cleanupStaleProductionE2EAccounts({
 } = {}) {
   const configuration = requireEnvironment(environment);
   const cutoff = new Date(now - STALE_ACCOUNT_AGE_MS).toISOString();
-  const query = new URLSearchParams({
-    select: 'id,email,created_at',
-    email: `like.${ACCOUNT_PREFIX}*${ACCOUNT_SUFFIX}`,
-    created_at: `lte.${cutoff}`,
-    order: 'created_at.asc',
-    limit: String(STALE_ACCOUNT_LIMIT + 1),
-  });
   const accounts = await serviceRequest(
     configuration,
-    `/rest/v1/profiles?${query.toString()}`,
-    {},
+    '/rest/v1/rpc/fn_ca_stale_certification_accounts',
+    { method: 'POST', body: JSON.stringify({ p_before: cutoff }) },
     fetchImpl
   );
   if (!Array.isArray(accounts)) throw new Error('Stale account query returned a non-array body.');
@@ -318,6 +346,12 @@ export async function retireProductionCreateClubFixtures({
 } = {}) {
   const path = fixturePath(environment);
   const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  if (!account) {
+    console.log(
+      '[production-e2e-account] no fixture record exists; Create Club retirement is a no-op.'
+    );
+    return 0;
+  }
   if (!account?.id || !reserved(account.email || '')) {
     throw new Error('Refusing to retire clubs outside the reserved post-deploy namespace.');
   }

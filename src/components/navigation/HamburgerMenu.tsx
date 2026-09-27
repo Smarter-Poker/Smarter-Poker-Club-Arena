@@ -698,6 +698,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     setShowDeviceCheck(true);
     onClose();
   };
+  // The menu reopened over an open check (edge swipe, Ctrl/Cmd+M, the bus):
+  // the check is dismissed with it, so closing the menu never brings back a
+  // blank Device Check the player did not ask for.
+  useEffect(() => {
+    if (isOpen) setShowDeviceCheck(false);
+  }, [isOpen]);
 
   const togglePinnedPath = (path: string) => {
     const nextPinnedPaths = pinnedPaths.includes(path)

@@ -249,11 +249,11 @@ export function HandReveal({
             <>
               <button className="hand-reveal__btn hand-reveal__btn--muck" onClick={handleMuck}>
                 Muck
-                <TapHaptic />
+                <TapHaptic radius="8px" />
               </button>
               <button className="hand-reveal__btn hand-reveal__btn--show" onClick={handleShow}>
                 Show Cards
-                <TapHaptic />
+                <TapHaptic radius="8px" />
               </button>
             </>
           )}
@@ -272,7 +272,7 @@ export function HandReveal({
               disabled={userDiamonds < revealCost}
             >
               Reveal ({revealCost})
-              <TapHaptic disabled={userDiamonds < revealCost} />
+              <TapHaptic disabled={userDiamonds < revealCost} radius="8px" />
             </button>
           )}
           {!isWinner && !revealed && !mucked && typeof onPayReveal !== 'function' && (

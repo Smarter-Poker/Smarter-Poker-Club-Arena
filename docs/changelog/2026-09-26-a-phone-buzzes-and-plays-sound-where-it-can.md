@@ -25,3 +25,9 @@ A beat that no finger starts (the crash, a Plinko landing, a gem turning over) c
 ## Audit follow-up (2026-09-27)
 
 A second read of this change found and fixed: the Device Check opened behind the menu (the shared modal stacks at 1000, the drawer at 9500), so it now closes the menu first like Table Studio, pinned in `tests/unit/hamburgerMenuLaw.test.ts`; the playback session was set at load, so the first tap that woke the sound engine could pause a player's music, and it is now set only with the first real sound; a table settings sync turned sound off by writing storage directly and left the session in playback, and now goes through the engine; the two shared focus traps counted the hidden switches as keyboard stops; a fixed-limit Raise tap buzzed twice on Android and in the app; and the switch was added to the remaining committing table taps (Pineapple discard, Insurance and EV Cashout plates, Show, Muck and Reveal, the four pre-actions, the raise steppers and presets).
+
+## Second audit follow-up (2026-09-27)
+
+- **A stale settings sync can no longer un-mute a player.** The first follow-up routed TablePage's settings sync through the sound engine; that sync carries the Settings page's cached copy, re-sent on every tab return and theme change, so a player who muted at the table could be switched back on. It now only ever mutes (pinned in `tests/unit/aStaleSettingsSyncNeverUnmutes.test.ts`).
+- **Reopening the menu over an open Device Check dismisses the check**, so closing the menu never brings back a blank one.
+- The shared modal's first-focus pick skips the hidden switches too, the Show, Muck and Reveal switches match their 8px corners, and the audio session test now starts its engine suspended so the first-tap path it pins really runs.

@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -80,90 +81,50 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
   const { style: recordsStyle } = useStaggerAnimation(records.length);
   const { style: subagentsStyle } = useStaggerAnimation(subAgents.length);
 
-  useEffect(() => {
-    if (user?.id) {
-      loadData();
-    }
-  }, [user?.id, clubId]);
-
-  // ── Real-time bus listeners for commission updates ──
-  const loadDataRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    loadDataRef.current = loadData;
-  }, [user?.id, clubId]);
-
+  // The per-hand ledger stays outside replication. Only a visible dashboard
+  // observes its authenticated summary; local commands can request one successor.
+  const refresh = useVisibleRead({
+    scopeKey: readScope,
+    enabled: Boolean(user?.id),
+    intervalMs: 30_000,
+    read: (signal) => loadData(signal),
+    onData: () => {
+      setLoadedScope(readScope);
+      setLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'AgentCommissionDashboard.Refresh');
+      setReadError(true);
+      setLoading(false);
+      setLoadedScope(readScope);
+    },
+    onReset: () => {
+      setSummary(null);
+      setOwed(null);
+      setRecords([]);
+      setSubAgents([]);
+      setResolvedClubId(null);
+      setReadError(false);
+      setRecordsUnavailable(false);
+      setSubAgentsError(null);
+      setLoading(true);
+      setLoadedScope(null);
+    },
+  });
   useEffect(() => {
     if (!user?.id) return;
+    return masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500);
+  }, [user?.id, refresh]);
 
-    // Postgres Changes: live commission updates.
-    //
-    // PHASE 7. This listened to commission_records, filtered on agent_id. That
-    // table held zero rows on the day it was dropped and was never in the
-    // supabase_realtime publication, so this subscription could not fire even
-    // if a row had ever been written to it. agent_commissions is the ledger the
-    // engine writes as hands settle, it IS in the publication, and its rows are
-    // keyed by the auth user id.
-    const channelKey = `agent-commission-live-${user.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'agent_commissions',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadDataRef.current()
-      )
-      // 2026-08-24: the `wallets` (user_id=eq.<uid>) listener that sat here is
-      // gone. PostgresSyncHooks' `global_db_sync:<userId>` channel already
-      // carries that exact listener - same table, same filter - created once at
-      // sign-in and never torn down by navigation, and it emits BALANCE_UPDATED.
-      // The bus subscriber further down already calls loadDataRef.current() on
-      // BALANCE_UPDATED, so the refresh is unchanged and one duplicate
-      // subscription per mount disappears.
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err)
-            reportError(err?.message || err, 'AgentCommissionDashboard._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[AgentCommissionDashboard] Realtime channel timed out');
-        }
-      });
-
-    // Bus event: BALANCE_UPDATED from engine
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadDataRef.current();
-      },
-      500
-    );
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-      unsubBalance();
-    };
-  }, [user?.id]);
-
-  const loadData = async () => {
+  const loadData = async (signal: AbortSignal) => {
     if (!user?.id) return;
     const scope = readScope;
     const generation = ++readGeneration.current;
     const current = () =>
-      isMounted.current && readScopeRef.current === scope && readGeneration.current === generation;
-    setLoading(true);
-    setSummary(null);
-    setOwed(null);
-    setRecords([]);
-    setSubAgents([]);
-    setResolvedClubId(null);
-    setReadError(false);
-    setRecordsUnavailable(false);
-    setSubAgentsError(null);
-
+      isMounted.current &&
+      !signal.aborted &&
+      readScopeRef.current === scope &&
+      readGeneration.current === generation;
     try {
       // Routes may contain a numeric club number or slug. Financial readers and
       // Messenger require the authoritative UUID; a failed lookup must not widen
@@ -181,11 +142,11 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       // on the platform. It answers from agent_commissions now, in chips rather
       // than whole numbers, and scoped to the club being looked at when there
       // is one.
-      const { data: summaryData, error: summaryErr } = await supabase.rpc(
-        'fn_get_agent_commission_summary',
-        { p_agent_id: user.id, p_club_id: canonicalClubId }
-      );
+      const { data: summaryData, error: summaryErr } = await supabase
+        .rpc('fn_get_agent_commission_summary', { p_agent_id: user.id, p_club_id: canonicalClubId })
+        .abortSignal(signal);
       if (!current()) return;
+      setReadError(false);
       if (summaryErr) reportError(summaryErr, 'AgentCommissionDashboard.Summary_RPC_failed');
 
       const summaryAmounts = ['total_earned', 'this_week', 'this_month', 'pending_payout'];
@@ -206,13 +167,17 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           pendingPayout: Number(summaryData.pending_payout) || 0,
           lastPayout: summaryData.last_payout ? new Date(summaryData.last_payout) : null,
         });
-      }
+      } else setSummary(null);
 
       // The real outstanding figure, per club. Cheap enough for a page load
       // (one indexed sum). Settlement remains exclusively server scheduled.
       if (canonicalClubId) {
         try {
-          const amount = await CommissionService.unsettledCommission(canonicalClubId, user.id);
+          const amount = await CommissionService.unsettledCommission(
+            canonicalClubId,
+            user.id,
+            signal
+          );
           if (current()) setOwed(amount);
         } catch (e) {
           reportError(e, 'AgentCommissionDashboard.unsettled');
@@ -247,7 +212,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         .limit(50);
       if (canonicalClubId) recordsQuery = recordsQuery.eq('club_id', canonicalClubId);
 
-      const { data: recordsData, error: recordsErr } = await recordsQuery;
+      const { data: recordsData, error: recordsErr } = await recordsQuery.abortSignal(signal);
       if (!current()) return;
       if (recordsErr || !Array.isArray(recordsData)) {
         setRecordsUnavailable(true);
@@ -256,6 +221,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           'AgentCommissionDashboard.Records_load_failed'
         );
       } else {
+        setRecordsUnavailable(false);
         setRecords(
           recordsData.map((r: any) => ({
             id: r.id,
@@ -281,6 +247,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         .select('id')
         .eq('user_id', user.id)
         .eq('club_id', canonicalClubId)
+        .abortSignal(signal)
         .maybeSingle();
 
       if (!current()) return;
@@ -289,12 +256,17 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         reportError(myAgentError, 'AgentCommissionDashboard.Agent_load_failed');
         return;
       }
-      if (!myAgent) return;
+      if (!myAgent) {
+        setSubAgents([]);
+        setSubAgentsError(null);
+        return;
+      }
       const { data: subAgentsData, error: subAgentsErr } = await supabase
         .from('agents')
         .select('id, user_id, total_players, commission_rate, created_at')
         .eq('parent_agent_id', myAgent.id)
-        .eq('club_id', canonicalClubId);
+        .eq('club_id', canonicalClubId)
+        .abortSignal(signal);
       if (!current()) return;
       if (subAgentsErr || !Array.isArray(subAgentsData)) {
         setSubAgentsError('Your Sub-Agents Could Not Be Loaded.');
@@ -326,7 +298,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       let downlineFailed = false;
       if (myAgent) {
         try {
-          for (const row of await CommissionService.downlineCommission(canonicalClubId)) {
+          for (const row of await CommissionService.downlineCommission(canonicalClubId, signal)) {
             downlineOwed[row.agentId] = row.unclaimed;
           }
           if (subAgentsData.some((agent: any) => downlineOwed[agent.id] === undefined)) {
@@ -339,7 +311,9 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       }
 
       if (!current()) return;
-      if (downlineFailed) setSubAgentsError('Sub-Agent Commission Balances Could Not Be Loaded.');
+      setSubAgentsError(
+        downlineFailed ? 'Sub-Agent Commission Balances Could Not Be Loaded.' : null
+      );
       if (subAgentsData) {
         // Batch-fetch sub-agent profiles (no FK hint needed)
         const subAgentUserIds = subAgentsData.map((a: any) => a.user_id).filter(Boolean);
@@ -349,7 +323,8 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
             const { data: profiles, error: profilesError } = await supabase
               .from('profiles')
               .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
-              .in('id', subAgentUserIds);
+              .in('id', subAgentUserIds)
+              .abortSignal(signal);
             if (!current()) return;
             if (profilesError) throw profilesError;
             if (profiles) {
@@ -412,7 +387,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
     return (
       <div className="agent-commission empty-state" role="alert">
         <p>Your Commission Data Could Not Be Loaded.</p>
-        <button className="payout-btn" onClick={() => loadDataRef.current()}>
+        <button className="payout-btn" onClick={() => refresh()}>
           Try Again
         </button>
       </div>
@@ -603,7 +578,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       {activeTab === 'summary' && !summary && (
         <div className="empty-state">
           <p>Your Commission Summary Could Not Be Loaded.</p>
-          <button className="payout-btn" onClick={() => loadDataRef.current()}>
+          <button className="payout-btn" onClick={() => refresh()}>
             Try Again
           </button>
         </div>
@@ -615,7 +590,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           {recordsUnavailable ? (
             <div className="empty-state" role="alert">
               <p>Your Commission Records Could Not Be Loaded.</p>
-              <button className="payout-btn" onClick={() => loadDataRef.current()}>
+              <button className="payout-btn" onClick={() => refresh()}>
                 Try Again
               </button>
             </div>
@@ -669,7 +644,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           {subAgentsError && (
             <div className="empty-state" role="alert">
               <p>{subAgentsError}</p>
-              <button className="payout-btn" onClick={() => loadDataRef.current()}>
+              <button className="payout-btn" onClick={() => refresh()}>
                 Try Again
               </button>
             </div>

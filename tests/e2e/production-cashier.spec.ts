@@ -136,4 +136,56 @@ test.describe('Production Cashier Certification', () => {
     expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
     expect(bounds.documentWidth).toBeLessThanOrEqual(bounds.viewportWidth);
   });
+
+  test('refreshes the visible commission summary through its scoped read contract', async ({
+    page,
+  }) => {
+    // A cold route (60s), its read sequence (15s) and the next visible read
+    // (30s plus request time) need room inside the complete test budget.
+    test.setTimeout(150_000);
+    const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+    await page.goto(`clubs/${clubId}/agents`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+    const summaryResponse = () =>
+      page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_get_agent_commission_summary'),
+        { timeout: 50_000 }
+      );
+    const initial = summaryResponse();
+    await page.getByRole('tab', { name: 'Commissions', exact: true }).click();
+    const first = await initial;
+    expect(first.status()).toBe(200);
+    const request = first.request().postDataJSON();
+    expect(request.p_club_id).toBe(clubId);
+    expect(request.p_agent_id).toMatch(/^[0-9a-f-]{36}$/i);
+    const assertSummary = async (response: typeof first) => {
+      expect(response.status()).toBe(200);
+      expect(response.request().postDataJSON()).toEqual(request);
+      const summary = await response.json();
+      for (const key of ['total_earned', 'this_week', 'this_month', 'pending_payout']) {
+        expect(['number', 'string']).toContain(typeof summary[key]);
+        expect(String(summary[key]).trim()).not.toBe('');
+        expect(Number.isFinite(Number(summary[key]))).toBe(true);
+      }
+      return summary;
+    };
+    await assertSummary(first);
+    // The maintained production fixture is a reserved zero-balance staff
+    // membership. Only read its own commission; never create an agent, grant
+    // float, click a payout/send control or impersonate a real club member.
+    const next = summaryResponse();
+    const dashboard = page.locator('.agent-commission');
+    await expect(
+      dashboard.getByRole('region', { name: 'Automatic Weekly Settlement' })
+    ).toBeVisible({ timeout: 30_000 });
+    const refreshed = await assertSummary(await next);
+    await expect(dashboard.locator('.summary-card.total .value')).toHaveText(
+      Number(refreshed.total_earned).toLocaleString(),
+      { timeout: 15_000 }
+    );
+  });
 });

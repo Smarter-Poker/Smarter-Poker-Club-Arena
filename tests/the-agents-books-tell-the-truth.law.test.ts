@@ -239,11 +239,15 @@ describe('the client asks the ledger', () => {
     expect(DASHBOARD).toMatch(/settled_via/);
   });
 
-  it('the realtime listener is on a table that is actually published', () => {
-    // It listened to commission_records, which is not in supabase_realtime and
-    // never held a row, so it could not fire even in principle.
-    expect(DASHBOARD).toMatch(/table: 'agent_commissions'/);
-    expect(DASHBOARD).toMatch(/filter: `user_id=eq\.\$\{user\.id\}`/);
+  it('observes the authenticated summary without republishing the per-hand ledger', () => {
+    // agent_commissions was removed from publication in the measured cost trim.
+    // Drive the real component in AgentCommissionAutomaticSettlement as well.
+    expect(DASHBOARD).toContain('useVisibleRead({');
+    expect(DASHBOARD).toContain('scopeKey: readScope');
+    expect(DASHBOARD).toContain('intervalMs: 30_000');
+    expect(DASHBOARD).toContain('.abortSignal(signal)');
+    expect(DASHBOARD).not.toMatch(/table: 'agent_commissions'/);
+    expect(DASHBOARD).toContain('p_agent_id: user.id');
   });
 
   it('the summary is asked for the club being looked at', () => {

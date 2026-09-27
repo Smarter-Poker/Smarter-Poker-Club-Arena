@@ -22,6 +22,12 @@ ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY)_[A-Z0-9_]{1
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 HEADER = re.compile(r'^\[[^\]\r\n]{1,160}\]')
 MAX_BYTES = 8 * 1024 * 1024
+HEALTH_TIMEOUT = 10
+CAPTURE_TIMEOUT = 20
+CONNECT_TIMEOUT = 10
+# Both host identity reads surround capture; the outer transport owns their
+# complete budget plus connection setup and a finite transfer allowance.
+TRANSPORT_TIMEOUT = 2 * HEALTH_TIMEOUT + CAPTURE_TIMEOUT + CONNECT_TIMEOUT + 5
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
 
 
@@ -82,7 +88,7 @@ def capture(command=COMMAND):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     stream = selectors.DefaultSelector()
     stream.register(process.stdout, selectors.EVENT_READ)
-    chunks, size, deadline = [], 0, time.monotonic()+20
+    chunks, size, deadline = [], 0, time.monotonic()+CAPTURE_TIMEOUT
     try:
         while True:
             remaining = deadline-time.monotonic()
@@ -116,7 +122,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def health(origin='https://engine.smarter.poker'):
     url = origin+'/health?runtime_observation=' + str(time.time_ns())
-    with urllib.request.build_opener(NoRedirect).open(url, timeout=10) as r:
+    with urllib.request.build_opener(NoRedirect).open(url, timeout=HEALTH_TIMEOUT) as r:
         if r.status != 200:
             raise RuntimeError('Health unavailable')
         body = r.read(262145)
@@ -167,9 +173,9 @@ def main():
         # container and time window cannot be selected through dispatch input.
         args = ['ssh', '-i', str(directory/'key'), '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
-                '-o', 'UserKnownHostsFile='+str(directory/'known_hosts'), '-o', 'ConnectTimeout=10',
+                '-o', 'UserKnownHostsFile='+str(directory/'known_hosts'), '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
                 'root@'+host, "python3 - --remote '"+encoded+"'"]
-        reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=35)
+        reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=TRANSPORT_TIMEOUT)
         if reply.returncode or len(reply.stdout) > 262144:
             raise RuntimeError('Scoped transport unavailable')
         result = json.loads(reply.stdout)

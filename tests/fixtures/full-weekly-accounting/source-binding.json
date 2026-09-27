@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+    "scripts/ci/classify-ci-changes.mjs": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "26bf55e5ab1d1138c3e3234b0e0fa6fb57bbb7e4bfcb5eecbf21976949ea1fec",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "0dcdffe72baddb4afea6e89094543f0370849ac83560c71e042570611de7652e",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "63971c18afc24c9a085370031dd83f11e6c4966e952a3746cc5855750a6aaa66",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "c9e021162f8856da45ba7c3d7275e8d33abc264f195225dcf8311782691ba530",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2110,6 +2110,48 @@
         "tests/fixtures/sep8-spin-custody/source-binding.json"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 source-only satellite audit index native qualification",
+      "why": "Add one required accounting shard4 native runner and its path admission; no financial component/assertion/captured baseline changed. Preserve every previous audit entry.",
+      "changes": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "previous": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+          "current": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb"
+        },
+        {
+          "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+          "previous": "26bf55e5ab1d1138c3e3234b0e0fa6fb57bbb7e4bfcb5eecbf21976949ea1fec",
+          "current": "81866076cb1b496de3a991d516aec861e155624817a42bd1b00fe6b52ecdc777"
+        },
+        {
+          "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+          "previous": "63971c18afc24c9a085370031dd83f11e6c4966e952a3746cc5855750a6aaa66",
+          "current": "61ac93fa887b49636a43dc3ef12c9f0dd586ee650cf901651f5bd0793665b322"
+        }
+      ]
+    },
+    {
+      "integration": "2026-09-27 finite recovery of the same interrupted satellite source index",
+      "why": "Also admit the maintained REINDEX CONCURRENTLY statement; native fixture reads its exact source and reproduces the ready/live invalid old-snapshot boundary. No financial function or previous history changed.",
+      "changes": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "previous": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb",
+          "current": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2"
+        },
+        {
+          "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+          "previous": "81866076cb1b496de3a991d516aec861e155624817a42bd1b00fe6b52ecdc777",
+          "current": "0dcdffe72baddb4afea6e89094543f0370849ac83560c71e042570611de7652e"
+        },
+        {
+          "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+          "previous": "61ac93fa887b49636a43dc3ef12c9f0dd586ee650cf901651f5bd0793665b322",
+          "current": "c9e021162f8856da45ba7c3d7275e8d33abc264f195225dcf8311782691ba530"
+        }
+      ]
     }
   ],
   "tournament_rake_club_successor_20260921": {

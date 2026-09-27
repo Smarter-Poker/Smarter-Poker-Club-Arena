@@ -56,6 +56,10 @@ const discoveryPrivacy =
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 
+// Sparse satellite receipt reads qualify their actual online index and audit.
+const satelliteAuditIndex =
+  /^(scripts\/(?:ci\/(?:test-satellite-audit-index-postgres\.py$|fixtures\/satellite-audit-index\/)|ops\/(?:build|recover)-satellite-audit-index-concurrently\.sql$)|tests\/satelliteAuditIndexRegression\.test\.ts$)/;
+
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
   /^(scripts\/ci\/(?:test-certification-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/certification-retirement\/)|tests\/unit\/productionE2EAccount\.test\.ts$)/;
@@ -237,7 +241,8 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
-      matches(certificationRetirement),
+      matches(certificationRetirement) ||
+      matches(satelliteAuditIndex),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
@@ -270,7 +275,8 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
-      matches(certificationRetirement),
+      matches(certificationRetirement) ||
+      matches(satelliteAuditIndex),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

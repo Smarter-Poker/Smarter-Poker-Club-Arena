@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169529,
-      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      "bytes": 169719,
+      "sha256": "3a8b631da9e8cc70c945e9692382e5b9178daf508f974fc03dd000a0448a5f54"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24631,
-      "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      "bytes": 25031,
+      "sha256": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -477,5 +477,50 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "satellite_audit_index_qualification_20260927": {
+    "integration": "2026-09-27 source-only satellite audit index native qualification",
+    "why": "Add one required accounting shard4 native runner and its path admission; no financial component/assertion/captured baseline changed. Preserve every previous audit entry.",
+    "changes": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "current": {
+          "bytes": 169719,
+          "sha256": "3a8b631da9e8cc70c945e9692382e5b9178daf508f974fc03dd000a0448a5f54"
+        }
+      },
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "current": {
+          "bytes": 25019,
+          "sha256": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb"
+        }
+      }
+    ]
+  },
+  "satellite_audit_index_recovery_20260927": {
+    "integration": "2026-09-27 finite recovery of the same interrupted satellite source index",
+    "why": "Also admit the maintained REINDEX CONCURRENTLY statement; native fixture reads its exact source and reproduces the ready/live invalid old-snapshot boundary. No financial function or previous history changed.",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 25019,
+          "sha256": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb"
+        },
+        "current": {
+          "bytes": 25031,
+          "sha256": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2"
+        }
+      }
+    ]
   }
 }

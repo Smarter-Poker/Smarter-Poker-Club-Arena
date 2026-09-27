@@ -1388,6 +1388,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
 
+      - name: Satellite conservation keeps exact results through an online source index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-audit-index-postgres.py
+
       - name: Achievement and rate history reads enforce account and finance scope
         if: matrix.shard == 4
         run: python3 scripts/ci/test-scoped-audit-reads.py

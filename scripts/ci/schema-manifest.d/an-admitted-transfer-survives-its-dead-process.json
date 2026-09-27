@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/claude-f06-adopt/fix/admitted-transfer-survives-its-process - migration 20260927163949_an_admitted_transfer_survives_its_dead_process",
+  "_comment": "NOT YET APPLIED: the table and the door below are a promise until 20260927163949 is installed from main by apply-merged-migration.yml after this PR merges. smarter_private.f06_manager_custody_readmissions is append-only (the transfer tables' immutability triggers); public.fn_f06_readmit_mixed_manager_custody hands an ADMITTED, UNCOMPLETED mixed custody transfer from a dead admitted generation to a fresh live one. Proved against production rows in one rolled-back DO block (docs/changelog/2026-09-27-an-admitted-transfer-survives-its-dead-process.md).",
+  "tables": ["smarter_private.f06_manager_custody_readmissions"],
+  "functions": ["fn_f06_readmit_mixed_manager_custody"]
+}

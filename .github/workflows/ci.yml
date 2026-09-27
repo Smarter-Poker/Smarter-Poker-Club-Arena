@@ -1400,6 +1400,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-satellite-ledger-audit-index-postgres.py
 
+      - name: Union administrator directory enforces caller scope and revocation
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-union-admin-directory.py
+
       - name: Achievement and rate history reads enforce account and finance scope
         if: matrix.shard == 4
         run: python3 scripts/ci/test-scoped-audit-reads.py

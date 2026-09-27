@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171068,
-      "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+      "bytes": 171242,
+      "sha256": "d3a08b4478367311cb7e7fe3ad98f461cb133dbf8f0532b9ff7c2bf5c102d68c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27619,
-      "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+      "bytes": 27862,
+      "sha256": "d43e9934ac1033a66d9697837e179dd9a7530700e0dd28988325abe1afbae6aa"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -917,5 +917,19 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "unionDirectoryReadQualification20260927": {
+    "reason": "Add caller-bound read-only union administrator native qualification to existing accounting shard 4 and classify each isolated fixture input. Every previous rule, path and audit record remains; no financial fixture assertion changes.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 171068,
+        "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 27619,
+        "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+      }
+    },
+    "qualification": "Exact changed source reviewed; binding validity is separate from actual native and required hosted outcomes."
   }
 }

@@ -2,16 +2,15 @@
  *  RAKEBACK PAGE — Player Rakeback Dashboard with Charts
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import './RakebackPage.css';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useVisibleRead } from '../hooks/useVisibleRead';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
@@ -45,7 +44,6 @@ function rateLabel(rate: number | null | undefined) {
 
 export default function RakebackPage() {
   const navigate = useNavigate();
-  useVisibilityRefresh(() => loadRakebackData());
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -56,15 +54,12 @@ export default function RakebackPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [visiblePeriodRows, setVisiblePeriodRows] = useState(new Set<number>());
-  const mountedRef = useRef(true);
   const scopeRef = useRef({ userId: user?.id, epoch: 0 });
   // Invalidate old continuations immediately when the rendered account changes.
   if (scopeRef.current.userId !== user?.id) {
     scopeRef.current = { userId: user?.id, epoch: scopeRef.current.epoch + 1 };
   }
   const loadRakebackDataRef = useRef<() => void>(() => {});
-  const loadingRef = useRef(false);
-  const reloadQueuedRef = useRef(false);
   const ownsData = dataEpoch === scopeRef.current.epoch && !!user?.id;
   const periods = useMemo(() => (ownsData ? loadedPeriods : []), [ownsData, loadedPeriods]);
   const discoveredPeriods = useMemo(
@@ -74,27 +69,13 @@ export default function RakebackPage() {
   const totalEarned = periods.reduce((sum, p) => sum + (Number(p.rakeback_earned) || 0), 0);
   const currentRate = periods[0]?.rakeback_rate;
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      scopeRef.current.epoch += 1;
-      reloadQueuedRef.current = false;
-    };
-  }, []);
-
-  const loadRakebackData = async () => {
-    const { userId, epoch } = scopeRef.current;
-    if (!userId || !mountedRef.current) return;
-    if (loadingRef.current) {
-      reloadQueuedRef.current = true;
-      return;
-    }
-    const ownsRequest = () => mountedRef.current && scopeRef.current.epoch === epoch;
-    loadingRef.current = true;
-    setLoading(true);
-    setLoadError(null);
-    try {
+  const loadRakebackData = useVisibleRead({
+    scopeKey: JSON.stringify([user?.id, scopeRef.current.epoch]),
+    enabled: !!user?.id,
+    intervalMs: 60_000,
+    read: async (signal) => {
+      const { userId, epoch } = scopeRef.current;
+      if (!userId) throw new Error('Rakeback Account Is Unavailable');
       // The book is a Pacific calendar; a UTC date opens the window early.
       const accountingToday = rakebackAccountingDay(Date.now());
       const [history, eligible] = await Promise.all([
@@ -103,6 +84,7 @@ export default function RakebackPage() {
           .select(PERIOD_COLUMNS)
           .eq('user_id', userId)
           .order('period_start', { ascending: false })
+          .abortSignal(signal)
           .limit(12),
         supabase
           .from('rakeback_periods')
@@ -113,73 +95,62 @@ export default function RakebackPage() {
           .lt('period_end', accountingToday)
           .not('club_id', 'is', null)
           .order('period_start', { ascending: false })
+          .abortSignal(signal)
           .limit(1),
       ]);
-      if (!ownsRequest()) return;
       if (history.error) throw history.error;
       if (eligible.error) throw eligible.error;
-      setPeriods(history.data || []);
-      setReadyPeriod(eligible.data?.[0] || null);
+      const validRows = (rows: unknown, limit: number): rows is RakebackPeriod[] =>
+        Array.isArray(rows) &&
+        rows.length <= limit &&
+        rows.every(
+          (row) =>
+            row &&
+            typeof row.id === 'string' &&
+            row.user_id === userId &&
+            (typeof row.club_id === 'string' || row.club_id === null) &&
+            typeof row.period_start === 'string' &&
+            typeof row.period_end === 'string' &&
+            typeof row.status === 'string' &&
+            typeof row.rake_generated === 'number' &&
+            Number.isFinite(row.rake_generated) &&
+            typeof row.rakeback_earned === 'number' &&
+            Number.isFinite(row.rakeback_earned) &&
+            (row.rakeback_rate === null ||
+              (typeof row.rakeback_rate === 'number' && Number.isFinite(row.rakeback_rate)))
+        );
+      if (!validRows(history.data, 12) || !validRows(eligible.data, 1))
+        throw new Error('Rakeback Data Is Unavailable');
+      return { history: history.data, ready: eligible.data[0] ?? null, epoch };
+    },
+    onData: ({ history, ready, epoch }) => {
+      if (scopeRef.current.epoch !== epoch) return;
+      setPeriods(history);
+      setReadyPeriod(ready);
       setDataEpoch(epoch);
       setReadinessAt(Date.now());
-    } catch (error) {
-      if (ownsRequest() && !reloadQueuedRef.current) {
-        reportError(error, 'RakebackPage.Failed_to_load_rakeback');
-        setLoadError('Rakeback Data Could Not Be Refreshed. Please Try Again.');
-        toast.error('Failed To Load Rakeback Data.');
-      }
-    } finally {
-      loadingRef.current = false;
-      if (reloadQueuedRef.current && mountedRef.current && scopeRef.current.userId) {
-        reloadQueuedRef.current = false;
-        loadRakebackDataRef.current();
-      } else if (ownsRequest()) {
-        setLoading(false);
-      }
-    }
-  };
+      setLoadError(null);
+      setLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'RakebackPage.Failed_to_load_rakeback');
+      setLoadError('Rakeback Data Could Not Be Refreshed. Please Try Again.');
+      setLoading(false);
+      toast.error('Failed To Load Rakeback Data.');
+    },
+    onReset: () => {
+      setPeriods([]);
+      setReadyPeriod(null);
+      setDataEpoch(null);
+      setLoadError(null);
+      setLoading(!!user?.id);
+      setReadinessAt(Date.now());
+    },
+  });
   loadRakebackDataRef.current = loadRakebackData;
 
-  useEffect(() => {
-    setPeriods([]);
-    setReadyPeriod(null);
-    setDataEpoch(null);
-    setLoadError(null);
-    setReadinessAt(Date.now());
-    if (user?.id) loadRakebackDataRef.current();
-    else {
-      reloadQueuedRef.current = false;
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  // Real-time updates when rakeback periods change
-  const handleRakebackUpdate = useCallback(() => {
-    loadRakebackDataRef.current();
-  }, []);
-
-  useMasterBusChannel({
-    channelName: user?.id ? `rakeback-updates-${user.id}` : null,
-    table: 'rakeback_periods',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: '*',
-    onPayload: handleRakebackUpdate,
-    enabled: !!user?.id,
-  });
-
-  // Real-time wallet updates: NOT subscribed here any more (2026-08-24).
-  //
-  // A `wallet-updates-<uid>` channel on `wallets` filtered by user_id used to
-  // sit here with a handleWalletUpdate callback. PostgresSyncHooks'
-  // `global_db_sync:<userId>` channel already carries that exact listener -
-  // same table, same filter - created once at sign-in and never torn down by
-  // navigation, and it emits BALANCE_UPDATED. The bus subscriber below already
-  // reloads on BALANCE_UPDATED, so the refresh path is unchanged and one
-  // subscription per visit to this page disappears.
-  //
-  // The rakeback_periods channel above STAYS: it is genuinely specific to this
-  // page and has no equivalent in the global channel.
-
+  // rakeback_periods is unpublished. A mounted visible view reads its own two
+  // bounded queries; hidden/offline views stop, and old-account replies retire.
   // Bus listeners: reload when balance changes or settlements complete
   useEffect(() => {
     if (!user?.id) return;

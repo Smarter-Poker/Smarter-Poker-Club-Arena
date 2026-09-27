@@ -60,6 +60,8 @@ const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
+const unionAdminDirectory =
+  /^(scripts\/ci\/(?:test-union-admin-directory\.py$|fixtures\/union-admin-directory\/)|tests\/unionAdminDirectoryRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
@@ -261,6 +263,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(bbjContributionCover) ||
+      matches(unionAdminDirectory) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
       matches(settlementConservationIndex) ||
@@ -302,6 +305,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(bbjContributionCover) ||
+      matches(unionAdminDirectory) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
       matches(settlementConservationIndex) ||

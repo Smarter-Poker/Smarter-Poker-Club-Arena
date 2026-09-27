@@ -130,16 +130,19 @@ REVOKE ALL ON FUNCTION public.enforce_chip_ledger_performed_by()
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_chip_ledger_performed_by() TO service_role;
 
-DROP TRIGGER trg_chip_ledger_performed_by ON public.chip_ledger;
-CREATE TRIGGER trg_chip_ledger_performed_by
-BEFORE INSERT OR UPDATE OF performed_by ON public.chip_ledger
+-- Keep the existing INSERT trigger in place. Replacing it would add a
+-- destructive DDL edge on a live financial table for no behavioral gain; the
+-- replaced function already hardens inserts. Add the narrowly scoped UPDATE
+-- trigger separately for the archived actor detachment path.
+CREATE TRIGGER trg_chip_ledger_performed_by_update
+BEFORE UPDATE OF performed_by ON public.chip_ledger
 FOR EACH ROW EXECUTE FUNCTION public.enforce_chip_ledger_performed_by();
 
 INSERT INTO public.ca_declared_money_triggers (table_name, trigger_name, note)
 VALUES (
   'chip_ledger',
-  'trg_chip_ledger_performed_by',
-  'Create Club certification hardening: inserts still require a real actor; actor updates are refused except an exact reserved certification actor-to-null detachment after its complete old ledger row has been preserved in the immutable private archive.'
+  'trg_chip_ledger_performed_by_update',
+  'Create Club certification hardening: actor updates are refused except an exact reserved certification actor-to-null detachment after its complete old ledger row has been preserved in the immutable private archive; the existing insert trigger remains installed.'
 )
 ON CONFLICT (table_name, trigger_name) DO UPDATE
 SET note = EXCLUDED.note;

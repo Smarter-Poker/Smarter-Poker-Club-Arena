@@ -90,7 +90,9 @@ describe('Create Club production certification contract', () => {
     );
     expect(migration).toContain("<> 'ce4ab3013be283d66ab9afd1e861b552'");
     expect(migration).toContain('CHIP_LEDGER_ACTOR_TRIGGER_PREIMAGE_CHANGED');
-    expect(migration).toContain('BEFORE INSERT OR UPDATE OF performed_by');
+    expect(migration).toContain('CREATE TRIGGER trg_chip_ledger_performed_by_update');
+    expect(migration).toContain('BEFORE UPDATE OF performed_by');
+    expect(migration).not.toContain('DROP TRIGGER trg_chip_ledger_performed_by');
     expect(migration).toContain('INSERT INTO public.ca_declared_money_triggers');
     expect(migration).toContain("v_reason LIKE 'certification-cleanup:%'");
     expect(migration).toContain('NEW.performed_by IS NULL');

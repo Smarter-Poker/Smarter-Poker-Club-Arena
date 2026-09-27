@@ -1,0 +1,1115 @@
+From 24dd480b78853761377c238c40096198d9784a53 Mon Sep 17 00:00:00 2001
+From: fleet <fleet@local>
+Date: Sun, 27 Sep 2026 09:46:14 -0500
+Subject: [PATCH] fix(e2e): production never receives a synthetic hand; certify
+ the settled-hand trigger natively
+
+tests/e2e/production-daily-missions.spec.ts certified the settled-hand Daily
+Missions trigger by inserting a synthetic hand_history row into production
+(table_id NULL, winners [], pot 600, hand_number 1.7e9-1.8e9) and deleting it
+in a finally block. Every Post-Deploy E2E run put a winnerless 600-chip hand
+into the live hand ledger; every run cancelled or timed out before its finally
+left it there. Four survived (2026-09-11, 09-19, 09-23, 09-24) and raised the
+cash-pot conservation no_winner_recorded monitor twelve times (board #5070,
+incident e2e-synthetic-hands).
+
+- The production spec no longer writes hand_history. Its step inserts the
+  exact daily_challenge_event_outbox row the settled-hand trigger writes
+  (event_key certification:outbox:<uuid>, threshold_values
+  {big_pots:[499,500],strong_hands:[6,7]}) and waits for the live pg_cron
+  drainer to book it: the receipt lands in daily_challenge_progress_events and
+  the outbox row is gone. The spec never books the event itself, so the
+  handoff, the outbox and the drainer stay certified in production. The wait
+  is 180 s, above the measured drain lag (p99 69 s, max 173 s).
+- scripts/ci/test-daily-missions-hand-trigger-postgres.py certifies the
+  trigger itself on a private native PostgreSQL, loading the newest migration
+  that defines fn_enqueue_hand_daily_missions and its trigger.
+- The service-role request layer (serviceRequest in
+  tests/e2e/support/temporaryCustomizationAccount.ts) refuses, before sending,
+  any write to a hand or ledger table and any hand, rake, settlement, payout,
+  jackpot or seat RPC (tests/e2e/support/productionLedgerWritePolicy.mjs); the
+  one named diamond journal exception passes only for its exact table, method
+  and reference prefix.
+- tests/operations/production-e2e-ledger-write-guard.test.mjs reads the same
+  lists and refuses any tests/e2e write, hand/ledger RPC or literal ledger REST
+  path (fails closed on an unreadable target), pins the run-time refusal, and
+  runs on every PR. The native certification runs in accounting shard 4, and
+  classify-ci-changes selects that job when only the native script changes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KbC6SSK12W2uBJBMvtQ3Ln
+---
+ .github/workflows/ci.yml                      |  10 +
+ ...duction-never-receives-a-synthetic-hand.md |  85 ++++++
+ scripts/ci/classify-ci-changes.mjs            |   2 +-
+ ...st-daily-missions-hand-trigger-postgres.py | 228 ++++++++++++++++
+ tests/e2e/production-daily-missions.spec.ts   | 143 +++++-----
+ .../support/productionLedgerWritePolicy.mjs   | 126 +++++++++
+ .../support/temporaryCustomizationAccount.ts  |   4 +
+ ...production-e2e-ledger-write-guard.test.mjs | 253 ++++++++++++++++++
+ ...ilyMissionsProductionCertification.test.ts |  20 +-
+ tests/unit/fixtureNativeCi.test.ts            |   8 +-
+ 10 files changed, 798 insertions(+), 81 deletions(-)
+ create mode 100644 docs/changelog/2026-09-27-production-never-receives-a-synthetic-hand.md
+ create mode 100644 scripts/ci/test-daily-missions-hand-trigger-postgres.py
+ create mode 100644 tests/e2e/support/productionLedgerWritePolicy.mjs
+ create mode 100644 tests/operations/production-e2e-ledger-write-guard.test.mjs
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d49302849..6fd2425e5 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -371,6 +371,9 @@ jobs:
+       - name: Native fixture gate rejects missing and skipped proof
+         run: node --test tests/operations/fixture-required-ci.test.mjs
+ 
++      - name: Production e2e specs never write a hand or ledger table
++        run: node --test tests/operations/production-e2e-ledger-write-guard.test.mjs
++
+       - name: Local dependency preflight refuses incomplete or stale installs
+         run: node --test tests/operations/local-dependency-policy.test.mjs
+ 
+@@ -1835,6 +1838,13 @@ jobs:
+           PG_BIN: /usr/lib/postgresql/17/bin
+         run: python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat
+ 
++      - name: Settled-hand Daily Missions trigger is certified on native PostgreSQL
++        id: daily_missions_hand_trigger
++        if: matrix.shard == 4
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: python3 scripts/ci/test-daily-missions-hand-trigger-postgres.py
++
+       - name: Rake attribution commits with its fee or rolls back together
+         id: rake_attribution_atomic
+         if: matrix.shard == 4
+diff --git a/docs/changelog/2026-09-27-production-never-receives-a-synthetic-hand.md b/docs/changelog/2026-09-27-production-never-receives-a-synthetic-hand.md
+new file mode 100644
+index 000000000..20ec619fd
+--- /dev/null
++++ b/docs/changelog/2026-09-27-production-never-receives-a-synthetic-hand.md
+@@ -0,0 +1,85 @@
++# Production Never Receives A Synthetic Hand
++
++Board #5070, incident `e2e-synthetic-hands`, lane PRIMARY-CHAT.
++
++## What Happened
++
++`tests/e2e/production-daily-missions.spec.ts` certified the settled-hand Daily
++Missions trigger by inserting a synthetic `hand_history` row into the
++production database through the service role: `table_id` and `tournament_id`
++NULL, `winners` and `players` empty, `pot_size` 600, `hand_number` in
++1,700,000,000 to 1,799,999,999, `source` defaulting to `manual`. It deleted the
++row in a `finally` block. Every run of Post-Deploy E2E therefore put a
++winnerless 600-chip hand into the live hand ledger for the length of the run,
++and every run that was cancelled or hit the job timeout before its `finally`
++left the row there for good.
++
++Four survived: 2026-09-11, 09-19, 09-23 and 09-24. They are the only
++`table_id IS NULL` rows in `hand_history`. The cash-pot conservation check read
++three of them inside its 24-hour window and raised `no_winner_recorded` twelve
++times (six-hourly, four detections per hand), all linked to the one unresolved
++`financial_alerts` row for that condition. The monitor was right: a hand
++holding 600 chips with no winner is what it exists to find. The hands were not
++real.
++
++Two earlier drafts (#5225, #5226) diagnosed an engine crash fallback and a
++direct probe call; both were closed. The SIGTERM handler added by #5357 only
++narrowed the window: the synthetic row still reached production on every run.
++
++## The Fix
++
++- The production spec no longer writes `hand_history` at all. Its step now
++  certifies the production half the trigger hands off to. It inserts the exact
++  `daily_challenge_event_outbox` row that `fn_enqueue_hand_daily_missions()`
++  writes for a settled hand (`user_id`, `event_key`
++  `certification:outbox:<uuid>`, `amounts`, `magnitudes`, `threshold_values`
++  `{big_pots: [499, 500], strong_hands: [6, 7]}`, `occurred_at`; the rest take
++  their table defaults, as they do for a real hand). It then waits for the live
++  pg_cron drainer (`sp_drain_daily_challenge_event_outbox` to
++  `fn_drain_daily_challenge_event_outbox_user`, four shards once a minute) to
++  book it: the exact receipt appears in `daily_challenge_progress_events` and
++  the outbox row is gone. The spec never books the event itself, so production
++  still certifies the trigger's handoff, the outbox and the drainer, and a
++  stalled or broken drainer fails the run.
++- The drain wait is 180 seconds, derived from the measured production lag from
++  `occurred_at` to the booked receipt (2026-09-27, three hours, 266,771 hand
++  events): p50 29 s, p95 58 s, p99 69 s, max 173 s. The previous 60-second wait
++  sat below the p99.
++- The trigger itself (`hand_history` insert to `daily_challenge_event_outbox`)
++  is certified on a private native PostgreSQL by
++  `scripts/ci/test-daily-missions-hand-trigger-postgres.py`, which loads the
++  newest migration that defines `fn_enqueue_hand_daily_missions()` and the
++  trigger DDL, and proves: exact threshold preservation, per-player events and
++  `{}` defaults, a malformed event isolated from its siblings, no event means no
++  outbox row, and atomicity plus idempotency with the hand's own transaction.
++- The service-role request layer refuses the write at run time.
++  `serviceRequest` in `tests/e2e/support/temporaryCustomizationAccount.ts`, the
++  one path every service-role row write and RPC takes, calls
++  `assertProductionLedgerWriteAllowed` from
++  `tests/e2e/support/productionLedgerWritePolicy.mjs` before it sends anything.
++  A non-read request to a hand or ledger table, or to an RPC that commits,
++  settles or repairs a hand, rake, payout, jackpot or seat, throws before it
++  leaves the runner, whatever helper or path built it. The one named exception
++  (a separate diamond journal write in
++  `tests/e2e/daily-missions-database-settlement.spec.ts`) passes only for its
++  exact table, method and reference prefix.
++- `tests/operations/production-e2e-ledger-write-guard.test.mjs` reads the same
++  lists and refuses, on every pull request, any spec under `tests/e2e` that
++  writes a hand or ledger table, calls a hand or ledger RPC, or spells a REST
++  path to a ledger table; a helper write or service RPC whose target it cannot
++  read is refused too. It also pins the run-time refusal and the CI wiring.
++- `scripts/ci/classify-ci-changes.mjs` selects the PostgreSQL job for a change
++  to the native certification alone, so an edit to that script cannot skip it.
++
++A database constraint on `hand_history` is not the owning layer here: the
++engine writes hands through the same service role, so the database cannot tell
++a certification write from a real one, and a constraint would be a migration
++for a defect that lives in the test harness.
++
++## Not Changed Here
++
++The four surviving rows are left in place for the owner. Migration
++`20260926151328_prune_e2e_certification_hand_history_fixtures.sql` (from #5357)
++is on main and not installed in production; as written it would classify these
++rows as keepers (their `players` array is empty) and set `has_human = true`
++rather than prune them.
+diff --git a/scripts/ci/classify-ci-changes.mjs b/scripts/ci/classify-ci-changes.mjs
+index 591ec44b9..f3bdde1f7 100644
+--- a/scripts/ci/classify-ci-changes.mjs
++++ b/scripts/ci/classify-ci-changes.mjs
+@@ -41,7 +41,7 @@ const firstArchivedSpin =
+ 
+ // Production Alert SQL inputs select the existing accounting checks.
+ const productionAlertsSql =
+-  /^(scripts\/ci\/(?:test-(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\.py$|probes\/(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\/)|tests\/tournament-rake-attribution-retries-inside-its-own-transaction\.law\.test\.ts$)/;
++  /^(scripts\/ci\/(?:test-(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic|daily-missions-hand-trigger-postgres)\.py$|probes\/(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\/)|tests\/tournament-rake-attribution-retries-inside-its-own-transaction\.law\.test\.ts$)/;
+ 
+ // These alert components and their exact inputs run in the same accounting job.
+ const productionAlertCore =
+diff --git a/scripts/ci/test-daily-missions-hand-trigger-postgres.py b/scripts/ci/test-daily-missions-hand-trigger-postgres.py
+new file mode 100644
+index 000000000..0ba4ea2ff
+--- /dev/null
++++ b/scripts/ci/test-daily-missions-hand-trigger-postgres.py
+@@ -0,0 +1,228 @@
++#!/usr/bin/env python3
++"""Native PostgreSQL certification of the settled-hand Daily Missions trigger.
++
++This is where the settled-hand -> Daily Missions outbox trigger is certified.
++It used to be certified by tests/e2e/production-daily-missions.spec.ts
++inserting a synthetic hand_history row (table_id NULL, winners [], pot 600,
++hand_number 1.7e9-1.8e9) into PRODUCTION through the service role and
++deleting it in a finally block. Every run put a winnerless 600-chip hand into
++the live hand ledger, and every run that was cancelled or timed out left one
++behind: four survived (2026-09-11, 09-19, 09-23, 09-24) and tripped the
++cash-pot conservation no_winner_recorded monitor twelve times (board #5070,
++incident e2e-synthetic-hands). Production never receives a synthetic hand
++again; tests/operations/production-e2e-ledger-write-guard.test.mjs refuses
++any production e2e spec that writes a hand or ledger table.
++
++The trigger body under test is read from the NEWEST migration that defines
++public.fn_enqueue_hand_daily_missions(), and the trigger DDL from the newest
++migration that creates trg_enqueue_hand_daily_missions, so a later
++redefinition is certified automatically. The cluster is private: no TCP
++listener, trust auth over a temporary unix socket, never a provider.
++"""
++import argparse
++import json
++import os
++from pathlib import Path
++import re
++import shutil
++import subprocess
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[2]
++MIGRATIONS = ROOT / 'supabase/migrations'
++FUNCTION_HEAD = 'CREATE OR REPLACE FUNCTION public.fn_enqueue_hand_daily_missions()'
++TRIGGER_HEAD = 'CREATE TRIGGER trg_enqueue_hand_daily_missions'
++
++parser = argparse.ArgumentParser()
++parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
++parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))
++args = parser.parse_args()
++pg = Path(args.pg_bin).resolve()
++env = {'PATH': str(pg) + ':/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PGCONNECT_TIMEOUT': '5'}
++cluster = Path(tempfile.mkdtemp(prefix='ca-dm-hand-trigger-', dir=args.scratch))
++data = cluster / 'data'
++socket = cluster / 's'
++socket.mkdir(mode=0o700)
++start_attempted = False
++
++PLAYER_A = '00000000-0000-4000-8000-00000000000a'
++PLAYER_B = '00000000-0000-4000-8000-00000000000b'
++HAND_1 = '00000000-0000-4000-8000-000000000101'
++HAND_2 = '00000000-0000-4000-8000-000000000102'
++HAND_3 = '00000000-0000-4000-8000-000000000103'
++HAND_4 = '00000000-0000-4000-8000-000000000104'
++HAND_5 = '00000000-0000-4000-8000-000000000105'
++TABLE = '00000000-0000-4000-8000-0000000000aa'
++ENDED_AT = '2026-09-27T12:00:00.123+00:00'
++
++# The exact mixed-threshold candidate set the production spec used to
++# certify: two values per threshold, one below and one exactly on it.
++AMOUNTS = {'hands_played': 1, 'hands_won': 1, 'hands_won_no_showdown': 1,
++           'chips_won': 600, 'big_pots': 2, 'strong_hands': 2}
++MAGNITUDES = {'big_pots': 500, 'strong_hands': 7}
++THRESHOLD_VALUES = {'big_pots': [499, 500], 'strong_hands': [6, 7]}
++
++
++def newest_block(head, terminator):
++    """Return (migration name, text) of the newest migration block starting at head."""
++    for path in sorted(MIGRATIONS.glob('*.sql'), reverse=True):
++        text = path.read_text()
++        start = text.rfind(head)
++        if start < 0:
++            continue
++        end = text.find(terminator, start)
++        assert end > start, f'{path.name}: {head} has no terminator {terminator!r}'
++        return path.name, text[start:end + len(terminator)]
++    raise AssertionError(f'No migration defines {head}')
++
++
++def run(argv, sql=None, expect_error=None):
++    result = subprocess.run([str(v) for v in argv], input=sql, text=True,
++                            capture_output=True, env=env, timeout=60)
++    if expect_error:
++        assert result.returncode != 0 and expect_error in result.stderr, result
++        return result.stderr
++    if result.returncode:
++        raise RuntimeError(result.stderr + result.stdout)
++    return result
++
++
++def query(sql, expect_error=None):
++    result = run([pg / 'psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-At', '-h', socket,
++                  '-U', 'postgres', '-d', 'postgres', '-p', '5432'], sql, expect_error)
++    return result if expect_error else result.stdout.strip()
++
++
++def query_with_notices(sql):
++    result = run([pg / 'psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-At', '-h', socket,
++                  '-U', 'postgres', '-d', 'postgres', '-p', '5432'], sql)
++    return result.stdout.strip(), result.stderr
++
++
++def hand(hand_id, events, *, table=TABLE):
++    events_sql = 'NULL' if events is None else "'" + json.dumps(events).replace("'", "''") + "'::jsonb"
++    table_sql = 'NULL' if table is None else f"'{table}'"
++    return (
++        "INSERT INTO public.hand_history(id,table_id,hand_number,pot_size,winners,players,"
++        "ended_at,has_human,daily_mission_events) VALUES "
++        f"('{hand_id}',{table_sql},42,600,'[]'::jsonb,'[]'::jsonb,'{ENDED_AT}',false,{events_sql});"
++    )
++
++
++def outbox(user_id, hand_id):
++    raw = query(
++        "SELECT coalesce(json_agg(json_build_object('event_key',event_key,'amounts',amounts,"
++        "'magnitudes',magnitudes,'threshold_values',threshold_values,"
++        "'occurred_at',to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS'))),'[]') "
++        f"FROM public.daily_challenge_event_outbox WHERE user_id='{user_id}' AND event_key='hand:{hand_id}';"
++    )
++    return json.loads(raw)
++
++
++def event(user_id, *, amounts=AMOUNTS, magnitudes=MAGNITUDES, values=THRESHOLD_VALUES):
++    return {'user_id': user_id, 'amounts': amounts, 'magnitudes': magnitudes, 'values': values}
++
++
++try:
++    function_source, function_sql = newest_block(FUNCTION_HEAD, '$function$;')
++    trigger_source, trigger_sql = newest_block(TRIGGER_HEAD, ';')
++    assert 'daily_challenge_event_outbox' in function_sql or 'enqueue_daily_challenge_event' in function_sql
++
++    run([pg / 'initdb', '-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=reject',
++         '--no-locale', '--encoding=UTF8'])
++    with (data / 'postgresql.conf').open('a') as conf:
++        conf.write("\nlisten_addresses = ''\nunix_socket_directories = '" + str(socket) + "'\nautovacuum = off\n")
++    start_attempted = True
++    run([pg / 'pg_ctl', '-D', data, '-l', cluster / 'server.log', '-w', 'start'])
++    endpoint = json.loads(query(
++        "select json_build_object('address',inet_server_addr(),'listen',current_setting('listen_addresses'));"))
++    assert endpoint == {'address': None, 'listen': ''}, endpoint
++
++    # Production column shapes (information_schema, 2026-09-27) for every
++    # column the trigger reads or writes.
++    query("""
++      CREATE TABLE public.hand_history(
++        id uuid PRIMARY KEY,
++        table_id uuid,
++        tournament_id uuid,
++        hand_number integer,
++        pot_size numeric,
++        winners jsonb,
++        players jsonb,
++        created_at timestamptz NOT NULL DEFAULT now(),
++        ended_at timestamptz,
++        has_human boolean,
++        daily_mission_events jsonb);
++      CREATE TABLE public.daily_challenge_event_outbox(
++        user_id uuid NOT NULL,
++        event_key text NOT NULL,
++        amounts jsonb NOT NULL,
++        magnitudes jsonb NOT NULL DEFAULT '{}'::jsonb,
++        occurred_at timestamptz NOT NULL,
++        attempts integer NOT NULL DEFAULT 0,
++        last_error text,
++        next_attempt_at timestamptz NOT NULL DEFAULT now(),
++        dead_lettered_at timestamptz,
++        created_at timestamptz NOT NULL DEFAULT now(),
++        threshold_values jsonb NOT NULL DEFAULT '{}'::jsonb,
++        PRIMARY KEY(user_id,event_key));
++    """)
++    query(function_sql)
++    query(trigger_sql)
++    assert query("SELECT count(*) FROM pg_trigger WHERE tgname='trg_enqueue_hand_daily_missions' "
++                 "AND tgrelid='public.hand_history'::regclass AND NOT tgisinternal;") == '1'
++
++    # 1. A settled hand carrying the mixed exact threshold candidates queues
++    #    exactly one event per player, preserving every value and the hand's
++    #    own end time.
++    query(hand(HAND_1, [event(PLAYER_A)]))
++    assert outbox(PLAYER_A, HAND_1) == [{
++        'event_key': f'hand:{HAND_1}', 'amounts': AMOUNTS, 'magnitudes': MAGNITUDES,
++        'threshold_values': THRESHOLD_VALUES, 'occurred_at': '2026-09-27T12:00:00.123',
++    }], outbox(PLAYER_A, HAND_1)
++
++    # 2. Two players in one hand each get their own event; a missing
++    #    magnitudes/values key is stored as {} rather than NULL.
++    query(hand(HAND_2, [{'user_id': PLAYER_B, 'amounts': AMOUNTS}, event(PLAYER_A)]))
++    b_rows = outbox(PLAYER_B, HAND_2)
++    assert len(b_rows) == 1 and b_rows[0]['magnitudes'] == {} and b_rows[0]['threshold_values'] == {}, b_rows
++    assert len(outbox(PLAYER_A, HAND_2)) == 1
++
++    # 3. One malformed event never blocks the hand or its valid siblings:
++    #    the hand commits, the warning is raised, the valid event is queued.
++    _, notices = query_with_notices(hand(HAND_3, [{'user_id': 'not-a-uuid', 'amounts': AMOUNTS},
++                                                  event(PLAYER_A)]))
++    assert 'could not be queued' in notices, notices
++    assert query(f"SELECT count(*) FROM public.hand_history WHERE id='{HAND_3}';") == '1'
++    assert len(outbox(PLAYER_A, HAND_3)) == 1
++
++    # 4. A hand with no mission events queues nothing and still commits.
++    query(hand(HAND_4, None))
++    assert query(f"SELECT count(*) FROM public.daily_challenge_event_outbox WHERE event_key='hand:{HAND_4}';") == '0'
++    assert query(f"SELECT count(*) FROM public.hand_history WHERE id='{HAND_4}';") == '1'
++
++    # 5. The event is one commit with its hand: a rolled-back hand leaves no
++    #    outbox row behind, and an already-queued key is never duplicated.
++    query('BEGIN;' + hand(HAND_5, [event(PLAYER_A)]) + 'ROLLBACK;')
++    assert outbox(PLAYER_A, HAND_5) == []
++    before = query("SELECT count(*) FROM public.daily_challenge_event_outbox;")
++    query(f"INSERT INTO public.daily_challenge_event_outbox(user_id,event_key,amounts,occurred_at) "
++          f"VALUES('{PLAYER_B}','hand:{HAND_5}','{{}}'::jsonb,now());")
++    query(hand(HAND_5, [event(PLAYER_B)]))
++    rows = outbox(PLAYER_B, HAND_5)
++    assert len(rows) == 1 and rows[0]['amounts'] == {}, rows
++    assert int(query("SELECT count(*) FROM public.daily_challenge_event_outbox;")) == int(before) + 1
++
++    print(json.dumps({
++        'ok': True,
++        'function_source': function_source,
++        'trigger_source': trigger_source,
++        'server_version': query('SHOW server_version;'),
++        'checks': ['mixed_exact_thresholds_preserved', 'per_player_events_and_defaults',
++                   'malformed_event_isolated', 'no_events_no_outbox', 'atomic_and_idempotent'],
++    }))
++finally:
++    if start_attempted:
++        subprocess.run([str(pg / 'pg_ctl'), '-D', str(data), '-m', 'immediate', 'stop'],
++                       capture_output=True, env=env, timeout=60)
++    shutil.rmtree(cluster, ignore_errors=True)
+diff --git a/tests/e2e/production-daily-missions.spec.ts b/tests/e2e/production-daily-missions.spec.ts
+index 6c2738576..c6462329a 100644
+--- a/tests/e2e/production-daily-missions.spec.ts
++++ b/tests/e2e/production-daily-missions.spec.ts
+@@ -21,7 +21,6 @@ import {
+   callServiceRpc,
+   cleanupTemporaryCustomizationAccount,
+   createTemporaryCustomizationAccount,
+-  deleteServiceRows,
+   insertServiceRows,
+   readServiceRows,
+   requireCustomizationCertificationEnvironment,
+@@ -179,6 +178,13 @@ function exactQuery(select: string, column: string, value: string): URLSearchPar
+   return new URLSearchParams({ select, [column]: `eq.${value}` });
+ }
+ 
++// The outbox is drained by four pg_cron shards once a minute, each with a
++// 45-second budget. Measured production lag from occurred_at to the booked
++// receipt (2026-09-27, 3 hours, 266,771 hand events): p50 29 s, p95 58 s,
++// p99 69 s, max 173 s. The certification waits past that observed maximum so
++// a healthy drainer never fails it and a stalled one always does.
++const DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT = 180_000;
++
+ async function serviceRows<T>(
+   environment: CustomizationCertificationEnvironment,
+   table: string,
+@@ -309,31 +315,10 @@ test.describe('production Daily Missions certification', () => {
+     const environment = requireCustomizationCertificationEnvironment();
+     const contexts: BrowserContext[] = [];
+     let account: TemporaryCustomizationAccount | null = null;
+-    let certificationHandHistoryId: string | null = null;
+     let compatibilityCycleRowId: string | null = null;
+     let receiptBearingUiRowId: string | null = null;
+     const report: JsonObject = {};
+     const cleanupErrors: string[] = [];
+-    // A run cancelled mid-certification (CI cancellation, a SIGTERM from the
+-    // runner) still reaches this handler even though it never reaches the
+-    // finally block's own cleanup below - Node delivers the signal, but the
+-    // process is free to exit before an interrupted await resumes. Reading
+-    // certificationHandHistoryId here is a closure read, so it always sees
+-    // whatever the try block has assigned by the time the signal lands. This
+-    // is a backstop for cancellation only: it cannot run after SIGKILL or a
+-    // host loss, which is why the retention sweep fix in
+-    // 20260926151328_prune_e2e_certification_hand_history_fixtures.sql exists
+-    // as the durable backstop underneath it (board #5070).
+-    const deleteFixtureOnSignal = () => {
+-      if (!certificationHandHistoryId) return;
+-      void deleteServiceRows(
+-        environment,
+-        'hand_history',
+-        new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
+-      ).catch(() => undefined);
+-    };
+-    process.once('SIGTERM', deleteFixtureOnSignal);
+-    process.once('SIGINT', deleteFixtureOnSignal);
+ 
+     try {
+       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
+@@ -735,13 +720,22 @@ test.describe('production Daily Missions certification', () => {
+         await expect(page).toHaveURL(challengesURL.toString());
+       });
+ 
+-      await test.step('the settled-hand trigger preserves mixed exact threshold candidates', async () => {
+-        certificationHandHistoryId = randomUUID();
++      // The settled-hand trigger (hand_history -> daily_challenge_event_outbox)
++      // is certified on a private native PostgreSQL by
++      // scripts/ci/test-daily-missions-hand-trigger-postgres.py, never here:
++      // production never receives a synthetic hand (board #5070, incident
++      // e2e-synthetic-hands). This step certifies the production half the
++      // trigger hands off to. It writes the exact outbox row
++      // fn_enqueue_hand_daily_missions writes for a settled hand (same columns,
++      // same mixed exact threshold candidates) and waits for the live pg_cron
++      // drainer (sp_drain_daily_challenge_event_outbox ->
++      // fn_drain_daily_challenge_event_outbox_user) to book it: the receipt
++      // appears in daily_challenge_progress_events and the outbox row is gone.
++      // It never books the event itself, so a stalled or broken drainer fails
++      // here. tests/operations/production-e2e-ledger-write-guard refuses any
++      // production spec that writes a hand or ledger table.
++      await test.step('the mission outbox drainer preserves mixed exact threshold candidates', async () => {
+         const occurredAt = new Date().toISOString();
+-        const handNumber =
+-          1_700_000_000 +
+-          (Number.parseInt(certificationHandHistoryId.replaceAll('-', '').slice(0, 7), 16) %
+-            100_000_000);
+         const amounts = {
+           hands_played: 1,
+           hands_won: 1,
+@@ -752,37 +746,37 @@ test.describe('production Daily Missions certification', () => {
+         };
+         const magnitudes = { big_pots: 500, strong_hands: 7 };
+         const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };
+-
+-        const inserted = await insertServiceRows<{ id: string }>(environment, 'hand_history', {
+-          id: certificationHandHistoryId,
+-          table_id: null,
+-          tournament_id: null,
+-          hand_number: handNumber,
+-          game_variant: 'nlh',
+-          small_blind: 1,
+-          big_blind: 2,
+-          pot_size: 600,
+-          rake_amount: 0,
+-          community_cards: [],
+-          winners: [],
+-          players: [],
+-          actions: [],
+-          started_at: occurredAt,
+-          ended_at: occurredAt,
+-          has_human: false,
+-          daily_mission_events: [
+-            {
+-              user_id: account!.id,
+-              amounts,
+-              magnitudes,
+-              values: thresholdValues,
+-            },
+-          ],
++        const eventKey = `certification:outbox:${randomUUID()}`;
++
++        // Exactly the row the settled-hand trigger inserts: user_id,
++        // event_key, amounts, magnitudes, threshold_values, occurred_at.
++        // attempts, next_attempt_at and created_at take their table defaults,
++        // as they do for a real hand.
++        const queued = await insertServiceRows<{
++          user_id: string;
++          event_key: string;
++          amounts: JsonObject;
++          magnitudes: JsonObject;
++          threshold_values: JsonObject;
++          dead_lettered_at: string | null;
++        }>(environment, 'daily_challenge_event_outbox', {
++          user_id: account!.id,
++          event_key: eventKey,
++          amounts,
++          magnitudes,
++          threshold_values: thresholdValues,
++          occurred_at: occurredAt,
++        });
++        expect(queued).toHaveLength(1);
++        expect(queued[0]).toMatchObject({
++          user_id: account!.id,
++          event_key: eventKey,
++          amounts,
++          magnitudes,
++          threshold_values: thresholdValues,
++          dead_lettered_at: null,
+         });
+-        expect(inserted).toHaveLength(1);
+-        expect(inserted[0]).toMatchObject({ id: certificationHandHistoryId });
+ 
+-        const eventKey = `hand:${certificationHandHistoryId}`;
+         await expect
+           .poll(
+             async () => {
+@@ -799,9 +793,22 @@ test.describe('production Daily Missions certification', () => {
+               );
+               return receipts.find((receipt) => receipt.event_key === eventKey) ?? null;
+             },
+-            { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
++            {
++              message: 'the pg_cron outbox drainer must book the queued event',
++              timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT,
++            }
+           )
+           .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
++
++        // Booking an event removes its outbox row; a row that survives its own
++        // receipt would be booked twice.
++        const remaining = await serviceRows<{ event_key: string }>(
++          environment,
++          'daily_challenge_event_outbox',
++          account!.id,
++          'event_key'
++        );
++        expect(remaining.filter((row) => row.event_key === eventKey)).toEqual([]);
+       });
+ 
+       await test.step('reroll confirmation charges one Diamond exactly once', async () => {
+@@ -2063,29 +2070,9 @@ test.describe('production Daily Missions certification', () => {
+         contentType: 'application/json',
+       });
+     } finally {
+-      process.removeListener('SIGTERM', deleteFixtureOnSignal);
+-      process.removeListener('SIGINT', deleteFixtureOnSignal);
+       for (const context of contexts.reverse()) {
+         await context.close().catch(() => undefined);
+       }
+-      if (certificationHandHistoryId) {
+-        await deleteServiceRows(
+-          environment,
+-          'hand_history',
+-          new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
+-        ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
+-        await readServiceRows<{ id: string }>(
+-          environment,
+-          'hand_history',
+-          new URLSearchParams({ select: 'id', id: `eq.${certificationHandHistoryId}`, limit: '1' })
+-        )
+-          .then((rows) => {
+-            if (rows.length > 0) cleanupErrors.push('hand history: exact fixture row remains');
+-          })
+-          .catch((error) =>
+-            cleanupErrors.push(`hand history verification: ${(error as Error).message}`)
+-          );
+-      }
+       if (account) {
+         await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
+           cleanupErrors.push(`account: ${(error as Error).message}`)
+diff --git a/tests/e2e/support/productionLedgerWritePolicy.mjs b/tests/e2e/support/productionLedgerWritePolicy.mjs
+new file mode 100644
+index 000000000..779f546db
+--- /dev/null
++++ b/tests/e2e/support/productionLedgerWritePolicy.mjs
+@@ -0,0 +1,126 @@
++// A production e2e run never writes a hand or ledger table.
++//
++// Every spec under tests/e2e that holds the service role runs against the
++// deployed production database (post-deploy-e2e.yml). The settled-hand Daily
++// Missions certification used to insert a synthetic hand_history row there
++// (table_id NULL, winners [], pot 600) and delete it in a finally block; every
++// run that was cancelled before its finally left a winnerless hand in the live
++// ledger, and four of them tripped the cash-pot conservation monitor twelve
++// times (board #5070, incident e2e-synthetic-hands).
++//
++// This module is the single source of truth for that rule. The service-role
++// request layer (temporaryCustomizationAccount.ts serviceRequest) calls
++// assertProductionLedgerWriteAllowed before every request, so a write is
++// refused at run time whatever shape the spec used to build it, and
++// tests/operations/production-e2e-ledger-write-guard.test.mjs scans the specs
++// with the same lists on every pull request.
++
++// Hand history and everything derived from it, and every chip, diamond, rake,
++// jackpot, seat and settlement ledger. A production spec may read these; it
++// may never write them.
++export const LEDGER_TABLES = new Set([
++  'hand_history',
++  'hand_atomic_commits',
++  'hand_projection_outbox',
++  'ca_hand_player_idx',
++  'ca_hand_financial_facts',
++  'bomb_pot_award_units',
++  'rake_records',
++  'rake_attributions',
++  'accounting_cash_accrual_batches',
++  'chip_ledger',
++  'wallets',
++  'wallet_transactions',
++  'diamond_wallets',
++  'diamond_transactions',
++  'bbj_payouts',
++  'bbj_contributions',
++  'table_seats',
++  'tournament_payouts',
++  'tournament_terminal_settlements',
++  'financial_alerts',
++]);
++
++// An RPC that commits, settles, projects, repairs or prunes a hand, or moves
++// rake, jackpot, payout or seat state. The diamond fixture RPCs a certification
++// account needs (fn_ca_mint, fn_ca_burn, add_diamonds_to_balance,
++// deduct_diamonds) and the guarded fixture cleanup do not match.
++export const HAND_LEDGER_RPC = /(?:^|_)(?:hand|hands|rake|settle|settlement|payout|payouts|jackpot|bbj|seat|seats)(?:_|$)/;
++
++// A pre-existing write that belongs to a separate incident and is kept
++// visible here rather than hidden. The runtime allows it only for the exact
++// table, method and reference prefix named; the guard test fails when the
++// write disappears, so the exception cannot outlive its reason.
++export const KNOWN_EXCEPTIONS = [
++  {
++    file: 'tests/e2e/daily-missions-database-settlement.spec.ts',
++    table: 'diamond_transactions',
++    method: 'POST',
++    referencePrefix: 'daily-missions-historical-multiplier:',
++    reason:
++      'historical multiplier milestone journal row; separate synthetic-ledger incident on board #5070, not a hand',
++  },
++];
++
++const READ_METHODS = new Set(['GET', 'HEAD']);
++
++function rowsOf(body) {
++  if (typeof body !== 'string' || body === '') return null;
++  try {
++    const parsed = JSON.parse(body);
++    const rows = Array.isArray(parsed) ? parsed : [parsed];
++    return rows.every((row) => row && typeof row === 'object' && !Array.isArray(row)) ? rows : null;
++  } catch {
++    return null;
++  }
++}
++
++function exceptionFor(table, method, body) {
++  const rows = rowsOf(body);
++  if (!rows || rows.length === 0) return null;
++  return (
++    KNOWN_EXCEPTIONS.find(
++      (entry) =>
++        entry.table === table &&
++        entry.method === method &&
++        rows.every(
++          (row) =>
++            typeof row.reference_id === 'string' && row.reference_id.startsWith(entry.referencePrefix)
++        )
++    ) || null
++  );
++}
++
++/**
++ * Throws before a service-role request that would write a hand or ledger
++ * table, or call a hand, rake, settlement, payout, jackpot or seat RPC.
++ *
++ * @param {{ method?: string, path: string, body?: unknown }} request
++ */
++export function assertProductionLedgerWriteAllowed({ method = 'GET', path, body }) {
++  const verb = String(method).toUpperCase();
++  if (READ_METHODS.has(verb)) return;
++  const pathname = String(path).split('?')[0];
++
++  const rpc = /^\/rest\/v1\/rpc\/([^/]+)$/.exec(pathname);
++  if (rpc) {
++    const name = decodeURIComponent(rpc[1]).toLowerCase();
++    if (HAND_LEDGER_RPC.test(name)) {
++      throw new Error(
++        `Refused: a production e2e run may not call ${name}. Certify hand, rake, settlement, ` +
++          'payout, jackpot and seat behavior on a native PostgreSQL fixture (scripts/ci/test-*-postgres.py).'
++      );
++    }
++    return;
++  }
++
++  const rest = /^\/rest\/v1\/([^/]+)$/.exec(pathname);
++  if (!rest) return;
++  const table = decodeURIComponent(rest[1]).toLowerCase();
++  if (!LEDGER_TABLES.has(table)) return;
++  if (exceptionFor(table, verb, body)) return;
++  throw new Error(
++    `Refused: a production e2e run may not ${verb} ${table}. Production specs read hand and ledger ` +
++      'tables; they never write them. Certify the database behavior on a native PostgreSQL fixture.'
++  );
++}
+diff --git a/tests/e2e/support/temporaryCustomizationAccount.ts b/tests/e2e/support/temporaryCustomizationAccount.ts
+index 0a04d258e..26cc21192 100644
+--- a/tests/e2e/support/temporaryCustomizationAccount.ts
++++ b/tests/e2e/support/temporaryCustomizationAccount.ts
+@@ -1,5 +1,6 @@
+ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+ import { randomUUID } from 'node:crypto';
++import { assertProductionLedgerWriteAllowed } from './productionLedgerWritePolicy.mjs';
+ 
+ const ACCOUNT_PREFIX = 'ca-customization-cert-';
+ const SHARED_POST_DEPLOY_PREFIX = 'ca-customization-cert-postdeploy-';
+@@ -103,6 +104,9 @@ async function serviceRequest<T>(
+   retrySafe = false
+ ): Promise<T> {
+   const method = (init.method || 'GET').toUpperCase();
++  // Every service-role write passes here. A hand or ledger write is refused
++  // before it reaches production, whatever helper or path built it.
++  assertProductionLedgerWriteAllowed({ method, path, body: init.body });
+   const methodIsIdempotent =
+     retrySafe || ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
+ 
+diff --git a/tests/operations/production-e2e-ledger-write-guard.test.mjs b/tests/operations/production-e2e-ledger-write-guard.test.mjs
+new file mode 100644
+index 000000000..a8dd316fb
+--- /dev/null
++++ b/tests/operations/production-e2e-ledger-write-guard.test.mjs
+@@ -0,0 +1,253 @@
++// A production e2e spec never writes a hand or ledger table.
++//
++// Every spec under tests/e2e runs against the deployed production database
++// (post-deploy-e2e.yml). tests/e2e/production-daily-missions.spec.ts used to
++// certify the settled-hand Daily Missions trigger by inserting a synthetic
++// hand_history row (table_id NULL, winners [], pot 600, hand_number
++// 1.7e9-1.8e9) through the service role and deleting it in a finally block.
++// Every run put a winnerless 600-chip hand into the live hand ledger; every
++// run that was cancelled or timed out before its finally left one there. Four
++// survived (2026-09-11, 09-19, 09-23, 09-24) and tripped the cash-pot
++// conservation no_winner_recorded monitor twelve times (board #5070, incident
++// e2e-synthetic-hands). The trigger is now certified on a private native
++// PostgreSQL by scripts/ci/test-daily-missions-hand-trigger-postgres.py, and
++// this guard keeps any production spec from writing one of these tables again.
++//
++// Two layers. At run time, serviceRequest in
++// tests/e2e/support/temporaryCustomizationAccount.ts, the only service-role
++// request path, refuses every hand or ledger write and every hand, rake,
++// settlement, payout, jackpot or seat RPC before it leaves the runner
++// (tests/e2e/support/productionLedgerWritePolicy.mjs). On every pull request
++// this scan reads the specs with the same lists. It fails closed: a helper
++// write or service RPC whose target it cannot read as a string literal is
++// refused too, because "could not tell" is not "clean"; and any literal REST
++// path to a ledger table is refused, which covers a hand-built fetch().
++
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { readdirSync, readFileSync, statSync } from 'node:fs';
++import { dirname, join, relative } from 'node:path';
++import { fileURLToPath } from 'node:url';
++import {
++  HAND_LEDGER_RPC,
++  KNOWN_EXCEPTIONS,
++  LEDGER_TABLES,
++  assertProductionLedgerWriteAllowed,
++} from '../e2e/support/productionLedgerWritePolicy.mjs';
++
++const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
++const E2E = join(ROOT, 'tests', 'e2e');
++
++// The ledger tables, the hand/ledger RPC rule and the named exception live in
++// the runtime policy module that the service-role request layer enforces, so
++// the static scan and the run-time refusal can never disagree.
++export { LEDGER_TABLES, KNOWN_EXCEPTIONS, HAND_LEDGER_RPC };
++
++const WRITE_HELPER =
++  /(?<!function\s)\b(insert|update|upsert|delete)ServiceRows\s*(?:<[\s\S]*?>)?\s*\(\s*[\w$.!]+\s*,\s*([^,)]+)/g;
++const RAW_SERVICE_WRITE =
++  /\bserviceRequest\s*(?:<[\s\S]*?>)?\s*\(\s*[\w$.!]+\s*,\s*['"`]\/rest\/v1\/([a-z_]+)[^'"`]*['"`]\s*,\s*\{[^}]*?method\s*:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g;
++const CLIENT_WRITE =
++  /\.from\(\s*['"`]([a-z_]+)['"`]\s*\)\s*\.\s*(insert|upsert|update|delete)\s*\(/g;
++const SERVICE_RPC =
++  /(?<!function\s)\bcallServiceRpc\s*(?:<[\s\S]*?>)?\s*\(\s*[\w$.!]+\s*,\s*([^,)]+)/g;
++const CLIENT_RPC = /\.rpc\(\s*(?:<[\s\S]*?>)?\s*['"`]([a-z0-9_]+)['"`]/g;
++const LEDGER_REST_PATH = /\/rest\/v1\/([a-z_]+)(?![a-z_\/])/g;
++
++function lineOf(source, index) {
++  return source.slice(0, index).split('\n').length;
++}
++
++/** Every write a source file makes to a ledger table, or cannot be read. */
++export function ledgerWrites(source) {
++  const writes = [];
++  for (const match of source.matchAll(WRITE_HELPER)) {
++    const argument = match[2].trim();
++    const literal = /^['"`]([a-z_]+)['"`]$/.exec(argument);
++    if (!literal) {
++      writes.push({ kind: `${match[1]}ServiceRows`, table: `<unreadable: ${argument}>`, line: lineOf(source, match.index) });
++    } else if (LEDGER_TABLES.has(literal[1])) {
++      writes.push({ kind: `${match[1]}ServiceRows`, table: literal[1], line: lineOf(source, match.index) });
++    }
++  }
++  for (const match of source.matchAll(RAW_SERVICE_WRITE)) {
++    if (LEDGER_TABLES.has(match[1])) {
++      writes.push({ kind: `serviceRequest ${match[2]}`, table: match[1], line: lineOf(source, match.index) });
++    }
++  }
++  for (const match of source.matchAll(CLIENT_WRITE)) {
++    if (LEDGER_TABLES.has(match[1])) {
++      writes.push({ kind: `.from().${match[2]}`, table: match[1], line: lineOf(source, match.index) });
++    }
++  }
++  for (const match of source.matchAll(SERVICE_RPC)) {
++    const argument = match[1].trim();
++    const literal = /^['"`]([a-z0-9_]+)['"`]$/.exec(argument);
++    if (!literal) {
++      writes.push({ kind: 'callServiceRpc', table: `<unreadable: ${argument}>`, line: lineOf(source, match.index) });
++    } else if (HAND_LEDGER_RPC.test(literal[1])) {
++      writes.push({ kind: 'callServiceRpc', table: literal[1], line: lineOf(source, match.index) });
++    }
++  }
++  for (const match of source.matchAll(CLIENT_RPC)) {
++    if (HAND_LEDGER_RPC.test(match[1])) {
++      writes.push({ kind: '.rpc', table: match[1], line: lineOf(source, match.index) });
++    }
++  }
++  for (const match of source.matchAll(LEDGER_REST_PATH)) {
++    if (LEDGER_TABLES.has(match[1])) {
++      writes.push({ kind: 'REST path', table: match[1], line: lineOf(source, match.index) });
++    }
++  }
++  return writes;
++}
++
++function sourceFiles(directory) {
++  const files = [];
++  for (const name of readdirSync(directory)) {
++    const path = join(directory, name);
++    if (statSync(path).isDirectory()) files.push(...sourceFiles(path));
++    else if (/\.(c|m)?(t|j)sx?$/.test(name)) files.push(path);
++  }
++  return files;
++}
++
++test('the scanner sees every write shape, including one it cannot read', () => {
++  const found = ledgerWrites(`
++    await insertServiceRows<{ id: string }>(environment, 'hand_history', { id });
++    await updateServiceRows(env, "chip_ledger", query, values);
++    await deleteServiceRows(environment, TABLE, query);
++    await serviceRequest<void>(environment, '/rest/v1/rake_records?id=eq.1', { method: 'DELETE' });
++    await client.from('wallets').update({ balance: 1 });
++    await insertServiceRows(environment, 'daily_challenge_reroll_receipts', row);
++    await readServiceRows(environment, 'hand_history', query);
++    export async function insertServiceRows<T>(environment: Env, table: string, rows: Rows) {}
++    await callServiceRpc(environment, 'fn_ca_commit_hand_submission', body);
++    await callServiceRpc<Result>(environment, rpcName, body);
++    await callServiceRpc(environment, 'fn_ca_mint', body);
++    await account.client.rpc('settle_hand_atomically', body);
++    await account.client.rpc('claim_daily_challenges', body);
++    await fetch(\`\${url}/rest/v1/table_seats?id=eq.\${id}\`, { method: 'PATCH', body });
++    await fetch(\`\${url}/rest/v1/rpc/get_daily_challenge_dashboard_v3\`);
++  `);
++  assert.deepEqual(
++    found.map(({ kind, table }) => `${kind}:${table}`),
++    [
++      'insertServiceRows:hand_history',
++      'updateServiceRows:chip_ledger',
++      'deleteServiceRows:<unreadable: TABLE>',
++      'serviceRequest DELETE:rake_records',
++      '.from().update:wallets',
++      'callServiceRpc:fn_ca_commit_hand_submission',
++      'callServiceRpc:<unreadable: rpcName>',
++      '.rpc:settle_hand_atomically',
++      'REST path:rake_records',
++      'REST path:table_seats',
++    ]
++  );
++});
++
++test('the service-role request layer refuses a hand or ledger write at run time', () => {
++  const refused = (request) => assert.throws(() => assertProductionLedgerWriteAllowed(request), /^Error: Refused:/);
++  const allowed = (request) => assert.doesNotThrow(() => assertProductionLedgerWriteAllowed(request));
++
++  // The exact write this incident was: a synthetic hand posted to production.
++  refused({ method: 'POST', path: '/rest/v1/hand_history', body: JSON.stringify({ pot_size: 600, winners: [] }) });
++  refused({ method: 'delete', path: '/rest/v1/hand_history?id=eq.1' });
++  refused({ method: 'PATCH', path: '/rest/v1/table_seats?id=eq.1', body: '{}' });
++  refused({ method: 'PUT', path: '/rest/v1/chip_ledger', body: '{}' });
++  refused({ method: 'POST', path: '/rest/v1/rpc/fn_ca_commit_hand_submission', body: '{}' });
++  refused({ method: 'POST', path: '/rest/v1/rpc/settle_hand_atomically', body: '{}' });
++  refused({ method: 'POST', path: '/rest/v1/rpc/record_hand_rake_attribution', body: '{}' });
++
++  // The named exception holds only for its exact table, method and reference.
++  const exception = KNOWN_EXCEPTIONS[0];
++  allowed({
++    method: 'POST',
++    path: `/rest/v1/${exception.table}`,
++    body: JSON.stringify({ reference_id: `${exception.referencePrefix}run-1`, amount: 15 }),
++  });
++  refused({ method: 'POST', path: `/rest/v1/${exception.table}`, body: JSON.stringify({ reference_id: 'other', amount: 15 }) });
++  refused({ method: 'POST', path: `/rest/v1/${exception.table}`, body: JSON.stringify([{ reference_id: `${exception.referencePrefix}a` }, {}]) });
++  refused({ method: 'PATCH', path: `/rest/v1/${exception.table}?id=eq.1`, body: JSON.stringify({ reference_id: `${exception.referencePrefix}a` }) });
++  refused({ method: 'POST', path: `/rest/v1/${exception.table}`, body: 'not json' });
++
++  // Reads, fixture diamonds, mission state and cleanup still pass.
++  allowed({ method: 'GET', path: '/rest/v1/hand_history?select=id' });
++  allowed({ path: '/rest/v1/table_seats?select=id' });
++  allowed({ method: 'POST', path: '/rest/v1/daily_challenge_milestone_claims', body: '{}' });
++  // The settled-hand certification queues the exact outbox row the trigger
++  // writes and lets the live drainer book it: a mission table, never a ledger.
++  allowed({
++    method: 'POST',
++    path: '/rest/v1/daily_challenge_event_outbox',
++    body: JSON.stringify({ event_key: 'certification:outbox:1', threshold_values: { big_pots: [499, 500] } }),
++  });
++  allowed({ method: 'PATCH', path: '/rest/v1/profiles?id=eq.1', body: '{}' });
++  for (const rpc of ['fn_ca_mint', 'fn_ca_burn', 'add_diamonds_to_balance', 'deduct_diamonds', 'enqueue_daily_challenge_event', 'cleanup_reserved_certification_account']) {
++    allowed({ method: 'POST', path: `/rest/v1/rpc/${rpc}`, body: '{}' });
++  }
++  allowed({ method: 'POST', path: '/auth/v1/admin/users', body: '{}' });
++});
++
++test('every service-role request passes the refusal before it is sent', () => {
++  const helper = readFileSync(join(E2E, 'support', 'temporaryCustomizationAccount.ts'), 'utf8');
++  assert.match(helper, /import \{ assertProductionLedgerWriteAllowed \} from '\.\/productionLedgerWritePolicy\.mjs';/);
++  const request = helper.slice(helper.indexOf('async function serviceRequest<T>('));
++  const guard = request.indexOf('assertProductionLedgerWriteAllowed({ method, path, body: init.body });');
++  assert.ok(guard > 0, 'serviceRequest must call assertProductionLedgerWriteAllowed');
++  assert.ok(guard < request.indexOf('await fetch('), 'the refusal must run before the first fetch');
++  // The only other service-role fetch in the helper is the auth existence
++  // read; it carries no method and no body, so it cannot write.
++  const others = [...helper.matchAll(/\bawait fetch\(([\s\S]*?)\);/g)].filter(
++    (match) => !match[1].startsWith('`${environment.supabaseUrl}${path}`')
++  );
++  assert.equal(others.length, 1);
++  assert.match(others[0][1], /\/auth\/v1\/admin\/users\//);
++  assert.doesNotMatch(others[0][1], /method|body/);
++});
++
++test('no production e2e spec writes a hand or ledger table', () => {
++  const offenders = [];
++  const exceptionsSeen = new Set();
++  for (const path of sourceFiles(E2E)) {
++    const file = relative(ROOT, path).split('\\').join('/');
++    for (const write of ledgerWrites(readFileSync(path, 'utf8'))) {
++      const exception = KNOWN_EXCEPTIONS.find((entry) => entry.file === file && entry.table === write.table);
++      if (exception) {
++        exceptionsSeen.add(exception);
++        continue;
++      }
++      offenders.push(`${file}:${write.line} ${write.kind} -> ${write.table}`);
++    }
++  }
++  assert.deepEqual(
++    offenders,
++    [],
++    'A production e2e spec wrote a hand or ledger table. Certify the database behavior on a native ' +
++      'PostgreSQL fixture (scripts/ci/test-*-postgres.py) and keep the production spec read-only.'
++  );
++  for (const exception of KNOWN_EXCEPTIONS) {
++    assert.ok(
++      exceptionsSeen.has(exception),
++      `${exception.file} no longer writes ${exception.table}; remove its KNOWN_EXCEPTIONS entry`
++    );
++  }
++});
++
++test('the settled-hand trigger is certified natively, not by a production hand', () => {
++  const spec = readFileSync(join(E2E, 'production-daily-missions.spec.ts'), 'utf8');
++  assert.doesNotMatch(spec, /['"`]hand_history['"`]/);
++  const native = readFileSync(join(ROOT, 'scripts/ci/test-daily-missions-hand-trigger-postgres.py'), 'utf8');
++  assert.match(native, /fn_enqueue_hand_daily_missions/);
++  assert.match(native, /trg_enqueue_hand_daily_missions/);
++  const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
++  assert.match(ci, /python3 scripts\/ci\/test-daily-missions-hand-trigger-postgres\.py/);
++  assert.match(ci, /node --test tests\/operations\/production-e2e-ledger-write-guard\.test\.mjs/);
++});
++
++test('a change to the native certification alone still selects the PostgreSQL job that runs it', async () => {
++  const { classifyChangedPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
++  assert.equal(classifyChangedPaths(['scripts/ci/test-daily-missions-hand-trigger-postgres.py']).server, true);
++  assert.equal(classifyChangedPaths(['scripts/ci/test-daily-missions-hand-trigger-postgres.py.bak']).server, false);
++});
+diff --git a/tests/unit/dailyMissionsProductionCertification.test.ts b/tests/unit/dailyMissionsProductionCertification.test.ts
+index ddc547a84..41db3cf14 100644
+--- a/tests/unit/dailyMissionsProductionCertification.test.ts
++++ b/tests/unit/dailyMissionsProductionCertification.test.ts
+@@ -147,7 +147,25 @@ describe('Daily Missions production certification', () => {
+     expect(helper).toContain("{ table: 'notifications', column: 'actor_id' as const }");
+     expect(helper).toContain("{ table: 'profiles', column: 'id' as const }");
+     expect(helper).toContain("{ table: 'users', column: 'id' as const }");
+-    expect(spec).toContain('hand history: exact fixture row remains');
++    // Production never receives a synthetic hand, so there is no hand fixture
++    // to clean up: the settled-hand trigger is certified on native PostgreSQL
++    // (scripts/ci/test-daily-missions-hand-trigger-postgres.py, board #5070).
++    expect(spec).not.toMatch(/['"`]hand_history['"`]/);
++    // Production still certifies the half the trigger hands off to: the exact
++    // outbox row the trigger writes, booked by the live pg_cron drainer. The
++    // spec must never book the event itself (the service enqueue RPC records
++    // it inline and deletes the outbox row, which skips the drainer).
++    expect(spec).toMatch(
++      /insertServiceRows<[\s\S]*?>\(environment, 'daily_challenge_event_outbox', \{\s*user_id: account!\.id,\s*event_key: eventKey,\s*amounts,\s*magnitudes,\s*threshold_values: thresholdValues,\s*occurred_at: occurredAt,\s*\}\)/
++    );
++    expect(spec).toContain('const eventKey = `certification:outbox:${randomUUID()}`;');
++    expect(spec).toContain(
++      'const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };'
++    );
++    expect(spec).toContain("'the pg_cron outbox drainer must book the queued event'");
++    expect(spec).toContain('timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT');
++    expect(spec).not.toContain('enqueue_daily_challenge_event');
++    expect(spec).not.toMatch(/fn_drain_daily_challenge_event_outbox_user['"`]/);
+     expect(helper).toContain('reserved fixture residue remains after cleanup');
+     // Certification owns and removes the exact UUID it creates. Listing the
+     // entire Auth tenant first makes an unrelated damaged account capable of
+diff --git a/tests/unit/fixtureNativeCi.test.ts b/tests/unit/fixtureNativeCi.test.ts
+index 5e99df8e6..656d1284f 100644
+--- a/tests/unit/fixtureNativeCi.test.ts
++++ b/tests/unit/fixtureNativeCi.test.ts
+@@ -1297,6 +1297,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
+     'scripts/ci/test-hand-index-writer-order.py',
+     'scripts/ci/test-hand-stat-writer-order.py',
+     'scripts/ci/test-rake-attribution-atomic.py',
++    'scripts/ci/test-daily-missions-hand-trigger-postgres.py',
+     'scripts/ci/probes/hand-index-writer-order/baseline.json',
+     'scripts/ci/probes/hand-stat-writer-order/baseline.json',
+     'scripts/ci/probes/rake-attribution-atomic/baseline.json',
+@@ -1314,12 +1315,13 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
+ 
+   it.each([
+     'scripts/ci/test-hand-stat-writer-order.py.bak',
++    'scripts/ci/test-daily-missions-hand-trigger-postgres.py.bak',
+     'scripts/ci/probes/unrelated-input/baseline.json',
+   ])('does not select an unrelated accounting check for %s', (path) => {
+     expect(classifyChangedPaths([path]).server).toBe(false);
+   });
+ 
+-  it('runs all three real drivers with the installed PG17 tools and no failure bypass', () => {
++  it('runs all four real drivers with the installed PG17 tools and no failure bypass', () => {
+     const accounting = ci.jobs.accounting_postgres;
+     expect(accounting['runs-on']).toBe('ubuntu-latest');
+     expect(accounting['continue-on-error']).toBeUndefined();
+@@ -1332,6 +1334,10 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
+         'hand_stat_writer_order',
+         'python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat',
+       ],
++      [
++        'daily_missions_hand_trigger',
++        'python3 scripts/ci/test-daily-missions-hand-trigger-postgres.py',
++      ],
+       [
+         'rake_attribution_atomic',
+         'python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution',
+-- 
+2.43.0
+

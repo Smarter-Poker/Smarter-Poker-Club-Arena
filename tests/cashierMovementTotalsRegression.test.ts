@@ -7,7 +7,7 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const fixture = 'tests/fixtures/cashier-statements/';
 const migrationPath =
-  'supabase/migrations/20260927143108_cashier_totals_match_receipt_omissions_before_the_movement_r.sql';
+  'supabase/migrations/20260927150429_cashier_totals_match_receipt_omissions_before_the_movement_r.sql';
 const migration = read(migrationPath);
 const before = read(fixture + 'movement-totals-before.sql');
 const after = read(fixture + 'movement-totals-after.sql');

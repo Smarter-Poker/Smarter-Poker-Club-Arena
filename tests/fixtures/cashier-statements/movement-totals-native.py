@@ -12,7 +12,7 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "tests/fixtures/cashier-statements"
 PG = Path(os.environ.get("PG_BIN", "/opt/homebrew/opt/postgresql@17/bin"))
-MIGRATION = ROOT / "supabase/migrations/20260927143108_cashier_totals_match_receipt_omissions_before_the_movement_r.sql"
+MIGRATION = ROOT / "supabase/migrations/20260927150429_cashier_totals_match_receipt_omissions_before_the_movement_r.sql"
 BASE = ROOT / "supabase/migrations/20260923131325_cashier_statements_read_every_wallet_in_one_keyset.sql"
 ENV = {"PATH": str(PG) + ":/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"}
 cluster = Path(tempfile.mkdtemp(prefix="cashier-movement-", dir=os.environ.get("TMPDIR")))

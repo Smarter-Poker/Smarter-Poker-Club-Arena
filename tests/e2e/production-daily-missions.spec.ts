@@ -14,6 +14,10 @@ import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
+  expectMissionArtworkDecoded,
+  installMissionArtObservation,
+} from './support/dailyMissionArtObservation';
+import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
@@ -373,6 +377,7 @@ test.describe('production Daily Missions certification', () => {
       const { page } = missions;
 
       await test.step('one-request cold load stays inside the production budget', async () => {
+        await page.addInitScript(installMissionArtObservation);
         await page.addInitScript(() => {
           const metrics = { lcp: 0, cls: 0 };
           Object.defineProperty(window, '__dailyMissionVitals', {
@@ -477,7 +482,7 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.locator('main')).toHaveCount(1);
         await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
 
-        await page.waitForTimeout(750);
+        await expectMissionArtworkDecoded(page);
         const vitals = await page.evaluate(() => {
           const navigation = performance.getEntriesByType(
             'navigation'
@@ -488,28 +493,27 @@ test.describe('production Daily Missions certification', () => {
               __dailyMissionVitals?: { lcp: number; cls: number };
             }
           ).__dailyMissionVitals;
-          const missionArt = performance
-            .getEntriesByType('resource')
-            .filter((entry) =>
-              /\/images\/challenges\/daily-missions-(?:casino|diamond)/.test(entry.name)
-            )
-            .map((entry) => {
-              const resource = entry as PerformanceResourceTiming;
-              return {
-                name: new URL(resource.name).pathname.split('/').pop() || resource.name,
-                bytes: resource.encodedBodySize,
-              };
-            });
+          const artObservation = window.__dailyMissionArt;
+          if (!artObservation)
+            throw new Error('Daily Missions artwork observer was not installed.');
+          artObservation.finish();
+          const missionArt = artObservation.missionArt;
           return {
             ttfb: navigation.responseStart - navigation.requestStart,
             fcp: paint?.startTime ?? 0,
             lcp: observed?.lcp ?? 0,
             cls: observed?.cls ?? Number.POSITIVE_INFINITY,
+            resourcesSeen: artObservation.resourcesSeen,
+            timelineOverflowed: artObservation.timelineOverflowed,
             missionArt,
             missionArtBytes: missionArt.reduce((total, asset) => total + asset.bytes, 0),
           };
         });
         report.webVitals = vitals;
+        await test.info().attach('daily-missions-cold-load.json', {
+          body: JSON.stringify(vitals, null, 2),
+          contentType: 'application/json',
+        });
         expect(vitals.ttfb).toBeGreaterThan(0);
         expect(vitals.ttfb).toBeLessThan(TTFB_BUDGET_MS);
         expect(vitals.fcp).toBeGreaterThan(0);

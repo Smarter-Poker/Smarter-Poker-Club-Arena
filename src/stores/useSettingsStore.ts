@@ -24,52 +24,78 @@ import { STORAGE_KEYS } from '../lib/storage';
  * Removed 2026-08-29. Sound belongs to `utils/soundGate` and the deck to
  * `useTableSettings`. If this store ever needs to grow again, check those first.
  */
+export type InterfaceThemePreference = 'dark' | 'light' | 'auto';
+
 interface SettingsState {
   theme: 'dark' | 'light';
-  setTheme: (theme: 'dark' | 'light', userId?: string) => void;
+  themePreference: InterfaceThemePreference;
+  setTheme: (theme: InterfaceThemePreference, userId?: string) => void;
+  receiveTheme: (theme: InterfaceThemePreference, userId?: string) => void;
+}
+
+function effectiveTheme(preference: InterfaceThemePreference): 'dark' | 'light' {
+  return preference === 'auto'
+    ? typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: light)').matches
+      ? 'light'
+      : 'dark'
+    : preference;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
-      theme: 'dark',
-
-      setTheme: (theme, userId) => {
-        set({ theme });
-        /* Keep the full Settings page's separate, deliberately namespaced
-           local cache in step with Table Studio. Without this mirror, the
-           interface changed immediately but /settings reopened with the old
-           mode and could save it back over the new account preference. */
+    (set) => {
+      const apply = (preference: InterfaceThemePreference, userId?: string) => {
+        const theme = effectiveTheme(preference);
+        set({ theme, themePreference: preference });
         if (typeof localStorage !== 'undefined') {
           try {
-            const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-            const parsed = raw ? JSON.parse(raw) : {};
+            const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || '{}');
             const current =
               parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-            const next = { ...current, theme };
-            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
-            masterBus.emit('SETTINGS_UPDATED', { settings: next });
+            if (current.theme !== preference) {
+              const next = { ...current, theme: preference };
+              localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
+              masterBus.emit('SETTINGS_UPDATED', {
+                settings: next,
+                userId,
+                source: 'interface-theme',
+              });
+            }
           } catch (error) {
             console.warn('[SettingsStore] Could Not Mirror Interface Mode:', error);
           }
         }
-        // Apply immediately even on direct /table routes where Shell may not
-        // be the component that initiated the change. The persisted store is
-        // still the source of truth; this keeps the visible chrome and the
-        // selected control in the same frame.
         if (typeof document !== 'undefined') {
           document.documentElement.setAttribute('data-theme', theme);
           document.documentElement.style.colorScheme = theme;
         }
-        masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: theme, userId });
-      },
-    }),
+      };
+      return {
+        theme: 'dark',
+        themePreference: 'dark',
+        receiveTheme: apply,
+
+        setTheme: (preference, userId) => {
+          apply(preference, userId);
+          masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: preference, userId });
+        },
+      };
+    },
     {
       // NOTE (2026-08-26): this key is exclusively zustand's. STORAGE_KEYS.SETTINGS
       // in src/lib/storage.ts used to be the same string, and this middleware
       // clobbered every save SettingsPage made. If you add another persisted
       // store, give it its own name and check src/lib/storage.ts first.
       name: 'club-arena-settings',
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<SettingsState> | undefined;
+        const preference = saved?.themePreference ?? saved?.theme;
+        if (preference !== 'light' && preference !== 'dark' && preference !== 'auto')
+          return current;
+        return { ...current, themePreference: preference, theme: effectiveTheme(preference) };
+      },
     }
   )
 );

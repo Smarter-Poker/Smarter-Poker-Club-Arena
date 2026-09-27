@@ -108,3 +108,53 @@ describe('live customization bus', () => {
     expect(seen).toEqual([payload.avatar, payload.avatar]);
   });
 });
+
+it('preserves Auto across a cross-device theme event and persistence', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true }));
+  masterBus.reset();
+  masterBus.init();
+  useUserStore.setState({ user: { id: 'user-1' } as never });
+  masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: 'auto', userId: 'user-1' });
+  expect(useSettingsStore.getState()).toMatchObject({ theme: 'light', themePreference: 'auto' });
+  expect(JSON.parse(localStorage.getItem('club-arena-user-settings')!).theme).toBe('auto');
+  await useSettingsStore.persist.rehydrate();
+  expect(useSettingsStore.getState().themePreference).toBe('auto');
+});
+
+it.each(['PROFILE_UPDATED', 'SETTINGS_UPDATED', 'DIAMOND_BALANCE_CHANGED'] as const)(
+  'fences private %s before dispatch from another browser account',
+  (type) => {
+    masterBus.reset();
+    masterBus.init();
+    useUserStore.setState({ user: { id: 'user-1' } as never });
+    const seen = vi.fn();
+    const off = masterBus.subscribe(type, seen);
+    masterBus.emit(
+      type,
+      {
+        userId: 'user-2',
+        source: 'profile-account',
+        updates: {},
+        settings: {},
+        newBalance: 999,
+        delta: 0,
+      },
+      true
+    );
+    expect(seen).not.toHaveBeenCalled();
+    masterBus.emit(
+      type,
+      {
+        userId: 'user-1',
+        source: 'profile-account',
+        updates: {},
+        settings: {},
+        newBalance: 999,
+        delta: 0,
+      },
+      true
+    );
+    expect(seen).toHaveBeenCalledOnce();
+    off();
+  }
+);

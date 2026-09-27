@@ -25,7 +25,6 @@ import { realtimeChannelService } from '../services/RealtimeChannelService';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
-import { STORAGE_KEYS } from '../lib/storage';
 import { IS_NATIVE_BUILD } from '../lib/appBase';
 import { playerDisplayName } from '../utils/playerDisplayName';
 
@@ -497,19 +496,19 @@ export interface BusPayloadMap {
   FLUSH_WIN: { handId: string; playerId: string };
   PLAY_MINUTES: { minutes: number };
   // Phase 8: Diamond economy
-  DIAMOND_BALANCE_CHANGED: { newBalance: number; delta: number; source: string };
+  DIAMOND_BALANCE_CHANGED: { newBalance: number; delta: number; source: string; userId?: string };
   // Social & Messaging
   MESSAGE_SENT: { message: Record<string, unknown>; conversationId: string };
   MESSAGE_RECEIVED: { message: Record<string, unknown> };
   MESSAGE_DELETED: { messageId: string };
   CONVERSATION_UPDATED: { conversationId: string };
-  PROFILE_UPDATED: { userId: string; updates: Record<string, unknown> };
+  PROFILE_UPDATED: { userId: string; updates: Record<string, unknown>; source?: string };
   NOTIFICATION_RECEIVED: { notification: Record<string, unknown> };
   NOTIFICATION_COUNT_CHANGED: Record<string, unknown>;
   FRIEND_REQUEST_SENT: { toUserId: string; fromUserId?: string };
   FRIEND_REQUEST_ACCEPTED: { friendshipId?: string; userId?: string; friendId?: string };
   // Settings sync
-  SETTINGS_UPDATED: { settings: Record<string, unknown> };
+  SETTINGS_UPDATED: { settings: Record<string, unknown>; userId?: string; source?: string };
   // Club data mutations (cross-page sync)
   CLUB_UPDATED: { clubId: string; action?: string };
   UNION_UPDATED: { unionId: string };
@@ -1525,6 +1524,16 @@ class MasterBusCore {
     payload: K extends keyof BusPayloadMap ? BusPayloadMap[K] : unknown,
     fromBroadcast: boolean = false
   ): void {
+    // Private account invalidations can also travel over this browser's shared
+    // BroadcastChannel. Refuse another account before any subscriber sees them.
+    if (['PROFILE_UPDATED', 'SETTINGS_UPDATED', 'DIAMOND_BALANCE_CHANGED'].includes(type)) {
+      const account = payload as { userId?: string; source?: string };
+      const privateProfile =
+        account.source === 'profile-account' || account.source === 'appearance-signal';
+      if (type !== 'PROFILE_UPDATED' || privateProfile) {
+        if (account.userId && account.userId !== useUserStore.getState().user?.id) return;
+      }
+    }
     const event: BusEvent<typeof payload> = {
       type,
       payload,
@@ -1640,35 +1649,8 @@ class MasterBusCore {
       const activeUserId = useUserStore.getState().user?.id;
       if (event.payload.userId && event.payload.userId !== activeUserId) return;
       const theme = event.payload.value;
-      if (theme !== 'light' && theme !== 'dark') return;
-      if (useSettingsStore.getState().theme !== theme) {
-        useSettingsStore.setState({ theme });
-      }
-      /* Keep the full /settings cache coherent too. A profile realtime event
-         used to repaint the app and update Zustand while leaving this separate
-         cache on the old mode; opening Settings then saved that stale value
-         back over the cross-device choice. The source tab has already mirrored
-         this cache before it emits, so only remote/stale events rebroadcast a
-         SETTINGS_UPDATED notification here. */
-      if (typeof localStorage !== 'undefined') {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-          const parsed = raw ? JSON.parse(raw) : {};
-          const current =
-            parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-          if ((current as Record<string, unknown>).theme !== theme) {
-            const next = { ...(current as Record<string, unknown>), theme };
-            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
-            this.emit('SETTINGS_UPDATED', { settings: next });
-          }
-        } catch (error) {
-          reportError(error, 'MasterBus.Interface_theme_cache_sync_failed');
-        }
-      }
-      if (typeof document !== 'undefined') {
-        document.documentElement.setAttribute('data-theme', theme);
-        document.documentElement.style.colorScheme = theme;
-      }
+      if (theme !== 'light' && theme !== 'dark' && theme !== 'auto') return;
+      useSettingsStore.getState().receiveTheme(theme, event.payload.userId);
     });
 
     // When auth state changes, sync user data across stores

@@ -130,6 +130,20 @@ describe('the tournament input device reads the authoritative closed window once
     expect(fixture.from).not.toHaveBeenCalled();
   });
 
+  it('keeps the original purchase path after a rejected policy request', async () => {
+    const manager = setup();
+    fixture.rpc.mockImplementation(async (name) => {
+      if (name === 'fn_ca_tournament_rebuy_window') throw new Error('transport rejected');
+      return { data: { success: true }, error: null };
+    });
+    const result = await manager.tryTournamentRebuys(users);
+    expect(
+      fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
+    ).toHaveLength(20);
+    expect([...result.rebought]).toEqual(users);
+    expect([...result.answered]).toEqual(users);
+  });
+
   it('rereads policy for each batch and does not cache an earlier open window', async () => {
     const manager = setup({ open: true });
     fixture.rpc.mockImplementation(async (name) =>

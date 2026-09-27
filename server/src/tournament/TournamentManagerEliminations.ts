@@ -1793,17 +1793,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // and burns the bust budget before ordinary eliminations can run.
       // This is not an elimination decision or a replacement receipt: the
       // caller still reads durable prompts and the atomic elimination door.
-      const { data: window, error: windowError } = await supabase.rpc(
-        'fn_ca_tournament_rebuy_window',
-        { p_tournament_id: this.tournamentId }
-      );
+      let closedWindow = false;
+      try {
+        const { data: window, error: windowError } = await supabase.rpc(
+          'fn_ca_tournament_rebuy_window',
+          { p_tournament_id: this.tournamentId }
+        );
+        closedWindow =
+          !windowError &&
+          window?.open === false &&
+          ['tournament_not_rebuyable', 'rebuy_window_closed'].includes(window.reason);
+      } catch (error) {
+        reportError(error, 'Tournament.rebuy_window_read_failed');
+      }
       if (!this.eliminationMutationAllowed()) return { rebought, answered };
-      if (
-        !windowError &&
-        window?.open === false &&
-        ['tournament_not_rebuyable', 'rebuy_window_closed'].includes(window.reason)
-      )
-        return { rebought, answered };
+      if (closedWindow) return { rebought, answered };
       // Open, malformed or unreadable policy retains the original purchase
       // authority, including its exact receipt replay and fresh locked checks.
       const { data: horseRows, error: horseErr } = await supabase

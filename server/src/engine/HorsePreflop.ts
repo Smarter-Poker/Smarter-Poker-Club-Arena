@@ -33,6 +33,7 @@
 import { potLimitRaiseTo } from './BettingStructure.js';
 import {
   tournamentMZone,
+  tournamentNextLevelProjectionApplies,
   type TournamentMState,
   type TournamentPreflopPolicy,
 } from './HorseTournamentPreflop.js';
@@ -640,9 +641,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   if (
     mzOn &&
     effM !== Infinity &&
-    typeof ctx.nextBlindInMin === 'number' &&
-    ctx.nextBlindInMin <= 3 &&
-    (ctx.nextBlindMult ?? 1) > 1.15
+    tournamentNextLevelProjectionApplies(ctx.nextBlindInMin, ctx.nextBlindMult)
   ) {
     effM = phase6M ? Math.min(effM, phase6M.projectedEffectiveM) : effM / (ctx.nextBlindMult ?? 1);
     // ...and the DEPTH moves with it. A 30bb stack two minutes from a level

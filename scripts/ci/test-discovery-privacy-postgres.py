@@ -201,6 +201,39 @@ try:
     query('DELETE FROM cron.job_run_details; DELETE FROM cron.job;')
     assert query('SET ROLE authenticated; SELECT * FROM public.fn_smarter_poker_pulse_cron_counts();')=='SET\n0|0'
     assert query("SELECT (NOT prosecdef) AND proacl=ARRAY['postgres=X/postgres','authenticated=X/postgres','service_role=X/postgres']::aclitem[] FROM pg_proc WHERE oid='public.get_smarter_poker_pulse()'::regprocedure;")=='t'
+    # Record only this reviewed aggregate in the existing live metadata shape.
+    # A changed declaration/grant or conflicting decision must refuse, while
+    # an identical repeat preserves its timestamp and every unrelated entry.
+    query("""CREATE TABLE public.ca_browser_definer_allowlist(proname text PRIMARY KEY,
+      reason text NOT NULL CHECK(length(btrim(reason))>=20),recorded_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE public.ca_browser_definer_allowlist ENABLE ROW LEVEL SECURITY;
+      REVOKE ALL ON public.ca_browser_definer_allowlist FROM PUBLIC,anon,authenticated;
+      GRANT ALL ON public.ca_browser_definer_allowlist TO service_role;
+      INSERT INTO public.ca_browser_definer_allowlist VALUES('fixture_existing','Existing reviewed surface',now());""")
+    review_migration = next((ROOT/'supabase/migrations').glob('*_record_pulse_authenticated_aggregate_review.sql')).read_text()
+    metadata_sql = "SELECT md5(jsonb_agg(to_jsonb(a) ORDER BY proname)::text) FROM public.ca_browser_definer_allowlist a;"
+    metadata_before = query(metadata_sql)
+    query(review_migration.replace('COMMIT;', "DO $$ BEGIN RAISE EXCEPTION 'fixture rollback'; END $$; COMMIT;"), 'fixture rollback')
+    assert query(metadata_sql) == metadata_before
+    query('GRANT EXECUTE ON FUNCTION public.fn_smarter_poker_pulse_cron_counts() TO anon;')
+    query(review_migration, 'PULSE_AGGREGATE_REVIEW_SOURCE_CHANGED')
+    query('REVOKE EXECUTE ON FUNCTION public.fn_smarter_poker_pulse_cron_counts() FROM anon;')
+    query("ALTER FUNCTION public.fn_smarter_poker_pulse_cron_counts() SET statement_timeout='9s';")
+    query(review_migration, 'PULSE_AGGREGATE_REVIEW_SOURCE_CHANGED')
+    query("ALTER FUNCTION public.fn_smarter_poker_pulse_cron_counts() SET statement_timeout='8s';")
+    query("INSERT INTO public.ca_browser_definer_allowlist(proname,reason) VALUES('fn_smarter_poker_pulse_cron_counts','Conflicting reviewed aggregate decision');")
+    query(review_migration, 'PULSE_AGGREGATE_REVIEW_ENTRY_CHANGED')
+    query("DELETE FROM public.ca_browser_definer_allowlist WHERE proname='fn_smarter_poker_pulse_cron_counts';")
+    assert query(metadata_sql) == metadata_before
+    query(review_migration)
+    metadata_after = query(metadata_sql)
+    assert query("SELECT md5(jsonb_agg(to_jsonb(a) ORDER BY proname)::text) FROM public.ca_browser_definer_allowlist a WHERE proname <> 'fn_smarter_poker_pulse_cron_counts';") == metadata_before
+    query(review_migration)
+    assert query(metadata_sql) == metadata_after
+    assert query("SELECT count(*) FROM public.ca_browser_definer_allowlist;") == '2'
+    assert query(catalog_sql) == cron_catalog_before
+    for role in ['anon','authenticated']:
+        query('SET ROLE '+role+'; SELECT * FROM public.ca_browser_definer_allowlist;','permission denied')
     # Supabase's actual postgres owner is NOSUPERUSER BYPASSRLS. A separate
     # isolated setup role remains superuser only to drive the test connection.
     query("""INSERT INTO cron.job VALUES

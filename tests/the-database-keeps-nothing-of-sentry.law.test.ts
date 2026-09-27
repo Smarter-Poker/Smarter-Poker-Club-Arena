@@ -91,6 +91,7 @@ describe('the database keeps nothing of Sentry', () => {
       "|| 'retired_error_telemetry_20260916.sentry_event_fingerprints';",
       "EXECUTE 'DROP SCHEMA retired_error_telemetry_20260916';",
       "EXECUTE 'DROP TABLE ca_archive.autofix_attempts';",
+      "DELETE FROM ca_archive.autofix_budget WHERE source = 'sentry';",
       'DROP INDEX public.signup_errors_pending_forward_idx;',
       'ALTER TABLE public.signup_errors DROP COLUMN forwarded_to_sentry;',
       'ALTER TABLE public.signup_errors_archive DROP COLUMN forwarded_to_sentry;',
@@ -98,6 +99,12 @@ describe('the database keeps nothing of Sentry', () => {
       expect(CODE).toContain(stmt);
     }
     expect(CODE).toContain("RAISE EXCEPTION 'POSTIMAGE: the database still names Sentry'");
+    expect(CODE).toContain(
+      "RAISE EXCEPTION 'POSTIMAGE: ca_archive.autofix_budget still carries the Sentry cap'"
+    );
+    // The only top-level row write: one archived configuration row, never a
+    // record (the archiver's own indented INSERT and DELETE are its body).
+    expect(CODE.match(/^(DELETE|UPDATE|INSERT)\b/gm)).toEqual(['DELETE']);
   });
 
   it('keeps all three functions service_role only', () => {

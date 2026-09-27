@@ -15,7 +15,13 @@
 --   * schema retired_error_telemetry_20260916: the archived error log,
 --     event budget and fingerprint tables (0 rows each) and their sequence;
 --   * ca_archive.autofix_attempts: the retired Sentry-to-Claude autofix
---     audit (1868 archived rows). Nothing in either repository reads it;
+--     audit (1868 archived rows: 891 sentry, 880 unsourced, 97 vercel; two
+--     columns and four comments named Sentry). Nothing in either repository
+--     reads it;
+--   * ca_archive.autofix_budget: one of its three archived cap rows was the
+--     Sentry loop's ('sentry', 1.0000 USD/day, "Sentry runtime-error
+--     autofix."). The row goes; the table, its _global and vercel rows stay,
+--     because the Vercel build-failure loop was never Sentry's;
 --   * public.signup_errors.forwarded_to_sentry and its partial index
 --     signup_errors_pending_forward_idx, and
 --     public.signup_errors_archive.forwarded_to_sentry. The only writer, the
@@ -41,6 +47,7 @@
 --
 -- @live-proof: to_regnamespace('retired_error_telemetry_20260916') IS NULL
 -- @live-proof: to_regclass('ca_archive.autofix_attempts') IS NULL
+-- @live-proof: NOT EXISTS (SELECT 1 FROM ca_archive.autofix_budget WHERE source ILIKE '%sentry%' OR notes ILIKE '%sentry%')
 -- @live-proof: NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid IN ('public.signup_errors'::regclass, 'public.signup_errors_archive'::regclass) AND attname = 'forwarded_to_sentry' AND NOT attisdropped)
 -- @live-proof: NOT EXISTS (SELECT 1 FROM pg_proc WHERE prosrc ILIKE '%sentry%')
 
@@ -103,6 +110,13 @@ BEGIN
                  WHERE confrelid = 'ca_archive.autofix_attempts'::regclass) THEN
     RAISE EXCEPTION 'PREIMAGE: ca_archive.autofix_attempts is not the table read 2026-09-27';
   END IF;
+  IF (SELECT count(*) FROM ca_archive.autofix_budget) <> 3
+     OR (SELECT count(*) FROM ca_archive.autofix_budget
+          WHERE source = 'sentry' AND daily_cap_usd = 1.0000) <> 1
+     OR EXISTS (SELECT 1 FROM ca_archive.autofix_projects
+                 WHERE source ILIKE '%sentry%' OR name ILIKE '%sentry%' OR notes ILIKE '%sentry%') THEN
+    RAISE EXCEPTION 'PREIMAGE: ca_archive.autofix_budget is not the three-row table read 2026-09-27';
+  END IF;
   IF (SELECT count(*) FROM pg_attribute
        WHERE attrelid IN ('public.signup_errors'::regclass, 'public.signup_errors_archive'::regclass)
          AND attname = 'forwarded_to_sentry' AND NOT attisdropped) <> 2
@@ -125,6 +139,10 @@ BEGIN
   EXECUTE 'DROP TABLE ca_archive.autofix_attempts';
 END
 $drop$;
+
+-- The Sentry loop's archived spend cap. A configuration row for a provider
+-- that no longer exists, not a record of anything that happened.
+DELETE FROM ca_archive.autofix_budget WHERE source = 'sentry';
 
 -- The archival function stops naming the column before the column goes.
 
@@ -269,6 +287,11 @@ BEGIN
                  WHERE attrelid IN ('public.signup_errors'::regclass, 'public.signup_errors_archive'::regclass)
                    AND attname = 'forwarded_to_sentry' AND NOT attisdropped) THEN
     RAISE EXCEPTION 'POSTIMAGE: a retired Sentry relation or column survives';
+  END IF;
+  IF (SELECT count(*) FROM ca_archive.autofix_budget) <> 2
+     OR EXISTS (SELECT 1 FROM ca_archive.autofix_budget
+                 WHERE source ILIKE '%sentry%' OR notes ILIKE '%sentry%') THEN
+    RAISE EXCEPTION 'POSTIMAGE: ca_archive.autofix_budget still carries the Sentry cap';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname ILIKE '%sentry%')
      OR EXISTS (SELECT 1 FROM pg_class WHERE relname ILIKE '%sentry%')

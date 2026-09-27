@@ -14,7 +14,7 @@ describe('certification identity retention qualification', () => {
     'scripts/ci/fixtures/certification-retirement/qualify-protected-club.py',
     'scripts/ci/fixtures/certification-retirement/protected-club-preimage.json',
     'scripts/ci/fixtures/certification-retirement/protected-club-cleanup-after.sql',
-    'supabase/migrations/20260927135010_reserved_certification_members_leave_protected_club_safely.sql',
+    'supabase/migrations/20260927140411_reserved_certification_members_leave_protected_club_safely.sql',
     'tests/unit/productionE2EAccount.test.ts',
   ])('runs native and unit qualification when %s changes', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });

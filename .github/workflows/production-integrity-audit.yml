@@ -33,6 +33,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scoped_runtime_errors:
+    name: Explicit scoped engine error observation
+    # Separate finite read. Scheduled observations cannot open host transport.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.client_payload.tournament_log_observation != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Read bounded existing scoped engine errors
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 scripts/ci/read-scoped-runtime-errors.py
+      - name: Retain only sanitized observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoped-runtime-errors-${{ github.run_id }}
+          path: artifacts/scoped-runtime-errors/observation.json
+          retention-days: 3
+          if-no-files-found: error
+
   scoped_tournament_diagnostic:
     name: Explicit tournament runtime observation
     # Only a deliberate bounded request. The existing hourly observer never

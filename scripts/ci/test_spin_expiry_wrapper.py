@@ -12,6 +12,7 @@ import re
 import signal
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -42,6 +43,40 @@ TOURNAMENT = '00000000-0000-4000-8000-000000000003'
 MANIFEST_SHA = 'b' * 64
 PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
+
+
+class ReadOnlyOracleImportTests(unittest.TestCase):
+    def test_plain_python_oracle_imports_preserve_staged_inventory(self):
+        # CI invokes plain python3, unlike local -B runs. The parent verifier
+        # imports these staged modules in-process after the SQL clients exit.
+        repo = Path(__file__).resolve().parents[2]
+        names = [W.ARCHIVE.CONCURRENCY, W.ARCHIVE.LOCKS,
+                 W.ARCHIVE.PRODUCTION_PROBE,
+                 'scripts/qualification/spin-expiry-business-races.py']
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            for name in names:
+                leaf = source / name
+                leaf.parent.mkdir(parents=True, exist_ok=True)
+                leaf.write_bytes((repo / name).read_bytes())
+                leaf.chmod(0o400)
+            program = '''
+import importlib.util, pathlib, runpy, sys
+assert not sys.dont_write_bytecode, 'test must start without -B or inherited policy'
+runpy.run_path(sys.argv[1], run_name='oracle_import_control')
+source = pathlib.Path(sys.argv[2])
+before = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
+for index, name in enumerate(sys.argv[3:]):
+    spec = importlib.util.spec_from_file_location('staged_oracle_' + str(index), source / name)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+after = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
+assert before == after, 'oracle imports changed staged inventory: ' + repr(sorted(set(after) - set(before)))
+'''
+            result = subprocess.run(
+                [sys.executable, '-E', '-c', program, str(repo / 'scripts/ci/test-spin-expiry-postgres.py'),
+                 str(source), *names], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 def mixed_source_files():

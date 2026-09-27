@@ -76,3 +76,15 @@ admission table and its three enabled triggers, and the original event/funding
 evidence. The task-owned schema fragment records those installed objects.
 Installation performed no financial invocation; the production abort probe,
 payment, unresolved fee evidence and incident closure remain separate gates.
+
+# Hosted source custody correction
+
+Hosted run 36294168233 preserved a failed first-archived-spin result: the
+financial, rollback and concurrency stages passed, but the parent Python
+verifier's dynamic imports wrote bytecode into its sealed source packet.
+Child-process environment settings did not govern those in-process imports.
+The wrapper now disables bytecode writes before loading any oracle; the exact
+inventory and byte checks remain unchanged. A plain-Python subprocess regression
+reproduced four added cache files before the correction and passes afterward.
+All 146 wrapper controls pass. The original failed artifact remains retained;
+fresh native and hosted qualification are required before settlement.

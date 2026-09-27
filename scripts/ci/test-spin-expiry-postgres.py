@@ -25,6 +25,10 @@ import time
 import unittest
 import uuid
 
+# The parent also imports staged oracles in-process. Child CLEAN_ENV alone
+# cannot prevent those imports from writing unpinned bytecode into the packet.
+sys.dont_write_bytecode = True
+
 ROOT = Path(__file__).resolve().parents[2]
 _mixed_spec = importlib.util.spec_from_file_location('spin_mixed_current', ROOT / 'scripts/qualification/spin-mixed-current.py')
 MIXED = importlib.util.module_from_spec(_mixed_spec)

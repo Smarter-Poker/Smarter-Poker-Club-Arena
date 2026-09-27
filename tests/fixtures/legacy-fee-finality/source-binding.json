@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+    "scripts/ci/classify-ci-changes.mjs": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -139,20 +139,6 @@
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
-      "to": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
-      "on": "2026-09-27",
-      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
-    },
-    {
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
-      "to": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25",
-      "on": "2026-09-27",
-      "why": "Integrate protected main d49fa1913c horse-admission regression routing with scoped achievement and rate-history read qualification. Preserve both classifier branches, every prior audit entry, all financial fixture assertions and incoming test bindings."
-    },
-    {
-      "file": "scripts/ci/classify-ci-changes.mjs",
       "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
       "sha256": "69907f18b8a43eeab81bd4324e1196a3bf3de1248fae9bd2efd01e76eda8fa90",
       "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
@@ -163,13 +149,6 @@
         "scripts/ci/classify-ci-changes.mjs"
       ],
       "why": "Preserve both cashier routing and protected horse admission routing; financial SQL and all historical assertions unchanged. Nested hashes reflect this exact integrated metadata."
-    },
-    {
-      "integration": "2026-09-27 scoped read native qualification with protected36bbcb23ad",
-      "changed_files": [
-        "scripts/ci/classify-ci-changes.mjs"
-      ],
-      "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
@@ -186,11 +165,51 @@
       "why": "Integrate protected main36bb including cashier input routing, while preserving reserved-identity native qualification. Existing financial definitions, assertions and all historical binding records remain unchanged."
     },
     {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb",
+      "to": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
+      "on": "2026-09-27",
+      "why": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
+      "to": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
+      "to": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25",
+      "on": "2026-09-27",
+      "why": "Integrate protected main d49fa1913c horse-admission regression routing with scoped achievement and rate-history read qualification. Preserve both classifier branches, every prior audit entry, all financial fixture assertions and incoming test bindings."
+    },
+    {
+      "integration": "2026-09-27 scoped read native qualification with protected36bbcb23ad",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
+    },
+    {
       "integration": "2026-09-27 scoped reads with protected certification retirement 3be3efe7c2",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 Production Alerts with protected main 8b0c54fdc",
+      "why": "Preserve both parents complete historical audit records, scoped audit routing and archived Spin routing; repin actual integrated workflow/classifier and nested metadata only. No captured financial input or assertion changed.",
+      "files": [
+        {
+          "binding": "tests/fixtures/legacy-fee-finality/source-binding.json",
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "before": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
+          "after": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+        }
+      ]
     },
     {
       "date": "2026-09-27",
@@ -212,6 +231,17 @@
       }
     ]
   },
+  "productionAlertsSettlementIntegration20260927": {
+    "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e",
+        "current": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
+      }
+    ]
+  },
   "bbjSettlementIntegration20260927": {
     "reason": "Preserve both existing native qualifications and both parents full histories and assertions; update only exact integrated CI/classifier and nested binding bytes.",
     "parents": [
@@ -224,6 +254,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711",
         "current": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+      }
+    ]
+  },
+  "productionAlertsBbjIntegration20260927": {
+    "reason": "Preserve protected main eb6e94939 BBJ scoped-ledger qualification and Production Alerts archived Spin routing, retaining both parents complete audit histories. Rebind exact integrated classifier/workflow and nested metadata only; no qualified Spin input or assertion changes.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d",
+        "current": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
       }
     ]
   }

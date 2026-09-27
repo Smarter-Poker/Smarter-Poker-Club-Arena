@@ -303,8 +303,6 @@ class AchievementServiceClass {
   /** FIX-216: Circuit breaker — disable DB writes after persistent failures (missing table) */
   private _dbWriteDisabled = false;
   private _dbWriteFailures = 0;
-  /** Read-side breaker — silence RLS/permission read errors after first report */
-  private _dbReadDisabled = false;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Get Achievements
@@ -326,34 +324,45 @@ class AchievementServiceClass {
   // User Progress
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async getUserAchievements(userId: string): Promise<UserAchievement[]> {
-    // Silent breaker — avoids error reporting flood from polling when table/RLS blocks reads
-    if (this._dbReadDisabled) return [];
-
-    const { data, error } = await supabase
+  async getUserAchievements(
+    userId: string,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<UserAchievement[]> {
+    if (!userId) throw new Error('An achievement owner is required');
+    const query = supabase
       .from('training_user_achievements')
       .select('id, achievement_id, user_id, progress, unlocked_at')
       .eq('user_id', userId)
       .limit(QUERY_LIMITS.MODERATE);
 
-    if (error) {
-      this._dbReadDisabled = true;
-      reportError(error, 'AchievementService.getUserAchievements', {
-        userId,
-        note: 'Disabling subsequent reads - likely missing table or RLS',
-      });
-      return [];
-    }
+    if (options.signal) query.abortSignal(options.signal);
+    const { data, error } = await query;
+    // A failed read is unavailable, never zero progress and never a permanent
+    // singleton-wide ban that also follows the next signed-in account.
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error('Achievement progress was not returned');
 
-    // Merge with achievement definitions
-    return (data || []).map((ua) => ({
-      id: ua.id,
-      achievementId: ua.achievement_id,
-      userId: ua.user_id,
-      progress: ua.progress,
-      unlockedAt: ua.unlocked_at,
-      achievement: this.getById(ua.achievement_id),
-    }));
+    return data.map((ua) => {
+      const progress = Number(ua.progress);
+      if (
+        ua.user_id !== userId ||
+        typeof ua.achievement_id !== 'string' ||
+        !['number', 'string'].includes(typeof ua.progress) ||
+        (typeof ua.progress === 'string' && !ua.progress.trim()) ||
+        !Number.isFinite(progress) ||
+        progress < 0
+      ) {
+        throw new Error('Achievement progress was not valid');
+      }
+      return {
+        id: ua.id,
+        achievementId: ua.achievement_id,
+        userId: ua.user_id,
+        progress,
+        unlockedAt: ua.unlocked_at,
+        achievement: this.getById(ua.achievement_id),
+      };
+    });
   }
 
   async getProgress(userId: string, achievementId: string): Promise<number> {

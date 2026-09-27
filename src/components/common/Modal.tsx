@@ -163,7 +163,7 @@ export function Modal({
         if (modalRef.current) {
           const focusable = Array.from(
             modalRef.current.querySelectorAll<HTMLElement>(
-              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+              'button, [href], input:not([tabindex="-1"]), select, textarea, [tabindex]:not([tabindex="-1"])'
             )
           );
           (focusable.find((el) => !el.classList.contains('sc__close')) ?? focusable[0])?.focus();

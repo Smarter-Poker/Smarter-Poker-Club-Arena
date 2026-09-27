@@ -20,7 +20,9 @@ function fakeAudioContext() {
     apply: () => anything,
   });
   return class {
-    state = 'running';
+    // Born suspended, like a real context before the first tap, so the unlock
+    // path really runs resume() on the pointerdown below.
+    state = 'suspended';
     currentTime = 0;
     sampleRate = 48000;
     destination = anything;
@@ -31,6 +33,7 @@ function fakeAudioContext() {
       return { getChannelData: () => new Float32Array(1) };
     }
     resume() {
+      this.state = 'running';
       return Promise.resolve();
     }
     addEventListener() {}
@@ -84,7 +87,11 @@ describe('the audio session follows the Sounds switch', () => {
     const { soundService } = await import('../../src/services/SoundService');
     // Loading the engine, and the first tap that resumes it, change nothing.
     expect(session.type).toBe('auto');
+    expect(soundService.audioState()).toBe('suspended');
     window.dispatchEvent(new Event('pointerdown'));
+    await Promise.resolve();
+    // The tap really woke the engine, and still did not touch the session.
+    expect(soundService.audioState()).toBe('running');
     expect(session.type).toBe('auto');
     // The first sound the game plays asks for playback.
     soundService.playWin();

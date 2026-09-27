@@ -14728,11 +14728,16 @@ function LiveTablePage({
     const s = payload?.settings || payload;
     if (!s) return;
     // Apply sound preference if changed
-    if (typeof s.soundEnabled === 'boolean') {
-      // Through the engine, not a raw storage write (2026-09-26): setEnabled
-      // writes both sound keys AND returns the Safari audio session to
-      // "ambient" when sound goes off, so a player's music is not left paused.
-      soundService.setEnabled(s.soundEnabled);
+    // MUTE ONLY (2026-09-27). This payload is the Settings page's cached copy,
+    // re-sent on every tab return and theme change, and it goes stale the
+    // moment the player mutes at the table or in the menu (those write the
+    // sound keys, not this cache). So it may only ever turn sound OFF: a stale
+    // `true` here must never un-mute a player. Sound ON from the Settings page
+    // already arrives through useTableSettings (applyGateChanges -> setEnabled).
+    // Off goes through the engine, which also returns the Safari audio session
+    // to "ambient", so a player's music is not left paused.
+    if (s.soundEnabled === false) {
+      soundService.setEnabled(false);
     }
     // 2026-08-18: a `deckStyle` branch used to live here writing
     // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read

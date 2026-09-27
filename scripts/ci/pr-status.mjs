@@ -15,7 +15,7 @@
 //   node scripts/ci/pr-status.mjs                 # PR for the current branch
 //   node scripts/ci/pr-status.mjs 3163            # by PR number
 //   node scripts/ci/pr-status.mjs --branch fix/x  # by branch name
-//   node scripts/ci/pr-status.mjs --sha abc123    # by commit
+//   node scripts/ci/pr-status.mjs --sha FULL_COMMIT_SHA  # exact 40-character SHA
 //   node scripts/ci/pr-status.mjs --json          # machine-readable
 //   node scripts/ci/pr-status.mjs --all           # every open PR, ranked
 //

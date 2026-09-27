@@ -73,3 +73,30 @@ required. Authority failures now retain the original admission, lease and time
 bounds in DETAIL. The installed lease owner is unchanged. Native controls evaluate
 the exact maintained predicate against equal, distinct, missing, reversed, old and
 future timestamps. Qualification remains pending on this corrected candidate.
+
+## Shared union bank observation
+
+The original READ COMMITTED financial equality can observe an unrelated committed
+union-bank update between its snapshots. A newly proposed observer captures each
+financial projection, its PostgreSQL row version, transaction status and snapshot
+bound together. It accepts a changed version only when that exact version is newer
+than the probe's assigned transaction and independently committed. Own parent and
+child transactions, unknown status, insertion/deletion, changed identity, malformed
+metadata, frozen versions and an ambiguous transaction epoch remain refusals.
+Both the first invocation and same-operation replay are checked. Other financial
+stores and all admission, maintenance, custody and historical-source checks retain
+their existing comparisons. Transaction isolation remains READ COMMITTED.
+
+The additional `first-archived-spin-bank-mvcc` image uses the existing allocator
+and captured owners. It explicitly inserts a synthetic zero-valued bank only
+after the authentic fixture checks. Actual external committed updates retain their
+immutable journal entries until normal allocation disposal; this variant never
+claims those synthetic rows were rolled back or the original fixture restored.
+Original nine images, including all original admission/committed concurrency
+checks, remain mandatory. The additional variant exercises committed changes in
+both observation intervals, own parent/subtransaction changes in both intervals,
+own no-op and offsetting changes, and an external commit after observation.
+Source-bound barriers and original SQL output distinguish actual concurrency
+from synthetic parser controls. Post-abort verification and production use remain
+unqualified until independently validated; no settlement or alert is closed by
+this observer change.

@@ -17,11 +17,12 @@ C_PATH=ROOT/'scripts/qualification/spin-first-archived-concurrency.py'
 spec=importlib.util.spec_from_file_location('archive_concurrency_session_contract',C_PATH)
 C=importlib.util.module_from_spec(spec);spec.loader.exec_module(C)
 require=C.require
+BANK=C.load("archive_bank_observer",ROOT/"scripts/qualification/spin-first-archived-bank-observer.py")
 
 
 
 PROBE='scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql'
-PROBE_SHA='14d09569dd366fbeff1ca4c87bffc58014f36ed382b1c04dab15676f57bfc732'
+PROBE_SHA = "491db971d2cdab0ea734bbbe5470904462d6f2b42c079dd14cab68318bda1b6d"
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 
 
@@ -60,7 +61,7 @@ def parse_abort(raw,R,A,transport="native"):
         raise ValueError('nonfinite probe detail number: '+value)
     detail=json.loads(details[0],parse_float=Decimal,parse_constant=nonfinite,object_pairs_hook=unique)
     require(detail['operation']==OPERATION and detail['event']==C.EVENT
-        and detail['same_operation_replay_unchanged'] is True
+        and detail['same_operation_response_and_nonbank_replay_unchanged'] is True
         and detail['transaction_will_abort_now'] is True
         and detail['sequence_rollback_claimed'] is False
         and detail['production_settlement_complete'] is False,'probe abort identity/scope differs')
@@ -71,6 +72,8 @@ def parse_abort(raw,R,A,transport="native"):
     admitted=detail['inside']['smarter_private.spin_archived_first_admission']
     require(isinstance(admitted,list) and len(admitted)==1 and type(admitted[0].get('admitted_xid')) is int
         and str(admitted[0]['admitted_xid'])==fee['transaction_id'],'capture and canonical admission xid differ')
+    BANK.validate_history(detail['bank_observations'],fee['transaction_id'],detail['before'][BANK.RELATION],detail['inside'][BANK.RELATION],detail['replay_state'][BANK.RELATION])
+    require({k:v for k,v in detail['inside'].items() if k!=BANK.RELATION}=={k:v for k,v in detail['replay_state'].items() if k!=BANK.RELATION},'nonbank replay differs')
     if transport=='native': A.validate_fee_notice(notices)
     else: require(not notices,'management transport unexpectedly carried NOTICE; inspect original transport')
     return detail
@@ -112,7 +115,7 @@ def parse_bank_fault(raw,A):
     def nonfinite(value):raise ValueError('nonfinite bank fault detail number: '+value)
     d=json.loads(details[0],parse_float=Decimal,parse_constant=nonfinite,object_pairs_hook=unique)
     require(set(d)=={'operation','event','transaction_id','isolation','relation','before','inside',
-        'sequence_rollback_claimed','production_settlement_complete','fee_capture_diagnostic'},'bank fault detail fields differ')
+        'sequence_rollback_claimed','production_settlement_complete','fee_capture_diagnostic','bank_observations'},'bank fault detail fields differ')
     fee=validate_fee_capture(d['fee_capture_diagnostic'])
     require(fee['transaction_id']==d['transaction_id'],'bank/capture transaction differs')
     require(d['operation']==OPERATION and d['event']==C.EVENT and d['isolation']=='read committed'
@@ -136,6 +139,7 @@ def parse_bank_fault(raw,A):
         expected=dict.fromkeys(financial,0)
         expected.update(id=OPERATION,union_id='fade0000-0000-0000-0000-000000000001',rake_wallet=1)
     require(d['inside']==[expected],'bank fault did not retain exact own update or synthetic insert')
+    BANK.validate_own_fault(d['bank_observations'],d['transaction_id'],d['before'],d['inside'])
     return d
 
 def validate_bank_fault(f,A):
@@ -186,7 +190,7 @@ def protocol_error(raw,kind):
 
 def validate_financial_detail(detail,observer_rows,archive):
     before=detail['before'];inside=detail['inside'];account_keys=('public.club_members','public.clubs','public.unions','public.union_wallets','public.spin_bonus_pools')
-    archive.validate_account_delta({k:before[k] for k in account_keys},{k:inside[k] for k in account_keys})
+    archive.validate_account_delta({k:before[k] for k in account_keys},{k:inside[k] for k in account_keys},bank_observations=detail['bank_observations'])
     terminal=inside['public.tournament_terminal_settlements'][0]
     archive.validate_journal_and_chairs({'reserve_before':before['public.spin_reserve_ledger'],'reserve_after':inside['public.spin_reserve_ledger'],
         'ledger_before':before['public.chip_ledger'],'ledger_after':inside['public.chip_ledger'],'seats_before':before['public.table_seats'],'seats_after':inside['public.table_seats'],
@@ -293,6 +297,8 @@ def run(args,e,sessions,deadline,R,A):
     env=observer.json("SELECT jsonb_build_object('database',current_database(),'user',current_user,'session_user',session_user,'port',current_setting('port'),'address',inet_server_addr(),'max_locks',current_setting('max_locks_per_transaction')::int,'max_connections',current_setting('max_connections')::int,'version',current_setting('server_version_num')::int,'others',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()));")
     R.require_private_endpoint(env,database);e['environment']=env
     worker=new('worker')
+    external=new('external') if args.bank_races else None
+    e['synthetic_bank_variant']=args.bank_races
     require(env['max_locks']==1024 and env['max_connections']==8,'probe isolated capacity differs')
     original=(ROOT/C.PROBE).read_text()
     setup="SET timezone='UTC';\n"+original[original.index('CREATE FUNCTION pg_temp.archive_financial_snapshot()'):original.index('CREATE TEMP TABLE archive_before')]
@@ -328,10 +334,13 @@ def run(args,e,sessions,deadline,R,A):
     fault['transaction_status']=observer.json("SELECT jsonb_build_object('transaction_id','"+xid+"','status',pg_xact_status('"+xid+"'::xid8));")
     validate_bank_fault(fault,A)
     run_protocol(args,e,worker,observer,snapshot,source.decode(),R,A,deadline)
+    if args.bank_races:
+        races=C.load('archive_bank_races',ROOT/'scripts/qualification/spin-first-archived-bank-races.py')
+        races.run(args,e,worker,observer,external,snapshot,source.decode(),type('ProbeAPI',(),dict(globals())),A,R,deadline)
     e['passed']=True
 
 
-def validate_evidence(document,execution,archive):
+def validate_evidence(document,execution,archive,*,bank_races=False):
     d=C.restore(document)
     require(d['execution']==execution and d['event']==C.EVENT and d['passed'] is True
         and d['cleanup_verified'] is True and d['financial_qualified'] is False
@@ -349,8 +358,16 @@ def validate_evidence(document,execution,archive):
     validate_bank_fault(d['bank_fault'],archive)
     validate_protocol(d['fee_protocol'],execution,archive,R,d['backend_pids'],d['bank_fault']['after']['rows'])
     require(d['bank_fault']['before']['rows']==d['after']['rows'],'fault baseline differs from original aborted probe')
-    p=d['backend_pids'];require(set(p)=={'observer','worker'} and len(set(p.values()))==2 and all(type(v) is int and v>0 for v in p.values()),'probe original backend identity differs')
-    require(len(d['clients'])==2 and {c['backend_pid'] for c in d['clients']}==set(p.values())
+    require(d.get('synthetic_bank_variant',False) is bank_races,'bank variant identity differs')
+    if bank_races:
+        races=C.load('retained_bank_races',ROOT/'scripts/qualification/spin-first-archived-bank-races.py')
+        races.validate(d['bank_races'],execution,type('ProbeAPI',(),dict(globals())),archive,R)
+        require(d['bank_races']['original_before']['rows']==d['fee_protocol'][-1]['after']['rows'],'bank overlay baseline differs')
+        require(d['bank_races']['pids']==d['backend_pids'],'bank race backend inventory differs')
+    else:require('bank_races' not in d,'ordinary image contains synthetic bank races')
+    names={'observer','worker','external'} if bank_races else {'observer','worker'}
+    p=d['backend_pids'];require(set(p)==names and len(set(p.values()))==len(names) and all(type(v) is int and v>0 for v in p.values()),'probe original backend identity differs')
+    require(len(d['clients'])==len(names) and {c['backend_pid'] for c in d['clients']}==set(p.values())
         and all(type(c['client_exit']) is int and c['client_exit']==0 for c in d['clients']),'probe client cleanup differs')
     require(d['backend_cleanup']=={'backends':0,'locks':0} and d['backend_cleanup_observations'][-1]=={'backends':0,'locks':0}
         and type(d['verifier_client']['client_exit']) is int and d['verifier_client']['client_exit']==0 and d['cleanup_transcript']
@@ -358,7 +375,7 @@ def validate_evidence(document,execution,archive):
     return {'production_probe_rehearsed':True,'own_bank_fault_diagnostic_rehearsed':True,'financial_qualified':False,'production_qualified':False,'sequence_rollback_claimed':False}
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--psql',type=Path,required=True);parser.add_argument('--execution',required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--psql',type=Path,required=True);parser.add_argument('--execution',required=True);parser.add_argument('--bank-races',action='store_true');args=parser.parse_args()
     require(args.psql.is_absolute() and args.psql.is_file(),'absolute qualified psql required')
     require(hashlib.sha256((ROOT/C.SESSION).read_bytes()).hexdigest()==C.SESSION_SHA,'existing Session owner changed')
     R=C.load('archive_probe_existing_session',ROOT/C.SESSION);A=C.load('archive_probe_financial_oracle',ROOT/C.MODULE);R.canonical_uuid(args.execution)
@@ -378,7 +395,11 @@ def main():
                 try:
                     holder.command('ROLLBACK; SELECT pg_advisory_unlock(570271,'+str(e['protocol_barrier_key'])+');')
                 except BaseException as error:e['fault_cleanup']['barrier_error']=str(error)
-            for name in ('worker',):
+            if e.get('mvcc_operation_barrier') and 'observer' in owned:
+                holder=owned['observer'];holder.deadline=deadline
+                try:holder.command("ROLLBACK; SELECT pg_advisory_unlock("+e["mvcc_operation_barrier"]+");")
+                except BaseException as error:e['fault_cleanup']['mvcc_barrier_error']=str(error)
+            for name in ('external','worker'):
                 client=owned.get(name)
                 if client is None:continue
                 try:
@@ -393,7 +414,7 @@ def main():
         e['transcripts']={name:bytes(s.raw).decode('utf-8',errors='replace') for name,s in sessions}
         verifier=None
         try:
-            require(len(sessions)==2,'original caller inventory incomplete')
+            require(len(sessions)==(3 if args.bank_races else 2),'original caller inventory incomplete')
             verifier=R.Session(args.psql,'qual_spin_expiry_'+args.execution.replace('-',''),'archive_probe_cleanup_'+args.execution,deadline)
             verifier.pid=verifier.json('SELECT to_jsonb(pg_backend_pid());');R.observe_backend_cleanup(verifier,','.join(str(s.pid) for _,s in sessions),deadline,e)
             e['cleanup_verified']=all(type(c.get('client_exit')) is int and c['client_exit']==0 and 'cleanup_error' not in c for c in e['clients'])
@@ -404,7 +425,7 @@ def main():
                 try:e['verifier_client']=verifier.close(deadline);require(e['verifier_client']['client_exit']==0,'verifier cleanup failed')
                 except BaseException as error:e['cleanup_verified']=False;e['verifier_cleanup_error']=str(error)
     if 'failure' not in e:
-        try:e['qualification']=validate_evidence(e,args.execution,A)
+        try:e['qualification']=validate_evidence(e,args.execution,A,bank_races=args.bank_races)
         except BaseException as error:e['failure']={'type':type(error).__name__,'message':str(error)}
     print(json.dumps(e,default=R.evidence_value,allow_nan=False))
     return 0 if e['passed'] and e['cleanup_verified'] and 'failure' not in e else 1

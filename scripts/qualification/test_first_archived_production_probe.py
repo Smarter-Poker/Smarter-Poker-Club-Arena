@@ -29,9 +29,12 @@ def valid():
     c['accounts_before']['public.union_wallets']=copy.deepcopy(bank)
     c['accounts_after']['public.union_wallets']=copy.deepcopy(bank)
     c['inside']['rows']['smarter_private.spin_archived_first_admission'][0]['admitted_xid']=10000
-    detail={'operation':P.OPERATION,'event':P.C.EVENT,'same_operation_replay_unchanged':True,'transaction_will_abort_now':True,
+    detail={'operation':P.OPERATION,'event':P.C.EVENT,'same_operation_response_and_nonbank_replay_unchanged':True,'transaction_will_abort_now':True,
         'sequence_rollback_claimed':False,'production_settlement_complete':False,'response':c['first_response'],
         'fee_capture_diagnostic':fee_diagnostic(),'before':dict(before['rows'],**c['accounts_before']),'inside':dict(c['inside']['rows'],**c['accounts_after'])}
+    observation={'transaction_id':'10000','snapshot_xmax':'10001','isolation':'read committed','rows':[{'projection':copy.deepcopy(bank[0]),'xmin':'9999','full_xid':'9999','eligible':False,'status':None}]}
+    detail['bank_observations']=[copy.deepcopy(observation) for _ in range(3)]
+    detail['replay_state']=copy.deepcopy(detail['inside'])
     raw=NOTICE+'\nERROR:  PZ002: FIRST_ARCHIVED_ROLLBACK_PROVED:'+P.OPERATION+'\nDETAIL:  '+json.dumps(detail)+'\n'
     p={'observer':101,'worker':102}
     result=copy.deepcopy({'execution':c['execution'],'event':P.C.EVENT,'passed':True,'cleanup_verified':True,'financial_qualified':False,'production_qualified':False,
@@ -45,6 +48,7 @@ def valid():
     diagnostic={'operation':P.OPERATION,'event':P.C.EVENT,'transaction_id':'10001','isolation':'read committed',
         'fee_capture_diagnostic':fee_diagnostic('10001'),'relation':'public.union_wallets','before':bank_before,'inside':bank_inside,
         'sequence_rollback_claimed':False,'production_settlement_complete':False}
+    diagnostic['bank_observations']=[{'transaction_id':'10001','snapshot_xmax':'10002','isolation':'read committed','rows':[{'projection':copy.deepcopy(row[0]),'xmin':xmin,'full_xid':xmin,'eligible':eligible,'status':status}]} for row,xmin,eligible,status in [(bank_before,'9999',False,None),(bank_inside,'10001',True,'in progress')]]
     fault_raw=NOTICE+'\nERROR:  P0001: PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets\nDETAIL:  '+json.dumps(diagnostic)+'\n'
     result['bank_fault']={'kind':'isolated-derived-own-bank-mutation','production_sql':False,'base_probe_sha256':P.PROBE_SHA,
         'derived_source':derived,'derived_sha256':P.hashlib.sha256(derived.encode()).hexdigest(),'before':copy.deepcopy(before),'after':copy.deepcopy(before),
@@ -122,6 +126,8 @@ class FirstArchivedProductionProbeTests(unittest.TestCase):
         row={k:0 for k in ('chip_balance','rake_wallet','bbj_wallet','promo_wallet','insurance_wallet','spin_reserve_wallet')}
         row.update(id=P.OPERATION,union_id='fade0000-0000-0000-0000-000000000001',rake_wallet=1)
         f['detail']['inside']=[row]
+        f['detail']['bank_observations'][0]['rows']=[]
+        f['detail']['bank_observations'][1]['rows'][0]['projection']=copy.deepcopy(row)
         def render(f):
             f['original_output']=NOTICE+'\nERROR:  P0001: PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets\nDETAIL:  '+json.dumps(f['detail'])+'\n'
         render(f);P.validate_bank_fault(f,A)

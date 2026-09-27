@@ -27,9 +27,12 @@ DECLARE
  accounts jsonb; expected_accounts jsonb; row_before jsonb; row_after jsonb;
  terminal jsonb; escrow jsonb; custody jsonb; accounting jsonb; admission jsonb; lease jsonb;
  expected_amount numeric; added jsonb; inside_observed_at timestamptz;
+ bank_top numeric; bank_observation jsonb; bank_history jsonb:='[]'::jsonb; bank_previous jsonb; bank_row jsonb; bank_invalid boolean; replay_state jsonb;
  fee_diagnostic jsonb; fee_state text; fee_message text; fee_context text;
  fee_capture_before jsonb; fee_capture_after jsonb; fee_owner_md5 text;
 BEGIN
+ bank_top:=pg_current_xact_id()::text::numeric;
+ IF current_setting('transaction_isolation') IS DISTINCT FROM 'read committed' THEN RAISE EXCEPTION 'PROBE_ISOLATION_CHANGED'; END IF;
  PERFORM set_config('lock_timeout','3s',true);
  PERFORM set_config('TimeZone','UTC',true);
  IF transaction_timestamp()<'2026-09-21T07:00:00Z'::timestamptz
@@ -46,6 +49,57 @@ BEGIN
  FOR phase IN 0..2 LOOP
   snap:='{}'::jsonb;
   FOR name,query IN SELECT key,value FROM jsonb_each_text(queries) LOOP
+   IF name='public.union_wallets' THEN
+    WITH observed AS MATERIALIZED (
+      SELECT w.xmin::text::numeric low,
+       (SELECT jsonb_object_agg(k,v ORDER BY k) FROM jsonb_each(to_jsonb(w)) q(k,v)
+        WHERE k IN ('id','user_id','club_id','union_id') OR k ~ '(balance|treasury|wallet|chip_pool|locked_chips|held_chips|credit_|diamonds|total_deposited|total_drawn|seeded_amount|surplus_returned|seed_returned_amount)') projection
+      FROM public.union_wallets w WHERE w.union_id='fade0000-0000-0000-0000-000000000001'::uuid),
+    observation_snapshot AS MATERIALIZED (SELECT pg_snapshot_xmax(pg_current_snapshot())::text::numeric x),
+    versions AS MATERIALIZED(SELECT o.*,s.x,floor(bank_top/4294967296)*4294967296+o.low full_xid
+      FROM observed o CROSS JOIN observation_snapshot s)
+    SELECT jsonb_build_object('transaction_id',bank_top::text,'snapshot_xmax',s.x::text,
+      'isolation',current_setting('transaction_isolation'),'rows',coalesce((SELECT jsonb_agg(jsonb_build_object(
+       'projection',v.projection,'xmin',v.low::text,'full_xid',v.full_xid::text,
+       'eligible',floor(bank_top/4294967296)=floor(v.x/4294967296) AND v.low>=3 AND v.low>=mod(bank_top,4294967296) AND v.full_xid<v.x,
+       'status',CASE WHEN floor(bank_top/4294967296)=floor(v.x/4294967296) AND v.low>=3 AND v.low>=mod(bank_top,4294967296) AND v.full_xid<v.x
+          THEN pg_xact_status(v.full_xid::text::xid8) END) ORDER BY v.projection->>'id') FROM versions v),'[]'::jsonb))
+     INTO bank_observation FROM observation_snapshot s;
+    bank_history:=bank_history||jsonb_build_array(bank_observation);
+    SELECT coalesce(jsonb_agg(r->'projection' ORDER BY r->'projection'->>'id'),'[]'::jsonb)
+      INTO part FROM jsonb_array_elements(bank_observation->'rows') r;
+    bank_invalid:=bank_observation->>'isolation' IS DISTINCT FROM 'read committed'
+      OR floor(bank_top/4294967296) IS DISTINCT FROM floor((bank_observation->>'snapshot_xmax')::numeric/4294967296)
+      OR (bank_observation->>'snapshot_xmax')::numeric<bank_top OR jsonb_array_length(part)>1;
+    FOR bank_row IN SELECT value FROM jsonb_array_elements(bank_observation->'rows') LOOP
+      IF (bank_row->>'xmin')::numeric<3 OR
+        ((bank_row->>'xmin')::numeric>=mod(bank_top,4294967296) AND
+          (bank_row->'eligible' IS DISTINCT FROM 'true'::jsonb OR bank_row->>'status' IS DISTINCT FROM 'committed'))
+        THEN bank_invalid:=true; END IF;
+    END LOOP;
+    IF phase>0 THEN
+      bank_previous:=bank_history->(phase-1);
+      IF jsonb_array_length(bank_previous->'rows') IS DISTINCT FROM jsonb_array_length(bank_observation->'rows')
+        THEN bank_invalid:=true;
+      ELSIF jsonb_array_length(part)=1 THEN
+        bank_row:=bank_observation->'rows'->0;
+        IF bank_previous->'rows'->0->'projection'->'id' IS DISTINCT FROM bank_row->'projection'->'id'
+          THEN bank_invalid:=true;
+        ELSIF bank_previous->'rows'->0->'xmin' IS NOT DISTINCT FROM bank_row->'xmin' THEN
+          IF bank_previous->'rows'->0->'projection' IS DISTINCT FROM bank_row->'projection' THEN bank_invalid:=true; END IF;
+        ELSIF bank_row->'eligible' IS DISTINCT FROM 'true'::jsonb OR bank_row->>'status' IS DISTINCT FROM 'committed'
+          THEN bank_invalid:=true; END IF;
+      END IF;
+    END IF;
+    IF bank_invalid THEN
+      RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets',
+       DETAIL=jsonb_build_object('operation',operation,'event',event,'transaction_id',bank_top::text,
+        'isolation',current_setting('transaction_isolation'),'relation',name,
+        'before',CASE WHEN phase=0 THEN part ELSE (SELECT coalesce(jsonb_agg(r->'projection' ORDER BY r->'projection'->>'id'),'[]'::jsonb) FROM jsonb_array_elements(bank_previous->'rows') r) END,
+        'inside',part,'bank_observations',bank_history,'fee_capture_diagnostic',fee_diagnostic,
+        'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
+    END IF;
+   ELSE
    EXECUTE 'SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),''[]''::jsonb) FROM ('||query||') r' INTO part;
    IF jsonb_array_length(part)>200 THEN RAISE EXCEPTION 'PROBE_SCOPE_BOUND: %',name; END IF;
    -- Retain only financial projections for shared account records; no contacts.
@@ -56,6 +110,7 @@ BEGIN
       k ~ '(balance|treasury|wallet|chip_pool|locked_chips|held_chips|credit_|diamonds|total_deposited|total_drawn|seeded_amount|surplus_returned|seed_returned_amount)') projected
      FROM jsonb_array_elements(part) r) projected_rows;
    END IF;
+   END IF; -- union wallet observation or unchanged generic row capture
    snap:=snap||jsonb_build_object(name,part);
   END LOOP;
   IF EXISTS(SELECT 1 FROM public.hand_history WHERE tournament_id=event)
@@ -65,7 +120,8 @@ BEGIN
   IF phase=0 THEN before_state:=snap;
   ELSIF phase=1 THEN inside_state:=snap; inside_observed_at:=clock_timestamp();
   ELSE
-   IF snap IS DISTINCT FROM inside_state OR replay IS DISTINCT FROM response THEN
+   replay_state:=snap;
+   IF (snap-'public.union_wallets') IS DISTINCT FROM (inside_state-'public.union_wallets') OR replay IS DISTINCT FROM response THEN
     RAISE EXCEPTION 'PROBE_SAME_OPERATION_REPLAY_CHANGED'; END IF;
    EXIT;
   END IF;
@@ -179,7 +235,7 @@ BEGIN
   (CASE WHEN r->>'user_id'=winner::text AND r->>'club_id'=funding_club::text THEN jsonb_set(r,'{chip_balance}',to_jsonb((r->>'chip_balance')::numeric+200)) ELSE r END)::text)
  INTO expected_accounts FROM jsonb_array_elements(before_state->'public.club_members') r;
  IF inside_state->'public.club_members' IS DISTINCT FROM expected_accounts THEN RAISE EXCEPTION 'PROBE_WALLET_DELTA'; END IF;
- FOREACH name IN ARRAY ARRAY['public.clubs','public.unions','public.union_wallets','public.spin_bonus_pools','public.spin_reserve_ledger'] LOOP
+ FOREACH name IN ARRAY ARRAY['public.clubs','public.unions','public.spin_bonus_pools','public.spin_reserve_ledger'] LOOP
   IF inside_state->name IS DISTINCT FROM before_state->name THEN
    -- A shared wallet can change between READ COMMITTED observations. Retain
    -- the actual financial projections for attribution; never waive equality,
@@ -239,6 +295,6 @@ BEGIN
  RAISE EXCEPTION USING ERRCODE='PZ002', MESSAGE='FIRST_ARCHIVED_ROLLBACK_PROVED:'||operation::text,
  DETAIL=jsonb_build_object('operation',operation,'event',event,'response',response,'before',before_state,'inside',inside_state,
  'fee_capture_diagnostic',fee_diagnostic,
- 'same_operation_replay_unchanged',true,'transaction_will_abort_now',true,'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
+ 'bank_observations',bank_history,'replay_state',replay_state,'same_operation_response_and_nonbank_replay_unchanged',true,'transaction_will_abort_now',true,'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
 END
 $probe$;

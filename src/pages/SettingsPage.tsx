@@ -777,7 +777,7 @@ export default function SettingsPage() {
   const handleEnablePush = async () => {
     setPushLoading(true);
     try {
-      const result = await enablePush();
+      const result = await enablePush({ surface: 'settings' });
       setPushEnabled(result.ok);
       if (result.ok) {
         toast.success('Push notifications are on for this device');

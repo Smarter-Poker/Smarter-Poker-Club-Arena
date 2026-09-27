@@ -61,6 +61,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import PushEnableBanner from '../../components/notifications/PushEnableBanner';
 import './TournamentDetails.css';
 import { useToast } from '../../components/common/Toast';
 import PageErrorBoundary from '../../components/common/PageErrorBoundary';
@@ -1749,6 +1750,20 @@ export default function TournamentDetails({
           {activeTab === 'rewards' && <RewardsTab {...tabProps} />}
           {activeTab === 'satellites' && <SatellitesTab {...tabProps} />}
         </div>
+
+        {/* After registration, before the off: the one moment a player most
+            wants the 15 and 2 minute start reminders
+            (prepare_tournament_reminders). Non-blocking and inked between the
+            scrolling panel and the footer, NOT inside the panel: the Details
+            tab paints its own chassis from the panel's top edge, and a banner
+            printed there lands on the art. Shown only when this device can
+            take a push and holds none, with its own cooldown
+            (src/lib/pushPromptPolicy.ts). */}
+        {isRegistered &&
+          user?.id &&
+          (tournament.status === 'ANNOUNCED' || tournament.status === 'REGISTERING') && (
+            <PushEnableBanner surface="tournament_registration" userId={user.id} />
+          )}
 
         {/* Footer Actions. A flex child of the shell, NOT `position: fixed`:
             the fixed version offset itself by `--bottom-nav-clearance` to clear

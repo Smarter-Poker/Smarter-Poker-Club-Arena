@@ -84,6 +84,8 @@
 
 import { readLocalSession } from './authUtils';
 import { isNativePlatform } from './appBase';
+import { enableOutcome, type PushPromptSurface } from './pushPromptPolicy';
+import { recordPushPromptEvent } from './pushPromptTelemetry';
 
 /* ═══════════════════════════════════════════════════════════════════════
    TIMEOUTS
@@ -493,14 +495,36 @@ export interface PushResult {
   permission?: PushPermission;
 }
 
+export interface EnablePushOptions {
+  /**
+   * The prompt surface a PLAYER answered. When present, the outcome is
+   * recorded to push_prompt_events (accepted / declined / failed /
+   * unsupported). Omitted by silent callers such as PushSubscriptionSync's
+   * re-registration, which is repair, not a player's answer, and must never
+   * be counted as one.
+   */
+  surface?: PushPromptSurface;
+}
+
 /**
  * Enable push on this device.
  *
  * MUST be called synchronously from a click handler. iOS only honours the
  * permission prompt while the originating tap gesture is alive, so callers
- * may not await anything before this.
+ * may not await anything before this. The telemetry below runs only AFTER
+ * the outcome is known and is never awaited.
  */
-export async function enablePush(): Promise<PushResult> {
+export async function enablePush(options: EnablePushOptions = {}): Promise<PushResult> {
+  const supported = isWebPushSupported();
+  const result = await enablePushOnThisDevice();
+  if (options.surface) {
+    const outcome = enableOutcome(result, supported);
+    recordPushPromptEvent(options.surface, outcome.event, outcome.detail);
+  }
+  return result;
+}
+
+async function enablePushOnThisDevice(): Promise<PushResult> {
   if (isNativePlatform()) {
     const { enableNativePush } = await import('./native/push');
     const result = await enableNativePush();

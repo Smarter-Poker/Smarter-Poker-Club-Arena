@@ -102,6 +102,7 @@ import { UnionService } from '../services/UnionService';
 import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import { compactChips } from '../utils/format';
 import { titleCase } from '../utils/titleCase';
 
@@ -2253,6 +2254,10 @@ export default function CashierTradePage() {
             </div>
           </section>
 
+          {/* The cashier is where money news starts; offer the phone alert here,
+              non-blocking and at most weekly (src/lib/pushPromptPolicy.ts). */}
+          {user?.id && <PushEnableBanner surface="cashier" userId={user.id} />}
+
           {/* Entity picker */}
           {pickerOpen && (
             <div
@@ -3270,6 +3275,7 @@ export default function CashierTradePage() {
                     <dd className="sc-ink--silver">{receipt.id}</dd>
                   </div>
                 </dl>
+                {user?.id && <PushEnableBanner surface="cashier_receipt" userId={user.id} />}
               </div>
             </SpadeConsole>
           </div>

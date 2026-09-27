@@ -31,6 +31,11 @@
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
+/* On a console's glass the rows already carry the inset; do not add a second. */
+.ca-push-banner--in-console {
+  margin: 6px 0 2px;
+}
+
 .ca-push-banner__text {
   display: flex;
   flex-direction: column;
@@ -62,6 +67,15 @@
   overflow-wrap: anywhere;
 }
 
+/* The actions: one or two lit words on the glass, side by side. A contextual
+   banner (cashier, receipt, tournament registration) adds Not Now in the
+   muted ink so the primary word stays the only lit one. */
+.ca-push-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 7cqw;
+}
+
 /* The lit word: an action printed on the glass, no plate and no box. */
 .ca-push-banner__btn {
   align-self: flex-start;
@@ -78,6 +92,12 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+/* Not Now is secondary: the same lit word, quieter and never glowing. */
+.ca-push-banner__btn--quiet {
+  font-weight: 700;
+  letter-spacing: 0.1em;
 }
 
 .ca-push-banner__btn:active {
@@ -105,8 +125,21 @@
     flex: 1 1 auto;
   }
 
-  .ca-push-banner__btn {
-    align-self: center;
+  .ca-push-banner__actions {
     flex: 0 0 auto;
   }
+}
+
+/* Inside a dialog (the cashier Transaction Receipt), metallic-popups.css
+   bevels every button with !important at 0,2,1. The lit word is not a button
+   shape and must not gain one: switch that chassis off longhand by longhand
+   at 0,3,0, exactly as SpadeConsole.css does for its plates (skill 3.5). */
+[role='dialog'] .ca-push-banner__btn.ca-push-banner__btn,
+[aria-modal='true'] .ca-push-banner__btn.ca-push-banner__btn {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }

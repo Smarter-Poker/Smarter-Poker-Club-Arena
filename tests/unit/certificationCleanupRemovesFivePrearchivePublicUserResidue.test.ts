@@ -180,13 +180,16 @@ describe('pre-archive certification public-user residue cleanup', () => {
     expect(parallelStart).toBeLessThan(rakebackCount);
     expect(rakebackCount).toBeLessThan(parallelRestore);
     expect(parallelRestore).toBeLessThan(catalogLoop);
-    for (const setting of [
-      'max_parallel_workers_per_gather',
-      'min_parallel_table_scan_size',
-      'parallel_setup_cost',
-      'parallel_tuple_cost',
+    for (const [setting, oldVariable] of [
+      ['max_parallel_workers_per_gather', 'v_old_max_parallel'],
+      ['min_parallel_table_scan_size', 'v_old_min_parallel_scan'],
+      ['parallel_setup_cost', 'v_old_parallel_setup_cost'],
+      ['parallel_tuple_cost', 'v_old_parallel_tuple_cost'],
     ]) {
       expect(migration).toContain(`current_setting('${setting}')`);
+      const restore = migration.indexOf(`set_config('${setting}', ${oldVariable}, true)`);
+      expect(restore).toBeGreaterThan(rakebackCount);
+      expect(restore).toBeLessThan(catalogLoop);
     }
   });
 

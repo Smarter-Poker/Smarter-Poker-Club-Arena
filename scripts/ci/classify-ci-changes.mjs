@@ -57,6 +57,8 @@ const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
+const settlementConservationIndex =
+  /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
 // Sparse satellite receipt reads qualify their actual online index and audit.
 const satelliteAuditIndex =
@@ -248,6 +250,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
+      matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex),
@@ -285,6 +288,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
+      matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex),

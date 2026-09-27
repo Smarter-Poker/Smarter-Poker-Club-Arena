@@ -29,3 +29,18 @@ installation, fresh plan and the next natural full-job outcome remain separate.
 The existing required accounting shard4 runs this fixture; classifier regression
 cases ensure every qualification input selects it. Historical source bindings are
 retained while their current source pins follow the added workflow and classifier.
+
+Both qualified indexes are delivered together in PR5392, preserving the original
+receipt-index branch history and the separately qualified ledger-index history.
+The root installed the ledger index once at05:08:19UTC (OID61362580, valid, ready
+and live,81920bytes), followed by verification version20260927050901 once.
+The verification bytes retain MD5bd2523743063652185e1f005a4eb4f59, and the
+financial function retains MD5462b1c631010e4bab0361967d2da2a75. Neither installed
+migration is replayed by source delivery.
+
+The root's read-only full-body measurement after both indexes was1689.116ms.
+Its ledger fallback executed zero loops because current eligible events use
+escrow, so this does not attribute production savings to the second index. The
+actual unchanged SQL function with parallel workers disabled completed in71.019ms
+with zero result rows and6062shared hits at05:12UTC. The next natural full job233
+remains a separate acceptance result; neither measurement certifies that job.

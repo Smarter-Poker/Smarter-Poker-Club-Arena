@@ -55,6 +55,8 @@ const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
+const settlementAttribution =
+  /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
 
 // Sparse satellite receipt reads qualify their actual online index and audit.
 const satelliteAuditIndex =
@@ -245,6 +247,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
+      matches(settlementAttribution) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex),
@@ -280,6 +283,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
+      matches(settlementAttribution) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex),

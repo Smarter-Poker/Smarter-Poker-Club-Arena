@@ -914,6 +914,21 @@ test('An iPhone browser gets a tap switch on every live Diamond control, and eve
       }
     };
     await check();
+    // Accessibility with the switches drawn: nothing new beyond the one written
+    // exception (a switch inside its button, aria-hidden and out of the tab
+    // order; see TapHaptic.tsx), and that exception only ever on a tap switch.
+    const axe = await new AxeBuilder({ page }).include('[data-game-console]').analyze();
+    for (const violation of axe.violations) {
+      if (violation.id === 'nested-interactive') {
+        for (const node of violation.nodes) {
+          const hasSwitch = await page.evaluate(
+            (selector) => Boolean(document.querySelector(`${selector} > input[data-tap-haptic]`)),
+            String(node.target[node.target.length - 1])
+          );
+          expect(hasSwitch, `nested-interactive on ${node.target} is not a tap switch`).toBe(true);
+        }
+      } else expect(violation, `${violation.id}: ${violation.help}`).toBeUndefined();
+    }
     // A tap lands on the switch (the topmost thing under the finger) and still plays.
     await page.getByRole('button', { name: 'Start Test', exact: true }).tap();
     await expect(page.getByRole('button', { name: 'Tile 2', exact: true })).toBeEnabled();

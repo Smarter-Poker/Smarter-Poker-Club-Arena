@@ -1,7 +1,6 @@
 import type { ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { requestPushNudge } from '../lib/pushNudgePolicy';
 import { ClubEntryTrustService } from './ClubEntryTrustService';
 import { isJoinableClubCode } from '../utils/clubCode';
 
@@ -172,7 +171,12 @@ export async function joinClubByIdentifier(options: {
     // A meaningful moment for notifications: seat offers, tournament starts
     // and club messages now concern this player. The prompt host decides
     // whether an ask is allowed (cool-down, already on, blocked).
-    requestPushNudge('club_joined');
+    // Loaded lazily: this service is in the entry chunk, the policy is not.
+    void import('../lib/pushNudgePolicy')
+      .then((m) => m.requestPushNudge('club_joined'))
+      .catch(() => {
+        /* a nudge is optional; joining the club already succeeded */
+      });
   }
   return result;
 }

@@ -203,7 +203,17 @@ async function main() {
   // vendor arrives twice (one Three.js chunk, one React, one Supabase). Initial
   // load moves 306 -> 309kB gz, inside the untouched 320kB initial limit; the
   // initial-load limits and the entry-module gate are unchanged.
-  const TOTAL_GZ_CEILING = 2880;
+  // 2026-09-27: raised 2880 -> 2890 gz (raw ceiling unchanged) for push
+  // enrollment (PR #5443, delivered under owner policy 2.9 and Dan's
+  // instruction to fully build push sign-up). Paired local builds with the
+  // same dependencies: main 5f61399652 2875kB gz; this branch 2878kB gz
+  // / 10132kB raw (hosted measured 2882kB before the nudge policy was made
+  // lazy). The growth is new product surface only: the nudge policy chunk,
+  // moment copy in the prompt and the legacy-subscription hand-over in the
+  // push client. No vendor added, no module in two chunks; the policy was
+  // moved OUT of the entry chunk (entry-chunk gate passes), and initial load is
+  // unchanged at 312kB gz inside the untouched 320kB limit.
+  const TOTAL_GZ_CEILING = 2890;
   const TOTAL_RAW_CEILING = 10150;
 
   const biggest = all

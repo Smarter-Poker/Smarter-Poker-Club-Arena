@@ -25,6 +25,7 @@ describe('pre-archive certification identity retirement', () => {
     expect(migration.trimStart()).toMatch(/^--[\s\S]*\nBEGIN;/);
     expect(migration.trimEnd()).toMatch(/COMMIT;$/);
     expect(migration).toContain('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+    expect(migration).toContain("SET LOCAL statement_timeout = '15min'");
     expect(migration).toContain('IF public.fn_platform_frozen() THEN');
     expect(migration).toContain(
       'PREARCHIVE_CERTIFICATION_IDENTITY_ARCHIVE_REFUSES_PLATFORM_FREEZE'

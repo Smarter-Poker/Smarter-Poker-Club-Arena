@@ -19,7 +19,10 @@ BEGIN;
 
 SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 SET LOCAL lock_timeout = '4s';
-SET LOCAL statement_timeout = '5min';
+-- The exhaustive no-FK UUID guard performs a serial scan under SERIALIZABLE.
+-- The matching production guard completed in about seven minutes; retain a
+-- bounded budget with enough headroom for the complete fail-closed readback.
+SET LOCAL statement_timeout = '15min';
 
 DO $preflight$
 DECLARE

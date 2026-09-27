@@ -369,6 +369,63 @@ describe('the server names the club that was created', () => {
   });
 });
 
+describe('name checks and a second creation never inherit stale state', () => {
+  it('ignores an older availability response after the player changes the name', async () => {
+    const user = userEvent.setup();
+    const replies: Array<(available: boolean) => void> = [];
+    state.checkNameAvailability.mockImplementation(
+      () => new Promise<boolean>((resolve) => replies.push(resolve))
+    );
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+
+    await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
+    await waitFor(() => expect(replies).toHaveLength(1), { timeout: 3000 });
+    await user.clear(screen.getByLabelText('Club Name'));
+    await user.type(screen.getByLabelText('Club Name'), 'Bravo Room');
+    await waitFor(() => expect(replies).toHaveLength(2), { timeout: 3000 });
+
+    replies[1](true);
+    await screen.findByText('Name Available');
+    replies[0](false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Name Available')).toBeVisible();
+    expect(screen.queryByText('Name Already In Use')).toBeNull();
+  });
+
+  it('treats switch-only changes as a saved draft and guards closing them', async () => {
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    await screen.findByText('3 Club Slots Remaining');
+    await user.click(screen.getByRole('switch', { name: 'Review Join Requests' }));
+    await waitFor(() => {
+      const draft = JSON.parse(window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`) || 'null');
+      expect(draft?.requiresApproval).toBe(true);
+    });
+    await user.click(closePlate());
+    expect(guardDialog()).toBeVisible();
+    expect(screen.getByText(/Launch Settings Stay Saved As A Draft/)).toBeVisible();
+  });
+
+  it('resets discovery, approval and the crest before a second club', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    state.create.mockResolvedValue({ id: 'club-1', name: 'Alpha Room' });
+    const view = render(<CreateClubModal isOpen onClose={onClose} />);
+    await user.click(screen.getByRole('switch', { name: 'Discoverable In Club Arena' }));
+    await user.click(screen.getByRole('switch', { name: 'Review Join Requests' }));
+    await user.click(screen.getByRole('radio', { name: 'Royal Crown' }));
+    await makeCreatable(user, 'Alpha Room');
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    view.rerender(<CreateClubModal isOpen={false} onClose={onClose} />);
+    view.rerender(<CreateClubModal isOpen onClose={onClose} />);
+    expect(screen.getByRole('switch', { name: 'Discoverable In Club Arena' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Review Join Requests' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Cardroom Chip' })).toBeChecked();
+  });
+});
+
 describe('Launch Settings are switches that say On or Off', () => {
   it('prints On or Off and carries the choice into the create call', async () => {
     const user = userEvent.setup();

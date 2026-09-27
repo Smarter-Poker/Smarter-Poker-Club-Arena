@@ -90,3 +90,13 @@ No Lightning migration, gameplay code or assertion changes. The original fails
 with the same section-05 message under deterministic horse-first ordering;
 the repaired normal fixture and that same adversarial ordering each pass all
 20 real PostgreSQL sections, including horse and human financial parity.
+
+The current-head client lane found that the already-installed settings migration
+creates no persistent object and has no `@live-proof` line. Its SQL remains
+immutable. The existing recorded-migrations manifest now records this version
+with live evidence: `fn_ca_migration_text` returned the identical 4,776 bytes
+and MD5 `7d5b2b925b0fc28a79b02ab36ea83b27` at 00:43:19 UTC. The existing
+recording law requires exact file bytes and its maintained live reader checks
+the same production hash. A separate 00:43:32 catalog read confirmed the valid,
+ready, live covering index and all intended options. No guard or SQL is changed,
+and no migration is replayed.

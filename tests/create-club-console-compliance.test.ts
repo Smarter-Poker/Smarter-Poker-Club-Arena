@@ -130,7 +130,7 @@ describe('#ClubArenaConsole Create A Club compliance', () => {
     expect(launchProgress).toContain("task.complete ? 'Done'");
   });
 
-  it('removes the completed checklist rather than leaving a decorative 100 percent gate', () => {
-    expect(launchProgress).toContain('if (allTasksResolved) return null;');
+  it('removes the completed checklist only after its durable completion gate answers', () => {
+    expect(launchProgress).toContain('if (allTasksResolved && !waitForCompletion) return null;');
   });
 });

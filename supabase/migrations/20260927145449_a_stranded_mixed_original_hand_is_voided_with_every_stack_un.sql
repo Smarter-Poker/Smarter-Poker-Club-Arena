@@ -47,8 +47,8 @@
 -- designed, then completes the transfer and resumes dealing. Owner postgres,
 -- EXECUTE for nobody else: only this reviewed migration calls it.
 --
--- It refuses, by name, anything else: an event anybody holds a lease on
--- (retried), an admitted transfer, any reserved hand that is not one of the
+-- It refuses, by name, anything else: an event held by any lease other than
+-- the never-admitted successor's (retried), an admitted transfer, any reserved hand that is not one of the
 -- transfer's originals, any open table break, a started or dispatched hand,
 -- a changed chair or registration, a snapshot that is not the open preflop
 -- one or whose stacks do not add back.
@@ -56,15 +56,23 @@
 -- THE DRIVER takes each event in its own subtransaction with only try-locks
 -- (the event's own lane, never queued). A busy lane or a claim in flight is
 -- deferred; a named F06 refusal is reported; anything unexpected rolls the
--- whole migration back. It stops starting events after 4 s so the shared
+-- whole migration back. It stops starting events after 6 s so the shared
 -- settlement lane is never held long. Deferred events are named in the log.
+--
+-- FIRST APPLY REFUSED (2026-09-27 16:17 UTC, run 36332626699, nothing
+-- committed). Engine 4946473b had just restarted and was claiming the
+-- successor generation of these events while the void ran; the post-image
+-- required "no lease" and refused. A holder of the never-admitted successor
+-- generation is harmless (it is refused admission until this receipt exists
+-- and every F06 write needs the lane the void holds), so the void and the
+-- post-image now admit exactly that holder and still refuse any other.
 --
 -- Law: tests/a-stranded-mixed-original-hand-is-voided-with-every-stack-unchanged.law.test.ts
 -- (run against rows exported from production for 23ef2d58 and the four-table
 -- MTT 4e2de62d in a local PostgreSQL 17: both voided, replay returns the
 -- stored outcome, a lease or a moved chip refuses).
 --
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_f06_void_stranded_mixed_original(uuid)'::regprocedure) = '49f45101006d8b94d192ac826ad7327f'
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_f06_void_stranded_mixed_original(uuid)'::regprocedure) = '618d61ed59a8aef999767c802469949f'
 -- @live-proof: (SELECT count(*) FROM smarter_private.f06_mixed_aborts WHERE expected->>'kind' = 'stranded_mixed_original') >= 1
 
 BEGIN;
@@ -151,8 +159,14 @@ BEGIN
      OR smarter_private.f06_generation_aborted(t, xfer.successor_generation) THEN
     RAISE EXCEPTION 'F06_STRANDED_GENERATION_DISPOSED' USING ERRCODE = '55000';
   END IF;
-  -- Nobody holds the event. A claim in flight is retried, never raced.
-  IF EXISTS (SELECT 1 FROM public.engine_tournament_leases WHERE tournament_id = t) THEN
+  -- Nobody but the never-admitted successor may hold the event. The engine
+  -- claims the successor generation and is refused admission until this
+  -- receipt exists, so that holder has built nothing and can act on nothing
+  -- (every F06 write needs the lane this transaction holds). Any other holder
+  -- is retried, never raced.
+  IF EXISTS (SELECT 1 FROM public.engine_tournament_leases
+              WHERE tournament_id = t
+                AND lease_generation IS DISTINCT FROM xfer.successor_generation) THEN
     RAISE EXCEPTION 'F06_STRANDED_EVENT_OWNED' USING ERRCODE = '40001';
   END IF;
 
@@ -439,7 +453,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
      WHERE p.oid = 'public.fn_f06_void_stranded_mixed_original(uuid)'::regprocedure
-       AND md5(p.prosrc) = '49f45101006d8b94d192ac826ad7327f'
+       AND md5(p.prosrc) = '618d61ed59a8aef999767c802469949f'
        AND pg_get_userbyid(p.proowner) = 'postgres'
        AND p.proacl::text = '{postgres=X/postgres}'
        AND p.proconfig::text = '{"search_path=pg_catalog, public, smarter_private"}'
@@ -473,7 +487,7 @@ BEGIN
     RAISE EXCEPTION 'the target list is not the 71 events read 2026-09-27';
   END IF;
   FOREACH t IN ARRAY targets LOOP
-    IF clock_timestamp() - v_started > interval '4 seconds' THEN
+    IF clock_timestamp() - v_started > interval '6 seconds' THEN
       v_deferred := v_deferred || (t::text || ':time_budget');
       CONTINUE;
     END IF;
@@ -505,11 +519,13 @@ BEGIN
     RAISE EXCEPTION 'no stranded event was voided; deferred % refused %', v_deferred, v_refused;
   END IF;
   -- POSTIMAGE for every voided event: nothing reserved, the origin disposed and
-  -- the successor claimable, one stranded receipt, no lease written.
+  -- the successor claimable, one stranded receipt, and no holder but the successor.
   IF EXISTS (
        SELECT 1 FROM unnest(v_voided) v(id)
         WHERE EXISTS (SELECT 1 FROM smarter_private.f06_hand_permits p WHERE p.tournament_id = v.id AND p.state = 'reserved')
-           OR EXISTS (SELECT 1 FROM public.engine_tournament_leases l WHERE l.tournament_id = v.id)
+           OR EXISTS (SELECT 1 FROM public.engine_tournament_leases l
+                       JOIN smarter_private.f06_manager_custody_transfers lx ON lx.tournament_id = l.tournament_id
+                      WHERE l.tournament_id = v.id AND l.lease_generation IS DISTINCT FROM lx.successor_generation)
            OR (SELECT count(*) FROM smarter_private.f06_mixed_aborts a
                 WHERE a.tournament_id = v.id AND a.expected->>'kind' = 'stranded_mixed_original') <> 1
            OR NOT EXISTS (

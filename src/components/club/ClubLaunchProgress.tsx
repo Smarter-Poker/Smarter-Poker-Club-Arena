@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   clubLaunchSkipStorageKey,
@@ -70,6 +70,12 @@ interface Props {
    * then keep their own copy of the same stored state.
    */
   skips?: ClubLaunchSkips;
+  /**
+   * Server-backed callers keep the completed panel mounted until the durable
+   * completion latch answers. Standalone callers retain the historical
+   * behaviour of disappearing as soon as their local tasks resolve.
+   */
+  waitForCompletion?: boolean;
 }
 
 /**
@@ -209,18 +215,30 @@ export function useClubLaunchSkips(
   }, [server, stateKey, storageKey, clubId]);
 
   const { skippedIds, source } = current;
+  const pendingWritesRef = useRef(new Set<string>());
+  useEffect(() => {
+    pendingWritesRef.current.clear();
+  }, [stateKey]);
 
-  /* A server write that fails keeps today's behaviour: the step resolves for
-     this session and this browser keeps the list, which the next load moves
-     to the server. An undo that lands also clears the step from any browser
-     copy still waiting to move, so it cannot come back from there. */
-  const write = useCallback(
-    (taskId: string, skipped: boolean, next: string[]) => {
-      if (!storageKey) return;
+  const commit = useCallback(
+    (taskId: string, skipped: boolean) => {
+      if (!stateKey || !storageKey) return;
+      const next = skipped
+        ? withSkip(skippedIds, taskId)
+        : skippedIds.filter((id) => id !== taskId);
       if (source !== 'server') {
+        setState((prev) => (prev.stateKey === stateKey ? { ...prev, skippedIds: next } : prev));
         writeClubLaunchSkips(storageKey, next, reportError);
         return;
       }
+
+      /* The last skip must not make the checklist look finished until the
+         server has actually stored it. Otherwise the lobby asks for the
+         completion latch against older server state, hides the checklist,
+         and has no visible action left from which to retry. */
+      const writeKey = `${stateKey}:${taskId}:${skipped ? 'skip' : 'undo'}`;
+      if (pendingWritesRef.current.has(writeKey)) return;
+      pendingWritesRef.current.add(writeKey);
       void (async () => {
         try {
           const { data, error } = await supabase.rpc('fn_club_opening_checklist_skip', {
@@ -229,9 +247,20 @@ export function useClubLaunchSkips(
             p_skipped: skipped,
           });
           if (error) throw error;
-          if (!parseClubOpeningChecklistState(data, clubId)) {
+          const answer = parseClubOpeningChecklistState(data, clubId);
+          if (!answer) {
             throw new Error('fn_club_opening_checklist_skip answered an unreadable shape');
           }
+          setState((prev) => {
+            if (prev.stateKey !== stateKey) return prev;
+            return {
+              ...prev,
+              skippedIds: skipped
+                ? withSkip(prev.skippedIds, taskId)
+                : prev.skippedIds.filter((id) => id !== taskId),
+              completedAt: answer.completedAt,
+            };
+          });
           if (!skipped) {
             const stored = readClubLaunchSkips(storageKey, reportError);
             if (stored.includes(taskId)) {
@@ -244,36 +273,36 @@ export function useClubLaunchSkips(
           }
         } catch (error) {
           reportError(error, 'ClubLaunchSkips.server_write_failed', { taskId, skipped });
-          writeClubLaunchSkips(storageKey, next, reportError);
+          /* Preserve the requested change for the next page load's one-time
+             migration, but do not publish it to this render as durable state.
+             Read again here: two different writes can be in flight together,
+             and each callback's `next` was derived before either failure
+             reached storage. Merging into the latest browser copy prevents the
+             second failure from erasing the first one's recovery intent. */
+          const stored = readClubLaunchSkips(storageKey, reportError);
+          writeClubLaunchSkips(
+            storageKey,
+            skipped ? withSkip(stored, taskId) : stored.filter((id) => id !== taskId),
+            reportError
+          );
+        } finally {
+          pendingWritesRef.current.delete(writeKey);
         }
       })();
     },
-    [clubId, storageKey, source]
-  );
-
-  const commit = useCallback(
-    (taskId: string, skipped: boolean, next: string[]) => {
-      if (!stateKey) return;
-      setState((prev) => (prev.stateKey === stateKey ? { ...prev, skippedIds: next } : prev));
-      write(taskId, skipped, next);
-    },
-    [stateKey, write]
+    [clubId, skippedIds, source, stateKey, storageKey]
   );
 
   const skip = useCallback(
     (taskId: string) => {
-      if (!skippedIds.includes(taskId)) commit(taskId, true, [...skippedIds, taskId]);
+      if (!skippedIds.includes(taskId)) commit(taskId, true);
     },
     [skippedIds, commit]
   );
   const undoSkip = useCallback(
     (taskId: string) => {
       if (skippedIds.includes(taskId)) {
-        commit(
-          taskId,
-          false,
-          skippedIds.filter((id) => id !== taskId)
-        );
+        commit(taskId, false);
       }
     },
     [skippedIds, commit]
@@ -336,6 +365,7 @@ export default function ClubLaunchProgress({
   openingBank,
   tasks,
   skips,
+  waitForCompletion = false,
 }: Props) {
   /* The parent keys this component by the same club and viewer tuple so React
      cannot carry one club's in-memory state into another club during
@@ -354,7 +384,7 @@ export default function ClubLaunchProgress({
     : Math.min(99, Math.round((completedCount / resolvedTasks.length) * 100));
   const [expanded, setExpanded] = useState(percent < 100);
 
-  if (allTasksResolved) return null;
+  if (allTasksResolved && !waitForCompletion) return null;
 
   const progressLine = `${completedCount} Of ${tasks.length} Steps Complete`;
   const subtitle =

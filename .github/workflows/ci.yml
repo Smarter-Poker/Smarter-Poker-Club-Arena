@@ -1396,6 +1396,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
 
+      - name: Player search enforces global discovery and private account boundaries
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-player-search-privacy-postgres.py
+
       - name: Satellite conservation keeps exact results through an online source index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-satellite-audit-index-postgres.py

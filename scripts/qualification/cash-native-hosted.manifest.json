@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171577,
-      "sha256": "ef32fdee01090806c3bc6aced5c87e3fdffa5dc4b34f0d3168b95f229dd6fab3"
+      "bytes": 171764,
+      "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 28321,
-      "sha256": "3a4f734e05e483a762bc1c86ec04d8ed2caa6915bb4bc7e6adb2fe62529f6026"
+      "bytes": 28573,
+      "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -912,6 +912,27 @@
   },
   "conservation_20260927_bbj_main_integration": {
     "integration": "2026-09-27 Four qualified lookup indexes: bbj-main-integration",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "playerSearchPrivacyRouting20260927": {
+    "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in accounting shard 4 and classify every maintained input after integrating protected main's qualified lookup-index routes. Both additions are preserved; cash SQL, captured financial inputs and existing assertions remain byte-identical.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "before": { "bytes": 171068, "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c" },
+        "after": { "bytes": 171764, "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d" }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": { "bytes": 27619, "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68" },
+        "after": { "bytes": 28573, "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f" }
+      }
+    }
+  },
+  "backed_payout_current_main_integration_20260927_1620": {
+    "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
     "changed_files": [
       ".github/workflows/ci.yml",
       "scripts/ci/classify-ci-changes.mjs"

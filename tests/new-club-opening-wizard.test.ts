@@ -127,10 +127,12 @@ describe('new club opening wizard', () => {
     expect(home).toContain('navigate(`/clubs/${clubId}/members`)');
   });
 
-  it('keeps the checklist visible until every launch task is complete', () => {
+  it('keeps the checklist visible until every task is durably latched complete', () => {
     expect(home).toContain('openingChecklistEligible &&');
-    expect(home).toContain('launchTasks.some((task) => !task.complete && !task.skipped)');
+    expect(home).toContain('launchTasks.every((task) => task.complete || task.skipped)');
     expect(home).toContain('{showLaunchChecklist && (');
+    expect(home).toContain('waitForCompletion');
+    expect(home).toContain('<ClubLaunchCompletionLatch');
     expect(home).not.toContain('noticeEditable && totalGameCount === 0');
   });
 

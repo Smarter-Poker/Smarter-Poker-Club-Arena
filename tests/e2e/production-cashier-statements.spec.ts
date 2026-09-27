@@ -14,6 +14,7 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { cashierTotalsObservation } from './support/cashierTotalsObservation';
 
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const HAS_AUTH = Boolean(process.env.SP_EMAIL && process.env.SP_PASS);
@@ -39,7 +40,7 @@ test.describe('Cashier Statements - authenticated production route', () => {
 
   test('serves the Full Statement console and honors the server authorization verdict', async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(90_000);
     const consoleErrors: Array<{ text: string; url: string }> = [];
     page.on('console', (message) => {
@@ -92,6 +93,17 @@ test.describe('Cashier Statements - authenticated production route', () => {
       'boolean'
     );
     const authorized = body.authorized === true && body.scope !== 'none';
+    await testInfo.attach('cashier-statement-page-verdict.json', {
+      body: JSON.stringify({
+        httpStatus: response.status(),
+        authorized,
+        scope:
+          typeof body.scope === 'string' && ['all', 'downline', 'self', 'none'].includes(body.scope)
+            ? body.scope
+            : null,
+      }),
+      contentType: 'application/json',
+    });
 
     const pill = surface.locator('.sc__pill');
     const totals = surface.locator('[aria-label="Statement Totals"]');
@@ -120,14 +132,35 @@ test.describe('Cashier Statements - authenticated production route', () => {
       await expect(entries.getByRole('alert')).toHaveCount(0);
       await expect(entries.getByText('Loading Statement...', { exact: true })).toHaveCount(0);
 
-      // (d) Totals reach a terminal state once their RPC has settled: four
-      // figures, or the Unavailable word. Never Calculating.
+      // (d) A production totals certificate requires the actual successful
+      // authorized RPC and four figures. The application's truthful Unavailable
+      // fallback remains valid UX, but cannot certify the database optimization.
       //
       // Read text CONTENT, not innerText: the console's CSS uppercases the
       // rendering, so innerText returns "UNAVAILABLE FOR THIS RANGE" and the
       // word as written in CashierStatementsPage never matches. That is what
       // the page really said in run 35886655700.
-      await totalsRpc;
+      const totalsResponse = await totalsRpc;
+      const totalsBody: unknown = await totalsResponse?.json().catch(() => null);
+      const totalsObservation = cashierTotalsObservation(
+        totalsResponse?.status() ?? null,
+        totalsBody,
+        body.scope
+      );
+      await testInfo.attach('cashier-statement-totals-verdict.json', {
+        body: JSON.stringify({ observedAt: new Date().toISOString(), ...totalsObservation }),
+        contentType: 'application/json',
+      });
+      expect(
+        totalsObservation,
+        'authorized statement totals did not return a usable verdict'
+      ).toEqual({
+        httpStatus: 200,
+        authorized: true,
+        scope: body.scope,
+        scopeMatchesPage: true,
+        validTotals: true,
+      });
       const totalsWord = totals.getByRole('status');
       const asText = (value: string | null) => (value ?? '').replace(/\s+/g, ' ').trim();
       await expect
@@ -144,7 +177,7 @@ test.describe('Cashier Statements - authenticated production route', () => {
           },
           { timeout: 30_000, message: 'Statement Totals never reached a terminal state' }
         )
-        .toMatch(/^(figures|unavailable)$/);
+        .toBe('figures');
       await expect(totals).not.toContainText('Calculating');
       // The pill zone's textContent ends on a deliberate word-boundary space
       // (SpadeConsole ZoneText, 2026-09-23); a regex toHaveText does not

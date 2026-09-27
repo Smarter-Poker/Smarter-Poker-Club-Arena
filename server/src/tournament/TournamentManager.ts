@@ -1615,13 +1615,16 @@ export class TournamentManager extends TournamentManagerEliminations {
     state: TournamentTableBreakState
   ): Promise<TournamentTableBreakState> {
     let current = state;
+    // Validate unchanged original destinations against one complete board.
+    // Re-reading every table/seat/roster for every member can spend the shared
+    // sweep budget before dispatching its first immutable request. The move
+    // RPC still validates each destination atomically; this board grants no
+    // mutation authority and never survives this invocation or an amendment.
+    let destinations: BalancerTable[] | null = null;
     for (const member of state.members) {
       if (member.winner_request_id) continue;
       if (!this.eliminationMutationAllowed()) return current;
-      const destinations = await this.eligibleBreakDestinations(
-        state.source_table_id,
-        state.break_id
-      );
+      destinations ??= await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
       if (!destinations || !this.eliminationMutationAllowed()) return current;
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
@@ -1658,6 +1661,9 @@ export class TournamentManager extends TournamentManagerEliminations {
         replacement.toSeat
       );
       if (!current.ok) return current;
+      // A changed proposal may reserve different space. Read the current board
+      // before validating or planning another member of this same break.
+      destinations = null;
     }
     return current;
   }

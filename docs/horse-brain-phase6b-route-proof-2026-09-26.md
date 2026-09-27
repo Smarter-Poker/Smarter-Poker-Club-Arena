@@ -1,0 +1,158 @@
+# Horse Brain Phase 6B: Route Checks, Mismatch Refusal and Bounded Observed Route Proof
+
+Prepared 2026-09-26, observations taken 2026-09-27. Horse Brain Phase 6B (2 of 4). This document builds on the atlas domain descriptor `TOURNAMENT_PREFLOP_ATLAS_DOMAIN` merged in PR #5265 (`docs/horse-brain-phase6b-domain-matrix-2026-09-25.md`) and does not redefine it. Status words are the six fixed statuses: verified now, historical only, implemented but unverified, defective, unavailable external input, not applicable with reason. No percentage is derived from them.
+
+## Summary
+
+| Item                                                                                                                                                                         | Status                     | Evidence                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Arithmetic checks (ante orbit under 3 ante modes at all 17 anchors; M boundaries 1, 5, 10, 20, 40 with half-M hysteresis under each ante mode)                               | verified now               | `HorsePhase6TournamentArithmetic.test.ts` (70)                                                                 |
+| Intersection checks (215,424-coordinate totality loop: every coordinate resolves to exactly one route or one named refusal; every family and context status)                 | verified now               | `HorsePhase6Tournament.test.ts` (44)                                                                           |
+| Real-consumer checks (validator, worker, HorseLogic, HorsePreflop read the one domain; no duplicated tables)                                                                 | verified now               | `HorsePhase6RouteRefusal.test.ts` (22), `workerRuntime.test.ts` (156)                                          |
+| Mismatch refusal (a receipt whose declared coordinate disagrees with the recomputed coordinate is refused with a named reason, at the matcher and at the live worker client) | verified now               | `HorsePhase6RouteRefusal.test.ts` (22)                                                                         |
+| Next-level projection gate read from the descriptor by all three consumers (it was defective on origin/main: three literal copies)                                           | verified now               | `HorsePhase6RouteRefusal.test.ts` (22), `HorsePhase6TournamentDomain.test.ts` (58)                             |
+| Bounded observed route proof, last 24 hours on the serving release `f2e484a3`                                                                                                | unavailable external input | production Horse journal paused since 2026-09-26T14:13:54Z (`archive_segments`); zero records on that release  |
+| Bounded observed route proof, final six archived hours on the previous release `778075b4`                                                                                    | historical only            | 34,697 tournament preflop receipts, 1,338 of 5,643 cells observed, 0 mismatches, 33,763 accepted actions bound |
+| This PR's code on the serving engine                                                                                                                                         | implemented but unverified | not merged or published; the observation ran the currently deployed modules                                    |
+
+## What Changed in Production Code
+
+1. **One owner for the receipt format.** `HorsePhase6Attribution.ts` kept its own copies of the context statuses, ante types, game families, fallback names, the cell prefix, the table-size range and the velocity rounding. It now imports `TOURNAMENT_CONTEXT_STATUSES`, `TOURNAMENT_ANTE_TYPES`, `TOURNAMENT_GAME_FAMILIES` and `TOURNAMENT_FALLBACK_PRECEDENCE`, and rebuilds the cell through the atlas's own `tournamentPreflopCell`, coordinate validity through `tournamentCoordinateIsValid` and velocity urgency through `tournamentVelocityUrgency`. The lookup itself uses the same three functions. `workerRuntime.ts` admission reads the same status and ante arrays.
+2. **Named mismatch refusal.** `horsePhase6AttributionMismatch` returns the first named reason a returned receipt disagrees with its snapshot (`coordinate_table_size`, `coordinate_hero_position`, `coordinate_raiser_position`, `coordinate_stack_bb`, `coordinate_branch`, `coordinate_game_family`, `coordinate_ante_type`, `context_status`, `m_velocity`, `receipt_invalid`, `reference_transition` and the structural reasons). `horsePhase6AttributionMatchesSnapshot` is its boolean form. The live worker client fails the request with that reason instead of a bare "invalid policy receipt".
+3. **One next-level projection gate.** The descriptor declared `TOURNAMENT_NEXT_LEVEL_PROJECTION_GATE` (3 minutes, multiplier above 1.15), but `HorseLogic.ts` (branch M zone), `HorsePreflop.ts` (decision M and depth) and the snapshot recompute in `HorsePhase6Attribution.ts` each carried their own `<= 3` and `> 1.15` literals, so the descriptor described a table its consumers did not read. `tournamentNextLevelProjectionApplies` now reads the gate constant and all three consumers call it. The comparisons, the missing-clock rule and the missing-multiplier rule are unchanged.
+
+No shift, precedence, action sampling, candidate flag or receipt value changed. These are defect fixes, not strategy changes, so no flag was added. The descriptor stays descriptive and off the action path, so no new wire field or digest input was added (B-T3: new wire and digest checks are not applicable with that reason).
+
+## Verified Now: Tests
+
+Executed on the PR head against current `origin/main`, Node 26, Vitest 2.1.9.
+
+| File                                                                                                                                                                                                                                                                                                | Tests | What it proves                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/engine/HorsePhase6TournamentArithmetic.test.ts` (new)                                                                                                                                                                                                                                   |    70 | Ante orbit, real M, effective M and zone under `none`, `per_player`, `big_blind` at every one of the 17 anchors (51 literal rows, independently derived); per-seat-authored and capped (2 BB) big blind ante conventions; every M zone boundary with exact and just-outside hysteresis edges in both directions under each ante mode through `buildTournamentMState`; the same chip stack rescaled across ante modes without moving the stack.                                            |
+| `server/src/engine/HorsePhase6RouteRefusal.test.ts` (new)                                                                                                                                                                                                                                           |    22 | The validator, the worker, HorseLogic, HorsePreflop and the receipt matcher read the domain (source text and behaviour); the projection gate fires exactly inside 3 minutes and above 1.15 at both edges; the validator admits exactly the 36 status x family x ante combinations and refuses one value outside each axis; a self-consistent receipt for a different coordinate on every axis is refused by name at the matcher and at the live client; the matching receipt is accepted. |
+| `server/src/engine/HorsePhase6Tournament.test.ts` (extended)                                                                                                                                                                                                                                        |    44 | The 215,424-coordinate totality loop, bound to the descriptor, proves every coordinate owns one unique cell and that the real validator accepts every one; a second walk over every family x context status (152,064 coordinates) proves each resolves to exactly one named outcome by the declared precedence.                                                                                                                                                                           |
+| `server/src/engine/HorsePhase6TournamentDomain.test.ts` (from #5265, header updated)                                                                                                                                                                                                                |    58 | Descriptor, digest, freezing, hysteresis, projection gate through HorsePreflop and HorseLogic, velocity, covering stacks, sparse rings, endpoints, context routes.                                                                                                                                                                                                                                                                                                                        |
+| `server/src/engine/AnteMath.test.ts`                                                                                                                                                                                                                                                                |    13 | Unchanged ante conventions.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `server/src/engine/horseDecision/*.test.ts` (8 files)                                                                                                                                                                                                                                               |   334 | Includes `workerRuntime.test.ts` (156): the worker admits exactly the domain statuses and ante types and refuses one outside each by name.                                                                                                                                                                                                                                                                                                                                                |
+| Connected suites (`testing/horseRegression/merged/attribution-*.candidate.test.ts`, `phase6-lifecycle-composition.candidate.test.ts`, `HorseV23`, `TournamentJamDepth`, `HorseCanonicalTournamentIdentity`, `HorsePhase7TournamentUtility`, `HorseLogic`, `HorseV37Satellites`, `HorseAllInOrFold`) |   323 | Unchanged-positive controls for the receipt, blind clock, jam depth and HorseLogic consumers.                                                                                                                                                                                                                                                                                                                                                                                             |
+
+`HorseTournamentPreflop.test.ts` does not exist; its coverage lives in the Phase 6 files above. Server `tsc --noEmit` passes. ESLint passes on every changed file.
+
+The totality loop proves lookup totality over valid algebraic coordinates. It does not prove numerical strategy quality, calibration or that a real betting history reaches a coordinate.
+
+## Bounded Observed Route Proof
+
+Script: `server/scripts/phase6b-route-proof.mjs` (observer) and `server/scripts/phase6b-route-proof-observe.py` (read-only runner). The selector is an explicit UTC window and the exact serving engine SHA, both arguments, both recorded. The observer runs in a throwaway container built from the serving image (no network, read-only journal mount, 1 GB, 1 CPU, hard deadline) and imports the deployed compiled atlas, receipt matcher and accepted-action binder, so every count is the deployed code's judgement. Only aggregate counts leave the host: no hand keys, actor or table identifiers, private cards or record bodies. The engine's own `/health` report of the serving release and of the Horse journal is captured before and after. Nothing is invented or interpolated; an empty cell is reported as unobserved.
+
+Cells are dealt size (2 to 10) x branch (11) x ante mode (3) x stack-anchor band (19: below 2, the 16 anchor intervals, exactly 100, above 100) = 5,643 cells.
+
+### Last 24 Hours on the Serving Release: Unavailable External Input
+
+Evidence: `docs/evidence/phase6b/phase6b-route-proof-20260927T144119Z.json` and `.md`.
+
+Command:
+
+```
+python3 server/scripts/phase6b-route-proof-observe.py f2e484a3d1a674f329d923b30394fd65f5aff50e 2026-09-26T14:41:00Z 2026-09-27T14:41:00Z docs/evidence/phase6b
+```
+
+The engine reported release `f2e484a3d1a674f329d923b30394fd65f5aff50e` before and after. Its Horse journal reported `mode: paused`, `pausedReason: archive_segments`, `pausedSince: 2026-09-26T14:13:54.887Z`, 4,139,804 records, unchanged across the run. The newest archived record is from 2026-09-25T19:34:05Z. The window therefore holds zero records on the serving release, and all 5,643 cells are unobserved. This is not evidence that the routes failed; the journal that owns the evidence recorded nothing in the window. Restoring the journal is owned by the journal and engine operators, not by this lane, and no engine configuration was changed.
+
+### Final Six Archived Hours on the Previous Release: Historical Only
+
+Evidence: `docs/evidence/phase6b/phase6b-route-proof-20260927T144144Z.json` and `.md` (full per-cell table and the complete unobserved list).
+
+Command (the fifth argument selects records written by the previous release; the observer image is still the serving release):
+
+```
+python3 server/scripts/phase6b-route-proof-observe.py f2e484a3d1a674f329d923b30394fd65f5aff50e 2026-09-25T13:35:00Z 2026-09-25T19:35:00Z docs/evidence/phase6b 778075b419d078c58565c284c0ca7c5225bb773a
+```
+
+The window was fixed before the run as the last six hours of the archive. 788,555 archive rows were scanned, 780,363 fell inside the window, all written by `778075b419d078c58565c284c0ca7c5225bb773a`; none were truncated.
+
+| Measure                                                                           |                      Count |
+| --------------------------------------------------------------------------------- | -------------------------: |
+| Decisions                                                                         |                    187,504 |
+| Cash decisions                                                                    |                    135,096 |
+| Tournament decisions after preflop                                                |                     17,711 |
+| Tournament preflop decisions                                                      |                     34,697 |
+| v2 receipts with a lookup                                                         |                     34,697 |
+| Receipts matching their snapshot (deployed matcher)                               |                     34,697 |
+| Mismatch refusals                                                                 |                          0 |
+| Depth bracket disagreements with the atlas                                        |                          0 |
+| Coordinates outside the domain                                                    |                          0 |
+| Atlas baseline lookups                                                            |                     22,451 |
+| Named refusals: `incomplete_context`                                              |                      9,130 |
+| Named refusals: `unsupported_variant` (Omaha)                                     |                      3,116 |
+| Context status complete / incomplete / stale                                      |        24,698 / 9,936 / 63 |
+| Routes: intent engine / chart open jam / chart BB defend / variant price          | 33,210 / 1,091 / 226 / 170 |
+| Accepted actions bound to the completed hand                                      |                     33,763 |
+| Binding unavailable: `execution_unavailable` / `observation_identity_unavailable` |                  489 / 325 |
+| Decisions whose completed hand lies outside the window                            |                        120 |
+| Cells observed / unobserved                                                       |              1,338 / 4,305 |
+
+By branch: unopened 15,259; cold_call 6,671; bb_defense 3,342; blind_vs_blind 2,998; reshove 2,385; three_bet_facing 1,620; multiway_all_in 1,304; squeeze 1,023; overcall 71; limp_facing 24; open_facing unobserved. By ante mode: big_blind 17,281; per_player 17,157; none 259. By size: 2 to 9 observed; 10 unobserved. Above 100 BB: 18,673 of 34,697 lookups, all served by the documented clamp to 100 BB (an approximation, not a calibrated deep-stack cell); below 2 BB: 241.
+
+The deployed matcher on that release returns a boolean only (`mismatchReasonsNamed: false`); the named reasons in this PR are implemented but unverified in production until it ships.
+
+### Unobserved Cells
+
+In the historical window 4,305 of 5,643 cells are unobserved; each is listed in `cells.unobserved` of the JSON. Whole axes with no observation:
+
+- Dealt size 10: no 10-handed tournament preflop decision in the window.
+- Branch `open_facing`: it requires one raise, no callers, and hero having already acted (hero limped or completed, then faced a raise). Horses almost never limp in tournaments (24 `limp_facing` decisions), so this history is naturally rare. It is unobserved, not unreachable: `HorsePhase6Tournament.test.ts` supplies a classifier input that reaches it, and `HorsePhase6TournamentDomain.test.ts` pins its shift vectors.
+
+Every other cell outside the observed 1,338 is unobserved and is not certified by a neighbouring cell. In the serving 24-hour window all 5,643 are unobserved.
+
+## Implemented but Unverified
+
+- The three code changes above on the serving engine: they are in this PR, not merged or published. Protected publication and a natural cohort on the containing release are 6B acceptance items that remain once the journal records again.
+- Named mismatch reasons on natural records: the observer counts them when the deployed matcher exports `horsePhase6AttributionMismatch`; the current release does not.
+
+## Gate Status (Bounded to 6B)
+
+| Gate                       | Status                     | Reason or owner                                                                                                         |
+| -------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | verified now               | Descriptor, totality loop, domain-bound consumers.                                                                      |
+| G2 Inputs                  | verified now               | Worker admission and receipt validator refuse values outside the domain by name.                                        |
+| G3 Computation             | verified now               | Literal independently derived ante, M and hysteresis expectations.                                                      |
+| G4 Immutable authority     | verified now               | Frozen descriptor and pinned digest (#5265); consumers read the same frozen constants.                                  |
+| G5 Reachability            | historical only            | Natural lookups and accepted-action joins on `778075b4`; serving window is unavailable external input (journal paused). |
+| G6 Outcome receipts        | historical only            | Baseline, named refusals, routes and accepted joins counted per cell on `778075b4`.                                     |
+| G7 Independent correctness | verified now               | Oracle rows are literal; the policy under test never generates its own expectation.                                     |
+| G8 Performance and replay  | not applicable with reason | Original-input replay and latency belong to 6C.                                                                         |
+| G9 Learning and promotion  | not applicable with reason | No candidate activation in 6B.                                                                                          |
+| G10 Publication and use    | implemented but unverified | This PR is unpublished; the serving journal is paused.                                                                  |
+
+## Source Identities at the PR Head
+
+Atlas revision `horse-tournament-preflop-v1`, domain digest `4a8918a0f015e9e96b31dc63e0a7ab45eca503698c514c82f55627bec7864305` (unchanged by this PR; the observer recomputed it on the deployed build and it matched).
+
+Blob hashes (`git hash-object`) of the owner files at the PR head:
+
+| File                                               | Blob                                       |
+| -------------------------------------------------- | ------------------------------------------ |
+| `server/src/engine/HorseTournamentPreflop.ts`      | `46a8d00b02e896ad065984322a35be1006bea580` |
+| `server/src/engine/AnteMath.ts`                    | `833fb44e097b86cd513eff29c39ecd19dcd54d97` |
+| `server/src/engine/HorsePreflop.ts`                | `0f310922de60f4eaea7004f956fd42f0f5907afd` |
+| `server/src/engine/HorseLogic.ts`                  | `62d934169ba251e9c609b14b381d4277d0f29e14` |
+| `server/src/engine/HorsePhase6Attribution.ts`      | `f3282dd9a4a770b44b9e9bc91d068d92e48bede4` |
+| `server/src/engine/ServerTableEngineTurns.ts`      | `c165f3d627b05a335b93d2e62fd8149e3c030b75` |
+| `server/src/engine/horseDecision/workerRuntime.ts` | `cb8561ef3b56df1583bb548df7786b99402ae8a0` |
+| `server/src/engine/horseDecision/client.ts`        | `a854cef4e0938e55a41c92a71e2db6427a11d9e7` |
+
+Observer script `server/scripts/phase6b-route-proof.mjs` sha256 `e58f19b232ab59a28e7599d4e0f4605c2ea0ea37e524a53d3685a50f8b04c1fa` (recorded as `scriptSha256` in both evidence envelopes).
+
+## Reproduce
+
+```
+export PATH=/opt/homebrew/opt/node@26/bin:/opt/homebrew/bin:$PATH
+cd server
+npx vitest run src/engine/HorsePhase6TournamentArithmetic.test.ts src/engine/HorsePhase6RouteRefusal.test.ts src/engine/HorsePhase6Tournament.test.ts src/engine/HorsePhase6TournamentDomain.test.ts src/engine/AnteMath.test.ts src/engine/horseDecision/ --reporter=dot
+npx tsc --noEmit -p tsconfig.json
+cd ..
+# Observation (read-only; needs the engine host key on the operator's Mac):
+python3 server/scripts/phase6b-route-proof-observe.py <serving-sha40> <since-ISO-Z> <until-ISO-Z> docs/evidence/phase6b [<records-release-sha40>]
+node server/scripts/phase6b-route-proof.mjs render --input docs/evidence/phase6b/<file>.json
+```

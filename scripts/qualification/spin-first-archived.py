@@ -14,7 +14,14 @@ from decimal import Decimal
 
 IMAGE = 'first-archived-spin'
 BANK_IMAGE = 'first-archived-spin-bank-mvcc'
-IMAGES=(IMAGE,BANK_IMAGE)
+COMPLETION_IMAGE='first-archived-spin-completion'
+COMPLETION_BANK_IMAGE='first-archived-spin-completion-bank'
+COMPLETION_CASES='scripts/qualification/spin-first-archived-completion-cases.py'
+COMPLETION='scripts/qualification/spin-first-archived-completion.py'
+COMPLETION_TEST='scripts/qualification/test_first_archived_completion.py'
+COMPLETION_SQL='scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql'
+COMPLETION_READBACK='scripts/qualification/fixtures/archived-spin/first-postcompletion-readback.sql'
+IMAGES=(IMAGE,BANK_IMAGE,COMPLETION_IMAGE,COMPLETION_BANK_IMAGE)
 BANK_OBSERVER='scripts/qualification/spin-first-archived-bank-observer.py'
 BANK_RACES='scripts/qualification/spin-first-archived-bank-races.py'
 BANK_TEST='scripts/qualification/test_first_archived_bank_observer.py'
@@ -39,7 +46,7 @@ COMPONENTS = tuple('supabase/components/spin-archived-first-'+n+'.sql' for n in 
 POSTABORT='scripts/qualification/spin-first-archived-postabort.py'
 POSTABORT_TEST='scripts/qualification/test_first_archived_postabort.py'
 POSTABORT_SQL=BASE+'first-postabort-bank-readback.sql'
-INPUTS = (MODULE, MANIFEST, POSTABORT, POSTABORT_TEST, POSTABORT_SQL, BANK_OBSERVER, BANK_RACES, BANK_TEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
+INPUTS = (MODULE, MANIFEST, COMPLETION, COMPLETION_CASES, COMPLETION_TEST, COMPLETION_SQL, COMPLETION_READBACK, POSTABORT, POSTABORT_TEST, POSTABORT_SQL, BANK_OBSERVER, BANK_RACES, BANK_TEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
           *(BASE+n for n in (*SEED, *PROVIDER, 'first-captured-state.json',
             'full-provider-catalog.json', 'full-authority-catalog.json',
             'index-sequence-catalog.json', 'fee-resolution-provider.json',
@@ -121,6 +128,12 @@ def body_plan(PG, source, execution, ordinary, tournament, image=IMAGE):
     plan.append(('archive_atomic_failures',sql_argv(PG,source,execution,BASE+'first-atomic-failures.sql')))
     plan.append(('archive_connected_rollback',sql_argv(PG,source,execution,BASE+'first-connected-probe.sql')))
     probe_args=[sys.executable,'-B',str(source/PRODUCTION_PROBE),'--psql',str(PG/'psql'),'--execution',execution]
+    if image==COMPLETION_BANK_IMAGE:
+        plan.append(('archive_production_probe',probe_args+['--completion','--completion-case','bank_intervals']))
+        return plan
+    if image==COMPLETION_IMAGE:
+        plan.append(('archive_production_probe',probe_args+['--completion']))
+        return plan
     if image==BANK_IMAGE:
         plan.append(('archive_production_probe',probe_args+['--bank-races']))
         return plan
@@ -316,14 +329,15 @@ def validate_outputs(source,work,execution,tournament,image=IMAGE):
         lock_result=lock_verifier.validate_evidence(locks[0],execution,Oracle)
 
     else:
-        require(image==BANK_IMAGE,'unknown archive variant')
-        result={'committed_terminal_qualified':False,'concurrency_qualified':False,'skipped_in_synthetic_variant':True}
-        lock_result={'skipped_in_synthetic_variant':True}
+        require(image in (BANK_IMAGE,COMPLETION_IMAGE,COMPLETION_BANK_IMAGE),'unknown archive variant')
+        skip_field='skipped_in_synthetic_variant' if image==BANK_IMAGE else 'skipped_in_completion_variant'
+        result={'committed_terminal_qualified':False,'concurrency_qualified':False,skip_field:True}
+        lock_result={skip_field:True}
     probe_values=[decode(line) for line in (work/'archive_production_probe.stdout').read_bytes().splitlines() if line.startswith(b'{')]
     require(len(probe_values)==1 and not (work/'archive_production_probe.stderr').read_text().strip(),'first production probe artifact absent or diagnostics unexpected')
     spec=importlib.util.spec_from_file_location('first_archived_production_probe_oracle',source/PRODUCTION_PROBE)
     probe_verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(probe_verifier)
-    probe_result=probe_verifier.validate_evidence(probe_values[0],execution,Oracle,bank_races=image==BANK_IMAGE)
+    probe_result=probe_verifier.validate_evidence(probe_values[0],execution,Oracle,bank_races=image==BANK_IMAGE,completion=image in (COMPLETION_IMAGE,COMPLETION_BANK_IMAGE),completion_case='bank_intervals' if image==COMPLETION_BANK_IMAGE else 'original')
 
     return {'diagnostic_passed':True,'stdout_sha256':digest(raw),'production_probe_rehearsal':probe_result,
             'committed_concurrency':result,'admission_locks':lock_result,

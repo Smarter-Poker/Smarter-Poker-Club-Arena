@@ -180,6 +180,19 @@ export class QuarantinedTournamentManagers {
     return delayMs;
   }
 
+  /**
+   * An attempt that was already charged by `record` settled without releasing
+   * the slot: keep what it learned (the custody refusal, when it has one)
+   * without charging it a second time or moving its due time. Returns false,
+   * changing nothing, when this quarantine is not held by `owner`.
+   */
+  amend(tournamentId: string, owner: unknown, custodyRefusal?: string | null): boolean {
+    const entry = this.held.get(tournamentId);
+    if (entry === undefined || entry.owner !== owner) return false;
+    if (custodyRefusal !== undefined) entry.custodyRefusal = custodyRefusal;
+    return true;
+  }
+
   /** The manager this quarantine is held by, for an identity-exact settle. */
   heldBy(tournamentId: string): unknown {
     return this.held.get(tournamentId)?.owner ?? null;

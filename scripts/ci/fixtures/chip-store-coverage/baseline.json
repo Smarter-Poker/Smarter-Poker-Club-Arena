@@ -1,0 +1,73 @@
+{
+  "columns": [
+    {
+      "name": "amount",
+      "type": "numeric(15,2)",
+      "table": "chip_ledger",
+      "notnull": true
+    },
+    {
+      "name": "category",
+      "type": "text",
+      "table": "chip_ledger",
+      "notnull": true
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "chip_ledger",
+      "notnull": true
+    },
+    {
+      "name": "from_type",
+      "type": "text",
+      "table": "chip_ledger",
+      "notnull": true
+    },
+    {
+      "name": "metadata",
+      "type": "jsonb",
+      "table": "chip_ledger",
+      "notnull": false
+    },
+    {
+      "name": "to_type",
+      "type": "text",
+      "table": "chip_ledger",
+      "notnull": true
+    },
+    {
+      "name": "store",
+      "type": "text",
+      "table": "ca_chip_store_coverage",
+      "notnull": true
+    },
+    {
+      "name": "treatment",
+      "type": "text",
+      "table": "ca_chip_store_coverage",
+      "notnull": true
+    }
+  ],
+  "function": {
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "md5": "9f44a12318e13f1ef9942ed2a2758d1a",
+    "oid": "27837352",
+    "owner": "postgres",
+    "config": ["search_path=public, pg_temp"],
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_chip_store_coverage_gaps()\n RETURNS TABLE(store text, gap text, detail text)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_allowed text[];\nBEGIN\n  /* The enumerated stores, read from the journal's own constraint, so the\n     coverage list is checked against the real domain and not a copy of it. */\n  SELECT array_agg(DISTINCT m[1]) INTO v_allowed\n    FROM pg_constraint c,\n         LATERAL regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g') m\n   WHERE c.conrelid = 'public.chip_ledger'::regclass\n     AND c.conname IN ('chip_ledger_from_type_check','chip_ledger_to_type_check');\n\n  RETURN QUERY\n  SELECT a.s, 'undeclared'::text,\n         ('the chip journal accepts ' || a.s || ' but ca_chip_store_coverage does not say whether the supply basis counts it')::text\n    FROM unnest(v_allowed) a(s)\n   WHERE NOT EXISTS (SELECT 1 FROM public.ca_chip_store_coverage g WHERE g.store = a.s);\n\n  RETURN QUERY\n  SELECT g.store, 'uncounted store moved'::text,\n         ('the supply basis does not count ' || g.store || ' and it moved '\n          || round(x.net, 2)::text || ' in the last 24h, so that movement reads as drift')::text\n    FROM public.ca_chip_store_coverage g\n    JOIN LATERAL (\n      SELECT COALESCE(sum(l.amount) FILTER (WHERE l.to_type = g.store), 0)\n           - COALESCE(sum(l.amount) FILTER (WHERE l.from_type = g.store), 0) AS net\n        FROM public.chip_ledger l\n       WHERE l.created_at > now() - interval '24 hours'\n         -- the supply basis excludes exactly these legs (fn_ca_supply_snapshot)\n         AND NOT (l.category = 'correction'\n                  AND l.metadata ->> 'posted_via' = 'fn_ca_post_correction')\n    ) x ON true\n   WHERE g.treatment = 'uncounted' AND x.net <> 0;\nEND;\n$function$\n",
+    "volatility": "s",
+    "securityDefiner": true
+  },
+  "observed_at": "2026-09-27T16:20:32.486015+00:00",
+  "coverage_constraints": [
+    {
+      "name": "ca_chip_store_coverage_pkey",
+      "definition": "PRIMARY KEY (store)"
+    },
+    {
+      "name": "ca_chip_store_coverage_treatment_check",
+      "definition": "CHECK ((treatment = ANY (ARRAY['counted'::text, 'noncirculating'::text, 'uncounted'::text])))"
+    }
+  ]
+}

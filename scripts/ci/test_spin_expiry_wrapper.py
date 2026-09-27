@@ -37,6 +37,14 @@ ARCHIVE_PROBE_SPEC = importlib.util.spec_from_file_location('first_archived_prod
 ARCHIVE_PROBE_MODULE = importlib.util.module_from_spec(ARCHIVE_PROBE_SPEC)
 ARCHIVE_PROBE_SPEC.loader.exec_module(ARCHIVE_PROBE_MODULE)
 FirstArchivedProductionProbeTests = ARCHIVE_PROBE_MODULE.FirstArchivedProductionProbeTests
+ARCHIVE_POSTABORT_SPEC = importlib.util.spec_from_file_location('first_archived_postabort_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_postabort.py')
+ARCHIVE_POSTABORT_MODULE = importlib.util.module_from_spec(ARCHIVE_POSTABORT_SPEC)
+ARCHIVE_POSTABORT_SPEC.loader.exec_module(ARCHIVE_POSTABORT_MODULE)
+FirstArchivedPostabortTests = ARCHIVE_POSTABORT_MODULE.FirstArchivedPostabortTests
+ARCHIVE_BANK_SPEC = importlib.util.spec_from_file_location('first_archived_bank_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_bank_observer.py')
+ARCHIVE_BANK_MODULE = importlib.util.module_from_spec(ARCHIVE_BANK_SPEC)
+ARCHIVE_BANK_SPEC.loader.exec_module(ARCHIVE_BANK_MODULE)
+FirstArchivedBankObserverTests = ARCHIVE_BANK_MODULE.FirstArchivedBankObserverTests
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
@@ -45,13 +53,72 @@ PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
 
 
+class OwnedBackendDisposalTests(unittest.TestCase):
+    def test_frame_retains_every_original_argument_and_only_reads_its_backend(self):
+        argv = W.server_endpoint_command(PG, SOURCE)
+        actual = W.psql_backend_command(argv, PG, EXECUTION)
+        self.assertEqual(actual[0], argv[0])
+        self.assertEqual(actual[3:], argv[1:])
+        self.assertEqual(actual[1], '-c')
+        self.assertIn('pg_backend_pid()', actual[2])
+        self.assertIn(EXECUTION, actual[2])
+        self.assertEqual(W.psql_backend_command(['/usr/bin/python3', 'probe.py'], PG, EXECUTION), ['/usr/bin/python3', 'probe.py'])
+        for nonce in (None, 12, "bad'nonce", 'AAAAAAAA-0000-4000-8000-000000000001'):
+            with self.subTest(nonce=nonce), self.assertRaises(RuntimeError):
+                W.psql_backend_command(argv, PG, nonce)
+
+    def test_only_exact_first_frame_is_removed_and_original_bytes_are_retained(self):
+        body = b'{"ok":true}\n  second line\n'
+        frame = ('spin_backend:' + EXECUTION + ':12345\n').encode()
+        self.assertEqual(W.parse_backend_frame(frame + body, EXECUTION), (12345, body))
+        for raw in [b'', body, frame + frame, frame.replace(b'12345', b'0'), frame.replace(b'12345', b'-1'), frame.replace(EXECUTION.encode(), ORDINARY.encode())]:
+            with self.subTest(raw=raw), self.assertRaises(RuntimeError):
+                W.parse_backend_frame(raw, EXECUTION)
+
+    def test_client_exit_is_not_backend_exit_and_no_process_is_killed(self):
+        with patch.object(W, 'process_absent', side_effect=[False, False, True]) as absent, patch.object(W.time, 'monotonic', side_effect=[1.0, 1.02, 1.03, 1.04]), patch.object(W.time, 'sleep') as pause, patch.object(W.os, 'kill') as kill:
+            W.wait_backend_exit(12345, 2.0)
+        self.assertEqual(absent.call_args_list, [((12345,),), ((12345,),), ((12345,),)])
+        self.assertEqual(pause.call_count, 2)
+        kill.assert_not_called()
+
+    def test_lingering_or_reused_pid_is_failure_inside_the_existing_deadline(self):
+        with patch.object(W, 'process_absent', return_value=False), patch.object(W.time, 'monotonic', return_value=2.0), patch.object(W.time, 'sleep') as pause:
+            with self.assertRaises(TimeoutError): W.wait_backend_exit(12345, 2.0)
+        pause.assert_not_called()
+
+    def test_absence_after_original_deadline_cannot_qualify(self):
+        with patch.object(W, 'process_absent', return_value=True), patch.object(W.time, 'monotonic', side_effect=[1.99, 2.01]):
+            with self.assertRaisesRegex(RuntimeError, 'after deadline'):
+                W.wait_backend_exit(12345, 2.0)
+
+    def test_both_original_and_unframed_streams_are_retained(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory).resolve()/'work'; output=Path(directory).resolve()/'evidence'
+            work.mkdir(); output.mkdir()
+            receipt={'stages':[{'stage':'archive_connected_rollback','backend_nonce':EXECUTION}]}
+            body=b'BEGIN\nROLLBACK\n'; raw=('spin_backend:'+EXECUTION+':456\n').encode()+body
+            (work/'receipt.json').write_text(json.dumps(receipt))
+            (work/'archive_connected_rollback.stdout').write_bytes(body)
+            (work/'archive_connected_rollback.stderr').write_bytes(b'')
+            (work/'archive_connected_rollback.backend.stdout').write_bytes(raw)
+            kept=W.retained_evidence(work,output,receipt,b'{}')
+            self.assertEqual((output/'archive_connected_rollback.backend.stdout').read_bytes(),raw)
+            self.assertEqual(kept['archive_connected_rollback.backend.stdout'],W.pin(raw))
+            self.assertEqual((output/'archive_connected_rollback.stdout').read_bytes(),body)
+            (work/'archive_connected_rollback.backend.stdout').unlink()
+            with self.assertRaisesRegex(RuntimeError,'original evidence leaf missing'):
+                W.retained_evidence(work,output,receipt,b'{}')
+
+
+
 class ReadOnlyOracleImportTests(unittest.TestCase):
     def test_plain_python_oracle_imports_preserve_staged_inventory(self):
         # CI invokes plain python3, unlike local -B runs. The parent verifier
         # imports these staged modules in-process after the SQL clients exit.
         repo = Path(__file__).resolve().parents[2]
         names = [W.ARCHIVE.CONCURRENCY, W.ARCHIVE.LOCKS,
-                 W.ARCHIVE.PRODUCTION_PROBE,
+                 W.ARCHIVE.PRODUCTION_PROBE, W.ARCHIVE.BANK_OBSERVER, W.ARCHIVE.BANK_RACES,
                  'scripts/qualification/spin-expiry-business-races.py']
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
@@ -760,11 +827,11 @@ class MixedCurrentTests(unittest.TestCase):
 
     def test_all_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin', 'first-archived-spin-bank-mvcc'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': (), 'first-archived-spin-bank-mvcc': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -2919,6 +2986,19 @@ class FirstArchivedTests(unittest.TestCase):
             'authentic_entry_provider_supplement','fee_actual_paid_entry','real_funded_paid_seat_fixture'):
             self.assertNotIn(forbidden,names)
 
+    def test_bank_variant_keeps_original_image_and_uses_same_allocator(self):
+        root=Path(__file__).resolve().parents[2]
+        args=(Path('/qualified/pg17/bin'),root,EXECUTION,'00000000-0000-4000-8000-000000000002',TOURNAMENT)
+        original=W.archive_stage_plan(*args,W.ARCHIVE.IMAGE)
+        variant=W.archive_stage_plan(*args,W.ARCHIVE.BANK_IMAGE)
+        original_names=[n for n,_ in original];variant_names=[n for n,_ in variant]
+        i=original_names.index('archive_production_probe')
+        self.assertEqual(variant[:i],original[:i])
+        self.assertEqual(variant[i][1],original[i][1]+['--bank-races'])
+        self.assertEqual(variant_names[i+1:],['pg_stop_fast','pg_stopped_readback'])
+        self.assertEqual(original_names[i+1:],['archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        with self.assertRaises(ValueError):W.archive_stage_plan(*args,'unknown-variant')
+
     def test_archive_complete_stage_identity_and_original_streams_fail_closed(self):
         root=Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -2938,13 +3018,20 @@ class FirstArchivedTests(unittest.TestCase):
             stages=[]
             for name,argv in plan:
                 code=3 if name=='pg_stopped_readback' else 0
-                row={'stage':name,'argv':argv,'pid':123,'returncode':code,'terminal_returncode':code}
+                row={'stage':name,'argv':argv,'executed_argv':argv,'pid':123,'returncode':code,'terminal_returncode':code}
                 for stream in ('stdout','stderr'):
                     raw=(name+stream).encode();(work/(name+'.'+stream)).write_bytes(raw)
                     row[stream+'_sha256']=W.digest(raw)
+                if argv[0] == str(pg / 'psql'):
+                    original = (work / (name + '.stdout')).read_bytes()
+                    raw = ('spin_backend:' + EXECUTION + ':456\n').encode() + original
+                    (work / (name + '.backend.stdout')).write_bytes(raw)
+                    row.update(executed_argv=W.psql_backend_command(argv,pg,EXECUTION),
+                               backend_nonce=EXECUTION, backend_pid=456,
+                               backend_exit_observed=True, backend_stdout_sha256=W.digest(raw))
                 stages.append(row)
             summary={'diagnostic_passed':True,'financial_qualified':False}
-            receipt={'stages':stages,'work_deadline_seconds':240,'cleanup_deadline_seconds':30,
+            receipt={'image':W.ARCHIVE.IMAGE,'stages':stages,'work_deadline_seconds':240,'cleanup_deadline_seconds':30,
                      'first_archived_diagnostic':summary}
             with patch.object(W.ARCHIVE,'validate_stages',return_value=summary):
                 W.validate_archive_stages(receipt,pg,source,EXECUTION,ordinary,TOURNAMENT)
@@ -2956,6 +3043,12 @@ class FirstArchivedTests(unittest.TestCase):
                     x=copy.deepcopy(receipt);x['stages'][8][key]=value;changes.append(x)
                 x=copy.deepcopy(receipt);x['work_deadline_seconds']=999;changes.append(x)
                 x=copy.deepcopy(receipt);x['first_archived_diagnostic']={};changes.append(x)
+                for key,value in [('backend_nonce',None),('backend_pid',457),
+                                  ('backend_exit_observed',False),('backend_stdout_sha256','0'*64),
+                                  ('executed_argv',['other invocation'])]:
+                    x=copy.deepcopy(receipt)
+                    next(r for r in x['stages'] if r['argv'][0] == str(pg/'psql'))[key]=value
+                    changes.append(x)
                 for x in changes:
                     with self.assertRaises(RuntimeError):
                         W.validate_archive_stages(x,pg,source,EXECUTION,ordinary,TOURNAMENT)

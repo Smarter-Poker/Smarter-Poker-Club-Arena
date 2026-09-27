@@ -27,6 +27,8 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import {
   HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES,
   HORSE_JOURNAL_ARCHIVE_RECORDS,
+  HORSE_JOURNAL_ARCHIVE_SEGMENTS,
+  archiveRecordCap,
   type HorseJournalArchiveOptions,
 } from './config.js';
 import { isAbsolute, join } from 'node:path';
@@ -413,6 +415,9 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
   private appliedCatalogPages: number | undefined;
   /** One log line per writer lifetime, the first time the ring retires. */
   private ringAnnounced = false;
+  /** The archive_segments rowids the evidence hold keeps, resolved by this
+   * writer at open; [1, 0] holds nothing. */
+  private held: { first: number; last: number } = { first: 1, last: 0 };
   constructor(
     directory: string,
     limits: {
@@ -422,7 +427,10 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       archive?: HorseJournalArchiveOptions;
     } = {}
   ) {
-    const archive = limits.archive && { ...limits.archive };
+    const archive = limits.archive && {
+      ...limits.archive,
+      hold: limits.archive.hold ? { ...limits.archive.hold } : null,
+    };
     if (
       archive &&
       (!isAbsolute(archive.directory) ||
@@ -430,7 +438,14 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         archive.maxBytes < 1 ||
         !Number.isSafeInteger(archive.maxSegments) ||
         archive.maxSegments < 1 ||
-        archive.maxSegments > 500000 ||
+        archive.maxSegments > HORSE_JOURNAL_ARCHIVE_SEGMENTS ||
+        (archive.hold != null &&
+          !(
+            Number.isSafeInteger(archive.hold.fromMs) &&
+            Number.isSafeInteger(archive.hold.untilMs) &&
+            archive.hold.fromMs >= 0 &&
+            archive.hold.fromMs < archive.hold.untilMs
+          )) ||
         archive.directory === directory)
     )
       throw Error('Invalid Horse archive configuration');
@@ -514,7 +529,10 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           CREATE TABLE IF NOT EXISTS archive_retired(sha TEXT PRIMARY KEY, bytes INTEGER NOT NULL) STRICT;
           CREATE TABLE IF NOT EXISTS archive_ring(id INTEGER PRIMARY KEY CHECK(id=1), retired_segments INTEGER NOT NULL,
             retired_records INTEGER NOT NULL, retired_bytes INTEGER NOT NULL, last_retired_at_ms INTEGER NOT NULL) STRICT;
-          INSERT OR IGNORE INTO archive_ring VALUES(1,0,0,0,0);`);
+          INSERT OR IGNORE INTO archive_ring VALUES(1,0,0,0,0);
+          CREATE TABLE IF NOT EXISTS archive_hold(id INTEGER PRIMARY KEY CHECK(id=1), from_ms INTEGER NOT NULL,
+            until_ms INTEGER NOT NULL, first_rowid INTEGER NOT NULL, last_rowid INTEGER NOT NULL,
+            segments INTEGER NOT NULL, records INTEGER NOT NULL) STRICT;`);
         db.prepare('INSERT OR IGNORE INTO archive_meta VALUES(1,?,0,0,0,?,?)').run(
           identity.sha256,
           archive.maxBytes,
@@ -540,6 +558,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       if (!this.archiveReadOnly) {
         this.finishRetired();
         this.finishPending();
+        this.resolveHold();
       }
     } catch (e) {
       if (this.catalog) {
@@ -766,7 +785,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         [usage.bytes, usage.segments, usage.records].some(
           (n) => !Number.isSafeInteger(n) || Number(n) < 0
         ) ||
-        Number(usage.segments) > 500000 ||
+        Number(usage.segments) > HORSE_JOURNAL_ARCHIVE_SEGMENTS ||
         Number(usage.records) > HORSE_JOURNAL_ARCHIVE_RECORDS
       )
         throw Error('Horse archive usage corruption');
@@ -850,14 +869,110 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         this.archiveQuotaRefusal(usage, bytes, segments.length, fresh) ??
         (this.catalogHasRoom(fresh, segments) ? null : 'archive_catalog_capacity');
       if (!refusal || retired >= RING_RETIRE_LIMIT) return refusal;
-      const oldest = db
-        .prepare(
-          'SELECT sha,compressed_sha,bytes,decoded_bytes,records FROM archive_segments ORDER BY rowid LIMIT 1'
-        )
-        .get();
+      const oldest = this.oldestRetirable();
       if (!oldest) return refusal;
       this.retireSegment(oldest);
     }
+  }
+  /** The oldest published segment outside the evidence hold: first below the
+   * held rowids, then above them. Two rowid seeks, never a scan across the
+   * held segments. */
+  private oldestRetirable(): Record<string, SQLOutputValue> | undefined {
+    const db = this.catalog!,
+      columns = 'SELECT sha,compressed_sha,bytes,decoded_bytes,records FROM archive_segments';
+    return (
+      db.prepare(columns + ' WHERE rowid<? ORDER BY rowid LIMIT 1').get(this.held.first) ??
+      db.prepare(columns + ' WHERE rowid>? ORDER BY rowid LIMIT 1').get(this.held.last)
+    );
+  }
+  /** Resolve the evidence hold at open, once per window. The published
+   * segments whose records fall inside [fromMs, untilMs] are a contiguous run
+   * of archive_segments rowids, because one writer appends batches in capture
+   * order; the run is found by two binary searches that decode one segment per
+   * probe (about forty in all on a full catalog), never a scan. It is recorded
+   * with its counts in archive_hold, so every later open with the same window
+   * keeps exactly that set, and it does not grow: segments appended after it
+   * are the ring's. A released hold ("none") deletes the row. */
+  private resolveHold(): void {
+    const db = this.catalog!,
+      hold = this.archive!.hold;
+    const row = db.prepare('SELECT * FROM archive_hold WHERE id=1').get();
+    if (
+      hold &&
+      row &&
+      Number(row.from_ms) === hold.fromMs &&
+      Number(row.until_ms) === hold.untilMs
+    ) {
+      this.held = { first: Number(row.first_rowid), last: Number(row.last_rowid) };
+      return;
+    }
+    let first = 1,
+      last = 0;
+    if (hold) {
+      const at = (rowid: number) =>
+        db
+          .prepare(
+            'SELECT rowid AS id,sha,compressed_sha,bytes,decoded_bytes,records FROM archive_segments WHERE rowid>=? ORDER BY rowid LIMIT 1'
+          )
+          .get(rowid);
+      const times = (segment: Record<string, SQLOutputValue>) => {
+        const t = this.readSegment(segment).records.map((r) => r.atMs);
+        return { min: Math.min(...t), max: Math.max(...t) };
+      };
+      const bounds = db
+        .prepare(
+          'SELECT coalesce(min(rowid),1) AS lo,coalesce(max(rowid),0) AS hi FROM archive_segments'
+        )
+        .get()!;
+      const lo = Number(bounds.lo),
+        hi = Number(bounds.hi);
+      // The first rowid whose segment satisfies a predicate that is false then
+      // true in rowid order; hi + 1 when none does.
+      const firstWhere = (ok: (s: Record<string, SQLOutputValue>) => boolean): number => {
+        let a = lo,
+          b = hi + 1;
+        while (a < b) {
+          const segment = at(Math.floor((a + b) / 2));
+          if (!segment || ok(segment)) b = Math.floor((a + b) / 2);
+          else a = Number(segment.id) + 1;
+        }
+        return Number(at(a)?.id ?? hi + 1);
+      };
+      first = firstWhere((s) => times(s).max >= hold.fromMs);
+      const after = firstWhere((s) => times(s).min > hold.untilMs);
+      last = Number(
+        db
+          .prepare('SELECT coalesce(max(rowid),0) AS n FROM archive_segments WHERE rowid<?')
+          .get(after)!.n
+      );
+      if (last < first) {
+        first = 1;
+        last = 0;
+      }
+    }
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (hold) {
+        const counts = db
+          .prepare(
+            'SELECT count(*) AS n,coalesce(sum(records),0) AS r FROM archive_segments WHERE rowid>=? AND rowid<=?'
+          )
+          .get(first, last)!;
+        db.prepare('INSERT OR REPLACE INTO archive_hold VALUES(1,?,?,?,?,?,?)').run(
+          hold.fromMs,
+          hold.untilMs,
+          first,
+          last,
+          Number(counts.n),
+          Number(counts.r)
+        );
+      } else db.exec('DELETE FROM archive_hold');
+      db.exec('COMMIT');
+    } catch (e) {
+      rollback(db);
+      throw e;
+    }
+    this.held = { first, last };
   }
   /** Retire one published segment inside the caller's transaction: its index
    * rows, its catalog row and its usage leave together, and its file name is
@@ -962,7 +1077,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
   private ringCanMakeRoom(bytes: number, segments: number, fresh: number): boolean {
     if (this.archiveQuotaRefusal({ bytes: 0, segments: 0, records: 0 }, bytes, segments, fresh))
       return false;
-    return Boolean(this.catalog!.prepare('SELECT 1 AS n FROM archive_segments LIMIT 1').get());
+    return Boolean(this.oldestRetirable());
   }
   /** The byte and segment/record quotas, shared by the writer and the probe so
    * the two cannot disagree. A batch with nothing new reserves nothing. */
@@ -977,7 +1092,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     if (
       fresh &&
       (Number(usage.segments) + segments > archive.maxSegments ||
-        Number(usage.records) + fresh > archive.maxSegments * 16)
+        Number(usage.records) + fresh > archiveRecordCap(archive.maxSegments))
     )
       return 'archive_segments';
     return null;
@@ -1169,6 +1284,9 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       /** Retired by the ring since the catalog was created. */
       retiredSegments: number;
       retiredRecords: number;
+      /** Published segments the evidence hold keeps from the ring. */
+      heldSegments: number;
+      heldRecords: number;
       catalogBytes: number;
       maxRowid: number;
       maxBytes: number;
@@ -1196,7 +1314,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           Number(usage.max_bytes) < 1 ||
           !Number.isSafeInteger(usage.max_segments) ||
           Number(usage.max_segments) < 1 ||
-          Number(usage.max_segments) > 500000
+          Number(usage.max_segments) > HORSE_JOURNAL_ARCHIVE_SEGMENTS
         )
           throw Error('Horse archive usage corruption');
         const pendingSegments = Number(
@@ -1211,6 +1329,12 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
               .prepare('SELECT retired_segments,retired_records FROM archive_ring WHERE id=1')
               .get()
           : undefined;
+        // Absent before a hold-aware writer opened the catalog, or released.
+        const hold = this.catalog
+          .prepare("SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='archive_hold'")
+          .get()
+          ? this.catalog.prepare('SELECT segments,records FROM archive_hold WHERE id=1').get()
+          : undefined;
         archive = {
           compressedBytes: Number(usage.bytes),
           segments: Number(usage.segments),
@@ -1219,6 +1343,8 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           publishedSegments: Math.max(0, Number(usage.segments) - pendingSegments),
           retiredSegments: Number(ring?.retired_segments ?? 0),
           retiredRecords: Number(ring?.retired_records ?? 0),
+          heldSegments: Number(hold?.segments ?? 0),
+          heldRecords: Number(hold?.records ?? 0),
           catalogBytes:
             Number(this.catalog.prepare('PRAGMA page_count').get()!.page_count) *
             CATALOG_PAGE_BYTES,
@@ -1229,7 +1355,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           maxBytes: Number(usage.max_bytes),
           maxSegments: Number(usage.max_segments),
           // The record cap the writer enforces alongside the segment cap.
-          maxRecords: Number(usage.max_segments) * 16,
+          maxRecords: archiveRecordCap(Number(usage.max_segments)),
           // Source policy of this reader's release, not the connection-local
           // pragma default of a read-only observer or another running writer.
           maxCatalogBytes: HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES,

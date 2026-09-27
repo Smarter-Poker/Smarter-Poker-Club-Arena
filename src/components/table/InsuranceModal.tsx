@@ -739,6 +739,7 @@ export function InsuranceModal({
               label="No"
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDeclineForHand}
+              haptic
               disabled={isSubmitting}
               title="Decline Insurance For The Rest Of This Hand"
             />
@@ -749,6 +750,7 @@ export function InsuranceModal({
               ink="white"
               className="insurance-modal__btn insurance-modal__btn--accept"
               onClick={handleAccept}
+              haptic
               disabled={isSubmitting}
             />
           </div>
@@ -761,6 +763,7 @@ export function InsuranceModal({
               label="Play It Out"
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDecline}
+              haptic
               disabled={isSubmitting}
             />
             <PlateButton
@@ -770,6 +773,7 @@ export function InsuranceModal({
               ink="green"
               className="insurance-modal__btn insurance-modal__btn--cashout"
               onClick={handleEvCashout}
+              haptic
               disabled={isSubmitting}
             />
           </div>

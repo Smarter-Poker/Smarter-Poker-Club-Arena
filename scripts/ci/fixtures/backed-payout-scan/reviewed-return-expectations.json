@@ -1,0 +1,7 @@
+{
+  "scalarDefinitionMD5": "46647067aa049dcb9bda93fa0a1a35b3",
+  "scalarBodyMD5": "ce248ae34ecb66dd36a55c50fee8d07b",
+  "batchDefinitionMD5": "48e76094473a68f00d75da7343834c97",
+  "previousBatchDefinitionMD5": "f4365f6a123257d70d68a525eed9f7b0",
+  "ledgerIndexDefinition": "CREATE INDEX idx_chip_ledger_tournament_category ON public.chip_ledger USING btree (tournament_id, category) WHERE (tournament_id IS NOT NULL)"
+}

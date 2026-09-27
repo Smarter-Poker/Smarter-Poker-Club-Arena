@@ -100,7 +100,9 @@ function selectedColumns(src: string, table = 'tournaments'): Set<string> {
     const before = src.slice(0, m.index ?? 0);
     const lastFrom = before.lastIndexOf('.from(');
     if (lastFrom === -1) continue;
-    const fromArg = sliceCall(before.slice(lastFrom), '.from(').match(/\.from\(\s*['"]([^'"]+)['"]/);
+    const fromArg = sliceCall(before.slice(lastFrom), '.from(').match(
+      /\.from\(\s*['"]([^'"]+)['"]/
+    );
     if (!fromArg || fromArg[1] !== table) continue;
     for (const raw of m[2].split(',')) {
       const col = raw
@@ -127,7 +129,14 @@ describe('a buy-in payload can only read what its own query selected', () => {
       // argument, short enough not to swallow the rest of the component.
       const payload = sliceCall(src, 'registerMtt(');
 
-      const selected = selectedColumns(src);
+      // XMTT's bounded list reader owns the rows passed into the unchanged money command.
+      let querySource = src;
+      if (file === 'src/pages/XMTTPage.tsx') {
+        expect(src).toContain('useXmttLobby');
+        expect(read('src/hooks/useXmttLobby.ts')).toContain('readXmttLobby');
+        querySource = read('src/services/xmttLobbyReads.ts');
+      }
+      const selected = selectedColumns(querySource);
       expect(selected.size, `${file} must contain at least one .select()`).toBeGreaterThan(0);
 
       const missing: string[] = [];

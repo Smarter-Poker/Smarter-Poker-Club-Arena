@@ -474,7 +474,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const getFocusable = () =>
       Array.from(
         drawer.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          // input[tabindex="-1"] excluded: a TapHaptic switch inside a button is
+          // for the finger, never a keyboard stop.
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )
       ).filter((element) => element.offsetParent !== null);
 
@@ -685,6 +687,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   // design tile looks visible but cannot be tapped on mobile or desktop.
   const handleOpenTableStudio = () => {
     setShowThemeSettings(true);
+    onClose();
+  };
+
+  // The Device Check is a modal destination too, and the shared Modal stacks
+  // at 1000, far under this drawer (9450/9500): opened with the drawer still
+  // up it painted behind the backdrop and could not be reached. Same hand-off
+  // as Table Studio: open it and close the drawer in the same click.
+  const handleOpenDeviceCheck = () => {
+    setShowDeviceCheck(true);
     onClose();
   };
 
@@ -916,6 +927,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Do not leave an off-canvas tree full of focusable controls in the tab order.
   if (!isOpen) {
+    if (showDeviceCheck) return <DeviceCheck isOpen onClose={() => setShowDeviceCheck(false)} />;
     return showThemeSettings ? (
       <ThemeSettingsModal
         isOpen
@@ -1369,7 +1381,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span className={styles.toggleTrack} aria-hidden="true">
                 <span className={styles.toggleThumb} />
               </span>
-              <TapHaptic ignorePreference radius="3px" />
+              {/* Ticks when switching vibration ON (an iPhone browser feels it); off is silent. */}
+              <TapHaptic ignorePreference disabled={vibrationsEnabled} radius="3px" />
             </button>
           </div>
 
@@ -1410,7 +1423,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           <button
             type="button"
             className={styles.navItem}
-            onClick={() => setShowDeviceCheck(true)}
+            onClick={handleOpenDeviceCheck}
             aria-label="Open Device Check"
           >
             <span>
@@ -1539,8 +1552,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           isVip={isVIP}
         />
       )}
-
-      <DeviceCheck isOpen={showDeviceCheck} onClose={() => setShowDeviceCheck(false)} />
 
       {/* Bible V8 §11.2: Theme Settings Modal */}
       <ThemeSettingsModal

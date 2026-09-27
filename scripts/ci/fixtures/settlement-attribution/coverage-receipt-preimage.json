@@ -1,0 +1,86 @@
+[
+  {
+    "jsonb_build_object": {
+      "at": "2026-09-27T13:48:57.757292+00:00",
+      "table": {
+        "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+        "oid": "24464366",
+        "rls": true,
+        "kind": "r",
+        "rows": 2570400,
+        "force": false,
+        "owner": "postgres",
+        "pages": 730144,
+        "options": [
+          "autovacuum_vacuum_scale_factor=0.0",
+          "autovacuum_vacuum_threshold=250000",
+          "autovacuum_vacuum_insert_scale_factor=0.0",
+          "autovacuum_vacuum_insert_threshold=100000"
+        ],
+        "visible": 627834,
+        "heap_bytes": 5981339648,
+        "total_bytes": 11514273792
+      },
+      "bounds": {
+        "max": 15825022,
+        "min": 12976717,
+        "rows": 971406
+      },
+      "columns": [
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "notnull": true
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "hand_atomic_commits_pkey",
+          "bytes": 351592448,
+          "ready": true,
+          "valid": true,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX hand_atomic_commits_pkey ON public.hand_atomic_commits USING btree (table_id, hand_number)"
+        },
+        {
+          "live": true,
+          "name": "hand_atomic_commits_hand_number_key",
+          "bytes": 227508224,
+          "ready": true,
+          "valid": true,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX hand_atomic_commits_hand_number_key ON public.hand_atomic_commits USING btree (hand_number)"
+        },
+        {
+          "live": true,
+          "name": "hand_atomic_commits_hand_id_key",
+          "bytes": 156385280,
+          "ready": true,
+          "valid": true,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX hand_atomic_commits_hand_id_key ON public.hand_atomic_commits USING btree (hand_id)"
+        },
+        {
+          "live": true,
+          "name": "idx_hand_atomic_commits_post_commit_pending",
+          "bytes": 581632,
+          "ready": true,
+          "valid": true,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_hand_atomic_commits_post_commit_pending ON public.hand_atomic_commits USING btree (table_id, hand_number) WHERE ((post_commit_payload IS NOT NULL) AND (post_commit_completed_at IS NULL))"
+        }
+      ]
+    }
+  }
+]

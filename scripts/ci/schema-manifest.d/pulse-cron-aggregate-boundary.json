@@ -1,0 +1,5 @@
+{
+  "_owner": "Supabase billing audit connected authenticated pulse repair.",
+  "_comment": "Fixed two-count operational aggregate only. Outer pulse keeps its existing invoker privileges and all product RLS; no cron schema grant. Candidate installation verified separately.",
+  "functions": ["fn_smarter_poker_pulse_cron_counts"]
+}

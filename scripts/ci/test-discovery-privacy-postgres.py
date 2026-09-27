@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))
 parser.add_argument('--baseline', action='store_true')
+parser.add_argument('--pulse-baseline', action='store_true')
 args = parser.parse_args()
 pg = Path(args.pg_bin).resolve()
 env = {'PATH': str(pg) + ':/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PGCONNECT_TIMEOUT': '5'}
@@ -79,11 +80,16 @@ def baseline():
 
 try:
     if ' 17.' not in run([pg/'postgres', '--version']): raise RuntimeError('PostgreSQL 17 is required')
-    run([pg/'initdb', '-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
+    # A bootstrap superuser cannot be demoted. Keep it distinct so the final
+    # owner invocation can match Supabase's NOSUPERUSER BYPASSRLS postgres.
+    run([pg/'initdb', '-D', data, '-U', 'pulse_fixture_admin', '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
     with (data/'postgresql.conf').open('a') as conf:
         conf.write("\nlisten_addresses = ''\nunix_socket_directories = '"+str(socket)+"'\nautovacuum = off\n")
     start_attempted = True
     run([pg/'pg_ctl', '-D', data, '-l', cluster/'server.log', '-w', 'start'])
+    run([pg/'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-At', '-h', socket,
+         '-U', 'pulse_fixture_admin', '-d', 'postgres', '-p', '5432'],
+        'CREATE ROLE postgres LOGIN SUPERUSER;')
     endpoint = json.loads(query("select json_build_object('address',inet_server_addr(),'data',current_setting('data_directory'),'listen',current_setting('listen_addresses'));"))
     assert endpoint == {'address': None, 'data': str(data), 'listen': ''}, endpoint
     baseline()
@@ -127,6 +133,124 @@ try:
             connection.wait(timeout=5)
     print(result)
     print('discovery-privacy-two-session-snapshot-passed')
+    # Connected aggregate boundary uses the actual cron grants and RLS.
+    captured = json.loads((FIXTURE/'pulse-baseline.json').read_text())
+    query("""CREATE ROLE supabase_admin BYPASSRLS;
+      ALTER SCHEMA cron OWNER TO supabase_admin;
+      REVOKE ALL ON SCHEMA cron FROM PUBLIC,anon,authenticated,service_role;
+      GRANT USAGE ON SCHEMA cron TO postgres;
+      ALTER TABLE cron.job ADD COLUMN username text DEFAULT 'postgres';
+      ALTER TABLE cron.job OWNER TO supabase_admin;
+      ALTER TABLE cron.job ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY cron_job_policy ON cron.job USING(username=CURRENT_USER);
+      GRANT SELECT ON cron.job TO PUBLIC;
+      CREATE TABLE cron.job_run_details(jobid bigint,username text,start_time timestamptz,end_time timestamptz,status text,return_message text);
+      ALTER TABLE cron.job_run_details OWNER TO supabase_admin;
+      ALTER TABLE cron.job_run_details ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY cron_job_run_details_policy ON cron.job_run_details USING(username=CURRENT_USER);
+      GRANT SELECT,DELETE ON cron.job_run_details TO PUBLIC;
+      DROP TABLE public.v_system_health_cron;
+      INSERT INTO cron.job VALUES(700,'home-disabled','* * * * *','PRIVATE SQL',false,'postgres'),
+        (701,'unrelated-active','* * * * *','PRIVATE SQL',true,'postgres'),
+        (702,'another-owner','* * * * *','PRIVATE SQL',true,'another_owner');
+      INSERT INTO cron.job_run_details VALUES
+        (17,'postgres',now(),now(),'failed','PRIVATE ERROR'),
+        (20,'postgres',now(),now(),'succeeded','PRIVATE ERROR'),
+        (700,'postgres',now(),now(),'failed','PRIVATE ERROR'),
+        (701,'postgres',now(),now(),'failed','PRIVATE ERROR'),
+        (702,'another_owner',now(),now(),'failed','PRIVATE ERROR'),
+        (999,'postgres',now(),now(),'failed','PRIVATE ERROR'),
+        (17,'postgres',now()-interval '25 hours',now(),'failed','PRIVATE ERROR');
+    """)
+    query('CREATE VIEW public.v_system_health_cron WITH(security_invoker=true) AS '+captured['view']['def']+'; GRANT SELECT ON public.v_system_health_cron TO anon,authenticated,service_role;')
+    # Capture the caller-visible non-cron payload; the temporary grant is local
+    # only and removed before reproducing the real denied schema boundary.
+    query("GRANT USAGE ON SCHEMA cron TO authenticated;")
+    def payload(role, uid):
+        return query("SET ROLE "+role+"; SET request.jwt.claim.sub='"+uid+"'; SELECT get_smarter_poker_pulse()-'generated_at' #- '{system_health,cron_jobs_active}' #- '{system_health,cron_failures_24h}';")
+    users=['20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000099']
+    query("UPDATE commander_home_groups SET is_private=true WHERE id='10000000-0000-0000-0000-000000000002';")
+    expected=[payload('authenticated',uid) for uid in users]
+    assert expected[0] != expected[2], 'Fixture must distinguish owner and stranger RLS'
+    query("REVOKE USAGE ON SCHEMA cron FROM authenticated;")
+    if args.pulse_baseline:
+        query('SET ROLE authenticated; SELECT public.get_smarter_poker_pulse();')
+        raise AssertionError('Expected the recorded cron schema permission failure')
+    query('SET ROLE authenticated; SELECT public.get_smarter_poker_pulse();','permission denied for schema cron')
+    catalog_sql="SELECT md5(jsonb_build_object('schema',(SELECT nspacl FROM pg_namespace WHERE nspname='cron'),'relations',(SELECT jsonb_agg(jsonb_build_object('oid',c.oid,'acl',c.relacl,'rls',c.relrowsecurity) ORDER BY c.oid) FROM pg_class c WHERE c.relnamespace='cron'::regnamespace),'policies',(SELECT jsonb_agg(to_jsonb(p) ORDER BY policyname) FROM pg_policies p WHERE schemaname='cron'))::text);"
+    cron_catalog_before=query(catalog_sql)
+    migration=(ROOT/'supabase/migrations/20260927041025_pulse_cron_aggregates_preserve_caller_product_privacy.sql').read_text()
+    query(migration.replace('COMMIT;',"DO $$BEGIN RAISE EXCEPTION 'fixture rollback';END$$;COMMIT;"),'fixture rollback')
+    assert query("SELECT to_regprocedure('public.fn_smarter_poker_pulse_cron_counts()') IS NULL;")=='t'
+    query(migration)
+    query(migration,'PULSE_CRON_BOUNDARY_PREIMAGE_CHANGED')
+    assert query("SELECT md5(pg_get_functiondef('public.get_smarter_poker_pulse()'::regprocedure));")==captured['pulse']['candidate_md5']
+    assert [payload('authenticated',uid) for uid in users]==expected
+    assert query(catalog_sql)==cron_catalog_before
+    assert query("SELECT prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=\"\"','statement_timeout=8s'] FROM pg_proc WHERE oid='public.fn_smarter_poker_pulse_cron_counts()'::regprocedure;")== 't'
+    for role in ['anon','authenticated']:
+        query('SET ROLE '+role+'; SELECT command FROM cron.job;','permission denied for schema cron')
+        # The existing bound view needs no underlying schema lookup; its RLS
+        # still hides jobs owned by other database roles. No view grants change.
+        assert query('SET ROLE '+role+'; SELECT count(*) FROM public.v_system_health_cron;')=='SET\n0'
+    query('SET ROLE anon; SELECT * FROM public.fn_smarter_poker_pulse_cron_counts();','permission denied')
+    query('SET ROLE anon; SELECT public.get_smarter_poker_pulse();','permission denied')
+    for role in ['authenticated','service_role']:
+        assert query('SET ROLE '+role+'; SELECT * FROM public.fn_smarter_poker_pulse_cron_counts();')=='SET\n2|4'
+    # Empty data produces explicit zero; errors are not hidden as empty success.
+    query('DELETE FROM cron.job_run_details; DELETE FROM cron.job;')
+    assert query('SET ROLE authenticated; SELECT * FROM public.fn_smarter_poker_pulse_cron_counts();')=='SET\n0|0'
+    assert query("SELECT (NOT prosecdef) AND proacl=ARRAY['postgres=X/postgres','authenticated=X/postgres','service_role=X/postgres']::aclitem[] FROM pg_proc WHERE oid='public.get_smarter_poker_pulse()'::regprocedure;")=='t'
+    # Record only this reviewed aggregate in the existing live metadata shape.
+    # A changed declaration/grant or conflicting decision must refuse, while
+    # an identical repeat preserves its timestamp and every unrelated entry.
+    query("""CREATE TABLE public.ca_browser_definer_allowlist(proname text PRIMARY KEY,
+      reason text NOT NULL CHECK(length(btrim(reason))>=20),recorded_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE public.ca_browser_definer_allowlist ENABLE ROW LEVEL SECURITY;
+      REVOKE ALL ON public.ca_browser_definer_allowlist FROM PUBLIC,anon,authenticated;
+      GRANT ALL ON public.ca_browser_definer_allowlist TO service_role;
+      INSERT INTO public.ca_browser_definer_allowlist VALUES('fixture_existing','Existing reviewed surface',now());""")
+    review_migration = next((ROOT/'supabase/migrations').glob('*_record_pulse_authenticated_aggregate_review.sql')).read_text()
+    metadata_sql = "SELECT md5(jsonb_agg(to_jsonb(a) ORDER BY proname)::text) FROM public.ca_browser_definer_allowlist a;"
+    metadata_before = query(metadata_sql)
+    query(review_migration.replace('COMMIT;', "DO $$ BEGIN RAISE EXCEPTION 'fixture rollback'; END $$; COMMIT;"), 'fixture rollback')
+    assert query(metadata_sql) == metadata_before
+    query('GRANT EXECUTE ON FUNCTION public.fn_smarter_poker_pulse_cron_counts() TO anon;')
+    query(review_migration, 'PULSE_AGGREGATE_REVIEW_SOURCE_CHANGED')
+    query('REVOKE EXECUTE ON FUNCTION public.fn_smarter_poker_pulse_cron_counts() FROM anon;')
+    query("ALTER FUNCTION public.fn_smarter_poker_pulse_cron_counts() SET statement_timeout='9s';")
+    query(review_migration, 'PULSE_AGGREGATE_REVIEW_SOURCE_CHANGED')
+    query("ALTER FUNCTION public.fn_smarter_poker_pulse_cron_counts() SET statement_timeout='8s';")
+    query("INSERT INTO public.ca_browser_definer_allowlist(proname,reason) VALUES('fn_smarter_poker_pulse_cron_counts','Conflicting reviewed aggregate decision');")
+    query(review_migration, 'PULSE_AGGREGATE_REVIEW_ENTRY_CHANGED')
+    query("DELETE FROM public.ca_browser_definer_allowlist WHERE proname='fn_smarter_poker_pulse_cron_counts';")
+    assert query(metadata_sql) == metadata_before
+    query(review_migration)
+    metadata_after = query(metadata_sql)
+    assert query("SELECT md5(jsonb_agg(to_jsonb(a) ORDER BY proname)::text) FROM public.ca_browser_definer_allowlist a WHERE proname <> 'fn_smarter_poker_pulse_cron_counts';") == metadata_before
+    query(review_migration)
+    assert query(metadata_sql) == metadata_after
+    assert query("SELECT count(*) FROM public.ca_browser_definer_allowlist;") == '2'
+    assert query(catalog_sql) == cron_catalog_before
+    for role in ['anon','authenticated']:
+        query('SET ROLE '+role+'; SELECT * FROM public.ca_browser_definer_allowlist;','permission denied')
+    # Supabase's actual postgres owner is NOSUPERUSER BYPASSRLS. A separate
+    # isolated setup role remains superuser only to drive the test connection.
+    query("""INSERT INTO cron.job VALUES
+      (17,'home-native-owner','* * * * *','PRIVATE SQL',true,'postgres'),
+      (20,'pnm-native-other','* * * * *','PRIVATE SQL',true,'another_owner');
+      INSERT INTO cron.job_run_details VALUES
+      (17,'postgres',now(),now(),'failed','PRIVATE ERROR'),
+      (20,'another_owner',now(),now(),'failed','PRIVATE ERROR');
+      ALTER ROLE postgres NOSUPERUSER BYPASSRLS;""")
+    native_owner_result = run([pg/'psql','-X','-v','ON_ERROR_STOP=1','-At','-h',socket,
+      '-U','pulse_fixture_admin','-d','postgres','-p','5432'],
+      "SELECT NOT rolsuper AND rolbypassrls FROM pg_roles WHERE rolname='postgres';"
+      " SET ROLE authenticated; SELECT * FROM public.fn_smarter_poker_pulse_cron_counts();"
+      " SELECT jsonb_typeof(public.get_smarter_poker_pulse());")
+    assert native_owner_result == 't\nSET\n2|2\nobject', native_owner_result
+    print('pulse-cron-boundary-nosuperuser-owner-passed')
+    print('pulse-cron-boundary-native-acceptance-passed')
 finally:
     if start_attempted and (data/'postmaster.pid').exists():
         run([pg/'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])

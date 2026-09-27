@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169704,
-      "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
+      "bytes": 169880,
+      "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24824,
-      "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
+      "bytes": 25086,
+      "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -500,5 +500,67 @@
         "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
       }
     }
+  },
+  "settlementAttributionIntegration20260927": {
+    "reason": "Register the exact settlement-attribution native fixture and every maintained input in existing required accounting shard4. Existing runners, financial assertions, historical receipts and other pins remain unchanged. Cascade only the current nested binding bytes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "current": {
+          "bytes": 169705,
+          "sha256": "a041aacebb76da830085d19425a14bb838686807555422827d15841f46fdd1c8"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "current": {
+          "bytes": 24893,
+          "sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2"
+        }
+      }
+    ]
+  },
+  "bbjSettlementIntegration20260927": {
+    "reason": "Preserve both existing native qualifications and both parents full histories and assertions; update only exact integrated CI/classifier and nested binding bytes.",
+    "parents": [
+      "92ea103a60b67845cdc26159a7bfb5978340736b",
+      "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4"
+    ],
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 169704,
+          "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
+        },
+        "current": {
+          "bytes": 169880,
+          "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 24824,
+          "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
+        },
+        "current": {
+          "bytes": 25086,
+          "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+        }
+      }
+    ]
   }
 }

@@ -134,12 +134,21 @@ export interface NativePushResult {
   ok: boolean;
   error?: string;
   permission?: 'granted' | 'denied' | 'default';
+  code?: string;
 }
 
-/** Permission prompt, token, then the Hub row. Call from a tap handler. */
-export async function enableNativePush(): Promise<NativePushResult> {
+/**
+ * Permission prompt, token, then the Hub row. Call from a tap handler.
+ * `repairOnly` is the silent sync: it never prompts and the server refreshes
+ * only an enrollment this account already holds on this device.
+ */
+export async function enableNativePush(
+  options: { repairOnly?: boolean } = {}
+): Promise<NativePushResult> {
+  const repairOnly = options.repairOnly === true;
   const PushNotifications = await plugin();
   let status = (await PushNotifications.checkPermissions()).receive;
+  if (repairOnly && status !== 'granted') return { ok: false, code: 'not_granted' };
   if (status === 'prompt' || status === 'prompt-with-rationale') {
     status = (await PushNotifications.requestPermissions()).receive;
   }
@@ -171,10 +180,14 @@ export async function enableNativePush(): Promise<NativePushResult> {
       deviceLabel: nativePlatform() === 'ios' ? 'iPhone' : 'Android',
       deviceId: pushDeviceId() || undefined,
       replacesEndpoint: previous && previous !== token ? previous : undefined,
+      repairOnly: repairOnly ? true : undefined,
     }),
   });
   if (res.status === 401) {
     return { ok: false, error: 'You need to be signed in to enable notifications.' };
+  }
+  if (res.status === 409 && repairOnly) {
+    return { ok: false, code: 'repair_not_enrolled' };
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

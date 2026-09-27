@@ -3089,6 +3089,13 @@ jobs:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:financial-decisions
 
+      # Push opt-in in a real Chromium: the real prompt host, push client and
+      # nudge policy against a local recorded stand-in for the hub API. No
+      # login and no production data. Guards the shared /push/ registration,
+      # the Not Now cool-down and the owner receipt exception (2026-09-27).
+      - name: Push enrollment opt-in browser gate
+        run: npm run test:e2e:push-enrollment
+
       # if: always() because the preview is now started outside the step that
       # uses it, so nothing else will reap it - and an orphaned --strictPort
       # server would fail every later job on this runner. The port-reserve step

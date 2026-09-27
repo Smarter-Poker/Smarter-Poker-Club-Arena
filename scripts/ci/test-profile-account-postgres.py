@@ -12,7 +12,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'supabase/migrations/20260926221700_own_account_changes_send_bounded_private_signals.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927001026_own_account_changes_send_bounded_private_signals.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))

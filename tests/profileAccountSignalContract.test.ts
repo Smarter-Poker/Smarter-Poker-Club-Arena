@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 const migration = read(
-  'supabase/migrations/20260926221700_own_account_changes_send_bounded_private_signals.sql'
+  'supabase/migrations/20260927001026_own_account_changes_send_bounded_private_signals.sql'
 );
 describe('private own-account invalidations stay bounded', () => {
   it('carries only identity and domains, never row values or broad publication', () => {

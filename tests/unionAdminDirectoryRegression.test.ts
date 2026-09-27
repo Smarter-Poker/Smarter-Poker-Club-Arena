@@ -6,7 +6,7 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 const migration = read(
-  'supabase/migrations/20260927165228_union_administrator_directory_binds_the_signed_in_operator.sql'
+  'supabase/migrations/20260927170842_union_administrator_directory_binds_the_signed_in_operator.sql'
 );
 
 describe('caller-bound union administrator directory qualification', () => {

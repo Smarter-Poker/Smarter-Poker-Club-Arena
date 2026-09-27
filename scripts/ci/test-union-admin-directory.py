@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'supabase/migrations/20260927165228_union_administrator_directory_binds_the_signed_in_operator.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927170842_union_administrator_directory_binds_the_signed_in_operator.sql'
 NAME = ROOT / 'scripts/ci/fixtures/union-admin-directory/arena-name.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))

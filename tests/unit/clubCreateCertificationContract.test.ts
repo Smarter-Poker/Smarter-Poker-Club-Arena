@@ -75,6 +75,42 @@ describe('Create Club production certification contract', () => {
     expect(migration).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
   });
 
+  it('archives the exact ledger actor before a reserved certification identity is removed', () => {
+    const migration = read(
+      'supabase/migrations/20260927004356_certification_accounts_archive_ledger_actor_before_deletion.sql'
+    );
+
+    expect(migration).toContain("md5(v_old) <> 'f525ae6f43f60a993524f9e43ecfba71'");
+    expect(migration).toContain('CREATE TABLE public.ca_test_account_ledger_actor_archive');
+    expect(migration).toContain('to_jsonb(l)');
+    expect(migration).toContain('ALTER COLUMN performed_by DROP NOT NULL');
+    expect(migration).toContain("<> 'ce4ab3013be283d66ab9afd1e861b552'");
+    expect(migration).toContain('CHIP_LEDGER_ACTOR_TRIGGER_PREIMAGE_CHANGED');
+    expect(migration).toContain('BEFORE INSERT OR UPDATE OF performed_by');
+    expect(migration).toContain('INSERT INTO public.ca_declared_money_triggers');
+    expect(migration).toContain("v_reason LIKE 'certification-cleanup:%'");
+    expect(migration).toContain('NEW.performed_by IS NULL');
+    expect(migration).toContain('a.ledger_row = to_jsonb(OLD)');
+    expect(
+      migration.indexOf('INSERT INTO public.ca_test_account_ledger_actor_archive')
+    ).toBeLessThan(migration.indexOf('UPDATE public.chip_ledger'));
+    expect(migration.indexOf('UPDATE public.chip_ledger')).toBeLessThan(
+      migration.lastIndexOf('SELECT count(*) INTO v_audit_count')
+    );
+    expect(migration).toContain('v_ledger_archived_count <> v_ledger_count');
+    expect(migration).toContain('Reserved Certification Ledger Actor Archive Copied');
+    expect(migration).toContain('Test-account ledger actor testimony is append-only');
+    expect(migration).toContain('REVOKE ALL ON TABLE public.ca_test_account_ledger_actor_archive');
+    expect(migration).not.toMatch(
+      /CREATE TABLE public\.ca_test_account_ledger_actor_archive[\s\S]*?REFERENCES/
+    );
+    expect(migration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.enforce_chip_ledger_performed_by() TO service_role'
+    );
+    expect(migration).not.toContain('DELETE FROM public.chip_ledger');
+    expect(migration).not.toContain("SET performed_by = '00000000-0000-0000-0000-000000000001'");
+  });
+
   it('targets the unique keyboard-enabled action-bar control', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
     expect(spec).toContain("getByTitle('Create A Club (C)', { exact: true })");

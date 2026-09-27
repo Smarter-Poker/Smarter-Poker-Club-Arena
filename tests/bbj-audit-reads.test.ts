@@ -9,7 +9,7 @@ const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const capture = JSON.parse(read('scripts/ci/fixtures/bbj-audit-reads/baseline.json'));
 const migration = read(
-  'supabase/migrations/20260927042532_bbj_meter_reads_only_pool_ledger_legs.sql'
+  'supabase/migrations/20260927050742_bbj_meter_reads_only_pool_ledger_legs.sql'
 );
 const online = read('scripts/ops/build-bbj-audit-indexes-concurrently.sql');
 const md5 = (value: string) => createHash('md5').update(value).digest('hex');

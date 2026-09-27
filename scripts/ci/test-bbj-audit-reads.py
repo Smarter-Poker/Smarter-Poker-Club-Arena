@@ -21,7 +21,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 CAPTURE = ROOT / 'scripts/ci/fixtures/bbj-audit-reads/baseline.json'
-MIGRATION = ROOT / 'supabase/migrations/20260927042532_bbj_meter_reads_only_pool_ledger_legs.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927050742_bbj_meter_reads_only_pool_ledger_legs.sql'
 ONLINE = ROOT / 'scripts/ops/build-bbj-audit-indexes-concurrently.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))

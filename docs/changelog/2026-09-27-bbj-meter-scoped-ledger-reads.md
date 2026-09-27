@@ -34,3 +34,5 @@ and eliminate unrelated tuple scans. The predecessor without the indexes must fa
 indexes-only comparison showed the OR query already becomes scoped, so no
 financial function rewrite is included. Large-pool heap work remains; timing and buffer
 observations are fixture evidence, not production capacity or billing savings.
+
+Production installation was read back on September 27 at 05:08 UTC. Both online indexes are valid, ready and live. The separate verification transaction is recorded once as `20260927050742`; the maintained filename and native/source fixture paths match that actual history version. Its 3,348 bytes are unchanged (SHA-256 `e68f3b008955dba1f7de2e7cf877585e85aa9db68887c3c44e54172521b2ad4b`). The financial function remains at the captured definition. Natural cron completion and measured production read cost remain separate acceptance evidence.

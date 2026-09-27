@@ -1,0 +1,11 @@
+{
+  "migration": "supabase/migrations/20260927173127_backed_payout_seat_income_uses_its_existing_target_index.sql",
+  "beforeDefinitionMD5": "997e5e7b816c12f7a17c30454806da0b",
+  "afterDefinitionMD5": "9078403312e51a873e6e7462555dcf7e",
+  "scalarDefinitionMD5": "46647067aa049dcb9bda93fa0a1a35b3",
+  "incomeBeforeMD5": "6836dfe2d04f88301f41f83b7ba27d17",
+  "indexDefinition": "CREATE INDEX idx_tournament_payouts_satellite_target ON public.tournament_payouts USING btree (((metadata ->> 'satellite_target_id'::text))) INCLUDE (amount)",
+  "indexDefinitionMD5": "db3e950667c8ef905d3e8f8747108aa4",
+  "oldPredicate": "WHERE sp.source IN ('satellite_seat','satellite_ticket')",
+  "newPredicate": "WHERE sp.source IN ('satellite_seat','satellite_ticket')\n        AND sp.metadata->>'satellite_target_id' IS NOT NULL"
+}

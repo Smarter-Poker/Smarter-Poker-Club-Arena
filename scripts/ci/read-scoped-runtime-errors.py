@@ -3,6 +3,7 @@
 import base64
 import datetime
 import json
+import math
 import os
 import re
 import selectors
@@ -20,6 +21,8 @@ STAMP = re.compile(r'^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s+')
 # player objects, credentials, SQL parameters, or stack traces.
 ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b')
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
+ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.watchdog_kill\]')
+ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
 # Successor admission is owned by GameServer, before or while a new manager
 # recovers its originals. Keep this an exact call-site list, never GameServer.*.
 ADMISSION_CONTEXT = re.compile(r'^\[(GameServer\.(?:Tournament_resume_failed_for_t|tournament_admission_retry_failed|mixed_original_recovery_retained))\]')
@@ -32,6 +35,85 @@ CONNECT_TIMEOUT = 10
 # complete budget plus connection setup and a finite transfer allowance.
 TRANSPORT_TIMEOUT = 2 * HEALTH_TIMEOUT + CAPTURE_TIMEOUT + CONNECT_TIMEOUT + 5
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
+
+
+def log_window(value, now=None):
+    """One original incident window, never a wider or caller-chosen command."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+        raise ValueError('Invalid observation window')
+    start = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    end = start + datetime.timedelta(minutes=15)
+    if start < now - datetime.timedelta(hours=24) or end > now:
+        raise ValueError('Observation window is not a completed recent interval')
+    return {'since': value, 'until': end.strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+
+def log_command(window):
+    if window is None:
+        return COMMAND.copy()
+    return ['docker', 'logs', '--since', window['since'], '--until', window['until'],
+            '--tail', '20000', '--timestamps', 'club-arena-engine']
+
+
+def window_description(window):
+    return ({**window, 'durationMinutes': 15, 'maximumPhysicalLines': 20000}
+            if window else 'last 15 minutes; last 20000 physical lines')
+
+
+def mux_timing_requested(value, window):
+    # Anonymous transport phases cannot be scoped to a table. Require a
+    # separate explicit opt-in and the original completed incident interval.
+    if value is None:
+        return False
+    if value is not True or window is None:
+        raise ValueError('Anonymous timing requires an explicit completed window')
+    return True
+
+
+def extract_mux_timings(raw):
+    prefix = '[EngineWS] mux subscription timing '
+    offsets = {'authorityReturnedAtMs', 'ensureStartedAtMs', 'tableReadyAtMs',
+               'ackQueuedAtMs', 'firstHubFrameQueuedAtMs', 'hubSubscribedAtMs'}
+    outcomes = {'interrupted', 'access_refused', 'banned', 'table_unavailable',
+                'ip_restricted', 'subscribed', 'error'}
+    fields = offsets | {'attempt', 'startedAt', 'outcome', 'totalMs'}
+    records, invalid = [], 0
+
+    def number(value, maximum):
+        return (type(value) in (int, float) and 0 <= value <= maximum
+                and (type(value) is int or math.isfinite(value)))
+
+    for line in raw.decode('utf-8', errors='replace').splitlines():
+        stamp = STAMP.match(line)
+        body = line[stamp.end():] if stamp else line
+        if not body.startswith(prefix):
+            continue
+        try:
+            if stamp is None or len(body) > 4096:
+                raise ValueError('Unbounded or undated timing')
+            record = json.loads(body[len(prefix):])
+            if not isinstance(record, dict) or set(record) != fields:
+                raise ValueError('Unknown timing fields')
+            if record['outcome'] not in outcomes:
+                raise ValueError('Unknown timing outcome')
+            for field in ['attempt', 'startedAt']:
+                if type(record[field]) is not int or not 0 < record[field] <= 9007199254740991:
+                    raise ValueError('Invalid timing identity')
+            if not number(record['totalMs'], 900000):
+                raise ValueError('Invalid duration')
+            for field in offsets:
+                if record[field] is not None and not number(record[field], record['totalMs']):
+                    raise ValueError('Invalid timing offset')
+            records.append({'timestamp': stamp.group(1), **record})
+        except (ValueError, TypeError):
+            invalid += 1
+    return {'records': records[-50:], 'matchingRecords': len(records),
+            'omittedRecords': max(0, len(records)-50), 'invalidRecords': invalid,
+            'attribution': 'anonymous phases cannot identify a table or user; offsets end at enqueue, not browser receipt',
+            'absenceMeans': 'unknown; bounded retained logs may omit attempts'}
 
 
 def selection(value):
@@ -66,7 +148,9 @@ def extract(raw, scopes):
         matched = sorted(i for i in allowed if re.search(r"(?<![0-9a-f-])" + i + r"(?![0-9a-f-])", text))
         if context and matched:
             records.append({'timestamp': stamp, 'context': context, 'scopeIds': matched,
-                            'symbolicErrors': sorted(set(ERROR.findall(text)))})
+                            'symbolicErrors': sorted(set(ERROR.findall(text))),
+                            'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
+                            if context == 'ServerTableEngine.watchdog_kill' else []})
 
     for line in raw.decode('utf-8', errors='replace').splitlines():
         ts = STAMP.match(line)
@@ -75,6 +159,9 @@ def extract(raw, scopes):
             finish()
             match = CONTEXT.match(body) or ADMISSION_CONTEXT.match(body)
             context = match.group(1) if match else None
+            engine_match = ENGINE_CONTEXT.match(body)
+            if engine_match and engine_match.group(1) in allowed:
+                context = 'ServerTableEngine.watchdog_kill'
             stamp = ts.group(1) if ts else None
             block = [body]
         elif context:
@@ -139,17 +226,25 @@ def health(origin='https://engine.smarter.poker'):
 
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
-        scopes = selection(json.loads(base64.b64decode(sys.argv[2], validate=True)))
+        request = json.loads(base64.b64decode(sys.argv[2], validate=True))
+        if isinstance(request, list):
+            scopes, window, mux_timing = selection(request), None, False
+        elif isinstance(request, dict) and set(request) in ({'scopes', 'windowStart'}, {'scopes', 'windowStart', 'muxTiming'}):
+            scopes, window = selection(request['scopes']), log_window(request['windowStart'])
+            mux_timing = mux_timing_requested(request.get('muxTiming'), window)
+        else:
+            raise ValueError('Invalid observation request')
         before = health('http://127.0.0.1:8080')
-        raw = capture()
+        raw = capture(log_command(window))
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
+        extra = {'muxSubscriptionTimings': extract_mux_timings(raw)} if mux_timing else {}
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
-                          'window': 'last 15 minutes; last 20000 physical lines',
+                          'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
                           'perRecordEngineIdentity': 'unproven; the retained window may include an earlier process',
-                          'inputBytes': len(raw), **extract(raw, scopes)}))
+                          'inputBytes': len(raw), **extract(raw, scopes), **extra}))
         return
     if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
         raise RuntimeError('Explicit observation dispatch required')
@@ -157,6 +252,8 @@ def main():
     if event.get('action') != 'audit-production-integrity':
         raise RuntimeError('Wrong event')
     scopes = selection(event.get('client_payload', {}).get('tournament_log_observation'))
+    window = log_window(event.get('client_payload', {}).get('tournament_log_window_start'))
+    mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -171,9 +268,12 @@ def main():
             path.chmod(0o600)
         for args in [['ssh-keygen', '-y', '-f', str(directory/'key')], ['ssh-keygen', '-l', '-f', str(directory/'known_hosts')]]:
             subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=5)
-        encoded = base64.b64encode(json.dumps(scopes).encode()).decode()
-        # The caller supplies only validated UUID scope; command, host, account,
-        # container and time window cannot be selected through dispatch input.
+        request = {'scopes': scopes, 'windowStart': window['since'] if window else None}
+        if mux_timing:
+            request['muxTiming'] = True
+        encoded = base64.b64encode(json.dumps(request).encode()).decode()
+        # Only validated UUID scope and an exact recent fifteen-minute interval
+        # enter the fixed reader. Host, account, container and command stay fixed.
         args = ['ssh', '-i', str(directory/'key'), '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
                 '-o', 'UserKnownHostsFile='+str(directory/'known_hosts'), '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
@@ -184,6 +284,10 @@ def main():
         result = json.loads(reply.stdout)
         if result.get('schema') != 'scoped-runtime-errors/v1' or result.get('readOnly') is not True:
             raise RuntimeError('Observation contract unavailable')
+        if result.get('window') != window_description(window):
+            raise RuntimeError('Observation window differs')
+        if ('muxSubscriptionTimings' in result) != mux_timing:
+            raise RuntimeError('Anonymous timing observation differs')
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')

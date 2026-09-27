@@ -164,24 +164,15 @@ describe('the existing certification waits only for its engine maintenance bound
     const tournamentCount = formats?.match(/'[^']+'/g)?.length ?? 0;
     expect(tournamentCount).toBeGreaterThan(0);
     expect(formats).toContain("'mtt'");
-    const mttMs = Number(
-      suite.match(/const MTT_HUD_CASE_TIMEOUT_MS = ([\d_]+);/)?.[1]?.replaceAll('_', '')
-    );
-    // The MTT case carries its natural HUD witness's budget (two levels of up
-    // to seven minutes plus the reserve); the other tournament cases extend
-    // their existing 300s timeout by 90s; the cash case retains 300s. Keep
-    // five further minutes for setup/cleanup, independent of the
-    // prerequisite; a matching job timeout cannot pass.
-    expect(mttMs).toBeGreaterThanOrEqual(2 * 7 * 60_000 + 60_000);
-    expect(suite).toContain(
-      "(gameFormat === 'mtt' ? MTT_HUD_CASE_TIMEOUT_MS : testInfo.timeout) + CAUSAL_HAND_TIMEOUT_MS"
-    );
+    // All tournament cases retain 300s + 90s. The MTT observes its one
+    // future boundary only AFTER recovery, inside the remaining case budget.
+    // Keep the current job envelope and at least five further minutes for
+    // setup/cleanup, independent of the engine readiness prerequisite.
+    expect(suite).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    expect(caseMs + handMs).toBe(390_000);
+    expect(suite).not.toContain('MTT_HUD_CASE_TIMEOUT_MS');
     expect(
-      jobMs -
-        GAMEPLAY_WAIT_MS -
-        (mttMs + handMs) -
-        (tournamentCount - 1) * (caseMs + handMs) -
-        caseMs
+      jobMs - GAMEPLAY_WAIT_MS - tournamentCount * (caseMs + handMs) - caseMs
     ).toBeGreaterThanOrEqual(5 * 60_000);
   });
 

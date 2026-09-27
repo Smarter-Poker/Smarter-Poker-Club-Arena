@@ -164,6 +164,9 @@ export function classifyChangedPaths(paths) {
   const bbjFixture = matches(
     /^(scripts\/ci\/(?:test-bbj-(?:bank-replay|audit-reads|cumulative-reads)\.py$|migration-concurrent-preamble\.mjs$|probes\/bbj-bank-replay\/|fixtures\/bbj-audit-reads\/)|scripts\/ops\/build-bbj-(?:audit-indexes|cumulative-bank-indexes)-concurrently\.sql$|tests\/bbj-(?:audit-reads|cumulative-reads)\.test\.ts$)/
   );
+  const chipStoreCoverage = matches(
+    /^(scripts\/ci\/(?:test-chip-store-coverage\.py$|fixtures\/chip-store-coverage\/)|tests\/chip-store-coverage\.test\.ts$)/
+  );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   //
@@ -240,6 +243,7 @@ export function classifyChangedPaths(paths) {
     server:
       broad ||
       bbjFixture ||
+      chipStoreCoverage ||
       diamondGames ||
       diamondSqlAcceptance ||
       phase4Changed ||
@@ -279,6 +283,7 @@ export function classifyChangedPaths(paths) {
       matches(certificationPlayerIndex),
     tests:
       bbjFixture ||
+      chipStoreCoverage ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||

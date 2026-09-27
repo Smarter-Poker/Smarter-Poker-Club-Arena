@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169529,
-      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      "bytes": 169700,
+      "sha256": "ff347050882fefa18e7011baa1bfbbbb806d412b32759cb46ea44547c13ab410"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24631,
-      "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      "bytes": 24865,
+      "sha256": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -477,5 +477,34 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backedPayoutScanIntegration": {
+    "on": "2026-09-27",
+    "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding.",
+    "updatedPins": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "from": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "to": {
+          "bytes": 24865,
+          "sha256": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785"
+        }
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "from": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "to": {
+          "bytes": 169700,
+          "sha256": "ff347050882fefa18e7011baa1bfbbbb806d412b32759cb46ea44547c13ab410"
+        }
+      }
+    ],
+    "status": "Exact source binding; hosted financial qualification remains required."
   }
 }

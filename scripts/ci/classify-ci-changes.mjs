@@ -53,6 +53,8 @@ const cashEvidence =
 // The discovery privacy fixture must execute even when only its inputs change.
 const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
+const backedPayoutScan =
+  /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 
@@ -237,6 +239,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(certificationRetirement),
     tests:
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
@@ -270,6 +273,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(certificationRetirement),
     phase4: phase4Changed,
     fixture: matches(fixture),

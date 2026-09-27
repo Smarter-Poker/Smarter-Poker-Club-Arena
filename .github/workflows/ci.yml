@@ -1384,6 +1384,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
 
+      - name: Backed payout discovery preserves every conservation term
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-backed-payout-scan-postgres.py
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py

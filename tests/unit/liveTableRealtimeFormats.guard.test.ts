@@ -107,7 +107,13 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(tournamentHelper).toContain('did not recover exactly one multiplexed transport');
     expect(tournamentHelper).toContain('const observationDeadline = Date.now() + testInfo.timeout');
     expect(tournamentHelper.match(/remainingObservationMs\(observationDeadline\)/g)).toHaveLength(
-      2
+      4
+    );
+    // Both existing causal hand waits plus clock qualification and the natural
+    // two-context HUD witness consume this same deadline, never fresh budgets.
+    expect(tournamentHelper).toContain('waitForSharedNaturalLevel(');
+    expect(tournamentHelper).toContain(
+      'reader.clocks([id], remainingObservationMs(observationDeadline))'
     );
     expect(spec).toContain('const MAX_GAMEPLAY_SILENCE_MS = 45_000');
     expect(spec).toContain('test.setTimeout(300_000)');

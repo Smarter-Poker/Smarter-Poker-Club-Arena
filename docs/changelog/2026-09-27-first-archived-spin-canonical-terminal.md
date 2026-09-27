@@ -88,3 +88,13 @@ inventory and byte checks remain unchanged. A plain-Python subprocess regression
 reproduced four added cache files before the correction and passes afterward.
 All 146 wrapper controls pass. The original failed artifact remains retained;
 fresh native and hosted qualification are required before settlement.
+
+# Protected-main integration
+
+Main 6e32e04f2 adds the settlement-attribution qualifier to accounting shard 4
+and its input classifier while this change adds archived Spin qualification.
+The integration preserves both routes and both complete binding audit histories.
+Four shared metadata files now pin the exact combined classifier, workflow and
+nested bindings. No financial fixture, installed migration or oracle changed.
+The prior 8690 hosted nine-image evidence remains retained; the merged candidate
+must pass its own required checks before protected delivery.

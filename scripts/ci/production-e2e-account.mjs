@@ -12,6 +12,7 @@ const LEGACY_DIRECT_PREFIX = 'club-create-cert-';
 const LEGACY_DIRECT_SUFFIX = '@smarter-poker.invalid';
 const FREE_AVATAR = '/avatars/table/free_samurai@2x.webp';
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
@@ -206,6 +207,7 @@ export async function cleanupProductionE2EAccount({
 export async function prepareProductionE2EStaffMembership({
   environment = process.env,
   fetchImpl = fetch,
+  requireStandalone = false,
 } = {}) {
   const path = fixturePath(environment);
   const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
@@ -217,6 +219,23 @@ export async function prepareProductionE2EStaffMembership({
   const anonKey = environment.SUPABASE_ANON_KEY || environment.VITE_SUPABASE_ANON_KEY || '';
   if (!anonKey) throw new Error('SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY is required.');
   const clubId = environment.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+  if (requireStandalone) {
+    const clubs = await serviceRequest(
+      configuration,
+      `/rest/v1/clubs?id=eq.${encodeURIComponent(clubId)}&select=id,union_id,status`,
+      {},
+      fetchImpl
+    );
+    if (
+      !Array.isArray(clubs) ||
+      clubs.length !== 1 ||
+      clubs[0].id !== clubId ||
+      clubs[0].union_id !== null ||
+      clubs[0].status !== 'active'
+    ) {
+      throw new Error('Template certification requires one active standalone club.');
+    }
+  }
   const query = new URLSearchParams({
     select: 'club_id,user_id,role,status,chip_balance',
     club_id: `eq.${clubId}`,
@@ -299,6 +318,23 @@ export async function prepareProductionE2EStaffMembership({
   }
   console.log('[production-e2e-account] isolated zero-balance staff membership verified.');
   return row;
+}
+
+/** Reuse the same reserved, zero-balance public-join fixture in a standalone
+ * club. A union member club correctly refuses this creation route regardless
+ * of its local admin membership; never weaken that gate or mint a test club. */
+export function prepareProductionE2ETemplateMembership({
+  environment = process.env,
+  fetchImpl = fetch,
+} = {}) {
+  return prepareProductionE2EStaffMembership({
+    environment: {
+      ...environment,
+      E2E_CLUB_ID: environment.E2E_TEMPLATE_CLUB_ID || DEFAULT_E2E_TEMPLATE_CLUB_ID,
+    },
+    fetchImpl,
+    requireStandalone: true,
+  });
 }
 
 export async function cleanupStaleProductionE2EAccounts({
@@ -468,10 +504,11 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
+  if (command === 'prepare-template-staff') return prepareProductionE2ETemplateMembership();
   if (command === 'retire-create-clubs') return retireProductionCreateClubFixtures();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
   throw new Error(
-    'Usage: production-e2e-account.mjs <create|prepare-staff|retire-create-clubs|cleanup>'
+    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-template-staff|retire-create-clubs|cleanup>'
   );
 }
 

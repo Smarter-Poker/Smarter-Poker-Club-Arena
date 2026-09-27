@@ -1392,6 +1392,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-scoped-audit-reads.py
 
+      - name: Settlement attribution retains complete financial coverage
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-settlement-attribution-postgres.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

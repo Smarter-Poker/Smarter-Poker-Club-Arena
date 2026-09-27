@@ -8,6 +8,8 @@ import {
   cleanupStaleProductionE2EAccounts,
   createProductionE2EAccount,
   prepareProductionE2EStaffMembership,
+  prepareProductionE2ETemplateMembership,
+  DEFAULT_E2E_TEMPLATE_CLUB_ID,
   retireProductionCreateClubFixtures,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
@@ -313,6 +315,77 @@ describe('post-deploy production account', () => {
       role: 'admin',
       status: 'active',
     });
+  });
+
+  it.each([
+    [],
+    [{ id: DEFAULT_E2E_TEMPLATE_CLUB_ID, union_id: 'union', status: 'active' }],
+    [{ id: DEFAULT_E2E_TEMPLATE_CLUB_ID, union_id: null, status: 'closed' }],
+    [{ id: 'wrong', union_id: null, status: 'active' }],
+    null,
+  ])('refuses invalid standalone scope before any membership write: %j', async (rows) => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-template-invalid-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-template@example.invalid',
+        password: 'unused',
+      })
+    );
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(rows));
+    await expect(
+      prepareProductionE2ETemplateMembership({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('requires one active standalone club');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      `/clubs?id=eq.${DEFAULT_E2E_TEMPLATE_CLUB_ID}`
+    );
+  });
+
+  it('gives only the reserved zero-balance account standalone template access through public join', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-template-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-template@example.invalid',
+        password: 'unused',
+      })
+    );
+    let memberReads = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/clubs?'))
+        return Response.json([
+          { id: DEFAULT_E2E_TEMPLATE_CLUB_ID, union_id: null, status: 'active' },
+        ]);
+      if (url.includes('/auth/v1/token?')) return Response.json({ access_token: 'test-token' });
+      if (url.includes('/rpc/fn_join_club')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ p_club_id: DEFAULT_E2E_TEMPLATE_CLUB_ID });
+        return Response.json({ success: true });
+      }
+      if (url.includes('/club_members?')) {
+        expect(url).toContain(`club_id=eq.${DEFAULT_E2E_TEMPLATE_CLUB_ID}`);
+        if (init?.method !== 'PATCH' && ++memberReads === 1) return Response.json([]);
+        return Response.json([
+          {
+            club_id: DEFAULT_E2E_TEMPLATE_CLUB_ID,
+            user_id: USER_ID,
+            role: init?.method === 'PATCH' ? 'admin' : 'player',
+            status: 'active',
+            chip_balance: 0,
+          },
+        ]);
+      }
+      throw new Error('Unexpected request ' + url);
+    });
+    await expect(
+      prepareProductionE2ETemplateMembership({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toMatchObject({ club_id: DEFAULT_E2E_TEMPLATE_CLUB_ID, chip_balance: 0 });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1);
   });
 
   it('refuses to overwrite an existing reserved membership', async () => {

@@ -111,6 +111,7 @@
  *         · 2 script error
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { partitionMigrations, reportRecorded } from './recording-only.mjs';
@@ -158,21 +159,19 @@ function changedMigrations(base) {
       process.exit(2);
     }
   }
-  return (
-    out
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
-      // A RECORDING IS SORTED OUT IN main(), NOT HERE (2026-09-23, issue #5008).
-      //
-      // This used to drop any file whose first line read `-- BACKFILLED`, with
-      // no check that it recorded anything, so a comment disarmed all four
-      // rules on any file that carried it. scripts/ci/recording-only.mjs
-      // replaces that with a claim that can be checked - a manifest row whose
-      // md5 must equal both the file on disk and what production's
-      // schema_migrations holds for that version - and it has three outcomes,
-      // so "could not tell" is judged strictly instead of skipped.
-  );
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
+  // A RECORDING IS SORTED OUT IN main(), NOT HERE (2026-09-23, issue #5008).
+  //
+  // This used to drop any file whose first line read `-- BACKFILLED`, with
+  // no check that it recorded anything, so a comment disarmed all four
+  // rules on any file that carried it. scripts/ci/recording-only.mjs
+  // replaces that with a claim that can be checked - a manifest row whose
+  // md5 must equal both the file on disk and what production's
+  // schema_migrations holds for that version - and it has three outcomes,
+  // so "could not tell" is judged strictly instead of skipped.
 }
 
 /** Read comments only in SQL, never inside quoted data. A replacement payload
@@ -609,8 +608,17 @@ export function anonReadableDefiners(sql, allowlist = new Set(), grantSql = sql)
  * A parameterless definer returning a SCALAR is untouched (a count, a flag, a
  * name-availability check), and so is any function that takes an argument -
  * both are the ordinary shapes of a legitimate logged-in read.
+ * A TABLE declaration can encode one fixed row of aggregate numbers, too.
+ * Such a reviewed authenticated aggregate is pinned to its exact declaration
+ * and body; it remains refused if PUBLIC or anon can execute it. The separate
+ * classification never exempts writer, anonymous-reader or clone rules.
  */
-export function unscopedRosterDefiners(sql, allowlist = new Set(), grantSql = sql) {
+export function unscopedRosterDefiners(
+  sql,
+  allowlist = new Set(),
+  grantSql = sql,
+  authenticatedAggregates = new Map()
+) {
   const clean = stripComments(sql);
   const grants = grantSql === sql ? clean : stripComments(grantSql);
   const out = [];
@@ -633,7 +641,36 @@ export function unscopedRosterDefiners(sql, allowlist = new Set(), grantSql = sq
     // question and is not a roster.
     if (!/RETURNS\s+(?:SETOF\b|TABLE\s*\()/i.test(fn.header)) continue;
 
+    // TABLE can also encode one fixed row of aggregate numbers. A reviewed
+    // classification is exact-source evidence, never a name-only exception.
+    // It affects only this roster rule and never permits anonymous execution.
+    const aggregate = authenticatedAggregates.get(fn.name);
+    const declarationSha256 = createHash('sha256')
+      .update(fn.header + '\0' + fn.body)
+      .digest('hex');
+    if (
+      !anonReachable(grants, fn.name) &&
+      aggregate?.declarationSha256 === declarationSha256 &&
+      typeof aggregate.reason === 'string' &&
+      aggregate.reason.length > 120
+    )
+      continue;
+
     out.push(fn.name);
+  }
+  // A later grant-only migration must not open a reviewed aggregate simply
+  // because it does not repeat CREATE FUNCTION. These entries start from the
+  // reviewed anonymous denial; ordered explicit grants can only change that.
+  const declaredNames = new Set(declaredFunctions(clean).map((fn) => fn.name));
+  for (const name of authenticatedAggregates.keys()) {
+    if (declaredNames.has(name)) continue;
+    const held = { public: false, anon: false };
+    for (const statement of grantLedger(grants).get(name.toLowerCase()) ?? []) {
+      for (const role of statement.roles) {
+        if (role in held) held[role] = statement.verb === 'GRANT';
+      }
+    }
+    if (held.public || held.anon) out.push(name);
   }
   return out;
 }
@@ -743,6 +780,7 @@ function main() {
 
   const allowlist = new Set(loadAllowlist().keys());
   const anonAllowlist = new Set(loadAllowlist('anonPublicSurface').keys());
+  const authenticatedAggregates = loadAllowlist('authenticatedAggregates');
   const offenders = [];
   const anonOffenders = [];
   const cloneOffenders = [];
@@ -788,7 +826,12 @@ function main() {
       ...anonOffenders.map((o) => o.name),
       ...cloneOffenders.map((o) => o.name),
     ]);
-    for (const name of unscopedRosterDefiners(sql, anonAllowlist, branchSql)) {
+    for (const name of unscopedRosterDefiners(
+      sql,
+      anonAllowlist,
+      branchSql,
+      authenticatedAggregates
+    )) {
       if (!named.has(name)) rosterOffenders.push({ name, file });
     }
   }
@@ -983,7 +1026,7 @@ function main() {
     `[check-definer-authorization] OK — ${inspected} SECURITY DEFINER function(s) declared across ` +
       `${files.length} migration(s); every writer a browser can reach consults the request, ` +
       'nothing new answers a caller with no account, every clone names its grants, ' +
-      'and no unscoped set-returning definer is browser-reachable.'
+      'and no unreviewed unscoped roster is browser-reachable.'
   );
 }
 

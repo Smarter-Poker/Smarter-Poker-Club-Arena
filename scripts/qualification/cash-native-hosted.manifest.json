@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169529,
-      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      "bytes": 169705,
+      "sha256": "a041aacebb76da830085d19425a14bb838686807555422827d15841f46fdd1c8"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 25145,
-      "sha256": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+      "bytes": 25407,
+      "sha256": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -517,6 +517,52 @@
         "after": {
           "bytes": 25145,
           "sha256": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+        }
+      }
+    ]
+  },
+  "settlementAttributionIntegration20260927": {
+    "reason": "Register the exact settlement-attribution native fixture and every maintained input in existing required accounting shard4. Existing runners, financial assertions, historical receipts and other pins remain unchanged. Cascade only the current nested binding bytes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "current": {
+          "bytes": 169705,
+          "sha256": "a041aacebb76da830085d19425a14bb838686807555422827d15841f46fdd1c8"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "current": {
+          "bytes": 24893,
+          "sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2"
+        }
+      }
+    ]
+  },
+  "productionAlertsSettlementIntegration20260927": {
+    "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 25145,
+          "sha256": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+        },
+        "current": {
+          "bytes": 25407,
+          "sha256": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
         }
       }
     ]

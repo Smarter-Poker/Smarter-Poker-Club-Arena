@@ -373,6 +373,16 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
         run: node scripts/ci/production-e2e-account.mjs prepare-staff
 
+      # The standalone template builder requires independent club authority.
+      # Reuse the reserved zero-balance identity; save no template or game.
+      - name: Prepare isolated standalone template access
+        if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-template-staff
+
       - name: Certify the live cashier database contract
         if: always() && steps.live.outputs.ready == 'true'
         env:
@@ -654,7 +664,9 @@ jobs:
     if: needs.publication-gate.outputs.should_run == 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 12m prerequisite + 3 x 6.5m tournament cases + 5m cash case leaves
+    # 8.5m for checkout/setup, fixture lifecycle, provenance and reports.
+    timeout-minutes: 45
     permissions:
       contents: read
     concurrency:

@@ -1,0 +1,8 @@
+{
+  "migration": "supabase/migrations/20260927171918_backed_payout_discovery_avoids_its_unused_wallet_receipt_spool.sql",
+  "beforeDefinitionMD5": "48e76094473a68f00d75da7343834c97",
+  "afterDefinitionMD5": "997e5e7b816c12f7a17c30454806da0b",
+  "scalarDefinitionMD5": "46647067aa049dcb9bda93fa0a1a35b3",
+  "oldToken": "wallet_receipts AS MATERIALIZED (",
+  "newToken": "wallet_receipts AS NOT MATERIALIZED ("
+}

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169529,
-      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      "bytes": 169704,
+      "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24631,
-      "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      "bytes": 24824,
+      "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -477,5 +477,28 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "bbjAuditReadQualification20260927": {
+    "reason": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169529,
+        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 24631,
+        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      }
+    },
+    "updated": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169704,
+        "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 24824,
+        "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
+      }
+    }
   }
 }

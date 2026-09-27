@@ -1392,6 +1392,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-scoped-audit-reads.py
 
+      - name: BBJ meter preserves its opening-balance proof through scoped ledger reads
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-bbj-audit-reads.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

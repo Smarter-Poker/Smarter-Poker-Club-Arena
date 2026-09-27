@@ -171,7 +171,9 @@ BEGIN
 
     -- The busts the sweep has not recorded: playing at 0 chips, holding no
     -- live seat of this event, ranked by the latest knockout generation.
-    DELETE FROM pg_temp.mttf_pending_busts;
+    -- Every row of the scratch table belongs to the previous event of this
+    -- loop; the predicate is written out for the unqualified-write check.
+    DELETE FROM pg_temp.mttf_pending_busts WHERE user_id IS NOT NULL;
     INSERT INTO pg_temp.mttf_pending_busts (user_id, hand_number, stack_before)
     SELECT tp.user_id, k.hand_number, k.stack_before
       FROM public.tournament_players tp

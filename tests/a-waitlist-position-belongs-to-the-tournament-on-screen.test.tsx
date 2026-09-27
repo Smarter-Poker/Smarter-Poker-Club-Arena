@@ -27,8 +27,8 @@
  * change, so nothing here passes by accident on the unfixed effect.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { render, screen, act, fireEvent } from '@testing-library/react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import XMTTPage from '../src/pages/XMTTPage';
 
 const POLL_MS = 30_000;
@@ -38,7 +38,10 @@ const lobby = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>>,
   /** userId -> tournamentId -> position, or null for "not on this waitlist". */
   positions: {} as Record<string, number | null>,
+  user: { id: 'player-1' },
   getPosition: vi.fn(),
+  getPositions: vi.fn(),
+  readLobby: vi.fn(),
 }));
 
 const tournament = (id: string, name: string) => ({
@@ -79,12 +82,18 @@ vi.mock('../src/lib/supabase', () => {
   };
 });
 
+vi.mock('../src/services/xmttLobbyReads', () => ({
+  XMTT_PAGE_SIZE: 50,
+  readXmttLobby: (...args: unknown[]) => lobby.readLobby(...args),
+  readXmttWaitlistPositions: (...args: unknown[]) => lobby.getPositions(...args),
+}));
+
 vi.mock('../src/hooks/useAuthUser', () => ({
-  useAuthUser: () => ({ user: { id: 'player-1' }, loading: false }),
+  useAuthUser: () => ({ user: lobby.user, loading: false }),
 }));
 
 vi.mock('../src/utils/resolvePageClubId', () => ({
-  resolvePageClubId: vi.fn(async () => 'club-uuid'),
+  resolvePageClubId: vi.fn(async (options) => options.routeClubId || 'club-uuid'),
   hasUnresolvableClubParam: vi.fn(() => false),
   pickPreferredClubId: vi.fn(() => 'club-uuid'),
 }));
@@ -148,13 +157,37 @@ const settle = async (ms = 0) => {
 /** One turn of the page's own 30-second lobby poll. */
 const poll = () => settle(POLL_MS);
 
-const positionsAsked = () => lobby.getPosition.mock.calls.map((c) => c[0] as string);
+const positionsAsked = () => lobby.getPositions.mock.calls.flatMap((c) => c[0] as string[]);
 
 beforeEach(() => {
   vi.useFakeTimers();
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  lobby.user = { id: 'player-1' };
   lobby.rows = [];
   lobby.positions = {};
   lobby.getPosition.mockReset();
+  lobby.getPositions.mockReset();
+  lobby.readLobby.mockReset();
+  lobby.readLobby.mockImplementation(async (_club, filter, limit) => {
+    const rows =
+      filter === 'all'
+        ? lobby.rows
+        : lobby.rows.filter((row) => String(row.status).toLowerCase() === filter);
+    return {
+      rows: rows.slice(0, limit),
+      total: rows.length,
+      counts: Object.fromEntries(
+        ['registering', 'running', 'completed'].map((status) => [
+          status,
+          lobby.rows.filter((row) => String(row.status).toLowerCase() === status).length,
+        ])
+      ),
+    };
+  });
+  lobby.getPositions.mockImplementation(async (ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, lobby.positions[id] ?? null]))
+  );
   lobby.getPosition.mockImplementation(async (tournamentId: string) => {
     const position = lobby.positions[tournamentId];
     return position == null ? null : { position, total: 40 };
@@ -165,9 +198,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+function NavigateClub() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate('/xmtt?club=club-b')}>Other Club</button>;
+}
 const renderLobby = () =>
   render(
     <MemoryRouter initialEntries={['/xmtt']}>
+      <NavigateClub />
       <XMTTPage />
     </MemoryRouter>
   );
@@ -239,7 +277,7 @@ describe('a waitlist position belongs to the tournament on screen', () => {
 
     renderLobby();
     await settle();
-    const afterFirstLoad = lobby.getPosition.mock.calls.length;
+    const afterFirstLoad = lobby.getPositions.mock.calls.length;
     expect(afterFirstLoad).toBe(1);
 
     // A fresh array of the same events. Keying on identity rather than on the
@@ -247,7 +285,207 @@ describe('a waitlist position belongs to the tournament on screen', () => {
     lobby.rows = [tournament('t-sunday', 'Sunday Major')];
     await poll();
 
-    expect(lobby.getPosition.mock.calls.length).toBe(afterFirstLoad);
+    expect(lobby.getPositions.mock.calls.length).toBe(afterFirstLoad);
     expect(screen.getByText('Position #3')).toBeInTheDocument();
+  });
+  it('mounts a bounded first page and keeps all one thousand events accessible', async () => {
+    lobby.rows = Array.from({ length: 1000 }, (_, i) => tournament(`t-${i}`, `Event ${i}`));
+    renderLobby();
+    await settle();
+    expect(screen.getAllByText(/^Event /)).toHaveLength(50);
+    expect(screen.getByText('1,000')).toBeInTheDocument();
+    expect(positionsAsked()).toHaveLength(50);
+    expect(lobby.getPositions).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Load More' }));
+    await settle();
+    expect(screen.getAllByText(/^Event /)).toHaveLength(100);
+    expect(screen.getByText('Event 99')).toBeInTheDocument();
+    expect(screen.queryByText('Event 100')).not.toBeInTheDocument();
+  });
+
+  it('resets the displayed page on a filter change while keeping the server count', async () => {
+    lobby.rows = Array.from({ length: 160 }, (_, i) => ({
+      ...tournament(`t-${i}`, `Event ${i}`),
+      status: i < 80 ? 'registering' : 'completed',
+    }));
+    renderLobby();
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Load More' }));
+    await settle();
+    expect(screen.getAllByText(/^Event /)).toHaveLength(100);
+    fireEvent.click(screen.getByRole('button', { name: 'Completed (80)' }));
+    await settle();
+    expect(screen.getAllByText(/^Event /)).toHaveLength(50);
+    expect(screen.getByText('Event 80')).toBeInTheDocument();
+    expect(screen.queryByText('Event 0')).not.toBeInTheDocument();
+    expect(screen.getByText('80')).toBeInTheDocument();
+  });
+
+  it('retains a known legacy exit and reports a failed batch as unknown', async () => {
+    lobby.rows = [tournament('t-old', 'Old Event')];
+    lobby.positions = { 't-old': 4 };
+    renderLobby();
+    await settle();
+    expect(screen.getByText('Position #4')).toBeInTheDocument();
+    lobby.getPositions.mockRejectedValueOnce(new Error('offline'));
+    lobby.rows = [tournament('t-old', 'Old Event'), tournament('t-new', 'New Event')];
+    await poll();
+    expect(screen.getByText('Position #4')).toBeInTheDocument();
+    expect(screen.getByText(/Waitlist Status Unavailable/)).toBeInTheDocument();
+  });
+
+  it('ignores a delayed position answer for a replaced page', async () => {
+    let finish!: (value: Record<string, number>) => void;
+    lobby.rows = [tournament('t-old', 'Old Event')];
+    lobby.getPositions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    renderLobby();
+    await settle();
+    lobby.rows = [tournament('t-new', 'New Event')];
+    lobby.positions = { 't-new': 7 };
+    await poll();
+    await act(async () => {
+      finish({ 't-old': 3 });
+    });
+    expect(screen.getByText('Position #7')).toBeInTheDocument();
+    expect(screen.queryByText('Position #3')).not.toBeInTheDocument();
+  });
+  it('discards a prior club response after routed navigation', async () => {
+    let finish!: (value: unknown) => void;
+    lobby.readLobby.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const view = renderLobby();
+    await settle();
+    lobby.rows = [tournament('t-new', 'New Club Event')];
+    fireEvent.click(screen.getByRole('button', { name: 'Other Club' }));
+    await settle();
+    expect(screen.getByText('New Club Event')).toBeInTheDocument();
+    await act(async () =>
+      finish({
+        rows: [tournament('t-old', 'Old Club Event')],
+        total: 1,
+        counts: { registering: 1, running: 0, completed: 0 },
+      })
+    );
+    expect(screen.queryByText('Old Club Event')).not.toBeInTheDocument();
+    expect(screen.getByText('New Club Event')).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it('never carries a prior account position into the next account', async () => {
+    let finish!: (value: Record<string, number>) => void;
+    lobby.rows = [tournament('t-one', 'Shared Event')];
+    lobby.getPositions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const view = renderLobby();
+    await settle();
+    lobby.user = { id: 'player-2' };
+    lobby.positions = {};
+    view.rerender(
+      <MemoryRouter>
+        <NavigateClub />
+        <XMTTPage />
+      </MemoryRouter>
+    );
+    await settle();
+    await act(async () => finish({ 't-one': 9 }));
+    expect(screen.queryByText('Position #9')).not.toBeInTheDocument();
+    expect(lobby.getPositions.mock.calls.at(-1)?.[1]).toBe('player-2');
+  });
+
+  it('does not accept a waitlist answer after its abort deadline', async () => {
+    let finish!: (value: Record<string, number>) => void;
+    lobby.rows = [tournament('t-one', 'Shared Event')];
+    lobby.getPositions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    renderLobby();
+    await settle();
+    const signal = lobby.getPositions.mock.calls[0][2] as AbortSignal;
+    await settle(15_000);
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish({ 't-one': 9 }));
+    expect(screen.queryByText('Position #9')).not.toBeInTheDocument();
+    expect(screen.getByText(/Waitlist Status Unavailable/)).toBeInTheDocument();
+    lobby.positions = { 't-one': 4 };
+    fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+    await settle();
+    expect(screen.getByText('Position #4')).toBeInTheDocument();
+  });
+
+  it('discards a delayed prior filter and keeps the new filter loading until its read', async () => {
+    let finishOld!: (value: unknown) => void;
+    let finishNew!: (value: unknown) => void;
+    lobby.readLobby.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        })
+    );
+    const view = renderLobby();
+    await settle();
+    // Establish a first page, then leave its replacement observation unresolved.
+    await act(async () =>
+      finishOld({
+        rows: [tournament('t-one', 'First Event')],
+        total: 1,
+        counts: { registering: 1, running: 0, completed: 0 },
+      })
+    );
+    lobby.readLobby.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        })
+    );
+    await poll();
+    lobby.readLobby.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishNew = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Completed (0)' }));
+    await settle();
+    expect(screen.queryByText('First Event')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Tournaments')).not.toBeInTheDocument();
+    await act(async () =>
+      finishOld({
+        rows: [tournament('t-old', 'Late Event')],
+        total: 1,
+        counts: { registering: 1, running: 0, completed: 0 },
+      })
+    );
+    expect(screen.queryByText('Late Event')).not.toBeInTheDocument();
+    await act(async () =>
+      finishNew({ rows: [], total: 0, counts: { registering: 1, running: 0, completed: 0 } })
+    );
+    expect(screen.getByText('No Tournaments')).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it('retains the loaded list when a later observation fails', async () => {
+    lobby.rows = [tournament('t-old', 'Retained Event')];
+    renderLobby();
+    await settle();
+    lobby.readLobby.mockRejectedValueOnce(new Error('denied'));
+    await poll();
+    expect(screen.getByText('Retained Event')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Tournament List Unavailable');
   });
 });

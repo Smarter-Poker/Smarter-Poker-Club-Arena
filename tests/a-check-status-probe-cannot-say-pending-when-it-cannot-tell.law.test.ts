@@ -121,9 +121,9 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     );
 
     expect(problems).toEqual([
-      { context: 'Audit', state: 'not_successful', conclusions: ['neutral'] },
+      { context: 'Audit', state: 'not_run', conclusions: ['neutral'] },
       { context: 'Deploy', state: 'missing', conclusions: [] },
-      { context: 'Test', state: 'not_successful', conclusions: ['skipped'] },
+      { context: 'Test', state: 'not_run', conclusions: ['skipped'] },
     ]);
     expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
       'RED'
@@ -134,7 +134,7 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
         activeRuns: [{ name: 'Optional suite' }],
         requiredProblems: problems,
       })
-    ).toBe('RED');
+    ).toBe('RUNNING'); // A genuinely active workflow is still visible; never green.
     expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: null })).toBe(
       'UNKNOWN'
     );

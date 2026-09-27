@@ -831,7 +831,7 @@ BEGIN
        AND md5(p.prosrc) = '1d8fe29089e20bb6dedd54fe00b46818'
        AND pg_get_userbyid(p.proowner) = 'postgres'
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
-       AND p.proconfig::text = '{"search_path=pg_catalog, public, smarter_private","statement_timeout=20s","lock_timeout=5s"}'
+       AND p.proconfig::text = '{"search_path=pg_catalog, public, smarter_private",statement_timeout=20s,lock_timeout=5s}'
        AND p.prosecdef AND p.provolatile = 'v') THEN
     RAISE EXCEPTION 'POSTIMAGE: the void door is not the reviewed definition with its owner, grants and settings';
   END IF;

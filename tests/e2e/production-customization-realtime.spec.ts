@@ -10,6 +10,7 @@ import {
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { observeAccountRealtime } from './support/accountRealtimeObservation';
+import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
@@ -85,7 +86,7 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 };
 
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
-const PRESENCE_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+const PRESENCE_TOPIC_PREFIX = 'cert-presence:';
 const accountObservations = new WeakMap<Page, ReturnType<typeof observeAccountRealtime>>();
 // Record only the expected cosmetic signal, never session/auth websocket frames.
 const appearanceSignalReceived = new WeakMap<Page, boolean>();
@@ -269,7 +270,7 @@ async function signIn(
   account: TemporaryCustomizationAccount
 ) {
   const page = await context.newPage();
-  accountObservations.set(page, observeAccountRealtime(page, account.id, PRESENCE_UNION_ID));
+  accountObservations.set(page, observeAccountRealtime(page, account.id, ''));
   observeAppearanceSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
@@ -450,6 +451,8 @@ test.describe('production Table Studio realtime contract', () => {
     let otherOriginal: SavedStudioState | undefined;
     let journeyFailure: unknown;
     const teardownFailures: unknown[] = [];
+    const presenceTransports: Array<Awaited<ReturnType<typeof createReservedPresenceTransport>>> =
+      [];
 
     try {
       // Each run owns both players. Post-deploy workflows intentionally do not
@@ -680,76 +683,64 @@ test.describe('production Table Studio realtime contract', () => {
         '[account-realtime] private metadata and preferences reached both devices, Auto followed each device, and the other player stayed isolated'
       );
 
-      // Use the existing public union, not a newly created club or a funded
-      // membership. Refuse before navigation if it is absent: this legacy page
-      // otherwise attempts an unrelated Midway provisioning path.
-      const publicUnion = await primaryAccount.client
-        .from('unions')
-        .select('id,is_public')
-        .eq('id', PRESENCE_UNION_ID)
-        .maybeSingle();
-      if (publicUnion.error) throw publicUnion.error;
-      expect(publicUnion.data).toEqual({ id: PRESENCE_UNION_ID, is_public: true });
-      const primaryObserved = accountObservations.get(primaryPage)!;
-      const otherObserved = accountObservations.get(otherPage)!;
-      const onlineCount = primaryPage
-        .getByText('Online Now', { exact: true })
-        .locator('..')
-        .locator('span')
-        .first();
-      const openUnion = (page: Page) =>
-        page.goto(
-          new URL(`unions/${PRESENCE_UNION_ID}`, baseURL.endsWith('/') ? baseURL : `${baseURL}/`)
-            .href,
-          { waitUntil: 'domcontentloaded', timeout: PRODUCTION_RESPONSE_TIMEOUT }
-        );
-      await openUnion(primaryPage);
-      await expect
-        .poll(() => primaryObserved.peers.has(primaryUserId), {
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        })
-        .toBe(true);
-      await openUnion(otherPage);
-      await expect
-        .poll(() => primaryObserved.peers.has(otherAccount!.id), {
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        })
-        .toBe(true);
-      await expect
-        .poll(
-          async () =>
-            (await onlineCount.innerText()) === primaryObserved.peers.size.toLocaleString(),
-          { timeout: PRODUCTION_RESPONSE_TIMEOUT }
-        )
-        .toBe(true);
-      const quietTracks = primaryObserved.presenceTracks;
-      const quietHeartbeats = primaryObserved.heartbeats;
-      expect(quietTracks).toBeGreaterThan(0);
-      // This interval IS the assertion: the removed producer fired every 60s.
-      // SDK heartbeats must continue while the unchanged Presence stays quiet.
-      await primaryPage.waitForTimeout(65_000);
-      expect(primaryObserved.presenceTracks).toBe(quietTracks);
-      expect(primaryObserved.heartbeats).toBeGreaterThan(quietHeartbeats);
-
-      await otherPage.goto(
-        new URL('profile', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href,
-        { waitUntil: 'domcontentloaded' }
+      // UnionDetailPage is owner-only even for a public union. Reserved players
+      // must not bypass that route or create/fund a union for certification.
+      // This is real SDK transport proof on a disposable topic, separate from
+      // the PresenceService unit contracts and the unavailable owner-page UI.
+      const presenceTopic = `${PRESENCE_TOPIC_PREFIX}${primaryUserId}`;
+      const primaryPresence = await createReservedPresenceTransport(
+        environment,
+        primaryAccount,
+        presenceTopic
       );
+      presenceTransports.push(primaryPresence);
+      const otherPresence = await createReservedPresenceTransport(
+        environment,
+        otherAccount,
+        presenceTopic
+      );
+      presenceTransports.push(otherPresence);
       await expect
-        .poll(() => otherObserved.presenceLeaves, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
-        .toBeGreaterThan(0);
-      await expect
-        .poll(() => primaryObserved.peers.has(otherAccount!.id), {
+        .poll(() => primaryPresence.state.peers, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
-        .toBe(false);
+        .toEqual([otherAccount.id, primaryUserId].sort());
       await expect
-        .poll(
-          async () =>
-            (await onlineCount.innerText()) === primaryObserved.peers.size.toLocaleString(),
-          { timeout: PRODUCTION_RESPONSE_TIMEOUT }
-        )
-        .toBe(true);
+        .poll(() => otherPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([otherAccount.id, primaryUserId].sort());
+      const quietTracks = primaryPresence.state.tracks;
+      const quietJoins = primaryPresence.state.joins;
+      const quietHeartbeats = primaryPresence.state.heartbeatReplies;
+      expect(quietTracks).toBeGreaterThan(0);
+      // The old application producer fired every60s. Actual service regression
+      // protection remains in PresenceService.test.ts; this interval separately
+      // proves the SDK transport stays live without republishing Presence.
+      await primaryPage.waitForTimeout(65_000);
+      expect(primaryPresence.state.tracks).toBe(quietTracks);
+      expect(primaryPresence.state.joins).toBe(quietJoins);
+      expect(primaryPresence.state.heartbeatReplies).toBeGreaterThan(quietHeartbeats);
+      expect(primaryPresence.state.errors).toEqual([]);
+      await otherPresence.leave();
+      await expect
+        .poll(() => primaryPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([primaryUserId]);
+      expect(primaryPresence.state.leaves).toBeGreaterThan(0);
+      await otherPresence.reconnect();
+      await expect
+        .poll(() => primaryPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([otherAccount.id, primaryUserId].sort());
+      expect(otherPresence.state.tracks).toBeGreaterThan(1);
+      expect(otherPresence.state.errors).toEqual([]);
+      console.log(
+        '[presence-transport] real authenticated SDK join, leave and fresh connection rejoin passed on a reserved topic; unchanged Presence stayed quiet for65s while heartbeat replies continued; owner-only union UI was not exercised'
+      );
+      const primaryObserved = accountObservations.get(primaryPage)!;
 
       // Read-only balance acceptance. No financial update is induced to make
       // a cross-device event appear. Prove the real own-row subscription and
@@ -781,9 +772,6 @@ test.describe('production Table Studio realtime contract', () => {
       expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
       await primaryDesktop.setOffline(false);
       await expect
-        .poll(() => primaryObserved.presenceTracks, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
-        .toBeGreaterThan(beforeReconnect.presenceTracks);
-      await expect
         .poll(() => primaryObserved.membershipSubscriptions, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
@@ -799,22 +787,6 @@ test.describe('production Table Studio realtime contract', () => {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
         .toBeGreaterThan(walletBefore._balancesAt);
-      await expect
-        .poll(() => primaryObserved.peers.has(primaryUserId), {
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        })
-        .toBe(true);
-      await expect
-        .poll(
-          async () =>
-            (await onlineCount.innerText()) === primaryObserved.peers.size.toLocaleString(),
-          { timeout: PRODUCTION_RESPONSE_TIMEOUT }
-        )
-        .toBe(true);
-      console.log(
-        '[presence-realtime] real joins, leave and rejoin reached the count; unchanged Presence stayed quiet for 65s while SDK heartbeats continued'
-      );
-
       const authorizedMembers = await primaryAccount.client
         .from('club_members')
         .select('chip_balance,promo_balance,locked_chips')
@@ -867,6 +839,7 @@ test.describe('production Table Studio realtime contract', () => {
       // Close all realtime sockets before hard-deleting the reserved Auth and
       // database rows. Cleanup must still run when the journey itself fails.
       const closed = await Promise.allSettled([
+        ...presenceTransports.map((transport) => transport.close()),
         primaryDesktop?.close(),
         primaryMobile?.close(),
         otherPlayer?.close(),

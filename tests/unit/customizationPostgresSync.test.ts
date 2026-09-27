@@ -113,18 +113,8 @@ describe('customization postgres sync', () => {
     });
   });
 
-  it('applies light/dark mode stored by SettingsPage on another device', () => {
-    binding('profiles', 'UPDATE').handler({
-      eventType: 'UPDATE',
-      old: {},
-      new: { id: 'user-1', settings: { theme: 'light' } },
-    });
-
-    expect(emit).toHaveBeenCalledWith('UI_THEME_CHANGED', {
-      key: 'theme',
-      value: 'light',
-      userId: 'user-1',
-    });
+  it('leaves unpublished profiles to the private account and appearance owners', () => {
+    expect(bindings.some((item) => item.config.table === 'profiles')).toBe(false);
   });
 
   it('does not put an unfiltered profiles subscription on every table socket', () => {

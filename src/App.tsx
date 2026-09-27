@@ -47,6 +47,7 @@ import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import { HeaderAppearanceSync } from './hooks/useHeaderAppearanceSync';
+import { ProfileAccountSync } from './hooks/useProfileAccountSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
 import {
   shouldShowClubFooterForVisitor,
@@ -587,6 +588,7 @@ function FullApp() {
         </Suspense>
         <GlobalBalanceSync />
         <HeaderAppearanceSync />
+        <ProfileAccountSync />
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
           should ever see the union skins." A union is a `clubs` row, so every

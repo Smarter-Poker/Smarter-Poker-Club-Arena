@@ -271,7 +271,7 @@ describe('ThemeSettingsModal hardening', () => {
       method.mockReset();
     }
     for (const method of Object.values(mocks.toast)) method.mockReset();
-    useSettingsStore.setState({ theme: 'dark' });
+    useSettingsStore.setState({ theme: 'dark', themePreference: 'dark' });
     useWalletStore.setState({
       diamonds: 1_000,
       loadDiamonds: mocks.loadDiamonds,
@@ -950,6 +950,33 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() => expect(mocks.persistMode).toHaveBeenCalledWith('user-1', 'light'));
   });
 
+  it('can choose explicit Light while Auto currently resolves to Light', async () => {
+    useSettingsStore.setState({ theme: 'light', themePreference: 'auto' });
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Light' }));
+    await waitFor(() => expect(mocks.persistMode).toHaveBeenCalledWith('user-1', 'light'));
+    expect(useSettingsStore.getState().themePreference).toBe('light');
+  });
+  it('does not roll another account back after a delayed mode failure', async () => {
+    const pending = deferred<{ ok: false; error: Error }>();
+    mocks.persistMode.mockReturnValue(pending.promise);
+    const view = renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Light' }));
+    view.rerender(<ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-2" isVip={false} />);
+    useSettingsStore.setState({ theme: 'light', themePreference: 'auto' });
+    await act(async () => {
+      pending.resolve({ ok: false, error: new Error('old write failed') });
+      await pending.promise;
+    });
+    expect(useSettingsStore.getState().themePreference).toBe('auto');
+    expect(mocks.toast.error).not.toHaveBeenCalled();
+  });
   it('rolls interface mode back when account persistence fails', async () => {
     mocks.persistMode.mockResolvedValue({ ok: false, error: new Error('write failed') });
     renderStudio();

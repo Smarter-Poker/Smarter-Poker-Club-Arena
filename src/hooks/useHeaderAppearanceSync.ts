@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { masterBus } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
 import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import { useMasterBusBroadcastChannel } from './useMasterBusBroadcastChannel';
@@ -17,7 +18,10 @@ export function HeaderAppearanceSync() {
 
   const refresh = () => {
     const store = useHeaderDataStore.getState();
-    if (userId && store._userId === userId) void store.refreshAppearance();
+    if (userId && store._userId === userId) {
+      void store.refreshAppearance();
+      masterBus.emit('PROFILE_UPDATED', { userId, updates: {}, source: 'appearance-signal' });
+    }
   };
   useMasterBusBroadcastChannel({
     channelName: userId ? `profile-appearance:${userId}` : null,

@@ -15,7 +15,7 @@ import { useSettingsStore } from '../../src/stores/useSettingsStore';
 describe('useSettingsStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useSettingsStore.setState({ theme: 'dark' });
+    useSettingsStore.setState({ theme: 'dark', themePreference: 'dark' });
   });
 
   /* ── INVERTED 2026-08-29 ────────────────────────────────────────────────────

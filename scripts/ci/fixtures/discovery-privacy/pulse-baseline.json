@@ -1,0 +1,36 @@
+{
+  "view": {
+    "def": " SELECT jobid,\n    jobname,\n    schedule,\n    active,\n    ( SELECT d.status\n           FROM cron.job_run_details d\n          WHERE d.jobid = j.jobid\n          ORDER BY d.start_time DESC\n         LIMIT 1) AS last_status,\n    ( SELECT d.start_time\n           FROM cron.job_run_details d\n          WHERE d.jobid = j.jobid\n          ORDER BY d.start_time DESC\n         LIMIT 1) AS last_run_at,\n    ( SELECT d.end_time - d.start_time\n           FROM cron.job_run_details d\n          WHERE d.jobid = j.jobid\n          ORDER BY d.start_time DESC\n         LIMIT 1) AS last_run_duration,\n    ( SELECT count(*) AS count\n           FROM cron.job_run_details d\n          WHERE d.jobid = j.jobid AND d.start_time > (now() - '24:00:00'::interval) AND d.status = 'failed'::text) AS failures_24h\n   FROM cron.job j;",
+    "md5": "23e8b8c3420b1e2162e12490069d68a2"
+  },
+  "clock": "2026-09-27T03:50:59.466994+00:00",
+  "pulse": {
+    "def": "CREATE OR REPLACE FUNCTION public.get_smarter_poker_pulse()\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'cron'\nAS $function$\nDECLARE\n    v_pulse jsonb;\nBEGIN\n    SELECT jsonb_build_object(\n        'generated_at', NOW(),\n        'home_games', jsonb_build_object(\n            'groups_total', (SELECT COUNT(*) FROM commander_home_groups WHERE is_active),\n            'groups_public', (SELECT COUNT(*) FROM commander_home_groups\n                              WHERE is_active AND NOT is_private\n                                AND profile_photo_url IS NOT NULL),\n            'groups_private', (SELECT COUNT(*) FROM commander_home_groups\n                               WHERE is_active AND is_private),\n            'groups_stale', (SELECT COUNT(*) FROM commander_home_groups\n                             WHERE is_active\n                               AND last_activity_at < NOW() - INTERVAL '45 days'),\n            'members_total', (SELECT COUNT(*) FROM commander_home_members WHERE status = 'approved'),\n            'members_new_30d', (SELECT COUNT(*) FROM commander_home_members\n                                WHERE created_at > NOW() - INTERVAL '30 days'),\n            'games_scheduled_next_7d', (SELECT COUNT(*) FROM commander_home_games\n                                         WHERE status IN ('scheduled','confirmed')\n                                           AND scheduled_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7),\n            'games_completed_all_time', (SELECT COUNT(*) FROM commander_home_games WHERE status='completed'),\n            'games_completed_30d', (SELECT COUNT(*) FROM commander_home_games\n                                     WHERE status='completed'\n                                       AND updated_at > NOW() - INTERVAL '30 days'),\n            'rsvps_yes_30d', (SELECT COUNT(*) FROM commander_home_rsvps\n                               WHERE response='yes'\n                                 AND responded_at > NOW() - INTERVAL '30 days'),\n            'checkins_30d', (SELECT COUNT(*) FROM commander_home_rsvps\n                              WHERE checked_in_at > NOW() - INTERVAL '30 days'),\n            'flake_rate_30d_pct', (\n                SELECT CASE\n                    WHEN COUNT(*) FILTER (WHERE response='yes') = 0 THEN 0\n                    ELSE ROUND(100.0 * COUNT(*) FILTER (WHERE flaked=true)::numeric\n                               / NULLIF(COUNT(*) FILTER (WHERE response='yes'), 0), 1)\n                END\n                FROM commander_home_rsvps\n                WHERE responded_at > NOW() - INTERVAL '30 days'\n            )\n        ),\n        'discovery', jsonb_build_object(\n            'active_poker_locations_total', (SELECT COUNT(*) FROM mv_active_poker_locations),\n            'by_source', (SELECT jsonb_object_agg(source, cnt)\n                           FROM (SELECT source, COUNT(*) AS cnt\n                                   FROM mv_active_poker_locations GROUP BY source) t),\n            'top_states', (\n                SELECT jsonb_agg(jsonb_build_object('state', state, 'count', cnt))\n                  FROM (SELECT state, COUNT(*) AS cnt\n                          FROM mv_active_poker_locations\n                         WHERE state IS NOT NULL\n                         GROUP BY state\n                         ORDER BY cnt DESC\n                         LIMIT 10) t\n            ),\n            'last_refresh', (SELECT MAX(refreshed_at) FROM mv_active_poker_locations)\n        ),\n        'content', jsonb_build_object(\n            'venues_total', (SELECT COUNT(*) FROM poker_venues WHERE COALESCE(is_active,true)),\n            'venues_claimed', (SELECT COUNT(*) FROM poker_venues WHERE is_claimed = true),\n            'venue_tournaments_active', (SELECT COUNT(*) FROM venue_daily_tournaments\n                                          WHERE COALESCE(is_active, true)\n                                            AND NOT COALESCE(is_suppressed, false)),\n            'venue_tournaments_suppressed', (SELECT COUNT(*) FROM venue_daily_tournaments\n                                              WHERE is_suppressed = true)\n        ),\n        'system_health', jsonb_build_object(\n            -- Fixed: parenthesize the OR on jobname patterns\n            'cron_jobs_active', (SELECT COUNT(*) FROM cron.job\n                                  WHERE active = true\n                                    AND (jobname LIKE 'home%' OR jobname LIKE 'pnm%')),\n            'cron_failures_24h', (\n                SELECT COALESCE(SUM(failures_24h), 0)\n                  FROM v_system_health_cron\n            ),\n            'latest_snapshot_week', (SELECT MAX(week_start)\n                                      FROM commander_home_group_weekly_snapshots),\n            'total_weekly_snapshots', (SELECT COUNT(*) FROM commander_home_group_weekly_snapshots)\n        )\n    ) INTO v_pulse;\n    RETURN v_pulse;\nEND;\n$function$\n",
+    "md5": "0a02c2f8a126f55a921a71763112a350",
+    "candidate_md5": "47427f7876c3dd77027917e10f6d46dd",
+    "old_fragment": "            -- Fixed: parenthesize the OR on jobname patterns\n            'cron_jobs_active', (SELECT COUNT(*) FROM cron.job\n                                  WHERE active = true\n                                    AND (jobname LIKE 'home%' OR jobname LIKE 'pnm%')),\n            'cron_failures_24h', (\n                SELECT COALESCE(SUM(failures_24h), 0)\n                  FROM v_system_health_cron\n            ),\n",
+    "new_fragment": "            'cron_jobs_active', pulse_cron.cron_jobs_active,\n            'cron_failures_24h', pulse_cron.cron_failures_24h,\n"
+  },
+  "roles": [
+    {
+      "name": "authenticated",
+      "super": false,
+      "bypassrls": false
+    },
+    {
+      "name": "postgres",
+      "super": false,
+      "bypassrls": true
+    },
+    {
+      "name": "service_role",
+      "super": false,
+      "bypassrls": true
+    },
+    {
+      "name": "supabase_admin",
+      "super": true,
+      "bypassrls": true
+    }
+  ]
+}

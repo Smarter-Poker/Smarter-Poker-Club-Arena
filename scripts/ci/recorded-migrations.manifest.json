@@ -245,6 +245,17 @@
       "recoveredFrom": "Exact installer bytes independently compared with supabase_migrations.schema_migrations.statements; task evidence three-installed-1708.json",
       "refusedBy": [],
       "liveVerdict": "Installed once after independent full PostgreSQL17 qualification. This dynamic substitution creates no statically parsed new object and carries no @live-proof line; its immutable SQL is recorded byte for byte. Live readback17:08:57 keeps functionOID24464413, postgres owner, service-role/postgres-only EXECUTE, SECURITY DEFINER, VOLATILE and public,pg_temp search path. DefinitionMD5a5585b9d7fb061f12c29f1262a5a1b6c matches the qualified postimage. Only the existing canonical lane prefix is added before the first row lock; removing it recovers the complete original2c34f4cb body. Private financial core, lane helper, source guard and source triggers stay unchanged. No financial or player data is corrected by this installation; original event progress and protected publication remain separate evidence. Never replay installed SQL."
+    },
+    {
+      "version": "20260927150637",
+      "name": "stranded_player_audit_examines_history_only_after_excluding_",
+      "file": "supabase/migrations/20260927150637_stranded_player_audit_examines_history_only_after_excluding_.sql",
+      "md5": "330cf5e98f3debcf7473eff4e0c323f3",
+      "appliedToProductionAt": "2026-09-27T15:06:37Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "Exact unchanged SQL bytes equal public.fn_ca_migration_text(20260927150637).md5 330cf5e98f3debcf7473eff4e0c323f3 and body length 4596, read at 2026-09-27T15:16:23.338453Z.",
+      "refusedBy": [],
+      "liveVerdict": "Installed once after native PostgreSQL 17 qualification. Dynamic EXECUTE replaces only two CTE materialization boundaries in the existing read-only audit; the installed SQL lacks a parsed object or @live-proof comment and cannot be edited afterward. Live OID 25456281 retains postgres owner, STABLE SECURITY DEFINER, search_path=public and only postgres/service_role EXECUTE; anon and authenticated EXECUTE are both false. Function definition MD5 is 8c36b14e14eb5b39c09ebd5b72120030, matching the qualified postimage. Original predicates, stack rounding, result ordering and financial records are unchanged. Complete read-only function measured 2437.865ms with zero findings at 15:06. This records immutable installed SQL without replay; source delivery and the next naturally scheduled complete conservation job remain separate pending evidence."
     }
   ]
 }

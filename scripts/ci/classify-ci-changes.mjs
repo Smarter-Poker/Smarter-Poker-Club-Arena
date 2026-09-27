@@ -66,6 +66,8 @@ const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
+const strandedPlayerRead =
+  /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
 const settlementConservationIndex =
   /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
@@ -266,6 +268,7 @@ export function classifyChangedPaths(paths) {
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
+      matches(strandedPlayerRead) ||
       matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
@@ -308,6 +311,7 @@ export function classifyChangedPaths(paths) {
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
+      matches(strandedPlayerRead) ||
       matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||

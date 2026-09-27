@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 172178,
-      "sha256": "618845888d7de39453396180b4a45f02b62347dc20953ca23d01f749fdc124c9"
+      "bytes": 172352,
+      "sha256": "341ce0ec6ed0928d3ad2f6378d039f2b2c24717cdd3cbd48871379da8dae1658"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 28006,
-      "sha256": "2a5912b3944902a5e6f7d0de97eb6957d4c0c2f318142ad7b2c7e204244425ba"
+      "bytes": 28252,
+      "sha256": "17190b6dbc7641e69b80320ce414d1d2634a645fb578af0342a7ce322fbfc995"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -925,5 +925,57 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Add required PG17 complete original transaction and real hand-lane contention qualification; preserve all historical binding records."
+  },
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 25920,
+          "sha256": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8"
+        },
+        "after": {
+          "bytes": 26166,
+          "sha256": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
+        }
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "before": {
+          "bytes": 170130,
+          "sha256": "09c86c4be8d6cac4e833b62af4c6882f0d606c3bfb32655297da6cfb10f5ed91"
+        },
+        "after": {
+          "bytes": 170305,
+          "sha256": "fa23bffe179b315d15ad3fe4223b53637bd4163249b32abcd544e88d213a31aa"
+        }
+      }
+    ]
+  },
+  "stranded_player_current_main_integration_20260927": {
+    "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "stranded_player_current_main_integration_20260927_1610": {
+    "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "elimination_current_main_integration_20260927_1737": {
+    "integration": "2026-09-27 canonical elimination with protected main03957 and stranded-player reader",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   }
 }

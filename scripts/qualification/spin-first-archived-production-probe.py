@@ -3,6 +3,7 @@ Runs only inside the existing allocator; never owns a cluster or production targ
 """
 from decimal import Decimal
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -20,7 +21,7 @@ require=C.require
 
 
 PROBE='scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql'
-PROBE_SHA='920c57efc0484aa78c6815f01b16a7098ebdfe79f54c6c78b31956169c19bf6d'
+PROBE_SHA='b134486f027611bb40c44e75d346de1b9b4d5e1ca0c5d2b0709baf40839b7a8f'
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 
 
@@ -51,6 +52,72 @@ def parse_abort(raw,R,A):
     return detail
 
 
+BANK_FAULT_ANCHOR="  EXECUTE format('SET LOCAL ROLE %I',original_role);\n END LOOP;"
+BANK_FAULT_INSERT="""  -- ISOLATED QUALIFICATION FAULT ONLY: derived bytes, never a production probe.
+  IF phase=0 THEN
+   UPDATE public.union_wallets SET rake_wallet=rake_wallet+1
+    WHERE union_id='fade0000-0000-0000-0000-000000000001'::uuid;
+   IF NOT FOUND THEN RAISE EXCEPTION 'ISOLATED_BANK_FAULT_TARGET_ABSENT'; END IF;
+  END IF;
+"""
+
+def bank_fault_source(source):
+    require(source.count(BANK_FAULT_ANCHOR)==1,'bank fault injection anchor differs')
+    return source.replace(BANK_FAULT_ANCHOR,
+        "  EXECUTE format('SET LOCAL ROLE %I',original_role);\n"+BANK_FAULT_INSERT+" END LOOP;",1)
+
+def parse_bank_fault(raw,A):
+    require(re.findall(r'ERROR:  ([A-Z0-9]{5}): ([^\n]+)',raw)==
+        [('P0001','PROBE_BANK_OR_RESERVE_CHANGED: public.union_wallets')],
+        'own bank fault did not refuse with original invariant')
+    require(not re.search(r'(?:WARNING|FATAL|PANIC):',raw),'bank fault unexpected diagnostics')
+    A.validate_fee_notice('\n'.join(line for line in raw.splitlines() if 'NOTICE:' in line))
+    details=re.findall(r'^DETAIL:\s+(.*)$',raw,re.M)
+    require(len(details)==1,'bank fault DETAIL missing or duplicated')
+    def unique(pairs):
+        result={}
+        for key,value in pairs:
+            require(key not in result,'duplicate bank fault detail key');result[key]=value
+        return result
+    def nonfinite(value):raise ValueError('nonfinite bank fault detail number: '+value)
+    d=json.loads(details[0],parse_float=Decimal,parse_constant=nonfinite,object_pairs_hook=unique)
+    require(set(d)=={'operation','event','transaction_id','isolation','relation','before','inside',
+        'sequence_rollback_claimed','production_settlement_complete'},'bank fault detail fields differ')
+    require(d['operation']==OPERATION and d['event']==C.EVENT and d['isolation']=='read committed'
+        and d['relation']=='public.union_wallets' and d['sequence_rollback_claimed'] is False
+        and d['production_settlement_complete'] is False,'bank fault identity/scope differs')
+    require(isinstance(d['transaction_id'],str) and re.fullmatch(r'[1-9][0-9]{0,19}',d['transaction_id'])
+        and int(d['transaction_id'])<2**64,'bank fault transaction identity malformed')
+    require(isinstance(d['before'],list) and len(d['before'])==1 and isinstance(d['inside'],list)
+        and len(d['inside'])==1,'bank fault wallet cardinality differs')
+    row=d['before'][0];require(isinstance(row,dict) and row.get('union_id')=='fade0000-0000-0000-0000-000000000001'
+        and row.get('id')=='059bb325-6eeb-4bbd-957d-3a82e755bb0c'
+        and type(row.get('rake_wallet')) in (int,Decimal),'bank fault original wallet differs')
+    expected=copy.deepcopy(row);expected['rake_wallet']+=1
+    require(d['inside']==[expected],'bank fault did not retain exact own +1 mutation')
+    return d
+
+def validate_bank_fault(f,A):
+    require(f['kind']=='isolated-derived-own-bank-mutation' and f['production_sql'] is False
+        and f['base_probe_sha256']==PROBE_SHA,'bank fault source identity differs')
+    source=(ROOT/PROBE).read_bytes();require(hashlib.sha256(source).hexdigest()==PROBE_SHA,'bank fault base probe drift')
+    derived=bank_fault_source(source.decode())
+    require(f['derived_source']==derived and f['derived_sha256']==hashlib.sha256(derived.encode()).hexdigest(),
+        'derived fault source changed')
+    d=parse_bank_fault(f['original_output'],A);require(d==f['detail'],'bank fault retained detail differs')
+    observed=f['before']['rows']['public.union_wallets']
+    require(isinstance(observed,list) and len(observed)==1,'bank fault independent original wallet absent')
+    projection={k:v for k,v in observed[0].items() if k in ('id','user_id','club_id','union_id')
+        or re.search(r'(balance|treasury|wallet|chip_pool|locked_chips|held_chips|credit_|diamonds|total_deposited|total_drawn|seeded_amount|surplus_returned|seed_returned_amount)',k)}
+    require(d['before']==[projection],'bank fault diagnostic before differs from independent wallet')
+    require(f['before']['rows']==f['after']['rows'],'bank fault left durable rows')
+    require(f['transaction_status']=={'transaction_id':d['transaction_id'],'status':'aborted'},'bank fault actual transaction not aborted')
+    require(f['rollback_output'] and not re.search(r'(?:ERROR|WARNING|FATAL|PANIC):',f['rollback_output']),
+        'bank fault explicit rollback absent/failed')
+    for phase in ('before','after'):require(set(f[phase]['sequences'])==set(C.SEQUENCES),'bank fault sequence observation missing')
+    return d
+
+
 def run(args,e,sessions,deadline,R,A):
     database='qual_spin_expiry_'+args.execution.replace('-','')
     def new(name):
@@ -73,6 +140,20 @@ def run(args,e,sessions,deadline,R,A):
     worker.no_errors(worker.command('ROLLBACK;'))
     e['after']=observer.json(snapshot)
     require(e['after']['rows']==e['before']['rows'],'aborted production probe left durable rows')
+    # A separately labelled derived local fault proves strict bank equality
+    # still refuses our own money mutation and reports its original values.
+    # This never modifies or executes a production target.
+    fault={'kind':'isolated-derived-own-bank-mutation','production_sql':False,
+        'base_probe_sha256':PROBE_SHA,'before':observer.json(snapshot)}
+    derived=bank_fault_source(source.decode());fault['derived_source']=derived
+    fault['derived_sha256']=hashlib.sha256(derived.encode()).hexdigest()
+    e['bank_fault']=fault;fault['original_output']=worker.command(derived)
+    fault['detail']=parse_bank_fault(fault['original_output'],A)
+    fault['rollback_output']=worker.command('ROLLBACK;');worker.no_errors(fault['rollback_output'])
+    fault['after']=observer.json(snapshot)
+    xid=fault['detail']['transaction_id']
+    fault['transaction_status']=observer.json("SELECT jsonb_build_object('transaction_id','"+xid+"','status',pg_xact_status('"+xid+"'::xid8));")
+    validate_bank_fault(fault,A)
     e['passed']=True
 
 
@@ -96,13 +177,15 @@ def validate_evidence(document,execution,archive):
         'history_count':sum(r.get('tournament_id')==C.EVENT or r.get('table_id')==C.TABLE for r in d['before']['rows']['public.hand_history']),'atomic_commit_count':sum(r.get('table_id')==C.TABLE for r in d['before']['rows']['public.hand_atomic_commits']),'terminal':terminal,'primary_table':inside['public.tables'][0]})
     require(detail['response']['ok'] is True and detail['response']['fully_settled'] is False
         and detail['response']['rake']['accounting']['held_amount']==24,'probe financial receipt differs')
+    validate_bank_fault(d['bank_fault'],archive)
+    require(d['bank_fault']['before']['rows']==d['after']['rows'],'fault baseline differs from original aborted probe')
     p=d['backend_pids'];require(set(p)=={'observer','worker'} and len(set(p.values()))==2 and all(type(v) is int and v>0 for v in p.values()),'probe original backend identity differs')
     require(len(d['clients'])==2 and {c['backend_pid'] for c in d['clients']}==set(p.values())
         and all(type(c['client_exit']) is int and c['client_exit']==0 for c in d['clients']),'probe client cleanup differs')
     require(d['backend_cleanup']=={'backends':0,'locks':0} and d['backend_cleanup_observations'][-1]=={'backends':0,'locks':0}
         and type(d['verifier_client']['client_exit']) is int and d['verifier_client']['client_exit']==0 and d['cleanup_transcript']
         and set(d['transcripts'])==set(p) and all(d['transcripts'].values()),'probe actual disposal absent')
-    return {'production_probe_rehearsed':True,'financial_qualified':False,'production_qualified':False,'sequence_rollback_claimed':False}
+    return {'production_probe_rehearsed':True,'own_bank_fault_diagnostic_rehearsed':True,'financial_qualified':False,'production_qualified':False,'sequence_rollback_claimed':False}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--psql',type=Path,required=True);parser.add_argument('--execution',required=True);args=parser.parse_args()

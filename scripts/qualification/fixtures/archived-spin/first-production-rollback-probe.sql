@@ -129,7 +129,16 @@ BEGIN
  INTO expected_accounts FROM jsonb_array_elements(before_state->'public.club_members') r;
  IF inside_state->'public.club_members' IS DISTINCT FROM expected_accounts THEN RAISE EXCEPTION 'PROBE_WALLET_DELTA'; END IF;
  FOREACH name IN ARRAY ARRAY['public.clubs','public.unions','public.union_wallets','public.spin_bonus_pools','public.spin_reserve_ledger'] LOOP
-  IF inside_state->name IS DISTINCT FROM before_state->name THEN RAISE EXCEPTION 'PROBE_BANK_OR_RESERVE_CHANGED: %',name; END IF;
+  IF inside_state->name IS DISTINCT FROM before_state->name THEN
+   -- A shared wallet can change between READ COMMITTED observations. Retain
+   -- the actual financial projections for attribution; never waive equality,
+   -- infer a benign external writer, or change admission snapshot semantics.
+   RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='PROBE_BANK_OR_RESERVE_CHANGED: '||name,
+    DETAIL=jsonb_build_object('operation',operation,'event',event,
+     'transaction_id',txid_current()::text,'isolation',current_setting('transaction_isolation'),
+     'relation',name,'before',before_state->name,'inside',inside_state->name,
+     'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
+  END IF;
  END LOOP;
  FOR row_before IN SELECT value FROM jsonb_array_elements(before_state->'public.chip_ledger') LOOP
   SELECT value INTO row_after FROM jsonb_array_elements(inside_state->'public.chip_ledger') WHERE value->>'id'=row_before->>'id';

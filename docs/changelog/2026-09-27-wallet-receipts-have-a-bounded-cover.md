@@ -1,0 +1,9 @@
+# Cover the existing tournament wallet receipt read
+
+A bounded production measurement of the unchanged wallet-totals component read 72,104 wallet heap disk blocks and completed in 4,547.015ms including eligible-event selection. The six receipt predicates matched 974,368 rows and 326,914 joined the existing complete eligible population. The whole eight-second read still timed out after the earlier projection improvements.
+
+Qualify one partial covering index keyed by related event UUID, including type, category and amount only for the existing three debit and three credit labels. The predicate bounds the included text values, the amount remains numeric(15,2), and unrelated wallet rows do not enter the index. The current financial functions, all existing indexes, authority, eligibility, retention and 120-second natural-job budget remain unchanged. No payer is invoked manually.
+
+This is a measured read-cost tradeoff: the index consumes storage and is maintained on matching inserts/updates. Native qualification measures actual index size and buffers, and exercises real concurrent writers, old snapshots, interrupted build and exact recovery, browser denial, source/type/shape drift and all original financial outputs. It does not promise a production latency or billing reduction. Production installation, exact readback and whole-query/natural-run proof remain pending.
+
+The final isolated PostgreSQL 17 run passed all retained financial, role, concurrent-build and recovery cases. Its same-data projection used 1,728 buffers before and 265 afterward, with a 2,179,072-byte index (32.697ms versus 19.464ms locally). The zero-heap fixture assertion requires explicit private index cleanup after deliberately rolled-back oracle inserts; the measured production visibility ratio does not promise zero heap fetches. Production remains unmodified by this candidate pending the qualified owning installation.

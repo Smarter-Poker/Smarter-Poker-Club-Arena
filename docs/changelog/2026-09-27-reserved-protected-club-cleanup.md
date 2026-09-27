@@ -1,0 +1,7 @@
+# Reserved test membership cleanup preserves protected clubs
+
+The post-deploy browser fixture joined Deep Stack Society to verify the standalone club's member UI. Its later cleanup attempted the existing general membership delete and was correctly refused by `DEEP_STACK_PROTECTED`, preventing subsequent browser qualification from starting.
+
+The maintained cleanup now separately qualifies that single reserved post-deploy identity, locks its identity, profile, memberships and legacy wallets, and refuses real accounts, elevated profiles, unknown or nonzero balances, ownership, agents, seats, tournament participation and ledger/rake history. Only its empty membership in the protected club may use the guard's existing deliberate-deletion mechanism. The setting is restored immediately before any remaining cleanup, including on failure. The protected club guard, other members and the retained immutable-ledger-actor path remain unchanged.
+
+The existing required PostgreSQL retirement fixture reproduces the original failure and qualifies the exact captured guard with a nonsuperuser owner, service and browser roles, refused identities/custody, rollback after deletion, configuration restoration, duplicate callers and concurrent custody insertion. Source hashes and catalog metadata refuse drift or replay. No production user or financial row is changed by the migration itself; actual fixture retirement and browser proof remain separate evidence.

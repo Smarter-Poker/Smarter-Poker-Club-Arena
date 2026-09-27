@@ -37,12 +37,18 @@ exact installed helper from its read-only capture. No production change was
 made by either native run. Required accounting PostgreSQL shard 3 executes the
 native qualification and retains its output whenever any input changes.
 
-Production installation, original candidate/backlog progress and protected
-source publication are distinct remaining evidence. Four zero-stack players
+Original candidate/backlog progress and protected source publication remain
+separate acceptance items after database installation. Four zero-stack players
 on the selected Morning FreeBuy table have exact durable zero hand/settlement
 receipts, but finishing places must still follow the complete event's original
 candidate order. This change does not edit those registrations, positions or
 receipts, nor weaken the whole-roster movement guard. The two older selected
 stalls have coherent rosters and are a separate diagnosis.
 
-Installed once as20260927170836 at17:08:36UTC; exact10,651 SQL bytes SHA25603f7fa6f15b64ff309a5982a3f845cb36664a0843e0e781a85f3940b0e1178f5 match durable history. Readback17:08:57 keeps originalOID24464413 and authority with qualified postdefinitiona5585b9d7fb061f12c29f1262a5a1b6c. File renamed to actual provider history without changing SQL. Installation did not invoke an elimination or rewrite any player record. Natural backlog progress remains a separate acceptance item.
+Installed once as `20260927170836` at 17:08:36 UTC. The exact 10,651 SQL bytes
+(SHA256 `03f7fa6f15b64ff309a5982a3f845cb36664a0843e0e781a85f3940b0e1178f5`)
+match durable history. Readback at 17:08:57 retains original OID 24464413 and
+authority, with qualified definition MD5 `a5585b9d7fb061f12c29f1262a5a1b6c`.
+The file was renamed to actual provider history without changing SQL.
+Installation did not invoke an elimination or rewrite any player record.
+Natural backlog progress remains a separate acceptance item.

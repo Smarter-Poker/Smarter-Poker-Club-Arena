@@ -11,8 +11,8 @@
       "sha256": "2ddf42788ee7e0fa026c22850e31ab398899ea85fa4ab5ac79a51596f8aaee4c"
     },
     "supabase/migrations/20260926143705_finalized_horse_seating_preserves_existing_custody.sql": {
-      "bytes": 2501,
-      "sha256": "99443796017aecbe777b5d02cd5f644b21232cb199c6ac481ba1f7b9b6281cb2"
+      "bytes": 2784,
+      "sha256": "c0205292d976ab12d5ca95e2bffafd56cb34d568ddcd4a1e6ddd6c922fba47bb"
     },
     "scripts/qualification/spin-horse-admission-race.py": {
       "bytes": 8317,
@@ -47,8 +47,8 @@
       "sha256": "e85454527cb17e9ceeee0c9774fc8a551ca2fefa5e59baf5f2b00376f147c082"
     },
     "scripts/qualification/fixtures/finalized-horse-admission/closed-seat.sql": {
-      "bytes": 6295,
-      "sha256": "fc307a6325a0c776c592acfb2cc0a2221d08213c76e337c8c4bd773b8b2c09d0"
+      "bytes": 6959,
+      "sha256": "a41a4823c4bf7a915408b2f5028441497def9ef3e44f6cb7cb4ae2adddfaf37f"
     },
     "scripts/qualification/fixtures/finalized-horse-admission/launch.sql": {
       "bytes": 8282,

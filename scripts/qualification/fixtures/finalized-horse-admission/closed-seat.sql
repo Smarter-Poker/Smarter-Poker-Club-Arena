@@ -30,6 +30,14 @@ SELECT pg_temp.horse_assert((SELECT count(*)=3 AND sum(s.stack)=3*t.starting_chi
  WHERE t.id=q.tournament AND s.left_at IS NULL GROUP BY t.starting_chips)
  AND (SELECT status='RUNNING' FROM public.tournaments WHERE id=q.tournament),
  'real paid draw and completed launch must precede malformed closed-chair case') FROM horse_q_inputs q;
+-- Actual catalog privileges must remain engine-only before and after installation.
+SELECT pg_temp.horse_assert(
+ NOT has_function_privilege('anon','public.fn_seat_horse_in_seat_first_game(uuid,uuid)','EXECUTE')
+ AND NOT has_function_privilege('authenticated','public.fn_seat_horse_in_seat_first_game(uuid,uuid)','EXECUTE')
+ AND has_function_privilege('service_role','public.fn_seat_horse_in_seat_first_game(uuid,uuid)','EXECUTE')
+ AND (SELECT pg_get_userbyid(proowner)='postgres' AND prosecdef
+ FROM pg_proc WHERE oid='public.fn_seat_horse_in_seat_first_game(uuid,uuid)'::regprocedure),
+ 'original service-only permissions and definer owner must remain intact');
 -- Classify only this isolated synthetic profile/club for the horse-class case.
 -- Actual current house-board guard decides eligibility; no guard is disabled.
 SELECT pg_temp.horse_assert((SELECT public.fn_ca_house_board_allows_automation(t.club_id)

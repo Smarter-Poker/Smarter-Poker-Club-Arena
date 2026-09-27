@@ -39,7 +39,7 @@ TERMINAL_MANIFEST_SHA256 = '2450ccac1489b9ecaca591761f4a65cb21c7f39a2862a7779728
 _horse_spec = importlib.util.spec_from_file_location('spin_finalized_horse', ROOT / 'scripts/qualification/spin-finalized-horse-admission.py')
 HORSE = importlib.util.module_from_spec(_horse_spec)
 _horse_spec.loader.exec_module(HORSE)
-HORSE_MANIFEST_SHA256 = '92fe792716e4ab95e5aa3c314424ce9ea7be6405a491493d861200ae4e7e79df'
+HORSE_MANIFEST_SHA256 = '300b84d68730072e9c4efa66a2cff60df51c233918d91ccc458a18ea44602624'
 FEE_MANIFEST_SHA256 = '235b524090286e316d902093a53be8a6948d5853ced8e621048ba249d6a4be14'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'

@@ -61,5 +61,10 @@ BEGIN
 END;
 $function$;
 
--- CREATE OR REPLACE retains the existing owner and grants. No widened role.
+-- Restate the existing engine-only ACL so this migration is independently safe.
+-- CREATE OR REPLACE preserves postgres ownership; no role gains access.
+REVOKE ALL ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid)
+  TO service_role;
 COMMIT;

@@ -15,6 +15,7 @@ describe('discovery privacy native regression qualification', () => {
     'scripts/ci/test-discovery-privacy-postgres.py',
     'scripts/ci/fixtures/discovery-privacy/cases.sql',
     'scripts/ci/fixtures/discovery-privacy/baseline.json',
+    'scripts/ci/fixtures/discovery-privacy/pulse-baseline.json',
     'tests/discoveryPrivacyRegression.test.ts',
   ])('runs native and source checks for isolated changes to %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });

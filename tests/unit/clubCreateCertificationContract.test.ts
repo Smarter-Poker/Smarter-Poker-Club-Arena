@@ -131,9 +131,10 @@ describe('Create Club production certification contract', () => {
 
     expect(migration).toContain("md5(v_old) <> '3f4d071ce514645f1881c31856a92e72'");
     expect(migration).toContain("'certification-cleanup:20260927034716:' || p_user_id::text");
-    expect(migration.indexOf("PERFORM set_config(\n+    'app.ledger_maintenance'")).toBeLessThan(
-      migration.indexOf('UPDATE public.chip_ledger')
-    );
+    const markerAt = migration.indexOf("PERFORM set_config(\n    'app.ledger_maintenance'");
+    expect(markerAt).toBeGreaterThan(-1);
+    const detachAt = migration.indexOf('UPDATE public.chip_ledger', markerAt);
+    expect(detachAt).toBeGreaterThan(markerAt);
     expect(migration).not.toContain('DELETE FROM public.chip_ledger');
   });
 
@@ -146,8 +147,13 @@ describe('Create Club production certification contract', () => {
 
   it('proves the visible opening-bank command instead of a hidden live-region match', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
-    expect(spec).toContain('getByLabel(/^100,000(?:\\.00)? Club Bank Chips$/)');
-    expect(spec).not.toContain('getByText(/100,000(?:\\.00)?/).first()');
+    expect(spec).toContain('const responseBody = (await response.json()) as unknown');
+    expect(spec).toContain('createdClub?.slug');
+    expect(spec).toContain('createdClub?.id');
+    expect(spec).toContain('escapeRegExp(createdClubRef)');
+    expect(spec).not.toContain('/\\/clubs\\/[0-9a-f-]{36}');
+    expect(spec).toContain('getByLabel(/^100K Club Bank Chips$/)');
+    expect(spec).not.toContain('getByText(/100K/).first()');
   });
 
   it('bakes replayed cards from the authoritative server club and reports a failed URL write', () => {

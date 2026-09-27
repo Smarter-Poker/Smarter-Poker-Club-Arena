@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { rawProfileHeading } from './support/rawProfileHeading';
+import { walletPlayableAmount } from './support/walletPlayableAmount';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
@@ -826,11 +827,12 @@ test.describe('production Table Studio realtime contract', () => {
         new URL('wallet', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href,
         { waitUntil: 'domcontentloaded' }
       );
-      await expect(
-        primaryPage.getByText('Playable Now', { exact: true }).locator('..').locator('dd')
-      ).toHaveText(Math.max(0, total - locked).toLocaleString(), {
-        timeout: PRODUCTION_RESPONSE_TIMEOUT,
-      });
+      await expect(walletPlayableAmount(primaryPage)).toHaveText(
+        Math.max(0, total - locked).toLocaleString(),
+        {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        }
+      );
       console.log(
         '[member-balance] authenticated own-row subscription and initial/reconnect reads reached the persistent wallet and rendered amount; no financial mutation induced'
       );

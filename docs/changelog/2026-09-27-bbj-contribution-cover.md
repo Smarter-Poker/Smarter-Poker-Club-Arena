@@ -1,0 +1,7 @@
+# Jackpot facts use a covering contribution index
+
+The unchanged pool facts aggregate exceeded an 8-second read-only production budget while scanning the307MB contribution heap. A separate concurrent index on pool_id/created_at including amount, backup_portion and promo_portion lets all original aggregates read fixed-width numeric facts without rewriting either RPC or financial records. Existing indexes remain in place.
+
+The verification migration refuses a missing, invalid, wrongly shaped or differently owned index, changed column types, or changed RPC definitions. The online operation must be admitted and executed once outside the real database maintenance restriction, then read back before verification. Installed once at05:04:59UTC, indexOID61349458 valid/ready/live with106,405,888bytes. Verification history20260927050525 read back with unchanged original RPC fingerprints/ACLs. Actual production read latency and affected browser acceptance are recorded separately.
+
+Isolated native PostgreSQL17 runs the exact captured function bodies under real caller roles, compares all results and row/catalog fingerprints, checks generic/custom covering plans, simultaneous inserts, oversized unrelated text, a real interrupted concurrent build, rollback, source/type drift and permission failures. The fixture reduced heap/index blocks5358 to983; these are local fixture results, not measured production savings. The required accounting shard4 runs the actual native fixture for every relevant input.

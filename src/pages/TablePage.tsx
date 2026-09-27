@@ -12914,7 +12914,7 @@ function LiveTablePage({
              * with no table_seats row, so every seat-derived signal here says
              * "spectator" — while tournament_players says he has paid.
              */
-            if (userId) {
+            if (userId && isUUID(userId)) {
               const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
                 .select('status, table_id')

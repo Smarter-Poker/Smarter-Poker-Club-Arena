@@ -18,11 +18,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubAnnouncementBanner.module.css';
 import '../console/SpadeConsole.css';
@@ -59,6 +59,7 @@ export default function ClubAnnouncementBanner({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
+  const announcementRead = useRef(0);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -68,7 +69,11 @@ export default function ClubAnnouncementBanner({
   }, []);
 
   useEffect(() => {
+    setAnnouncements([]);
+    setCurrentIndex(0);
+    setDismissed(new Set());
     if (!clubId) {
+      ++announcementRead.current;
       setLoading(false);
       return;
     }
@@ -94,16 +99,27 @@ export default function ClubAnnouncementBanner({
     );
 
     return () => {
+      ++announcementRead.current;
       unsub();
     };
   }, [clubId]);
 
   const loadAnnouncements = async () => {
+    const read = ++announcementRead.current;
+    const current = () => isMounted.current && read === announcementRead.current;
     setLoading(true);
     try {
       const now = new Date().toISOString();
       if (!clubId) return;
       const resolvedId = await resolveClubUUID(clubId!);
+      if (!current()) return;
+      if (!isUUID(resolvedId)) {
+        if (isMounted.current) {
+          setAnnouncements([]);
+          setLoading(false);
+        }
+        return;
+      }
       const { data, error } = await supabase
         .from('club_announcements')
         .select(
@@ -126,7 +142,7 @@ export default function ClubAnnouncementBanner({
 
       if (error) reportError(error, 'ClubAnnouncementBanner.loadAnnouncements');
       if (!error && data) {
-        if (!isMounted.current) return;
+        if (!current()) return;
         const mapped: Announcement[] = data.map((a: any) => ({
           id: a.id,
           title: a.title,
@@ -142,7 +158,7 @@ export default function ClubAnnouncementBanner({
     } catch (error) {
       reportError(error, 'ClubAnnouncementBanner.Failed_to_load_announcements');
     }
-    if (isMounted.current) setLoading(false);
+    if (current()) setLoading(false);
   };
 
   const dismiss = (id: string) => {

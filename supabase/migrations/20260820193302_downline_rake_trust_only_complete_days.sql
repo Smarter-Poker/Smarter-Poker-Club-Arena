@@ -1,0 +1,203 @@
+-- BACKFILLED 2026-09-27 from supabase_migrations.schema_migrations.statements.
+-- Applied to production as 20260820193302 "downline_rake_trust_only_complete_days"; the .sql file was never committed
+-- at the time. Everything below this header is byte-exact to what ran:
+-- md5 404d0abad55d3ef8d3db82e8bd25e157 of array_to_string(statements, chr(10)) || chr(10).
+-- Do NOT re-apply; it is already live.
+
+-- Read the rollup ONLY for club-days proven complete; live-scan everything
+-- else in the window. Previously the reader assumed every past day was rolled
+-- up, so a missing day was silently skipped rather than counted.
+--
+-- The consequence is that correctness no longer depends on the cron having run.
+-- A cold rollup is merely slower, never wrong, and each catch-up pass moves
+-- more of the window onto the fast path.
+
+CREATE OR REPLACE FUNCTION public.fn_agent_downline_rake(
+  p_agent_user_id uuid DEFAULT NULL,
+  p_club_id       uuid DEFAULT NULL,
+  p_since         timestamptz DEFAULT NULL,
+  p_until         timestamptz DEFAULT NULL,
+  p_search        text DEFAULT NULL,
+  p_limit         integer DEFAULT 500
+) RETURNS TABLE (
+  player_id       uuid,
+  username        text,
+  club_id         uuid,
+  club_name       text,
+  role            text,
+  depth           integer,
+  upline_user_id  uuid,
+  upline_name     text,
+  rake_generated  numeric,
+  hands           bigint,
+  last_hand_at    timestamptz,
+  downline_players integer,
+  downline_rake   numeric
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+#variable_conflict use_column
+DECLARE
+  v_root uuid := COALESCE(p_agent_user_id, auth.uid());
+  v_from timestamptz := COALESCE(p_since, date_trunc('week', now()));
+  v_to   timestamptz := COALESCE(p_until, now());
+  v_caller uuid := auth.uid();
+  v_today  timestamptz := date_trunc('day', now());
+  v_day_lo date;
+  v_day_hi date;   -- exclusive
+BEGIN
+  IF v_root IS NULL THEN RAISE EXCEPTION 'no_agent'; END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM agents a
+                  WHERE a.user_id = v_root AND a.status='active'
+                    AND a.role IN ('super_agent','agent','sub_agent')
+                    AND (p_club_id IS NULL OR a.club_id = p_club_id)) THEN
+    RAISE EXCEPTION 'not_an_agent';
+  END IF;
+
+  IF v_caller IS NOT NULL
+     AND v_caller <> v_root
+     AND NOT public.fn_is_agent_ancestor(v_caller, v_root, p_club_id)
+     AND NOT EXISTS (
+       SELECT 1 FROM union_clubs uc
+        WHERE (p_club_id IS NULL OR uc.club_id = p_club_id)
+          AND public.fn_is_union_overseer(uc.union_id, v_caller))
+  THEN
+    RAISE EXCEPTION 'not_authorised';
+  END IF;
+
+  -- Whole days inside the window, never today.
+  v_day_lo := date_trunc('day', v_from)::date;
+  IF date_trunc('day', v_from) < v_from THEN v_day_lo := v_day_lo + 1; END IF;
+  v_day_hi := LEAST(date_trunc('day', v_to), v_today)::date;
+  IF v_day_hi < v_day_lo THEN v_day_hi := v_day_lo; END IF;
+
+  RETURN QUERY
+  WITH RECURSIVE chain AS (
+    SELECT a.id, a.user_id, a.club_id, a.role, a.parent_agent_id, 0 AS depth
+      FROM agents a
+     WHERE a.user_id = v_root AND a.status = 'active'
+       AND (p_club_id IS NULL OR a.club_id = p_club_id)
+    UNION ALL
+    SELECT c.id, c.user_id, c.club_id, c.role, c.parent_agent_id, ch.depth + 1
+      FROM agents c JOIN chain ch ON c.parent_agent_id = ch.id
+     WHERE c.status = 'active'
+  ),
+  roster AS (
+    SELECT DISTINCT cm.user_id AS player_id, cm.club_id, cm.agent_id AS upline_user_id,
+           ch.depth + 1 AS depth
+      FROM club_members cm
+      JOIN chain ch ON ch.user_id = cm.agent_id AND ch.club_id = cm.club_id
+     WHERE cm.agent_id IS NOT NULL
+  ),
+  everyone AS MATERIALIZED (
+    SELECT player_id, club_id, upline_user_id, depth FROM roster
+    UNION
+    SELECT ch.user_id, ch.club_id,
+           (SELECT p.user_id FROM agents p WHERE p.id = ch.parent_agent_id),
+           ch.depth
+      FROM chain ch WHERE ch.depth > 0
+  ),
+  in_scope_clubs AS MATERIALIZED (
+    SELECT DISTINCT club_id FROM everyone
+  ),
+  -- Days we can PROVE are rolled up, per club.
+  ok_days AS MATERIALIZED (
+    SELECT rc.club_id, rc.day
+      FROM club_rake_rollup_complete rc
+      JOIN in_scope_clubs c ON c.club_id = rc.club_id
+     WHERE rc.day >= v_day_lo AND rc.day < v_day_hi
+  ),
+  from_rollup AS (
+    SELECT rd.user_id, rd.club_id,
+           SUM(rd.rake_amount) AS rake,
+           SUM(rd.hands)::bigint AS hands,
+           MAX((rd.day + 1)::timestamptz) AS last_at
+      FROM club_rake_daily_user rd
+      JOIN ok_days o  ON o.club_id = rd.club_id AND o.day = rd.day
+      JOIN everyone e ON e.player_id = rd.user_id AND e.club_id = rd.club_id
+     GROUP BY rd.user_id, rd.club_id
+  ),
+  -- Anything the rollup cannot vouch for: the partial edges, plus any whole
+  -- day with no completeness marker.
+  edge_hands AS MATERIALIZED (
+    SELECT r.id, r.club_id, r.created_at, r.rake_amount, r.player_contributions
+      FROM rake_records r
+      JOIN in_scope_clubs c ON c.club_id = r.club_id
+     WHERE r.created_at >= v_from AND r.created_at < v_to
+       AND r.rake_amount > 0 AND r.player_contributions IS NOT NULL
+       AND (p_club_id IS NULL OR r.club_id = p_club_id)
+       AND NOT EXISTS (
+         SELECT 1 FROM ok_days o
+          WHERE o.club_id = r.club_id
+            AND o.day = (r.created_at AT TIME ZONE 'UTC')::date)
+  ),
+  edge_split AS MATERIALIZED (
+    SELECT (k.key)::uuid AS user_id, eh.club_id, eh.created_at,
+           (round(eh.rake_amount * 100)::bigint / count(*) OVER (PARTITION BY eh.id))
+           + CASE WHEN row_number() OVER (PARTITION BY eh.id ORDER BY k.key)
+                       <= (round(eh.rake_amount * 100)::bigint % count(*) OVER (PARTITION BY eh.id))
+                  THEN 1 ELSE 0 END AS cents
+      FROM edge_hands eh
+      JOIN LATERAL jsonb_each(eh.player_contributions) k
+        ON (CASE WHEN jsonb_typeof(k.value) = 'number'
+                 THEN (k.value)::numeric ELSE 0 END) > 0
+  ),
+  from_live AS (
+    SELECT s.user_id, s.club_id,
+           SUM(s.cents)::numeric / 100 AS rake,
+           count(*)::bigint AS hands,
+           max(s.created_at) AS last_at
+      FROM edge_split s
+      JOIN everyone e ON e.player_id = s.user_id AND e.club_id = s.club_id
+     GROUP BY s.user_id, s.club_id
+  ),
+  earned AS MATERIALIZED (
+    SELECT COALESCE(a.user_id, b.user_id) AS user_id,
+           COALESCE(a.club_id, b.club_id) AS club_id,
+           COALESCE(a.rake,0) + COALESCE(b.rake,0)   AS rake,
+           COALESCE(a.hands,0) + COALESCE(b.hands,0) AS hands,
+           GREATEST(COALESCE(a.last_at,'-infinity'::timestamptz),
+                    COALESCE(b.last_at,'-infinity'::timestamptz)) AS last_at
+      FROM from_rollup a
+      FULL OUTER JOIN from_live b ON b.user_id = a.user_id AND b.club_id = a.club_id
+  ),
+  downline_agg AS MATERIALIZED (
+    SELECT cm.agent_id AS upline, cm.club_id, SUM(ea.rake) AS rake
+      FROM earned ea
+      JOIN club_members cm ON cm.user_id = ea.user_id AND cm.club_id = ea.club_id
+     WHERE cm.agent_id IS NOT NULL
+     GROUP BY cm.agent_id, cm.club_id
+  ),
+  downline_cnt AS MATERIALIZED (
+    SELECT cm.agent_id AS upline, cm.club_id, count(*)::int AS players
+      FROM club_members cm
+     WHERE cm.agent_id IN (SELECT player_id FROM everyone)
+     GROUP BY cm.agent_id, cm.club_id
+  )
+  SELECT e.player_id,
+         COALESCE(pr.display_name, pr.username, left(e.player_id::text, 8)),
+         e.club_id, cl.name,
+         COALESCE(ag.role, 'player'),
+         e.depth, e.upline_user_id,
+         COALESCE(up.display_name, up.username),
+         COALESCE(ea.rake, 0), COALESCE(ea.hands, 0),
+         NULLIF(ea.last_at, '-infinity'::timestamptz),
+         COALESCE(dc.players, 0), COALESCE(da.rake, 0)
+    FROM everyone e
+    LEFT JOIN earned ea       ON ea.user_id = e.player_id AND ea.club_id = e.club_id
+    LEFT JOIN downline_agg da ON da.upline  = e.player_id AND da.club_id = e.club_id
+    LEFT JOIN downline_cnt dc ON dc.upline  = e.player_id AND dc.club_id = e.club_id
+    LEFT JOIN profiles pr ON pr.id = e.player_id
+    LEFT JOIN profiles up ON up.id = e.upline_user_id
+    LEFT JOIN clubs cl    ON cl.id = e.club_id
+    LEFT JOIN agents ag   ON ag.user_id = e.player_id AND ag.club_id = e.club_id
+                         AND ag.status = 'active'
+   WHERE (p_search IS NULL OR p_search = ''
+          OR COALESCE(pr.display_name, pr.username, '') ILIKE '%' || p_search || '%')
+   ORDER BY COALESCE(ea.rake, 0) DESC
+   LIMIT GREATEST(COALESCE(p_limit, 500), 1);
+END $function$;

@@ -1,0 +1,216 @@
+{
+  "cron": {
+    "jobid": 231,
+    "active": true,
+    "command": " SET LOCAL statement_timeout = '120s';\n     SELECT CASE WHEN pg_try_advisory_lock(hashtext('ca-pay-backed-payout-shortfalls'))\n       THEN (public.fn_pay_backed_payout_shortfalls())::text ELSE 'locked' END; ",
+    "jobname": "ca-pay-backed-payout-shortfalls-hourly",
+    "schedule": "26 * * * *"
+  },
+  "indexes": [
+    {
+      "table": "rake_records",
+      "definition": "CREATE UNIQUE INDEX rake_records_pkey ON public.rake_records USING btree (id)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_date ON public.rake_records USING btree (created_at)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE UNIQUE INDEX uq_rake_records_hand_id ON public.rake_records USING btree (hand_id) WHERE (hand_id IS NOT NULL)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_tournament ON public.rake_records USING btree (tournament_id) WHERE (tournament_id IS NOT NULL)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_table_id ON public.rake_records USING btree (table_id)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_created_at_id ON public.rake_records USING btree (created_at, id)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_club_created ON public.rake_records USING btree (club_id, created_at) WHERE (rake_amount > (0)::numeric)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_contribs_gin ON public.rake_records USING gin (player_contributions)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_relink ON public.rake_records USING btree (table_id, ((metadata ->> 'hand_number'::text))) WHERE (hand_id IS NULL)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_club_data_tournament_window ON public.rake_records USING btree (created_at, tournament_id) INCLUDE (rake_amount, metadata) WHERE (is_tournament AND (rake_amount <> (0)::numeric) AND (tournament_id IS NOT NULL))"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_club_id_fk ON public.rake_records USING btree (club_id)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_satellite_seat_source_ccnew ON public.rake_records USING btree (source) WHERE (source = 'fn_award_satellite_seat'::text)"
+    },
+    {
+      "table": "rake_records",
+      "definition": "CREATE INDEX idx_rake_records_satellite_seat_source ON public.rake_records USING btree (source) WHERE (source = 'fn_award_satellite_seat'::text)"
+    },
+    {
+      "table": "tournament_conservation_baseline",
+      "definition": "CREATE UNIQUE INDEX tournament_conservation_baseline_pkey ON public.tournament_conservation_baseline USING btree (tournament_id)"
+    },
+    {
+      "table": "tournament_guarantee_overlays",
+      "definition": "CREATE UNIQUE INDEX tournament_guarantee_overlays_pkey ON public.tournament_guarantee_overlays USING btree (tournament_id)"
+    },
+    {
+      "table": "tournament_guarantee_overlays",
+      "definition": "CREATE INDEX idx_tournament_guarantee_overlays_club_id ON public.tournament_guarantee_overlays USING btree (club_id)"
+    },
+    {
+      "table": "tournament_payouts",
+      "definition": "CREATE UNIQUE INDEX tournament_payouts_pkey ON public.tournament_payouts USING btree (id)"
+    },
+    {
+      "table": "tournament_payouts",
+      "definition": "CREATE INDEX idx_tournament_payouts_tournament ON public.tournament_payouts USING btree (tournament_id)"
+    },
+    {
+      "table": "tournament_payouts",
+      "definition": "CREATE UNIQUE INDEX uq_tournament_payouts_idempotency_key ON public.tournament_payouts USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)"
+    },
+    {
+      "table": "tournament_payouts",
+      "definition": "CREATE INDEX idx_tournament_payouts_tournament_position ON public.tournament_payouts USING btree (tournament_id, \"position\")"
+    },
+    {
+      "table": "tournament_payouts",
+      "definition": "CREATE INDEX idx_tournament_payouts_satellite_target ON public.tournament_payouts USING btree (((metadata ->> 'satellite_target_id'::text))) INCLUDE (amount)"
+    },
+    {
+      "table": "tournament_satellite_awards",
+      "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_pkey ON public.tournament_satellite_awards USING btree (tournament_id, place)"
+    },
+    {
+      "table": "tournament_satellite_awards",
+      "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_tournament_id_user_id_key ON public.tournament_satellite_awards USING btree (tournament_id, user_id)"
+    },
+    {
+      "table": "tournament_satellite_awards",
+      "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_payout_id_key ON public.tournament_satellite_awards USING btree (payout_id)"
+    },
+    {
+      "table": "tournament_satellite_awards",
+      "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_idempotency_key_key ON public.tournament_satellite_awards USING btree (idempotency_key)"
+    },
+    {
+      "table": "tournament_satellite_awards",
+      "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_registration_id_key ON public.tournament_satellite_awards USING btree (registration_id)"
+    },
+    {
+      "table": "tournament_satellite_awards",
+      "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_ticket_id_key ON public.tournament_satellite_awards USING btree (ticket_id)"
+    },
+    {
+      "table": "tournament_tickets",
+      "definition": "CREATE INDEX idx_tournament_tickets_club_id_fk ON public.tournament_tickets USING btree (club_id)"
+    },
+    {
+      "table": "tournament_tickets",
+      "definition": "CREATE UNIQUE INDEX tournament_ticket_one_satellite_entitlement ON public.tournament_tickets USING btree (source_refund_entitlement_id) WHERE (source_refund_entitlement_id IS NOT NULL)"
+    },
+    {
+      "table": "tournament_tickets",
+      "definition": "CREATE UNIQUE INDEX tournament_ticket_one_direct_satellite_award ON public.tournament_tickets USING btree (source_satellite_id, source_satellite_award_place) WHERE (source_satellite_award_place IS NOT NULL)"
+    },
+    {
+      "table": "tournament_tickets",
+      "definition": "CREATE UNIQUE INDEX tournament_tickets_pkey ON public.tournament_tickets USING btree (id)"
+    },
+    {
+      "table": "tournament_tickets",
+      "definition": "CREATE INDEX tournament_ticket_entry_lookup ON public.tournament_tickets USING btree (holder_id, status, redemption_mode, created_at, id) WHERE ((status = 'issued'::text) AND (redemption_mode = 'tournament_entry_only'::text))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE UNIQUE INDEX wallet_transactions_pkey ON public.wallet_transactions USING btree (id)"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_transactions_user ON public.wallet_transactions USING btree (user_id)"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_transactions_user_created ON public.wallet_transactions USING btree (user_id, created_at DESC)"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_club_data_player_window ON public.wallet_transactions USING btree (user_id, created_at) INCLUDE (category, type, amount, table_id, related_entity_id) WHERE (((category = ANY (ARRAY['buyin'::text, 'cashout'::text])) AND (table_id IS NOT NULL)) OR ((category = ANY (ARRAY['tournament_buyin'::text, 'prize'::text, 'bounty'::text])) AND (related_entity_id IS NOT NULL)))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_table_created ON public.wallet_transactions USING btree (table_id, created_at) WHERE (table_id IS NOT NULL)"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_entity_cat_created ON public.wallet_transactions USING btree (related_entity_id, category, created_at) WHERE (related_entity_id IS NOT NULL)"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wt_bbj_promo_payout ON public.wallet_transactions USING btree (category) INCLUDE (amount) WHERE ((category = 'promotion'::text) AND (description = 'BBJ promo pool payout'::text))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_user_diamond ON public.wallet_transactions USING btree (user_id) INCLUDE (amount) WHERE ((type = 'credit'::text) AND (category = ANY (ARRAY['diamond_purchase'::text, 'diamond_reward'::text, 'diamond_refund'::text])))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_user_diamond_spend ON public.wallet_transactions USING btree (user_id) INCLUDE (amount) WHERE ((type = 'debit'::text) AND (category = ANY (ARRAY['diamond_deduction'::text, 'vip_purchase'::text, 'mint'::text])))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_club_data_tournament_user_window ON public.wallet_transactions USING btree (user_id, created_at) INCLUDE (category, amount, related_entity_id) WHERE ((category = ANY (ARRAY['tournament_buyin'::text, 'prize'::text, 'bounty'::text])) AND (related_entity_id IS NOT NULL))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_prize_credits_by_entity ON public.wallet_transactions USING btree (related_entity_id) INCLUDE (amount) WHERE ((type = 'credit'::text) AND (category = 'prize'::text) AND (related_entity_id IS NOT NULL))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_table_cat ON public.wallet_transactions USING btree (table_id, category) WHERE (table_id IS NOT NULL)"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_club_data_cash_user_window ON public.wallet_transactions USING btree (user_id, created_at) INCLUDE (type, amount, table_id) WHERE ((category = ANY (ARRAY['buyin'::text, 'cashout'::text])) AND (table_id IS NOT NULL))"
+    },
+    {
+      "table": "wallet_transactions",
+      "definition": "CREATE INDEX idx_wallet_tx_created_at ON public.wallet_transactions USING btree (created_at)"
+    }
+  ],
+  "functions": [
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "0d3b61282e592f3f938e77dcb1bf4a98",
+      "oid": "16457034",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "signature": "fn_tournament_conservation_delta(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_conservation_delta(p_tournament_id uuid)\n RETURNS numeric\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  WITH m AS (\n    SELECT t.id, t.ended_at,\n      COALESCE((SELECT sum(w.amount) FROM public.wallet_transactions w\n         WHERE w.related_entity_id = t.id AND w.type = 'debit'\n           AND w.category IN ('tournament_buyin','rebuy','addon')), 0) AS money_in,\n      COALESCE((SELECT sum(w.amount) FROM public.wallet_transactions w\n         WHERE w.related_entity_id = t.id AND w.type = 'credit'\n           AND w.category = 'refund'), 0) AS refunds,\n      COALESCE((SELECT sum(w.amount) FROM public.wallet_transactions w\n         WHERE w.related_entity_id = t.id AND w.type = 'credit'\n           AND w.category = 'prize'), 0) AS prizes,\n      COALESCE((SELECT sum(w.amount) FROM public.wallet_transactions w\n         WHERE w.related_entity_id = t.id AND w.type = 'credit'\n           AND w.category = 'bounty'), 0) AS bounties,\n      COALESCE((SELECT sum(r.rake_amount) FROM public.rake_records r\n         WHERE r.tournament_id = t.id AND r.is_tournament), 0) AS rake,\n\n      -- THE OVERLAY, FROM THE JOURNAL FIRST (2026-09-06). Two paths fund a\n      -- guarantee and they keep different books: fn_apply_prize_guarantee\n      -- writes a tournament_guarantee_overlays row, and the lock trigger\n      -- fn_ca_fund_overlay_on_lock writes a chip_ledger leg\n      -- (union_bank|club_treasury -> prize_liability, category 'overlay').\n      -- The journal is the record of truth, so it is read first; the side\n      -- table carries the 227 events older than the leg. GREATEST, never the\n      -- sum: no event in the whole history has both, and if one ever does,\n      -- they are two records of ONE funding, not two fundings.\n      GREATEST(\n        COALESCE((SELECT sum(l.amount) FROM public.chip_ledger l\n           WHERE l.tournament_id = t.id\n             AND l.category = 'overlay'\n             AND l.to_type = 'prize_liability'), 0),\n        COALESCE((SELECT o.amount FROM public.tournament_guarantee_overlays o\n           WHERE o.tournament_id = t.id), 0)\n      ) AS funded_overlay,\n\n      -- ACKNOWLEDGED PRE-FUNDING MINTING. Replaces the 2026-08-27T12:00:00Z\n      -- date literal that used to live here: same intent, but one auditable row\n      -- per event carrying the exact amount instead of a comparison that\n      -- silently forgave whatever fell the right side of it. An event with no\n      -- baseline row is offset by nothing.\n      COALESCE((SELECT b.amount FROM public.tournament_conservation_baseline b\n         WHERE b.tournament_id = t.id), 0) AS acknowledged,\n\n      -- A SEAT ARRIVING. The target's pool and rake were both credited by\n      -- fn_award_satellite_seat with no wallet debit anywhere, so without this\n      -- term the target is charged for a prize it was funded to pay. The seat\n      -- names its target in metadata because the payout row belongs to the\n      -- SATELLITE that paid it.\n      --\n      -- A TICKET ARRIVES WHEN IT IS REDEEMED, NOT WHEN IT IS ISSUED\n      -- (2026-09-12). The holder of an unredeemed ticket has not entered this\n      -- event and owes it nothing; crediting the target on issue invents an\n      -- entry. Measured: gating this side the same way as the paid side below\n      -- put \"Wednesday Feature\" at +40.00 and \"DSS Wednesday $22 NLH\n      -- Deepstack\" at +20.00, both of which are correctly 0.00.\n      COALESCE((SELECT sum(sp.amount)\n         FROM public.tournament_payouts sp\n         LEFT JOIN public.tournament_satellite_awards a\n                ON a.tournament_id = sp.tournament_id AND a.place = sp.position\n         LEFT JOIN public.tournament_tickets k ON k.id = a.ticket_id\n        WHERE sp.source IN ('satellite_seat','satellite_ticket')\n          AND sp.metadata->>'satellite_target_id' = t.id::text\n          -- no award row = the legacy direct-seat path, which always arrived\n          AND COALESCE(a.delivery_kind, 'seat') IN ('seat','ticket')\n          -- no ticket row = never a ticket; a ticket must be redeemed\n          AND (k.id IS NULL OR k.status = 'redeemed')), 0) AS seat_income,\n\n      -- A SEAT LEAVING. The satellite really did pay this out; it simply paid\n      -- it in a seat rather than in chips, so no 'prize' credit exists to find.\n      --\n      -- A TICKET IS THAT SAME SEAT, HELD RATHER THAN TAKEN (2026-09-12), so it\n      -- leaves on ISSUE. A cancelled ticket does not leave at all - its value\n      -- comes back as cash and the 'prize' credit above already counts it - and\n      -- a cash delivery was never a seat in the first place.\n      --\n      -- ... AND A CASH DELIVERY WITH NO TICKET ROW IS STILL A CASH DELIVERY\n      -- (2026-09-25). The cancelled-ticket case above is one way a ticket turns\n      -- into cash. The other leaves NO tournament_satellite_awards row and NO\n      -- tournament_tickets row at all: fn_settle_satellite_tournament pays the\n      -- place through fn_credit_and_log with the wallet reason \"Satellite ticket\n      -- paid in cash because target admission was definitively unavailable\",\n      -- and the payout row keeps source='satellite_ticket' with a NULL position.\n      -- Both COALESCE defaults above then read it as the legacy direct-seat\n      -- path, and the 'prize' credit counts it a second time.\n      --\n      -- Measured: 40 satellites, 2,320.00, every delta explained to the penny\n      -- as wallet_prizes + seat_paid_out - payout_total. Over the whole 71,785\n      -- event scan the extra condition touches 41 events, fixes 41, and breaks\n      -- none. Keying this on recorded_by='credit_and_log' instead - the obvious\n      -- first guess - would have broken 245 healthy events to fix the same 41,\n      -- because for those the cancelled-ticket gate had already excluded the row\n      -- and this would have subtracted it twice.\n      COALESCE((SELECT sum(sp.amount)\n         FROM public.tournament_payouts sp\n         LEFT JOIN public.tournament_satellite_awards a\n                ON a.tournament_id = sp.tournament_id AND a.place = sp.position\n         LEFT JOIN public.tournament_tickets k ON k.id = a.ticket_id\n        WHERE sp.source IN ('satellite_seat','satellite_ticket')\n          AND sp.tournament_id = t.id\n          AND COALESCE(a.delivery_kind, 'seat') IN ('seat','ticket')\n          AND COALESCE(k.status, 'issued') IN ('issued','redeemed')\n          AND NOT (\n            k.id IS NULL\n            AND EXISTS (SELECT 1 FROM public.wallet_transactions w\n                         WHERE w.related_entity_id = t.id\n                           AND w.type = 'credit' AND w.category = 'prize'\n                           AND w.user_id = sp.user_id\n                           AND w.amount  = sp.amount)\n          )), 0) AS seat_paid_out\n    FROM public.tournaments t WHERE t.id = p_tournament_id\n  )\n  SELECT round(\n      m.money_in - m.refunds - m.rake - m.prizes - m.bounties\n    + m.funded_overlay\n    + m.acknowledged\n    + m.seat_income\n    - m.seat_paid_out\n  , 2)\n  FROM m;\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "9bf0cce25df7f2c4dcae32f2c42d2cd3",
+      "oid": "16640842",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "signature": "fn_pay_backed_payout_shortfalls(boolean,integer)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_pay_backed_payout_shortfalls(p_apply boolean DEFAULT false, p_limit integer DEFAULT 500)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  r record; v_res jsonb;\n  v_paid numeric := 0; v_events integer := 0;\n  v_withheld numeric := 0; v_withheld_events integer := 0;\n  v_refused integer := 0; v_refused_chips numeric := 0;\n  v_alerts integer := 0;\n  v_delta_after numeric;\n  /* HOW FAR BACK THIS QUESTION REACHES (2026-09-19).\n     There was no bound here, so fn_tournament_conservation_delta ran per row\n     over every COMPLETED tournament and the job was cancelled at 120s on 21 of\n     its last 24 runs. A shortfall is created at settlement and is detectable\n     within hours; 30 days is about a 100x margin on that. Measured: bounded\n     21,817 ms against production, unbounded over 120,000 ms and cancelled.\n     Widen it deliberately if a shortfall is ever found older than this. */\n  v_window_days integer := 30;\nBEGIN\n  FOR r IN\n    SELECT t.id, t.name, t.club_id, t.prize_pool,\n           COALESCE((public.fn_tournament_payout_reconcile(t.id, false)->>'total_top_up')::numeric, 0) AS topup,\n           public.fn_tournament_conservation_delta(t.id) AS delta,\n           COALESCE((SELECT sum(w.amount) FROM public.wallet_transactions w\n                      WHERE w.related_entity_id = t.id AND w.type = 'credit'\n                        AND w.category = 'prize'), 0) AS wallet_prizes\n      FROM public.tournaments t\n     WHERE t.status = 'COMPLETED'\n       -- Satellites award seats, not cash. Reconciling them against a cash\n       -- pool would invent prizes that do not exist.\n       AND NOT (COALESCE(t.variant, '') = 'satellite' OR UPPER(COALESCE(t.tournament_type, '')) = 'SATELLITE' OR t.satellite_target_id IS NOT NULL)\n       -- A Spin's pool is funded by the reserve, not by this game's own\n       -- collections, so its delta does not mean what it means elsewhere.\n       AND COALESCE(t.variant, '') <> 'spin'\n       -- THE BOUND THAT MAKES THIS A DETECTOR RATHER THAN A TIMEOUT.\n       -- Cheap, and it comes before the delta so the delta is only computed\n       -- for rows inside the window. Uses idx_tournaments_completed_ended_at.\n       AND t.ended_at > now() - make_interval(days => GREATEST(v_window_days, 1))\n       /* THE LOG IS A RECEIPT, NOT A TOMBSTONE (2026-09-01).\n          This clause used to be `NOT EXISTS (... backfill_log ...)`, so one\n          pass over an event excluded it from every future pass, for good. That\n          is wrong in principle rather than in practice today: an event can\n          become payable AFTER its pass - a guarantee gets funded, a\n          conservation baseline is acknowledged - and nothing would ever look\n          at it again. Measured before this change, no logged event is payable\n          right now (all 57 fail the conservation filter below on their own\n          merits), so removing the clause unlocks no payment today and closes\n          the door on a shortfall that outlives its one and only inspection.\n          \"Nothing is owed\" is the only correct exclusion, and it is computed\n          below as `topup <= 0.005`. The log stays, as the audit trail it\n          should always have been. */\n       AND public.fn_tournament_conservation_delta(t.id) > 0.01\n     ORDER BY t.ended_at ASC NULLS LAST\n     LIMIT GREATEST(p_limit, 1)\n  LOOP\n    CONTINUE WHEN r.topup <= 0.005;\n\n    /* CONSERVATION REFUSES BEFORE THE POOL DOES (2026-09-01).\n       The reconciler computes \"already paid\" from tournament_payouts, on\n       purpose - counting ledger rows instead caused two real double-pays. The\n       cost of that choice is that an event whose record is incomplete reports\n       a debt it does not have, and 61 events on this platform hold 5,515.91\n       chips of prizes that reached wallets and were never recorded. If such a\n       pool is ever funded, this sweep would pay them a second time.\n\n       An event that has already disbursed its whole pool to wallets owes\n       nobody, whatever the paperwork says. Refuse, and say so, so the record\n       gets fixed rather than paid twice. */\n    IF r.wallet_prizes + 0.01 >= COALESCE(r.prize_pool, 0) AND COALESCE(r.prize_pool, 0) > 0 THEN\n      v_refused := v_refused + 1;\n      v_refused_chips := v_refused_chips + r.topup;\n      INSERT INTO public.financial_alerts (severity, source, message, context)\n      SELECT 'warning', 'fn_pay_backed_payout_shortfalls',\n             format('%s already paid %s of its %s pool to wallets, so the %s the reconciler reports as owed is a missing tournament_payouts record, not a debt. Paying nothing.',\n                    COALESCE(r.name, r.id::text), round(r.wallet_prizes,2),\n                    round(COALESCE(r.prize_pool,0),2), round(r.topup,2))\n           , jsonb_build_object('kind','refused_already_disbursed','tournament_id',r.id,\n               'club_id',r.club_id,'wallet_prizes',round(r.wallet_prizes,2),\n               'prize_pool',round(COALESCE(r.prize_pool,0),2),'reported_top_up',round(r.topup,2))\n       WHERE NOT EXISTS (SELECT 1 FROM public.financial_alerts fa\n                          WHERE fa.source='fn_pay_backed_payout_shortfalls'\n                            AND fa.resolved IS NOT TRUE\n                            AND fa.context->>'kind'='refused_already_disbursed'\n                            AND fa.context->>'tournament_id' = r.id::text);\n      IF FOUND THEN v_alerts := v_alerts + 1; END IF;\n      CONTINUE;\n    END IF;\n\n    -- The event must be holding at least what it is about to pay out. Not\n    -- `delta >= 0` - that would let an event with 3 chips spare pay out 300.\n    IF r.delta < r.topup THEN\n      v_withheld := v_withheld + r.topup;\n      v_withheld_events := v_withheld_events + 1;\n      /* WITHHOLDING IS NEVER SILENT (2026-09-01).\n         This branch used to increment a counter that reached a console line\n         and nothing else. Money owed to a player and not paid produced no\n         durable record anywhere, so nobody could find it later, and nobody\n         did. It is a deduped alert now, per event, naming the gap. */\n      INSERT INTO public.financial_alerts (severity, source, message, context)\n      SELECT 'critical', 'fn_pay_backed_payout_shortfalls',\n             format('%s owes players %s and its pool holds %s, so nothing was paid. The shortfall needs funding before anyone can be paid.',\n                    COALESCE(r.name, r.id::text), round(r.topup,2), round(r.delta,2))\n           , jsonb_build_object('kind','withheld_unfunded_pool','tournament_id',r.id,\n               'club_id',r.club_id,'owed',round(r.topup,2),'pool_holds',round(r.delta,2),\n               'funding_gap',round(r.topup - r.delta,2),\n               'detail','no money was moved; funding an advertised guarantee is a human decision')\n       WHERE NOT EXISTS (SELECT 1 FROM public.financial_alerts fa\n                          WHERE fa.source='fn_pay_backed_payout_shortfalls'\n                            AND fa.resolved IS NOT TRUE\n                            AND fa.context->>'kind'='withheld_unfunded_pool'\n                            AND fa.context->>'tournament_id' = r.id::text);\n      IF FOUND THEN v_alerts := v_alerts + 1; END IF;\n      CONTINUE;\n    END IF;\n\n    IF p_apply THEN\n      /* ONE SETTLE PATH (Lane A3, 2026-09-02): the reconciler settles every\n         place through fn_settle_tournament_obligation. `total_settled` is what\n         that path actually paid; `total_top_up` is what was wanted. */\n      v_res := public.fn_tournament_payout_reconcile(r.id, true);\n      v_delta_after := public.fn_tournament_conservation_delta(r.id);\n\n      IF v_delta_after < -0.01 THEN\n        RAISE EXCEPTION 'paying % would leave conservation at %; refusing', r.id, v_delta_after;\n      END IF;\n\n      INSERT INTO public.tournament_payout_backfill_log\n        (tournament_id, top_up, delta_before, delta_after)\n      VALUES (r.id, COALESCE((v_res->>'total_settled')::numeric, (v_res->>'total_top_up')::numeric, r.topup), r.delta, v_delta_after)\n      ON CONFLICT (tournament_id) DO UPDATE\n        SET top_up = EXCLUDED.top_up,\n            delta_before = EXCLUDED.delta_before,\n            delta_after = EXCLUDED.delta_after;\n\n      v_paid := v_paid + COALESCE((v_res->>'total_settled')::numeric, (v_res->>'total_top_up')::numeric, 0);\n    ELSE\n      v_paid := v_paid + r.topup;\n    END IF;\n    v_events := v_events + 1;\n  END LOOP;\n\n  RETURN jsonb_build_object('ok', true, 'applied', p_apply,\n    'events_paid', v_events, 'chips_paid', round(v_paid, 2),\n    'events_withheld_unfunded_pool', v_withheld_events,\n    'chips_withheld_unfunded_pool', round(v_withheld, 2),\n    'events_refused_already_disbursed', v_refused,\n    'chips_refused_already_disbursed', round(v_refused_chips, 2),\n    'alerts_raised', v_alerts,\n    'window_days', v_window_days,\n    'money_path', 'fn_settle_tournament_obligation');\nEND;\n$function$\n"
+    }
+  ],
+  "observed_at": "2026-09-27T04:39:54.082748+00:00"
+}

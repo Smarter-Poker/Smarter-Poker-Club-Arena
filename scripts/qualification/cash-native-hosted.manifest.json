@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171491,
-      "sha256": "03ed48c5f82369156119effb7c988172fbd4577d19e96e27cc651363f5957a32"
+      "bytes": 171662,
+      "sha256": "3164dc75ae413bbbd1a1aada5833a8c1856141856dd1be87c918cf691c4f6afc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27865,
-      "sha256": "cc3c43f1f53d12c0964d7c91d0b790432170438ed090fa0ff487eab2cb7a3931"
+      "bytes": 28099,
+      "sha256": "435c5a885105eb907a267df7ee8e81a57f7beff0ac2c50ae898095be2f9fff48"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -993,6 +993,112 @@
     "changed": [
       ".github/workflows/ci.yml",
       "scripts/ci/classify-ci-changes.mjs"
+    ]
+  },
+  "backedPayoutScanIntegration": {
+    "on": "2026-09-27",
+    "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding.",
+    "updatedPins": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "from": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "to": {
+          "bytes": 24865,
+          "sha256": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785"
+        }
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "from": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "to": {
+          "bytes": 169700,
+          "sha256": "ff347050882fefa18e7011baa1bfbbbb806d412b32759cb46ea44547c13ab410"
+        }
+      }
+    ],
+    "status": "Exact source binding; hosted financial qualification remains required."
+  },
+  "backed_payout_settlement_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected settlement attribution and catalog 6e32e04f2f",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_bbj_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected BBJ indexes eb6e949396",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_archived_spin_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected archived Spin 593f355b75",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/unit/fixtureNativeCi.test.ts"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_backend_disposal_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected native backend disposal a5b2b5f8",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_current_main_integration_20260927_1620": {
+    "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_current_main_integration_20260927_1732": {
+    "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "openWeekProtectedPayoutIntegration20260927": {
+    "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
+    "reason": "Preserve both required native routes and every parent history; bind only the actual integrated workflow, classifier and nested manifest bytes. No accounting assertion changed.",
+    "changes": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 171491,
+          "sha256": "03ed48c5f82369156119effb7c988172fbd4577d19e96e27cc651363f5957a32"
+        },
+        "actual": {
+          "bytes": 171662,
+          "sha256": "3164dc75ae413bbbd1a1aada5833a8c1856141856dd1be87c918cf691c4f6afc"
+        }
+      },
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 27865,
+          "sha256": "cc3c43f1f53d12c0964d7c91d0b790432170438ed090fa0ff487eab2cb7a3931"
+        },
+        "actual": {
+          "bytes": 28099,
+          "sha256": "435c5a885105eb907a267df7ee8e81a57f7beff0ac2c50ae898095be2f9fff48"
+        }
+      }
     ]
   }
 }

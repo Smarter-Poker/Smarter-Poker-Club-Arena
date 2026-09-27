@@ -8,5 +8,12 @@
   "anonPublicSurface": {
     "fn_shared_bonus_replay": "Public bonus replay links reveal only the immutable game/prize snapshot explicitly shared by its authenticated owner after settlement. The caller must possess a random share UUID; private entry IDs, identities, club data, wallet balances, seeds and unshared games are excluded. This read-only RPC never creates a share, publishes a post or changes a wallet.",
     "fn_platform_capabilities": "Returns the public technical capability projection (id, rule version, title, scope, variants, compatibility, readiness, available). No evidence, actor, club, player or wallet data; read-only; capability readiness is not secret and the client gates product surfaces on it."
+  },
+  "_comment_authenticatedAggregates": "Rule 4 only: reviewed single-row aggregate declarations, pinned to SHA256 of comment-stripped header + NUL + body. PUBLIC and anon must remain denied. This is not an anonymous surface or a name-only exception; any declaration change requires renewed review and native qualification.",
+  "authenticatedAggregates": {
+    "fn_smarter_poker_pulse_cron_counts": {
+      "declarationSha256": "e3f0cc36f4851784a940abfe021685c4686312efa4f520f5c20e6e481d5008ac",
+      "reason": "Returns exactly one row containing only the existing pulse active home/pnm job count and the last-24-hour failure count. No names, commands, error text, users, financial records or product rows can be returned. The no-argument SQL STABLE body has no dynamic SQL or writes; authenticated/service grants are explicit and anonymous access is refused. Native PG17 qualifies count semantics and the real NOSUPERUSER BYPASSRLS owner boundary while the outer pulse retains caller RLS."
+    }
   }
 }

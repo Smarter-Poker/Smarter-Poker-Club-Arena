@@ -78,13 +78,40 @@ describe('required standalone verdicts retain source and reporter authority', ()
       { context: check().name, integrationId: authority, state: 'missing', conclusions: [] },
     ]);
   });
-  it.each(['failure', 'cancelled', 'skipped', 'neutral', 'timed_out'])(
+  it.each(['failure', 'cancelled', 'timed_out'])(
     'a newer %s attempt supersedes old success',
     (conclusion) => {
       const problems = verdict([check(), check({ id: 11, conclusion })]);
       expect(problems[0].state).toBe('not_successful');
       expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
         'RED'
+      );
+    }
+  );
+  it.each(['skipped', 'neutral'])(
+    'a newer %s verdict is known unexecuted, never green',
+    (conclusion) => {
+      const problems = verdict([check(), check({ id: 11, conclusion })]);
+      expect(problems[0]).toMatchObject({ state: 'not_run', conclusions: [conclusion] });
+      expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
+        'NOT_RUN'
+      );
+      expect(
+        stateForChecks({
+          failures: [],
+          activeRuns: [],
+          requiredProblems: [...problems, { state: 'not_successful' }],
+        })
+      ).toBe('RED');
+      expect(
+        stateForChecks({
+          failures: [],
+          activeRuns: [],
+          requiredProblems: [...problems, { state: 'missing' }],
+        })
+      ).toBe('RED');
+      expect(stateForChecks({ failures: [], activeRuns: [{}], requiredProblems: problems })).toBe(
+        'RUNNING'
       );
     }
   );
@@ -259,13 +286,26 @@ describe('required standalone verdicts retain source and reporter authority', ()
 // Execute the actual CLI and HTTP response boundary, with no network, repository
 // credential or production mutation. An HTTP error must not become GREEN/RUNNING.
 const tool = resolve('scripts/ci/pr-status.mjs');
-function cli(response, movingHead = false) {
+function cli(
+  response,
+  options: {
+    movingHead?: boolean;
+    pr?: boolean;
+    all?: boolean;
+    text?: boolean;
+    merged?: boolean;
+  } = {}
+) {
   const source = `
-    process.argv = [process.execPath, ${JSON.stringify(tool)}, ...${JSON.stringify(movingHead ? ['5400'] : ['--sha', sha])}, '--repo', 'fixture/repo', '--json'];
+    process.argv = [process.execPath, ${JSON.stringify(tool)}, ...${JSON.stringify(options.all ? ['--all'] : options.pr || options.movingHead || options.merged ? ['5400'] : ['--sha', sha])}, '--repo', 'fixture/repo', ...${JSON.stringify(options.text ? [] : ['--json'])}];
     let prReads = 0;
     globalThis.fetch = async (url, options) => {
       if (options.method && options.method !== 'GET') throw Error('Observation attempted a mutation');
-      if (url.endsWith('/pulls/5400')) return new Response(JSON.stringify({number:5400,head:{sha:++prReads === 1 ? '${sha}' : '${'b'.repeat(40)}',ref:'fixture'}}));
+      if (url.includes('/pulls?')) return new Response(JSON.stringify([{number:5400,head:{sha:'${sha}',ref:'fixture'}}]));
+      if (url.endsWith('/pulls/5400')) {
+        ++prReads;
+        return new Response(JSON.stringify({number:5400, state: prReads > 1 && ${!!options.merged} ? 'closed' : 'open', merged: prReads > 1 && ${!!options.merged}, mergeable_state:'dirty',head:{sha:prReads > 1 && ${!!options.movingHead} ? '${'b'.repeat(40)}' : '${sha}',ref:'fixture'}}));
+      }
       if (url.endsWith('/rules/branches/main')) return new Response(JSON.stringify([{type:'required_status_checks',parameters:{required_status_checks:[{context:'Money trigger declaration authority',integration_id:${authority}}]}}]));
       if (url.includes('/actions/runs?')) return new Response(JSON.stringify({total_count:0,workflow_runs:[]}));
       if (url.includes('/check-runs?')) return new Response(JSON.stringify(${JSON.stringify(response.body)}), {status:${response.status},headers:${JSON.stringify(response.headers || {})}});
@@ -279,7 +319,7 @@ function cli(response, movingHead = false) {
     env: { PATH: process.env.PATH, GH_TOKEN: 'local-fixture-only' },
   });
   expect(result.error).toBeUndefined();
-  return { exit: result.status, result: JSON.parse(result.stdout) };
+  return { exit: result.status, result: options.text ? result.stdout : JSON.parse(result.stdout) };
 }
 describe('actual read-only CLI response handling', () => {
   it('reports the exact App result through the complete CLI', () => {
@@ -287,6 +327,44 @@ describe('actual read-only CLI response handling', () => {
       exit: 0,
       result: { state: 'GREEN', sha, requiredProblems: [] },
     });
+  });
+  it.each(['skipped', 'neutral'])(
+    'reports %s distinctly through the CLI without green exit',
+    (conclusion) => {
+      const response = {
+        status: 200,
+        body: { total_count: 1, check_runs: [check({ conclusion })] },
+      };
+      expect(cli(response)).toMatchObject({ exit: 5, result: { state: 'NOT_RUN' } });
+      const merged = cli(response, { merged: true, text: true });
+      expect(merged.exit).toBe(5);
+      expect(merged.result).toContain('MERGED');
+      expect(merged.result).toContain('NOT_RUN');
+      expect(merged.result).not.toMatch(/will not merge|BLOCKS MERGE|DIRTY -/);
+      expect(cli(response, { merged: true })).toMatchObject({
+        exit: 5,
+        result: { state: 'NOT_RUN', merged: true, mergeable_state: 'MERGED' },
+      });
+      expect(cli(response, { all: true, merged: true })).toMatchObject({
+        exit: 5,
+        result: [{ state: 'NOT_RUN', merged: true, mergeable_state: 'MERGED' }],
+      });
+      const allText = cli(response, { all: true, merged: true, text: true });
+      expect(allText.exit).toBe(5);
+      expect(allText.result).toContain('MERGED');
+      expect(allText.result).not.toContain('1 open');
+    }
+  );
+  it('a merged PR retains a failed check without predicting an impossible future merge', () => {
+    const response = {
+      status: 200,
+      body: { total_count: 1, check_runs: [check({ conclusion: 'failure' })] },
+    };
+    const read = cli(response, { merged: true, text: true });
+    expect(read.exit).toBe(1);
+    expect(read.result).toContain('MERGED');
+    expect(read.result).toContain('RED');
+    expect(read.result).not.toMatch(/will not merge|BLOCKS MERGE|DIRTY -/);
   });
   it.each([403, 429, 503])('HTTP %s stays UNKNOWN with nonzero exit', (status) => {
     expect(cli({ status, body: { message: 'Unavailable fixture' } })).toMatchObject({
@@ -296,7 +374,7 @@ describe('actual read-only CLI response handling', () => {
   });
   it('a PR changing head while read cannot inherit the earlier head success', () => {
     expect(
-      cli({ status: 200, body: { total_count: 1, check_runs: [check()] } }, true)
+      cli({ status: 200, body: { total_count: 1, check_runs: [check()] } }, { movingHead: true })
     ).toMatchObject({
       exit: 3,
       result: { state: 'UNKNOWN', reason: expect.stringContaining('changed head') },

@@ -552,7 +552,7 @@ export default function UnionDashboardPage() {
       ...uc.clubs,
       // UNION AUDIT FIX 2026-07-21: live column is club_commission_rate
       // (commission_rate never existed on union_clubs — reads were undefined).
-      club_commission_rate: uc.club_commission_rate || 0.9,
+      club_commission_rate: uc.club_commission_rate ?? 0.9,
     }));
     if (isCurrent()) setClubs(enrichedClubs);
 
@@ -1628,7 +1628,7 @@ export default function UnionDashboardPage() {
                           className="admin-btn admin-btn-ghost admin-btn-sm"
                           onClick={() => {
                             setEditCommClub(club);
-                            setEditCommRate(String((club.club_commission_rate || 0.9) * 100));
+                            setEditCommRate(String((club.club_commission_rate ?? 0.9) * 100));
                           }}
                         >
                           Edit Rate

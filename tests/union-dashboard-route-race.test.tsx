@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   adminRole: null as string | null,
   queriedTables: [] as string[],
   admins: [] as Record<string, unknown>[],
+  unionClubs: [] as Record<string, unknown>[],
+  updateClubCommission: vi.fn(),
   wallet: null as Record<string, unknown> | null,
   walletError: null as unknown,
   listApplications: vi.fn(),
@@ -28,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/services/UnionApiService', () => ({
   unionApi: {
+    updateClubCommission: (...args: unknown[]) => mocks.updateClubCommission(...args),
     listApplications: (...args: unknown[]) => mocks.listApplications(...args),
     listLeaveRequests: (...args: unknown[]) => mocks.listLeaveRequests(...args),
   },
@@ -114,7 +117,11 @@ vi.mock('../src/lib/supabase', () => ({
         return Promise.resolve({ data: null, error: null });
       });
       builder.then = (resolve: (value: unknown) => unknown) =>
-        Promise.resolve({ data: [], error: null, count: 0 }).then(resolve);
+        Promise.resolve({
+          data: table === 'union_clubs' ? mocks.unionClubs : [],
+          error: null,
+          count: 0,
+        }).then(resolve);
       return builder;
     }),
     rpc: vi.fn((name: string, args?: Record<string, unknown>) => {
@@ -168,6 +175,8 @@ describe('UnionDashboardPage route ownership', () => {
     mocks.adminRole = null;
     mocks.queriedTables = [];
     mocks.admins = [];
+    mocks.unionClubs = [];
+    mocks.updateClubCommission.mockReset();
     mocks.wallet = {
       id: 'wallet-id',
       union_id: UNION_B,
@@ -435,6 +444,33 @@ describe('UnionDashboardPage route ownership', () => {
     expect(screen.getByText('No Union Workspace Is Available')).toBeVisible();
     expect(mocks.queriedTables).not.toContain('union_wallets');
     expect(screen.queryByText('Second Admin')).not.toBeInTheDocument();
+  });
+
+  it('preserves an authoritative zero commission in display and prefill without widening valid writes', async () => {
+    mocks.unionClubs = [
+      {
+        club_id: '66666666-6666-4666-8666-666666666666',
+        club_commission_rate: 0,
+        clubs: {
+          id: '66666666-6666-4666-8666-666666666666',
+          name: 'Zero Rate Club',
+          club_id: 123,
+          member_count: 0,
+          active_tables: 0,
+          total_rake: 0,
+        },
+      },
+    ];
+    await mountTab('clubs');
+    expect(screen.getByText('0.0% Comm')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Rate', exact: true }));
+    const input = screen.getByRole('spinbutton');
+    expect(input).toHaveValue(0);
+    expect(input).toHaveAttribute('min', '1');
+    expect(input).toHaveAttribute('max', '100');
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+    expect(screen.getByText('Rate must be 1-100%')).toBeVisible();
+    expect(mocks.updateClubCommission).not.toHaveBeenCalled();
   });
 
   it('refreshes external wallet balances and retains them on malformed or failed reads', async () => {

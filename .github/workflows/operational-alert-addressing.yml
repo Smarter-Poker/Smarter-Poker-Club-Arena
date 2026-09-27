@@ -18,6 +18,9 @@ on:
     paths:
       - scripts/ci/check-operational-alert-addressing.mjs
       - scripts/ci/check-operational-alert-addressing.test.mjs
+      - scripts/ci/test-operational-alert-redelivery-addressing.py
+      - supabase/migrations/20260927160533_operational_alert_redelivery_addresses_an_unaddressed_row.sql
+      - supabase/components/cash-failed-run-intake.sql
       - .github/workflows/operational-alert-addressing.yml
 
 permissions:
@@ -38,6 +41,22 @@ jobs:
         with:
           node-version: 20
       - run: node --test scripts/ci/check-operational-alert-addressing.test.mjs
+
+  redelivery-addresses:
+    # 2026-09-27: rows first recorded before their writer named the fleet stayed
+    # unaddressed through every later delivery. The recorder now adds the
+    # destination on redelivery; this proves it on an isolated PostgreSQL built
+    # from the exact production preimages.
+    name: A redelivery addresses a row recorded without a destination
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recorder redelivery on an isolated PostgreSQL
+        env:
+          PG_BIN: /usr/lib/postgresql/16/bin
+        run: python3 scripts/ci/test-operational-alert-redelivery-addressing.py
 
   live-addressing:
     name: No unaddressed operational alert in the last two hours

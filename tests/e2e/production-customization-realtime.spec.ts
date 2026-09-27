@@ -12,6 +12,7 @@ import { walletPlayableAmount } from './support/walletPlayableAmount';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { observeAccountRealtime } from './support/accountRealtimeObservation';
+import { installAccountRealtimeInterruption } from './support/accountRealtimeInterruption';
 import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
@@ -488,6 +489,10 @@ test.describe('production Table Studio realtime contract', () => {
         baseURL,
         storageState: { cookies: [], origins: [] },
       });
+      const interruptPrimaryRealtime = await installAccountRealtimeInterruption(
+        primaryDesktop,
+        environment.supabaseUrl
+      );
       primaryMobile = await browser.newContext({
         ...devices['iPhone 13'],
         baseURL,
@@ -768,11 +773,15 @@ test.describe('production Table Studio realtime contract', () => {
       const walletBefore = await persistedWallet();
       const beforeReconnect = { ...primaryObserved };
       await primaryDesktop.setOffline(true);
+      expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
+      await primaryDesktop.setOffline(false);
+      // Offline HTTP emulation can preserve an existing Chromium WebSocket.
+      // Interrupt the real connection explicitly; the SDK owns rejoin and the
+      // consumers must perform their own authoritative reads after it.
+      await interruptPrimaryRealtime();
       await expect
         .poll(() => primaryObserved.socketCloses, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
         .toBeGreaterThan(beforeReconnect.socketCloses);
-      expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
-      await primaryDesktop.setOffline(false);
       await expect
         .poll(() => primaryObserved.membershipSubscriptions, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,

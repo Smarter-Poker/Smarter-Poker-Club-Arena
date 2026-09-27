@@ -75,6 +75,55 @@ describe('Create Club production certification contract', () => {
     expect(migration).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
   });
 
+  it('archives the exact ledger actor before a reserved certification identity is removed', () => {
+    const migration = read(
+      'supabase/migrations/20260927032422_certification_accounts_archive_ledger_actor_before_deletion.sql'
+    );
+
+    expect(migration).toContain("md5(v_old) <> 'a600217942966c122d7f245d64df96aa'");
+    expect(migration).toContain('CREATE TABLE public.ca_test_account_ledger_actor_archive');
+    expect(migration).toContain('to_jsonb(l)');
+    expect(migration).toContain('ALTER COLUMN performed_by DROP NOT NULL');
+    expect(migration).toContain('LOCK TABLE public.chip_ledger IN ACCESS EXCLUSIVE MODE');
+    expect(migration.indexOf('LOCK TABLE public.chip_ledger')).toBeLessThan(
+      migration.indexOf('CREATE TABLE public.ca_test_account_ledger_actor_archive')
+    );
+    expect(migration).toContain("<> 'ce4ab3013be283d66ab9afd1e861b552'");
+    expect(migration).toContain('CHIP_LEDGER_ACTOR_TRIGGER_PREIMAGE_CHANGED');
+    expect(migration).toContain('CREATE TRIGGER trg_chip_ledger_performed_by_update');
+    expect(migration).toContain('BEFORE UPDATE OF performed_by');
+    expect(migration).not.toContain('DROP TRIGGER trg_chip_ledger_performed_by');
+    expect(migration).toContain('INSERT INTO public.ca_declared_money_triggers');
+    expect(migration).toContain("v_reason LIKE 'certification-cleanup:%'");
+    expect(migration).toContain('NEW.performed_by IS NULL');
+    expect(migration).toContain('a.ledger_row = to_jsonb(OLD)');
+    expect(
+      migration.indexOf('INSERT INTO public.ca_test_account_ledger_actor_archive')
+    ).toBeLessThan(migration.indexOf('UPDATE public.chip_ledger'));
+    expect(migration.indexOf('UPDATE public.chip_ledger')).toBeLessThan(
+      migration.lastIndexOf('-- Preserve immutable ledger actors.')
+    );
+    expect(migration).toContain('v_ledger_archived_count <> v_ledger_count');
+    expect(migration).toContain('Reserved Certification Ledger Actor Archive Copied');
+    expect(migration).toContain("'^club-opening-grant:' || l.club_id::text || '(:[0-9]+)?$'");
+    expect(migration).toContain("l.from_type IN ('issuance_reserve', 'system_mint')");
+    expect(migration).toContain("l.from_type = 'settlement_suspense'");
+    expect(migration).toContain("l.from_type = 'table_stack'");
+    expect(migration).toContain('l.amount = 100000');
+    expect(migration).toContain('l.to_entity_id = p_user_id');
+    expect(migration).toContain('OR NOT (');
+    expect(migration).toContain('Test-account ledger actor testimony is append-only');
+    expect(migration).toContain('REVOKE ALL ON TABLE public.ca_test_account_ledger_actor_archive');
+    expect(migration).not.toMatch(
+      /CREATE TABLE public\.ca_test_account_ledger_actor_archive[\s\S]*?REFERENCES/
+    );
+    expect(migration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.enforce_chip_ledger_performed_by() TO service_role'
+    );
+    expect(migration).not.toContain('DELETE FROM public.chip_ledger');
+    expect(migration).not.toContain("SET performed_by = '00000000-0000-0000-0000-000000000001'");
+  });
+
   it('targets the unique keyboard-enabled action-bar control', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
     expect(spec).toContain("getByTitle('Create A Club (C)', { exact: true })");

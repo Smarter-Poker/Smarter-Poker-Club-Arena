@@ -387,6 +387,18 @@ describe('post-deploy production account', () => {
     });
   });
 
+  it('treats retirement as a no-op when provisioning never created a fixture record', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-no-create-club-'));
+    const env = environment(directory);
+    const fetchMock = vi.fn();
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refuses to retire an owned club outside the exact certificate prefix', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-create-refusal-'));
     const env = environment(directory);

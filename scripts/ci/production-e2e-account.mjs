@@ -346,6 +346,12 @@ export async function retireProductionCreateClubFixtures({
 } = {}) {
   const path = fixturePath(environment);
   const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  if (!account) {
+    console.log(
+      '[production-e2e-account] no fixture record exists; Create Club retirement is a no-op.'
+    );
+    return 0;
+  }
   if (!account?.id || !reserved(account.email || '')) {
     throw new Error('Refusing to retire clubs outside the reserved post-deploy namespace.');
   }

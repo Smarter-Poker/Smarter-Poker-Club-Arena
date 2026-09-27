@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
+    "scripts/ci/classify-ci-changes.mjs": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "d8e04ee86e2e865e3e7a2a245c6936c905613abb4a3aeeb77385579aaabe9aa6",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "2e7bbe21a76a4a462e28ee513d08ff4b3df6b95b376a47d00d0edf7efb5a7561",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "c2b4c50d7fac3ee12286a57067a3e37ea0b57c7e2b7b24939c01168a76076e5a",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "2bcb5b3a40249d80e363f0087309d079f65bd5bae8499ba87ca6803e0c49f426",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1933,6 +1933,27 @@
       "to": "c2b4c50d7fac3ee12286a57067a3e37ea0b57c7e2b7b24939c01168a76076e5a",
       "on": "2026-09-26",
       "why": "Bind the reviewed discovery privacy native-input classifier and any resulting nested qualification bindings. No financial SQL, fixtures or assertions changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
+      "to": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "d8e04ee86e2e865e3e7a2a245c6936c905613abb4a3aeeb77385579aaabe9aa6",
+      "to": "2e7bbe21a76a4a462e28ee513d08ff4b3df6b95b376a47d00d0edf7efb5a7561",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "c2b4c50d7fac3ee12286a57067a3e37ea0b57c7e2b7b24939c01168a76076e5a",
+      "to": "2bcb5b3a40249d80e363f0087309d079f65bd5bae8499ba87ca6803e0c49f426",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
     }
   ],
   "tournament_rake_club_successor_20260921": {

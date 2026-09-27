@@ -53,6 +53,8 @@ const cashEvidence =
 // The discovery privacy fixture must execute even when only its inputs change.
 const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
+const scopedAuditReads =
+  /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
@@ -229,7 +231,8 @@ export function classifyChangedPaths(paths) {
       matches(alertEvidence) ||
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
-      matches(discoveryPrivacy),
+      matches(discoveryPrivacy) ||
+      matches(scopedAuditReads),
     tests:
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
@@ -259,7 +262,8 @@ export function classifyChangedPaths(paths) {
       matches(alertEvidence) ||
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
-      matches(discoveryPrivacy),
+      matches(discoveryPrivacy) ||
+      matches(scopedAuditReads),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

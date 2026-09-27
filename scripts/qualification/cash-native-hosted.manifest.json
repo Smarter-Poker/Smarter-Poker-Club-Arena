@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 168945,
-      "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
+      "bytes": 169118,
+      "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 23714,
-      "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
+      "bytes": 23938,
+      "sha256": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -333,6 +333,29 @@
     "mainIntegration": {
       "revision": "6857e76cb994d22476be54f30ea3a8de5caae806",
       "reason": "Preserve newly merged appearance qualification and both diamond runner corrections while retaining discovery native qualification; recompute the exact combined workflow bytes."
+    }
+  },
+  "scoped_audit_reads_rebinding_20260927": {
+    "reason": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 168945,
+        "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 23714,
+        "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169118,
+        "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 23938,
+        "sha256": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded"
+      }
     }
   }
 }

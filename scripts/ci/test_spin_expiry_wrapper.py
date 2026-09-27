@@ -37,6 +37,14 @@ ARCHIVE_PROBE_SPEC = importlib.util.spec_from_file_location('first_archived_prod
 ARCHIVE_PROBE_MODULE = importlib.util.module_from_spec(ARCHIVE_PROBE_SPEC)
 ARCHIVE_PROBE_SPEC.loader.exec_module(ARCHIVE_PROBE_MODULE)
 FirstArchivedProductionProbeTests = ARCHIVE_PROBE_MODULE.FirstArchivedProductionProbeTests
+ARCHIVE_POSTABORT_SPEC = importlib.util.spec_from_file_location('first_archived_postabort_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_postabort.py')
+ARCHIVE_POSTABORT_MODULE = importlib.util.module_from_spec(ARCHIVE_POSTABORT_SPEC)
+ARCHIVE_POSTABORT_SPEC.loader.exec_module(ARCHIVE_POSTABORT_MODULE)
+FirstArchivedPostabortTests = ARCHIVE_POSTABORT_MODULE.FirstArchivedPostabortTests
+ARCHIVE_BANK_SPEC = importlib.util.spec_from_file_location('first_archived_bank_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_bank_observer.py')
+ARCHIVE_BANK_MODULE = importlib.util.module_from_spec(ARCHIVE_BANK_SPEC)
+ARCHIVE_BANK_SPEC.loader.exec_module(ARCHIVE_BANK_MODULE)
+FirstArchivedBankObserverTests = ARCHIVE_BANK_MODULE.FirstArchivedBankObserverTests
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
@@ -110,7 +118,7 @@ class ReadOnlyOracleImportTests(unittest.TestCase):
         # imports these staged modules in-process after the SQL clients exit.
         repo = Path(__file__).resolve().parents[2]
         names = [W.ARCHIVE.CONCURRENCY, W.ARCHIVE.LOCKS,
-                 W.ARCHIVE.PRODUCTION_PROBE,
+                 W.ARCHIVE.PRODUCTION_PROBE, W.ARCHIVE.BANK_OBSERVER, W.ARCHIVE.BANK_RACES,
                  'scripts/qualification/spin-expiry-business-races.py']
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
@@ -819,11 +827,11 @@ class MixedCurrentTests(unittest.TestCase):
 
     def test_all_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin', 'first-archived-spin-bank-mvcc'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': (), 'first-archived-spin-bank-mvcc': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -2978,6 +2986,19 @@ class FirstArchivedTests(unittest.TestCase):
             'authentic_entry_provider_supplement','fee_actual_paid_entry','real_funded_paid_seat_fixture'):
             self.assertNotIn(forbidden,names)
 
+    def test_bank_variant_keeps_original_image_and_uses_same_allocator(self):
+        root=Path(__file__).resolve().parents[2]
+        args=(Path('/qualified/pg17/bin'),root,EXECUTION,'00000000-0000-4000-8000-000000000002',TOURNAMENT)
+        original=W.archive_stage_plan(*args,W.ARCHIVE.IMAGE)
+        variant=W.archive_stage_plan(*args,W.ARCHIVE.BANK_IMAGE)
+        original_names=[n for n,_ in original];variant_names=[n for n,_ in variant]
+        i=original_names.index('archive_production_probe')
+        self.assertEqual(variant[:i],original[:i])
+        self.assertEqual(variant[i][1],original[i][1]+['--bank-races'])
+        self.assertEqual(variant_names[i+1:],['pg_stop_fast','pg_stopped_readback'])
+        self.assertEqual(original_names[i+1:],['archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        with self.assertRaises(ValueError):W.archive_stage_plan(*args,'unknown-variant')
+
     def test_archive_complete_stage_identity_and_original_streams_fail_closed(self):
         root=Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -3010,7 +3031,7 @@ class FirstArchivedTests(unittest.TestCase):
                                backend_exit_observed=True, backend_stdout_sha256=W.digest(raw))
                 stages.append(row)
             summary={'diagnostic_passed':True,'financial_qualified':False}
-            receipt={'stages':stages,'work_deadline_seconds':240,'cleanup_deadline_seconds':30,
+            receipt={'image':W.ARCHIVE.IMAGE,'stages':stages,'work_deadline_seconds':240,'cleanup_deadline_seconds':30,
                      'first_archived_diagnostic':summary}
             with patch.object(W.ARCHIVE,'validate_stages',return_value=summary):
                 W.validate_archive_stages(receipt,pg,source,EXECUTION,ordinary,TOURNAMENT)

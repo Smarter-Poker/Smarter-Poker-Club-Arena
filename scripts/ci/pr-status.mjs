@@ -25,6 +25,7 @@
 //   2  RUNNING  something is genuinely still in progress, nothing failed yet
 //   3  UNKNOWN  could not determine. NOT a synonym for pending. Read the note.
 //   4  DIRTY    the branch conflicts with main; CI state is moot until resolved
+//   5  NOT_RUN  required verdicts are skipped/neutral, not executed successes
 //
 // Use the configured credential with Actions, Checks, pull-request and rules
 // read access. This helper performs observation only; it never merges or retries.
@@ -83,7 +84,15 @@ const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 // "tell the human" instead of "silently pass".
 const GOOD = new Set(['success', 'skipped', 'neutral']);
 
-const EXIT = { GREEN: 0, RED: 1, RED_NON_BLOCKING: 1, RUNNING: 2, UNKNOWN: 3, DIRTY: 4 };
+const EXIT = {
+  GREEN: 0,
+  RED: 1,
+  RED_NON_BLOCKING: 1,
+  RUNNING: 2,
+  UNKNOWN: 3,
+  DIRTY: 4,
+  NOT_RUN: 5,
+};
 
 function die(msg, code = EXIT.UNKNOWN) {
   if (JSON_OUT) console.log(JSON.stringify({ state: 'UNKNOWN', reason: msg }, null, 2));
@@ -273,6 +282,7 @@ const sh = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 
 // endpoint omits both fields entirely, which is the same trap one level down.
 function mergeLabel(pr) {
   if (!pr) return 'UNCOMPUTED';
+  if (pr.merged === true) return 'MERGED';
   if (pr.mergeable_state === 'dirty') return 'DIRTY';
   if (pr.mergeable === null || pr.mergeable_state === undefined || pr.mergeable_state === 'unknown')
     return 'UNCOMPUTED';
@@ -343,8 +353,9 @@ export async function readPages(path, key, read = gh) {
 /**
  * Name every required context for which this commit lacks a completed success.
  * A workflow-level success is not enough: a required job can be absent because
- * a path or job condition prevented it from being created, and GitHub will keep
- * the pull request blocked in exactly that state.
+ * a path or job condition prevented it from being created. Known skipped or
+ * neutral results are distinct from failure, but neither certifies execution.
+ * This observer does not decide whether a classifier correctly skipped a job.
  */
 export function requiredContextProblems(required, checks, sha) {
   if (!(required instanceof Map)) return null;
@@ -392,12 +403,19 @@ export function requiredContextProblems(required, checks, sha) {
       )
         continue;
       const failed = observed.some(
-        (check) => check.status === 'completed' && check.conclusion !== 'success'
+        (check) => check.status === 'completed' && !GOOD.has(check.conclusion)
       );
+      const running = observed.some((check) => check.status !== 'completed');
       problems.push({
         context,
         ...(reporter !== null ? { integrationId: reporter } : {}),
-        state: !observed.length ? 'missing' : failed ? 'not_successful' : 'running',
+        state: !observed.length
+          ? 'missing'
+          : failed
+            ? 'not_successful'
+            : running
+              ? 'running'
+              : 'not_run',
         conclusions: [...new Set(observed.map((check) => check.conclusion || check.status))].sort(),
       });
     }
@@ -412,8 +430,9 @@ export function stateForChecks({ failures, activeRuns, requiredProblems }) {
   if (requiredProblems === null) return 'UNKNOWN';
   if (activeRuns.length || requiredProblems.some((problem) => problem.state === 'running'))
     return 'RUNNING';
-  if (requiredProblems.length) return 'RED';
+  if (requiredProblems.some((problem) => problem.state !== 'not_run')) return 'RED';
   if (failures.length) return 'RED_NON_BLOCKING';
+  if (requiredProblems.length) return 'NOT_RUN';
   return 'GREEN';
 }
 
@@ -570,6 +589,7 @@ function render(pr, st) {
   line('');
   line('  ' + head);
   if (pr) line(`  ${pr.html_url}`);
+  if (pr?.merged === true) line('  MERGED - GitHub reports the pull request already merged.');
   line('  ' + '-'.repeat(Math.max(20, head.length)));
 
   if (pr && mergeLabel(pr) === 'DIRTY') {
@@ -600,7 +620,7 @@ function render(pr, st) {
     line('');
     line('  FAILING:');
     for (const f of st.failures) {
-      line(`    ${f.required ? '[BLOCKS MERGE]' : '[not required]'} ${f.workflow} -> ${f.job}`);
+      line(`    ${f.required ? '[required check]' : '[not required]'} ${f.workflow} -> ${f.job}`);
       if (f.step) line(`        failed step: ${f.step}`);
       line(`        ${f.url}`);
       if (f.detail?.length) {
@@ -622,14 +642,16 @@ function render(pr, st) {
           : problem.state === 'running'
             ? 'still running'
             : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
-      line(`    [BLOCKS MERGE] ${problem.context} - ${detail}`);
+      line(
+        `    [${problem.state === 'not_run' ? 'NOT_RUN' : 'required check'}] ${problem.context} - ${detail}`
+      );
     }
   }
 
   quotaWarning(line);
   line('');
   if (st.state === 'RED') {
-    line('  RED - one or more required checks are not proven successful. This will not merge.');
+    line('  RED - one or more required checks failed or were not observed.');
     line('');
     return EXIT.RED;
   }
@@ -644,6 +666,12 @@ function render(pr, st) {
     line('  Retain this operation, continue independent assigned work, then read its result.');
     line('');
     return EXIT.RUNNING;
+  }
+  if (st.state === 'NOT_RUN') {
+    line('  NOT_RUN - required verdicts were skipped or neutral; execution is not certified.');
+    line('  Inspect the owning workflow classification and actual protected-merge result.');
+    line('');
+    return EXIT.NOT_RUN;
   }
   line('  GREEN - every required check passed.');
   if (pr && mergeLabel(pr) === 'BLOCKED')
@@ -673,16 +701,26 @@ async function main() {
       // branch look clean, so the same PR reported DIRTY on its own and RED
       // in this table. Fetch the detail; treat an uncomputed answer as
       // uncomputed rather than as "fine".
-      const pr = (await ghSoft(`/pulls/${stub.number}`)) || stub;
+      let pr = (await ghSoft(`/pulls/${stub.number}`)) || stub;
       const st = await commitState(pr.head.sha, required);
-      if ((await gh(`/pulls/${pr.number}`))?.head?.sha !== pr.head.sha) {
+      const fresh = await gh(`/pulls/${pr.number}`);
+      if (fresh?.head?.sha !== pr.head.sha) {
         die(
           `PR #${pr.number} changed head while its checks were read; obtain a fresh observation.`
         );
       }
+      pr = fresh;
       rows.push({ pr, st, merge: mergeLabel(pr) });
     }
-    const rank = { DIRTY: -1, RED: 0, RED_NON_BLOCKING: 1, UNKNOWN: 2, RUNNING: 3, GREEN: 4 };
+    const rank = {
+      DIRTY: -1,
+      RED: 0,
+      RED_NON_BLOCKING: 1,
+      UNKNOWN: 2,
+      RUNNING: 3,
+      NOT_RUN: 4,
+      GREEN: 5,
+    };
     const stateOf = (r) => (r.merge === 'DIRTY' ? 'DIRTY' : r.st.state);
     rows.sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)] || a.pr.number - b.pr.number);
     const states = rows.map(stateOf);
@@ -694,7 +732,9 @@ async function main() {
         ? EXIT.UNKNOWN
         : states.includes('RUNNING')
           ? EXIT.RUNNING
-          : EXIT.GREEN;
+          : states.includes('NOT_RUN')
+            ? EXIT.NOT_RUN
+            : EXIT.GREEN;
     if (JSON_OUT) {
       console.log(
         JSON.stringify(
@@ -703,6 +743,7 @@ async function main() {
             branch: pr.head.ref,
             state: stateOf({ st, merge }),
             mergeable_state: merge,
+            merged: pr.merged === true,
             failures: st.failures,
             requiredProblems: st.requiredProblems,
           })),
@@ -717,7 +758,11 @@ async function main() {
       const { pr, st, merge } = row;
       const state = stateOf(row);
       const note =
-        merge === 'UNCOMPUTED' && state !== 'DIRTY' ? '  (mergeability not yet computed)' : '';
+        merge === 'MERGED'
+          ? '  (MERGED)'
+          : merge === 'UNCOMPUTED' && state !== 'DIRTY'
+            ? '  (mergeability not yet computed)'
+            : '';
       console.log(
         `  ${state.padEnd(18)} #${String(pr.number).padEnd(5)} ${pr.head.ref.slice(0, 56)}${note}`
       );
@@ -731,7 +776,7 @@ async function main() {
     const dirty = rows.filter((r) => stateOf(r) === 'DIRTY').length;
     const red = rows.filter((r) => stateOf(r) === 'RED').length;
     console.log(
-      `  ${rows.length} open, ${red} with a failing required check, ${dirty} conflicting with main.`
+      `  ${rows.length} observed, ${rows.filter(({ pr }) => pr.state === 'open' && pr.merged !== true).length} open, ${red} with failed or missing required checks, ${dirty} conflicting with main.`
     );
     console.log('');
     return aggregateExit;
@@ -777,8 +822,12 @@ async function main() {
   if (pr) sha = pr.head.sha;
   const st = await commitState(sha, required);
   st.sha = sha;
-  if (pr && (await gh(`/pulls/${pr.number}`))?.head?.sha !== sha) {
-    die(`PR #${pr.number} changed head while its checks were read; obtain a fresh observation.`);
+  if (pr) {
+    const fresh = await gh(`/pulls/${pr.number}`);
+    if (fresh?.head?.sha !== sha) {
+      die(`PR #${pr.number} changed head while its checks were read; obtain a fresh observation.`);
+    }
+    pr = fresh;
   }
 
   // --log: name the failing test, not just the failing job. Without this the
@@ -801,6 +850,7 @@ async function main() {
           sha,
           state: pr && mergeLabel(pr) === 'DIRTY' ? 'DIRTY' : st.state,
           mergeable_state: pr ? mergeLabel(pr) : null,
+          merged: pr ? pr.merged === true : null,
           failures: st.failures,
           requiredProblems: st.requiredProblems,
           reason: st.reason ?? null,

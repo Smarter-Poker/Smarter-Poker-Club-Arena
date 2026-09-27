@@ -39,6 +39,10 @@ import {
   relayHorseDecisionJournalHealth,
   type HorseJournalWorker,
 } from './HorseDecisionJournal.js';
+import {
+  HORSE_JOURNAL_ARCHIVE_HOLD,
+  runtimeHorseJournalArchiveOptions,
+} from './horseDecisionJournal/config.js';
 
 const folders: string[] = [],
   stores: HorseDecisionJournalStore[] = [];
@@ -1239,16 +1243,197 @@ describe('the archive is a ring: the oldest published segments make room, unpubl
         compressedBytes: 10,
         maxBytes: 1024,
         capture:
-          'running: the archive is a ring of 100 segments; the oldest published segment is retired when a new one needs its room; retained=1 published=1 unpublished=0 retired=4',
+          'running: the archive is a ring of 100 segments; the oldest published segment outside the evidence hold is retired when a new one needs its room; retained=1 published=1 held=0 unpublished=0 retired=4',
       });
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
       expect(p.health().capture).toBe(
-        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment left to retire (only unpublished segments remain); asks again every minute; retained=1 published=1 unpublished=0 retired=4'
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
       );
       w.emit({ type: 'CAPACITY', room: false, reason: 'archive_storage_capacity' });
       expect(p.health().capture).toBe(
-        'not running: paused since 2026-09-25T19:34:05.000Z because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute; retained=1 published=1 unpublished=0 retired=4'
+        'not running: paused since 2026-09-25T19:34:05.000Z because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
+      );
+      void p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('the ring holds the Phase 6A/6B evidence: held segments are never retired, capture still runs', () => {
+  const options = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  const at = (sequence: number, atMs: number): HorseJournalRecord =>
+    makeHorseJournalRecord(
+      {
+        producerId: '10000000-0000-4000-8000-000000000001',
+        sequence,
+        atMs,
+        sourceRelease: null,
+        kind: 'decision',
+        handKey: journalHash('hand'),
+        turnKey: journalHash('turn'),
+      },
+      { privateSyntheticCard: 'As' }
+    );
+  const catalog = (dir: string) =>
+    new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  /** Five segments captured at t=100..500, written before any hold existed. */
+  const archiveOfFive = (dir: string) => {
+    const w = store(dir, { archive: options(dir) });
+    for (const n of [1, 2, 3, 4, 5]) expect(w.append(at(n, n * 100))).toBe('recorded');
+    w.close();
+  };
+  it('retires only published segments outside the hold, below it first and then above it', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 150, untilMs: 350 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 5,
+      heldSegments: 2,
+      heldRecords: 2,
+    });
+    // Below the hold first: t=100 goes.
+    expect(s.append(at(6, 600))).toBe('recorded');
+    // Then the oldest above it: t=400 and t=500, never t=200 or t=300.
+    expect(s.appendBatch([at(7, 700)])).toEqual(['recorded']);
+    expect(s.append(at(8, 800))).toBe('recorded');
+    expect(s.readHand(journalHash('hand'))).toEqual([
+      at(2, 200),
+      at(3, 300),
+      at(6, 600),
+      at(7, 700),
+      at(8, 800),
+    ]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 5,
+      heldSegments: 2,
+      retiredSegments: 3,
+      retiredRecords: 3,
+    });
+    const native = catalog(dir);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_events').get()!.n).toBe(5);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toHaveLength(5);
+    native.close();
+  });
+  it('never retires a held segment: with only held segments left the quota refuses by name, the probe agrees, and nothing is lost', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 1, untilMs: 1000 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 5 });
+    expect(s.capacityRefusal([at(6, 600)])).toBe('archive_segments');
+    expect(() => s.append(at(6, 600))).toThrow('horse_archive_segment_capacity');
+    expect(s.readHand(journalHash('hand'))).toHaveLength(5);
+    expect(s.storageStats().archive).toMatchObject({ segments: 5, retiredSegments: 0 });
+    s.close();
+    // Released (the env var reads "none"): the ring reclaims them oldest first.
+    const released = store(dir, { archive: options(dir, { maxSegments: 5, hold: null }) });
+    expect(released.storageStats().archive).toMatchObject({ heldSegments: 0 });
+    expect(released.capacityRefusal([at(6, 600)])).toBeNull();
+    expect(released.append(at(6, 600))).toBe('recorded');
+    expect(released.readHand(journalHash('hand'))).toEqual(
+      [2, 3, 4, 5, 6].map((n) => at(n, n * 100))
+    );
+  });
+  it('the held set is resolved once per window and does not grow with later capture', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const hold = { fromMs: 250, untilMs: 1000 };
+    const a = store(dir, { archive: options(dir, { maxSegments: 6, hold }) });
+    expect(a.storageStats().archive).toMatchObject({ heldSegments: 3, heldRecords: 3 });
+    // Captured later with a timestamp inside the window: the ring's, not held.
+    expect(a.append(at(6, 260))).toBe('recorded');
+    a.close();
+    const b = store(dir, { archive: options(dir, { maxSegments: 6, hold }) });
+    expect(b.storageStats().archive).toMatchObject({ segments: 6, heldSegments: 3 });
+    expect(b.append(at(7, 700))).toBe('recorded');
+    expect(b.append(at(8, 800))).toBe('recorded');
+    expect(b.append(at(9, 900))).toBe('recorded');
+    // t=100, t=200, then the later t=260 segment went; t=300..500 stayed.
+    expect(b.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([3, 4, 5, 7, 8, 9]);
+    expect(b.storageStats().archive).toMatchObject({ heldSegments: 3, retiredSegments: 3 });
+  });
+  it('a window that holds nothing leaves the ring whole, and a read-only observer of a pre-hold catalog reports zero held', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const native = catalog(dir);
+    native.exec('DROP TABLE archive_hold');
+    native.close();
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    expect(r.storageStats().archive).toMatchObject({ heldSegments: 0, heldRecords: 0 });
+    r.close();
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 5000, untilMs: 6000 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 0 });
+    expect(s.append(at(6, 600))).toBe('recorded');
+    expect(s.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([2, 3, 4, 5, 6]);
+  });
+  it('HORSE_DECISION_JOURNAL_ARCHIVE_HOLD defaults to the Phase 6A/6B window and refuses a malformed value', () => {
+    const directory = join(tmpdir(), 'horse-journal-config');
+    expect(HORSE_JOURNAL_ARCHIVE_HOLD).toBe('2026-09-18T21:56:28Z/2026-09-25T19:34:06Z');
+    expect(runtimeHorseJournalArchiveOptions(directory, {}).hold).toEqual({
+      fromMs: Date.parse('2026-09-18T21:56:28Z'),
+      untilMs: Date.parse('2026-09-25T19:34:06Z'),
+    });
+    expect(
+      runtimeHorseJournalArchiveOptions(directory, { HORSE_DECISION_JOURNAL_ARCHIVE_HOLD: 'none' })
+        .hold
+    ).toBeNull();
+    for (const value of [
+      '',
+      'None',
+      '2026-09-18T21:56:28Z',
+      '2026-09-25T19:34:06Z/2026-09-18T21:56:28Z',
+      '2026-09-18T21:56:28Z/2026-09-18T21:56:28Z',
+      '2026-02-30T00:00:00Z/2026-03-01T00:00:00Z',
+      '2026-09-18T21:56:28.000Z/2026-09-25T19:34:06Z',
+      '2026-09-18T21:56:28+00:00/2026-09-25T19:34:06Z',
+      '2026-09-18T21:56:28Z/2026-09-25T19:34:06Z/',
+    ])
+      expect(() =>
+        runtimeHorseJournalArchiveOptions(directory, { HORSE_DECISION_JOURNAL_ARCHIVE_HOLD: value })
+      ).toThrow('Invalid Horse archive evidence hold');
+  });
+  it('/health counts the held segments and says when only held or unpublished segments remain', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({
+        type: 'STATS',
+        stats: {
+          archive: {
+            ...STATS_ARCHIVE,
+            segments: 500_000,
+            publishedSegments: 500_000,
+            heldSegments: 237_613,
+            retiredSegments: 0,
+            maxSegments: 2_000_000,
+          },
+        },
+      });
+      expect(p.health()).toMatchObject({
+        heldSegments: 237_613,
+        capture:
+          'running: the archive is a ring of 2000000 segments; the oldest published segment outside the evidence hold is retired when a new one needs its room; retained=500000 published=500000 held=237613 unpublished=0 retired=0',
+      });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_bytes' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_bytes with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute; retained=500000 published=500000 held=237613 unpublished=0 retired=0'
       );
       void p.stop();
     } finally {
@@ -1629,6 +1814,7 @@ describe('the journal says why it stopped and shows itself to /health', () => {
       pendingSegments: null,
       retiredSegments: null,
       retiredRecords: null,
+      heldSegments: null,
       compressedBytes: null,
       maxBytes: null,
       records: null,

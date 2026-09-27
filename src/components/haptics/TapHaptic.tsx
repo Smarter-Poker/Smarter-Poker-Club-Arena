@@ -25,6 +25,16 @@ import styles from './TapHaptic.module.css';
  * (a disabled button must not tick). It is invisible, out of the tab order and
  * hidden from assistive technology; the host keeps its role, name and keys.
  *
+ * One deliberate exception to the markup rules, written down so nobody
+ * "fixes" it: HTML and axe's nested-interactive rule say a button should not
+ * contain another control. This one has to be INSIDE the host, because it
+ * must be the thing the finger lands on while the click still reaches the
+ * host's own handler. It is aria-hidden and tabIndex -1, so assistive
+ * technology and the keyboard see only the host (and the shared focus traps
+ * skip input[tabindex="-1"]); it exists only on iPhone and iPad browsers.
+ * Where a host clips its children (overflow: hidden), its 1px border strip
+ * still acts on a tap but does not tick.
+ *
  * The host must be a positioned box (its stylesheet says so; tests/components/
  * TapHaptic.test.tsx checks every host) and passes its corner radius so the hit
  * area matches its shape.

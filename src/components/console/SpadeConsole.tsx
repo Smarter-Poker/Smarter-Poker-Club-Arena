@@ -8,6 +8,7 @@ import type {
 } from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
+import { TapHaptic } from '../haptics/TapHaptic';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -560,6 +561,12 @@ export function SpadeConsole({
  */
 export type PlateButtonProps = {
   label: string;
+  /**
+   * A plate that commits a game action (Insure, Cash Out) carries TapHaptic:
+   * on an iPhone browser the finger's tap on it is the only buzz possible
+   * (src/components/haptics/TapHaptic.tsx). Buttons only; ignored on a link.
+   */
+  haptic?: boolean;
   ink?: ConsoleInk;
   /** The button element, for callers that manage focus (ConfirmModal). */
   buttonRef?: Ref<HTMLButtonElement>;
@@ -594,6 +601,7 @@ export function PlateButton({
   href,
   className = '',
   style,
+  haptic = false,
   ...rest
 }: {
   zone: Zone;
@@ -637,6 +645,7 @@ export function PlateButton({
       {...rest}
     >
       {face}
+      {haptic && <TapHaptic disabled={Boolean(rest.disabled)} radius="6px" />}
     </button>
   );
 }

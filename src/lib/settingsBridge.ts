@@ -1,3 +1,4 @@
+import { PROFILE_PREFERENCE_DEFAULTS } from './profilePreferenceDefaults';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SETTINGS BRIDGE — the /settings page <-> the table's own settings store
@@ -70,7 +71,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
      player's volume by 14% without being asked. */
   soundVolume: 70,
 
-  theme: 'dark',
+  theme: PROFILE_PREFERENCE_DEFAULTS.theme,
   cardBack: 'classic_blue',
   fourColorDeck: false,
   animationSpeed: 'normal',
@@ -83,9 +84,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   tournamentReminders: true,
   clubActivity: true,
   handWonNotifications: false,
-  achievementNotifications: true,
+  achievementNotifications: PROFILE_PREFERENCE_DEFAULTS.achievementNotifications,
   friendAlerts: true,
-  settlementAlerts: true,
+  settlementAlerts: PROFILE_PREFERENCE_DEFAULTS.settlementAlerts,
 };
 
 /**

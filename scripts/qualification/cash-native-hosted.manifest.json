@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169118,
-      "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+      "bytes": 169345,
+      "sha256": "5a4ea09fa91a0946fd0736a766b55c8dbe6ecc9d872260db0c78f2d013ee26cd"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -393,6 +393,21 @@
         "to": {
           "bytes": 24115,
           "sha256": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25"
+        }
+      }
+    }
+  },
+  "scoped_audit_profile_account_integration_20260927": {
+    "reason": "Integrate protected e62250b702 account sync native fixture beside scoped audit SELECT policy enforcement on accounting shard 4. Both actual native commands and assertions are retained.",
+    "changed_files": {
+      ".github/workflows/ci.yml": {
+        "from": {
+          "bytes": 169118,
+          "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+        },
+        "to": {
+          "bytes": 169345,
+          "sha256": "5a4ea09fa91a0946fd0736a766b55c8dbe6ecc9d872260db0c78f2d013ee26cd"
         }
       }
     }

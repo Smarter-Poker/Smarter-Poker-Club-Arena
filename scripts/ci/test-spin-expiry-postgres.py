@@ -47,7 +47,7 @@ HORSE_MANIFEST_SHA256 = '300b84d68730072e9c4efa66a2cff60df51c233918d91ccc458a18e
 _archive_spec = importlib.util.spec_from_file_location('spin_first_archived', ROOT / 'scripts/qualification/spin-first-archived.py')
 ARCHIVE = importlib.util.module_from_spec(_archive_spec)
 _archive_spec.loader.exec_module(ARCHIVE)
-ARCHIVE_MANIFEST_SHA256 = '41adca5f8896b210d73e2616ad282ff255f12d5766d4e4580f8cbd1bce3f015b'
+ARCHIVE_MANIFEST_SHA256 = 'e342ea56e4a3661298b8c2f943c8ffc337307a812f741b94ede77ccd107b7ce0'
 FEE_MANIFEST_SHA256 = '235b524090286e316d902093a53be8a6948d5853ced8e621048ba249d6a4be14'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
@@ -55,10 +55,10 @@ ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 OWNER = '47965354-0e56-43ef-931c-ddaab82af765'
 REFUND_ACTOR = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'
-IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE)
+IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, *ARCHIVE.IMAGES)
 CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
          'retention-completed': ()}
-CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE)})
+CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, *ARCHIVE.IMAGES)})
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
@@ -895,6 +895,63 @@ def process_absent(pid):
     return False
 
 
+def psql_backend_command(argv, PG, nonce):
+    """Observe the original local session; never open a disposal observer."""
+    if argv[0] != str(PG / 'psql'):
+        return argv
+    require(isinstance(nonce, str) and re.fullmatch(
+        r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', nonce),
+        'backend observation nonce invalid')
+    require('-X' in argv and ('-f' in argv or '-c' in argv),
+            'backend observation requires an explicit one-shot psql command')
+    query = "COPY (SELECT 'spin_backend:" + nonce + ":' || pg_backend_pid()::text) TO STDOUT;"
+    return [argv[0], '-c', query, *argv[1:]]
+
+
+def parse_backend_frame(raw, nonce):
+    prefix = ('spin_backend:' + nonce + ':').encode()
+    first, separator, body = raw.partition(b'\n')
+    require(separator and first.startswith(prefix), 'original backend frame missing')
+    digits = first[len(prefix):]
+    require(re.fullmatch(rb'[1-9][0-9]{0,9}', digits) is not None,
+            'original backend PID malformed')
+    pid = int(digits)
+    require(pid <= 2147483647 and prefix not in body, 'original backend frame repeated or invalid')
+    return pid, body
+
+
+def wait_backend_exit(pid, deadline):
+    # A psql client can exit before its backend has left pg_stat_activity.
+    # Waiting for that exact OS PID avoids creating another late observer.
+    # A lingering or reused PID fails closed; this never signals a process.
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('original local PostgreSQL backend exit unobserved')
+        if process_absent(pid):
+            require(time.monotonic() < deadline, 'original backend exit observed after deadline')
+            return
+        time.sleep(min(.01, remaining))
+
+
+def validate_backend_disposal(row, PG, work):
+    argv = row['argv']
+    if argv[0] != str(PG / 'psql'):
+        require(row.get('executed_argv') == argv and 'backend_pid' not in row,
+                'non-psql invocation evidence differs')
+        return
+    nonce = row.get('backend_nonce')
+    require(row.get('executed_argv') == psql_backend_command(argv, PG, nonce),
+            'original backend invocation differs')
+    raw = (work / (row['stage'] + '.backend.stdout')).read_bytes()
+    pid, body = parse_backend_frame(raw, nonce)
+    require(type(row.get('backend_pid')) is int and row.get('backend_pid') == pid
+            and row.get('backend_exit_observed') is True
+            and row.get('backend_stdout_sha256') == digest(raw)
+            and (work / (row['stage'] + '.stdout')).read_bytes() == body,
+            'original backend disposal evidence differs')
+
+
 def finish_clients(clients, deadline, outcome):
     terminal = True
     for child, entry in clients:
@@ -951,11 +1008,14 @@ def retained_evidence(work, output, receipt, source_manifest):
         name = stage['stage']
         require(re.fullmatch(r'[a-z0-9_]+', name), 'unsafe evidence stage name')
         names.update((name + '.stdout', name + '.stderr'))
+        if stage.get('backend_nonce') is not None: names.add(name + '.backend.stdout')
     mandatory = {'receipt.json'}
     if receipt.get('receipt_lane_qualification') is not None: mandatory.add(LANE_RESULT)
     if receipt.get('mixed_current_qualification') is not None: mandatory.add(MIXED.RESULT)
     for stage in receipt.get('stages', []):
         mandatory.update((stage['stage'] + '.stdout', stage['stage'] + '.stderr'))
+        if stage.get('backend_nonce') is not None:
+            mandatory.add(stage['stage'] + '.backend.stdout')
     mandatory.update(case['result_path'] for case in receipt.get('business_cases', []) if case.get('state') == 'passed')
     require(all((work / name).exists() for name in mandatory), 'original evidence leaf missing')
     kept = {}
@@ -973,7 +1033,7 @@ def retained_evidence(work, output, receipt, source_manifest):
 
 def qualify(args, allocation, manifest_bytes, manifest, PG):
     ROOT = allocation / 'source'
-    archive_image = args.image == ARCHIVE.IMAGE
+    archive_image = args.image in ARCHIVE.IMAGES
     mixed_image = args.image in MIXED.IMAGES
     horse_image = args.image == HORSE.IMAGE
     terminal_image = args.image == TERMINAL.IMAGE
@@ -1052,12 +1112,22 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
 
     def command(stage, command_args, *, timeout=30, cleanup=False, allow=(0,)):
         active_deadline = cleanup_deadline if cleanup else deadline
-        budget = command_budget(active_deadline, time.monotonic(), timeout)
-        entry = {'stage': stage, 'started_monotonic': time.monotonic(), 'argv': command_args}
+        started = time.monotonic()
+        budget = command_budget(active_deadline, started, timeout)
+        command_deadline = started + budget
+        entry = {'stage': stage, 'started_monotonic': started, 'argv': command_args}
+        # The archived image's next owner refuses any leftover session. Preserve
+        # its logical command and separately bind the actual PID-prefixed argv.
+        nonce = str(uuid.uuid4()) if archive_image and command_args[0] == str(PG / 'psql') else None
+        executed = psql_backend_command(command_args, PG, nonce) if nonce else command_args
+        entry['executed_argv'] = executed
+        if nonce: entry['backend_nonce'] = nonce
         receipt['stages'].append(entry); persist()
         stdout = work / (stage + '.stdout'); stderr = work / (stage + '.stderr')
-        with stdout.open('wb') as out, stderr.open('wb') as err:
-            child = subprocess.Popen(command_args, stdout=out, stderr=err, env=env, start_new_session=True)
+        captured = work / (stage + '.backend.stdout') if nonce else stdout
+        if nonce: stdout.touch(exist_ok=False)
+        with captured.open('wb') as out, stderr.open('wb') as err:
+            child = subprocess.Popen(executed, stdout=out, stderr=err, env=env, start_new_session=True)
             entry['pid'] = child.pid
             clients.append((child, entry))
             try:
@@ -1072,6 +1142,15 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                 entry['returncode'] = child.returncode; persist()
                 raise RuntimeError('client interrupted; database effect/cleanup remains unknown: ' + stage) from interrupted
         entry['returncode'] = child.returncode
+        if nonce:
+            raw = captured.read_bytes()
+            pid, body = parse_backend_frame(raw, nonce)
+            stdout.write_bytes(body)
+            entry['backend_pid'] = pid
+            entry['backend_stdout_sha256'] = digest(raw)
+            persist()
+            wait_backend_exit(pid, command_deadline)
+            entry['backend_exit_observed'] = True
         entry['stdout_sha256'] = hashlib.sha256(stdout.read_bytes()).hexdigest()
         entry['stderr_sha256'] = hashlib.sha256(stderr.read_bytes()).hexdigest()
         persist()
@@ -1143,9 +1222,9 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('current_tested_roles', ROOT / 'provider-roles.sql')
         sql('tested_role_readback', ROOT / 'provider-roles-check.sql')
         if archive_image:
-            for stage, argv in ARCHIVE.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
+            for stage, argv in ARCHIVE.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament,args.image):
                 command(stage, argv, timeout=30)
-            receipt['first_archived_diagnostic'] = ARCHIVE.validate_outputs(ROOT, work, args.execution, args.tournament)
+            receipt['first_archived_diagnostic'] = ARCHIVE.validate_outputs(ROOT, work, args.execution, args.tournament,args.image)
             persist()
             return receipt
         sql('current_catalog_readback', ROOT / 'provider-check.sql')
@@ -1314,7 +1393,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
     return receipt
 
 
-def archive_stage_plan(PG, source, execution, ordinary, tournament):
+def archive_stage_plan(PG, source, execution, ordinary, tournament,image=ARCHIVE.IMAGE):
     # Reuse the exact maintained allocator commands. Archive restoration replaces
     # the principals stage and the obsolete empty/baseline catalog assumptions.
     base = FEE.allocation_plan(PG, source, execution, ordinary, tournament)
@@ -1325,14 +1404,14 @@ def archive_stage_plan(PG, source, execution, ordinary, tournament):
             plan.extend(ARCHIVE.seed_plan(PG, source, execution, ordinary, tournament))
         else:
             plan.append((name, argv))
-    plan.extend(ARCHIVE.body_plan(PG, source, execution, ordinary, tournament))
+    plan.extend(ARCHIVE.body_plan(PG, source, execution, ordinary, tournament,image))
     data = source.parent / 'work/data'
     return plan + [('pg_stop_fast', [str(PG / 'pg_ctl'), '-D', str(data), '-w', '-t', '10', '-m', 'fast', 'stop']),
                    ('pg_stopped_readback', [str(PG / 'pg_ctl'), '-D', str(data), 'status'])]
 
 
 def validate_archive_stages(receipt, PG, source, execution, ordinary, tournament):
-    plan = archive_stage_plan(PG, source, execution, ordinary, tournament)
+    plan = archive_stage_plan(PG, source, execution, ordinary, tournament,receipt['image'])
     stages = receipt['stages']
     require([r.get('stage') for r in stages] == [n for n, _ in plan],
             'archive complete allocation sequence differs')
@@ -1351,10 +1430,11 @@ def validate_archive_stages(receipt, PG, source, execution, ordinary, tournament
                 and type(row.get('returncode')) is int and row['returncode'] == code
                 and type(row.get('terminal_returncode')) is int and row['terminal_returncode'] == code
                 and 'client_deadline_exceeded' not in row, 'archive stage identity or result differs: ' + name)
+        validate_backend_disposal(row, PG, work)
         for stream in ('stdout','stderr'):
             require(digest((work / (name + '.' + stream)).read_bytes()) == row.get(stream + '_sha256'),
                     'archive original stream differs: ' + name)
-    summary = ARCHIVE.validate_stages(receipt, PG, source, execution, ordinary, tournament)
+    summary = ARCHIVE.validate_stages(receipt, PG, source, execution, ordinary, tournament,receipt['image'])
     require(receipt.get('first_archived_diagnostic') == summary, 'archive summary differs from original')
     return []
 
@@ -1365,7 +1445,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(receipt.get('execution') == execution and receipt.get('source_manifest_sha256') == manifest_sha
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
-    archive_image = image == ARCHIVE.IMAGE
+    archive_image = image in ARCHIVE.IMAGES
     mixed_image = image in MIXED.IMAGES
     horse_image = image == HORSE.IMAGE
     terminal_image = image == TERMINAL.IMAGE
@@ -1572,7 +1652,7 @@ def run_image(image, PG, scratch=None):
         retained_evidence(allocation / 'work', output, receipt, manifest_bytes)
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
-        if image not in MIXED.IMAGES and image not in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE):
+        if image not in MIXED.IMAGES and image not in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, *ARCHIVE.IMAGES):
             pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
             pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
             require(digest(pure_original) == pure_stage['stdout_sha256']

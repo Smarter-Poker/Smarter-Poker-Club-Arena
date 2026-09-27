@@ -89,8 +89,10 @@ describe('B. a stop that leaves the slot occupied is recorded, throw included', 
     // transferDrainedF06Custody, not by a false return. A record placed beside
     // `return stopped` would have missed every one of them.
     const finallyBlock = stop.slice(stop.indexOf('} finally {'));
+    // 2026-09-27: an attempt the quarantine's own retry already charged is
+    // amended rather than charged twice; every other stop is recorded.
     expect(finallyBlock).toMatch(
-      /if \(this\.tournamentEngines\.get\(tournamentId\) === manager\) \{\s*quarantine\.record\(/
+      /if \(this\.tournamentEngines\.get\(tournamentId\) === manager\) \{[^}]*quarantine\.amend\([^}]*if \(!alreadyCharged\) \{\s*quarantine\.record\(/
     );
     expect(finallyBlock).toMatch(/\} else \{\s*quarantine\.forget\(tournamentId\);/);
     // And it can never replace the physical stop result a caller is awaiting.

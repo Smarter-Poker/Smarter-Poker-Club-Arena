@@ -38,8 +38,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 const ROOT = resolve(__dirname, '..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -47,6 +48,12 @@ const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 const PANEL = 'src/components/bbj/BBJAdminAnalytics.tsx';
 const ENGINE_RULES = 'server/src/config/RakeConfig.ts';
 const WRITER = 'server/src/services/supabase/bbj.ts';
+
+// The corpus is immutable for this test file; resolve the same newest matching
+// declaration once instead of rereading every migration for three assertions.
+const readerMigrations = migrationCorpus().filter(({ sql }) =>
+  sql.includes('CREATE OR REPLACE FUNCTION public.fn_bbj_near_miss_summary')
+);
 
 /** The reason strings the engine can write, read from the engine itself. */
 function enginesReasons(): string[] {
@@ -230,13 +237,7 @@ describe('the near-miss log has a reader', () => {
 
 /** The migration that declares the reader, found by content not by filename. */
 function latestReaderMigration(): string {
-  const dir = resolve(ROOT, 'supabase/migrations');
-  const hit = readdirSync(dir)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .reverse()
-    .map((f) => readFileSync(resolve(dir, f), 'utf8'))
-    .find((s) => s.includes('CREATE OR REPLACE FUNCTION public.fn_bbj_near_miss_summary'));
+  const hit = readerMigrations.at(-1)?.sql;
   if (!hit) throw new Error('no migration declares fn_bbj_near_miss_summary');
   return hit;
 }

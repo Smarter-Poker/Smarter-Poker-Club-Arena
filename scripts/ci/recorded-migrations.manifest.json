@@ -223,6 +223,17 @@
       "recoveredFrom": "File bytes equal public.fn_ca_migration_text(20260927001937).body byte for byte; matching live MD5 7d5b2b925b0fc28a79b02ab36ea83b27 and byte_len 4776 read 2026-09-27T00:43:19Z.",
       "refusedBy": [],
       "liveVerdict": "Installed once after native PostgreSQL 17 qualification and an independently verified online index build. This short migration changes only four chip_transactions autovacuum/analyze reloptions and creates no persistent object; it lacks an @live-proof comment and cannot be edited after installation. At 2026-09-27T00:43:32Z, idx_chip_tx_club_time_totals is valid, ready and live with exactly (club_id, created_at DESC) INCLUDE (amount, from_user_id, to_user_id); vacuum_insert_scale_factor=0, vacuum_insert_threshold=4000, analyze_scale_factor=0, analyze_threshold=3000 and existing freeze_max_age=150000000 are present. Independent installed readback retains the three cashier function definitions, OIDs, ACLs and search paths unchanged. No function, policy, trigger, grant, financial record or timeout changed. Record existing immutable SQL without replay; source delivery and cashier browser acceptance remain separate."
+    },
+    {
+      "version": "20260927150429",
+      "name": "cashier_totals_match_receipt_omissions_before_the_movement_r",
+      "file": "supabase/migrations/20260927150429_cashier_totals_match_receipt_omissions_before_the_movement_r.sql",
+      "md5": "e5155bf7efde88d48b1185fdafe379f7",
+      "appliedToProductionAt": "2026-09-27T15:04:29Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "File bytes equal the installed schema_migrations statements; public.fn_ca_migration_text(20260927150429) returned MD5 e5155bf7efde88d48b1185fdafe379f7 and byte_len 8624 on 2026-09-27 at 15:15 UTC.",
+      "refusedBy": [],
+      "liveVerdict": "Installed once after independent PostgreSQL 17 accounting, authorization, snapshot and drift qualification. This dynamic replacement has no statically parsed new object or @live-proof line and cannot be edited after installation. Live readback retains fn_cashier_statement_rows OID 54141976, postgres owner, postgres-only EXECUTE, SECURITY DEFINER, STABLE and public, pg_temp search path; definition MD5 is 49e310be00e91afc9a9b7582bb048184. Nine other guarded Cashier functions remained unchanged at installation. Only authorized all-scope totals precompute existing receipt omissions; no grants, triggers, financial rows, indexes or timeout changed. The first whole production read still exceeded 8 seconds and a later warm whole read passed; authenticated browser availability remains unresolved. This records immutable installed SQL, not completion or permission to replay it."
     }
   ]
 }

@@ -21,7 +21,13 @@ import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
 } from './workerRuntime.js';
-import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
+import {
+  buildTournamentMState,
+  TOURNAMENT_ANTE_TYPES,
+  TOURNAMENT_CONTEXT_INCOMPLETE,
+  TOURNAMENT_CONTEXT_STATUSES,
+  TOURNAMENT_PREFLOP_ATLAS_DOMAIN,
+} from '../HorseTournamentPreflop.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 
@@ -1131,6 +1137,103 @@ describe('HorseDecisionWorkerRuntime', () => {
     await h.runtime.drain();
 
     expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 61 });
+  });
+
+  it('Phase 6B: the worker admits exactly the atlas domain context statuses and refuses one outside it by name', async () => {
+    // The worker reads TOURNAMENT_CONTEXT_STATUSES; this pins that the admitted set is the
+    // domain's set, not a second table. Every status in the domain is admitted through the
+    // real validator; a status outside it is refused with the named error.
+    expect([...TOURNAMENT_CONTEXT_STATUSES].sort()).toEqual(
+      [
+        ...TOURNAMENT_PREFLOP_ATLAS_DOMAIN.contextStatuses.baseline,
+        ...TOURNAMENT_PREFLOP_ATLAS_DOMAIN.contextStatuses.fallback,
+      ].sort()
+    );
+    let requestId = 62;
+    for (const status of TOURNAMENT_CONTEXT_STATUSES) {
+      const h = harness();
+      h.runtime.receive(
+        status === 'complete'
+          ? phase6TournamentRequest(requestId)
+          : labeledContextRequest(status, requestId)
+      );
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId });
+      requestId++;
+    }
+    const outside = labeledContextRequest('warming', requestId);
+    const refused = rekey({
+      ...outside,
+      gameState: {
+        ...outside.gameState,
+        tournament: { ...outside.gameState.tournament!, contextStatus: 'pending' as never },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(refused);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament context status is invalid',
+    });
+  });
+
+  it('Phase 6B: the worker admits exactly the atlas domain ante types and refuses one outside it by name', async () => {
+    expect([...TOURNAMENT_ANTE_TYPES]).toEqual([...TOURNAMENT_PREFLOP_ATLAS_DOMAIN.anteTypes]);
+    const request = phase6TournamentRequest(66);
+    const tournament = request.gameState.tournament!;
+    const withAnte = (
+      anteType: (typeof TOURNAMENT_ANTE_TYPES)[number] | 'button',
+      requestId: number
+    ) => {
+      const ante = anteType === 'none' ? 0 : 0.4;
+      const m = buildTournamentMState({
+        stackChips: request.player.stack,
+        smallBlind: tournament.currentSmallBlind!,
+        bigBlind: tournament.currentBigBlind!,
+        ante,
+        anteType: anteType as never,
+        playersAtTable: 2,
+        nextSmallBlind: tournament.nextSmallBlind,
+        nextBigBlind: tournament.nextBigBlind,
+        nextAnte: ante,
+        minutesToNextLevel: tournament.nextBlindInMin,
+        opponentStacks: request.gameState.players
+          .filter((seat) => seat.user_id !== request.player.user_id)
+          .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+      });
+      return rekey({
+        ...request,
+        requestId,
+        gameState: {
+          ...request.gameState,
+          ante,
+          bigBlindAnte: anteType === 'big_blind',
+          tournament: {
+            ...tournament,
+            currentAnte: ante,
+            anteType: anteType as never,
+            nextAnte: ante,
+            m,
+          },
+        },
+      });
+    };
+    let requestId = 66;
+    for (const anteType of TOURNAMENT_ANTE_TYPES) {
+      const h = harness();
+      h.runtime.receive(withAnte(anteType, requestId));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId });
+      requestId++;
+    }
+    const h = harness();
+    h.runtime.receive(withAnte('button', requestId));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament context numeric state is invalid',
+    });
   });
 
   it('gates on owned-service hydration and returns fast RNG/latency/governor receipts', async () => {

@@ -2,66 +2,33 @@
 // ---------------------------------------------------------------------------
 // PR-STATUS - answer "is my branch green, red, or still running" truthfully.
 //
-// WHY THIS EXISTS (measured 2026-09-06).
+// Actions runs describe workflow jobs; standalone GitHub App checks also carry
+// required verdicts. Read both on the exact commit and retain the ruleset's
+// reporter binding. On 2026-09-27 PR5400's Money check succeeded from its required
+// App, while this tool reported it absent because it searched only Actions jobs.
 //
-// An agent reported "checks pending" on a branch whose CI had been RED for
-// three pushes. The report was not careless. It was what the API said.
-//
-// There are three routes to a commit's check state and on this estate two of
-// them lie to you:
-//
-//   GET /repos/:o/:r/commits/:sha/check-runs
-//        -> 403 "Resource not accessible by personal access token".
-//        The estate PAT has no `checks:read`. A script that does
-//        `(await res.json()).check_runs` gets `undefined`, treats it as an
-//        empty list, and concludes there is nothing wrong.
-//
-//   GET /repos/:o/:r/commits/:sha/status
-//        -> 200 {"state":"pending","total_count":0}
-//        THIS IS THE ONE THAT CAUSED THE WRONG REPORT. It is the legacy
-//        COMMIT STATUS API. Every check in this estate is a GitHub Actions
-//        check-run, and check-runs are not commit statuses, so this endpoint
-//        has nothing to report and says so as `pending`. It answers `pending`
-//        for a commit that is green, for a commit that is red, and for a
-//        commit nobody has ever built. Verified against PR #3163, whose
-//        `CI - Build & Type Safety` had been `completed failure` for fifteen
-//        hours: /status said `pending`, total_count 0, HTTP 200.
-//
-//   GET /repos/:o/:r/actions/runs?head_sha=:sha        <- the truth
-//        -> 200, readable with the same token, and it is the same data the
-//        Checks tab renders. Its /jobs child names the failing JOB and STEP.
-//
-// AGENT-PLAYBOOK.md already documented the 403 and already named the Actions
-// API as the answer. It did not help, because all four commands it offered
-// were `gh` commands and `gh` IS NOT INSTALLED ON THIS MAC (CLAUDE.md 1.2.5).
-// So an agent following the playbook got `command not found` four times, fell
-// back to curl, hit the 403, fell back again to /status, and got a well-formed
-// 200 saying `pending`. Every step of that is reasonable. The outcome is a
-// false all-clear that outlived three pushes.
-//
-// THE RULE THIS FILE ENCODES: a fallback that cannot tell you the answer must
-// SAY SO. "Pending" is a claim about the world, and this tool only makes it
-// after seeing a run that is genuinely in progress. When it cannot tell, it
-// prints UNKNOWN and exits 3, which is impossible to mistake for good news.
+// A historically unreadable endpoint is not permanently unavailable. Any denied
+// or malformed read is UNKNOWN, never an empty list or a successful check. The
+// legacy aggregate /commits/:sha/status still cannot answer for check runs.
 //
 // USAGE
 //   node scripts/ci/pr-status.mjs                 # PR for the current branch
 //   node scripts/ci/pr-status.mjs 3163            # by PR number
 //   node scripts/ci/pr-status.mjs --branch fix/x  # by branch name
-//   node scripts/ci/pr-status.mjs --sha abc123    # by commit
+//   node scripts/ci/pr-status.mjs --sha FULL_COMMIT_SHA  # exact 40-character SHA
 //   node scripts/ci/pr-status.mjs --json          # machine-readable
 //   node scripts/ci/pr-status.mjs --all           # every open PR, ranked
 //
 // EXIT CODES (branch on these, do not parse the prose)
-//   0  GREEN    every required check passed; autopilot will merge it
+//   0  GREEN    every required check passed; protected merge is a separate action
 //   1  RED      at least one check failed - the job and step are named
 //   2  RUNNING  something is genuinely still in progress, nothing failed yet
 //   3  UNKNOWN  could not determine. NOT a synonym for pending. Read the note.
 //   4  DIRTY    the branch conflicts with main; CI state is moot until resolved
+//   5  NOT_RUN  required verdicts are skipped/neutral, not executed successes
 //
-// The token needs `actions:read` + `pull_requests:read` only. It deliberately
-// does NOT need `checks:read` - that scope is missing from the estate token,
-// and waiting for someone to add it is how this stayed broken.
+// Use the configured credential with Actions, Checks, pull-request and rules
+// read access. This helper performs observation only; it never merges or retries.
 // ---------------------------------------------------------------------------
 
 import { execSync } from 'node:child_process';
@@ -117,7 +84,15 @@ const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 // "tell the human" instead of "silently pass".
 const GOOD = new Set(['success', 'skipped', 'neutral']);
 
-const EXIT = { GREEN: 0, RED: 1, RED_NON_BLOCKING: 1, RUNNING: 2, UNKNOWN: 3, DIRTY: 4 };
+const EXIT = {
+  GREEN: 0,
+  RED: 1,
+  RED_NON_BLOCKING: 1,
+  RUNNING: 2,
+  UNKNOWN: 3,
+  DIRTY: 4,
+  NOT_RUN: 5,
+};
 
 function die(msg, code = EXIT.UNKNOWN) {
   if (JSON_OUT) console.log(JSON.stringify({ state: 'UNKNOWN', reason: msg }, null, 2));
@@ -223,7 +198,7 @@ async function gh(path, { allow404 = false } = {}) {
       `GitHub answered ${res.status} for ${url}\n  ${detail}\n\n` +
         (res.status === 403
           ? '  A 403 with quota remaining means the token lacks a scope. This tool\n' +
-            '  needs actions:read and pull_requests:read. Do NOT "work around" it\n' +
+            '  needs readable Actions, Checks, pull requests and rules. Do NOT hide it\n' +
             '  by falling back to /commits/:sha/status - that endpoint reports\n' +
             '  "pending" for commits that have already failed. See the header.'
           : '')
@@ -307,6 +282,7 @@ const sh = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 
 // endpoint omits both fields entirely, which is the same trap one level down.
 function mergeLabel(pr) {
   if (!pr) return 'UNCOMPUTED';
+  if (pr.merged === true) return 'MERGED';
   if (pr.mergeable_state === 'dirty') return 'DIRTY';
   if (pr.mergeable === null || pr.mergeable_state === undefined || pr.mergeable_state === 'unknown')
     return 'UNCOMPUTED';
@@ -324,37 +300,125 @@ async function requiredChecks() {
   if (!Array.isArray(rules)) return null;
   const list = rules
     .filter((rule) => rule.type === 'required_status_checks')
-    .flatMap((rule) => rule.parameters?.required_status_checks ?? [])
-    .map((check) => check.context)
-    .filter(Boolean);
-  return list?.length ? new Set(list) : null;
+    .flatMap((rule) => rule.parameters?.required_status_checks ?? [null]);
+  if (
+    !list.length ||
+    list.some((check) => !check || typeof check.context !== 'string' || !check.context)
+  )
+    return null;
+  const required = new Map();
+  for (const check of list) {
+    const app = check.integration_id ?? null;
+    if (app !== null && (!Number.isSafeInteger(app) || app <= 0)) return null;
+    const reporters = required.get(check.context) ?? new Set();
+    reporters.add(app);
+    required.set(check.context, reporters);
+  }
+  return required;
+}
+
+// Counted endpoints must be read completely. Bound abnormal inventories and
+// reject partial/changing pages instead of inferring absence from page one.
+export async function readPages(path, key, read = gh) {
+  const rows = [];
+  let expected;
+  const seen = new Set();
+  for (let page = 1; page <= 10; page++) {
+    const answer = await read(`${path}&per_page=100&page=${page}`);
+    if (
+      !Array.isArray(answer?.[key]) ||
+      !Number.isSafeInteger(answer.total_count) ||
+      answer.total_count < 0 ||
+      answer.total_count > 1000 ||
+      (expected !== undefined && answer.total_count !== expected)
+    ) {
+      throw new Error(`Incomplete or changing ${key} inventory for ${path}`);
+    }
+    expected = answer.total_count;
+    for (const row of answer[key]) {
+      if (!Number.isSafeInteger(row?.id) || row.id <= 0 || seen.has(row.id)) {
+        throw new Error(`Invalid or repeated ${key} identity for ${path}`);
+      }
+      seen.add(row.id);
+      rows.push(row);
+    }
+    if (rows.length === expected) return rows;
+    if (rows.length > expected || answer[key].length !== 100) {
+      throw new Error(`Incomplete ${key} page for ${path}`);
+    }
+  }
+  throw new Error(`Unbounded ${key} inventory for ${path}`);
 }
 
 /**
  * Name every required context for which this commit lacks a completed success.
  * A workflow-level success is not enough: a required job can be absent because
- * a path or job condition prevented it from being created, and GitHub will keep
- * the pull request blocked in exactly that state.
+ * a path or job condition prevented it from being created. Known skipped or
+ * neutral results are distinct from failure, but neither certifies execution.
+ * This observer does not decide whether a classifier correctly skipped a job.
  */
-export function requiredContextProblems(required, jobs) {
-  if (!(required instanceof Set)) return null;
-
-  const problems = [];
-  for (const context of [...required].sort()) {
-    const observed = jobs.filter((job) => job?.name === context);
-    if (observed.some((job) => job.status === 'completed' && job.conclusion === 'success')) {
-      continue;
+export function requiredContextProblems(required, checks, sha) {
+  if (!(required instanceof Map)) return null;
+  if (!/^[a-f0-9]{40}$/.test(sha) || !Array.isArray(checks)) {
+    throw new Error('Required checks need an exact commit and readable inventory');
+  }
+  for (const check of checks) {
+    if (
+      check.head_sha !== sha ||
+      !Number.isSafeInteger(check.id) ||
+      check.id <= 0 ||
+      !Number.isSafeInteger(check.app?.id) ||
+      check.app.id <= 0 ||
+      typeof check.app.slug !== 'string' ||
+      !check.app.slug ||
+      typeof check.name !== 'string' ||
+      !['queued', 'in_progress', 'completed', 'waiting', 'requested', 'pending'].includes(
+        check.status
+      ) ||
+      (check.status === 'completed' && typeof check.conclusion !== 'string')
+    ) {
+      throw new Error('Check identity, reporter or status is missing or belongs to another commit');
     }
-
-    const running = observed.some((job) => job.status !== 'completed');
-    const conclusions = [
-      ...new Set(observed.map((job) => job.conclusion || job.status || 'unknown')),
-    ].sort();
-    problems.push({
-      context,
-      state: observed.length === 0 ? 'missing' : running ? 'running' : 'not_successful',
-      conclusions,
-    });
+  }
+  const problems = [];
+  for (const [context, reporters] of [...required].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const reporter of reporters) {
+      const matching = checks.filter(
+        (check) => check.name === context && (reporter === null || check.app.id === reporter)
+      );
+      // Newer attempts supersede old successes even if the old attempt finishes
+      // later. IDs identify creation order; completed_at does not. For an
+      // unbound context retain every reporter's latest verdict, never let a
+      // foreign success mask a failing reporter with the same name.
+      const latest = new Map();
+      for (const check of matching) {
+        if (!latest.has(check.app.id) || latest.get(check.app.id).id < check.id) {
+          latest.set(check.app.id, check);
+        }
+      }
+      const observed = [...latest.values()];
+      if (
+        observed.length &&
+        observed.every((check) => check.status === 'completed' && check.conclusion === 'success')
+      )
+        continue;
+      const failed = observed.some(
+        (check) => check.status === 'completed' && !GOOD.has(check.conclusion)
+      );
+      const running = observed.some((check) => check.status !== 'completed');
+      problems.push({
+        context,
+        ...(reporter !== null ? { integrationId: reporter } : {}),
+        state: !observed.length
+          ? 'missing'
+          : failed
+            ? 'not_successful'
+            : running
+              ? 'running'
+              : 'not_run',
+        conclusions: [...new Set(observed.map((check) => check.conclusion || check.status))].sort(),
+      });
+    }
   }
   return problems;
 }
@@ -363,21 +427,27 @@ export function requiredContextProblems(required, jobs) {
 export function stateForChecks({ failures, activeRuns, requiredProblems }) {
   if (failures.some((failure) => failure.required)) return 'RED';
   if (requiredProblems?.some((problem) => problem.state === 'not_successful')) return 'RED';
-  if (activeRuns.length) return 'RUNNING';
   if (requiredProblems === null) return 'UNKNOWN';
-  if (requiredProblems.length) return 'RED';
+  if (activeRuns.length || requiredProblems.some((problem) => problem.state === 'running'))
+    return 'RUNNING';
+  if (requiredProblems.some((problem) => problem.state !== 'not_run')) return 'RED';
   if (failures.length) return 'RED_NON_BLOCKING';
+  if (requiredProblems.length) return 'NOT_RUN';
   return 'GREEN';
 }
 
 // ---------------------------------------------------------------------------
-// The state of one commit, from the one endpoint that answers.
+// Workflow diagnostics and required App verdicts for one exact commit.
 // ---------------------------------------------------------------------------
-async function commitState(sha, required) {
-  const data = await gh(`/actions/runs?head_sha=${sha}&per_page=100`);
-  const runs = data.workflow_runs || [];
+export async function commitState(sha, required, read = gh) {
+  if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('An exact 40-character commit SHA is required');
+  const runs = await readPages(`/actions/runs?head_sha=${sha}`, 'workflow_runs', read);
+  if (runs.some((run) => run.head_sha !== sha || !Number.isSafeInteger(run.workflow_id))) {
+    throw new Error('Actions run identity does not match the requested commit');
+  }
+  const checks = await readPages(`/commits/${sha}/check-runs?filter=all`, 'check_runs', read);
 
-  if (runs.length === 0) {
+  if (runs.length === 0 && checks.length === 0) {
     return {
       state: 'UNKNOWN',
       reason:
@@ -396,27 +466,50 @@ async function commitState(sha, required) {
   // failure sitting beside a fresh success would otherwise read as red forever.
   const latest = new Map();
   for (const r of runs) {
-    const prev = latest.get(r.name);
-    if (!prev || new Date(r.created_at) > new Date(prev.created_at)) latest.set(r.name, r);
+    const prev = latest.get(r.workflow_id);
+    if (!prev || r.id > prev.id) latest.set(r.workflow_id, r);
   }
   const list = [...latest.values()];
 
   const failedRuns = list.filter((r) => r.conclusion && !GOOD.has(r.conclusion));
   const activeRuns = list.filter((r) => r.status !== 'completed');
 
-  // Required status checks are JOB contexts, not workflow names. Read every
-  // newest run's jobs so absence is visible; reading jobs only for failed runs
-  // made a missing required check indistinguishable from a passing one.
+  // Keep workflow job/step diagnostics separate from required check-run proof.
+  // A standalone App verdict has no Actions job, and a job name cannot prove
+  // the App identity required by the ruleset.
   const jobsByRun = new Map();
-  const allJobs = [];
   for (const run of list) {
-    const answer = await gh(`/actions/runs/${run.id}/jobs?per_page=100`);
-    if (!Array.isArray(answer?.jobs)) {
-      die(`GitHub returned no readable job list for workflow run ${run.id}.`);
+    const jobs = await readPages(`/actions/runs/${run.id}/jobs?filter=latest`, 'jobs', read);
+    if (jobs.some((job) => job.head_sha !== sha || job.run_id !== run.id)) {
+      throw new Error(`Job identity does not match workflow run ${run.id}`);
     }
-    jobsByRun.set(run.id, answer.jobs);
-    allJobs.push(...answer.jobs);
+    jobsByRun.set(run.id, jobs);
   }
+
+  // Validate the complete inventory before filtering provider-ineligible events.
+  requiredContextProblems(required, checks, sha);
+  const eligibleChecks = checks.filter((check) => {
+    if (check.app.slug !== 'github-actions') return true;
+    if (!Number.isSafeInteger(check.check_suite?.id) || check.check_suite.id <= 0) {
+      throw new Error(`Actions check ${check.id} has no readable matching workflow source`);
+    }
+    const source = runs.find((run) => run.check_suite_id === check.check_suite?.id);
+    if (!source || typeof source.event !== 'string') {
+      throw new Error(`Actions check ${check.id} has no readable matching workflow source`);
+    }
+    // GitHub does not evaluate workflow_dispatch/workflow_run/schedule job
+    // checks for PR rules. External App verdicts have no such event restriction.
+    return [
+      'push',
+      'pull_request',
+      'pull_request_review',
+      'pull_request_target',
+      'deployment',
+      'deployment_status',
+      'merge_group',
+    ].includes(source.event);
+  });
+  const requiredProblems = requiredContextProblems(required, eligibleChecks, sha);
 
   // Name the job and the step. This is the part an agent actually needs, and
   // the part /commits/:sha/status could never give even if it worked.
@@ -449,12 +542,15 @@ async function commitState(sha, required) {
         // The ruleset names JOBS, not workflows - "TypeScript Check" is a job
         // inside "CI - Build & Type Safety". Getting that backwards is why
         // agents mis-read which reds actually block a merge.
-        required: required instanceof Set ? required.has(j.name) : true,
+        required:
+          requiredProblems === null ||
+          requiredProblems.some(
+            (problem) => problem.context === j.name && problem.state === 'not_successful'
+          ),
       });
     }
   }
 
-  const requiredProblems = requiredContextProblems(required, allJobs);
   const state = stateForChecks({ failures, activeRuns, requiredProblems });
   const reason =
     state === 'UNKNOWN'
@@ -482,7 +578,7 @@ function quotaWarning(line) {
     `  QUOTA LOW: ${lastQuota.remaining}/${lastQuota.limit} GitHub API calls left, resets in ${mins} min.`
   );
   line(
-    '  Stop polling. Push the branch; agent-open-pr.yml creates its pull request automatically.'
+    '  Preserve the pending operation and use the remaining quota for necessary evidence reads.'
   );
 }
 
@@ -493,6 +589,7 @@ function render(pr, st) {
   line('');
   line('  ' + head);
   if (pr) line(`  ${pr.html_url}`);
+  if (pr?.merged === true) line('  MERGED - GitHub reports the pull request already merged.');
   line('  ' + '-'.repeat(Math.max(20, head.length)));
 
   if (pr && mergeLabel(pr) === 'DIRTY') {
@@ -523,7 +620,7 @@ function render(pr, st) {
     line('');
     line('  FAILING:');
     for (const f of st.failures) {
-      line(`    ${f.required ? '[BLOCKS MERGE]' : '[not required]'} ${f.workflow} -> ${f.job}`);
+      line(`    ${f.required ? '[required check]' : '[not required]'} ${f.workflow} -> ${f.job}`);
       if (f.step) line(`        failed step: ${f.step}`);
       line(`        ${f.url}`);
       if (f.detail?.length) {
@@ -545,34 +642,42 @@ function render(pr, st) {
           : problem.state === 'running'
             ? 'still running'
             : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
-      line(`    [BLOCKS MERGE] ${problem.context} - ${detail}`);
+      line(
+        `    [${problem.state === 'not_run' ? 'NOT_RUN' : 'required check'}] ${problem.context} - ${detail}`
+      );
     }
   }
 
   quotaWarning(line);
   line('');
   if (st.state === 'RED') {
-    line('  RED - one or more required checks are not proven successful. This will not merge.');
+    line('  RED - one or more required checks failed or were not observed.');
     line('');
     return EXIT.RED;
   }
   if (st.state === 'RED_NON_BLOCKING') {
     line('  RED (non-blocking) - a check failed but the ruleset does not require it.');
-    line('  Autopilot can still merge this. Fix it anyway: CLAUDE.md 10.83 - a red');
-    line('  nobody is required to look at is how a gate rots for two days.');
+    line('  Diagnose the failure; the authorized task still owns protected delivery.');
     line('');
     return EXIT.RED;
   }
   if (st.state === 'RUNNING') {
-    line(`  RUNNING - ${st.activeRuns.length} run(s) in progress, nothing has failed yet.`);
-    line('  Stop here. agent-open-pr.yml and Autopilot own pull-request creation and merge');
-    line('  automatically (AGENT-PLAYBOOK 7b / CLAUDE.md 10.8.3).');
+    line('  RUNNING - a workflow or required check is still in progress.');
+    line('  Retain this operation, continue independent assigned work, then read its result.');
     line('');
     return EXIT.RUNNING;
   }
+  if (st.state === 'NOT_RUN') {
+    line('  NOT_RUN - required verdicts were skipped or neutral; execution is not certified.');
+    line('  Inspect the owning workflow classification and actual protected-merge result.');
+    line('');
+    return EXIT.NOT_RUN;
+  }
   line('  GREEN - every required check passed.');
   if (pr && mergeLabel(pr) === 'BLOCKED')
-    line('  (GitHub still says "blocked" - that clears when autopilot enables auto-merge.)');
+    line(
+      '  (GitHub still says "blocked" - required check success does not establish mergeability.)'
+    );
   if (pr && mergeLabel(pr) === 'UNCOMPUTED')
     line(
       '  (GitHub has not computed mergeability yet - that is not a problem, just not an answer.)'
@@ -596,11 +701,26 @@ async function main() {
       // branch look clean, so the same PR reported DIRTY on its own and RED
       // in this table. Fetch the detail; treat an uncomputed answer as
       // uncomputed rather than as "fine".
-      const pr = (await ghSoft(`/pulls/${stub.number}`)) || stub;
+      let pr = (await ghSoft(`/pulls/${stub.number}`)) || stub;
       const st = await commitState(pr.head.sha, required);
+      const fresh = await gh(`/pulls/${pr.number}`);
+      if (fresh?.head?.sha !== pr.head.sha) {
+        die(
+          `PR #${pr.number} changed head while its checks were read; obtain a fresh observation.`
+        );
+      }
+      pr = fresh;
       rows.push({ pr, st, merge: mergeLabel(pr) });
     }
-    const rank = { DIRTY: -1, RED: 0, RED_NON_BLOCKING: 1, UNKNOWN: 2, RUNNING: 3, GREEN: 4 };
+    const rank = {
+      DIRTY: -1,
+      RED: 0,
+      RED_NON_BLOCKING: 1,
+      UNKNOWN: 2,
+      RUNNING: 3,
+      NOT_RUN: 4,
+      GREEN: 5,
+    };
     const stateOf = (r) => (r.merge === 'DIRTY' ? 'DIRTY' : r.st.state);
     rows.sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)] || a.pr.number - b.pr.number);
     const states = rows.map(stateOf);
@@ -612,7 +732,9 @@ async function main() {
         ? EXIT.UNKNOWN
         : states.includes('RUNNING')
           ? EXIT.RUNNING
-          : EXIT.GREEN;
+          : states.includes('NOT_RUN')
+            ? EXIT.NOT_RUN
+            : EXIT.GREEN;
     if (JSON_OUT) {
       console.log(
         JSON.stringify(
@@ -621,6 +743,7 @@ async function main() {
             branch: pr.head.ref,
             state: stateOf({ st, merge }),
             mergeable_state: merge,
+            merged: pr.merged === true,
             failures: st.failures,
             requiredProblems: st.requiredProblems,
           })),
@@ -635,7 +758,11 @@ async function main() {
       const { pr, st, merge } = row;
       const state = stateOf(row);
       const note =
-        merge === 'UNCOMPUTED' && state !== 'DIRTY' ? '  (mergeability not yet computed)' : '';
+        merge === 'MERGED'
+          ? '  (MERGED)'
+          : merge === 'UNCOMPUTED' && state !== 'DIRTY'
+            ? '  (mergeability not yet computed)'
+            : '';
       console.log(
         `  ${state.padEnd(18)} #${String(pr.number).padEnd(5)} ${pr.head.ref.slice(0, 56)}${note}`
       );
@@ -649,7 +776,7 @@ async function main() {
     const dirty = rows.filter((r) => stateOf(r) === 'DIRTY').length;
     const red = rows.filter((r) => stateOf(r) === 'RED').length;
     console.log(
-      `  ${rows.length} open, ${red} with a failing required check, ${dirty} conflicting with main.`
+      `  ${rows.length} observed, ${rows.filter(({ pr }) => pr.state === 'open' && pr.merged !== true).length} open, ${red} with failed or missing required checks, ${dirty} conflicting with main.`
     );
     console.log('');
     return aggregateExit;
@@ -686,8 +813,7 @@ async function main() {
       if (!b)
         die(
           `no open PR for "${ref}" and origin has no such branch.\n` +
-            '  If you have not pushed yet, push the branch. agent-open-pr.yml then\n' +
-            '  creates its pull request automatically for protected checks.'
+            '  Verify the owned branch and push through normal hooks, then find or create its PR.'
         );
       sha = b.commit.sha;
     }
@@ -696,6 +822,13 @@ async function main() {
   if (pr) sha = pr.head.sha;
   const st = await commitState(sha, required);
   st.sha = sha;
+  if (pr) {
+    const fresh = await gh(`/pulls/${pr.number}`);
+    if (fresh?.head?.sha !== sha) {
+      die(`PR #${pr.number} changed head while its checks were read; obtain a fresh observation.`);
+    }
+    pr = fresh;
+  }
 
   // --log: name the failing test, not just the failing job. Without this the
   // agent runs a second curl, and if they run it in a loop they land on the
@@ -717,6 +850,7 @@ async function main() {
           sha,
           state: pr && mergeLabel(pr) === 'DIRTY' ? 'DIRTY' : st.state,
           mergeable_state: pr ? mergeLabel(pr) : null,
+          merged: pr ? pr.merged === true : null,
           failures: st.failures,
           requiredProblems: st.requiredProblems,
           reason: st.reason ?? null,

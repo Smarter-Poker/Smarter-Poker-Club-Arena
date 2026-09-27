@@ -111,6 +111,7 @@ const HEALTH_STATS_FIELDS = [
   'pendingSegments',
   'retiredSegments',
   'retiredRecords',
+  'heldSegments',
   'compressedBytes',
   'maxBytes',
   'records',
@@ -143,6 +144,8 @@ export interface HorseJournalHealth {
   pendingSegments: number | null;
   retiredSegments: number | null;
   retiredRecords: number | null;
+  /** Published segments the evidence hold keeps from the ring. */
+  heldSegments: number | null;
   compressedBytes: number | null;
   maxBytes: number | null;
   records: number | null;
@@ -168,6 +171,7 @@ const EMPTY_HEALTH: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number
     pendingSegments: null,
     retiredSegments: null,
     retiredRecords: null,
+    heldSegments: null,
     compressedBytes: null,
     maxBytes: null,
     records: null,
@@ -182,15 +186,15 @@ export function horseJournalCaptureLine(h: Omit<HorseJournalHealth, 'capture'>):
   const counts =
     h.segments === null
       ? ''
-      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}`;
+      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} held=${h.heldSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}`;
   const ring = h.maxSegments === null ? 'a ring' : `a ring of ${h.maxSegments} segments`;
   switch (h.mode) {
     case 'ready':
-      return `running: the archive is ${ring}; the oldest published segment is retired when a new one needs its room;${counts}`;
+      return `running: the archive is ${ring}; the oldest published segment outside the evidence hold is retired when a new one needs its room;${counts}`;
     case 'paused':
       return h.pausedReason === 'archive_storage_capacity'
         ? `not running: paused since ${h.pausedSince} because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute;${counts}`
-        : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment left to retire (only unpublished segments remain); asks again every minute;${counts}`;
+        : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute;${counts}`;
     case 'starting':
       return 'not running yet: the writer has not said READY';
     case 'recovering':
@@ -693,6 +697,7 @@ export class HorseDecisionJournalPublisher {
       pendingSegments: number('pendingSegments'),
       retiredSegments: number('retiredSegments'),
       retiredRecords: number('retiredRecords'),
+      heldSegments: number('heldSegments'),
       compressedBytes: number('compressedBytes'),
       maxBytes: number('maxBytes'),
       records: number('records'),

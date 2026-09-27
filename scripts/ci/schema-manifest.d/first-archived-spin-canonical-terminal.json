@@ -1,0 +1,26 @@
+{
+  "_owner": "Production Alerts",
+  "_comment": "Installed once through Supabase apply_migration on 2026-09-27; actual provider history 20260927041537, name first_archived_spin_canonical_terminal. Readback at 04:15:49 UTC matched the exact 143809-byte statement SHA256 2f474595a7d4f88cd70a52ba95d4616fb8f91cc53681146ec09f1738bc51878c and all ten function bodies/ACLs. This declaration does not certify financial execution or incident closure.",
+  "tables": ["smarter_private.spin_archived_first_admission"],
+  "functions": [
+    "smarter_private.spin_archived_first_manifest",
+    "smarter_private.spin_archived_first_preimage",
+    "smarter_private.spin_archived_first_immutable",
+    "smarter_private.spin_archived_first_launch_witness",
+    "smarter_private.spin_archived_first_standings",
+    "smarter_private.spin_archived_first_requires_terminal",
+    "fn_complete_first_archived_spin"
+  ],
+  "columns": {
+    "smarter_private.spin_archived_first_admission": [
+      "tournament_id",
+      "operation_id",
+      "lease_generation",
+      "owner_instance",
+      "source_sha256",
+      "original_fee_proof",
+      "admitted_xid",
+      "admitted_at"
+    ]
+  }
+}

@@ -7,6 +7,7 @@ vi.mock('../services/supabase/client.js', () => ({
 }));
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => fixture.frozen }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+const { reportError } = await import('../services/errorReporter.js');
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
 const event = 'aaaaaaaa-0000-4000-8000-000000000001';
 const users = Array.from(
@@ -177,5 +178,61 @@ describe('the tournament input device reads the authoritative closed window once
       'fn_ca_tournament_rebuy_window',
     ]);
     expect(fixture.from).not.toHaveBeenCalled();
+  });
+});
+
+describe('a rebuy-window policy the engine cannot read names itself once (2026-09-27)', () => {
+  const denied = {
+    code: '42501',
+    message: 'permission denied for function fn_ca_tournament_rebuy_window',
+  };
+
+  it('reports the refused read by its code the first time, and keeps the purchase door', async () => {
+    const manager = setup();
+    fixture.rpc.mockImplementation(async (name: string) =>
+      name === 'fn_ca_tournament_rebuy_window'
+        ? { data: null, error: denied }
+        : { data: { success: false }, error: null }
+    );
+    const result = await manager.tryTournamentRebuys(users);
+    expect(
+      fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
+    ).toHaveLength(20);
+    expect(result.answered.size).toBe(20);
+    const reports = vi
+      .mocked(reportError)
+      .mock.calls.filter((call) => call[1] === 'Tournament.rebuy_window_unreadable');
+    expect(reports).toHaveLength(1);
+    expect(String((reports[0][0] as Error).message)).toContain('42501');
+    expect(reports[0][2]).toEqual({ tournamentId: event, code: '42501' });
+  });
+
+  it('does not repeat the same code on every sweep, but names a different one', async () => {
+    const manager = setup();
+    let error: { code: string; message: string } = denied;
+    fixture.rpc.mockImplementation(async (name: string) =>
+      name === 'fn_ca_tournament_rebuy_window'
+        ? { data: null, error }
+        : { data: { success: false }, error: null }
+    );
+    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users);
+    error = { code: '57014', message: 'canceling statement due to statement timeout' };
+    await manager.tryTournamentRebuys(users);
+    const codes = vi
+      .mocked(reportError)
+      .mock.calls.filter((call) => call[1] === 'Tournament.rebuy_window_unreadable')
+      .map((call) => (call[2] as { code: string }).code);
+    expect(codes).toEqual(['42501', '57014']);
+  });
+
+  it('says nothing when the window is read', async () => {
+    const manager = setup();
+    await manager.tryTournamentRebuys(users);
+    expect(
+      vi
+        .mocked(reportError)
+        .mock.calls.filter((call) => call[1] === 'Tournament.rebuy_window_unreadable')
+    ).toHaveLength(0);
   });
 });

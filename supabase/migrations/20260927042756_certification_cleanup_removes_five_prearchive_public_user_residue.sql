@@ -22,10 +22,6 @@ SET LOCAL lock_timeout = '4s';
 -- surfaces. Keep the exhaustive guard bounded, but give its read-only scans
 -- enough time to finish before the exact five-row mutation.
 SET LOCAL statement_timeout = '15min';
-SET LOCAL max_parallel_workers_per_gather = 8;
-SET LOCAL min_parallel_table_scan_size = 0;
-SET LOCAL parallel_setup_cost = 0;
-SET LOCAL parallel_tuple_cost = 0;
 
 DO $cleanup$
 DECLARE
@@ -41,7 +37,6 @@ DECLARE
   ];
   v_validated integer := 0;
   v_deleted integer := 0;
-  v_rakeback_rows bigint := 0;
 BEGIN
   IF public.fn_platform_frozen() THEN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_REFUSES_PLATFORM_FREEZE'
@@ -198,19 +193,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- This ten-million-row table has a composite primary key led by
-  -- rake_record_id, so the generic serial EXISTS plan cannot use its index.
-  -- Count its exact five user IDs with the bounded parallel scan configured
-  -- above, then exclude only this already-guarded column from the loop.
-  SELECT count(*)
-    INTO v_rakeback_rows
-    FROM public.rakeback_stats_applied r
-   WHERE r.user_id = ANY (v_target_ids);
-  IF v_rakeback_rows <> 0 THEN
-    RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_IS_NOT_EMPTY: rakeback_stats_applied.user_id'
-      USING ERRCODE = '55000';
-  END IF;
-
   -- The older feature tables did not consistently declare user foreign
   -- keys. Enumerate every extant public UUID user-bearing column without a
   -- direct FK and refuse any matching row. Explicit guards above document
@@ -238,10 +220,7 @@ BEGIN
            'approver_id', 'caller_id', 'callee_id', 'caller_uid', 'jwt_sub'
          )
        )
-       AND (c.relname, a.attname) NOT IN (
-         ('signup_errors', 'user_id'),
-         ('rakeback_stats_applied', 'user_id')
-       )
+       AND c.relname <> 'signup_errors'
        AND NOT EXISTS (
          SELECT 1
            FROM pg_catalog.pg_constraint fk

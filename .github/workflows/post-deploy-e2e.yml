@@ -665,8 +665,9 @@ jobs:
     name: Live-table and engine verification
     runs-on: ubuntu-latest
     # 12m prerequisite + 3 x 6.5m tournament cases + 5m cash case leaves
-    # 8.5m for checkout/setup, fixture lifecycle, provenance and reports.
-    timeout-minutes: 45
+    # 23.5m for checkout/setup, fixture lifecycle, provenance and reports.
+    # Preserve the existing job envelope; MTT shares the original case limit.
+    timeout-minutes: 60
     permissions:
       contents: read
     concurrency:

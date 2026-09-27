@@ -24,3 +24,14 @@ plus everything put in), writes the mixed abort receipt the admission reads,
 and disposes the origin generation only. The engine then admits the
 successor, completes the transfer and resumes dealing. Migration
 `20260927145449`. No chip, registration, ledger row or wallet is written.
+
+### The First Apply Refused, And Why The Void Now Admits The Successor Holder
+
+The first apply of `20260927145449` (2026-09-27 16:17 UTC) rolled back with
+nothing committed: engine 4946473b had just restarted and was claiming the
+successor generation of these events while the void ran, and the post-image
+required that no lease exist. A holder of the never-admitted successor
+generation cannot act (its admission is refused until the void's receipt
+exists, and every F06 write needs the lane the void holds), so the void and its
+post-image now admit exactly that holder and still refuse any other. The file
+was never applied, so it is corrected in place, and its time budget is 6 s.

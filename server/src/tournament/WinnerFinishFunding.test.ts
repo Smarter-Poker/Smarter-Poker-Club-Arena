@@ -173,11 +173,11 @@ describe('lost responses are resolved by the same immutable request', () => {
     const request = terminalRpc.indexOf('const request = {');
     const loop = terminalRpc.indexOf('for (let attempt = 1;', request);
     const invoke = terminalRpc.indexOf(
-      "supabase.rpc('fn_complete_tournament_terminal', request)",
+      "terminalAuthority.rpc('fn_complete_tournament_terminal', request)",
       loop
     );
     const resolver = terminalRpc.indexOf(
-      "supabase.rpc('fn_resolve_tournament_terminal_outcome'",
+      "terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'",
       invoke
     );
     expect(request).toBeGreaterThanOrEqual(0);

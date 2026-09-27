@@ -9,6 +9,24 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 const { runLegacyEngineCheckpoint } = await import(process.argv[3]);
 const scenario = process.argv[2];
+// A real timer may wake before its requested wall-clock deadline. Exercise
+// that boundary deterministically while retaining the actual inspector/target.
+const originalSetTimeout = globalThis.setTimeout;
+let earlyRequestTimerCallbacks = 0;
+if (scenario === 'early_timeout') {
+  globalThis.setTimeout = (callback, ms, ...args) => {
+    if (typeof callback === 'function' && callback.toString().includes('request_timeout')) {
+      return originalSetTimeout(
+        () => {
+          earlyRequestTimerCallbacks++;
+          callback(...args);
+        },
+        Math.max(1, ms - 10)
+      );
+    }
+    return originalSetTimeout(callback, ms, ...args);
+  };
+}
 // The runtimes this fixture is allowed to prove itself on. CI stays pinned to
 // 20 and 22; 26 is here because the Mac that runs the local prechecks is on it,
 // and the GATE - not the behaviour - was what failed there. All twelve
@@ -41,7 +59,7 @@ const bounded = (promise, ms = 2500, stage = 'fixture') => {
   ]).finally(() => clearTimeout(timer));
 };
 try {
-  const mode = ['timeout', 'disconnect'].includes(scenario)
+  const mode = ['timeout', 'early_timeout', 'disconnect'].includes(scenario)
     ? 'hang'
     : scenario === 'exception'
       ? 'throw'
@@ -296,7 +314,7 @@ try {
   } else {
     result = await runLegacyEngineCheckpoint({
       ...options,
-      ...(scenario === 'timeout' ? { workBudgetMs: 500 } : {}),
+      ...(['timeout', 'early_timeout'].includes(scenario) ? { workBudgetMs: 500 } : {}),
       ...(['success', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)
         ? { createWebSocket: observedWebSocket }
         : {}),
@@ -315,7 +333,7 @@ try {
       });
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
-    if (scenario === 'timeout') {
+    if (['timeout', 'early_timeout'].includes(scenario)) {
       assert.equal(result.reason, 'inspector operation outcome unknown');
       // An unknown outcome says how far the guard got (2026-09-24): the
       // record it left on the target's global object, held to its shape, and
@@ -348,7 +366,12 @@ try {
       // whether the fix is a bigger budget or a cheaper operation, and until
       // today it was never written down.
       assert.ok(allowanceMs > 0 && allowanceMs < 500, 'allowance is the remaining slice');
-      assert.ok(waitedMs >= allowanceMs, 'the operation waited out its whole slice');
+      assert.ok(
+        waitedMs >= allowanceMs,
+        `the operation waited out its whole slice: waited=${waitedMs}, allowance=${allowanceMs}`
+      );
+      if (scenario === 'early_timeout')
+        assert.ok(earlyRequestTimerCallbacks > 1, 'early wake rechecks the same deadline');
       assert.equal(result.retryAllowed, false);
       assert.equal(result.checkpointInvoked, true);
       assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
@@ -459,6 +482,7 @@ try {
   );
   throw error;
 } finally {
+  globalThis.setTimeout = originalSetTimeout;
   clearTimeout(hardStop);
   if (child && child.exitCode === null && child.signalCode === null) {
     child.kill('SIGKILL');

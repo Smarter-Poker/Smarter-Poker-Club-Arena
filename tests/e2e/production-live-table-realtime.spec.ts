@@ -12,6 +12,7 @@ import {
   installLiveTablePresentationJournal,
   liveTablePresentationEvidence,
   whileConnectionBannerStaysHidden,
+  whileInitialTableConnects,
   type CausalHandCycle,
 } from './support/liveTableRealtime';
 import {
@@ -23,8 +24,10 @@ import { createProgressSilenceGuard } from './support/progressSilence';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { remainingObservationMs } from './support/observationDeadline';
 import { assertInitialTableOwnership } from './support/initialTableOwnership';
+import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
   createHudClockReader,
+  hudEventObservationMs,
   observeHudLevels,
   sharedNaturalLevel,
   waitForSharedNaturalLevel,
@@ -325,8 +328,7 @@ async function proveTableProgressedBeforeNavigation(
 async function selectProgressingTournamentTable(
   request: APIRequestContext,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number],
-  testInfo: TestInfo,
-  qualifiesHud?: (tableId: string) => Promise<boolean>
+  testInfo: TestInfo
 ): Promise<{ candidate: RunningTableCandidate; evidence: PreNavigationEngineEvidence }> {
   let before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
@@ -398,7 +400,6 @@ async function selectProgressingTournamentTable(
   let beforeTable: EngineTableLiveness | null = null;
   let afterTable: EngineTableLiveness | null = null;
   const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
-  const refusedHudTables = new Set<string>();
   await expect
     .poll(
       async () => {
@@ -411,15 +412,7 @@ async function selectProgressingTournamentTable(
           )
             continue;
           const current = healthyRunningTable(after, baseline.tableId, gameFormat);
-          if (
-            current &&
-            current.handCount > baseline.handCount &&
-            !refusedHudTables.has(baseline.tableId)
-          ) {
-            if (qualifiesHud && !(await qualifiesHud(baseline.tableId))) {
-              refusedHudTables.add(baseline.tableId);
-              continue;
-            }
+          if (current && current.handCount > baseline.handCount) {
             beforeTable = baseline;
             afterTable = current;
             return true;
@@ -432,7 +425,7 @@ async function selectProgressingTournamentTable(
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
           `none of ${baselines.length} already-running ${gameFormat.toUpperCase()} tables ` +
-          `started their next hand${qualifiesHud ? ' with an eligible natural HUD clock' : ''} inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+          `started their next hand inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
       }
     )
     .toBe(true);
@@ -539,25 +532,7 @@ async function certifyReadOnlyTournamentFormat(
   // live poker events still must satisfy the unchanged silence limit.
   const observationDeadline = Date.now() + testInfo.timeout;
   let hudClock: HudClock | undefined;
-  const selectHudTable = async () => {
-    const reader = await createHudClockReader();
-    try {
-      return await selectProgressingTournamentTable(request, gameFormat, testInfo, async (id) => {
-        hudClock = (await reader.clocks([id], remainingObservationMs(observationDeadline))).get(id);
-        return !!hudClock;
-      });
-    } finally {
-      await testInfo.attach('mtt-hud-clock-qualification', {
-        body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),
-        contentType: 'application/json',
-      });
-      await reader.close();
-    }
-  };
-  const selected =
-    gameFormat === 'mtt'
-      ? await selectHudTable()
-      : await selectProgressingTournamentTable(request, gameFormat, testInfo);
+  const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo);
   const { candidate, evidence } = selected;
   await testInfo.attach(`${gameFormat}-engine-before-navigation`, {
     body: Buffer.from(
@@ -577,13 +552,12 @@ async function certifyReadOnlyTournamentFormat(
 
   const journal = new EngineSocketJournal(page);
   const context = page.context();
-  const hudLevels = hudClock ? observeHudLevels(page) : [];
+  const hudLevels = gameFormat === 'mtt' ? observeHudLevels(page) : [];
   let peerContext: BrowserContext | undefined;
   let peerPage: Page | undefined;
   let peerLevels: HudLevel[] = [];
   let hudBaseline = 0;
   let hudSince = 0;
-  let hudProof: Promise<{ error?: unknown }> | undefined;
   const hudObservation = new AbortController();
   const hudLevelBadge = (target: Page) =>
     target
@@ -636,7 +610,7 @@ async function certifyReadOnlyTournamentFormat(
       ),
     ]);
 
-    await whileConnectionBannerStaysHidden(
+    await whileInitialTableConnects(
       page,
       (async () => {
         await Promise.all([
@@ -658,12 +632,18 @@ async function certifyReadOnlyTournamentFormat(
           page.locator('.table-surface'),
           `${candidate.name} live felt never rendered`
         ).toBeVisible({ timeout: 20_000 });
+        // Cold entry may honestly say Connecting before its first state. The
+        // actual subscription, snapshot, mounted felt and cleared status must
+        // still finish inside the same original navigation deadline.
+        await expect(banner).toBeHidden({
+          timeout: remainingInitialTableReadinessMs(navigationStartedAt, CONNECT_DEADLINE_MS),
+        });
       })(),
       `${candidate.name} initial live-table connection`
     );
 
     await expect(banner).toBeHidden();
-    if (hudClock) {
+    if (gameFormat === 'mtt') {
       const browser = context.browser();
       if (!browser) throw new Error('HUD witness needs the existing isolated WebKit browser');
       peerContext = await browser.newContext({
@@ -702,38 +682,6 @@ async function certifyReadOnlyTournamentFormat(
           }
         )
         .toBeGreaterThan(0);
-      hudBaseline = Number(await hudLevelBadge(page).innerText()) - 1;
-      hudSince = Date.now();
-      // Observe the changed UI when the event arrives, concurrently with the
-      // existing hand/reconnect proof. Reading only at its end can mistake a
-      // healthy second later level for failure to render the first one.
-      hudProof = (async () => {
-        const transition = await waitForSharedNaturalLevel(
-          () =>
-            sharedNaturalLevel(
-              hudLevels,
-              peerLevels,
-              hudClock!.tournamentId,
-              hudBaseline,
-              hudSince
-            ),
-          remainingObservationMs(observationDeadline),
-          hudObservation.signal
-        );
-        // Actual source contract: payload.level is the zero-based engine index;
-        // TournamentHUD renders levelState.levelIndex + 1.
-        await Promise.all(
-          [page, peerPage!].map((target) =>
-            expect(hudLevelBadge(target)).toHaveText(String(transition.levelIndex + 1), {
-              timeout: 15_000,
-            })
-          )
-        );
-        console.log(
-          `[tournament-hud] two isolated spectators received natural level_up index ${transition.levelIndex} and rendered display ${transition.levelIndex + 1} for ${hudClock!.tournamentId}`
-        );
-        return {};
-      })().catch((error) => ({ error }));
     }
     await expect
       .poll(() => page.locator('.seat[role="region"]').count(), {
@@ -904,9 +852,45 @@ async function certifyReadOnlyTournamentFormat(
       }
     }
 
-    if (hudClock && peerPage) {
-      const proof = await hudProof;
-      if (!proof || proof.error) throw proof?.error || new Error('HUD proof was not started');
+    if (gameFormat === 'mtt') {
+      if (!peerPage) throw new Error('The mandatory second HUD context is unavailable');
+      // All mandatory gameplay, outage and one-owner reconnect assertions are
+      // complete. Neither context goes offline again after this fresh clock.
+      // A level emitted during the outage cannot satisfy this new baseline.
+      const reader = await createHudClockReader();
+      try {
+        hudClock = (await reader.clocks([candidate.id], observationDeadline)).get(candidate.id);
+      } finally {
+        await testInfo.attach('mtt-hud-clock-qualification', {
+          body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),
+          contentType: 'application/json',
+        });
+        await reader.close();
+      }
+      if (!hudClock)
+        throw new Error(
+          'The recovered MTT has no eligible natural HUD clock inside the remaining case budget'
+        );
+      hudBaseline = hudClock.levelIndex;
+      hudSince = hudClock.observedAt;
+      const transition = await waitForSharedNaturalLevel(
+        () =>
+          sharedNaturalLevel(hudLevels, peerLevels, hudClock!.tournamentId, hudBaseline, hudSince),
+        hudEventObservationMs(hudClock, observationDeadline),
+        hudObservation.signal
+      );
+      // Actual source contract: payload.level is the zero-based engine index;
+      // TournamentHUD renders levelState.levelIndex + 1.
+      await Promise.all(
+        [page, peerPage].map((target) =>
+          expect(hudLevelBadge(target)).toHaveText(String(transition.levelIndex + 1), {
+            timeout: 15_000,
+          })
+        )
+      );
+      console.log(
+        `[tournament-hud] two isolated spectators received natural level_up index ${transition.levelIndex} and rendered display ${transition.levelIndex + 1} for ${hudClock.tournamentId}`
+      );
       await readEngineHealth(request, { tableIds: [candidate.id] });
     }
 

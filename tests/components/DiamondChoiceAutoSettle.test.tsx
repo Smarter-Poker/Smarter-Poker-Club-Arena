@@ -1209,7 +1209,11 @@ const VERDICT_SENTENCE =
 /** WebCrypto answers outside the fake game clock. Await either actual verdict
  * within the existing bounded turn budget; missing proof is an assertion failure. */
 const receiptWithVerdict = async () => {
-  for (let i = 0; i < 50 && !VERDICT_SENTENCE.test(receiptCopy()); i++) await settle();
+  for (let i = 0; i < 50 && !VERDICT_SENTENCE.test(receiptCopy()); i++) {
+    // Fake-clock flushes alone can exhaust every turn before native crypto runs.
+    await eventLoopTurn(0);
+    await settle();
+  }
   const printed = receiptCopy();
   expect(printed).toMatch(VERDICT_SENTENCE);
   return printed;
@@ -1325,10 +1329,13 @@ describe('every choice names its chips, and every outcome has one name', () => {
       picked: [0, 1],
       payout_chips: 0.2,
       proof: { ...fixtures.receipts.crossing.proof, road_roll: ROLL[1] },
-    }).then((value) => {
-      completed = true;
-      return value;
-    });
+    }).then(
+      (value) => {
+        completed = true;
+        return { ok: true as const, value };
+      },
+      (error: unknown) => ({ ok: false as const, error })
+    );
     try {
       // WebCrypto is outside the fake game clock. Hold its real digest while
       // the scene completes, then yield beyond the old five-turn read budget.
@@ -1339,7 +1346,9 @@ describe('every choice names its chips, and every outcome has one name', () => {
       expect(receiptCopy()).not.toMatch(VERDICT_SENTENCE);
       expect(completed).toBe(false);
       release();
-      expect((await pending).proof).toBe(
+      const outcome = await pending;
+      if (!outcome.ok) throw outcome.error;
+      expect(outcome.value.proof).toBe(
         'This Round Did Not Verify On This Device And Has Been Reported.'
       );
       expect(Date.now()).toBe(gameTime);

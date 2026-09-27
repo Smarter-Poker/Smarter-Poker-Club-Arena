@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169172,
-      "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+      "bytes": 169356,
+      "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 23891,
-      "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+      "bytes": 24266,
+      "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -347,6 +347,32 @@
     "mainIntegration": {
       "revision": "6857e76cb994d22476be54f30ea3a8de5caae806",
       "reason": "Preserve newly merged appearance qualification and both diamond runner corrections while retaining discovery native qualification; recompute the exact combined workflow bytes."
+    }
+  },
+  "certificationRetirementIntegration": {
+    "reviewedOn": "2026-09-27",
+    "reason": "Bind the reviewed reserved-identity retirement native-input selector and required shard-4 workflow step. No financial SQL, accounting fixture or existing assertion changes. docs/changelog/2026-09-27-certification-ledger-actors-are-retired.md",
+    "files": {
+      ".github/workflows/ci.yml": {
+        "from": {
+          "bytes": 169172,
+          "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+        },
+        "to": {
+          "bytes": 169356,
+          "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "from": {
+          "bytes": 23891,
+          "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+        },
+        "to": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        }
+      }
     }
   }
 }

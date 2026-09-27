@@ -1380,6 +1380,10 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Reserved certification identities retain immutable ledger actors
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-certification-retirement-postgres.py
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py

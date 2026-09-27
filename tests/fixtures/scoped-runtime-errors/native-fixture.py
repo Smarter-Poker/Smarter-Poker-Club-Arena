@@ -41,6 +41,46 @@ class NativeLogReader(unittest.TestCase):
         self.assertEqual(result['records'], [])
         self.assertIn('unknown', result['absenceMeans'])
 
+    def test_native_successor_admission_contexts_are_exact_and_redacted(self):
+        contexts = [
+            'GameServer.Tournament_resume_failed_for_t',
+            'GameServer.tournament_admission_retry_failed',
+            'GameServer.mixed_original_recovery_retained',
+        ]
+        lines = []
+        for context in contexts:
+            lines.extend([
+                STAMP+'['+context+"] { message: 'F06_ORIGINAL_CHANGED',",
+                STAMP+"  password: 'PRIVATE_FIXTURE_PAYLOAD', token: 'PRIVATE_FIXTURE_TOKEN',",
+                STAMP+"  parameters: ['PRIVATE_SQL_ARGUMENT'], stack: 'PRIVATE_STACK',",
+                STAMP+"} { tournamentId: '"+EVENT+"', tableId: '"+TABLE+"' }",
+            ])
+        # Neither another GameServer call site nor a prefix/suffix match may
+        # broaden this finite scope. A different event and a partial UUID also
+        # remain outside the selected identities, even at an allowed call site.
+        for context, identity in [
+            ('GameServer.Tournament_stage_resume_failed_for_t', EVENT),
+            ('GameServer.arbitrary_failure', EVENT),
+            (contexts[0]+'_extra', EVENT),
+            ('Prefix'+contexts[0], EVENT),
+            (contexts[0], '10000000-0000-4000-8000-000000000001'),
+            (contexts[0], EVENT+'a'),
+        ]:
+            lines.append(STAMP+'['+context+'] F06_UNRELATED '+identity)
+        source = '\n'.join(lines)
+        raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr(source)+')'])
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 3)
+        self.assertEqual([r['context'] for r in result['records']], contexts)
+        for record in result['records']:
+            self.assertEqual(record['scopeIds'], [EVENT, TABLE])
+            self.assertEqual(record['symbolicErrors'], ['F06_ORIGINAL_CHANGED'])
+            self.assertEqual(record['timestamp'], STAMP.strip())
+        serialized = json.dumps(result)
+        for private in ['PRIVATE_FIXTURE_PAYLOAD', 'PRIVATE_FIXTURE_TOKEN',
+                        'PRIVATE_SQL_ARGUMENT', 'PRIVATE_STACK', 'F06_UNRELATED']:
+            self.assertNotIn(private, serialized)
+
     def test_oversized_record_cannot_reuse_later_scope(self):
         raw = ('[Tournament.bad] F06_BAD\n'+'x\n'*70+EVENT).encode()
         result = reader.extract(raw, SCOPES)

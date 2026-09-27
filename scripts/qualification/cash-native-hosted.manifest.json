@@ -17,8 +17,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 25600,
-      "sha256": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+      "bytes": 25611,
+      "sha256": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 94734,
-      "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+      "bytes": 94929,
+      "sha256": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
     }
   },
   "nativePgCron": {
@@ -636,6 +636,33 @@
         "current": {
           "bytes": 25600,
           "sha256": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+        }
+      }
+    ]
+  },
+  "archivedCompletionRouting20260927": {
+    "reason": "Add archived completion control routing and exact near-match regression assertions. No cash SQL, fixture or existing assertion changed. Preserve every previous source and audit entry.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 25600,
+          "sha256": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+        },
+        "current": {
+          "bytes": 25611,
+          "sha256": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
+        }
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 94734,
+          "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+        },
+        "current": {
+          "bytes": 94929,
+          "sha256": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
         }
       }
     ]

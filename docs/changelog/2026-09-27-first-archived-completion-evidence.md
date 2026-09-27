@@ -29,3 +29,16 @@ the existing caller retains explicit rollback ownership. Original completion
 and deferred-COMMIT failure scripts keep that suffix. Strict original-error
 validation is unchanged. Failed execution 7b7624b2-a4ff-469a-9637-6d0ede7af75a
 and all original evidence are retained; cleanup was verified.
+
+Corrected revision 2507aae889cd76c2501531fdec950928b1588f79 passed both
+isolated completion images. Bank execution 2a461a1e-522a-4cfc-aaba-9fae5723c3e0
+and original execution 153180dd-aa97-4c79-b0a2-f2f0306e1e6d retain exact
+source and original observations, with cleanup verified. Independent readers
+replayed their maintained validators. This is isolated qualification, not a
+production financial completion.
+
+Pre-push also required the cash qualification manifest to bind the two changed
+routing files. Its audit records the additive routing change without altering
+cash fixture SQL or assertions. Missing sparse-worktree test dependencies were
+materialized from the unchanged tracked revision. Applicable checks remain
+mandatory; the failed push is retained.

@@ -8,11 +8,14 @@
  * `navigator.audioSession`; its "playback" type is heard whatever the switch
  * says, like a video or a music app.
  *
- * The app's Sounds switch decides: ON asks for "playback", OFF sets "ambient"
- * (and the engine plays nothing anyway). The cost of "playback", said plainly:
- * like any app that plays sound, it pauses music another app was playing when
- * the game first makes a sound. A player who wants their music keeps it by
- * turning Sounds off here.
+ * The app's Sounds switch decides. With it ON, the sound engine asks for
+ * "playback" at the moment it is about to play a sound (SoundService's
+ * ensureContext), never earlier: the context itself is resumed by the
+ * player's first tap anywhere, and a "playback" session set at import would
+ * have paused their music on that tap. With it OFF the session goes back to
+ * "ambient" at once. The cost of "playback", said plainly: like any app that
+ * plays sound, the first game sound pauses music another app was playing. A
+ * player who wants their music keeps it by turning Sounds off.
  *
  * Browsers without the API (everything but Safari today) are untouched.
  */

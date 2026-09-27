@@ -384,8 +384,6 @@ class SoundService {
     // Resume on the FIRST user gesture (the only place browsers allow it),
     // and again whenever the tab returns to the foreground.
     this.installUnlockListeners();
-    // Heard with the iPhone on silent while Sounds is on (utils/audioSession.ts).
-    applyAudioSession(this.enabled && isSoundAllowed());
     /* `restoreStoredConfig()` was called here. It is gone with the call: its
        body became empty on 2026-08-29 when the localStorage key it read
        (`sp_sound_settings`) turned out to be written by nothing anywhere in the
@@ -524,6 +522,12 @@ class SoundService {
 
   private ensureContext(): boolean {
     if (!this.ctx || !this.masterGain) return false;
+    // Every play path reaches here only after the Sounds gate said yes, so
+    // this is the moment the game first makes a sound: only now is the Safari
+    // session made "playback" (heard with the silent switch on). Doing it at
+    // import made the first TAP anywhere (which resumes the context) pause the
+    // player's music. See utils/audioSession.ts.
+    applyAudioSession(true);
     if (this.ctx.state === 'suspended') {
       // Kick it, then let this sound through anyway. Returning false here
       // would be more honest about the one tone that gets dropped while
@@ -548,7 +552,10 @@ class SoundService {
     // only its own, so the two switches drifted and whichever was read last on
     // the next mount silently undid the other.
     persistSoundPreference(enabled);
-    applyAudioSession(enabled);
+    // Off: back to the mixing, switch-respecting session at once, so music
+    // another app was playing is free again. On: the session turns "playback"
+    // with the next sound the game actually plays (ensureContext).
+    if (!enabled) applyAudioSession(false);
   }
 
   /**

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171232,
-      "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
+      "bytes": 171406,
+      "sha256": "6d9df64ec82c085529f4690cfd59398d2737fc72a51cd94807e2bd45c4229f83"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27841,
-      "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
+      "bytes": 28087,
+      "sha256": "d0c9d6b77e16297cafa085de238bfad47b51ec9e36fd0458cc3756a41ab0606e"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -942,5 +942,58 @@
         }
       }
     }
+  },
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 25920,
+          "sha256": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8"
+        },
+        "after": {
+          "bytes": 26166,
+          "sha256": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
+        }
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "before": {
+          "bytes": 170130,
+          "sha256": "09c86c4be8d6cac4e833b62af4c6882f0d606c3bfb32655297da6cfb10f5ed91"
+        },
+        "after": {
+          "bytes": 170305,
+          "sha256": "fa23bffe179b315d15ad3fe4223b53637bd4163249b32abcd544e88d213a31aa"
+        }
+      }
+    ]
+  },
+  "stranded_player_current_main_integration_20260927": {
+    "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "stranded_player_current_main_integration_20260927_1610": {
+    "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ]
   }
 }

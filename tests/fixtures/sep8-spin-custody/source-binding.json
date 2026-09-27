@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665",
+    "scripts/ci/classify-ci-changes.mjs": "d0c9d6b77e16297cafa085de238bfad47b51ec9e36fd0458cc3756a41ab0606e",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -213,6 +213,75 @@
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+      "to": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8",
+      "on": "2026-09-27",
+      "why": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged."
+    },
+    {
+      "integration": "2026-09-27 BBJ contribution cover with protected main6e32e04f2f",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Preserve both native checks, all accounting assertions and both parent histories; bind exact integrated workflow, classifier and nested source maps."
+    },
+    {
+      "date": "2026-09-27",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "previous_sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+      "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711",
+      "why": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records."
+    },
+    {
+      "integration": "2026-09-27 BBJ contribution cover with protected meter reads eb6e949396",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb",
+      "to": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
+      "on": "2026-09-27",
+      "why": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "from": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
+      "to": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
+      "on": "2026-09-27",
+      "why": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only."
+    },
+    {
+      "integration": "2026-09-27 Production Alerts with protected main 8b0c54fdc",
+      "why": "Preserve both parents complete historical audit records, scoped audit routing and archived Spin routing; repin actual integrated workflow/classifier and nested metadata only. No captured financial input or assertion changed.",
+      "files": [
+        {
+          "binding": "tests/fixtures/sep8-spin-custody/source-binding.json",
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "before": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
+          "after": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
+        }
+      ]
+    },
+    {
+      "integration": "2026-09-27 BBJ contribution cover integration with protected13ebc7240c",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/unit/fixtureNativeCi.test.ts"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
       "integration": "2026-09-27 source-only satellite audit index native qualification",
       "why": "Add one required accounting shard4 native runner and its path admission; no financial component/assertion/captured baseline changed. Preserve every previous audit entry.",
       "changes": [
@@ -246,13 +315,6 @@
       ]
     },
     {
-      "date": "2026-09-27",
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "previous_sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
-      "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711",
-      "why": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records."
-    },
-    {
       "integration": "2026-09-27 Satellite audit indexes with protected meter reads eb6e949396",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
@@ -265,32 +327,6 @@
         "scripts/ci/classify-ci-changes.mjs"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
-    },
-    {
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb",
-      "to": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
-      "on": "2026-09-27",
-      "why": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only."
-    },
-    {
-      "file": "tests/unit/fixtureNativeCi.test.ts",
-      "from": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
-      "to": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
-      "on": "2026-09-27",
-      "why": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only."
-    },
-    {
-      "integration": "2026-09-27 Production Alerts with protected main 8b0c54fdc",
-      "why": "Preserve both parents complete historical audit records, scoped audit routing and archived Spin routing; repin actual integrated workflow/classifier and nested metadata only. No captured financial input or assertion changed.",
-      "files": [
-        {
-          "binding": "tests/fixtures/sep8-spin-custody/source-binding.json",
-          "file": "scripts/ci/classify-ci-changes.mjs",
-          "before": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
-          "after": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e"
-        }
-      ]
     },
     {
       "integration": "2026-09-27 Conservation lookup integration with protected13ebc7240c",
@@ -323,35 +359,6 @@
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
-      "to": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8",
-      "on": "2026-09-27",
-      "why": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged."
-    },
-    {
-      "integration": "2026-09-27 BBJ contribution cover with protected main6e32e04f2f",
-      "changed_files": [
-        "scripts/ci/classify-ci-changes.mjs"
-      ],
-      "why": "Preserve both native checks, all accounting assertions and both parent histories; bind exact integrated workflow, classifier and nested source maps."
-    },
-    {
-      "integration": "2026-09-27 BBJ contribution cover with protected meter reads eb6e949396",
-      "changed_files": [
-        "scripts/ci/classify-ci-changes.mjs"
-      ],
-      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
-    },
-    {
-      "integration": "2026-09-27 BBJ contribution cover integration with protected13ebc7240c",
-      "changed_files": [
-        "scripts/ci/classify-ci-changes.mjs",
-        "tests/unit/fixtureNativeCi.test.ts"
-      ],
-      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
-    },
-    {
       "integration": "2026-09-27 Four qualified lookup indexes: current-main-integration",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
@@ -360,6 +367,13 @@
     },
     {
       "integration": "2026-09-27 Four qualified lookup indexes: bbj-main-integration",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
       "changed_files": [
         "scripts/ci/classify-ci-changes.mjs"
       ],
@@ -479,5 +493,24 @@
         "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
       }
     }
+  },
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8",
+        "after": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
+      }
+    ]
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      "scripts/ci/classify-ci-changes.mjs"
+    ]
   }
 }

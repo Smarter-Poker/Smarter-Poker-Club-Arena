@@ -119,6 +119,22 @@ describe('4. Table Studio takes control from the command drawer', () => {
     expect(MENU).toContain('onClick={handleOpenTableStudio}');
     expect(MENU).not.toContain('onClick={() => setShowThemeSettings(true)}');
   });
+
+  it('opens the Device Check the same way, and renders it once the drawer has closed', () => {
+    expect(MENU).toContain(`const handleOpenDeviceCheck = () => {
+    setShowDeviceCheck(true);
+    onClose();
+  };`);
+    expect(MENU).toContain('onClick={handleOpenDeviceCheck}');
+    expect(MENU).not.toContain('onClick={() => setShowDeviceCheck(true)}');
+    // The modal lives in the closed-drawer branch, where nothing stacks over it.
+    const closed = MENU.slice(MENU.indexOf('  if (!isOpen) {\n    if (showDeviceCheck)'));
+    expect(closed.indexOf('<DeviceCheck isOpen')).toBeGreaterThan(0);
+    expect(closed.indexOf('<DeviceCheck isOpen')).toBeLessThan(
+      closed.indexOf('  return (\n    <>')
+    );
+    expect(MENU.split('<DeviceCheck').length - 1).toBe(1);
+  });
 });
 
 describe('5. A union operator has a Table Management door', () => {

@@ -3400,23 +3400,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // separate post-commit mirror would reopen the split-brain window this
     // transaction removes.
 
-    // TOURNAMENT ELIMINATION WAKE (2026-09-07): this is a scheduling hint,
-    // never payout authority.  A zero in the final in-memory stack must wake
-    // the owning manager even when one persistence mirror or the queued hand
-    // write failed: Dealing may still durably vacate/zero that player, and no
-    // later hand will contain them to provide another event.  The sweep itself
-    // remains fail-closed on its exact accepted settlement/history/outbox
-    // evidence and re-drives unresolved work.  Keep the callback synchronous
-    // and fire-and-forget so tournament maintenance never extends settlement.
+    // TOURNAMENT HAND-COMPLETE CALLBACK (2026-09-07, widened 2026-09-27):
+    // a scheduling hint, never payout authority.  It fires for EVERY accepted
+    // hand.  The owning manager does two things with it: it records the blind
+    // clock's witness (a level is spent by play, and most hands eliminate
+    // nobody), and it wakes the elimination sweep only for the zero-stack
+    // shape (the manager's own gate in wireEliminationWake).  Until
+    // 2026-09-27 this call was gated on a zero final stack here, so the
+    // witness only moved when somebody busted and every level after a bust-
+    // free stretch was held "until this tournament deals again" while it was
+    // dealing hundreds of hands (3-minute SNG levels stuck for two hours).
+    // A zero in the final in-memory stack must still wake the manager even
+    // when one persistence mirror or the queued hand write failed: Dealing may
+    // still durably vacate/zero that player, and no later hand will contain
+    // them to provide another event.  The sweep itself remains fail-closed on
+    // its exact accepted settlement/history/outbox evidence and re-drives
+    // unresolved work.  Keep the callback synchronous and fire-and-forget so
+    // tournament maintenance never extends settlement.
     const finalStacks = players.map((p) => ({
       user_id: p.user_id,
       stack: p.stack,
     }));
-    if (
-      this.lifecycleCanMutate() &&
-      this.handCompleteCallback &&
-      finalStacks.some((player) => Number(player.stack) <= 0)
-    ) {
+    if (this.lifecycleCanMutate() && this.handCompleteCallback) {
       try {
         this.handCompleteCallback(this.tableId, finalStacks);
       } catch (err) {

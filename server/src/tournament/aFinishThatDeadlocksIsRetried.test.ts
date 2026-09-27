@@ -68,11 +68,11 @@ describe('the finish boundary is owned by one database contract', () => {
     const request = TERMINAL_RPC.indexOf('const request = {');
     const attempts = TERMINAL_RPC.indexOf('for (let attempt = 1;', request);
     const settle = TERMINAL_RPC.indexOf(
-      "supabase.rpc('fn_complete_tournament_terminal', request)",
+      "terminalAuthority.rpc('fn_complete_tournament_terminal', request)",
       attempts
     );
     const resolve = TERMINAL_RPC.indexOf(
-      "supabase.rpc('fn_resolve_tournament_terminal_outcome'",
+      "terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'",
       settle
     );
     const committed = TERMINAL_RPC.indexOf('outcome.terminal_committed === true', resolve);

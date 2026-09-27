@@ -40,4 +40,7 @@ PY
   -f "$root/tests/fixtures/accounting-agreement-history/eco-bootstrap.sql" \
   -f "$root/supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql" \
   -f "$root/tests/fixtures/accounting-agreement-history/regression.sql" \
-  -f "$root/tests/fixtures/accounting-agreement-history/eco-regression.sql"
+  -f "$root/tests/fixtures/accounting-agreement-history/eco-regression.sql" \
+  -f "$root/tests/fixtures/accounting-agreement-history/baseline-inception-preimage.sql" \
+  -f "$root/supabase/migrations/20260927221954_an_agreement_baseline_is_in_force_from_inception.sql" \
+  -f "$root/tests/fixtures/accounting-agreement-history/baseline-inception-regression.sql"

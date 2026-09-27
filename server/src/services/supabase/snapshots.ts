@@ -266,9 +266,36 @@ export async function savePresenceAtPark(params: {
  * answer, so nothing may be assumed either way.
  */
 export type StoppedCustodyParkOutcome =
-  | { status: 'parked' }
+  | { status: 'parked'; unstartedPermitReleased: string | null }
   | { status: 'refused'; reason: string }
   | { status: 'unknown'; reason: string };
+
+/**
+ * A NEVER-STARTED PERMIT DOES NOT HOLD THE BANK (2026-09-27).
+ *
+ * The engine that holds the custody may also hold one F06 hand permit it
+ * reserved for the NEXT hand and never started: the number was taken, the
+ * permit row was written `reserved`, and the pause or the lease loss arrived
+ * before `permit.start`. Only that engine can say the hand never started
+ * (`start` is a local fence; the database sees `reserved` either way), and
+ * the door that records it - fn_f06_cancel_prepared_hand - is fenced the
+ * moment the lease is gone. On 2026-09-26 six tournaments lost their lease at
+ * 15:07Z with such a permit in hand: the park refused `hand_after_custody`
+ * over the reserved row, every stop failed "retained time-bank custody", the
+ * six managers stayed quarantined, and stopped_bank_custody_stuck held the
+ * restart certificate shut for the next 24 hours (26 breaks, no release).
+ *
+ * So the engine attests the permit it never started, by id and hand number,
+ * and the same guarded function releases it `never_started` in the same
+ * transaction as the park - only when the permit is still `reserved`, its
+ * generation no longer holds the lease, and no durable witness of a start
+ * exists (the exact witness set fn_f06_cancel_prepared_hand refuses over).
+ * A permit whose `start` ran is never attested: that hand may have happened.
+ */
+export interface UnstartedPermitAttestation {
+  permitId: string;
+  handNumber: number;
+}
 
 /**
  * WRITE A TERMINAL ENGINE'S FROZEN TIME BANK AS THE PROCESS (2026-09-26).
@@ -299,8 +326,10 @@ export const parkStoppedTimeBankCustody = bindToProcessRoot(
     disconnectStates: Record<string, DisconnectStateEntry>;
     timeBanks: Record<string, ParkedTimeBank>;
     engineInstance: string;
+    unstartedPermit?: UnstartedPermitAttestation | null;
   }): Promise<StoppedCustodyParkOutcome> => {
     try {
+      const unstarted = params.unstartedPermit ?? null;
       const { data, error } = await supabase.rpc('fn_park_stopped_time_bank_custody', {
         p_table_id: params.tableId,
         p_tournament_id: params.tournamentId,
@@ -310,6 +339,12 @@ export const parkStoppedTimeBankCustody = bindToProcessRoot(
         p_disconnect_states: params.disconnectStates,
         p_players: params.timeBanks,
         p_engine_instance: params.engineInstance,
+        ...(unstarted
+          ? {
+              p_unstarted_permit_id: unstarted.permitId,
+              p_unstarted_hand_number: unstarted.handNumber,
+            }
+          : {}),
       });
       if (error) {
         console.warn(`[parkStoppedTimeBankCustody] ${params.tableId}: ${error.message}`);
@@ -320,13 +355,21 @@ export const parkStoppedTimeBankCustody = bindToProcessRoot(
         refused?: unknown;
         table_id?: unknown;
         hand_number?: unknown;
+        unstarted_permit_released?: unknown;
       } | null;
       if (
         reply?.ok === true &&
         reply.table_id === params.tableId &&
         Number(reply.hand_number) === params.handNumber
-      )
-        return { status: 'parked' };
+      ) {
+        // The release is acknowledged only when the database names the exact
+        // permit that was attested; anything else is "not released".
+        const released =
+          unstarted !== null && reply.unstarted_permit_released === unstarted.permitId
+            ? unstarted.permitId
+            : null;
+        return { status: 'parked', unstartedPermitReleased: released };
+      }
       if (reply?.ok === false && typeof reply.refused === 'string') {
         console.warn(`[parkStoppedTimeBankCustody] ${params.tableId}: refused (${reply.refused})`);
         return { status: 'refused', reason: reply.refused };

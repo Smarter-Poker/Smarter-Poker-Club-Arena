@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169007,
-      "sha256": "109d7b381cdcaded346075d9824faeac30b70858d80fc7b9db7707d2b058695b"
+      "bytes": 169172,
+      "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 23401,
-      "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
+      "bytes": 23714,
+      "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -318,6 +318,21 @@
         "bytes": 156053,
         "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
       }
+    }
+  },
+  "discoveryPrivacyIntegration": {
+    "reason": "Add isolated discovery privacy regression to existing accounting shard 4 and classify its own runner/fixtures as mandatory accounting inputs; existing financial suites and assertions unchanged.",
+    "previousWorkflowPin": {
+      "bytes": 168560,
+      "sha256": "4558dcc8d46a47e1b8b8c13561ccc80733fda73b1270dd24c7598751b3a16078"
+    },
+    "previousClassifierPin": {
+      "bytes": 23401,
+      "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
+    },
+    "mainIntegration": {
+      "revision": "6857e76cb994d22476be54f30ea3a8de5caae806",
+      "reason": "Preserve newly merged appearance qualification and both diamond runner corrections while retaining discovery native qualification; recompute the exact combined workflow bytes."
     }
   }
 }

@@ -243,7 +243,7 @@ describe('the private own-account carrier', () => {
     );
   });
   it('updates live consumers even if browser cache persistence is denied', async () => {
-    const failure = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const failure = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new Error('quota');
     });
     try {

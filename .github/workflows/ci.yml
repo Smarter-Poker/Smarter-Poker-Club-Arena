@@ -1380,6 +1380,10 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Public discovery enforces current home-group privacy
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-discovery-privacy-postgres.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

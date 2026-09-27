@@ -194,8 +194,23 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creationRequestIdRef = useRef<string>(uuid());
   const eligibilitySequenceRef = useRef(0);
+  const availabilitySequenceRef = useRef(0);
   const formOwnerRef = useRef<string | null>(null);
   const hasTypedRef = useRef(false);
+  const hasDraft = Boolean(
+    clubName.trim() ||
+    description.trim() ||
+    !isPublic ||
+    requiresApproval ||
+    selectedPresetId !== DEFAULT_LOGO.id
+  );
+  const hasPersistableDraft = Boolean(
+    clubName.trim() ||
+    description.trim() ||
+    !isPublic ||
+    requiresApproval ||
+    (selectedPresetId !== null && selectedPresetId !== DEFAULT_LOGO.id)
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -217,8 +232,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   }, [isOpen]);
 
   useEffect(() => {
-    hasTypedRef.current = Boolean(clubName || description);
-  }, [clubName, description]);
+    hasTypedRef.current = hasDraft;
+  }, [hasDraft]);
 
   // Draft restore, keyed to the signed-in account (see createDraftKeyFor).
   useEffect(() => {
@@ -277,8 +292,15 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         if (/^[0-9a-f-]{36}$/i.test(draft.requestId || '')) {
           creationRequestIdRef.current = draft.requestId!;
         }
-        setDraftRestored(Boolean(draft.name || draft.description));
-        if (draft.name || draft.description) {
+        const restored = Boolean(
+          draft.name ||
+          draft.description ||
+          draft.isPublic === false ||
+          draft.requiresApproval === true ||
+          (draft.logoPresetId && draft.logoPresetId !== DEFAULT_LOGO.id)
+        );
+        setDraftRestored(restored);
+        if (restored) {
           ClubEntryTrustService.track('create', 'draft_restored', { outcome: 'succeeded' });
         }
       }
@@ -303,7 +325,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       requestId: creationRequestIdRef.current,
     };
     try {
-      if (clubName || description) window.localStorage.setItem(draftKey, JSON.stringify(draft));
+      if (hasPersistableDraft) window.localStorage.setItem(draftKey, JSON.stringify(draft));
       else window.localStorage.removeItem(draftKey);
     } catch (error) {
       reportError(error, 'CreateClubModal.SaveDraft');
@@ -314,23 +336,28 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     isPublic,
     requiresApproval,
     selectedPresetId,
+    hasPersistableDraft,
     isOpen,
     user?.id,
     draftHydratedFor,
   ]);
 
   useEffect(() => {
+    const sequence = ++availabilitySequenceRef.current;
     if (!isOpen || clubName.trim().length < 3) {
       setNameStatus('idle');
       return;
     }
+    const checkedName = clubName.trim();
     setNameStatus('checking');
     const timer = window.setTimeout(async () => {
       try {
-        const available = await ClubsService.checkNameAvailability(clubName);
-        if (isMounted.current) setNameStatus(available ? 'available' : 'taken');
+        const available = await ClubsService.checkNameAvailability(checkedName);
+        if (isMounted.current && sequence === availabilitySequenceRef.current)
+          setNameStatus(available ? 'available' : 'taken');
       } catch {
-        if (isMounted.current) setNameStatus('error');
+        if (isMounted.current && sequence === availabilitySequenceRef.current)
+          setNameStatus('error');
       }
     }, 350);
     return () => window.clearTimeout(timer);
@@ -449,6 +476,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
       setClubName('');
       setDescription('');
+      setIsPublic(true);
+      setRequiresApproval(false);
       setLogoPreview(defaultLogoUrl(DEFAULT_LOGO.file));
       setSelectedPresetId(DEFAULT_LOGO.id);
       setHasAgreed(false);
@@ -483,13 +512,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
   };
 
-  // A built-in placeholder is the pristine default, not unsaved work.
-  const hasDraft = Boolean(clubName.trim() || description.trim() || selectedPresetId === null);
   // What the guard can promise: text and settings are filed per account once
   // that account is known; an uploaded logo is never part of the draft.
-  const draftIsSaved = Boolean(
-    user?.id && draftHydratedFor === user.id && (clubName || description)
-  );
+  const draftIsSaved = Boolean(user?.id && draftHydratedFor === user.id && hasPersistableDraft);
   const requestClose = useCallback(() => {
     if (isCreating) return;
     if (hasDraft) {

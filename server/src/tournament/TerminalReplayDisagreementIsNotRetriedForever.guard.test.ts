@@ -35,7 +35,7 @@ describe('the RPC helper adopts the receipt instead of replaying the refusal', (
     const check = RPC.indexOf('if (isTerminalReplayDisagreement(error))', loop);
     const adopt = RPC.indexOf('return adoptStoredTerminalReceipt(', check);
     const wait = RPC.indexOf('if (attempt < attempts) await wait(', check);
-    const resolver = RPC.indexOf("supabase.rpc('fn_resolve_tournament_terminal_outcome'", loop);
+    const resolver = RPC.indexOf("terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'", loop);
     expect(loop).toBeGreaterThanOrEqual(0);
     expect(check).toBeGreaterThan(loop);
     expect(adopt).toBeGreaterThan(check);

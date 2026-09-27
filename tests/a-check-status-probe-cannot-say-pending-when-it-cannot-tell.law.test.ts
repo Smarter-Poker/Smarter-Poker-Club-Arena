@@ -3,20 +3,11 @@
 //
 // 2026-09-06. An agent reported "checks pending" on a branch that had been RED
 // for three pushes, and the report was not careless - it was what the API said.
-// There are three routes to a commit's check state on this estate and two of
-// them answer confidently and wrongly:
-//
-//   /commits/:sha/check-runs  -> 403, no `checks:read` on the estate PAT.
-//                                `body.check_runs` is then `undefined`, which
-//                                reads as "nothing failed".
-//   /commits/:sha/status      -> 200 {"state":"pending","total_count":0} for a
-//                                GREEN commit, a RED commit and a commit that
-//                                was never built alike. Legacy commit statuses;
-//                                every check here is an Actions check-run, so
-//                                this endpoint has nothing to report and calls
-//                                that "pending". Verified against PR #3163,
-//                                red for fifteen hours, reported pending.
-//   /actions/runs?head_sha=   -> the truth, same token, no extra scope.
+// The historical fallback to legacy aggregate commit status could not report
+// Actions check runs. In September 2026 the required Money verdict also became
+// a standalone App check. Current observation reads exact check runs with their
+// required App identity as well as Actions diagnostics. A denied Checks read is
+// still UNKNOWN; a dated scope limitation never makes absence a passing result.
 //
 // The pins below are each a step of that ladder. If one of them turns red, the
 // ladder has been rebuilt and the next agent gets the same false all-clear.
@@ -42,7 +33,7 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     ).toBe(true);
   });
 
-  it('it reads the Actions API, not the two endpoints that lie', () => {
+  it('it reads Actions and exact check runs without using legacy aggregate status', () => {
     const src = read(TOOL);
     expect(src, 'pr-status.mjs must read /actions/runs?head_sha=').toContain(
       '/actions/runs?head_sha='
@@ -53,11 +44,11 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     const fetchesBadRoute = src
       .split('\n')
       .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
-      .some((l) => /(?:gh|ghSoft|fetch)\s*\(.*commits\/.*\/(?:status|check-runs)/.test(l));
+      .some((l) => /(?:gh|ghSoft|fetch)\s*\(.*commits\/.*\/status/.test(l));
     expect(
       fetchesBadRoute,
       'pr-status.mjs must never FETCH /commits/:sha/status (reports "pending" for ' +
-        'commits that already failed) or /commits/:sha/check-runs (403 on this token).'
+        'commits that already failed). Denied check-run reads must remain UNKNOWN.'
     ).toBe(false);
   });
 
@@ -101,7 +92,9 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
 
     expect(src).toContain('requiredContextProblems');
     expect(src).toContain('stateForChecks');
-    expect(src).toMatch(/requiredProblems\s*=\s*requiredContextProblems\(required,\s*allJobs\)/);
+    expect(src).toMatch(
+      /requiredProblems\s*=\s*requiredContextProblems\(required,\s*eligibleChecks,\s*sha\)/
+    );
     expect(src).toMatch(/\.filter\(\(rule\) => rule\.type === 'required_status_checks'\)/);
     expect(src).toMatch(/\.flatMap\(\(rule\) => rule\.parameters\?\.required_status_checks/);
     expect(src).toMatch(/return aggregateExit/);
@@ -109,12 +102,23 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
   });
 
   it('treats missing, skipped, and neutral required contexts as non-green', () => {
-    const required = new Set(['Build', 'Test', 'Audit', 'Deploy']);
-    const problems = requiredContextProblems(required, [
-      { name: 'Build', status: 'completed', conclusion: 'success' },
-      { name: 'Test', status: 'completed', conclusion: 'skipped' },
-      { name: 'Audit', status: 'completed', conclusion: 'neutral' },
-    ]);
+    const required = new Map(
+      ['Build', 'Test', 'Audit', 'Deploy'].map((name) => [name, new Set([null])])
+    );
+    const problems = requiredContextProblems(
+      required,
+      [
+        { name: 'Build', status: 'completed', conclusion: 'success' },
+        { name: 'Test', status: 'completed', conclusion: 'skipped' },
+        { name: 'Audit', status: 'completed', conclusion: 'neutral' },
+      ].map((check, id) => ({
+        ...check,
+        id: id + 1,
+        head_sha: 'a'.repeat(40),
+        app: { id: 1, slug: 'fixture' },
+      })),
+      'a'.repeat(40)
+    );
 
     expect(problems).toEqual([
       { context: 'Audit', state: 'not_successful', conclusions: ['neutral'] },
@@ -137,11 +141,20 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
   });
 
   it('returns green only for a complete set of successful required contexts', () => {
-    const required = new Set(['Build', 'Test']);
-    const problems = requiredContextProblems(required, [
-      { name: 'Build', status: 'completed', conclusion: 'success' },
-      { name: 'Test', status: 'completed', conclusion: 'success' },
-    ]);
+    const required = new Map(['Build', 'Test'].map((name) => [name, new Set([null])]));
+    const problems = requiredContextProblems(
+      required,
+      [
+        { name: 'Build', status: 'completed', conclusion: 'success' },
+        { name: 'Test', status: 'completed', conclusion: 'success' },
+      ].map((check, id) => ({
+        ...check,
+        id: id + 1,
+        head_sha: 'a'.repeat(40),
+        app: { id: 1, slug: 'fixture' },
+      })),
+      'a'.repeat(40)
+    );
 
     expect(problems).toEqual([]);
     expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
@@ -149,12 +162,11 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     );
   });
 
-  it('never instructs an agent to manually open the pull request', () => {
+  it('retains agent ownership instead of promising disabled autopilot', () => {
     const src = read(TOOL);
-
-    expect(src).not.toMatch(/\bopen (?:the|its|a) (?:PR|pull request)\b/i);
-    expect(src).toContain('agent-open-pr.yml');
-    expect(src).toMatch(/automatically/i);
+    expect(src).not.toMatch(/autopilot|Stop here|agent-open-pr\.yml/i);
+    expect(src).toContain('protected merge is a separate action');
+    expect(src).toContain('continue independent assigned work');
   });
 
   it('no other agent-facing script treats /commits/:sha/status as a check oracle', () => {

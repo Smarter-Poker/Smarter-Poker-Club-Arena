@@ -65,8 +65,16 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * inactive rows are untouched again, and
  * tests/a-retired-compensation-job-is-never-scheduled-again.law.test.ts keeps
  * all fourteen names from coming back.
+ *
+ * 121 -> 122 on 2026-09-27. Migration
+ * 20260927221321_horse_stackoff_audit_runs_on_its_own_schedule added
+ * horse-stackoff-audit-20m, the driver for the deep-stack one-pair commitment
+ * detector. It is a measurement sweep over hand_history that writes only its
+ * own three tables and moves no chips, so it is not the kind of compensation
+ * job the two retirements above removed; it is here because a detector with no
+ * driver measures nothing. The argument is in that migration's header.
  */
-const ACTIVE_JOBS = 121;
+const ACTIVE_JOBS = 122;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -93,7 +101,7 @@ describe('the scheduled-work roster is pinned', () => {
   });
 
   it('123 total is 121 active plus the two rows 20260910073355 kept disabled', () => {
-    expect(TOTAL_JOBS).toBe(123);
+    expect(TOTAL_JOBS).toBe(124);
     expect(raw).toContain('20260910073355');
   });
 

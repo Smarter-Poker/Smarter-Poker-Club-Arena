@@ -43,3 +43,24 @@ to production. The coordinator applies both migrations after review.
 - `scripts/dev/test-push-prompt-events.sh`: RLS, grants, cap, funnel reader.
 - `tests/a-mirrored-push-needs-a-device.law.test.ts`,
   `tests/unit/pushPromptPolicy.test.ts`, `tests/components/PushEnableBanner.test.tsx`.
+
+## Round 2 (owner UI review): the offer is a painted console
+
+The first contextual banner was flat ink with bare lit words and was rejected.
+In context the offer is now its own `SpadeConsole` with plates (the chassis
+for "a message and two actions"): title and eyebrow in the painted head, a
+painted Off / Install pill, copy on the glass, Not Now on the steel plate and
+Turn On on the lit blue plate. It is placed BESIDE the console it relates to,
+never nested in another console's glass: above the Trade cashier console, under
+the Transaction Receipt console inside the same scrolling dialog, above the
+classic cashier console after a cash-out request. Diamond crest on money
+surfaces. On Game Details it is the first item of the scrolling Details panel
+with the flat head (the panel shell already carries a centred crown notch), so
+it scrolls away instead of shrinking the panel. The Notifications page door
+keeps its 2026-09-14 inked form, byte for byte as on main.
+
+Pre-existing, not from this branch: on the Trade cashier the "0 Available · 0
+Selected" line under Claim Back / Send Ticket / Send Out is clipped by the
+sticky action bar. Rendered with the offer suppressed (identical to main,
+whose CashierTradePage differs from this branch only by the offer lines) it
+clips the same way.

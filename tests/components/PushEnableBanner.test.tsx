@@ -37,10 +37,25 @@ describe('PushEnableBanner in context', () => {
     pushMocks.notificationPermission.mockReset().mockReturnValue('default');
   });
 
+  it('in context it is its own painted console: title in the head, two plates', async () => {
+    const { container } = render(<PushEnableBanner surface="cashier" userId="u1" />);
+    await flush();
+    const offer = container.querySelector('section.ca-push-offer');
+    expect(offer).not.toBeNull();
+    expect(offer!.classList.contains('sc')).toBe(true);
+    expect(offer!.querySelector('.sc__head')).not.toBeNull();
+    const plates = [...offer!.querySelectorAll('button.sc-plate')].map((b) =>
+      b.textContent?.trim()
+    );
+    expect(plates).toEqual(['Not Now', 'Turn On']);
+    // Never the flat inked banner of the Notifications page.
+    expect(container.querySelector('.ca-push-banner')).toBeNull();
+  });
+
   it('asks on the cashier receipt, records the showing and starts the cooldown', async () => {
     render(<PushEnableBanner surface="cashier_receipt" userId="u1" />);
     await flush();
-    expect(screen.getByText('Get Receipts On Your Phone')).toBeInTheDocument();
+    expect(screen.getByText('Receipt Alerts')).toBeInTheDocument();
     expect(telemetry.recordPushPromptEvent).toHaveBeenCalledWith('cashier_receipt', 'shown', null);
     expect(localStorage.getItem('sp_push_ctx_cashier_receipt_u1')).toBeTruthy();
   });
@@ -75,7 +90,7 @@ describe('PushEnableBanner in context', () => {
     pushMocks.isIos.mockReturnValue(true);
     render(<PushEnableBanner surface="tournament_registration" userId="u1" />);
     await flush();
-    expect(screen.getByText('Add Smarter Poker To Your Home Screen')).toBeInTheDocument();
+    expect(screen.getByText('Add To Home Screen')).toBeInTheDocument();
     expect(screen.queryByText('Turn On')).not.toBeInTheDocument();
     expect(telemetry.recordPushPromptEvent).toHaveBeenCalledWith(
       'tournament_registration',
@@ -91,14 +106,14 @@ describe('PushEnableBanner in context', () => {
       fireEvent.click(screen.getByText('Turn On'));
     });
     expect(pushMocks.enablePush).toHaveBeenCalledWith({ surface: 'cashier' });
-    expect(screen.queryByText('Get Cashier Alerts')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cashier Alerts')).not.toBeInTheDocument();
   });
 
   it('Not Now hides it and records a decline', async () => {
     render(<PushEnableBanner surface="cashier" userId="u1" />);
     await flush();
     fireEvent.click(screen.getByText('Not Now'));
-    expect(screen.queryByText('Get Cashier Alerts')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cashier Alerts')).not.toBeInTheDocument();
     expect(telemetry.recordPushPromptEvent).toHaveBeenCalledWith('cashier', 'declined', 'not_now');
   });
 

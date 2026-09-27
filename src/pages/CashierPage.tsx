@@ -2068,6 +2068,14 @@ function CashierContent() {
         </>
       )}
 
+      {/* A cash-out request is decided later, by someone else: the moment a
+          push is worth the most. Its own riveted console above the cashier's,
+          like the wallet above it, never nested in the cashier's glass.
+          Non-blocking, with its own cooldown (src/lib/pushPromptPolicy.ts). */}
+      {message?.type === 'success' && action === 'cashout' && user?.id && (
+        <PushEnableBanner surface="cashier_receipt" userId={user.id} />
+      )}
+
       <SpadeConsole
         eyebrow="Club Arena Cashier"
         title="Cashier"
@@ -2801,13 +2809,6 @@ function CashierContent() {
                     >
                       {formatPopupText(message.text)}
                     </div>
-                  )}
-
-                  {/* A cash-out request is decided later, by someone else: the
-                      moment a push is worth the most. Non-blocking, with its own
-                      cooldown (src/lib/pushPromptPolicy.ts). */}
-                  {message?.type === 'success' && action === 'cashout' && user?.id && (
-                    <PushEnableBanner surface="cashier_receipt" userId={user.id} />
                   )}
 
                   <button

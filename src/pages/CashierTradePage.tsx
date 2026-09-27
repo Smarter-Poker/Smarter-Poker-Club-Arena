@@ -2180,6 +2180,10 @@ export default function CashierTradePage() {
 
   return (
     <div className={styles.page} data-cashier-surface="trade">
+      {/* The cashier is where money news starts, so the phone alert is offered
+          here: its own riveted console ABOVE the cashier's, never nested in its
+          glass, non-blocking and at most weekly (src/lib/pushPromptPolicy.ts). */}
+      {user?.id && <PushEnableBanner surface="cashier" userId={user.id} />}
       <SpadeConsole
         eyebrow="Secure Cashier"
         title="Cashier"
@@ -2253,10 +2257,6 @@ export default function CashierTradePage() {
               </div>
             </div>
           </section>
-
-          {/* The cashier is where money news starts; offer the phone alert here,
-              non-blocking and at most weekly (src/lib/pushPromptPolicy.ts). */}
-          {user?.id && <PushEnableBanner surface="cashier" userId={user.id} />}
 
           {/* Entity picker */}
           {pickerOpen && (
@@ -3275,9 +3275,11 @@ export default function CashierTradePage() {
                     <dd className="sc-ink--silver">{receipt.id}</dd>
                   </div>
                 </dl>
-                {user?.id && <PushEnableBanner surface="cashier_receipt" userId={user.id} />}
               </div>
             </SpadeConsole>
+            {/* Its own console under the receipt's, inside the same scrolling
+                dialog: two surfaces side by side, never a frame on a frame. */}
+            {user?.id && <PushEnableBanner surface="cashier_receipt" userId={user.id} />}
           </div>
         </div>
       )}

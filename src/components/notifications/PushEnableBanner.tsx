@@ -45,6 +45,7 @@ import {
 } from '../../lib/pushPromptPolicy';
 import { recordPushPromptEvent } from '../../lib/pushPromptTelemetry';
 import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole, type ConsoleCrest, type ConsoleFamily } from '../console/SpadeConsole';
 import '../console/SpadeConsole.css';
 import './PushEnableBanner.css';
 
@@ -64,20 +65,50 @@ type BannerState = PushOffer;
  */
 const CONTEXT_COPY: Record<
   'cashier' | 'cashier_receipt' | 'tournament_registration',
-  { title: string; body: string }
+  { eyebrow: string; title: string; body: string }
 > = {
   cashier: {
-    title: 'Get Cashier Alerts',
+    eyebrow: 'Notifications',
+    title: 'Cashier Alerts',
     body: 'Know The Moment Chips Land In Your Wallet Or A Cashout Is Decided, Even When Smarter Poker Is Closed.',
   },
   cashier_receipt: {
-    title: 'Get Receipts On Your Phone',
+    eyebrow: 'Notifications',
+    title: 'Receipt Alerts',
     body: 'Turn On Notifications And Every Buy-In And Cashout Receipt Reaches This Device The Moment It Is Issued.',
   },
   tournament_registration: {
-    title: 'Know When It Starts',
+    eyebrow: 'Notifications',
+    title: 'Start Alerts',
     body: 'Turn On Notifications And We Will Alert You Fifteen Minutes And Two Minutes Before Your Tournament Starts.',
   },
+};
+
+/**
+ * #ClubArenaConsole (2026-09-27, owner review of #5489): IN CONTEXT THE OFFER
+ * IS ITS OWN CONSOLE. A message and two actions is SpadeConsole + plates
+ * (skill section 4, step 4): the title engraved in the painted head, the copy
+ * on the black glass, Not Now on the steel plate and Turn On on the lit
+ * plate, all printed into the approved master. It is a separate surface
+ * placed BESIDE the console it relates to, never nested inside another
+ * console's glass (FRAMES SHOULD NEVER SIT ON TOP OF FRAMES), the same way the
+ * cashier's wallet is a separate master above its console.
+ *
+ * All three wear the spade chassis because it is the family whose primary
+ * plate is the lit blue glass (Turn On) beside the steel secondary (Not Now).
+ * The crest follows the skill's section map: the diamond for wallet and
+ * transaction surfaces. On Game Details the offer sits inside the Details
+ * panel, whose painted shell already carries a centred crown notch, so it
+ * wears the FLAT head: a second emblem directly under the shell's would read
+ * as art on art.
+ */
+const CONTEXT_FAMILY: Record<
+  'cashier' | 'cashier_receipt' | 'tournament_registration',
+  { family: ConsoleFamily; crest: ConsoleCrest }
+> = {
+  cashier: { family: 'spade', crest: 'diamond' },
+  cashier_receipt: { family: 'spade', crest: 'diamond' },
+  tournament_registration: { family: 'spade', crest: 'flat' },
 };
 
 export interface PushEnableBannerProps {
@@ -181,47 +212,86 @@ export default function PushEnableBanner({
 
   if (!state) return null;
 
-  // Inside a console's glass (the cashier, its receipt) the banner lines up
-  // with the glass's own rows instead of indenting past them.
-  const bannerClass =
-    surface === 'cashier' || surface === 'cashier_receipt'
-      ? 'ca-push-banner ca-push-banner--in-console'
-      : 'ca-push-banner';
+  if (contextual) {
+    const key = surface as keyof typeof CONTEXT_COPY;
+    const dress = CONTEXT_FAMILY[key];
+    if (state === 'install') {
+      return (
+        <SpadeConsole
+          as="section"
+          family={dress.family}
+          crest={dress.crest}
+          eyebrow="Notifications"
+          title="Add To Home Screen"
+          pill="Install"
+          pillInk="blue"
+          foot="plates"
+          plates={{
+            secondary: { label: 'Not Now', onClick: handleDismiss },
+            primary: { label: 'Got It', ink: 'white', onClick: handleDismiss },
+          }}
+          className="ca-push-offer"
+          data-surface={surface}
+          aria-label="Add Smarter Poker To Your Home Screen"
+        >
+          <p className="sc-copy">
+            Apple Devices Can Only Send Notifications From An Installed App. In Safari, Tap Share,
+            Then Add To Home Screen, Then Open Smarter Poker From There.
+          </p>
+        </SpadeConsole>
+      );
+    }
+    const copy = CONTEXT_COPY[key];
+    return (
+      <SpadeConsole
+        as="section"
+        family={dress.family}
+        crest={dress.crest}
+        eyebrow={copy.eyebrow}
+        title={copy.title}
+        pill="Off"
+        pillInk="muted"
+        foot="plates"
+        plates={{
+          secondary: { label: 'Not Now', onClick: handleDismiss, disabled: busy },
+          primary: {
+            label: busy ? 'Enabling...' : 'Turn On',
+            ink: 'white',
+            onClick: handleEnable,
+            disabled: busy,
+          },
+        }}
+        className="ca-push-offer"
+        data-surface={surface}
+        aria-label={copy.title}
+      >
+        <p className="sc-copy">{copy.body}</p>
+        {/* The one string here that is not a literal: whatever the push
+            service said. Title Cased where it is printed. */}
+        {error && <p className="sc-copy sc-ink--red">{titleCase(error)}</p>}
+      </SpadeConsole>
+    );
+  }
 
+  // The Notifications page door (2026-09-14 ruling): inked on that page's
+  // glass, one lit word, no frame of its own. Unchanged.
   if (state === 'install') {
     return (
-      <div className={bannerClass} data-surface={surface}>
+      <div className="ca-push-banner">
         <div className="ca-push-banner__text">
-          {contextual ? (
-            <strong className="ca-push-banner__title sc-ink--silver">
-              Add Smarter Poker To Your Home Screen
-            </strong>
-          ) : (
-            <strong className="ca-push-banner__title sc-ink--silver">Turn On Seat Alerts</strong>
-          )}
+          <strong className="ca-push-banner__title sc-ink--silver">Turn On Seat Alerts</strong>
           <span className="ca-push-banner__body">
             Apple Devices Can Only Send Notifications From An Installed App. In Safari, Tap Share,
             Then Add To Home Screen, Then Open Smarter Poker From There.
           </span>
         </div>
-        {contextual && (
-          <div className="ca-push-banner__actions">
-            <button
-              type="button"
-              className="ca-push-banner__btn sc-ink--blue"
-              onClick={handleDismiss}
-            >
-              Got It
-            </button>
-          </div>
-        )}
       </div>
     );
   }
 
   if (state === 'blocked') {
     return (
-      <div className={bannerClass} data-surface={surface}>
+      <div className="ca-push-banner">
         <div className="ca-push-banner__text">
           <strong className="ca-push-banner__title sc-ink--silver">
             Notifications Are Blocked
@@ -235,50 +305,26 @@ export default function PushEnableBanner({
     );
   }
 
-  const copy = contextual ? CONTEXT_COPY[surface as keyof typeof CONTEXT_COPY] : null;
-
   return (
-    <div className={bannerClass} data-surface={surface}>
+    <div className="ca-push-banner">
       <div className="ca-push-banner__text">
-        {copy ? (
-          <>
-            <strong className="ca-push-banner__title sc-ink--silver">{copy.title}</strong>
-            <span className="ca-push-banner__body">{copy.body}</span>
-          </>
-        ) : (
-          <>
-            <strong className="ca-push-banner__title sc-ink--silver">Never Miss A Seat</strong>
-            <span className="ca-push-banner__body">
-              Get Alerted On This Device The Moment Your Seat Opens, Even When Smarter Poker Is
-              Closed.
-            </span>
-          </>
-        )}
+        <strong className="ca-push-banner__title sc-ink--silver">Never Miss A Seat</strong>
+        <span className="ca-push-banner__body">
+          Get Alerted On This Device The Moment Your Seat Opens, Even When Smarter Poker Is Closed.
+        </span>
         {/* The one string on this surface that is not a literal: whatever the
             push service said. Title Cased where it is printed, because the
             copy gates cannot see it. */}
         {error && <span className="ca-push-banner__error sc-ink--red">{titleCase(error)}</span>}
       </div>
-      <div className="ca-push-banner__actions">
-        <button
-          type="button"
-          className="ca-push-banner__btn sc-ink--blue"
-          onClick={handleEnable}
-          disabled={busy}
-        >
-          {busy ? 'Enabling...' : 'Turn On'}
-        </button>
-        {contextual && (
-          <button
-            type="button"
-            className="ca-push-banner__btn ca-push-banner__btn--quiet sc-ink--muted"
-            onClick={handleDismiss}
-            disabled={busy}
-          >
-            Not Now
-          </button>
-        )}
-      </div>
+      <button
+        type="button"
+        className="ca-push-banner__btn sc-ink--blue"
+        onClick={handleEnable}
+        disabled={busy}
+      >
+        {busy ? 'Enabling...' : 'Turn On'}
+      </button>
     </div>
   );
 }

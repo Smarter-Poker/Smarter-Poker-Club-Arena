@@ -64,3 +64,17 @@ Selected" line under Claim Back / Send Ticket / Send Out is clipped by the
 sticky action bar. Rendered with the offer suppressed (identical to main,
 whose CashierTradePage differs from this branch only by the offer lines) it
 clips the same way.
+
+## Round 3: the head's glass is solid
+
+Two defects on the Game Details offer (a white sliver right of the pill, hard
+cut ends on the header rule) had one root: every spade-console head
+(top, top-flat, top-diamond, top-vip, top-club) is transparent inside its
+rails at rows 160-271 beside the pill slot and rows 318-347 under the rule,
+and the kit only laid the 2026-09-23 glass layer under the body and the foot.
+Over black nobody saw it; over the Details panel's painted shell, the shell
+showed through. `.sc__head` now carries the same #0a0b0d glass under its art
+(x 74-923, from row 98 down), restated on every crest override, pinned in
+`tests/unit/theConsoleGlassIsSolid.test.ts` against the art's own alpha.
+Remaining, not changed: the right rail of the master has a painted 10px
+groove (x 946-956) that is transparent in head and body alike.

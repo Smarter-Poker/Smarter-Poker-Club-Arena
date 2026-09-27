@@ -1,0 +1,14 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 4ea6af810..5a6b68d16 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1675,6 +1675,9 @@ jobs:
+           path: artifacts/hand-submission/
+           if-no-files-found: error
+           retention-days: 7
++      - name: A pruned hand is not an unfinished one
++        if: matrix.shard == 3
++        run: python3 scripts/ci/test-pruned-hand-is-not-unfinished-postgres.py --pg-bin /usr/lib/postgresql/17/bin
+       - name: Atomic departures, ownership, rollback and concurrency
+         if: matrix.shard == 3
+         env:

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169529,
-      "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      "bytes": 169779,
+      "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 24631,
-      "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      "bytes": 24951,
+      "sha256": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -477,5 +477,28 @@
       "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "bbjContributionCoverIntegration20260927": {
+    "reason": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169529,
+        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 24631,
+        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169779,
+        "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 24951,
+        "sha256": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8"
+      }
+    }
   }
 }

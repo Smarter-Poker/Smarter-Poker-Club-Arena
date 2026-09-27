@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171764,
-      "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
+      "bytes": 172000,
+      "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -922,12 +922,24 @@
     "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in accounting shard 4 and classify every maintained input after integrating protected main's qualified lookup-index routes. Both additions are preserved; cash SQL, captured financial inputs and existing assertions remain byte-identical.",
     "changes": {
       ".github/workflows/ci.yml": {
-        "before": { "bytes": 171068, "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c" },
-        "after": { "bytes": 171764, "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d" }
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171764,
+          "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "before": { "bytes": 27619, "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68" },
-        "after": { "bytes": 28573, "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f" }
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 28573,
+          "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
+        }
       }
     }
   },
@@ -1079,14 +1091,6 @@
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   },
-  "backed_payout_current_main_integration_20260927_1620": {
-    "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
-    "changed_files": [
-      ".github/workflows/ci.yml",
-      "scripts/ci/classify-ci-changes.mjs"
-    ],
-    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
-  },
   "backed_payout_current_main_integration_20260927_1732": {
     "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
     "changed_files": [
@@ -1099,5 +1103,17 @@
     "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
     "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
     "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
+  },
+  "ownerAccountingPushIntegration20260927": {
+    "protectedMain": "52c99680fd555bfb056cc670b45b0cad77140fb2",
+    "previousCiPin": {
+      "bytes": 171764,
+      "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
+    },
+    "newCiPin": {
+      "bytes": 172000,
+      "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
+    },
+    "scope": "Adds one CI step (shard 1) running scripts/dev/test-accounting-push-bridge.sh, the accounting push receipt harness, so the owner-accounting Production Alerts routing (migration 20260927143752) is enforced. No cash input, native pg_cron route or financial assertion changed; only the ci.yml pin moves."
   }
 }

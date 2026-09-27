@@ -245,7 +245,7 @@ try:
             q(index['statement'])
             if number==0:
                 q(body,'BBJ_METER_READ_INDEX_NOT_QUALIFIED')
-    report['indexBytes'] = json.loads(q("SELECT jsonb_object_agg(relname,pg_relation_size(oid)) FROM pg_class WHERE relname IN ('chip_ledger_bbj_to_pool_meter','chip_ledger_bbj_from_pool_meter')"))
+    report['indexBytes'] = json.loads(q("SELECT coalesce(jsonb_object_agg(relname,pg_relation_size(oid)),'{}'::jsonb) FROM pg_class WHERE relname IN ('chip_ledger_bbj_to_pool_meter','chip_ledger_bbj_from_pool_meter')"))
     q('VACUUM (ANALYZE) chip_ledger;')
     if not args.baseline:
         q(body.replace('COMMIT;', 'ROLLBACK;'))

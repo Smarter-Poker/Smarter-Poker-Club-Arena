@@ -8,6 +8,8 @@ import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
+const LEGACY_DIRECT_PREFIX = 'club-create-cert-';
+const LEGACY_DIRECT_SUFFIX = '@smarter-poker.invalid';
 const FREE_AVATAR = '/avatars/table/free_samurai@2x.webp';
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const PROFILE_ATTEMPTS = 24;
@@ -38,7 +40,10 @@ function fixturePath(environment) {
 }
 
 function reserved(email) {
-  return email.startsWith(ACCOUNT_PREFIX) && email.endsWith(ACCOUNT_SUFFIX);
+  return (
+    (email.startsWith(ACCOUNT_PREFIX) && email.endsWith(ACCOUNT_SUFFIX)) ||
+    (email.startsWith(LEGACY_DIRECT_PREFIX) && email.endsWith(LEGACY_DIRECT_SUFFIX))
+  );
 }
 
 async function responseBody(response) {

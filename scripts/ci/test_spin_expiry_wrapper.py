@@ -1,6 +1,6 @@
 """Source-specific hosted adapter controls; not native financial qualification.
 
-The normal wrapper runs these controls before all seven separate PG17 images.
+The normal wrapper runs these controls before every separately owned PG17 image.
 No successful mocked protocol receipt establishes that SQL or refunds passed.
 """
 import copy
@@ -707,13 +707,13 @@ class MixedCurrentTests(unittest.TestCase):
                     b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}'):
             with self.subTest(raw=raw), self.assertRaises(ValueError): W.MIXED.decode_races(raw)
 
-    def test_all_seven_images_and_original_cases_remain_required(self):
+    def test_all_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -1759,7 +1759,7 @@ class FixtureSourceTests(unittest.TestCase):
         files.update(lane_source_files())
         files.update(mixed_source_files())
         files.update({name: (Path(__file__).resolve().parents[2] / name).read_bytes()
-                      for name in (*W.FEE.INPUTS, *W.TERMINAL.INPUTS)})
+                      for name in (*W.FEE.INPUTS, *W.TERMINAL.INPUTS, *W.HORSE.INPUTS)})
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -2671,3 +2671,149 @@ class PaidTerminalTests(unittest.TestCase):
                     b'{"stage":"x","amount":1e999}\n',b'{"stage":"x","amount":1e-999}\n'):
             with self.subTest(raw=raw),self.assertRaises(ValueError):W.TERMINAL.observations(raw)
         self.assertEqual(W.TERMINAL.observations(b'SET\n{"stage":"x","amount":0.24}\n')[0]['amount'],W.Decimal('.24'))
+
+
+class FinalizedHorseTests(unittest.TestCase):
+    def test_house_club_binding_cannot_be_inferred_from_the_observation(self):
+        root=Path(__file__).resolve().parents[2]
+        oracle=W.FEE.load_oracle(root)
+        execution,tournament,rows=oracle._control_records()
+        raw=('\n'.join(oracle._jsonb_text(row) for row in rows)+'\n').encode()
+        oracle.validate_output(raw,execution,tournament)
+        ex,tt,house=oracle._control_records(expected_club=W.FEE.HOUSE_BOARD)
+        house_raw=('\n'.join(oracle._jsonb_text(row) for row in house)+'\n').encode()
+        oracle.validate_output(house_raw,ex,tt,expected_club=W.FEE.HOUSE_BOARD)
+        with self.assertRaises(ValueError):
+            oracle.validate_output(house_raw,ex,tt)
+        for club in (W.FEE.HOUSE_BOARD,'00000000-0000-4000-8000-000000000009'):
+            with self.assertRaises(ValueError):
+                oracle.validate_output(raw,execution,tournament,expected_club=club)
+        rows[oracle.STAGES.index('positive_fee_entry_committed_observation')]['club']=W.FEE.HOUSE_BOARD
+        raw=('\n'.join(oracle._jsonb_text(row) for row in rows)+'\n').encode()
+        with self.assertRaises(ValueError):
+            oracle.validate_output(raw,execution,tournament,expected_club=W.FEE.HOUSE_BOARD)
+
+    def test_platform_board_variant_preserves_every_paid_operation(self):
+        root = Path(__file__).resolve().parents[2]
+        pg = Path('/qualified/pg17/bin')
+        ordinary = '00000000-0000-4000-8000-000000000002'
+        original = W.FEE.body_plan(pg,root,EXECUTION,ordinary,TOURNAMENT)
+        variant = W.FEE.body_plan(pg,root,EXECUTION,ordinary,TOURNAMENT,platform_board=True)
+        self.assertEqual(original[:-1],variant[:-1])
+        self.assertEqual(original[-1][1][:-1],variant[-1][1][:-1])
+        for invalid in (None,1,'true'):
+            with self.assertRaises(ValueError):
+                W.FEE.body_plan(pg,root,EXECUTION,ordinary,TOURNAMENT,platform_board=invalid)
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)
+            target='scripts/qualification/spin-horse-platform-paid-entry.sql'
+            for name in (W.FEE.FIXTURE,target):
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_bytes((root/name).read_bytes())
+            W.FEE.body_plan(pg,source,EXECUTION,ordinary,TOURNAMENT,platform_board=True)
+            path=source/target;path.write_bytes(path.read_bytes()+b'\nSELECT 1;\n')
+            with self.assertRaises(ValueError):
+                W.FEE.body_plan(pg,source,EXECUTION,ordinary,TOURNAMENT,platform_board=True)
+
+    def test_exact_sources_and_each_changed_input_are_refused(self):
+        root = Path(__file__).resolve().parents[2]
+        files = {name: (root / name).read_bytes() for name in W.HORSE.INPUTS}
+        W.HORSE.validate_sources(files)
+        for name in W.HORSE.INPUTS:
+            changed = dict(files); changed[name] += b' '
+            if name == W.HORSE.MANIFEST:
+                self.assertNotEqual(W.digest(changed[name]), W.HORSE_MANIFEST_SHA256)
+                continue
+            with self.subTest(name=name), self.assertRaises((ValueError, KeyError)):
+                W.HORSE.validate_sources(changed)
+
+    def test_original_observations_refuse_wrong_identity_or_mutating_refusal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            state={'rows':{'parser_control_'+str(i):[] for i in range(201)},'sequences':{}}
+            race={'execution':EXECUTION,'tournament':TOURNAMENT,'passed':True,'cleanup_verified':True,
+                'modeled_chair_closure':True,'finalization_transition_qualified':False,
+                'full_financial_qualification':False,'production_qualification':False,
+                'work_deadline_seconds':20,'cleanup_deadline_seconds':5,
+                'backend_cleanup':{'backends':0,'locks':0},
+                'backend_pids':{'observer':1,'holder':2,'writer':3},
+                'clients':[{'backend_pid':n,'client_exit':0} for n in (1,2,3)],
+                'verifier_client':{'client_exit':0},'transcripts':{'one':'parser mock','two':'parser mock','three':'parser mock'},
+                'cases':[{'case':name,'before':state,'inside':state,'after':state,'result':result,
+                    'wait':{'pid':3,'wait_event_type':'Lock','wait_event':'transactionid','blockers':[2]}}
+                    for name,result in [('existing_live_chair',{'ok':True,'already_seated':True}),
+                        ('modeled_closed_chair',{'ok':False,'reason':'game_already_started'})]]}
+            for key in ('client','verifier','backend'):
+                changed=copy.deepcopy(race)
+                if key=='client': changed['clients'][0]['client_exit']=False
+                elif key=='verifier': changed['verifier_client']['client_exit']=False
+                else: changed['backend_cleanup']['backends']=False
+                with self.subTest(numeric_identity=key),self.assertRaises(ValueError):
+                    W.HORSE.validate_race(changed,EXECUTION,TOURNAMENT)
+            changed=copy.deepcopy(race)
+            changed['cases'][1]['inside']=copy.deepcopy(state)
+            changed['cases'][1]['inside']['rows']['parser_control_0']=[{'unexpected_write':True}]
+            with self.assertRaises(ValueError):
+                W.HORSE.validate_race(changed,EXECUTION,TOURNAMENT)
+            rows = {'horse_parent_race':race}
+            for candidate, horse, stage in [(False,False,'horse_preimage_closed_chair'),
+                    (False,True,'horse_preimage_horse_closed_chair'),
+                    (True,False,'horse_candidate_closed_chair'),
+                    (True,True,'horse_candidate_horse_closed_chair')]:
+                rows[stage] = {'stage': 'closed_winning_chair', 'execution': EXECUTION,
+                    'tournament': TOURNAMENT, 'candidate': candidate, 'horse_profile': horse,
+                    'synthetic_finish_input': True, 'dealt_gameplay': False,
+                    'historical_qualification': False, 'full_financial_qualification': False,
+                    'production_qualification': False, 'state_unchanged': candidate,
+                    'sequences_unchanged': candidate,
+                    'live_replay': {'result': {'ok': True,'already_seated': True},
+                        'state_unchanged': True, 'sequences_unchanged': True},
+                    'response': {'ok': False, 'reason': 'game_already_started'} if candidate
+                       else {'ok': True, 'reused_registration': True, 'reused_seat': True}}
+            for horse,stage in [(False,'horse_prestart_ordinary'),(True,'horse_prestart_horse')]:
+                rows[stage]={'stage':'prestart_existing_entry','execution':EXECUTION,'tournament':TOURNAMENT,
+                    'horse_profile':horse,'status':'REGISTERING','money_unchanged':True,'live_seats':3,
+                    'live_stack':3000,'synthetic_closed_chair':True,'full_financial_qualification':False,
+                    'production_qualification':False,'response':{'ok':True,'reused_registration':True,
+                    'reused_seat':True,'stack':1000}}
+            def write(values):
+                for name, value in values.items():
+                    raw=json.dumps(value)+'\n'
+                    if name.startswith('horse_prestart_'):
+                        raw+=json.dumps({'stage':'finalized_prestart_refusal','execution':EXECUTION,
+                            'tournament':TOURNAMENT,'horse_profile':value['horse_profile'],
+                            'response':{'ok':False,'reason':'registration_closed'},
+                            'state_unchanged':True,'sequences_unchanged':True,
+                            'modeled_legacy_finalized_flag':True,'historical_qualification':False,
+                            'full_financial_qualification':False,'production_qualification':False})+'\n'
+                    (work / (name + '.stdout')).write_text(raw)
+            write(rows)
+            W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)
+            leaf=work/'horse_prestart_horse.stdout'
+            for key,bad in [('state_unchanged',False),('sequences_unchanged',False),
+                    ('response',{'ok':True}),('modeled_legacy_finalized_flag',False)]:
+                records=[json.loads(line) for line in leaf.read_text().splitlines()]
+                records[1][key]=bad
+                leaf.write_text('\n'.join(json.dumps(record) for record in records)+'\n')
+                with self.subTest(finalized_key=key),self.assertRaises(ValueError):
+                    W.HORSE.validate_outputs(work,work,EXECUTION,TOURNAMENT)
+                write(rows)
+            for stage, key, value in [
+                    ('horse_parent_race','cleanup_verified',False),
+                    ('horse_parent_race','backend_cleanup',{'backends':1,'locks':0}),
+                    ('horse_parent_race','cases',[]),
+                    ('horse_prestart_horse', 'money_unchanged', False),
+                    ('horse_prestart_ordinary', 'live_stack', 2000),
+                    ('horse_candidate_closed_chair', 'state_unchanged', False),
+                    ('horse_candidate_closed_chair', 'sequences_unchanged', False),
+                    ('horse_candidate_closed_chair', 'execution', 'wrong'),
+                    ('horse_preimage_closed_chair', 'state_unchanged', True),
+                    ('horse_preimage_closed_chair', 'production_qualification', True)]:
+                changed = copy.deepcopy(rows); changed[stage][key] = value; write(changed)
+                with self.subTest(stage=stage, key=key), self.assertRaises(ValueError):
+                    W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)
+            write(rows)
+            target = work / 'horse_candidate_closed_chair.stdout'
+            target.write_bytes(target.read_bytes() * 2)
+            with self.assertRaises(ValueError):
+                W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)

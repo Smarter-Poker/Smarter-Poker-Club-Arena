@@ -26,7 +26,13 @@ type Verdict = (sql: string, allowlist?: Set<string>, grantSql?: string) => stri
 let unauthorisedWriters: Verdict;
 let anonReadableDefiners: Verdict;
 let unrevokedClones: Verdict;
-let unscopedRosterDefiners: Verdict;
+type AggregateReview = Map<string, { declarationSha256: string; reason: string }>;
+let unscopedRosterDefiners: (
+  sql: string,
+  allowlist?: Set<string>,
+  grantSql?: string,
+  authenticatedAggregates?: AggregateReview
+) => string[];
 let clonedFunctions: (sql: string) => string[];
 let stripComments: (sql: string) => string;
 let droppedFunctions: (sql: string) => Set<string>;
@@ -692,6 +698,73 @@ AS $function$ SELECT * FROM bbj_unclaimed_shares WHERE paid_at IS NULL; $functio
     // A genuinely public list - a leaderboard, a lobby - is allowed, once
     // somebody writes down why every row in it is safe for anyone to read.
     expect(unscopedRosterDefiners(SHIPPED, new Set(['fn_bbj_unclaimed_shares']))).toEqual([]);
+  });
+});
+
+describe('an authenticated aggregate is an exact reviewed declaration', () => {
+  const name = 'fn_smarter_poker_pulse_cron_counts';
+  const sql = readFileSync(
+    resolve(
+      __dirname,
+      '../supabase/migrations/20260927041025_pulse_cron_aggregates_preserve_caller_product_privacy.sql'
+    ),
+    'utf8'
+  );
+  const manifest = JSON.parse(
+    readFileSync(resolve(__dirname, '../scripts/ci/definer-authorization.allowlist.json'), 'utf8')
+  );
+  const reviews: AggregateReview = new Map(Object.entries(manifest.authenticatedAggregates));
+  const verdict = (candidate: string, grants = candidate, review = reviews) =>
+    unscopedRosterDefiners(candidate, new Set(), grants, review);
+
+  it('reproduces the generic roster false positive without reviewed evidence', () => {
+    expect(unscopedRosterDefiners(sql)).toEqual([name]);
+    expect(verdict(sql)).toEqual([]);
+    expect(unauthorisedWriters(sql)).toEqual([]);
+    expect(anonReadableDefiners(sql)).toEqual([]);
+    expect(unrevokedClones(sql)).toEqual([]);
+    expect(manifest.anonPublicSurface).not.toHaveProperty(name);
+  });
+
+  it.each([
+    sql.replace('count(*)::numeric', 'd.jobid::numeric'),
+    sql.replace("interval '24 hours'", "interval '25 hours'"),
+    sql.replace("SET search_path TO ''", 'SET search_path TO public'),
+    sql.replace('RETURNS TABLE(cron_jobs_active bigint', 'RETURNS TABLE(job_id bigint'),
+    sql.replaceAll(name, 'fn_other_aggregate'),
+  ])('refuses a changed body, header or function identity', (candidate) => {
+    expect(verdict(candidate)).toHaveLength(1);
+  });
+
+  it.each(['PUBLIC', 'anon'])('refuses a later %s grant in the branch', (role) => {
+    const grants = sql + `\nGRANT EXECUTE ON FUNCTION public.${name}() TO ${role};`;
+    expect(verdict(sql, grants)).toEqual([name]);
+    expect(anonReadableDefiners(sql, new Set(), grants)).toEqual([name]);
+  });
+
+  it.each(['PUBLIC', 'anon'])('refuses standalone %s grants without a declaration', (role) => {
+    const grant = `GRANT EXECUTE ON FUNCTION public.${name}() TO ${role};`;
+    expect(verdict(grant)).toEqual([name]);
+    const closed = grant + `\nREVOKE EXECUTE ON FUNCTION public.${name}() FROM ${role};`;
+    expect(verdict(closed)).toEqual([]);
+  });
+
+  it('preserves standalone authenticated and service grants without inventing anonymous access', () => {
+    expect(
+      verdict(`GRANT EXECUTE ON FUNCTION public.${name}() TO authenticated,service_role;`)
+    ).toEqual([]);
+  });
+
+  it('refuses missing hash or review and retains writer checks', () => {
+    expect(
+      verdict(sql, sql, new Map([[name, { declarationSha256: '', reason: 'name only' }]]))
+    ).toEqual([name]);
+    expect(verdict(sql, sql, new Map([[name, { ...reviews.get(name)!, reason: '' }]]))).toEqual([
+      name,
+    ]);
+    const write = sql.replace('  SELECT\n', '  DELETE FROM public.profiles; SELECT\n');
+    expect(unauthorisedWriters(write)).toEqual([name]);
+    expect(verdict(write)).toEqual([name]);
   });
 });
 

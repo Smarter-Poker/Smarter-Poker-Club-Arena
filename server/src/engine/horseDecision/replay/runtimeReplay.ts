@@ -89,6 +89,7 @@ export async function replayThroughWorkerRuntime(
     saveRng: saveFastRandom,
     restoreRng: restoreFastRandom,
     governorScale: () => equityGovernor.current(),
+    atGovernorScale: (fn) => equityGovernor.withDecisionScale(fn),
     workerReadiness: readiness,
     observeCompletedHand: () => {},
     noteDecision: () => {},

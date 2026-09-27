@@ -7,7 +7,7 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const dir = 'tests/fixtures/cashier-statements/';
 const migrationPath =
-  'supabase/migrations/20260927151528_cashier_movement_totals_use_a_covered_ledger_range.sql';
+  'supabase/migrations/20260927152809_cashier_movement_totals_use_a_covered_ledger_range.sql';
 const migration = read(migrationPath);
 const online = read(dir + 'ledger-cover-build-online.sql')
   .replace(/^--.*$/gm, '')

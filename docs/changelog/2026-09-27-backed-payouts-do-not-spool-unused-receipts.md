@@ -1,0 +1,9 @@
+# Backed payout discovery does not spool unused receipts
+
+The single-use wallet receipt CTE was materialized before its aggregate joined it to eligible tournaments. A production component read projected 973,698 rows and wrote 6,025 temporary blocks. The unchanged complete discovery read still exceeded its eight-second budget after the separately qualified reviewed-return index was installed.
+
+The successor changes only `wallet_receipts AS MATERIALIZED` to `AS NOT MATERIALIZED`. The measured plan retains a parallel scan and hash join and removes that intermediate spool. One changed complete read finished in 5,357 ms with 1,243 temporary blocks and 12,190 disk reads, including a warm wallet scan and a 2,420 ms satellite-income read. These are dated, differently cached observations, not a controlled cold speedup or billing-savings estimate.
+
+All financial predicates, original request and payout behavior, roles, timeouts, retention and existing schedules remain unchanged. The guarded migration refuses source, scalar, privilege, singleton-key or required-index drift. The maintained PostgreSQL 17 qualification compares the complete original scalar caller and candidate, retains the reconciliation-adapter limitation, checks rollback and browser refusal, and verifies two-session wallet/return visibility. It also verifies the actual before/after planner boundary. No financial function was invoked in production for this qualification.
+
+Installed once as provider version `20260927171918`: 3,987 bytes, SHA256 `c2d0a9f3e04d56d13fc5a5e0c5516520f91d0d06af342d2c1b9c0502cee788a6`. Readback preserves the function OID, owner, service-only grants, volatility and configuration, with target definition `997e5e7b816c12f7a17c30454806da0b` and scalar `46647067aa049dcb9bda93fa0a1a35b3`. Both native reviewers passed. Do not replay this migration. Source delivery and natural invocation proof remain separate.

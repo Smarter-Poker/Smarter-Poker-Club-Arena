@@ -4,8 +4,12 @@ import { requireReadyEngineSha } from './production-e2e-provenance.mjs';
 // One prerequisite inside the existing certification job, never a release retry.
 // Allow the two-minute last-hand lead, five-minute break, v3 release tail,
 // and 10.5-second resume spread. Client-triggered checks may arrive during the lead.
-// The September 18 release resumed 423.65 seconds after its break began.
-export const GAMEPLAY_WAIT_MS = 10 * 60_000;
+// On September 27 the same engine needed 663.712 seconds from announcement
+// through its certified v3 release and all eight resume waves. The former
+// 600s deadline expired 62.457s before those waves finished in run 36292616717.
+// 720s retains over one health-request/poll interval of headroom for that
+// observed path. It is a fixed prerequisite limit, not a future-release promise.
+export const GAMEPLAY_WAIT_MS = 12 * 60_000;
 const POLL_MS = 5_000;
 
 export function gameplayHasResumed(raw, expected) {
@@ -63,7 +67,7 @@ export async function awaitEngineGameplay(
     await pause(Math.min(POLL_MS, Math.max(0, deadline - now())));
   }
   throw new Error(
-    'The exact engine did not resume gameplay within the ten-minute prerequisite budget.'
+    'The exact engine did not resume gameplay within the twelve-minute prerequisite budget.'
   );
 }
 

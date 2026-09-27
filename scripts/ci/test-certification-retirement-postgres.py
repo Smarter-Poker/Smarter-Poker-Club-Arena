@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))
 parser.add_argument('--baseline', action='store_true')
+parser.add_argument('--original-only', action='store_true', help='Local historical fixture only; CI defaults to the combined installed source')
 args = parser.parse_args()
 pg = Path(args.pg_bin).resolve()
 env = {'PATH': str(pg) + ':/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PGCONNECT_TIMEOUT': '5'}
@@ -57,7 +58,8 @@ def seed():
           f"INSERT INTO auth.refresh_tokens(user_id) VALUES('{USER}');")
 
 def cleanup():
-    return json.loads(query(f"SET ROLE service_role; SELECT public.cleanup_reserved_certification_account('{USER}');"))
+    return json.loads(query("SET request.jwt.claims = '{\"role\":\"service_role\"}'; SET ROLE service_role; "
+                            f"SELECT public.cleanup_reserved_certification_account('{USER}');"))
 
 def auth_soft_delete():
     # Documented provider contract, never used outside this private fixture.
@@ -86,11 +88,43 @@ try:
     assert query("SELECT md5(pg_get_functiondef('public.cleanup_reserved_certification_account(uuid)'::regprocedure));") == captured['definition_md5']
     seed()
     before = ledger()
-    if args.baseline:
+    if args.baseline and args.original_only:
         # Must fail at the real immutable actor FK, not a mocked predicate.
         cleanup()
         raise AssertionError('Baseline unexpectedly removed a referenced actor')
     query(MIGRATION.read_text())
+    if not args.original_only:
+        captured_archive = json.loads((FIXTURE/'archive-preimage.json').read_text())
+        query("""ALTER TABLE public.chip_ledger ADD COLUMN club_id uuid, ADD COLUMN hand_id uuid,
+          ADD COLUMN table_id uuid, ADD COLUMN tournament_id uuid, ADD COLUMN status text,
+          ADD COLUMN category text, ADD COLUMN from_type text, ADD COLUMN from_entity_id uuid,
+          ADD COLUMN to_type text, ADD COLUMN to_entity_id uuid, ADD COLUMN idempotency_key text;
+          CREATE TABLE public.accounting_tournament_fee_recognitions(bank_journal_id uuid);
+          CREATE TABLE public.ca_test_account_ledger_actor_archive(ledger_id uuid PRIMARY KEY,
+            actor_id uuid,actor_email text,ledger_row jsonb);
+          CREATE FUNCTION public.fn_freeze_bypass_active() RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
+        """)
+        query(f"UPDATE public.chip_ledger SET club_id='{CLUB}',status='posted',category='mint',"
+              f"from_type='issuance_reserve',to_type='club_treasury',to_entity_id='{CLUB}',"
+              f"idempotency_key='club-opening-grant:{CLUB}';")
+        # Exact installed actor and freeze trigger bodies, not permissive mocks.
+        # The bypass predicate is false; the actual service JWT role is supplied.
+        for trigger in captured_archive['ledger_triggers']:
+            query(trigger['source']+';'+trigger['definition']+';')
+        query(captured_archive['cleanup']['definition'])
+        assert query("SELECT md5(pg_get_functiondef('public.cleanup_reserved_certification_account(uuid)'::regprocedure));") == captured_archive['cleanup']['md5']
+        before = ledger()
+        if args.baseline:
+            query("UPDATE public.freeze_fixture SET active=true;")
+            assert cleanup() == {'success': False, 'reason': 'platform_is_frozen'}
+            assert ledger() == before, 'Frozen refusal committed immutable actor detachment'
+            raise AssertionError('Archive-order baseline unexpectedly preserved the actor')
+        order_migration = next((ROOT/'supabase/migrations').glob('*_certification_retirement_guards_precede_actor_archive.sql')).read_text()
+        query(order_migration.replace('COMMIT;', "DO $$ BEGIN RAISE EXCEPTION 'fixture rollback'; END $$; COMMIT;"), 'fixture rollback')
+        assert query("SELECT md5(pg_get_functiondef('public.cleanup_reserved_certification_account(uuid)'::regprocedure));") == captured_archive['cleanup']['md5']
+        query(order_migration)
+        assert query("SELECT md5(pg_get_functiondef('public.cleanup_reserved_certification_account(uuid)'::regprocedure));") == captured_archive['candidate_md5']
+        query(order_migration, 'CERTIFICATION_RETIREMENT_ORDER_PREIMAGE_CHANGED')
     assert ledger() == before
     for role in ['anon', 'authenticated']:
         for fn, arg in [('cleanup_reserved_certification_account', f"'{USER}'"),
@@ -192,6 +226,9 @@ try:
     query(MIGRATION.read_text(), 'CERTIFICATION_CLEANUP_PREIMAGE_CHANGED')
     assert query("SELECT md5(pg_get_functiondef('public.cleanup_reserved_certification_account(uuid)'::regprocedure));") == installed
     assert ledger() == before
+    if not args.original_only:
+        assert query('SELECT count(*) FROM public.ca_test_account_ledger_actor_archive;') == '0'
+        print('certification-retirement-archive-order-acceptance-passed')
     print('certification-retirement-native-acceptance-passed')
 finally:
     if start_attempted and (data/'postmaster.pid').exists():

@@ -664,7 +664,9 @@ jobs:
     if: needs.publication-gate.outputs.should_run == 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 12m prerequisite + 3 x 6.5m tournament cases + 5m cash case leaves
+    # 8.5m for checkout/setup, fixture lifecycle, provenance and reports.
+    timeout-minutes: 45
     permissions:
       contents: read
     concurrency:

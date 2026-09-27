@@ -1400,6 +1400,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
 
+      - name: Stranded player reads preserve every event and latest stack
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-stranded-player-read-postgres.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

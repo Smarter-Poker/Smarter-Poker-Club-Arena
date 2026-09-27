@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8",
+    "scripts/ci/classify-ci-changes.mjs": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -293,6 +293,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d",
         "current": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+      }
+    ]
+  },
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8",
+        "after": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
       }
     ]
   }

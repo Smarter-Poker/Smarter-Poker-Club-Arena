@@ -9,12 +9,14 @@ test.describe('Production Create A Club Certificate', () => {
     test.setTimeout(150_000);
     await page.setViewportSize({ width: 393, height: 852 });
     const stamp = `${Date.now()}`.slice(-9);
-    const clubName = `Club Create Cert ${stamp}`;
+    const clubName = `Crest Cert ${stamp}`;
 
     await page.goto('./', { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await expect(page).not.toHaveURL(/\/auth(?:\/|$)/, { timeout: 30_000 });
 
-    const createDoor = page.getByRole('button', { name: 'Create A Club', exact: true });
+    // The carousel also exposes a Create A Club CTA. Target the keyboard-enabled
+    // action-bar control so this certificate proves the primary entry point.
+    const createDoor = page.getByTitle('Create A Club (C)', { exact: true });
     await expect(createDoor).toBeVisible({ timeout: 60_000 });
     await expect(createDoor).toBeEnabled();
     await createDoor.click();

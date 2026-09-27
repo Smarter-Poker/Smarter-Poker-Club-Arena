@@ -10,8 +10,7 @@ export interface ClubOpeningEligibility {
  *
  *   undefined  not read yet, or not asked because this viewer is not the
  *              owner of a new standalone club: fail closed
- *   null       read and not latched, or the store could not answer and the
- *              lobby is on its local fallback (today's behaviour)
+ *   null       read successfully and not latched
  *   string     latched at that time: the list is finished for good, whatever
  *              the live data says later (a closed table, a member who left)
  */

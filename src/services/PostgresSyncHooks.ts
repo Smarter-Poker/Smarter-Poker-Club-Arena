@@ -80,6 +80,8 @@ class PostgresSyncHooksService {
   private channel: RealtimeChannel | null = null;
   private initialized: boolean = false;
   private _userId: string | null = null; // FIX: Track current user for re-init detection
+  private generation = 0;
+  private lastSeenMemberships = new Map<string, { balances: string; membership: string }>();
 
   // Phase 11: Internal debounce timers to batch rapid-fire events
   /* What this client last saw for each mirrored row, keyed by primary key.
@@ -108,19 +110,22 @@ class PostgresSyncHooksService {
     eventType: K,
     payload: Parameters<typeof masterBus.emit>[1]
   ): void {
+    const generation = this.generation;
     const existing = this.debounceTimers.get(key);
     if (existing) clearTimeout(existing);
 
     this.debounceTimers.set(
       key,
       setTimeout(() => {
-        masterBus.emit(eventType, payload as any);
+        if (this.initialized && generation === this.generation) {
+          masterBus.emit(eventType, payload as any);
+        }
         this.debounceTimers.delete(key);
       }, PostgresSyncHooksService.DEBOUNCE_MS)
     );
   }
 
-  init(userId: string) {
+  init(userId: string, reconnectAttempt = 0) {
     // Guard: If already initialized with a live channel FOR THE SAME USER, skip.
     // FIX: Also track userId to detect user switches (e.g., logout → login as different user)
     if (this.initialized && this.channel && this._userId === userId) return;
@@ -131,55 +136,21 @@ class PostgresSyncHooksService {
     // FIX: Set initialized BEFORE any async work to prevent re-entrancy
     this.initialized = true;
     this._userId = userId;
+    this.retryCount = reconnectAttempt;
+    const generation = this.generation;
+    const ownsSubscription = () =>
+      this.initialized && this.generation === generation && this._userId === userId;
 
     // Use a deterministic global channel name scoped to the user to avoid leaks/re-subs
     this.channel = supabase.channel(`global_db_sync:${userId}`);
 
     this.channel
-      // 1. WALLETS — restored here 2026-08-24, GLOBAL and USER-FILTERED.
-      //
-      // It was moved out to useRealtimeFinancials on 2026-04-19, and that hook
-      // is mounted on exactly two pages (PlayerWalletPage, CashierPage). So for
-      // the whole rest of the app - Home, the lobby, and every table - a balance
-      // changed SERVER-SIDE (agent transfer, admin credit, settlement payout,
-      // rakeback) produced no client update at all. The header simply showed a
-      // stale number until something unrelated happened to trigger a refetch.
-      // useGlobalBalanceSync's comment even asserted this listener lived here;
-      // it did not, so the balance was quietly less live than the code claimed.
-      //
-      // This is NOT a return to the listeners removed for billing in April.
-      // Those were UNFILTERED, table-wide subscriptions (`tables`, `tournaments`,
-      // `clubs`) that fanned every row change on the platform out to every
-      // client - ~80% of 86M realtime messages. This one carries
-      // `user_id=eq.<userId>`, so it delivers only this player's own wallet
-      // rows, exactly like the `profiles` and `club_members` listeners already
-      // in this channel.
-      //
-      // It emits BALANCE_UPDATED rather than pushing a number: useGlobalBalanceSync
-      // (mounted in App.tsx) already subscribes to that event debounced and
-      // refetches the authoritative balance, so bursts collapse into one read.
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallets',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'DELETE') return;
-          this.debouncedEmit('wallet_balance', 'BALANCE_UPDATED', {
-            source: 'postgres_sync_wallets',
-            userId,
-          });
-        }
-      )
-
       // 2. Profiles (Display names, avatars, diamonds) — NOT debounced (personal data)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
         (payload) => {
+          if (!ownsSubscription()) return;
           console.debug('[PostgresSync] External Profile mutation detected:', payload);
           masterBus.emit('PROFILE_UPDATED', { userId: payload.new.id, updates: payload.new });
 
@@ -225,6 +196,7 @@ class PostgresSyncHooksService {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          if (!ownsSubscription()) return;
           console.debug('[PostgresSync] External Settings mutation detected:', payload);
           if (payload.eventType === 'DELETE') return;
           const next = payload.new as Record<string, unknown>;
@@ -270,6 +242,7 @@ class PostgresSyncHooksService {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          if (!ownsSubscription()) return;
           const row = payload.new as Record<string, unknown>;
           /* An INSERT is always a first sighting, so `remembered` is undefined
              and every field comes back as news — which is what this handler
@@ -308,6 +281,7 @@ class PostgresSyncHooksService {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          if (!ownsSubscription()) return;
           const row = payload.new as Record<string, unknown>;
           /* `payload.old` used to be the comparison here. It is the primary key
              and nothing else on this table (REPLICA IDENTITY DEFAULT), so every
@@ -345,17 +319,56 @@ class PostgresSyncHooksService {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'club_members', filter: `user_id=eq.${userId}` },
         (payload) => {
-          console.debug('[PostgresSync] External Membership mutation detected:', payload);
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            const clubId = (payload.new as any)?.club_id;
-            if (clubId) {
-              this.debouncedEmit(`membership_${clubId}`, 'CLUB_UPDATED', { clubId });
-            }
-          } else if (payload.eventType === 'DELETE') {
-            // With default replica identity, payload.old only has the PK (id),
-            // not club_id. Emit immediately — this is a critical access change.
-            const clubId = (payload.old as any)?.club_id || 'unknown';
+          if (!ownsSubscription()) return;
+          // The live pools are club_members, not the retired wallets table.
+          // Reuse this existing own-user stream; do not publish a hot table or
+          // add a channel. Compare the latest complete row with our own baseline,
+          // because an RLS old row carries only the composite primary key.
+          const row = (payload.eventType === 'DELETE' ? payload.old : payload.new) as Record<
+            string,
+            unknown
+          >;
+          if (row?.user_id !== userId || typeof row.club_id !== 'string' || !row.club_id) return;
+          const clubId = row.club_id;
+          if (payload.eventType === 'DELETE') {
+            // DELETE is unfilterable. The actual PK is (club_id,user_id), so
+            // only this account's deletion may invalidate its access/balance.
+            this.lastSeenMemberships.delete(clubId);
             masterBus.emit('CLUB_LEFT', { clubId });
+            this.debouncedEmit('wallet_balance', 'BALANCE_UPDATED', {
+              source: 'postgres_sync_membership',
+              userId,
+            });
+            return;
+          }
+          const next = {
+            balances: JSON.stringify([row.chip_balance, row.promo_balance, row.locked_chips]),
+            membership: JSON.stringify([
+              row.role,
+              row.status,
+              row.is_active,
+              row.agent_id,
+              row.parent_agent_id,
+              row.membership_lifecycle_status,
+              row.departed_at,
+              row.nickname,
+              row.display_name,
+              row.credit_limit,
+              row.credit_used,
+              row.commission_rate,
+              row.rakeback_rate,
+            ]),
+          };
+          const previous = this.lastSeenMemberships.get(clubId);
+          this.lastSeenMemberships.set(clubId, next);
+          if (!previous || previous.balances !== next.balances) {
+            this.debouncedEmit('wallet_balance', 'BALANCE_UPDATED', {
+              source: 'postgres_sync_membership',
+              userId,
+            });
+          }
+          if (!previous || previous.membership !== next.membership) {
+            this.debouncedEmit(`membership_${clubId}`, 'CLUB_UPDATED', { clubId });
           }
         }
       )
@@ -371,6 +384,7 @@ class PostgresSyncHooksService {
           filter: `recipient_id=eq.${userId}`,
         },
         (payload) => {
+          if (!ownsSubscription()) return;
           const row = (payload.new || {}) as Record<string, unknown>;
           if (row.event_type !== 'management_access_changed') return;
           masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
@@ -388,9 +402,19 @@ class PostgresSyncHooksService {
       // Phase 15: Emit bus events so ConnectionHUD and other UI elements can react
       // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT
       .subscribe((status, err) => {
+        if (!ownsSubscription()) return;
         const channelName = `global_db_sync:${userId}`;
         switch (status) {
           case 'SUBSCRIBED':
+            if (this.reconnectTimer) {
+              clearTimeout(this.reconnectTimer);
+              this.reconnectTimer = null;
+            }
+            this.lastSeenMemberships.clear();
+            this.debouncedEmit('wallet_balance', 'BALANCE_UPDATED', {
+              source: 'postgres_sync_connected',
+              userId,
+            });
             console.info(`[PostgresSync] Realtime Hook Active for user ${userId}.`);
             masterBus.emit('REALTIME_CONNECTED', { channelName });
             this.retryCount = 0; // Reset on success
@@ -454,12 +478,15 @@ class PostgresSyncHooksService {
         this.channel = null;
       }
       this.initialized = false;
-      // Preserve _userId and retryCount across reconnect
-      this.init(userId);
+      // init tears down the old owner. Preserve the bounded attempt count
+      // across that teardown; only SUBSCRIBED or an actual new owner resets it.
+      this.init(userId, this.retryCount);
     }, delay);
   }
 
   destroy() {
+    this.generation++;
+    this.lastSeenMemberships.clear();
     // Clear any pending reconnect timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

@@ -214,9 +214,7 @@ describe('post-deploy production account', () => {
       if (url.includes('/rest/v1/clubs?')) {
         clubReads += 1;
         return Response.json(
-          clubReads === 1
-            ? [{ id: clubId, name: 'Club Create Cert 123456789', owner_id: USER_ID }]
-            : []
+          clubReads === 1 ? [{ id: clubId, name: 'Crest Cert 123456789', owner_id: USER_ID }] : []
         );
       }
       if (url.includes('/rest/v1/rpc/fn_ca_retire_certification_club')) {

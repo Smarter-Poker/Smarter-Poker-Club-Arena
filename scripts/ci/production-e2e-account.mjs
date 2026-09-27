@@ -330,7 +330,7 @@ export async function retireProductionCreateClubFixtures({
   if (!Array.isArray(clubs))
     throw new Error('Create Club fixture query returned a non-array body.');
   for (const club of clubs) {
-    if (club.owner_id !== account.id || !String(club.name || '').startsWith('Club Create Cert ')) {
+    if (club.owner_id !== account.id || !String(club.name || '').startsWith('Crest Cert ')) {
       throw new Error(`Refusing to retire unrecognized club ${String(club.id || 'unknown')}.`);
     }
     const result = await serviceRequest(

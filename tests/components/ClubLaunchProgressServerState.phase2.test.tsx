@@ -170,7 +170,8 @@ describe('the local fallback', () => {
     localStorage.setItem(KEY, JSON.stringify(['tagline']));
     const { result } = mountServer();
 
-    await waitFor(() => expect(result.current.completedAt).toBeNull());
+    await waitFor(() => expect(h.reportError).toHaveBeenCalled());
+    expect(result.current.completedAt).toBeUndefined();
     expect(h.reportError).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'PGRST202' }),
       'ClubLaunchSkips.server_read_failed'
@@ -188,7 +189,8 @@ describe('the local fallback', () => {
     replies.fn_club_opening_checklist_state = [{ data: 0, error: null }];
     const { result } = mountServer();
 
-    await waitFor(() => expect(result.current.completedAt).toBeNull());
+    await waitFor(() => expect(h.reportError).toHaveBeenCalled());
+    expect(result.current.completedAt).toBeUndefined();
     expect(h.reportError).toHaveBeenCalledWith(
       expect.any(Error),
       'ClubLaunchSkips.server_read_failed'

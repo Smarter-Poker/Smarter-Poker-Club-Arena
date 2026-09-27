@@ -3,38 +3,53 @@ name: Club Create Certification
 on:
   repository_dispatch:
     types: [certify-club-create]
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/club-create-certification.yml
-      - public/club-logos/**
-      - scripts/ci/certify-club-create.mjs
-      - src/components/modals/CreateClubModal.tsx
-      - src/pages/HomePage.tsx
-      - src/services/ClubsService.ts
-      - tests/e2e/global-setup.ts
-      - tests/e2e/production-create-club.spec.ts
-      - scripts/ci/production-e2e-account.mjs
-      - supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql
+  workflow_run:
+    workflows: ['Publish Club Arena']
+    types: [completed]
+
+concurrency:
+  group: club-create-certification
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   certify:
+    if: >-
+      github.event_name == 'repository_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event.repository.default_branch }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
+      - name: Wait For This Exact Revision On Both Public Endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(git rev-parse HEAD)"
+          for attempt in $(seq 1 40); do
+            origin="$(curl -fsS -H 'Cache-Control: no-cache' "https://ca-static.smarter.poker/build-info.json?cert=$RANDOM" || true)"
+            public="$(curl -fsS -H 'Cache-Control: no-cache' "https://smarter.poker/hub/club-arena/build-info.json?cert=$RANDOM" || true)"
+            origin_sha="$(printf '%s' "$origin" | node scripts/ci/production-e2e-provenance.mjs build-info 2>/dev/null || true)"
+            public_sha="$(printf '%s' "$public" | node scripts/ci/production-e2e-provenance.mjs build-info 2>/dev/null || true)"
+            if [[ "$origin_sha" == "$expected" && "$public_sha" == "$expected" ]]; then
+              echo "Both public endpoints serve exact revision $expected."
+              exit 0
+            fi
+            echo "Attempt $attempt: waiting for exact revision $expected (origin=${origin_sha:-invalid}, public=${public_sha:-invalid})."
+            sleep 15
+          done
+          echo "::error::Both public endpoints did not converge on exact revision $expected."
+          exit 1
       - name: Certify Authenticated Club Creation And Cleanup
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

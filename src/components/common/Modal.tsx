@@ -126,7 +126,9 @@ export function Modal({
     if (e.key !== 'Tab' || !modalRef.current) return;
 
     const focusableElements = modalRef.current.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      // input[tabindex="-1"] excluded: a TapHaptic switch inside a button is
+      // for the finger, never a keyboard stop, and must not become the trap's edge.
+      'button, [href], input:not([tabindex="-1"]), select, textarea, [tabindex]:not([tabindex="-1"])'
     );
     const firstElement = focusableElements[0] as HTMLElement;
     const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
@@ -161,7 +163,7 @@ export function Modal({
         if (modalRef.current) {
           const focusable = Array.from(
             modalRef.current.querySelectorAll<HTMLElement>(
-              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+              'button, [href], input:not([tabindex="-1"]), select, textarea, [tabindex]:not([tabindex="-1"])'
             )
           );
           (focusable.find((el) => !el.classList.contains('sc__close')) ?? focusable[0])?.focus();

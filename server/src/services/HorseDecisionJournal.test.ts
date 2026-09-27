@@ -26,6 +26,7 @@ import {
   HorseDecisionJournalStore,
   horseJournalCapacityReason,
 } from './horseDecisionJournal/store.js';
+import { horseJournalFailureKind } from './horseDecisionJournal/failure.js';
 import {
   horseJournalJson,
   journalHash,
@@ -39,6 +40,10 @@ import {
   relayHorseDecisionJournalHealth,
   type HorseJournalWorker,
 } from './HorseDecisionJournal.js';
+import {
+  HORSE_JOURNAL_ARCHIVE_HOLD,
+  runtimeHorseJournalArchiveOptions,
+} from './horseDecisionJournal/config.js';
 
 const folders: string[] = [],
   stores: HorseDecisionJournalStore[] = [];
@@ -1239,16 +1244,197 @@ describe('the archive is a ring: the oldest published segments make room, unpubl
         compressedBytes: 10,
         maxBytes: 1024,
         capture:
-          'running: the archive is a ring of 100 segments; the oldest published segment is retired when a new one needs its room; retained=1 published=1 unpublished=0 retired=4',
+          'running: the archive is a ring of 100 segments; the oldest published segment outside the evidence hold is retired when a new one needs its room; retained=1 published=1 held=0 unpublished=0 retired=4',
       });
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
       expect(p.health().capture).toBe(
-        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment left to retire (only unpublished segments remain); asks again every minute; retained=1 published=1 unpublished=0 retired=4'
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
       );
       w.emit({ type: 'CAPACITY', room: false, reason: 'archive_storage_capacity' });
       expect(p.health().capture).toBe(
-        'not running: paused since 2026-09-25T19:34:05.000Z because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute; retained=1 published=1 unpublished=0 retired=4'
+        'not running: paused since 2026-09-25T19:34:05.000Z because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
+      );
+      void p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('the ring holds the Phase 6A/6B evidence: held segments are never retired, capture still runs', () => {
+  const options = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  const at = (sequence: number, atMs: number): HorseJournalRecord =>
+    makeHorseJournalRecord(
+      {
+        producerId: '10000000-0000-4000-8000-000000000001',
+        sequence,
+        atMs,
+        sourceRelease: null,
+        kind: 'decision',
+        handKey: journalHash('hand'),
+        turnKey: journalHash('turn'),
+      },
+      { privateSyntheticCard: 'As' }
+    );
+  const catalog = (dir: string) =>
+    new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  /** Five segments captured at t=100..500, written before any hold existed. */
+  const archiveOfFive = (dir: string) => {
+    const w = store(dir, { archive: options(dir) });
+    for (const n of [1, 2, 3, 4, 5]) expect(w.append(at(n, n * 100))).toBe('recorded');
+    w.close();
+  };
+  it('retires only published segments outside the hold, below it first and then above it', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 150, untilMs: 350 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 5,
+      heldSegments: 2,
+      heldRecords: 2,
+    });
+    // Below the hold first: t=100 goes.
+    expect(s.append(at(6, 600))).toBe('recorded');
+    // Then the oldest above it: t=400 and t=500, never t=200 or t=300.
+    expect(s.appendBatch([at(7, 700)])).toEqual(['recorded']);
+    expect(s.append(at(8, 800))).toBe('recorded');
+    expect(s.readHand(journalHash('hand'))).toEqual([
+      at(2, 200),
+      at(3, 300),
+      at(6, 600),
+      at(7, 700),
+      at(8, 800),
+    ]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 5,
+      heldSegments: 2,
+      retiredSegments: 3,
+      retiredRecords: 3,
+    });
+    const native = catalog(dir);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_events').get()!.n).toBe(5);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toHaveLength(5);
+    native.close();
+  });
+  it('never retires a held segment: with only held segments left the quota refuses by name, the probe agrees, and nothing is lost', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 1, untilMs: 1000 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 5 });
+    expect(s.capacityRefusal([at(6, 600)])).toBe('archive_segments');
+    expect(() => s.append(at(6, 600))).toThrow('horse_archive_segment_capacity');
+    expect(s.readHand(journalHash('hand'))).toHaveLength(5);
+    expect(s.storageStats().archive).toMatchObject({ segments: 5, retiredSegments: 0 });
+    s.close();
+    // Released (the env var reads "none"): the ring reclaims them oldest first.
+    const released = store(dir, { archive: options(dir, { maxSegments: 5, hold: null }) });
+    expect(released.storageStats().archive).toMatchObject({ heldSegments: 0 });
+    expect(released.capacityRefusal([at(6, 600)])).toBeNull();
+    expect(released.append(at(6, 600))).toBe('recorded');
+    expect(released.readHand(journalHash('hand'))).toEqual(
+      [2, 3, 4, 5, 6].map((n) => at(n, n * 100))
+    );
+  });
+  it('the held set is resolved once per window and does not grow with later capture', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const hold = { fromMs: 250, untilMs: 1000 };
+    const a = store(dir, { archive: options(dir, { maxSegments: 6, hold }) });
+    expect(a.storageStats().archive).toMatchObject({ heldSegments: 3, heldRecords: 3 });
+    // Captured later with a timestamp inside the window: the ring's, not held.
+    expect(a.append(at(6, 260))).toBe('recorded');
+    a.close();
+    const b = store(dir, { archive: options(dir, { maxSegments: 6, hold }) });
+    expect(b.storageStats().archive).toMatchObject({ segments: 6, heldSegments: 3 });
+    expect(b.append(at(7, 700))).toBe('recorded');
+    expect(b.append(at(8, 800))).toBe('recorded');
+    expect(b.append(at(9, 900))).toBe('recorded');
+    // t=100, t=200, then the later t=260 segment went; t=300..500 stayed.
+    expect(b.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([3, 4, 5, 7, 8, 9]);
+    expect(b.storageStats().archive).toMatchObject({ heldSegments: 3, retiredSegments: 3 });
+  });
+  it('a window that holds nothing leaves the ring whole, and a read-only observer of a pre-hold catalog reports zero held', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const native = catalog(dir);
+    native.exec('DROP TABLE archive_hold');
+    native.close();
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    expect(r.storageStats().archive).toMatchObject({ heldSegments: 0, heldRecords: 0 });
+    r.close();
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 5000, untilMs: 6000 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 0 });
+    expect(s.append(at(6, 600))).toBe('recorded');
+    expect(s.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([2, 3, 4, 5, 6]);
+  });
+  it('HORSE_DECISION_JOURNAL_ARCHIVE_HOLD defaults to the Phase 6A/6B window and refuses a malformed value', () => {
+    const directory = join(tmpdir(), 'horse-journal-config');
+    expect(HORSE_JOURNAL_ARCHIVE_HOLD).toBe('2026-09-18T21:56:28Z/2026-09-25T19:34:06Z');
+    expect(runtimeHorseJournalArchiveOptions(directory, {}).hold).toEqual({
+      fromMs: Date.parse('2026-09-18T21:56:28Z'),
+      untilMs: Date.parse('2026-09-25T19:34:06Z'),
+    });
+    expect(
+      runtimeHorseJournalArchiveOptions(directory, { HORSE_DECISION_JOURNAL_ARCHIVE_HOLD: 'none' })
+        .hold
+    ).toBeNull();
+    for (const value of [
+      '',
+      'None',
+      '2026-09-18T21:56:28Z',
+      '2026-09-25T19:34:06Z/2026-09-18T21:56:28Z',
+      '2026-09-18T21:56:28Z/2026-09-18T21:56:28Z',
+      '2026-02-30T00:00:00Z/2026-03-01T00:00:00Z',
+      '2026-09-18T21:56:28.000Z/2026-09-25T19:34:06Z',
+      '2026-09-18T21:56:28+00:00/2026-09-25T19:34:06Z',
+      '2026-09-18T21:56:28Z/2026-09-25T19:34:06Z/',
+    ])
+      expect(() =>
+        runtimeHorseJournalArchiveOptions(directory, { HORSE_DECISION_JOURNAL_ARCHIVE_HOLD: value })
+      ).toThrow('Invalid Horse archive evidence hold');
+  });
+  it('/health counts the held segments and says when only held or unpublished segments remain', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({
+        type: 'STATS',
+        stats: {
+          archive: {
+            ...STATS_ARCHIVE,
+            segments: 500_000,
+            publishedSegments: 500_000,
+            heldSegments: 237_613,
+            retiredSegments: 0,
+            maxSegments: 2_000_000,
+          },
+        },
+      });
+      expect(p.health()).toMatchObject({
+        heldSegments: 237_613,
+        capture:
+          'running: the archive is a ring of 2000000 segments; the oldest published segment outside the evidence hold is retired when a new one needs its room; retained=500000 published=500000 held=237613 unpublished=0 retired=0',
+      });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_bytes' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_bytes with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute; retained=500000 published=500000 held=237613 unpublished=0 retired=0'
       );
       void p.stop();
     } finally {
@@ -1587,6 +1773,107 @@ describe('/health reads the journal from the thread that runs it', () => {
   });
 });
 
+describe('/health shows every decision shard, never only the one that answered last', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+  // Two shards as /health saw them on e6b9dc5d at 21:53 UTC on 2026-09-27:
+  // one capturing, one stopped for good since 21:22:51.
+  const report = (mode: 'ready' | 'failed', patch: Record<string, unknown> = {}) => ({
+    mode,
+    lastFailureReason: null,
+    pausedReason: null,
+    pausedSince: null,
+    failedSince: null,
+    queued: 6,
+    ...STATS_ARCHIVE,
+    records: 4886577,
+    maxRowid: 4935653,
+    statsAgeMs: 1087,
+    reportAgeMs: null,
+    capture: 'copied text is never shown',
+    ...patch,
+  });
+  const failed = report('failed', {
+    lastFailureReason: 'termination_unverified',
+    failedSince: '2026-09-27T21:22:51.994Z',
+    queued: 64,
+    records: 4774445,
+    maxRowid: 4823521,
+    statsAgeMs: 1971018,
+  });
+  it('reports the least healthy shard and counts the shards by mode', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    m.relayHorseDecisionJournalHealth(failed, 'shard-2');
+    // The running shard answers last; the stopped one must still show.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    const health = m.horseDecisionJournalHealth();
+    expect(health).toMatchObject({
+      mode: 'failed',
+      lastFailureReason: 'termination_unverified',
+      failedSince: '2026-09-27T21:22:51.994Z',
+      queued: 70,
+      publishers: { total: 2, byMode: { ready: 1, failed: 1 } },
+    });
+    // The catalog is one shared archive: its figures are the freshest shard's.
+    expect(health.records).toBe(4886577);
+    expect(health.maxRowid).toBe(4935653);
+    expect(health.statsAgeMs).toBeLessThan(1971018);
+    expect(health.capture).toMatch(
+      /^1 of 2 decision-shard publishers running; least healthy: not running: capture stopped for good at termination_unverified since 2026-09-27T21:22:51\.994Z;/
+    );
+    // Every shard capturing again: ready, and the sentence says all of them.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-2');
+    expect(m.horseDecisionJournalHealth()).toMatchObject({
+      mode: 'ready',
+      lastFailureReason: null,
+      publishers: { total: 2, byMode: { ready: 2 } },
+    });
+    expect(m.horseDecisionJournalHealth().capture).toMatch(
+      /^2 of 2 decision-shard publishers running; least healthy: running:/
+    );
+  });
+  it('keeps the single-shard sentence unchanged', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(failed);
+    const health = m.horseDecisionJournalHealth();
+    expect(health.publishers).toEqual({ total: 1, byMode: { failed: 1 } });
+    expect(health.capture).toMatch(
+      /^not running: capture stopped for good at termination_unverified/
+    );
+  });
+});
+
+describe('a competing writer on the shared archive is a lock, not a dead writer', () => {
+  it('refuses as RETRYABLE while the other shard holds the catalog, and the same store then succeeds', () => {
+    const dir = folder(),
+      options = { directory: join(dir, 'archive'), maxBytes: 1024 * 1024, maxSegments: 100 };
+    const a = store(dir, { archive: options }),
+      b = store(dir, { archive: options });
+    const catalogA = (a as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    catalogA.exec('BEGIN IMMEDIATE');
+    let refused: unknown = null;
+    try {
+      b.appendBatch([record(1)]);
+    } catch (error) {
+      refused = error;
+    }
+    expect(horseJournalFailureKind(refused)).toBe('RETRYABLE');
+    catalogA.exec('ROLLBACK');
+    // Nothing was half written: the same writer, asked again, records it, and
+    // the other writer sees the same record as a replay.
+    expect(b.appendBatch([record(1)])).toEqual(['recorded']);
+    expect(a.appendBatch([record(1)])).toEqual(['replayed']);
+    expect(b.storageStats().archive).toMatchObject({ records: 1, pendingSegments: 0 });
+  });
+});
+
 describe('the journal says why it stopped and shows itself to /health', () => {
   it('names the publisher fence that gave up when the writer never said', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -1629,6 +1916,7 @@ describe('the journal says why it stopped and shows itself to /health', () => {
       pendingSegments: null,
       retiredSegments: null,
       retiredRecords: null,
+      heldSegments: null,
       compressedBytes: null,
       maxBytes: null,
       records: null,

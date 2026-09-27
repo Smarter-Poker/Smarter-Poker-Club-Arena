@@ -156,3 +156,50 @@ cd ..
 python3 server/scripts/phase6b-route-proof-observe.py <serving-sha40> <since-ISO-Z> <until-ISO-Z> docs/evidence/phase6b [<records-release-sha40>]
 node server/scripts/phase6b-route-proof.mjs render --input docs/evidence/phase6b/<file>.json
 ```
+
+## 2026-09-27: Re-Verified on the Serving Release e6b9dc5d
+
+The release that serves since 2026-09-27T20:56:03Z is `e6b9dc5d472a040a118f537f65203a6cae45ce80`, and it contains c8cbe6e6 (#5417) (`git merge-base --is-ancestor`). The bounded observed route proof above was rerun against it without changing any engine configuration. Evidence: `docs/evidence/phase6b/phase6b-route-proof-e6b9dc5d-20260927T215216Z.json` and `.md`.
+
+Command, run on the operator's Mac from a worktree of `origin/main` at 347ab6be before any change on this branch (observer `phase6b-route-proof.mjs` sha256 `e58f19b2...`):
+
+```
+python3 server/scripts/phase6b-route-proof-observe.py e6b9dc5d472a040a118f537f65203a6cae45ce80 2026-09-27T20:57:00Z 2026-09-27T21:52:00Z docs/evidence/phase6b
+node server/scripts/phase6b-route-proof.mjs render --input docs/evidence/phase6b/phase6b-route-proof-e6b9dc5d-20260927T215216Z.json
+```
+
+Engine `/health` before: release `e6b9dc5d472a040a118f537f65203a6cae45ce80`, Horse journal `ready`, 4,883,862 records. After: the same release, Horse journal `failed` (`termination_unverified` since 2026-09-27T21:22:51.994Z), 4,774,445 records. The two reports came from different decision shards of the same process (see below); the observer's serving identity check (container, image, start time, release label) was equal before and after.
+
+| Measure                                                  |                  Count |
+| -------------------------------------------------------- | ---------------------: |
+| Tournament preflop decisions on e6b9dc5d                 |                 30,455 |
+| v2 receipts with a lookup / matching their snapshot      |        30,455 / 30,455 |
+| Mismatch refusals                                        |                      0 |
+| Depth bracket disagreements / coordinates outside domain |                  0 / 0 |
+| Atlas evaluated / unavailable / bypassed receipts        | 7,378 / 18,885 / 4,192 |
+| Accepted actions bound to the completed hand             |                 23,758 |
+| Cells observed / unobserved (of 5,643)                   |            690 / 4,953 |
+
+Dealt size 10 and branch `open_facing` are again wholly unobserved. The deployed matcher exports named mismatch reasons (`mismatchReasonsNamed: true`); with zero mismatches in the window no named reason was produced, so the named reasons have not yet been seen on a natural mismatch.
+
+### What the window does not contain
+
+The journal retained only part of the window's decisions. The horse decision lane runs two worker shards and each runs its own journal publisher and writer on the one shared archive. From about 21:07Z both writers met the other's catalog lock (SQLite BUSY after its 250 ms busy timeout), and the publisher answered every lock by terminating the writer and starting a replacement: 3 to 45 replacements per shard per five minutes, and 5,374 to 10,881 records per shard per five minutes dropped at the 64-record queue bound. At 21:22:51.994Z one shard's retiring writer did not confirm termination inside the one-second fence and that shard's capture stopped for good; from then on about half of all decisions (that shard's tables) were not captured, while the surviving shard, alone on the catalog, ran with no replacement at all. `/health` kept one slot for both shards' reports, so it answered `ready` or `failed` depending on which shard had reported last (eight reads at 21:5xZ from one process: one `failed`, seven `ready`). The per-shard counts are in the evidence `.md`.
+
+This is a defect in the Horse journal, not in the 6B routes: every retained record was judged by the deployed code and none mismatched. It is fixed at its cause on this branch, and the fix is implemented but unverified until a release containing it serves:
+
+1. `HorseDecisionJournal.ts`: a writer that answers RETRYABLE while ready is alive and has rolled back, so the same immutable batch is sent to the same writer again after a bounded backoff (`HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS`, 12 steps, 25 ms to 1 s). Only a batch refused that many times in a row falls back to the existing replacement path, whose two-replacement budget and termination fence are unchanged. A writer that meets a lock before it opens is still replaced.
+2. `/health`: each shard's report keeps its own slot (`client.ts` names the shard); the mode, failure and pause fields are the least healthy shard's, the catalog figures are the freshest shard's (one shared archive), `queued` is the sum, and a new `publishers` field counts shards by mode. With more than one shard the capture sentence begins "N of M decision-shard publishers running; least healthy: ...". The observer now records `publishers` in its before and after reads.
+3. Tests, planted red on the unfixed source: `retry.test.ts` "retries a locked batch on the same writer after a bounded backoff and never replaces it" and "renews the lock budget with the exact ACK, and a batch that exhausts it falls back to the bounded replacement"; `HorseDecisionJournal.test.ts` "reports the least healthy shard and counts the shards by mode" and "keeps the single-shard sentence unchanged". All four failed on the unfixed source and pass with the fix. Controls: a real two-store SQLite test proves a competing writer's lock surfaces as RETRYABLE and that the same store then records the batch (and the other writer sees it as a replay); a lock before READY is still replaced; a writer that dies during a lock backoff is never asked again. Four existing tests that used RETRYABLE to mean "the writer died" now use the writer's exit, which is what they model. Server suites `services/horseDecisionJournal/`, `HorseDecisionJournal.test.ts`, `engine/horseDecision/`, `HorseDataLedger.test.ts` and `handlers/`: 26 files, 874 tests passed; `tsc --noEmit` and ESLint clean.
+
+### Gate Status on e6b9dc5d (Bounded to 6B)
+
+| Gate                                                     | Status                     | Evidence                                                                                                                                                   |
+| -------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G4 Immutable authority                                   | verified now               | domain digest `4a8918a0...` recomputed by the observer on the deployed e6b9dc5d image from the frozen descriptor and equal to the pin                      |
+| G5 Reachability                                          | verified now               | 30,455 natural tournament preflop lookups on e6b9dc5d matching their snapshot, 23,758 accepted actions bound to the completed hand (retained records only) |
+| G6 Outcome receipts                                      | verified now               | baseline, named refusals, routes and accepted joins counted per cell on e6b9dc5d: 690 cells observed, 4,953 unobserved and listed, 0 mismatches            |
+| G10 Publication and use                                  | verified now               | e6b9dc5d contains c8cbe6e6 and serves; its deployed matcher (named reasons exported) judged the release's own natural receipts                             |
+| Horse journal lock and `/health` shard fix (this branch) | implemented but unverified | planted-red tests above; not in a serving release                                                                                                          |
+
+G1, G2, G3, G7, G8 and G9 are unchanged from the table above. The population in this window is partial for the journal reason stated, so these counts certify the retained records only; they are not a complete population and not a replay (6C) or population (6D) result.

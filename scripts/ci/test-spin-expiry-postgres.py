@@ -47,7 +47,7 @@ HORSE_MANIFEST_SHA256 = '300b84d68730072e9c4efa66a2cff60df51c233918d91ccc458a18e
 _archive_spec = importlib.util.spec_from_file_location('spin_first_archived', ROOT / 'scripts/qualification/spin-first-archived.py')
 ARCHIVE = importlib.util.module_from_spec(_archive_spec)
 _archive_spec.loader.exec_module(ARCHIVE)
-ARCHIVE_MANIFEST_SHA256 = '41adca5f8896b210d73e2616ad282ff255f12d5766d4e4580f8cbd1bce3f015b'
+ARCHIVE_MANIFEST_SHA256 = 'e342ea56e4a3661298b8c2f943c8ffc337307a812f741b94ede77ccd107b7ce0'
 FEE_MANIFEST_SHA256 = '235b524090286e316d902093a53be8a6948d5853ced8e621048ba249d6a4be14'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
@@ -55,10 +55,10 @@ ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 OWNER = '47965354-0e56-43ef-931c-ddaab82af765'
 REFUND_ACTOR = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'
-IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE)
+IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, *ARCHIVE.IMAGES)
 CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
          'retention-completed': ()}
-CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE)})
+CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, *ARCHIVE.IMAGES)})
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
@@ -1033,7 +1033,7 @@ def retained_evidence(work, output, receipt, source_manifest):
 
 def qualify(args, allocation, manifest_bytes, manifest, PG):
     ROOT = allocation / 'source'
-    archive_image = args.image == ARCHIVE.IMAGE
+    archive_image = args.image in ARCHIVE.IMAGES
     mixed_image = args.image in MIXED.IMAGES
     horse_image = args.image == HORSE.IMAGE
     terminal_image = args.image == TERMINAL.IMAGE
@@ -1222,9 +1222,9 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('current_tested_roles', ROOT / 'provider-roles.sql')
         sql('tested_role_readback', ROOT / 'provider-roles-check.sql')
         if archive_image:
-            for stage, argv in ARCHIVE.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
+            for stage, argv in ARCHIVE.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament,args.image):
                 command(stage, argv, timeout=30)
-            receipt['first_archived_diagnostic'] = ARCHIVE.validate_outputs(ROOT, work, args.execution, args.tournament)
+            receipt['first_archived_diagnostic'] = ARCHIVE.validate_outputs(ROOT, work, args.execution, args.tournament,args.image)
             persist()
             return receipt
         sql('current_catalog_readback', ROOT / 'provider-check.sql')
@@ -1393,7 +1393,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
     return receipt
 
 
-def archive_stage_plan(PG, source, execution, ordinary, tournament):
+def archive_stage_plan(PG, source, execution, ordinary, tournament,image=ARCHIVE.IMAGE):
     # Reuse the exact maintained allocator commands. Archive restoration replaces
     # the principals stage and the obsolete empty/baseline catalog assumptions.
     base = FEE.allocation_plan(PG, source, execution, ordinary, tournament)
@@ -1404,14 +1404,14 @@ def archive_stage_plan(PG, source, execution, ordinary, tournament):
             plan.extend(ARCHIVE.seed_plan(PG, source, execution, ordinary, tournament))
         else:
             plan.append((name, argv))
-    plan.extend(ARCHIVE.body_plan(PG, source, execution, ordinary, tournament))
+    plan.extend(ARCHIVE.body_plan(PG, source, execution, ordinary, tournament,image))
     data = source.parent / 'work/data'
     return plan + [('pg_stop_fast', [str(PG / 'pg_ctl'), '-D', str(data), '-w', '-t', '10', '-m', 'fast', 'stop']),
                    ('pg_stopped_readback', [str(PG / 'pg_ctl'), '-D', str(data), 'status'])]
 
 
 def validate_archive_stages(receipt, PG, source, execution, ordinary, tournament):
-    plan = archive_stage_plan(PG, source, execution, ordinary, tournament)
+    plan = archive_stage_plan(PG, source, execution, ordinary, tournament,receipt['image'])
     stages = receipt['stages']
     require([r.get('stage') for r in stages] == [n for n, _ in plan],
             'archive complete allocation sequence differs')
@@ -1434,7 +1434,7 @@ def validate_archive_stages(receipt, PG, source, execution, ordinary, tournament
         for stream in ('stdout','stderr'):
             require(digest((work / (name + '.' + stream)).read_bytes()) == row.get(stream + '_sha256'),
                     'archive original stream differs: ' + name)
-    summary = ARCHIVE.validate_stages(receipt, PG, source, execution, ordinary, tournament)
+    summary = ARCHIVE.validate_stages(receipt, PG, source, execution, ordinary, tournament,receipt['image'])
     require(receipt.get('first_archived_diagnostic') == summary, 'archive summary differs from original')
     return []
 
@@ -1445,7 +1445,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(receipt.get('execution') == execution and receipt.get('source_manifest_sha256') == manifest_sha
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
-    archive_image = image == ARCHIVE.IMAGE
+    archive_image = image in ARCHIVE.IMAGES
     mixed_image = image in MIXED.IMAGES
     horse_image = image == HORSE.IMAGE
     terminal_image = image == TERMINAL.IMAGE
@@ -1652,7 +1652,7 @@ def run_image(image, PG, scratch=None):
         retained_evidence(allocation / 'work', output, receipt, manifest_bytes)
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
-        if image not in MIXED.IMAGES and image not in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, ARCHIVE.IMAGE):
+        if image not in MIXED.IMAGES and image not in (FEE.IMAGE, TERMINAL.IMAGE, HORSE.IMAGE, *ARCHIVE.IMAGES):
             pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
             pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
             require(digest(pure_original) == pure_stage['stdout_sha256']

@@ -1,0 +1,15 @@
+# Read the original stalled-table interval
+
+The manual scoped log reader observed at15:22 could not include the six selected table stops at14:32–14:35 because it always read the most recent fifteen minutes. It also discarded the actual `ServerTableEngine.<table UUID>.watchdog_kill` header. The existing durable recovery rows independently identify those six kills as `tournament_table_zombie`; they do not identify every original recovery refusal or prove why ownership remains retained.
+
+The existing manual dispatch can now supply `tournament_log_window_start` as an exact UTC second (`YYYY-MM-DDTHH:MM:SSZ`). It selects precisely fifteen completed minutes beginning within the last24hours. The host revalidates that interval. The default last-fifteen-minute behavior remains available. Command, host, account and container are fixed; input remains bounded to20,000lines,8MiB and20seconds. The outer reader verifies the returned interval as well as the unchanged host/public process identity.
+
+The actual watchdog header is normalized to `ServerTableEngine.watchdog_kill` only when its own table UUID is selected. Only explicitly named reasons, selected UUIDs, timestamps and the existing symbolic error families leave the host. Arbitrary messages, players, stacks, SQL arguments and credentials remain excluded. Historical per-record process identity remains unproven even when the currently observed process is stable.
+
+Regression: the old reader fails the historical-window test and loses the real watchdog record. Native tests exercise the real bounded subprocess, historical remote entry, invalid/injected/old/future windows, unselected identities, secret redaction, output caps, configured host pinning, requested-window mismatch and ephemeral-key cleanup. This is a read-only delivery tool, not a table recovery, certificate, restart or financial operation.
+
+# Supporting release check correction
+
+The full local suite exposed the unchanged estate ruleset fixture crossing its existing 15-second deadline. The observer rehashed identical content separately for every repository: the connected fixture counted 96 real hashing invocations for 14 shared files. A one-entry, per-file cache now reuses only a successful digest for exactly identical returned bytes while retaining every repository read, state, retirement and date comparison. A different payload is rehashed. A failed decode/hash now reports unknown and fails the audit instead of letting an empty digest appear successful. The fixture pins all three cases using the real hasher; the existing deadline and ruleset assertions remain unchanged.
+
+Integration with protected main146914ca54 preserves all three successor-admission contexts from PR5453 alongside the selected watchdog and historical-window reader. Both native test families remain; the reader still emits only the fixed context/reason allowlists and selected identities. The complete12-case native proof and current compilation pass. Other branches' financial, historical-migration and MTT certificate changes remain intact.

@@ -121,8 +121,20 @@ require(provenance.get('dirty') is False,
         'release provenance is dirty')
 require(provenance.get('historyComplete') is True,
         'release provenance has incomplete history')
-require(type(provenance.get('behindMain')) is int and provenance['behindMain'] == 0,
-        'release provenance was behind protected main')
+require(type(provenance.get('behindMain')) is int and 0 <= provenance['behindMain'] <= 9007199254740991,
+        'release provenance has unreadable protected-main distance')
+publication = provenance.get('publication')
+legacy_current = provenance['behindMain'] == 0 and publication is None
+admitted = (type(publication) is dict and publication.get('admittedMain') == expected_sha
+    and type(publication.get('observedMain')) is str
+    and re.fullmatch(r'[0-9a-f]{40}', publication['observedMain']) is not None
+    and ((publication['observedMain'] == expected_sha) == (provenance['behindMain'] == 0))
+    and publication.get('workflowRef') == 'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main'
+    and type(publication.get('workflowSha')) is str
+    and re.fullmatch(r'[0-9a-f]{40}', publication['workflowSha']) is not None
+    and publication.get('triggerSha') == publication['workflowSha']
+    and publication.get('eventName') in ('push', 'repository_dispatch'))
+require(legacy_current or admitted, 'release provenance has no matching protected admission')
 require(type(provenance.get('aheadMain')) is int and provenance['aheadMain'] == 0,
         'release provenance was ahead of protected main')
 require(build_info.get('ca_sha') == expected_sha,

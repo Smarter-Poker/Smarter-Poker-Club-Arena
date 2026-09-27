@@ -136,11 +136,13 @@ describe('the period calculator reads one week of attributions', () => {
     const v = calculatorViolations(bodyIn('20260925205938_', 'fn_calculate_cash_rakeback_periods'));
     expect(v).toEqual(["club_attributions reads the club's whole history instead of the week"]);
   });
+  // 20260926042810 changed only the club_attributions slice. The body in force
+  // has since gained the page path of 20260927160709, which carries its own law
+  // (a-page-reads-only-the-evidence-that-changed) proving its whole-period path
+  // is this migration's byte for byte; so the comparison is pinned to the
+  // migration that made the claim.
   it('changes nothing else in the body', () => {
-    const now = functionBody(
-      latestDeclaring('fn_calculate_cash_rakeback_periods').sql,
-      'fn_calculate_cash_rakeback_periods'
-    );
+    const now = bodyIn('20260926042810_', 'fn_calculate_cash_rakeback_periods');
     const before = bodyIn('20260925205938_', 'fn_calculate_cash_rakeback_periods');
     const strip = (s: string) =>
       s.replace(

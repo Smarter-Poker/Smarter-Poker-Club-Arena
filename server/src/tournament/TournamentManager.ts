@@ -516,7 +516,22 @@ export class TournamentManager extends TournamentManagerEliminations {
     const readAdmission = async () => {
       if (!current()) throw new Error('f06_movement_owner_changed');
       const { data, error } = await supabase.rpc('fn_f06_admit_parked_movement', request);
-      if (!current() || error) throw new Error('f06_movement_admission_unproven');
+      if (!current()) throw new Error('f06_movement_admission_unproven [owner_changed]');
+      /**
+       * A REFUSAL NAMES ITS REASON (2026-09-27, CLAUDE.md 10.86 rule 1). This
+       * threw the bare label and dropped the door's message, so five parked
+       * tables of 618741a5 logged `f06_movement_admission_unproven` every
+       * fifteen seconds for two hours while the door was actually saying
+       * `F06_MOVEMENT_ELIMINATION_UNPROVEN` (f06_movement_prior: a player the
+       * source's last hand left at 0 chips was still `playing`, because the
+       * elimination sweep had not recorded the bust). The label stays as the
+       * prefix; the door's code and message ride behind it.
+       */
+      if (error) {
+        throw new Error(
+          `f06_movement_admission_unproven [${String(error.code ?? 'no_code')}]: ${String(error.message ?? error)}`
+        );
+      }
       return verifyF06MovementAdmission(data, expected);
     };
     const admission = await readAdmission();
@@ -1615,13 +1630,16 @@ export class TournamentManager extends TournamentManagerEliminations {
     state: TournamentTableBreakState
   ): Promise<TournamentTableBreakState> {
     let current = state;
+    // Validate unchanged original destinations against one complete board.
+    // Re-reading every table/seat/roster for every member can spend the shared
+    // sweep budget before dispatching its first immutable request. The move
+    // RPC still validates each destination atomically; this board grants no
+    // mutation authority and never survives this invocation or an amendment.
+    let destinations: BalancerTable[] | null = null;
     for (const member of state.members) {
       if (member.winner_request_id) continue;
       if (!this.eliminationMutationAllowed()) return current;
-      const destinations = await this.eligibleBreakDestinations(
-        state.source_table_id,
-        state.break_id
-      );
+      destinations ??= await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
       if (!destinations || !this.eliminationMutationAllowed()) return current;
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
@@ -1658,6 +1676,9 @@ export class TournamentManager extends TournamentManagerEliminations {
         replacement.toSeat
       );
       if (!current.ok) return current;
+      // A changed proposal may reserve different space. Read the current board
+      // before validating or planning another member of this same break.
+      destinations = null;
     }
     return current;
   }

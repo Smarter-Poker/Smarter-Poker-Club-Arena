@@ -493,17 +493,48 @@ export abstract class TournamentManagerBase {
     const selected = tableIds.map((tableId) => {
       const engine = originals.get(tableId);
       let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+      let claimedBoundary: boolean | null = null;
+      let retainedPermit: Readonly<{
+        status: 'retained' | 'none' | 'unavailable';
+        phase: string | null;
+      }> = Object.freeze({ status: 'unavailable', phase: null });
       if (engine) {
         try {
           snapshot = engine.getLifecycleDiagnosticSnapshot();
         } catch {
           /* unknown */
         }
+        // These existing getters inspect only this exact local original.
+        // Never invoke an authority check, RPC, recovery or release here.
+        try {
+          const claimed = engine.hasClaimedTournamentMoveBoundary();
+          if (typeof claimed === 'boolean') claimedBoundary = claimed;
+        } catch {
+          /* unavailable is not an unclaimed boundary */
+        }
+        try {
+          const permit = engine.getF06RetainedPermit();
+          if (permit === null) {
+            retainedPermit = Object.freeze({ status: 'none', phase: null });
+          } else if (
+            permit &&
+            ['new', 'reserved', 'unknown', 'attempted', 'terminated', 'number_refused'].includes(
+              permit.phase
+            )
+          ) {
+            // The binding contains custody identifiers; the phase is enough
+            // to distinguish this refusal and never exports that binding.
+            retainedPermit = Object.freeze({ status: 'retained', phase: permit.phase });
+          }
+        } catch {
+          /* unavailable is not an absent permit */
+        }
       }
       return Object.freeze({
         tableId,
         availability: snapshot ? ('observed' as const) : ('unavailable' as const),
         engine: snapshot,
+        movement: Object.freeze({ claimedBoundary, retainedPermit }),
         session: null,
         sessionCoverage: 'unavailable_on_selected_base' as const,
       });
@@ -519,6 +550,8 @@ export abstract class TournamentManagerBase {
       authorityExpired: this.tournamentLeaseAuthorityExpired,
       stopPending: this.teardownPromise !== null,
       schedulerPendingCount: this.eliminationSchedulerJobs.size,
+      seatMoveQuarantineRefusal: this.seatMoveQuarantineRefusal(),
+      absentSeatMoveRefusalMeans: 'unobserved_or_cleared' as const,
       lifecyclePendingCount: this.lifecycleJobs.size,
       schedulerRecent: Object.freeze(
         boundedDiagnosticEntries(this.eliminationSchedulerJobs, 32).map((job) =>
@@ -734,13 +767,34 @@ export abstract class TournamentManagerBase {
    * players. The knockout door accepted those eliminations when probed
    * directly; nothing was ever asking it.
    *
-   * So a sweep that reaches its mutation phase with nothing done yet may extend
-   * its deadline ONCE, by this much, to buy at least one committed mutation.
-   * It is one batch's worth of the same budget, granted once per sweep, only in
-   * the bust assignment pass, and only when the pass has committed nothing -
-   * the yield rule is otherwise unchanged.
+   * The first answer (2026-09-10) was a grace: a sweep that reached its
+   * mutation phase with nothing done could extend its deadline once, by one
+   * budget, to buy at least one committed finish, and it yielded the moment
+   * it had committed anything. That was measured to be one finish per
+   * admission, and one finish per admission is not enough.
+   *
+   * THE BATCH THE SWEEP PREPARED IS THE BATCH IT RECORDS (2026-09-27). Read on
+   * production at 22:44 UTC: the process-wide elimination scheduler had 317
+   * managers registered, 275 queued, all four slots busy and an oldest wait of
+   * 333 s, so a large MTT was admitted about every six minutes; inside each
+   * admission the reads spent the budget, the grace bought exactly one
+   * `Eliminated:` line, and three freerolls (341, 347 and 309 entrants)
+   * accumulated 213, 96 and 100 busted players still `status='playing'` at 0
+   * chips. Every one of those rows holds its roster chair, so the balancer
+   * could place nobody, no table was ever consolidated, and all 110 open tables
+   * of those events drained to one player each and stopped dealing.
+   *
+   * So the clock now decides only whether a pass may START recording. Once the
+   * reads are paid for and the pass holds its prepared, ordered batch (bounded
+   * by SWEEP_MUTATION_BATCH_SIZE), the batch is recorded whole: the deadline
+   * cannot refuse a bust that is already in flight, nor the busts queued behind
+   * it in the same batch. The yield to other tournaments happens after the
+   * batch, which is what the batch size has always bounded. The batch window
+   * is opened by the bust assignment pass alone (`openEliminationMutationBatch`),
+   * closed with it, never carried between sweeps, and never widens any other
+   * stage: a slow balance read or a finish attempt still answers to the budget.
    */
-  static readonly SWEEP_MUTATION_GRACE_MS = 5_000;
+  private eliminationMutationBatchOpen = false;
   /** Horses already offered the current add-on window in this process. */
   protected addOnAttemptedHorseIds = new Set<string>();
   /** Round-robin cursor keeps one transient refusal from starving the field. */
@@ -2216,7 +2270,9 @@ export abstract class TournamentManagerBase {
     return (
       this.running &&
       !this.eliminationSweepSignal?.aborted &&
-      (this.eliminationSweepDeadlineAt === 0 || Date.now() < this.eliminationSweepDeadlineAt)
+      (this.eliminationSweepDeadlineAt === 0 ||
+        this.eliminationMutationBatchOpen ||
+        Date.now() < this.eliminationSweepDeadlineAt)
     );
   }
 
@@ -2224,21 +2280,23 @@ export abstract class TournamentManagerBase {
     return this.eliminationSweepDeadlineAt > 0 && Date.now() >= this.eliminationSweepDeadlineAt;
   }
 
-  /** Cleared with every sweep deadline; one grace per admitted sweep. */
-  protected eliminationMutationGraceGranted = false;
-
   /**
-   * Buy one bounded extension so a sweep cannot be starved out of its own
-   * mutation phase by the reads that prepared it. Returns false when this
-   * sweep has already had its grace - the caller then yields and requeues,
-   * which is the ordinary budget rule. See SWEEP_MUTATION_GRACE_MS.
+   * The bust assignment pass holds a prepared, ordered, bounded batch. While
+   * the window is open the work budget cannot refuse a mutation of that
+   * batch; manager stop and the sweep's abort signal still can. Closed with
+   * the pass, and reset at every sweep admission so it never carries over.
+   * See the note above `eliminationMutationBatchOpen` for the measurement.
    */
-  protected grantEliminationMutationGrace(): boolean {
-    if (this.eliminationMutationGraceGranted) return false;
-    if (this.eliminationSweepDeadlineAt === 0) return false;
-    this.eliminationMutationGraceGranted = true;
-    this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_MUTATION_GRACE_MS;
-    return true;
+  protected openEliminationMutationBatch(): void {
+    this.eliminationMutationBatchOpen = true;
+  }
+
+  protected closeEliminationMutationBatch(): void {
+    this.eliminationMutationBatchOpen = false;
+  }
+
+  protected eliminationMutationBatchIsOpen(): boolean {
+    return this.eliminationMutationBatchOpen;
   }
 
   /** Wake this manager without exposing the process scheduler to GameServer. */

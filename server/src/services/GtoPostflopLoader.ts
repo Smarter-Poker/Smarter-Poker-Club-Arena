@@ -79,38 +79,54 @@ async function snapshotBoundary(): Promise<GtoPostflopSnapshotBoundary> {
   return { count: count.count, latestBuiltAt: latestBuiltAt ?? null };
 }
 
+export interface GtoPostflopSnapshot {
+  rows: GtoPostflopRow[];
+  /** The table's exact count and latest built_at, equal on both sides of the paged read. */
+  boundary: GtoPostflopSnapshotBoundary;
+}
+
+/**
+ * The one read of the open-node source: a complete, boundary-checked snapshot.
+ * The live load and the offline Phase 6C store snapshot
+ * (scripts/phase6c-store-snapshot.mjs) both use it.
+ */
+export async function fetchGtoPostflopSnapshot(): Promise<GtoPostflopSnapshot> {
+  const before = await snapshotBoundary();
+
+  const rows: GtoPostflopRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from('gto_postflop_compact')
+      .select('street, game_family, position, depth_bucket, texture_class, facing, hand_matrix')
+      // the full unique key, so paging stays stable while the V30 driver
+      // inserts rows into the same table
+      .order('street', { ascending: true })
+      .order('game_family', { ascending: true })
+      .order('position', { ascending: true })
+      .order('depth_bucket', { ascending: true })
+      .order('texture_class', { ascending: true })
+      .order('facing', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    rows.push(...(data as GtoPostflopRow[]));
+    if (data.length < PAGE) break;
+  }
+  const after = await snapshotBoundary();
+  assertCompleteGtoPostflopSnapshot(before, rows.length, after);
+  return { rows, boundary: after };
+}
+
 async function loadGtoPostflopAttempt(): Promise<{ ok: boolean; count: number }> {
   try {
-    const before = await snapshotBoundary();
-
-    const rows: GtoPostflopRow[] = [];
-    for (let offset = 0; ; offset += PAGE) {
-      const { data, error } = await supabase
-        .from('gto_postflop_compact')
-        .select('street, game_family, position, depth_bucket, texture_class, facing, hand_matrix')
-        // the full unique key, so paging stays stable while the V30 driver
-        // inserts rows into the same table
-        .order('street', { ascending: true })
-        .order('game_family', { ascending: true })
-        .order('position', { ascending: true })
-        .order('depth_bucket', { ascending: true })
-        .order('texture_class', { ascending: true })
-        .order('facing', { ascending: true })
-        .range(offset, offset + PAGE - 1);
-      if (error) throw new Error(error.message);
-      if (!data || data.length === 0) break;
-      rows.push(...(data as GtoPostflopRow[]));
-      if (data.length < PAGE) break;
-    }
-    const after = await snapshotBoundary();
-    assertCompleteGtoPostflopSnapshot(before, rows.length, after);
+    const { rows, boundary } = await fetchGtoPostflopSnapshot();
 
     // Full success only. Validation builds a separate Map and one assignment
     // swaps it, so an invalid/duplicate row cannot clear or partially replace
     // the last-known-good policy. Exact counts and the table's latest build
     // revision on both sides catch inserts and in-place aggregation updates
     // that could otherwise mix two offset-paginated snapshots.
-    const applied = replaceGtoPostflop(rows);
+    const applied = replaceGtoPostflop(rows, boundary.latestBuiltAt);
     console.log(
       `[GtoPostflopLoader] ${applied} solver open-node cells loaded (${gtoPostflopCount()} in the store)`
     );

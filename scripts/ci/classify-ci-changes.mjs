@@ -58,16 +58,36 @@ const cashEvidence =
 // The discovery privacy fixture must execute even when only its inputs change.
 const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
+const playerSearchPrivacy =
+  /^(scripts\/ci\/(?:test-player-search-privacy-postgres\.py$|fixtures\/player-search-privacy\/)|tests\/playerSearchPrivacyRegression\.test\.ts$)/;
+const backedPayoutScan =
+  /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
+const strandedPlayerRead =
+  /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
+const settlementConservationIndex =
+  /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
+
+// Sparse satellite receipt reads qualify their actual online index and audit.
+const satelliteAuditIndex =
+  /^(scripts\/(?:ci\/(?:test-satellite-audit-index-postgres\.py$|fixtures\/satellite-audit-index\/)|ops\/(?:build|recover)-satellite-audit-index-concurrently\.sql$)|tests\/satelliteAuditIndexRegression\.test\.ts$)/;
+
+// The same audit's pool-transfer fallback also owns a sparse entity index.
+const satelliteLedgerAuditIndex =
+  /^(scripts\/(?:ci\/(?:test-satellite-ledger-audit-index-postgres\.py$|fixtures\/satellite-ledger-audit-index\/)|ops\/build-satellite-ledger-audit-index-concurrently\.sql$)|tests\/satelliteLedgerAuditIndexRegression\.test\.ts$)/;
 
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
   /^(scripts\/ci\/(?:test-certification-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/certification-retirement\/)|tests\/unit\/productionE2EAccount\.test\.ts$)/;
+
+// Actual reserved cleanup/FK access must retain native concurrency qualification.
+const certificationPlayerIndex =
+  /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
 
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
@@ -143,6 +163,9 @@ export function classifyChangedPaths(paths) {
   // The existing accounting job owns the BBJ runner and its nested fixture inputs.
   const bbjFixture = matches(
     /^(scripts\/ci\/(?:test-bbj-(?:bank-replay|audit-reads|cumulative-reads)\.py$|migration-concurrent-preamble\.mjs$|probes\/bbj-bank-replay\/|fixtures\/bbj-audit-reads\/)|scripts\/ops\/build-bbj-(?:audit-indexes|cumulative-bank-indexes)-concurrently\.sql$|tests\/bbj-(?:audit-reads|cumulative-reads)\.test\.ts$)/
+  );
+  const chipStoreCoverage = matches(
+    /^(scripts\/ci\/(?:test-chip-store-coverage\.py$|fixtures\/chip-store-coverage\/)|tests\/chip-store-coverage\.test\.ts$)/
   );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
@@ -220,6 +243,7 @@ export function classifyChangedPaths(paths) {
     server:
       broad ||
       bbjFixture ||
+      chipStoreCoverage ||
       diamondGames ||
       diamondSqlAcceptance ||
       phase4Changed ||
@@ -246,12 +270,20 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
+      matches(playerSearchPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
-      matches(certificationRetirement),
+      matches(strandedPlayerRead) ||
+      matches(settlementConservationIndex) ||
+      matches(certificationRetirement) ||
+      matches(satelliteAuditIndex) ||
+      matches(satelliteLedgerAuditIndex) ||
+      matches(certificationPlayerIndex),
     tests:
       bbjFixture ||
+      chipStoreCoverage ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
@@ -283,10 +315,17 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
+      matches(playerSearchPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
-      matches(certificationRetirement),
+      matches(strandedPlayerRead) ||
+      matches(settlementConservationIndex) ||
+      matches(certificationRetirement) ||
+      matches(satelliteAuditIndex) ||
+      matches(satelliteLedgerAuditIndex) ||
+      matches(certificationPlayerIndex),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

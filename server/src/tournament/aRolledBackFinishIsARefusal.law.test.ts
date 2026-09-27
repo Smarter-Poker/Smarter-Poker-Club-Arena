@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), verify: vi.fn() }
 
 vi.mock('../services/supabase.js', () => ({
   supabase: { rpc: mocks.rpc, from: mocks.from },
+  maintenanceSupabase: { rpc: mocks.rpc, from: mocks.from },
 }));
 vi.mock('./completionSettlementReceipt.js', () => ({
   verifyTournamentCompletionReceipt: mocks.verify,

@@ -109,6 +109,8 @@ export interface HorseDecisionReplayVerdict {
   context: {
     atMs: number | null;
     gameMode: string | null;
+    /** `gameState.format` (cash, mtt, sng, spin, hu_sng) as the snapshot carries it. */
+    format: string | null;
     gameVariant: string | null;
     stage: string | null;
     tableSize: number | null;

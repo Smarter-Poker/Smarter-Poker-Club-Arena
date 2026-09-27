@@ -14,6 +14,10 @@ import {
   type HorseJournalRecord,
 } from '../../../services/horseDecisionJournal/record.js';
 import { buildHorseDecisionKey, type FastHorseDecisionRequest } from '../protocol.js';
+import {
+  isHorseSolverStoreIdentity,
+  type HorseSolverStoreIdentity,
+} from '../../../gto/SolverStoreIdentity.js';
 
 export class HorseReplayRefusal extends Error {
   constructor(public readonly reason: string) {
@@ -29,7 +33,15 @@ export interface HorseReplaySolverReadiness {
     postflopV31: number;
     postflopV31Dataset: { id: string; checksum: string } | null;
   };
-  solverPolicyArtifact: { policyVersion?: string; schemaSha256?: string; totalPolicies?: number };
+  solverPolicyArtifact: {
+    policyVersion?: string;
+    schemaSha256?: string;
+    totalPolicies?: number;
+    external?: { count?: number };
+    charts?: { loadedAt?: string | null };
+  };
+  /** Content identity of the stores, journaled by workers that carry Phase 6C G4; absent before. */
+  solverStoreIdentity?: HorseSolverStoreIdentity;
 }
 
 /** The exact original input of one journaled FAST decision, plus what it produced. */
@@ -140,7 +152,10 @@ export function reconstructHorseReplayInput(raw: unknown): HorseReplayInput {
     !obj(readiness.solverPolicyArtifact) ||
     !Number.isSafeInteger(readiness.solverStores.charts) ||
     !Number.isSafeInteger(readiness.solverStores.postflop) ||
-    !Number.isSafeInteger(readiness.solverStores.postflopV31)
+    !Number.isSafeInteger(readiness.solverStores.postflopV31) ||
+    // Absent on records made before the identity was journaled; malformed is never trusted.
+    (readiness.solverStoreIdentity !== undefined &&
+      !isHorseSolverStoreIdentity(readiness.solverStoreIdentity))
   )
     refuse('solver_stores');
   // RNG stream

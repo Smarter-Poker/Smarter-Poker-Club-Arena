@@ -1537,6 +1537,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Open-week page reads release the request row for terminal recognition
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/fixtures/mixed-rake-period/request-lock/native.py
       - name: Cashier statements follow the trade ledger scope and export what is on screen
         if: matrix.shard == 1
         env:

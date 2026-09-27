@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 170300,
-      "sha256": "0d68a0d80390063a87a07683c69e050afcd132c3d610f3b7dc6a6b8275092820"
+      "bytes": 170549,
+      "sha256": "33a3cc71a3b73720400065f52378925fd368605c3ec2f9e59e8c8113561b7d61"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -734,5 +734,16 @@
     "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "openWeekRequestLockIntegration20260927": {
+    "reason": "Add the bounded current-week page request-lock PostgreSQL regression to existing accounting shard 4. Preserve all financial assertions, existing native routes and historical bindings.",
+    "previousPin": {
+      "bytes": 170300,
+      "sha256": "0d68a0d80390063a87a07683c69e050afcd132c3d610f3b7dc6a6b8275092820"
+    },
+    "currentPin": {
+      "bytes": 170549,
+      "sha256": "33a3cc71a3b73720400065f52378925fd368605c3ec2f9e59e8c8113561b7d61"
+    }
   }
 }

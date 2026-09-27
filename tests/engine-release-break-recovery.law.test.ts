@@ -95,6 +95,10 @@ describe('engine release recovery stays inside one honest break boundary', () =>
     expect(recovery).toContain('bounded_recovery_command "$SUPERVISOR_BUDGET"');
   });
 
+  // These two run the real engine-supervisor.sh against stubbed binaries. Solo
+  // they take ~1.1-1.6s; under a loaded shared workstation (load average 10-18,
+  // pre-push on 2026-09-27) they took 5.3s and 7.3s and hit vitest's default
+  // 5000ms. The budget bounds the child, not the assertions.
   it('force-desired mode evicts a still-authorized pending candidate and proves exact local and public health', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-force-desired-'));
     try {
@@ -210,7 +214,7 @@ printf '%s\n%s' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","i
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   it('forces desired recovery even when abort returns an uncertain failure', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-abort-uncertain-'));
@@ -280,5 +284,5 @@ exit 0
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 });

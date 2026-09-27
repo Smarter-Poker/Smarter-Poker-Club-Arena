@@ -1749,6 +1749,36 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Bounded by construction: the database event cap/window plus the Free Buy
    * horse's deterministic 0-5 allowance, so this cannot loop indefinitely.
    */
+  /**
+   * A POLICY THE ENGINE CANNOT READ SAYS SO, ONCE (2026-09-27).
+   *
+   * An errored window read keeps the purchase path, by design: the door
+   * re-checks everything under its own lock, so asking it is never wrong,
+   * only slow. What was wrong is that it said nothing. From 20:56 to 22:15 UTC
+   * on 2026-09-27 every read answered 42501 (the function had never been
+   * granted to service_role), every closed-window Free Buy sweep went back to
+   * asking the door horse by horse, and the only sign was three fields
+   * draining to one player per table. Name the refusal the first time this
+   * manager sees each code (CLAUDE.md 10.86 rule 1); count nothing, change
+   * nothing else.
+   */
+  private rebuyWindowUnreadableCodes?: Set<string>;
+
+  private noteRebuyWindowUnreadable(error: { code?: unknown; message?: unknown }): void {
+    const code = typeof error?.code === 'string' && error.code ? error.code : 'no_sqlstate';
+    const seen = (this.rebuyWindowUnreadableCodes ??= new Set<string>());
+    if (seen.has(code)) return;
+    seen.add(code);
+    const message = typeof error?.message === 'string' ? error.message.slice(0, 200) : '';
+    reportError(
+      new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] the rebuy-window policy could not be read (${code}${message ? `: ${message}` : ''}); this batch keeps the purchase door`
+      ),
+      'Tournament.rebuy_window_unreadable',
+      { tournamentId: this.tournamentId, code }
+    );
+  }
+
   private async tryTournamentRebuys(
     bustedUserIds: string[]
   ): Promise<{ rebought: Set<string>; answered: Set<string> }> {
@@ -1803,6 +1833,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           !windowError &&
           window?.open === false &&
           ['tournament_not_rebuyable', 'rebuy_window_closed'].includes(window.reason);
+        if (windowError) this.noteRebuyWindowUnreadable(windowError);
       } catch (error) {
         reportError(error, 'Tournament.rebuy_window_read_failed');
       }

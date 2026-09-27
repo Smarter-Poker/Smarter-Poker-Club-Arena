@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/f06-never-started-hand-withdraws-own-park: the reviewed void for mixed custody originals stranded by the 2026-09-26 09:33 UTC collapse (migration 20260927145449_a_stranded_mixed_original_hand_is_voided_with_every_stack_un). Owner postgres, EXECUTE for no other role.",
+  "functions": ["fn_f06_void_stranded_mixed_original"]
+}

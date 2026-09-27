@@ -98,3 +98,17 @@
   font-size: 13px;
   white-space: pre-wrap;
 }
+
+.fallback {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #3b4a5c;
+  border-radius: 6px;
+  background: #0b121c;
+  color: #f4f7fb;
+  font:
+    12px / 1.4 ui-monospace,
+    Menlo,
+    monospace;
+  resize: vertical;
+}

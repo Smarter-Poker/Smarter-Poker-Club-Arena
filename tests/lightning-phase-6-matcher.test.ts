@@ -552,6 +552,24 @@ describe('the live proofs', () => {
 });
 
 describe('the wiring', () => {
+  it('the racing workers commit both completions before the next round without weakening hand conservation', () => {
+    const race = HARNESS.split('cat > "$fixture/race.sql"')[1].split(
+      'cat > "$fixture/race-check.sql"'
+    )[0];
+    expect(race).toMatch(/FOR i IN 1 \.\. 20 LOOP/);
+    expect(race).toMatch(
+      /fx6_complete[\s\S]*INSERT INTO harness\.m6[\s\S]*'race_done:'[\s\S]*COMMIT;[\s\S]*v_deadline := clock_timestamp\(\)/
+    );
+    expect(race).toContain("FROM harness.m6 WHERE k LIKE 'race_done:%:' || i");
+    expect(race).toContain('EXIT WHEN v_done = 2;');
+    expect(race).toMatch(/clock_timestamp\(\) >= v_deadline[\s\S]*RAISE EXCEPTION 'FAIL 12:/);
+    expect(HARNESS).toContain("WHERE k LIKE 'race_done:%') <> 40");
+    expect(HARNESS).toContain("d.k = replace(p.k, 'race:', 'race_done:')");
+    expect(HARNESS).toContain('v_passes <> 40 OR v_pids <> 2');
+    expect(HARNESS).toContain(
+      'v_formed IS DISTINCT FROM (SELECT count(*) FROM public.lightning_hand WHERE cluster_id = v_g) OR v_formed < 20'
+    );
+  });
   it('the harness applies the real chain through this file twice on its own port and counts twenty-two sections', () => {
     expect(HARNESS).toContain('port=${LIGHTNING_P6_PORT:-55552}');
     expect(HARNESS).toContain(FILE);

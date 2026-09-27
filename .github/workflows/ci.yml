@@ -1441,6 +1441,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-settlement-suspense-restatement.py
+      - name: Jackpot facts preserve exact totals through the covering contribution index
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-bbj-contribution-cover-postgres.py
       - name: The satellite seat preimage guard accepts the installed seat authority and refuses a broken contract
         if: matrix.shard == 4
         env:

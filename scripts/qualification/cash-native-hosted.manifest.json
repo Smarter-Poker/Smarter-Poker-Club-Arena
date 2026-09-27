@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 170050,
-      "sha256": "e064736b4171df5b9d0bf25660eac28c1a5602a59eed8d8d3cc80b2b2f9695d6"
+      "bytes": 170300,
+      "sha256": "0d68a0d80390063a87a07683c69e050afcd132c3d610f3b7dc6a6b8275092820"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 25666,
-      "sha256": "8d146d60454aac30fec70cf21fc71d151ef76d92d59c494a7448e762751646ce"
+      "bytes": 25986,
+      "sha256": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -681,5 +681,58 @@
         "integrated": "8d146d60454aac30fec70cf21fc71d151ef76d92d59c494a7448e762751646ce"
       }
     }
+  },
+  "bbjContributionCoverIntegration20260927": {
+    "reason": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169529,
+        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 24631,
+        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 169779,
+        "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 24951,
+        "sha256": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8"
+      }
+    }
+  },
+  "bbj_cover_main_integration_20260927": {
+    "integration": "2026-09-27 BBJ contribution cover with protected main6e32e04f2f",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Preserve both native checks, all accounting assertions and both parent histories; bind exact integrated workflow, classifier and nested source maps."
+  },
+  "bbj_cover_meter_integration_20260927": {
+    "integration": "2026-09-27 BBJ contribution cover with protected meter reads eb6e949396",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "bbj_cover_13eb_integration_20260927": {
+    "integration": "2026-09-27 BBJ contribution cover integration with protected13ebc7240c",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/unit/fixtureNativeCi.test.ts"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "bbjCumulativeCoverIntegration20260927": {
+    "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
+    "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
+    "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
   }
 }

@@ -1,6 +1,7 @@
 import {
   findMixedF06Transfer,
   admitMixedF06Transfer,
+  mixedF06RequestedGeneration,
   mixedF06PendingOriginals,
   type MixedF06Transfer,
 } from './tournament/mixedF06Custody.js';
@@ -2664,21 +2665,35 @@ export class GameServer {
 
     this.durableMixedF06Custody ??= new Map();
     let durableMixed = this.durableMixedF06Custody.get(tournamentId) ?? null;
-    if (!durableMixed && !this.drainedF06TournamentCustody?.has(tournamentId)) {
+    // AN ADMITTED TRANSFER SURVIVES ITS DEAD PROCESS (2026-09-27). Whether the
+    // admitted holder is alive changes after the first read: 45 events waited
+    // 31 hours behind a holder that died at 13:55. Re-read an admitted
+    // transfer on every admission attempt (no manager holds it here); an
+    // unadmitted one keeps its first read, as before.
+    if (
+      (!durableMixed || durableMixed.admittedGeneration) &&
+      !this.drainedF06TournamentCustody?.has(tournamentId)
+    ) {
+      const cached = durableMixed;
       durableMixed = await findMixedF06Transfer(tournamentId);
+      if (cached && durableMixed && durableMixed.transferId !== cached.transferId)
+        throw new Error('f06_mixed_transfer_selection_changed');
       if (durableMixed) this.durableMixedF06Custody.set(tournamentId, durableMixed);
+      else this.durableMixedF06Custody.delete(tournamentId);
       if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId))
         return;
     }
     const retainedGeneration = this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId);
     if (
       durableMixed &&
+      !durableMixed.readmit &&
       retainedGeneration &&
       retainedGeneration !== durableMixed.successorGeneration
     )
       throw new Error('f06_mixed_successor_generation_changed');
-    const requestedLeaseGeneration =
-      durableMixed?.successorGeneration ?? retainedGeneration ?? randomUUID();
+    const requestedLeaseGeneration = durableMixed
+      ? mixedF06RequestedGeneration(durableMixed, retainedGeneration, randomUUID)
+      : (retainedGeneration ?? randomUUID());
     this.tournamentManagerAdmissionLeaseGenerations.set(tournamentId, requestedLeaseGeneration);
     const lease = await claimTournamentLease(tournamentId, requestedLeaseGeneration);
     const uncertainLeaseGeneration =

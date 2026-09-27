@@ -10,6 +10,19 @@ export interface MixedF06Transfer {
   readonly local: Readonly<Record<string, unknown>>;
   readonly canonical: unknown;
   readonly receipt: unknown;
+  /**
+   * AN ADMITTED TRANSFER SURVIVES ITS DEAD PROCESS (2026-09-27). The
+   * generation that holds this transfer's admitted custody now (the admitted
+   * successor, or the last generation that readmitted it), when one exists.
+   */
+  readonly admittedGeneration?: string | null;
+  /**
+   * The admitted custody's holder has no live lease: its process is dead. The
+   * next owner claims a FRESH generation (a stale lease is taken only by a
+   * different generation, and every fence is the generation) and readmits
+   * through fn_f06_readmit_mixed_manager_custody.
+   */
+  readonly readmit?: boolean;
 }
 export interface MixedF06Proposal {
   readonly transferId: string;
@@ -126,25 +139,72 @@ export const prepareMixedF06Transfer = bindToProcessRoot(
   }
 );
 
+/**
+ * The generation a claim must ask for before admitting this transfer. The
+ * successor admits its own transfer. An admitted transfer whose holder is dead
+ * is readmitted under a fresh generation: never the origin, the successor or
+ * the admitted holder, because a stale lease is only taken by a different
+ * generation and a shared generation is a shared fence.
+ */
+export function mixedF06RequestedGeneration(
+  transfer: MixedF06Transfer,
+  retained: string | undefined,
+  mint: () => string
+): string {
+  if (!transfer.readmit) return transfer.successorGeneration;
+  const forbidden = new Set(
+    [transfer.successorGeneration, transfer.admittedGeneration, mixedF06OriginGeneration(transfer)]
+      .filter((g): g is string => typeof g === 'string')
+      .map((g) => g.toLowerCase())
+  );
+  if (retained && !forbidden.has(retained.toLowerCase())) return retained;
+  const fresh = mint();
+  if (forbidden.has(fresh.toLowerCase()))
+    throw new Error('f06_mixed_readmission_generation_reused');
+  return fresh;
+}
+
+function mixedF06OriginGeneration(transfer: MixedF06Transfer): string | null {
+  const origin = (transfer.receipt as { origin_generation?: unknown } | null)?.origin_generation;
+  return typeof origin === 'string' ? origin : null;
+}
+
 /** New authority owns custody only. No hand/move submission is made here. */
 export const admitMixedF06Transfer = bindToProcessRoot(
   async (tournamentId: string, leaseGeneration: string, transfer: MixedF06Transfer) => {
-    if (leaseGeneration !== transfer.successorGeneration)
+    const readmit = transfer.readmit === true;
+    if (!readmit && leaseGeneration !== transfer.successorGeneration)
       throw new Error('f06_mixed_successor_generation_changed');
+    if (
+      readmit &&
+      [
+        transfer.successorGeneration,
+        transfer.admittedGeneration,
+        mixedF06OriginGeneration(transfer),
+      ].includes(leaseGeneration)
+    )
+      throw new Error('f06_mixed_readmission_generation_reused');
     const { data, error } = await runWithTournamentDataAuthority(
       { tournamentId, leaseGeneration },
       () =>
-        supabase.rpc('fn_f06_admit_mixed_manager_custody', {
-          p_tournament_id: tournamentId,
-          p_lease_generation: leaseGeneration,
-          p_transfer_id: transfer.transferId,
-          p_expected: transfer.receipt,
-        })
+        supabase.rpc(
+          readmit ? 'fn_f06_readmit_mixed_manager_custody' : 'fn_f06_admit_mixed_manager_custody',
+          {
+            p_tournament_id: tournamentId,
+            p_lease_generation: leaseGeneration,
+            p_transfer_id: transfer.transferId,
+            p_expected: transfer.receipt,
+          }
+        )
     );
     if (
       error ||
       !data ||
       data.ok !== true ||
+      (readmit &&
+        (data.readmitted !== true ||
+          !uuid.test(String(data.admission?.prior_generation)) ||
+          data.admission?.prior_generation === leaseGeneration)) ||
       data.transfer_id !== transfer.transferId ||
       data.tournament_id !== tournamentId ||
       data.lease_generation !== leaseGeneration ||
@@ -190,6 +250,16 @@ export const findMixedF06Transfer = bindToProcessRoot(
     )
       throw new Error('f06_mixed_transfer_discovery_unproven');
     if (data.receipt === null) return null;
+    // Who holds the admitted custody, and whether that holder's lease is live.
+    // Absent before the readmission migration: nothing is readmitted then.
+    const admission = 'admission' in data ? data.admission : null;
+    if (
+      admission !== null &&
+      (typeof admission !== 'object' ||
+        !uuid.test(String(admission.generation)) ||
+        typeof admission.live !== 'boolean')
+    )
+      throw new Error('f06_mixed_transfer_discovery_unproven');
     const r = data.receipt;
     if (
       r.tournament_id !== tournamentId ||
@@ -213,6 +283,8 @@ export const findMixedF06Transfer = bindToProcessRoot(
       local: immutableCustody(r.local_proof),
       canonical: immutableCustody(r.canonical_proof),
       receipt: immutableCustody(r),
+      admittedGeneration: admission === null ? null : (admission.generation as string),
+      readmit: admission !== null && admission.live === false,
     });
   }
 );

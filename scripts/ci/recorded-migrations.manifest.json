@@ -223,6 +223,17 @@
       "recoveredFrom": "File bytes equal public.fn_ca_migration_text(20260927001937).body byte for byte; matching live MD5 7d5b2b925b0fc28a79b02ab36ea83b27 and byte_len 4776 read 2026-09-27T00:43:19Z.",
       "refusedBy": [],
       "liveVerdict": "Installed once after native PostgreSQL 17 qualification and an independently verified online index build. This short migration changes only four chip_transactions autovacuum/analyze reloptions and creates no persistent object; it lacks an @live-proof comment and cannot be edited after installation. At 2026-09-27T00:43:32Z, idx_chip_tx_club_time_totals is valid, ready and live with exactly (club_id, created_at DESC) INCLUDE (amount, from_user_id, to_user_id); vacuum_insert_scale_factor=0, vacuum_insert_threshold=4000, analyze_scale_factor=0, analyze_threshold=3000 and existing freeze_max_age=150000000 are present. Independent installed readback retains the three cashier function definitions, OIDs, ACLs and search paths unchanged. No function, policy, trigger, grant, financial record or timeout changed. Record existing immutable SQL without replay; source delivery and cashier browser acceptance remain separate."
+    },
+    {
+      "version": "20260927150637",
+      "name": "stranded_player_audit_examines_history_only_after_excluding_",
+      "file": "supabase/migrations/20260927150637_stranded_player_audit_examines_history_only_after_excluding_.sql",
+      "md5": "330cf5e98f3debcf7473eff4e0c323f3",
+      "appliedToProductionAt": "2026-09-27T15:06:37Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "Exact unchanged SQL bytes equal public.fn_ca_migration_text(20260927150637).md5 330cf5e98f3debcf7473eff4e0c323f3 and body length 4596, read at 2026-09-27T15:16:23.338453Z.",
+      "refusedBy": [],
+      "liveVerdict": "Installed once after native PostgreSQL 17 qualification. Dynamic EXECUTE replaces only two CTE materialization boundaries in the existing read-only audit; the installed SQL lacks a parsed object or @live-proof comment and cannot be edited afterward. Live OID 25456281 retains postgres owner, STABLE SECURITY DEFINER, search_path=public and only postgres/service_role EXECUTE; anon and authenticated EXECUTE are both false. Function definition MD5 is 8c36b14e14eb5b39c09ebd5b72120030, matching the qualified postimage. Original predicates, stack rounding, result ordering and financial records are unchanged. Complete read-only function measured 2437.865ms with zero findings at 15:06. This records immutable installed SQL without replay; source delivery and the next naturally scheduled complete conservation job remain separate pending evidence."
     }
   ]
 }

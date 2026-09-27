@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
+    "scripts/ci/classify-ci-changes.mjs": "ebf30e23ed473fe33954db0e84f5d8f40995851c977b4cc528db2fcee6655c63",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "67cfcd5d3c35291f76769beb438a2d4d1b08a81d2daf5525b4e207cbc6e9f33b",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "dcf6605d441d92bffd321f048d48ebe8a65adeaba4ade4c2fcf7c6ecf80b4d12",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+    "tests/unit/fixtureNativeCi.test.ts": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "dada847d5b52b67a2434ee0d683629d169768b26cf1604e683eb1c56bb78c540",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "87920c73ba5e7391e421dfc55d07ccc3d3c989b08c41d56c1454786b2542f331",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "bc321261849eee39ead21e7897d9a96228fa7c21fa8bd640bc956981c42ac4ed",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "52eb63c45bbccbcdd9f7387e126b9f2562504201c0d263f4fb5393af4ff9800a",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -1912,6 +1912,36 @@
       "to": "bc321261849eee39ead21e7897d9a96228fa7c21fa8bd640bc956981c42ac4ed",
       "on": "2026-09-26",
       "why": "Cascade of the reviewed paid-terminal routing/formatting restamps and their appended audit records; historical audit entries and financial fixture bytes are unchanged. PR5350; no financial component, captured definition, limit or existing assertion changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
+      "sha256": "ebf30e23ed473fe33954db0e84f5d8f40995851c977b4cc528db2fcee6655c63",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
+    },
+    {
+      "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+      "previous_sha256": "bc321261849eee39ead21e7897d9a96228fa7c21fa8bd640bc956981c42ac4ed",
+      "sha256": "52eb63c45bbccbcdd9f7387e126b9f2562504201c0d263f4fb5393af4ff9800a",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "previous_sha256": "67cfcd5d3c35291f76769beb438a2d4d1b08a81d2daf5525b4e207cbc6e9f33b",
+      "sha256": "dcf6605d441d92bffd321f048d48ebe8a65adeaba4ade4c2fcf7c6ecf80b4d12",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "previous_sha256": "dada847d5b52b67a2434ee0d683629d169768b26cf1604e683eb1c56bb78c540",
+      "sha256": "87920c73ba5e7391e421dfc55d07ccc3d3c989b08c41d56c1454786b2542f331",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "previous_sha256": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+      "sha256": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -2065,9 +2095,7 @@
     "reason": "Create Club Phase 2 lowers the discarded-error baseline for src/components/club/CreateTournamentModal.tsx from 1 to 0. This is a strict ratchet tightening: the satellite-target query now binds and reports its error and tells the owner that targets could not load instead of falsely presenting No Upcoming Tournaments. The file moves from BASELINE to AUDITED_ZERO so any future discarded read fails the suite. No assertion is removed or weakened, no other baseline row changes, and no accounting component, captured catalog, financial fixture or production object is changed.",
     "verification": "The replacement sha256 is the exact hashlib-compatible sha256 of tests/unit/discardedErrorReadRatchet.test.ts in this pull request after the reviewed one-row tightening. python3 scripts/ci/verify-source-bindings.py re-read all repository and fixture pins from disk and accepted the complete tree. The full local pre-push suite also passed 456 files and 6092 tests before this metadata-only binding refresh; no production data was read or changed by the restamp."
   },
-
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
-
   "weekly_rakeback_cost_successor_20260926": {
     "migrations": [
       "supabase/migrations/20260925205938_the_weekly_rakeback_gate_stops_proving_every_tournament_one_.sql"

@@ -69,8 +69,8 @@ import {
   TOURNAMENT_CONTEXT_STATUSES,
 } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
-import { gtoChartCount } from '../GtoCharts.js';
-import { gtoPostflopCount } from '../GtoPostflop.js';
+import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
+import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
 import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
 import {
@@ -145,6 +145,11 @@ export interface HorseDecisionWorkerDependencies {
 
 let ownedServicesStarted = false;
 
+/** The exact chart and open-node stores this worker decides with (Phase 6C G4). */
+function horseSolverStoreIdentity() {
+  return { charts: gtoChartStoreIdentity(), postflop: gtoPostflopStoreIdentity() };
+}
+
 /**
  * Start every mutable service consumed by HorseLogic inside the worker that
  * owns HorseLogic. READY is withheld until the durable mind and all solver
@@ -159,6 +164,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         postflopV31: gtoPostflopV31Count(),
         postflopV31Dataset: gtoPostflopV31Dataset(),
       },
+      solverStoreIdentity: horseSolverStoreIdentity(),
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
     };
@@ -199,6 +205,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         postflopV31: gtoPostflopV31Count(),
         postflopV31Dataset: gtoPostflopV31Dataset(),
       },
+      solverStoreIdentity: horseSolverStoreIdentity(),
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
     };
@@ -246,6 +253,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       postflopV31: gtoPostflopV31Count(),
       postflopV31Dataset: gtoPostflopV31Dataset(),
     },
+    solverStoreIdentity: horseSolverStoreIdentity(),
     solverPolicyArtifact: solverPolicyArtifactStatus(),
     governor: equityGovernor.snapshot(),
   }),

@@ -46,6 +46,12 @@ export interface HorseDecisionReplayOptions {
   engineSha: string;
   /** Solver stores visible to the replay; defaults to the live module stores. */
   stores?: ReplaySolverStores;
+  /**
+   * Per recorded release, the earliest instant a process running it can have
+   * started (its commit time), for matching count-only records to a pinned
+   * store snapshot. A release not listed is never matched to a pin.
+   */
+  releaseNotBeforeMs?: Readonly<Record<string, number>>;
 }
 
 export interface HorseJournalDecisionSource {
@@ -210,6 +216,7 @@ function baseVerdict(
   let context: HorseDecisionReplayVerdict['context'] = {
     atMs: null,
     gameMode: null,
+    format: null,
     gameVariant: null,
     stage: null,
     tableSize: null,
@@ -226,6 +233,7 @@ function baseVerdict(
       context = {
         atMs: typeof record?.atMs === 'number' ? record.atMs : null,
         gameMode: typeof gs.gameMode === 'string' ? gs.gameMode : null,
+        format: typeof gs.format === 'string' ? gs.format : null,
         gameVariant: typeof gs.gameVariant === 'string' ? gs.gameVariant : null,
         stage: typeof gs.stage === 'string' ? gs.stage : null,
         tableSize: Array.isArray(gs.dealtSeatIds) ? gs.dealtSeatIds.length : null,
@@ -296,6 +304,10 @@ export async function replayHorseDecisionRecord(
     admissibleRoutes: independent.admissibleRoutes,
     postflopStoreConsultPossible: independent.postflopStoreConsultPossible,
     stores: options.stores,
+    atMs: input.atMs,
+    releaseNotBeforeMs: input.recordedRelease
+      ? (options.releaseNotBeforeMs?.[input.recordedRelease] ?? null)
+      : null,
   });
   verdict.qualification = qualificationFrom(input, independent, references);
   const missing = references.find((r) => r.status === 'unavailable');

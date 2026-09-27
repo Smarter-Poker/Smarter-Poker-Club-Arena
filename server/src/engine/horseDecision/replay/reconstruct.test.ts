@@ -84,6 +84,28 @@ describe('Phase 6C reconstruction of the exact original input', () => {
     );
   });
 
+  it('accepts a journaled store identity and refuses a malformed one as solver_stores', () => {
+    const empty = {
+      version: 'solver-store-identity-v1',
+      rows: 0,
+      digest: 'e'.repeat(64),
+      revision: null,
+    };
+    const withIdentity = (identity: unknown) =>
+      changed(IDS.tournamentAtlasEvaluated, (b) => {
+        (b.readiness as Record<string, unknown>).solverStoreIdentity = identity;
+      });
+    expect(refusal(withIdentity({ charts: empty, postflop: empty }))).toBe('accepted');
+    expect(
+      reconstructHorseReplayInput(withIdentity({ charts: empty, postflop: empty })).readiness
+        .solverStoreIdentity?.charts.digest
+    ).toBe('e'.repeat(64));
+    expect(refusal(withIdentity({ charts: empty }))).toBe('replay_input_incomplete:solver_stores');
+    expect(refusal(withIdentity({ charts: { ...empty, digest: 'short' }, postflop: empty }))).toBe(
+      'replay_input_incomplete:solver_stores'
+    );
+  });
+
   it('refuses an input whose bytes no longer match the decision key that bound them', () => {
     const substitutedStack = changed(IDS.tournamentAtlasEvaluated, (b) => {
       (b.snapshot.player as { stack: number }).stack += 1;

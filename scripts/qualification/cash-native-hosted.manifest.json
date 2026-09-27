@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 170453,
-      "sha256": "593b3f19e3ff87962f6a83c1b8fda07d7db418d35fca88434c00406a8f7c85f2"
+      "bytes": 170648,
+      "sha256": "b8dbae47a5f0ee4d7f13ad20fe782c6a1e1d31671b562f7bedbc6e473964502d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 26806,
-      "sha256": "4f9459a76376b00bc5065cb90236a250b4da3b70181a8f0db6d7448fa55959cc"
+      "bytes": 27233,
+      "sha256": "474a110b2b22766d40f2da4e54ef203da9d66f2104197fcd521e7f600b5bb66c"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -764,6 +764,46 @@
       ".github/workflows/ci.yml",
       "scripts/ci/classify-ci-changes.mjs",
       "tests/unit/fixtureNativeCi.test.ts"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "certificationPlayerIndexIntegration20260927": {
+    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
+    "files": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous_sha256": "a041aacebb76da830085d19425a14bb838686807555422827d15841f46fdd1c8",
+        "sha256": "50711a2189d08ddcc442b9ce6c0b0735933871dcadea77c7f756d1bd44070ba0"
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
+        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+      }
+    ]
+  },
+  "certification_player_meter_integration_20260927": {
+    "integration": "2026-09-27 Certification player lookup with protected meter reads eb6e949396",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "certification_player_13eb_integration_20260927": {
+    "integration": "2026-09-27 Certification player lookup integration with protected13ebc7240c",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/unit/fixtureNativeCi.test.ts"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "conservation_20260927_cleanup_consolidation": {
+    "integration": "2026-09-27 Four qualified lookup indexes: cleanup-consolidation",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   }

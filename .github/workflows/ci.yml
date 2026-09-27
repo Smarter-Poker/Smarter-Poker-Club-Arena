@@ -1384,6 +1384,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
 
+      - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-certification-player-index-postgres.py
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py

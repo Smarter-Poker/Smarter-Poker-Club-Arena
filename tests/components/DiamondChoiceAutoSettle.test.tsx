@@ -15,11 +15,12 @@
  *  - the exit guard holds money in flight, never a won game that cannot start;
  *  - a ticket deal, or a game read, that fails is tried again by itself.
  *
- * Every case runs on fake timers and advances them explicitly; nothing here
- * waits on real time, so a loaded runner cannot change an outcome.
+ * Game clocks use fake timers and advance explicitly. Receipt checks await
+ * the real WebCrypto verdict on screen without advancing the game clock.
  */
 vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn(() => () => {}) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setTimeout as eventLoopTurn } from 'node:timers/promises';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import { useLiveBonusGuard } from '../../src/hooks/useLiveBonusGuard';
@@ -1205,6 +1206,14 @@ describe('focus stays on the plate from street to street', () => {
 /** What the page adds to a receipt once it has checked the round itself. */
 const VERDICT_SENTENCE =
   / (Sealed Before Play \([0-9a-f]{8}\) And Verified On This Device\.|This Round Did Not Verify On This Device And Has Been Reported\.)/;
+/** WebCrypto answers outside the fake game clock. Await either actual verdict
+ * within the existing bounded turn budget; missing proof is an assertion failure. */
+const receiptWithVerdict = async () => {
+  for (let i = 0; i < 50 && !VERDICT_SENTENCE.test(receiptCopy()); i++) await settle();
+  const printed = receiptCopy();
+  expect(printed).toMatch(VERDICT_SENTENCE);
+  return printed;
+};
 describe('every choice names its chips, and every outcome has one name', () => {
   /** The crossing ladder the server deals today, so a street reads 1.45x. */
   const road = (round: Record<string, unknown>) => ({
@@ -1288,7 +1297,7 @@ describe('every choice names its chips, and every outcome has one name', () => {
     const said = (spoken().at(-1)?.textContent ?? '').trim();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
-    const printed = receiptCopy();
+    const printed = await receiptWithVerdict();
     return {
       pill: pill(),
       said,
@@ -1298,6 +1307,51 @@ describe('every choice names its chips, and every outcome has one name', () => {
       proof: printed.match(VERDICT_SENTENCE)?.[1] ?? '',
     };
   };
+
+  it('does not read a finished receipt before its real cryptographic verdict lands', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+    const digest = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (...args) => {
+      await gate;
+      return originalDigest(...args);
+    });
+    let completed = false;
+    const gameTime = Date.now();
+    const pending = ends({
+      status: 'lost',
+      picked: [0, 1],
+      payout_chips: 0.2,
+      proof: { ...fixtures.receipts.crossing.proof, road_roll: ROLL[1] },
+    }).then((value) => {
+      completed = true;
+      return value;
+    });
+    try {
+      // WebCrypto is outside the fake game clock. Hold its real digest while
+      // the scene completes, then yield beyond the old five-turn read budget.
+      for (let i = 0; i < 50 && screen.queryByRole('dialog') === null; i++) await eventLoopTurn(0);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(digest).toHaveBeenCalled();
+      for (let i = 0; i < 10; i++) await eventLoopTurn(0);
+      expect(receiptCopy()).not.toMatch(VERDICT_SENTENCE);
+      expect(completed).toBe(false);
+      release();
+      expect((await pending).proof).toBe(
+        'This Round Did Not Verify On This Device And Has Been Reported.'
+      );
+      expect(Date.now()).toBe(gameTime);
+    } finally {
+      release();
+      try {
+        await pending;
+      } finally {
+        digest.mockRestore();
+      }
+    }
+  });
 
   it('says the same thing about a hit wherever it says it', async () => {
     expect(
@@ -1597,8 +1651,7 @@ describe('every finished round verifies itself', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
-    for (let i = 0; i < 50 && !receiptCopy().includes('On This Device'); i++) await settle();
-    return receiptCopy();
+    return receiptWithVerdict();
   };
 
   it('checks the round and says so on the receipt, with nothing pressed', async () => {

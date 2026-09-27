@@ -1,0 +1,3 @@
+# tests/the-rakeback-settler-reads-only-what-every-writer-has-committed.law.test.ts
+
+The rakeback settler asks fn_rakeback_settler_read_horizon (LEAST(now(), the start of the oldest open transaction in this database) minus a 60 s margin) before every rake_records page, bounds every page by created_at below it and holds its cursor without one, so a hand whose transaction commits after later-stamped rows were read can never fall behind the durable cursor unaccrued; the horizon is read-only, service_role only, and names none while a prepared transaction is open; fn_rakeback_settler_stranded_source_check records any never-submitted cash source below the cursor, and a held horizon, into operational_alert_events with the fleet target_task_id (20260927144455).

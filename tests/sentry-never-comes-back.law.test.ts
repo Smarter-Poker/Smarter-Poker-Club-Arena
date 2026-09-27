@@ -63,9 +63,17 @@ describe('Sentry never comes back', () => {
   });
 
   it('no lockfile resolves a Sentry package', () => {
-    const locks = FILES.filter((f) => /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(f));
+    const locks = FILES.filter((f) =>
+      /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(f)
+    );
     expect(locks.length).toBeGreaterThan(0);
-    expect(locks.filter((f) => read(f).toLowerCase().includes(SCOPE + '/'))).toEqual([]);
+    expect(
+      locks.filter((f) =>
+        read(f)
+          .toLowerCase()
+          .includes(SCOPE + '/')
+      )
+    ).toEqual([]);
   });
 
   it('no source file imports or requires a Sentry package', () => {

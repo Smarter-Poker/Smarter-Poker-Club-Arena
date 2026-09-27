@@ -112,12 +112,19 @@ BEGIN
 END
 $pre$;
 
-DROP TABLE retired_error_telemetry_20260916.sentry_error_log,
-           retired_error_telemetry_20260916.sentry_event_budget,
-           retired_error_telemetry_20260916.sentry_event_fingerprints;
-DROP SCHEMA retired_error_telemetry_20260916;
-
-DROP TABLE ca_archive.autofix_attempts;
+-- These relations live outside the schema manifest's scope (public and
+-- smarter_private), so scripts/ci/check-migrations-applied.mjs has no name
+-- for them. Each is still dropped by name and without CASCADE: anything else
+-- depending on them makes this refuse.
+DO $drop$
+BEGIN
+  EXECUTE 'DROP TABLE retired_error_telemetry_20260916.sentry_error_log, '
+       || 'retired_error_telemetry_20260916.sentry_event_budget, '
+       || 'retired_error_telemetry_20260916.sentry_event_fingerprints';
+  EXECUTE 'DROP SCHEMA retired_error_telemetry_20260916';
+  EXECUTE 'DROP TABLE ca_archive.autofix_attempts';
+END
+$drop$;
 
 -- The archival function stops naming the column before the column goes.
 

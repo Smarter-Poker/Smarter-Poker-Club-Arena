@@ -61,15 +61,23 @@ describe('the database keeps nothing of Sentry', () => {
       expect(b.toLowerCase()).not.toContain('sentry');
       expect(SQL).toContain(`md5(p.prosrc) = '${pre}'`);
       expect(SQL).toContain(`md5(p.prosrc) = '${post}'`);
-      expect(SQL).toContain(`RAISE EXCEPTION 'PREIMAGE: ${name} is not the definition read 2026-09-27'`);
+      expect(SQL).toContain(
+        `RAISE EXCEPTION 'PREIMAGE: ${name} is not the definition read 2026-09-27'`
+      );
     }
   );
 
   it('keeps the buy-in stub a stub and the archiver moving the same rows', () => {
-    expect(body('orb1_buyin_transaction')).toMatch(/^\s*BEGIN[\s\S]*RAISE EXCEPTION 'orb1_buyin_transaction is deprecated[^']*';\s*END;\s*$/);
+    expect(body('orb1_buyin_transaction')).toMatch(
+      /^\s*BEGIN[\s\S]*RAISE EXCEPTION 'orb1_buyin_transaction is deprecated[^']*';\s*END;\s*$/
+    );
     const archive = body('archive_signup_errors');
-    expect(archive).toContain('(original_id, user_id, email, trigger_name, error_code, error_msg,\n             raw_meta, occurred_at)');
-    expect(archive).toContain('SELECT id, user_id, email, trigger_name, error_code, error_msg,\n               raw_meta, occurred_at\n');
+    expect(archive).toContain(
+      '(original_id, user_id, email, trigger_name, error_code, error_msg,\n             raw_meta, occurred_at)'
+    );
+    expect(archive).toContain(
+      'SELECT id, user_id, email, trigger_name, error_code, error_msg,\n               raw_meta, occurred_at\n'
+    );
     expect(CODE.indexOf('CREATE OR REPLACE FUNCTION public.archive_signup_errors(')).toBeLessThan(
       CODE.indexOf('ALTER TABLE public.signup_errors DROP COLUMN forwarded_to_sentry;')
     );
@@ -78,8 +86,11 @@ describe('the database keeps nothing of Sentry', () => {
   it('drops every remaining Sentry relation and column without CASCADE', () => {
     expect(CODE).not.toMatch(/\bCASCADE\b/);
     for (const stmt of [
-      'DROP SCHEMA retired_error_telemetry_20260916;',
-      'DROP TABLE ca_archive.autofix_attempts;',
+      "EXECUTE 'DROP TABLE retired_error_telemetry_20260916.sentry_error_log, '",
+      "|| 'retired_error_telemetry_20260916.sentry_event_budget, '",
+      "|| 'retired_error_telemetry_20260916.sentry_event_fingerprints';",
+      "EXECUTE 'DROP SCHEMA retired_error_telemetry_20260916';",
+      "EXECUTE 'DROP TABLE ca_archive.autofix_attempts';",
       'DROP INDEX public.signup_errors_pending_forward_idx;',
       'ALTER TABLE public.signup_errors DROP COLUMN forwarded_to_sentry;',
       'ALTER TABLE public.signup_errors_archive DROP COLUMN forwarded_to_sentry;',
@@ -95,7 +106,9 @@ describe('the database keeps nothing of Sentry', () => {
       'fn_ca_stranded_completing_tournaments(integer)',
       'archive_signup_errors(integer)',
     ]) {
-      expect(CODE).toContain(`REVOKE ALL ON FUNCTION public.${sig} FROM PUBLIC, anon, authenticated;`);
+      expect(CODE).toContain(
+        `REVOKE ALL ON FUNCTION public.${sig} FROM PUBLIC, anon, authenticated;`
+      );
       expect(CODE).toContain(`GRANT EXECUTE ON FUNCTION public.${sig} TO service_role;`);
     }
   });

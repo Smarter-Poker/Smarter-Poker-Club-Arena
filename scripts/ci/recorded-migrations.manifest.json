@@ -245,6 +245,17 @@
       "recoveredFrom": "Exact unchanged SQL bytes equal public.fn_ca_migration_text(20260927150637).md5 330cf5e98f3debcf7473eff4e0c323f3 and body length 4596, read at 2026-09-27T15:16:23.338453Z.",
       "refusedBy": [],
       "liveVerdict": "Installed once after native PostgreSQL 17 qualification. Dynamic EXECUTE replaces only two CTE materialization boundaries in the existing read-only audit; the installed SQL lacks a parsed object or @live-proof comment and cannot be edited afterward. Live OID 25456281 retains postgres owner, STABLE SECURITY DEFINER, search_path=public and only postgres/service_role EXECUTE; anon and authenticated EXECUTE are both false. Function definition MD5 is 8c36b14e14eb5b39c09ebd5b72120030, matching the qualified postimage. Original predicates, stack rounding, result ordering and financial records are unchanged. Complete read-only function measured 2437.865ms with zero findings at 15:06. This records immutable installed SQL without replay; source delivery and the next naturally scheduled complete conservation job remain separate pending evidence."
+    },
+    {
+      "version": "20260927154806",
+      "name": "open_week_pages_lock_the_recompute_request_after_calculation",
+      "file": "supabase/migrations/20260927154806_open_week_pages_lock_the_recompute_request_after_calculation.sql",
+      "md5": "9084e25e2ff1315f8ff6bd58977a2852",
+      "appliedToProductionAt": "2026-09-27T15:48:06Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "refusedBy": ["check-definer-authorization: writer rule"],
+      "liveVerdict": "Read production 2026-09-27T16:32:59.773775Z: history 20260927154806 is exactly 12452 bytes, MD5 9084e25e2ff1315f8ff6bd58977a2852. The migration replaces the existing fn_rakeback_recompute_periods(uuid,date,date,uuid[]) without changing grants. Its original server-only authority remains: OID 14328564, owner postgres, SECURITY DEFINER, ACL {postgres=X/postgres,service_role=X/postgres}, anon/authenticated EXECUTE false and service_role true; configuration {search_path=public,statement_timeout=300s}; installed definition MD5 7b5688a846bd8cea792abd1d5bcd774a. The text-only guard assumes missing REVOKE in CREATE OR REPLACE means browser access; the actual preserved ACL denies it. No function, permission or installed migration bytes were changed to record this evidence."
     }
   ]
 }

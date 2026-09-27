@@ -1,0 +1,4 @@
+{
+  "_owner": "patch/alerts-union-rake-basis-refresh-late-commit-settler-horizon (PR #5430). Applied to production 2026-09-27 22:03 UTC, recorded in supabase_migrations.schema_migrations as version 20260927220353, name the_rakeback_settler_reads_only_what_every_writer_has_commit (file 20260927144455_the_rakeback_settler_reads_only_what_every_writer_has_commit.sql). Settler committed read horizon and the hourly stranded cash source check.",
+  "functions": ["fn_rakeback_settler_read_horizon", "fn_rakeback_settler_stranded_source_check"]
+}

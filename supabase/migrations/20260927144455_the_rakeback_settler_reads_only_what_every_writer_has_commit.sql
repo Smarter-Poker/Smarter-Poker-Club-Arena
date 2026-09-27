@@ -225,7 +225,7 @@ COMMENT ON FUNCTION public.fn_rakeback_settler_read_horizon() IS
   'The instant below which every rake_records row is already committed: LEAST(now(), the start of the oldest open transaction in this database) minus a 60 s margin. RakebackSettlerService reads created_at < horizon so its keyset cursor never passes a row whose writer has not committed. Read-only. 20260927144455.';
 
 REVOKE ALL ON FUNCTION public.fn_rakeback_settler_read_horizon() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_rakeback_settler_read_horizon() FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_rakeback_settler_read_horizon() FROM anon, authenticated; -- public-ok: PUBLIC is revoked by the statement above; SQL kept as applied 20260927220353
 GRANT EXECUTE ON FUNCTION public.fn_rakeback_settler_read_horizon() TO service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_rakeback_settler_stranded_source_check()
@@ -311,7 +311,7 @@ COMMENT ON FUNCTION public.fn_rakeback_settler_stranded_source_check() IS
   'Records every positive cash rake_record in the 4 hours below the rakeback settler cursor that has no accrual batch, source receipt, source work or earning source (never submitted) into operational_alert_events, and a held read horizon. Writes alerts only. 20260927144455.';
 
 REVOKE ALL ON FUNCTION public.fn_rakeback_settler_stranded_source_check() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_rakeback_settler_stranded_source_check() FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_rakeback_settler_stranded_source_check() FROM anon, authenticated; -- public-ok: PUBLIC is revoked by the statement above; SQL kept as applied 20260927220353
 GRANT EXECUTE ON FUNCTION public.fn_rakeback_settler_stranded_source_check() TO service_role;
 
 -- periodic-work: a read-only net that only records alerts; it pays, submits and repairs nothing, and the fix is the read horizon above

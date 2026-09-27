@@ -39,6 +39,11 @@ describe('backed payout discovery is the same accounting question in a batch', (
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-batch-selection.sql',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-build-online.sql',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-recover-online.sql',
+    'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-expectations.json',
+    'supabase/migrations/20260927164203_reviewed_overlay_returns_use_their_exact_partial_ledger_inde.sql',
     'scripts/ci/test-backed-payout-scan-postgres.py',
     'scripts/ci/fixtures/backed-payout-scan/baseline.json',
     'scripts/ci/fixtures/backed-payout-scan/batch-selection.sql',
@@ -112,6 +117,49 @@ describe('backed payout discovery is the same accounting question in a batch', (
       'whole successor caller differs',
       'successor transaction rollback',
       'fresh statement missed committed return',
+    ])
+      expect(native).toContain(proof);
+  });
+
+  it('enforces the exact online return cover without changing financial functions', () => {
+    const build = read(
+      'scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-build-online.sql'
+    );
+    const verifier = read(
+      'supabase/migrations/20260927164203_reviewed_overlay_returns_use_their_exact_partial_ledger_inde.sql'
+    );
+    const pins = JSON.parse(
+      read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-expectations.json')
+    );
+    expect(createHash('md5').update(pins.definition).digest('hex')).toBe(pins.definitionMD5);
+    expect(verifier).toContain(pins.definitionMD5);
+    expect(stripComments(build).match(/;/g)).toHaveLength(1);
+    expect(stripComments(build)).toMatch(
+      /^\s*CREATE INDEX CONCURRENTLY idx_chip_ledger_reviewed_overlay_returns/
+    );
+    expect(build).toContain('INCLUDE (amount)');
+    expect(verifier).toContain('numeric(15,2)');
+    expect(verifier).not.toMatch(
+      /\b(?:CREATE|ALTER|DROP|GRANT|REVOKE|EXECUTE)\s+(?:INDEX|FUNCTION|TABLE|ALL)/i
+    );
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'reviewed-return-index-native.py'))['qualify'](globals())"
+    );
+    for (const guard of [
+      'SOURCE_CHANGED',
+      'AUTHORITY_CHANGED',
+      'COLUMNS_CHANGED',
+      'MISSING_BUILD_ONLINE',
+      'ACTIVE_BUILD',
+      'DEFINITION_CHANGED',
+    ])
+      expect(verifier).toContain('REVIEWED_RETURN_INDEX_' + guard);
+    const native = read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-index-native.py');
+    for (const proof of [
+      'waiting for old snapshots',
+      'real interrupted build leaves invalid durable state',
+      'index changes financial output',
+      'financial data changed',
     ])
       expect(native).toContain(proof);
   });

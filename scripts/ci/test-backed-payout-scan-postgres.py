@@ -178,6 +178,7 @@ try:
     assert values[0]==values[1], 'large data candidate mismatch'
     print('backed-payout-scan-native-acceptance-passed')
     runpy.run_path(str(FIXTURE/'reviewed-return-native.py'))['qualify'](globals())
+    runpy.run_path(str(FIXTURE/'reviewed-return-index-native.py'))['qualify'](globals())
 finally:
     if started and (data/'postmaster.pid').exists():run([pg/'pg_ctl','-D',data,'-m','fast','-w','stop'])
     shutil.rmtree(cluster)

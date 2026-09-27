@@ -85,6 +85,10 @@
 -- The engine half of this fix (the sweep commits the batch it prepared; the
 -- movement admission names the door's refusal) is in the same pull request.
 -- Changelog: docs/changelog/2026-09-27-a-prepared-bust-batch-is-recorded.md
+--
+-- Live proof: no registration of the three events is left playing at 0 chips
+-- with no seat of that event (205 / 88 / 91 such rows when this was written).
+-- @live-proof: NOT EXISTS (SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id IN ('618741a5-2c39-4eee-9281-3de641780b8c','ac10f59a-522b-49b2-ada6-ccd42759fb91','c775d008-a0cf-4405-bb47-799006fcc7cc') AND tp.status = 'playing' AND COALESCE(tp.chips, 0) <= 0 AND NOT EXISTS (SELECT 1 FROM public.table_seats s JOIN public.tables t ON t.id = s.table_id WHERE t.tournament_id = tp.tournament_id AND s.user_id = tp.user_id AND s.left_at IS NULL))
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';

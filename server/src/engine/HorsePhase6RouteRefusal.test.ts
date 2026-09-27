@@ -6,8 +6,11 @@
  * (`TOURNAMENT_CONTEXT_STATUSES`, `TOURNAMENT_ANTE_TYPES`,
  * `TOURNAMENT_GAME_FAMILIES`, `TOURNAMENT_FALLBACK_PRECEDENCE`) and rebuild the
  * cell through the atlas's own `tournamentPreflopCell`; they keep no second
- * table. This file pins that by source text and by behaviour: the validator
- * admits exactly the domain's values and refuses one value outside each axis.
+ * table. HorseLogic and HorsePreflop ask the atlas's one next-level projection
+ * gate (`tournamentNextLevelProjectionApplies`) instead of carrying its
+ * thresholds as literals. This file pins that by source text and by behaviour:
+ * the validator admits exactly the domain's values and refuses one value
+ * outside each axis, and the gate fires exactly inside its stated thresholds.
  *
  * Mismatch refusal: a receipt whose declared coordinate disagrees with the
  * coordinate recomputed from the public snapshot is refused with a named
@@ -30,9 +33,11 @@ import {
   TOURNAMENT_CONTEXT_STATUSES,
   TOURNAMENT_FALLBACK_PRECEDENCE,
   TOURNAMENT_GAME_FAMILIES,
+  TOURNAMENT_NEXT_LEVEL_PROJECTION_GATE,
   TOURNAMENT_PREFLOP_ATLAS_DOMAIN,
   interpolateTournamentDepth,
   tournamentCoordinateIsValid,
+  tournamentNextLevelProjectionApplies,
   tournamentPreflopCell,
   tournamentPreflopPolicy,
   tournamentVelocityUrgency,
@@ -130,6 +135,38 @@ describe('Phase 6B real consumers read the one atlas domain', () => {
     expect(workerSource).toContain('TOURNAMENT_CONTEXT_STATUSES');
     expect(workerSource).toContain('TOURNAMENT_ANTE_TYPES');
     for (const literal of literalTables.slice(0, 2)) expect(workerSource).not.toContain(literal);
+  });
+
+  it('HorseLogic, HorsePreflop and the receipt matcher ask the one next-level projection gate instead of copying it', () => {
+    const logicSource = readFileSync(join(here, 'HorseLogic.ts'), 'utf8');
+    const preflopSource = readFileSync(join(here, 'HorsePreflop.ts'), 'utf8');
+    for (const source of [logicSource, preflopSource, attributionSource]) {
+      expect(source).toContain('tournamentNextLevelProjectionApplies(');
+      // The gate literals that each consumer used to carry beside its clock read.
+      expect(source).not.toMatch(/nextBlindInMin\s*<=\s*3\b/);
+      expect(source).not.toMatch(/nextBlindMult\s*\?\?\s*1\)\s*>\s*1\.15/);
+    }
+    expect(DOMAIN.m.projection).toBe(TOURNAMENT_NEXT_LEVEL_PROJECTION_GATE);
+  });
+
+  it('the projection gate fires exactly inside the domain thresholds, at both edges', () => {
+    const { maxMinutes, minMultiplierExclusive } = DOMAIN.m.projection;
+    expect([maxMinutes, minMultiplierExclusive]).toEqual([3, 1.15]);
+    const rows: Array<[number | null | undefined, number | null | undefined, boolean]> = [
+      [3, 1.16, true],
+      [0, 2, true],
+      [2.99, 1.1500001, true],
+      [3, 1.15, false],
+      [3.01, 1.16, false],
+      [3, 1, false],
+      [3, undefined, false],
+      [3, null, false],
+      [null, 2, false],
+      [undefined, 2, false],
+      [Number.NaN, 2, false],
+    ];
+    for (const [minutes, mult, fires] of rows)
+      expect(tournamentNextLevelProjectionApplies(minutes, mult)).toBe(fires);
   });
 
   it('the validator admits exactly the domain statuses, families and ante types on a real lookup', () => {

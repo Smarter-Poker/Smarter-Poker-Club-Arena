@@ -23,6 +23,7 @@ import {
   tournamentVelocityUrgency,
   classifyTournamentPreflopBranch,
   tournamentMZone,
+  tournamentNextLevelProjectionApplies,
   type TournamentPreflopPolicy,
   type TournamentPreflopPolicyInput,
 } from './HorseTournamentPreflop.js';
@@ -707,10 +708,10 @@ export function horsePhase6AttributionMismatch(
         ? Math.min(heroDepth, Math.max(0, opponent.stack + opponent.bet)) / bb
         : heroDepth / bb;
       const m = s.tournament.m,
-        imminent =
-          typeof s.tournament.nextBlindInMin === 'number' &&
-          s.tournament.nextBlindInMin <= 3 &&
-          (s.tournament.nextBlindMult ?? 1) > 1.15;
+        imminent = tournamentNextLevelProjectionApplies(
+          s.tournament.nextBlindInMin,
+          s.tournament.nextBlindMult
+        );
       const priorActed = history.some(
         (a) => a.seat === hero.seat && a.action !== 'fold' && a.action !== 'check'
       );

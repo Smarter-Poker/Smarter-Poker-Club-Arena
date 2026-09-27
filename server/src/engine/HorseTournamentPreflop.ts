@@ -120,15 +120,32 @@ export const TOURNAMENT_FALLBACK_PRECEDENCE = freeze([
 export type TournamentFallbackReason = (typeof TOURNAMENT_FALLBACK_PRECEDENCE)[number];
 
 /**
- * The next-level projection gate as HorseLogic and HorsePreflop apply it:
- * `nextBlindInMin <= maxMinutes` and `nextBlindMult > minMultiplierExclusive`.
- * Those consumers keep their own literals; the Phase 6 tournament domain
- * tests hold them to these values at the boundary.
+ * The next-level projection gate: `nextBlindInMin <= maxMinutes` and
+ * `nextBlindMult > minMultiplierExclusive`. HorseLogic (branch M zone) and
+ * HorsePreflop (decision M and depth) both ask
+ * `tournamentNextLevelProjectionApplies`, which reads these two values, so the
+ * gate has one owner and the domain descriptor states what the consumers run.
  */
 export const TOURNAMENT_NEXT_LEVEL_PROJECTION_GATE = freeze({
   maxMinutes: 3,
   minMultiplierExclusive: 1.15,
 } as const);
+
+/**
+ * Whether the next blind level is close and steep enough that a Horse plays
+ * the projected M now. A missing clock never fires; a missing multiplier is
+ * read as 1 (no increase), which never fires either.
+ */
+export function tournamentNextLevelProjectionApplies(
+  nextBlindInMin: number | null | undefined,
+  nextBlindMult: number | null | undefined
+): boolean {
+  return (
+    typeof nextBlindInMin === 'number' &&
+    nextBlindInMin <= TOURNAMENT_NEXT_LEVEL_PROJECTION_GATE.maxMinutes &&
+    (nextBlindMult ?? 1) > TOURNAMENT_NEXT_LEVEL_PROJECTION_GATE.minMultiplierExclusive
+  );
+}
 
 export interface TournamentMState {
   schemaVersion: 1;

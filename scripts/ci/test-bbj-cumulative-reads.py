@@ -22,7 +22,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 CAPTURE = ROOT / 'scripts/ci/fixtures/bbj-audit-reads/baseline.json'
-MIGRATION = ROOT / 'supabase/migrations/20260927134551_bbj_meter_separates_cumulative_banks_from_recent_flows.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927141643_bbj_meter_separates_cumulative_banks_from_recent_flows.sql'
 ONLINE = ROOT / 'scripts/ops/build-bbj-cumulative-bank-indexes-concurrently.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))

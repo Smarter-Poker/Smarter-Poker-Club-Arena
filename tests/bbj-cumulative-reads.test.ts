@@ -12,7 +12,7 @@ const oldRead = read(fixture + 'cumulative-read-before.sql');
 const newRead = read(fixture + 'cumulative-read.sql') + '\n';
 const after = read(fixture + 'cumulative-function-after.sql');
 const migration = read(
-  'supabase/migrations/20260927134551_bbj_meter_separates_cumulative_banks_from_recent_flows.sql'
+  'supabase/migrations/20260927141643_bbj_meter_separates_cumulative_banks_from_recent_flows.sql'
 );
 const online = read('scripts/ops/build-bbj-cumulative-bank-indexes-concurrently.sql');
 const md5 = (text: string) => createHash('md5').update(text).digest('hex');

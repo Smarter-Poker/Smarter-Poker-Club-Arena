@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+    "scripts/ci/classify-ci-changes.mjs": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -226,5 +226,14 @@
         "current": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
       }
     ]
+  },
+  "bbjCumulativeReadQualification20260927": {
+    "reason": "Add required native qualification for the one-statement BBJ cumulative/recent read split; preserve every existing qualification route and historical assertion. Exact reviewed CI/classifier bytes and nested bindings only.",
+    "updates": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
+      }
+    }
   }
 }

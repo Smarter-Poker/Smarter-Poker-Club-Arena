@@ -135,7 +135,7 @@ export function classifyChangedPaths(paths) {
   );
   // The existing accounting job owns the BBJ runner and its nested fixture inputs.
   const bbjFixture = matches(
-    /^(scripts\/ci\/(?:test-bbj-(?:bank-replay|audit-reads)\.py$|migration-concurrent-preamble\.mjs$|probes\/bbj-bank-replay\/|fixtures\/bbj-audit-reads\/)|scripts\/ops\/build-bbj-audit-indexes-concurrently\.sql$|tests\/bbj-audit-reads\.test\.ts$)/
+    /^(scripts\/ci\/(?:test-bbj-(?:bank-replay|audit-reads|cumulative-reads)\.py$|migration-concurrent-preamble\.mjs$|probes\/bbj-bank-replay\/|fixtures\/bbj-audit-reads\/)|scripts\/ops\/build-bbj-(?:audit-indexes|cumulative-bank-indexes)-concurrently\.sql$|tests\/bbj-(?:audit-reads|cumulative-reads)\.test\.ts$)/
   );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.

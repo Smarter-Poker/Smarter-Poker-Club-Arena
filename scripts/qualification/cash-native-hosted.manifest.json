@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 170300,
-      "sha256": "0d68a0d80390063a87a07683c69e050afcd132c3d610f3b7dc6a6b8275092820"
+      "bytes": 170487,
+      "sha256": "9a786d01a943d9d3b79d1e7352976c44eff880bd2734b87a6cdd5de34a412042"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 25986,
-      "sha256": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82"
+      "bytes": 26238,
+      "sha256": "15ff6f4ae55a228434922b0af166bcd14108ad6f485accdda0dda549534d5c6a"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -734,5 +734,30 @@
     "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "playerSearchPrivacyRouting20260927": {
+    "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in accounting shard 4 and classify every maintained input into that required database lane. Both changes are additive; all cash SQL, captured financial inputs and existing assertions remain byte-identical.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 170300,
+          "sha256": "0d68a0d80390063a87a07683c69e050afcd132c3d610f3b7dc6a6b8275092820"
+        },
+        "after": {
+          "bytes": 170487,
+          "sha256": "9a786d01a943d9d3b79d1e7352976c44eff880bd2734b87a6cdd5de34a412042"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 25986,
+          "sha256": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82"
+        },
+        "after": {
+          "bytes": 26238,
+          "sha256": "15ff6f4ae55a228434922b0af166bcd14108ad6f485accdda0dda549534d5c6a"
+        }
+      }
+    }
   }
 }

@@ -22,7 +22,7 @@ database), plus Commander, Diamond Arena and PepNationLab for attribution.
 
 ## How Each Gap Was Settled
 
-- **Genuinely missing source (1,179 files, plus 5 stubs).** Recovered byte-exact from
+- **Genuinely missing source (1,178 files, plus 5 stubs).** Recovered byte-exact from
   `schema_migrations.statements`; every body hashes to
   `md5(array_to_string(statements, chr(10)) || chr(10))` for its version.
   Below the 2026-09-15 freeze they carry the legacy `-- BACKFILLED` header,
@@ -66,6 +66,15 @@ database), plus Commander, Diamond Arena and PepNationLab for attribution.
   `20260815192707`, `20260819211747`, `20260820120810`, `20260820121527`,
   `20260820122738`, `20260821191431`, `20260823042107`, `20260903191338`,
   `20260904081210`, `20260911161027`, `20260912061157`, `20260914003624`.
+- `20260909180615_maintenance_ownership_fits_process_lifetime` is what
+  production runs (live `fn_entry_purchases_frozen` reads `break_started_at`),
+  but recording it makes it the definition the chip-journal atomicity probe
+  replays, and that probe's fixture still models the older function. Held back
+  for the maintenance lane to bring the probe up to the production contract.
+- `20260905000730_the_club_message_has_one_rule_and_one_door` (Dan's
+  2026-09-04 ruling) is recorded, and
+  `tests/unit/oneLengthForTheClubMessage.test.ts` now pins the rule production
+  has run since then instead of the one it replaced.
 
 - Eight migrations applied today whose files are on open, active pull requests
   (#5392, #5394, #5403, #5410, #5424, #5426, #5427, #5431). They land with

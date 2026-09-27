@@ -429,17 +429,21 @@ export default function BadBeatJackpotPage() {
         const [factsRes, mineRes, promoRes] = await Promise.all([
           jackpotData?.id
             ? supabase.rpc('fn_bbj_pool_facts', { p_pool_id: jackpotData.id })
-            : Promise.resolve({ data: null }),
+            : Promise.resolve({ data: null, error: null }),
           wantsMine
             ? supabase.rpc('fn_bbj_my_contribution', { p_pool_id: jackpotData!.id, p_days: 90 })
-            : Promise.resolve({ data: null }),
+            : Promise.resolve({ data: null, error: null }),
           /* The purse, not the pool. Returns NULLs for a caller who is not
              staff of this pool's club, so there is nothing to hide client-side. */
           jackpotData?.id
             ? supabase.rpc('fn_bbj_promo_facts', { p_pool_id: jackpotData.id })
-            : Promise.resolve({ data: null }),
+            : Promise.resolve({ data: null, error: null }),
         ]);
         if (!isCurrent()) return;
+        // Supabase returns query errors as values. A failed facts read must
+        // reach the existing unread state, never appear as successful zeroes.
+        const factsError = factsRes.error || mineRes.error || promoRes.error;
+        if (factsError) throw new Error(`Could not read jackpot facts: ${factsError.message}`);
 
         {
           const promoRow = Array.isArray(promoRes.data) ? promoRes.data[0] : promoRes.data;

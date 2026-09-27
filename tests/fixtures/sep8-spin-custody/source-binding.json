@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2",
+    "scripts/ci/classify-ci-changes.mjs": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -231,6 +231,17 @@
           "file": "scripts/ci/classify-ci-changes.mjs",
           "previous": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb",
           "current": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Add unchanged satellite pool-transfer audit native qualification to the required accounting shard; retain all historical bindings.",
+      "changes": [
+        {
+          "path": "scripts/ci/classify-ci-changes.mjs",
+          "previous_sha256": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2",
+          "sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7"
         }
       ]
     }

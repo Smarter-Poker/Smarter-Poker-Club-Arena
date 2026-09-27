@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2",
+    "scripts/ci/classify-ci-changes.mjs": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -211,6 +211,17 @@
           "file": "scripts/ci/classify-ci-changes.mjs",
           "previous": "cba4d2462ffd8e8ef5c27ee15463ddbb18fad1e89eaf20878df0ca717769a4eb",
           "current": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Add unchanged satellite pool-transfer audit native qualification to the required accounting shard; retain all historical bindings.",
+      "changes": [
+        {
+          "path": "scripts/ci/classify-ci-changes.mjs",
+          "previous_sha256": "0b443cbc19c0144e25d5860ced72605c7ad94a23dcb3bc854c91f0c796e290e2",
+          "sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7"
         }
       ]
     }

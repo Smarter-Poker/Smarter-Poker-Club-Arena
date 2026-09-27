@@ -26,11 +26,6 @@ DECLARE
   v_id constant uuid := 'a28421ff-9f27-4a99-81dd-2e18884d616c'::uuid;
   v_surface record;
   v_surface_exists boolean;
-  v_rakeback_rows bigint := 0;
-  v_old_max_parallel text := current_setting('max_parallel_workers_per_gather');
-  v_old_min_parallel_scan text := current_setting('min_parallel_table_scan_size');
-  v_old_parallel_setup_cost text := current_setting('parallel_setup_cost');
-  v_old_parallel_tuple_cost text := current_setting('parallel_tuple_cost');
 BEGIN
   IF public.fn_platform_frozen() THEN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_IDENTITY_ARCHIVE_REFUSES_PLATFORM_FREEZE'
@@ -148,26 +143,6 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  -- The ten-million-row rakeback receipt table has a composite primary key
-  -- led by rake_record_id. Guard its user column with one temporary parallel
-  -- count, then restore every planner setting before the generic loop.
-  PERFORM set_config('max_parallel_workers_per_gather', '8', true);
-  PERFORM set_config('min_parallel_table_scan_size', '0', true);
-  PERFORM set_config('parallel_setup_cost', '0', true);
-  PERFORM set_config('parallel_tuple_cost', '0', true);
-  SELECT count(*)
-    INTO v_rakeback_rows
-    FROM public.rakeback_stats_applied r
-   WHERE r.user_id = v_id;
-  IF v_rakeback_rows <> 0 THEN
-    RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_IDENTITY_UNEXPECTED_SURFACE: rakeback_stats_applied.user_id'
-      USING ERRCODE = '55000';
-  END IF;
-  PERFORM set_config('max_parallel_workers_per_gather', v_old_max_parallel, true);
-  PERFORM set_config('min_parallel_table_scan_size', v_old_min_parallel_scan, true);
-  PERFORM set_config('parallel_setup_cost', v_old_parallel_setup_cost, true);
-  PERFORM set_config('parallel_tuple_cost', v_old_parallel_tuple_cost, true);
-
   FOR v_surface IN
     SELECT c.relname AS table_name, a.attname AS column_name
       FROM pg_catalog.pg_class c
@@ -193,8 +168,7 @@ BEGIN
          ('signup_errors', 'user_id'),
          ('ca_diamond_balance_audit', 'user_id'),
          ('ca_diamond_incidents', 'user_id'),
-         ('ca_diamond_journal_archive', 'user_id'),
-         ('rakeback_stats_applied', 'user_id')
+         ('ca_diamond_journal_archive', 'user_id')
        )
        AND NOT EXISTS (
          SELECT 1 FROM pg_catalog.pg_constraint fk

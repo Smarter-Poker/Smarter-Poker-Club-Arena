@@ -25,22 +25,24 @@ const row = {
 };
 
 describe('a natural HUD witness must fit the real clock and keep independent wire facts', () => {
-  it('qualifies the actual remaining boundary while reserving another full interval and mount time', () => {
-    expect(eligibleHudClock(row, now, 210_000)).toEqual({
+  it('reserves the remaining boundary, the actual next interval and setup/recovery time', () => {
+    expect(eligibleHudClock(row, now, 270_000)).toEqual({
       tournamentId: id,
       levelIndex: 2,
       intervalMs: 120_000,
       remainingMs: 90_000,
+      nextIntervalMs: 120_000,
+      requiredObservationMs: 270_000,
       observedAt: now,
     });
-    expect(eligibleHudClock(row, now, 179_999)).toBeNull();
+    expect(eligibleHudClock(row, now, 269_999)).toBeNull();
   });
   it('rejects healthy long levels instead of scheduling a predictable timeout', () => {
     expect(
       eligibleHudClock({ ...row, blind_structure: [{ durationMinutes: 15 }] }, now, 300_000)
     ).toBeNull();
     expect(
-      eligibleHudClock({ ...row, blind_structure: [{ duration: 180 }] }, now, 250_000)?.intervalMs
+      eligibleHudClock({ ...row, blind_structure: [{ duration: 180 }] }, now, 390_000)?.intervalMs
     ).toBe(180_000);
     expect(
       eligibleHudClock(
@@ -49,6 +51,53 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
         200_000
       )?.intervalMs
     ).toBe(60_000);
+  });
+  it('rejects the proven 390s case whose first boundary can be lost and second cannot fit', () => {
+    // Old interval+60s accepted 300+60 <=390, but the second boundary is
+    // remaining270 + next300 =570s away before any render/recovery reserve.
+    expect(
+      eligibleHudClock({ ...row, blind_structure: [{ durationMinutes: 5 }] }, now, 390_000)
+    ).toBeNull();
+    expect(
+      eligibleHudClock({ ...row, blind_structure: [{ durationMinutes: 5 }] }, now, 630_000)
+        ?.requiredObservationMs
+    ).toBe(630_000);
+  });
+  it('uses the NEXT duration, not an assumed repeat of the current interval', () => {
+    const variable = {
+      ...row,
+      current_level: 0,
+      blind_structure: [{ durationMinutes: 1 }, { durationMinutes: 5 }],
+    };
+    expect(eligibleHudClock(variable, now, 389_999)).toBeNull();
+    expect(eligibleHudClock(variable, now, 390_000)?.nextIntervalMs).toBe(300_000);
+    expect(
+      eligibleHudClock({ ...variable, blind_structure: [{ durationMinutes: 1 }, {}] }, now, 390_000)
+    ).toBeNull();
+  });
+  it('rejects a second-boundary break or intervals both lost inside the existing outage gates', () => {
+    expect(
+      eligibleHudClock(
+        {
+          ...row,
+          current_level: 0,
+          blind_structure: [
+            { durationMinutes: 2 },
+            { durationMinutes: 2 },
+            { isBreak: true, durationMinutes: 2 },
+          ],
+        },
+        now,
+        390_000
+      )
+    ).toBeNull();
+    expect(
+      eligibleHudClock(
+        { ...row, current_level: 0, blind_structure: [{ durationMinutes: 2 }, { duration: 32 }] },
+        now,
+        390_000
+      )
+    ).toBeNull();
   });
   it.each([
     { status: 'COMPLETED' },

@@ -7,6 +7,8 @@ export type HudClock = {
   levelIndex: number;
   intervalMs: number;
   remainingMs: number;
+  nextIntervalMs: number;
+  requiredObservationMs: number;
   observedAt: number;
 };
 export type HudLevel = { tournamentId: string; levelIndex: number; at: number };
@@ -35,28 +37,49 @@ export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudCl
     }
   }
   if (!Array.isArray(levels) || !levels.length) return null;
-  // Current HUD uses the final advertised duration past the schedule. Refuse
-  // a break row or the accelerated clock rather than inventing its timing.
-  const level = levels[Math.min(levelIndex, levels.length - 1)];
-  if (!level || level.isBreak || levels[levelIndex + 1]?.isBreak) return null;
-  const minutes = Number(level.durationMinutes ?? level.duration_minutes);
-  const seconds = minutes > 0 ? minutes * 60 : Number(level.duration);
-  const intervalMs = seconds * 1000;
+  // The next advertised interval may differ from the current one. If the
+  // first boundary occurs during the deliberate outage, BOTH receivers need
+  // the following level_up. Refuse either upcoming break rather than assume
+  // a break emits the same event. The HUD uses the final duration past schedule.
+  const schedule = levels;
+  const at = (offset: number) => schedule[Math.min(levelIndex + offset, schedule.length - 1)];
+  const level = at(0);
+  const next = at(1);
+  if (!level || !next || level.isBreak || next.isBreak || at(2)?.isBreak) return null;
+  const durationMs = (entry: Row) => {
+    const minutes = Number(entry.durationMinutes ?? entry.duration_minutes);
+    return (minutes > 0 ? minutes * 60 : Number(entry.duration)) * 1000;
+  };
+  const intervalMs = durationMs(level);
+  const nextIntervalMs = durationMs(next);
   const startedAt = Date.parse(String(row.level_started_at));
   const remainingMs = startedAt + intervalMs - now;
-  // Keep a whole further interval plus navigation/render headroom. A boundary
-  // crossed during the two browser mounts still fits the same finite case.
+  // Existing outage gates allow 10s to show loss + 10s to close the old socket
+  // + 12s to recover. Two boundaries must be farther apart than that 32s gap.
+  // The 60s reserve covers those 32s, the 15s rendered-level assertion and 13s
+  // of setup slack. Navigation still consumes the original fixed deadline.
+  const requiredObservationMs = remainingMs + nextIntervalMs + 60_000;
   if (
     !Number.isFinite(intervalMs) ||
     intervalMs <= 0 ||
-    intervalMs + 60_000 > budgetMs ||
+    !Number.isFinite(nextIntervalMs) ||
+    nextIntervalMs <= 32_000 ||
+    requiredObservationMs > budgetMs ||
     !Number.isFinite(startedAt) ||
     startedAt > now ||
     remainingMs <= 20_000
   )
     return null;
   if (typeof row.id !== 'string') return null;
-  return { tournamentId: row.id, levelIndex, intervalMs, remainingMs, observedAt: now };
+  return {
+    tournamentId: row.id,
+    levelIndex,
+    intervalMs,
+    remainingMs,
+    nextIntervalMs,
+    requiredObservationMs,
+    observedAt: now,
+  };
 }
 
 /** A separate LOCAL session of the existing reserved fixture, never a service/owner read. */

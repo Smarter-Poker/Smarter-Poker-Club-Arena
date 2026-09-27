@@ -145,39 +145,8 @@ class PostgresSyncHooksService {
     this.channel = supabase.channel(`global_db_sync:${userId}`);
 
     this.channel
-      // 2. Profiles (Display names, avatars, diamonds) — NOT debounced (personal data)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
-        (payload) => {
-          if (!ownsSubscription()) return;
-          console.debug('[PostgresSync] External Profile mutation detected:', payload);
-          masterBus.emit('PROFILE_UPDATED', { userId: payload.new.id, updates: payload.new });
-
-          // SettingsPage persists Club Arena light/dark mode in profiles.settings.
-          // Re-broadcast its effective value so a second device changes mode
-          // without a reload; MasterBus handles same-browser tabs immediately.
-          const profileSettings = (payload.new as Record<string, unknown>)?.settings;
-          const savedTheme =
-            profileSettings && typeof profileSettings === 'object'
-              ? (profileSettings as Record<string, unknown>).theme
-              : undefined;
-          if (savedTheme === 'light' || savedTheme === 'dark') {
-            masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: savedTheme, userId });
-          }
-
-          const newDiamonds = (payload.new as any).diamonds;
-          const oldDiamonds = (payload.old as any)?.diamonds;
-          if (newDiamonds != null && oldDiamonds != null && newDiamonds !== oldDiamonds) {
-            masterBus.emit('DIAMOND_BALANCE_CHANGED', {
-              newBalance: newDiamonds,
-              delta: newDiamonds - oldDiamonds,
-              source: 'postgres_sync',
-            });
-          }
-        }
-      )
-
+      // Profiles intentionally stay outside row replication. Appearance and
+      // own-account domains use their bounded private app-level carriers.
       // NOTE: Global unfiltered listeners REMOVED to prevent billing waste:
       //   - `tables` + `tournaments` REMOVED 2026-04-18: fired on every mutation globally,
       //     caused ~80% of the 86M realtime messages ($217/mo last cycle).

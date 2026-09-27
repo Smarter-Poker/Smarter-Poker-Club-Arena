@@ -1,0 +1,210 @@
+{
+  "source_sha256": {
+    "first-terminal-catalog.json": "390049acfb1d65f45a65f5d8946caf64f645f6d64933621fde8e99c8a50a4bad",
+    "first-additional-trigger-functions.json": "b6ac7116283ddbffa486f4bfa86291ce8be5d776eb1b39a339bed479c3e9e851"
+  },
+  "relation": {
+    "observed_at": "2026-09-26 14:34:53.201132+00",
+    "name": "public.accounting_tournament_fee_custody_obligations",
+    "relation": "accounting_tournament_fee_custody_obligations",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "owner": "postgres",
+    "relacl": "{postgres=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "source_fingerprint",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_fees",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_funding",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_scope",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "escrow_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "held_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "transaction_id",
+        "type": "bigint",
+        "default": "txid_current()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "accounting_tournament_fee_custody_obli_source_fingerprint_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (source_fingerprint ~ '^[0-9a-f]{32}$'::text)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obliga_original_funding_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (jsonb_typeof(original_funding) = 'array'::text)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligat_escrow_snapshot_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (jsonb_typeof(escrow_snapshot) = 'object'::text)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligati_original_scope_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (jsonb_typeof(original_scope) = 'object'::text)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligatio_original_fees_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (jsonb_typeof(original_fees) = 'array'::text)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_amount_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (amount > 0::numeric AND amount = round(amount, 2) AND (amount::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_pkey",
+        "parent": null,
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_reason_check",
+        "parent": null,
+        "validated": true,
+        "definition": "CHECK (reason = ANY (ARRAY['tournament_fee_sources_require_reconciliation'::text, 'accounting_terms_not_observed'::text, 'accounting_terms_not_active'::text, 'tournament_fee_not_captured_by_original_producer'::text]))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_tournament_id_key",
+        "parent": null,
+        "validated": true,
+        "definition": "UNIQUE (tournament_id)"
+      },
+      {
+        "name": "legacy_fee_custody_requires_terminal",
+        "parent": null,
+        "validated": true,
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "legacy_fee_custody_is_append_only",
+        "enabled": "O",
+        "function": "fn_ca_legacy_fee_custody_is_append_only()",
+        "definition": "CREATE TRIGGER legacy_fee_custody_is_append_only BEFORE DELETE OR UPDATE ON accounting_tournament_fee_custody_obligations FOR EACH ROW EXECUTE FUNCTION fn_ca_legacy_fee_custody_is_append_only()"
+      },
+      {
+        "name": "legacy_fee_custody_refuses_truncate",
+        "enabled": "O",
+        "function": "fn_ca_legacy_fee_custody_is_append_only()",
+        "definition": "CREATE TRIGGER legacy_fee_custody_refuses_truncate BEFORE TRUNCATE ON accounting_tournament_fee_custody_obligations FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_legacy_fee_custody_is_append_only()"
+      },
+      {
+        "name": "legacy_fee_custody_requires_terminal",
+        "enabled": "O",
+        "function": "fn_ca_legacy_fee_custody_requires_terminal()",
+        "definition": "CREATE CONSTRAINT TRIGGER legacy_fee_custody_requires_terminal AFTER INSERT ON accounting_tournament_fee_custody_obligations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_legacy_fee_custody_requires_terminal()"
+      }
+    ]
+  },
+  "functions": [
+    {
+      "observed_at": "2026-09-26 15:10:42.558532+00",
+      "identity": "fn_ca_legacy_fee_custody_is_append_only()",
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_legacy_fee_custody_is_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN RAISE EXCEPTION 'original fee custody obligations are append-only' USING ERRCODE='55000'; END $function$\n",
+      "md5": "4bc1c11e22a8ee54c63c36782b642831"
+    },
+    {
+      "observed_at": "2026-09-26 15:10:42.558548+00",
+      "identity": "fn_ca_legacy_fee_custody_requires_terminal()",
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_legacy_fee_custody_requires_terminal()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF NOT EXISTS(SELECT 1 FROM public.tournament_terminal_settlements h\n  WHERE h.tournament_id=NEW.tournament_id AND h.accounting_state='fee_custody_unresolved'\n   AND h.receipt_version=3 AND h.rake_amount=NEW.amount AND h.rake_settled_at IS NULL\n   AND h.rake_attributed_at IS NULL AND h.escrow_closed_at IS NULL)\n THEN RAISE EXCEPTION 'fee custody cannot commit without its exact player terminal receipt' USING ERRCODE='P0404'; END IF;\n PERFORM public.fn_ca_tournament_terminal_receipt(NEW.tournament_id,NULL);\n RETURN NULL;\nEND $function$\n",
+      "md5": "3f9a6541f8016270ba4faae97765e620"
+    }
+  ],
+  "financial_qualified": false
+}

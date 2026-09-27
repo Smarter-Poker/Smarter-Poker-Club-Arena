@@ -86,8 +86,10 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
 // Record only the expected cosmetic signal, never session/auth websocket frames.
 const appearanceSignalReceived = new WeakMap<Page, boolean>();
+const accountSignalReceived = new WeakMap<Page, boolean>();
 function observeAppearanceSignal(page: Page, userId: string) {
   appearanceSignalReceived.set(page, false);
+  accountSignalReceived.set(page, false);
   page.on('websocket', (socket) =>
     socket.on('framereceived', ({ payload }) => {
       try {
@@ -100,6 +102,12 @@ function observeAppearanceSignal(page: Page, userId: string) {
           body?.payload?.user_id === userId
         )
           appearanceSignalReceived.set(page, true);
+        if (
+          event === 'broadcast' &&
+          body?.event === 'account_changed' &&
+          body?.payload?.user_id === userId
+        )
+          accountSignalReceived.set(page, true);
       } catch {
         /* Non-JSON websocket frames are unrelated to appearance. */
       }
@@ -600,6 +608,73 @@ test.describe('production Table Studio realtime contract', () => {
       await expectAppearance(otherStudio, PRESETS[otherPreset]);
       await expectAppearance(primaryStudio, finalPrimary);
       console.log('[customization-realtime] second player remained isolated');
+
+      // Same real third session, now exercising the separate metadata/settings
+      // carrier on mounted profiles. No synthetic bus emission or read polling.
+      for (const page of [primaryPage, mobilePage, otherPage]) {
+        await page.goto(new URL('profile', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href, {
+          waitUntil: 'domcontentloaded',
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        });
+        await expect(page.locator('#profile-heading')).toBeVisible({
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        });
+      }
+      const otherName = await otherPage.locator('#profile-heading').innerText();
+      const otherMode = await otherPage.locator('html').getAttribute('data-theme');
+      await primaryPage.emulateMedia({ colorScheme: 'light' });
+      await mobilePage.emulateMedia({ colorScheme: 'dark' });
+      accountSignalReceived.set(primaryPage, false);
+      accountSignalReceived.set(mobilePage, false);
+      const alias = `Signal${primaryUserId.slice(0, 8)}`;
+      const accountEdit = await primaryAccount.client
+        .from('profiles')
+        .update({
+          alias,
+          settings: { theme: 'auto', achievementNotifications: false, settlementAlerts: false },
+        })
+        .eq('id', primaryUserId);
+      if (accountEdit.error) throw accountEdit.error;
+      for (const page of [primaryPage, mobilePage]) {
+        await expect
+          .poll(() => accountSignalReceived.get(page), { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+          .toBe(true);
+        await expect(page.locator('#profile-heading')).toHaveText(alias, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        });
+        await expect
+          .poll(
+            () =>
+              page.evaluate(() =>
+                JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')
+              ),
+            { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+          )
+          .toMatchObject({
+            theme: 'auto',
+            achievementNotifications: false,
+            settlementAlerts: false,
+          });
+      }
+      await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'light');
+      await expect(mobilePage.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await primaryPage.emulateMedia({ colorScheme: 'dark' });
+      await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await expect(otherPage.locator('#profile-heading')).toHaveText(otherName);
+      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode!);
+      const accountReadback = await primaryAccount.client
+        .from('profiles')
+        .select('alias,settings')
+        .eq('id', primaryUserId)
+        .maybeSingle();
+      if (accountReadback.error) throw accountReadback.error;
+      expect(accountReadback.data).toMatchObject({
+        alias,
+        settings: { theme: 'auto', achievementNotifications: false, settlementAlerts: false },
+      });
+      console.log(
+        '[account-realtime] private metadata and preferences reached both devices, Auto followed each device, and the other player stayed isolated'
+      );
     } catch (error) {
       journeyFailure = error;
     } finally {

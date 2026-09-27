@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9b663cb1da95f3599df455855c5aaa6cd412115f72f92b98b0cac6cd7c625468",
+    "scripts/ci/classify-ci-changes.mjs": "dfde977eb6986f47e6b706a42ae07d412910bea3901ab4c6d8d4e361d0156add",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+    "tests/unit/fixtureNativeCi.test.ts": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -135,8 +135,14 @@
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
       "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
-      "sha256": "69907f18b8a43eeab81bd4324e1196a3bf3de1248fae9bd2efd01e76eda8fa90",
-      "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
+      "sha256": "ebf30e23ed473fe33954db0e84f5d8f40995851c977b4cc528db2fcee6655c63",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "previous_sha256": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+      "sha256": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
@@ -144,6 +150,25 @@
       "to": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
       "on": "2026-09-26",
       "why": "Bind the reviewed discovery privacy native-input classifier and any resulting nested qualification bindings. No financial SQL, fixtures or assertions changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "ebf30e23ed473fe33954db0e84f5d8f40995851c977b4cc528db2fcee6655c63",
+      "to": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
+      "reason": "Integrate main ad23d8350 discovery routing with horse admission enforcement, preserving both current contracts and all historical records."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
+      "sha256": "69907f18b8a43eeab81bd4324e1196a3bf3de1248fae9bd2efd01e76eda8fa90",
+      "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
+    },
+    {
+      "integration": "2026-09-27 cashier online-index qualification with current protected main94c3205",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Preserve both cashier routing and protected horse admission routing; financial SQL and all historical assertions unchanged. Nested hashes reflect this exact integrated metadata."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."

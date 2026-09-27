@@ -1406,10 +1406,12 @@ ASSERT
 # ===========================================================================
 # 12b THE RACE: two real psql processes, started together, each running
 # twenty matcher passes on the same Cluster and completing its own hands.
+# Rendezvous after each committed completion: a busy reply must not consume
+# all twenty attempts while the other process still owns one pass's lock.
 # ===========================================================================
 cat > "$fixture/race.sql" <<'ASSERT'
 DO $$
-DECLARE v_g uuid; r jsonb; h jsonb; i integer;
+DECLARE v_g uuid; r jsonb; h jsonb; i integer; v_done bigint; v_deadline timestamptz;
 BEGIN
   SELECT game INTO v_g FROM harness.m6 WHERE k = 'RACE';
   FOR i IN 1 .. 20 LOOP
@@ -1425,7 +1427,22 @@ BEGIN
     FOR h IN SELECT x FROM jsonb_array_elements(r -> 'hands') x LOOP
       PERFORM public.fx6_complete((h ->> 'instance_id')::uuid);
     END LOOP;
+    INSERT INTO harness.m6 (k, game) VALUES ('race_done:' || pg_backend_pid() || ':' || i, v_g);
     COMMIT;
+    -- Only the fixture coordinates rounds. The matcher still races normally,
+    -- with its real nonblocking lock and unchanged production time budget.
+    -- A dead peer fails the fixture; this is never an unbounded wait or a
+    -- retry of formation. Both completion transactions must be visible.
+    v_deadline := clock_timestamp() + interval '10 seconds';
+    LOOP
+      SELECT count(DISTINCT split_part(k, ':', 2)) INTO v_done
+        FROM harness.m6 WHERE k LIKE 'race_done:%:' || i;
+      EXIT WHEN v_done = 2;
+      IF clock_timestamp() >= v_deadline THEN
+        RAISE EXCEPTION 'FAIL 12: round % completion rendezvous has % of two backends', i, v_done;
+      END IF;
+      PERFORM pg_sleep(0.005);
+    END LOOP;
   END LOOP;
 END $$;
 ASSERT
@@ -1440,6 +1457,11 @@ BEGIN
     FROM harness.m6 WHERE k LIKE 'race:%';
   IF v_passes <> 40 OR v_pids <> 2 THEN
     RAISE EXCEPTION 'FAIL 12: the two processes did not both run twenty passes (% passes from % backends)', v_passes, v_pids;
+  END IF;
+  IF (SELECT count(*) FROM harness.m6 WHERE k LIKE 'race_done:%') <> 40
+     OR EXISTS (SELECT 1 FROM harness.m6 p WHERE p.k LIKE 'race:%'
+                  AND NOT EXISTS (SELECT 1 FROM harness.m6 d WHERE d.k = replace(p.k, 'race:', 'race_done:'))) THEN
+    RAISE EXCEPTION 'FAIL 12: a pass advanced without its committed completion';
   END IF;
   -- EVERY HAND FORMED IS ACCOUNTED FOR BY A PASS, AND NO PLAYER WAS EVER IN
   -- TWO LIVE HANDS: no two committed reservations of one player overlap.

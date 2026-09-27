@@ -178,6 +178,12 @@ export default function SettingsPage() {
     return fromTableSettings(tableSettingsRef.current, initial);
   });
   const [hasChanges, setHasChanges] = useState(false);
+  const hasChangesRef = useRef(hasChanges);
+  hasChangesRef.current = hasChanges;
+  useEffect(() => {
+    hasChangesRef.current = false;
+    setHasChanges(false);
+  }, [authUser?.id]);
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [showThemeSettings, setShowThemeSettings] = useState(false);
@@ -368,6 +374,7 @@ export default function SettingsPage() {
   useEffect(() => {
     let isMounted = true;
     const reloadSettings = () => {
+      if (hasChangesRef.current) return;
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
       if (saved) {
         try {
@@ -879,22 +886,9 @@ export default function SettingsPage() {
          soundService.setEnabled and writes both gate keys. The second block
          this comment used to sit beside was a byte-for-byte duplicate. */
 
-      /* Sync theme to Zustand store so Shell.tsx applies it immediately.
-         2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
-         validation, saved, and then DROPPED here by an
-         `if (dark || light)` guard — the page said "Settings saved!" and the
-         app kept whatever theme it already had. Auto now resolves against the
-         OS preference at save time, which is what the label promises. */
-      const { setTheme } = useSettingsStore.getState();
-      if (settings.theme === 'dark' || settings.theme === 'light') {
-        setTheme(settings.theme, authUser?.id);
-      } else if (settings.theme === 'auto') {
-        const prefersLight =
-          typeof window !== 'undefined' &&
-          typeof window.matchMedia === 'function' &&
-          window.matchMedia('(prefers-color-scheme: light)').matches;
-        setTheme(prefersLight ? 'light' : 'dark', authUser?.id);
-      }
+      // Preserve Auto as the account preference; the theme owner resolves it
+      // against the current device and keeps following system changes.
+      useSettingsStore.getState().setTheme(settings.theme, authUser?.id);
 
       // Sync to Supabase profiles table
       const {

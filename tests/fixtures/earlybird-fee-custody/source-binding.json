@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "e4c51f104e19181a85e69f8e2eacadac7ea3196392cae16cea3b79c1f9dbc7a4",
-    "tests/unit/fixtureNativeCi.test.ts": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+    "tests/unit/fixtureNativeCi.test.ts": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -60,6 +60,12 @@
       "to": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
       "on": "2026-09-26",
       "why": "Adds the seven paid-terminal input paths to routing assertions and verifies captured rules against the actual engine Spin rule manifest; existing sharding and assertions are preserved. PR5350; no financial component, captured definition, limit or existing assertion changed."
+    },
+    {
+      "file": "tests/unit/fixtureNativeCi.test.ts",
+      "previous_sha256": "739821b7d618d4497a49912a5246f3b2764aa9ce1a80180ffa16a5bf41ec624f",
+      "sha256": "e9e7d6b7ed8590a2668f700a384cb1e8e3c628269e90c9abf35e54770f0dce5b",
+      "why": "Horse admission maintained input routing and tests; reviewed additive classifier paths and negative cases. Nested bindings reflect those changes only. docs/changelog/2026-09-26-horse-admission-regression-enforcement.md"
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."

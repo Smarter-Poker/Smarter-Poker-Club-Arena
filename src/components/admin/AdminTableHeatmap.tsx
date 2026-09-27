@@ -8,7 +8,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../utils/haptic';
@@ -57,74 +58,65 @@ export default function AdminTableHeatmap({
   tables: propTables,
   onAction,
 }: AdminTableHeatmapProps) {
+  const { user } = useAuthUser();
   const [viewMode, setViewMode] = useState<ViewMode>('density');
   const [fetchedTables, setFetchedTables] = useState<TableRow[]>([]);
-  const isMounted = useIsMounted();
+  const [readError, setReadError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const supplied = propTables !== undefined;
+  const refresh = useVisibleRead({
+    scopeKey: `${user?.id || ''}:${clubId || ''}`,
+    enabled: Boolean(clubId && user?.id) && !supplied,
+    intervalMs: 15_000,
+    read: async (signal) => {
+      const filter = await clubGamesOrFilter(clubId!);
+      signal.throwIfAborted();
+      const { data, error } = await supabase
+        .from('tables')
+        .select(
+          'id, name, status, current_players, max_players, small_blind, big_blind, game_variant'
+        )
+        .or(filter)
+        .eq('is_deleted', false)
+        .abortSignal(signal);
+      if (error || !Array.isArray(data)) throw error || new Error('Table Activity Is Unavailable');
+      return data;
+    },
+    onData: (data) => {
+      setFetchedTables(data);
+      setReadError(false);
+      setLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'AdminTableHeatmap.Load_failed');
+      setReadError(true);
+      setLoading(false);
+    },
+    onReset: () => {
+      setFetchedTables([]);
+      setReadError(false);
+      setLoading(Boolean(clubId) && !supplied);
+    },
+  });
 
   useEffect(() => {
-    if (propTables && propTables.length > 0) return; // Use prop data if provided
-    if (!clubId) return;
-
-    const fetchTables = async () => {
-      try {
-        const { data, error: heatmapErr } = await supabase
-          .from('tables')
-          .select(
-            'id, name, status, current_players, max_players, small_blind, big_blind, game_variant'
-          )
-          // P2-1: include the union's tables (union games carry the union
-          // container as club_id, a plain club filter shows an empty club)
-          .or(await clubGamesOrFilter(clubId))
-          .eq('is_deleted', false);
-        if (heatmapErr) reportError(heatmapErr, 'AdminTableHeatmap.Load_failed');
-        if (isMounted.current && data) setFetchedTables(data);
-      } catch (err) {
-        reportError(err, 'AdminTableHeatmap.Error');
-        /* silent */
-      }
-    };
-
-    fetchTables();
-
-    // Realtime subscription for live updates
-    const channelKey = `heatmap-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tables',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          fetchTables(); // Re-fetch on any change
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'AdminTableHeatmap._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[AdminTableHeatmap] Realtime channel timed out');
-        }
-      });
-
-    // Bus listeners for cross-page events
+    if (supplied || !clubId) return;
     const unsubs = [
-      masterBus.subscribeDebounced('TABLE_CREATED', fetchTables, 500),
-      masterBus.subscribeDebounced('TABLE_UPDATED', fetchTables, 500),
-      masterBus.subscribeDebounced('TABLE_CLOSED', fetchTables, 500),
+      masterBus.subscribeDebounced('TABLE_CREATED', refresh, 500),
+      masterBus.subscribeDebounced('TABLE_UPDATED', refresh, 500),
+      masterBus.subscribeDebounced('TABLE_CLOSED', refresh, 500),
     ];
+    return () => unsubs.forEach((unsubscribe) => unsubscribe());
+  }, [clubId, supplied, refresh]);
 
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-      unsubs.forEach((u) => u());
-    };
-  }, [clubId, propTables?.length]);
-
-  const tables = propTables && propTables.length > 0 ? propTables : fetchedTables;
+  const tables = supplied ? propTables : fetchedTables;
+  if (!supplied && loading) return <div role="status">Loading Table Activity...</div>;
+  if (!supplied && readError)
+    return (
+      <div role="alert">
+        Table Activity Could Not Be Refreshed. <button onClick={refresh}>Try Again</button>
+      </div>
+    );
 
   if (!tables || tables.length === 0) {
     return (

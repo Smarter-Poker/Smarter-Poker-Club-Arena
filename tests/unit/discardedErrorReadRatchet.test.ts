@@ -161,7 +161,8 @@ const BASELINE = new Map<string, number>([
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
-  ['src/components/agent/AgentPromoPanel.tsx', 2],
+  // Visible promo observation now binds balance and profile read errors.
+  ['src/components/agent/AgentPromoPanel.tsx', 0],
   ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],
   ['src/components/admin/ArenaLedger.tsx', 2],
   ['src/utils/unionScope.ts', 1],

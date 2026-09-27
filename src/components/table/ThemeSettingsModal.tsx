@@ -663,10 +663,18 @@ export function ThemeSettingsModal({
   const checkoutPollTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const [modeSaving, setModeSaving] = useState(false);
   const uiMode = useSettingsStore((state) => state.theme);
+  const uiPreference = useSettingsStore((state) => state.themePreference);
   const setUiMode = useSettingsStore((state) => state.setTheme);
   const diamonds = useWalletStore((state) => state.diamonds);
   const loadDiamonds = useWalletStore((state) => state.loadDiamonds);
   const modeRevisionRef = useRef(0);
+  useEffect(() => {
+    modeRevisionRef.current += 1;
+    setModeSaving(false);
+    return () => {
+      modeRevisionRef.current += 1;
+    };
+  }, [userId]);
 
   // The live selection, readable from a callback without making every callback
   // depend on it. handleSave needs the value it is replacing so it can put it
@@ -1398,8 +1406,8 @@ export function ThemeSettingsModal({
 
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
-      if (mode === uiMode) return;
-      const previous = uiMode;
+      if (mode === uiPreference) return;
+      const previous = uiPreference;
       const revision = ++modeRevisionRef.current;
       setUiMode(mode, userId || undefined);
 
@@ -1414,7 +1422,7 @@ export function ThemeSettingsModal({
       }
       if (modeRevisionRef.current === revision) setModeSaving(false);
     },
-    [setUiMode, toast, uiMode, userId]
+    [setUiMode, toast, uiPreference, userId]
   );
 
   /**

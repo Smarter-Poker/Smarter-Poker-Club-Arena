@@ -113,3 +113,48 @@ describe('the database keeps nothing of Sentry', () => {
     }
   });
 });
+
+/**
+ * A catalog sweep cannot see a row. 20260927224816 deletes the one row of
+ * data that still named Sentry: the retired autofix loop's archived daily
+ * cap in ca_archive.autofix_budget. The table and its other two rows stay.
+ */
+const CAP_SQL = readFileSync(
+  join(
+    __dirname,
+    '..',
+    'supabase',
+    'migrations',
+    '20260927224816_the_archive_keeps_no_sentry_cap.sql'
+  ),
+  'utf8'
+);
+const CAP_CODE = CAP_SQL.split('\n')
+  .filter((l) => !l.startsWith('--'))
+  .join('\n');
+
+describe('the archive keeps no Sentry cap', () => {
+  it('is one transaction with a lock timeout and no DDL', () => {
+    expect(CAP_CODE.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(CAP_CODE.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(CAP_CODE).toMatch(/^SET LOCAL lock_timeout = '5s';$/m);
+    expect(CAP_CODE).not.toMatch(/\b(CREATE|ALTER|DROP|COMMENT|GRANT|REVOKE|TRUNCATE)\b/);
+  });
+
+  it('deletes exactly the sentry row, asserted before and after', () => {
+    // The only top-level row write in the file, and it carries its WHERE.
+    expect(CAP_CODE.match(/^(DELETE|UPDATE|INSERT)\b.*$/gm)).toEqual([
+      "DELETE FROM ca_archive.autofix_budget WHERE source = 'sentry';",
+    ]);
+    expect(CAP_CODE).toContain(
+      "RAISE EXCEPTION 'PREIMAGE: ca_archive.autofix_budget is not the three-row table read 2026-09-27'"
+    );
+    expect(CAP_CODE).toContain("WHERE source = 'sentry' AND daily_cap_usd = 1.0000");
+    expect(CAP_CODE).toContain("WHERE source IN ('_global', 'vercel')) <> 2");
+    expect(CAP_CODE).toContain(
+      "RAISE EXCEPTION 'POSTIMAGE: the autofix archive still names Sentry'"
+    );
+    expect(CAP_CODE.indexOf('$pre$')).toBeLessThan(CAP_CODE.indexOf('DELETE FROM'));
+    expect(CAP_CODE.indexOf('DELETE FROM')).toBeLessThan(CAP_CODE.indexOf('$post$'));
+  });
+});

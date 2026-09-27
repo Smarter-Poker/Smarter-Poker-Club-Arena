@@ -312,12 +312,14 @@ export const CommissionService = {
    * trigger anywhere in the database; on 2026-08-31 it claimed 26,859.87 owed
    * across 5 agents while agent_commissions held 394,904.61 across 96.
    */
-  async unsettledCommission(clubId: string, userId: string): Promise<number> {
+  async unsettledCommission(clubId: string, userId: string, signal?: AbortSignal): Promise<number> {
     const resolvedId = await resolveClubUUIDStrict(clubId);
-    const { data, error } = await supabase.rpc('fn_agent_unsettled_commission', {
+    signal?.throwIfAborted();
+    const query = supabase.rpc('fn_agent_unsettled_commission', {
       p_club_id: resolvedId,
       p_user_id: userId,
     });
+    const { data, error } = await (signal ? query.abortSignal(signal) : query);
     if (error) throw error;
     if (
       (typeof data !== 'number' && typeof data !== 'string') ||
@@ -343,12 +345,15 @@ export const CommissionService = {
    * row every downline has ever generated.
    */
   async downlineCommission(
-    clubId?: string
+    clubId?: string,
+    signal?: AbortSignal
   ): Promise<{ agentId: string; userId: string; unclaimed: number }[]> {
     const resolvedId = clubId ? await resolveClubUUIDStrict(clubId) : null;
-    const { data, error } = await supabase.rpc('fn_agent_downline_commission', {
+    signal?.throwIfAborted();
+    const query = supabase.rpc('fn_agent_downline_commission', {
       p_club_id: resolvedId,
     });
+    const { data, error } = await (signal ? query.abortSignal(signal) : query);
     if (error) throw error;
     if (
       !Array.isArray(data) ||

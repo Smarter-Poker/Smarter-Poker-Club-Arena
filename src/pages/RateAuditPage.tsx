@@ -6,14 +6,12 @@
  *  Filterable by type, agent, and date range.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useIsMounted } from '../hooks/useIsMounted';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useVisibleRead } from '../hooks/useVisibleRead';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -39,14 +37,14 @@ export default function RateAuditPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
-  const isMounted = useIsMounted();
 
-  const [changes, setChanges] = useState<RateChange[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [storedChanges, setChanges] = useState<RateChange[]>([]);
+  const [isLoading, setLoading] = useState(true);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
   /* A FAILED READ IS NOT "NO RATE HAS EVER CHANGED" (2026-09-10). Both audit
      reads destructured only `data`, so a refused or failed query rendered an
      empty audit table indistinguishable from a clean history. */
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [storedError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
   const [dateRange, setDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
@@ -58,12 +56,24 @@ export default function RateAuditPage() {
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
 
-  const loadAuditData = useCallback(async () => {
-    if (scopeStatus !== 'ready') return;
-    const scopeKey = { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide };
-    setLoading(true);
-    setLoadError(null);
-    try {
+  const readScope = `${user?.id || ''}:${scopeStatus}:${scopeClubId || ''}:${scopePlatformWide}`;
+  const ownsData = loadedScope === readScope;
+  const changes = ownsData ? storedChanges : [];
+  const loading = !ownsData || isLoading;
+  const loadError = ownsData ? storedError : null;
+
+  // These audit tables stay outside replication. Only an authorized, visible
+  // page reads its bounded history; late replies cannot cross account or club.
+  const loadAuditData = useVisibleRead({
+    scopeKey: readScope,
+    enabled: Boolean(user?.id) && scopeStatus === 'ready' && scope.userId === user?.id,
+    intervalMs: 30_000,
+    read: async (signal) => {
+      const scopeKey = {
+        status: scopeStatus,
+        clubId: scopeClubId,
+        platformWide: scopePlatformWide,
+      };
       const allChanges: RateChange[] = [];
 
       // Both reads run for the club in scope; either failing is a failure of
@@ -76,7 +86,8 @@ export default function RateAuditPage() {
           scopeKey
         )
           .order('created_at', { ascending: false })
-          .limit(100),
+          .limit(100)
+          .abortSignal(signal),
         clubScoped(
           supabase
             .from('rake_rate_audit')
@@ -84,7 +95,8 @@ export default function RateAuditPage() {
           scopeKey
         )
           .order('created_at', { ascending: false })
-          .limit(100),
+          .limit(100)
+          .abortSignal(signal),
       ]);
       if (commResult.error) throw commResult.error;
       if (rakeResult.error) throw rakeResult.error;
@@ -120,51 +132,31 @@ export default function RateAuditPage() {
       // Sort all by date descending
       allChanges.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      if (isMounted.current) setChanges(allChanges);
-    } catch (err) {
+      return allChanges;
+    },
+    onData: (allChanges) => {
+      setChanges(allChanges);
+      setLoadError(null);
+      setLoading(false);
+      setLoadedScope(readScope);
+    },
+    onError: (err) => {
       reportError(err, 'RateAuditPage.Load_failed');
-      if (isMounted.current) {
-        setChanges([]);
-        setLoadError(
-          safeErrorMessage(err, 'The Rate Audit Could Not Be Loaded. Nothing Has Been Changed.')
-        );
-        toast.error('Failed to load rate audit data');
-      }
-    }
-    if (isMounted.current) setLoading(false);
-  }, [scopeStatus, scopeClubId, scopePlatformWide, toast]);
-
-  useVisibilityRefresh(() => loadAuditData());
-
-  useEffect(() => {
-    loadAuditData();
-  }, [loadAuditData]);
-
-  // Real-time subscriptions on audit tables
-  useEffect(() => {
-    const channelKey = 'rate-audit-live';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'commission_rate_audit' },
-        () => loadAuditData()
-      )
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'rake_rate_audit' }, () =>
-        loadAuditData()
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'RateAuditPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[RateAuditPage] Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [loadAuditData]);
+      setChanges([]);
+      setLoadError(
+        safeErrorMessage(err, 'The Rate Audit Could Not Be Loaded. Nothing Has Been Changed.')
+      );
+      setLoading(false);
+      setLoadedScope(readScope);
+      toast.error('Failed to load rate audit data');
+    },
+    onReset: () => {
+      setChanges([]);
+      setLoadError(null);
+      setLoading(true);
+      setLoadedScope(null);
+    },
+  });
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -208,7 +200,7 @@ export default function RateAuditPage() {
     return { icon: '─', color: '#6b7280' };
   };
 
-  if (scope.status !== 'ready') {
+  if (scope.status !== 'ready' || scope.userId !== user?.id) {
     return (
       <div style={{ padding: '16px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
         <FinancialAdminScopeState scope={scope} />

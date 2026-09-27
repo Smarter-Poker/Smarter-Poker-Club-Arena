@@ -39,11 +39,15 @@ vi.mock('../../src/core/MasterBus', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: state.rpc,
+    rpc: (...args: unknown[]) => {
+      const result = Promise.resolve(state.rpc(...args));
+      return Object.assign(result, { abortSignal: () => result });
+    },
     from: (table: string) => {
       const filters: Record<string, unknown> = {};
       const query = {
         select: () => query,
+        abortSignal: () => query,
         eq: (column: string, value: unknown) => {
           filters[column] = value;
           return query;
@@ -153,8 +157,8 @@ describe('one automatic commission settlement path', () => {
       finish(summary(1234.56));
     });
     expect(screen.queryByText('1,234.56')).toBeNull();
-    expect(state.owed).toHaveBeenCalledWith(clubB, 'agent-a');
-    expect(state.owed).not.toHaveBeenCalledWith(clubA, 'agent-a');
+    expect(state.owed).toHaveBeenCalledWith(clubB, 'agent-a', expect.any(AbortSignal));
+    expect(state.owed).not.toHaveBeenCalledWith(clubA, 'agent-a', expect.any(AbortSignal));
   });
   it('removes financial data immediately on signout', async () => {
     const view = render(<AgentCommissionDashboard clubId="club-a" />);
@@ -209,8 +213,8 @@ describe('one automatic commission settlement path', () => {
         p_agent_id: 'agent-a',
         p_club_id: clubA,
       });
-      expect(state.owed).toHaveBeenCalledWith(clubA, 'agent-a');
-      expect(state.downline).toHaveBeenCalledWith(clubA);
+      expect(state.owed).toHaveBeenCalledWith(clubA, 'agent-a', expect.any(AbortSignal));
+      expect(state.downline).toHaveBeenCalledWith(clubA, expect.any(AbortSignal));
       for (const [{ table, filters }] of state.query.mock.calls) {
         if (table !== 'clubs') expect(filters.club_id).toBe(clubA);
       }
@@ -234,7 +238,7 @@ describe('one automatic commission settlement path', () => {
     state.query.mockImplementation(answerQuery);
     fireEvent.click(screen.getByText('Try Again'));
     await screen.findByText('Automatic Weekly Settlement');
-    expect(state.owed).toHaveBeenCalledWith(clubA, 'agent-a');
+    expect(state.owed).toHaveBeenCalledWith(clubA, 'agent-a', expect.any(AbortSignal));
   });
 
   it('does not start financial reads for an old route after delayed club resolution', async () => {
@@ -253,7 +257,7 @@ describe('one automatic commission settlement path', () => {
     await act(async () => finish({ data: { id: clubA }, error: null }));
     expect(state.rpc).toHaveBeenCalledTimes(1);
     expect(state.owed).toHaveBeenCalledTimes(1);
-    expect(state.owed).toHaveBeenCalledWith(clubB, 'agent-a');
+    expect(state.owed).toHaveBeenCalledWith(clubB, 'agent-a', expect.any(AbortSignal));
     fireEvent.click(screen.getByText('View Invoices'));
     expect(state.leave).toHaveBeenCalledWith(`/hub/messenger?clubId=${clubB}&folder=invoices`);
   });
@@ -341,5 +345,25 @@ describe('one automatic commission settlement path', () => {
     expect(screen.getByText('Select A Club To View Its Sub-Agents.')).toBeDefined();
     expect(state.query.mock.calls.some(([q]) => q.table === 'agents')).toBe(false);
     expect(state.downline).not.toHaveBeenCalled();
+  });
+});
+
+describe('commission observation while visible', () => {
+  it('refreshes an externally changed summary without any ledger subscription or writes', async () => {
+    const view = render(<AgentCommissionDashboard clubId="club-a" />);
+    await screen.findByText('Automatic Weekly Settlement');
+    vi.useFakeTimers();
+    state.rpc.mockResolvedValue(summary(321.25));
+    // Resume visibility uses the same observer as the scheduled read.
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(screen.getAllByText('321.25').length).toBeGreaterThan(0);
+    state.rpc.mockResolvedValue(summary(654.25));
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(screen.getAllByText('654.25').length).toBeGreaterThan(0);
+    expect(state.rpc.mock.calls.every(([name]) => name === 'fn_get_agent_commission_summary')).toBe(
+      true
+    );
+    view.unmount();
+    vi.useRealTimers();
   });
 });

@@ -11,7 +11,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/certification-player-index'
 PG = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
-MIGRATION = ROOT / 'supabase/migrations/20260927053710_certification_cleanup_finds_cash_rake_sources_by_player.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927133206_certification_cleanup_finds_cash_rake_sources_by_player.sql'
 ONLINE = ROOT / 'scripts/ops/build-certification-player-index-concurrently.sql'
 cluster = Path(tempfile.mkdtemp(prefix='cert-player-', dir=os.environ.get('TMPDIR')))
 socket = Path(tempfile.mkdtemp(prefix='cert-player-s-', dir='/tmp'))

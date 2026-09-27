@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+    "scripts/ci/classify-ci-changes.mjs": "2a5912b3944902a5e6f7d0de97eb6957d4c0c2f318142ad7b2c7e204244425ba",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "ae57af9f463caea7f871c4ea4c2440651dd0a06d01ba3998c11649b4236e8402",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "458a93325cc5afa51ba95fd23ac20ac2f83f9a48323a62b64740b1b19d41f1db",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "0654d6ce29995e19bfc4bb8eb8e9fb3eb4eaf8bc1217ce16f34b83e51a1e5360",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "3007c284294a0ce1a6f1532259f9aa5331750668cf859714300aa5342af1a736",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2376,6 +2376,15 @@
         "tests/fixtures/sep8-spin-custody/source-binding.json"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "change": "2026-09-27 ordinary elimination canonical lane qualification",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Add required PG17 complete original transaction and real hand-lane contention qualification; preserve all historical binding records."
     }
   ],
   "tournament_rake_club_successor_20260921": {

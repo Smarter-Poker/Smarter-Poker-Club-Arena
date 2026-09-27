@@ -11,8 +11,17 @@
  *
  * Run in a local PostgreSQL 17 on rows exported from production for 41eb379e:
  * the old body refuses F06_CONTINUATION_EXACT_PREMANIFEST_PARK, the new body
- * continues and withdraws the park, a caller without the custody still
- * refuses, and a replay returns the stored receipt.
+ * continues and withdraws the park, and a replay returns the stored receipt.
+ *
+ * THE HOLDER RULE (2026-09-27 21:40 UTC). The first body required the caller
+ * to BE the generation named in the park's custody. In production that
+ * generation (3871b71a) died too: engine e6b9dc5d adopted 41eb379e as
+ * f798e8e0 and the park still names 3871b71a, so the first body refused the
+ * very event it was written for (proved locally on the production shape).
+ * The caller is instead the event's live lease holder (f06_prefix fences
+ * every other generation), never the origin the door closed, and no other
+ * generation may hold a lease. The origin as caller, a foreign lease and a
+ * chip moved between chairs all still refuse.
  *
  * docs/changelog/2026-09-27-a-last-table-park-the-door-left-continues.md
  */
@@ -39,13 +48,20 @@ const BODY = SQL.slice(open, SQL.indexOf('$function$', open));
 describe('a last-table park the door left continues from its never-started hand', () => {
   it('installs exactly the reviewed body over the production pre-image', () => {
     expect(start).toBeGreaterThan(0);
-    expect(md5(BODY)).toBe('f475f8b25886455d53bac5185c9172db');
+    expect(md5(BODY)).toBe('7bcd80fcbbd3ac6cb1f47da7a9dc1d34');
     expect(SQL).toContain("md5(p.prosrc) = '88273d46745a000fc1b7b006427b8d89'");
     expect(SQL).toContain("<> '79b411db1991b00e04e6cfce647843a0'");
   });
 
-  it('admits only the custody holder of a park the door left, with the door receipt as witness', () => {
-    expect(BODY).toContain('AND NOT (o.custody_generation = p_lease_generation');
+  it('admits only the live lease holder for a park the door left, with the door receipt as witness', () => {
+    expect(BODY).toContain('AND NOT (p_lease_generation IS DISTINCT FROM o.origin_generation');
+    expect(BODY).toContain('AND l.lease_generation IS DISTINCT FROM p_lease_generation)');
+    expect(BODY).not.toContain('o.custody_generation = p_lease_generation');
+    // The live lease is proved before any of this is read.
+    expect(BODY.indexOf('PERFORM smarter_private.f06_prefix(')).toBeGreaterThan(0);
+    expect(BODY.indexOf('PERFORM smarter_private.f06_prefix(')).toBeLessThan(
+      BODY.indexOf('A PARK THE ABANDONED-GENERATION DOOR LEFT')
+    );
     expect(BODY).toContain("g.expected->'foreign_parks_left' ? o.break_id::text");
     expect(BODY).toContain("WHERE ns#>>'{permit,permit_id}'=h.permit_id::text");
     expect(BODY).toContain('OR NOT (h.evidence_id IS NOT DISTINCT FROM o.custody_id');

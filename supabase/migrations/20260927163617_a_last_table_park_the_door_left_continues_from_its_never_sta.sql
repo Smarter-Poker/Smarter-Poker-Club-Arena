@@ -19,8 +19,11 @@
 -- to be the origin's own prepared-hand cancellation. Neither can ever hold for
 -- a park the door left, so the event stays parked.
 --
--- The continuation now also accepts exactly that shape: the caller holds the
--- park's custody, the origin generation was closed by the door with a receipt
+-- The continuation now also accepts exactly that shape: the caller is the
+-- event's live lease holder (fenced by f06_prefix), it is not the origin the
+-- door closed, and no other generation holds a lease (the park's custody may
+-- name a successor that itself died: 3871b71a, while e6b9dc5d adopted the
+-- event as f798e8e0); the origin generation was closed by the door with a receipt
 -- that lists this park among foreign_parks_left and this permit among
 -- never_started, and that receipt is the permit's evidence. Every other clause
 -- (last open table, pre-manifest park with no members or attempts, no other
@@ -33,9 +36,11 @@
 -- (the new body was run in a local PostgreSQL 17 on rows exported from
 -- production for 41eb379e after the door: the old body refuses
 -- F06_CONTINUATION_EXACT_PREMANIFEST_PARK, the new body continues and
--- withdraws the park).
+-- withdraws the park; on the production shape of 21:40 UTC, custody naming the
+-- dead 3871b71a and the live lease f798e8e0, the first body of this file also
+-- refused, and the origin as caller, a foreign lease or a moved chip refuse).
 --
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure) = 'f475f8b25886455d53bac5185c9172db'
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure) = '7bcd80fcbbd3ac6cb1f47da7a9dc1d34'
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -95,11 +100,19 @@ BEGIN
  OR o.custody_generation IS NULL
  -- A PARK THE ABANDONED-GENERATION DOOR LEFT (2026-09-27). The door closes a
  -- dead generation's never-started hand as never_started and leaves that
- -- generation's own pre-manifest park for the successor, which claims its
- -- custody. On the event's last open table this continuation is the only exit,
- -- so the successor that holds the custody may take it for exactly that park.
+ -- generation's own pre-manifest park for the successor. On the event's last
+ -- open table this continuation is the only exit. The park's custody may name
+ -- a successor generation that has itself since died (41eb379e: 3871b71a
+ -- claimed it at 16:25, then engine e6b9dc5d adopted the event as f798e8e0 and
+ -- the park still names 3871b71a), so the caller is not required to be that
+ -- generation. The caller is the event's LIVE lease holder (f06_prefix above
+ -- fences every other generation), it is not the origin the door closed, and
+ -- no other generation holds a lease; the door's receipt must name this park.
  OR (o.origin_generation IS DISTINCT FROM o.custody_generation
-     AND NOT (o.custody_generation = p_lease_generation
+     AND NOT (p_lease_generation IS DISTINCT FROM o.origin_generation
+              AND NOT EXISTS(SELECT 1 FROM public.engine_tournament_leases l
+                              WHERE l.tournament_id=p_tournament_id
+                                AND l.lease_generation IS DISTINCT FROM p_lease_generation)
               AND EXISTS(SELECT 1 FROM smarter_private.f06_generation_aborts g
                           WHERE g.tournament_id=p_tournament_id AND g.generation=o.origin_generation
                             AND g.outcome='aborted_unsettled'
@@ -203,7 +216,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
      WHERE p.oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure
-       AND md5(p.prosrc) = 'f475f8b25886455d53bac5185c9172db'
+       AND md5(p.prosrc) = '7bcd80fcbbd3ac6cb1f47da7a9dc1d34'
        AND pg_get_userbyid(p.proowner) = 'postgres'
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.proconfig::text = '{"search_path=pg_catalog, public, smarter_private"}'

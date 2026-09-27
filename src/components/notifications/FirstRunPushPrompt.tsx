@@ -43,6 +43,7 @@ import {
   notificationPermission,
 } from '../../lib/pushClient';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { recordPushPromptEvent } from '../../lib/pushPromptTelemetry';
 import './FirstRunPushPrompt.css';
 
 /**
@@ -207,7 +208,13 @@ export default function FirstRunPushPrompt() {
     // the timer is simply never armed there.
     if (!pending || state || suppressed) return undefined;
     const t = setTimeout(() => {
-      if (mounted.current) setState(pending);
+      if (!mounted.current) return;
+      setState(pending);
+      // The funnel's first step (push_prompt_events). The iPhone install
+      // instruction is not an ask: that device cannot hold a subscription yet.
+      if (pending === 'install')
+        recordPushPromptEvent('first_run', 'unsupported', 'ios_install_shown');
+      else recordPushPromptEvent('first_run', 'shown', pending === 'blocked' ? 'blocked' : null);
     }, SHOW_DELAY_MS);
     return () => clearTimeout(t);
   }, [pending, state, suppressed]);
@@ -216,7 +223,8 @@ export default function FirstRunPushPrompt() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const result = await enablePush();
+    // Records accepted / declined / failed itself, after the outcome.
+    const result = await enablePush({ surface: 'first_run' });
     if (!mounted.current) return;
     setBusy(false);
 
@@ -269,6 +277,7 @@ export default function FirstRunPushPrompt() {
         }
       }
     } else {
+      if (state === 'ask') recordPushPromptEvent('first_run', 'declined', 'not_now');
       markDone();
     }
     answered.current = true;

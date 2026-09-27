@@ -61,6 +61,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import PushEnableBanner from '../../components/notifications/PushEnableBanner';
 import './TournamentDetails.css';
 import { useToast } from '../../components/common/Toast';
 import PageErrorBoundary from '../../components/common/PageErrorBoundary';
@@ -1740,6 +1741,18 @@ export default function TournamentDetails({
           aria-labelledby={`tl-tab-${activeTab}`}
           tabIndex={-1}
         >
+          {/* After registration, before the off: the one moment a player most
+              wants the 15 and 2 minute start reminders
+              (prepare_tournament_reminders). Its own console at the top of
+              the Details panel, so it scrolls with the page instead of
+              shrinking it. Shown only when this device can take a push and
+              holds none, with its own cooldown (src/lib/pushPromptPolicy.ts). */}
+          {activeTab === 'detail' &&
+            isRegistered &&
+            user?.id &&
+            (tournament.status === 'ANNOUNCED' || tournament.status === 'REGISTERING') && (
+              <PushEnableBanner surface="tournament_registration" userId={user.id} />
+            )}
           {activeTab === 'detail' && <DetailOverviewTab {...tabProps} />}
           {activeTab === 'blinds' && <BlindsTab {...tabProps} />}
           {activeTab === 'ranking' && <RankingTab {...tabProps} />}

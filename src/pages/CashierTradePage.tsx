@@ -102,6 +102,7 @@ import { UnionService } from '../services/UnionService';
 import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import { compactChips } from '../utils/format';
 import { titleCase } from '../utils/titleCase';
 
@@ -2179,6 +2180,10 @@ export default function CashierTradePage() {
 
   return (
     <div className={styles.page} data-cashier-surface="trade">
+      {/* The cashier is where money news starts, so the phone alert is offered
+          here: its own riveted console ABOVE the cashier's, never nested in its
+          glass, non-blocking and at most weekly (src/lib/pushPromptPolicy.ts). */}
+      {user?.id && <PushEnableBanner surface="cashier" userId={user.id} />}
       <SpadeConsole
         eyebrow="Secure Cashier"
         title="Cashier"
@@ -3272,6 +3277,9 @@ export default function CashierTradePage() {
                 </dl>
               </div>
             </SpadeConsole>
+            {/* Its own console under the receipt's, inside the same scrolling
+                dialog: two surfaces side by side, never a frame on a frame. */}
+            {user?.id && <PushEnableBanner surface="cashier_receipt" userId={user.id} />}
           </div>
         </div>
       )}

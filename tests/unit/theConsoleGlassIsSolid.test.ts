@@ -43,7 +43,45 @@ describe('the spade master has a window where its glass should be', () => {
   });
 });
 
+describe('the heads have the same window (2026-09-27)', () => {
+  for (const head of ['top', 'top-flat', 'top-diamond', 'top-vip', 'top-club']) {
+    it(`${head}.png is transparent inside the rails under the header rule and beside the pill`, async () => {
+      const { data, info } = await sharp(
+        read(`public/assets/club-buttons/console/spade-console-v1/${head}.png`)
+      )
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const alpha = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
+      expect(info.height).toBe(348);
+      expect(alpha(80, 340)).toBeLessThan(8); // under the header rule, left end
+      expect(alpha(900, 340)).toBeLessThan(8); // under the header rule, right end
+      expect(alpha(860, 160)).toBeLessThan(8); // beside the pill slot
+      expect(alpha(40, 200)).toBe(255); // the left rail
+      // Row 98 is the first row the glass layer covers: the rails are
+      // already there at both inner edges, so nothing paints outside them.
+      expect(alpha(74, 98)).toBeGreaterThan(240);
+      expect(alpha(923, 98)).toBeGreaterThan(240);
+    });
+  }
+});
+
 describe('the stylesheet closes it', () => {
+  it('every head lays the glass tone under its art, below the top rails', () => {
+    const head = rule('.sc__head');
+    expect(head).toMatch(/spade-console-v1\/top\.png'\) top center \/ 100% auto no-repeat,/);
+    expect(head).toMatch(
+      /linear-gradient\(#0a0b0d, #0a0b0d\) 50% 100% \/ 84\.9% 71\.84% no-repeat/
+    );
+    for (const crest of ['flat', 'diamond', 'club', 'vip']) {
+      expect(rule(`.sc--crest-${crest} .sc__head`)).toMatch(
+        new RegExp(
+          `background-image:\\s*url\\('/assets/club-buttons/console/spade-console-v1/top-${crest}\\.png'\\),\\s*linear-gradient\\(#0a0b0d, #0a0b0d\\)`
+        )
+      );
+    }
+  });
+
   it('the body lays the glass tone under the rails, inset to the rail interior', () => {
     const body = rule('.sc__body');
     expect(body).toMatch(/spade-console-v1\/mid\.png'\) top center \/ 100% auto repeat-y,/);

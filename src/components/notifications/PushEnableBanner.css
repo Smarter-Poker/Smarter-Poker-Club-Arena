@@ -110,3 +110,17 @@
     flex: 0 0 auto;
   }
 }
+
+/* The contextual offer (cashier, cashier receipt, tournament registration) is
+   its own SpadeConsole beside the surface it relates to. The chassis paints
+   everything; this only spaces it from the console above or below it. */
+.ca-push-offer {
+  margin-block: 10px;
+}
+
+/* On Game Details the offer is the first thing in the scrolling Details
+   panel; it clears the panel shell's top notch instead of printing into it. */
+.details-content > .ca-push-offer {
+  margin-top: 14px;
+  margin-bottom: 12px;
+}

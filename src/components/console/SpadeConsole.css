@@ -67,8 +67,12 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 348;
-  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
-    no-repeat;
+  /* The head's glass is solid too (see "THE GLASS IS SOLID" below): the
+     master's glass tone under the art, x 74-923 like the body, from row 98
+     (the first row under the top rails) to the bottom of the slice. */
+  background:
+    url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto no-repeat,
+    linear-gradient(#0a0b0d, #0a0b0d) 50% 100% / 84.9% 71.84% no-repeat;
 }
 
 /* THE DRESS VARIES, THE STRUCTURE DOES NOT. Each of these is its own painted
@@ -76,19 +80,31 @@
    with the rails re-mitred into it. No two share a housing. Same box, same
    ratio, same zones; only the picture changes. */
 .sc--crest-flat .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-flat.png');
+  /* Both layers restated: a one-value background-image drops the glass. */
+  background-image:
+    url('/assets/club-buttons/console/spade-console-v1/top-flat.png'),
+    linear-gradient(#0a0b0d, #0a0b0d);
 }
 
 .sc--crest-diamond .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-diamond.png');
+  /* Both layers restated: a one-value background-image drops the glass. */
+  background-image:
+    url('/assets/club-buttons/console/spade-console-v1/top-diamond.png'),
+    linear-gradient(#0a0b0d, #0a0b0d);
 }
 
 .sc--crest-club .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-club.png');
+  /* Both layers restated: a one-value background-image drops the glass. */
+  background-image:
+    url('/assets/club-buttons/console/spade-console-v1/top-club.png'),
+    linear-gradient(#0a0b0d, #0a0b0d);
 }
 
 .sc--crest-vip .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip.png');
+  /* Both layers restated: a one-value background-image drops the glass. */
+  background-image:
+    url('/assets/club-buttons/console/spade-console-v1/top-vip.png'),
+    linear-gradient(#0a0b0d, #0a0b0d);
 }
 
 /* Between the rails: inside x 85-915 of the master, with a little air.
@@ -109,8 +125,8 @@
    Do not "tidy" these four declarations into a plain `padding` shorthand. */
 /* ── THE GLASS IS SOLID (Dan 2026-09-23) ──────────────────────────────
    "POST OR WAIT IS SEE THROUGH ... THIS SHOULD HAVE A SOLID BACK AND NOT SEE
-   THE TABLE THROUGH THE FONTS." Measured on the slices: the spade master's
-   head is opaque, but mid.png is alpha 0-1 everywhere between its rails (x
+   THE TABLE THROUGH THE FONTS." Measured on the slices: mid.png is alpha 0-1
+   everywhere between its rails (x
    74-923 of 1000) and bottom-plates.png is transparent above its closing rail
    except where the two plates sit. On a dark page nobody saw it; over a live
    felt the board and the seats printed straight through the body copy.
@@ -121,7 +137,19 @@
    centred, which is x 74-923. The art is unchanged and still paints on top.
    The shark and riveted families cut their glass opaque and their
    `background-image` overrides below replace the layer list, so they are not
-   touched. Only the spade family had a window where its glass should be. */
+   touched. Only the spade family had a window where its glass should be.
+
+   THE HEAD HAD ONE TOO (2026-09-27). This note used to say the head was
+   opaque. Measured on all five heads (top, top-flat, top-diamond, top-vip,
+   top-club): inside x 74-923 and below the top rails, rows 160-271 are
+   transparent beside the pill slot (x 890-923 holds nothing) and rows 318-347
+   under the header rule are transparent right across. Over black it passed.
+   Over another painted surface (the push offer on Game Details, sitting on
+   the Details panel's shell) the shell's chrome showed through as a white
+   sliver right of the pill, and the rule's ends read as hard cuts where the
+   glass under them was missing. The head now carries the same glass layer,
+   from row 98 (the first row under the rails at x 74 and 923) to its bottom,
+   so it meets the body's glass with no seam. */
 .sc__body {
   position: relative;
   display: flex;

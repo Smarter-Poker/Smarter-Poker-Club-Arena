@@ -74,6 +74,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import { compactChips } from '../utils/format';
 import { enumToTitleCase } from '../utils/titleCase';
 
@@ -2065,6 +2066,14 @@ function CashierContent() {
             clubId={clubId}
           />
         </>
+      )}
+
+      {/* A cash-out request is decided later, by someone else: the moment a
+          push is worth the most. Its own riveted console above the cashier's,
+          like the wallet above it, never nested in the cashier's glass.
+          Non-blocking, with its own cooldown (src/lib/pushPromptPolicy.ts). */}
+      {message?.type === 'success' && action === 'cashout' && user?.id && (
+        <PushEnableBanner surface="cashier_receipt" userId={user.id} />
       )}
 
       <SpadeConsole

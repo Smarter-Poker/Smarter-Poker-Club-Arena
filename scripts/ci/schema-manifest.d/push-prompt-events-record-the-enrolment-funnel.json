@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/push-reach-horse-gate-and-prompts (draft PR). NOT YET APPLIED to production: migration 20260927221335_push_prompt_events_record_the_enrolment_funnel is pending coordinator review and application. Until it is applied these names are a promise, not an observation.",
+  "tables": ["push_prompt_events"],
+  "functions": ["fn_push_prompt_events_stamp", "fn_push_prompt_funnel"]
+}

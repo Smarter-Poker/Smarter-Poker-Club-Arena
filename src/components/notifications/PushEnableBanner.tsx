@@ -35,17 +35,100 @@ import {
   isWebPushSupported,
   notificationPermission,
 } from '../../lib/pushClient';
+import {
+  decidePushOffer,
+  isContextualSurface,
+  isCoolingDown,
+  startCooldown,
+  type PushOffer,
+  type PushPromptSurface,
+} from '../../lib/pushPromptPolicy';
+import { recordPushPromptEvent } from '../../lib/pushPromptTelemetry';
 import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole, type ConsoleCrest, type ConsoleFamily } from '../console/SpadeConsole';
 import '../console/SpadeConsole.css';
 import './PushEnableBanner.css';
 
-type BannerState = null | 'ask' | 'install' | 'blocked';
+type BannerState = PushOffer;
 
-export default function PushEnableBanner() {
+/**
+ * CONTEXTUAL USE (2026-09-27). The same inked banner, laid on the glass of a
+ * surface where the value of a push is obvious at that moment: the cashier, a
+ * cashier receipt, a tournament just registered for. There it is
+ * non-blocking, carries a Not Now, never shows the blocked instruction, and
+ * respects a per-surface cooldown started when it is first shown
+ * (src/lib/pushPromptPolicy.ts). Every showing and every answer is recorded
+ * to push_prompt_events.
+ *
+ * Copy per surface. Literals only, so the Title Case and em dash gates read
+ * every word of it.
+ */
+const CONTEXT_COPY: Record<
+  'cashier' | 'cashier_receipt' | 'tournament_registration',
+  { eyebrow: string; title: string; body: string }
+> = {
+  cashier: {
+    eyebrow: 'Notifications',
+    title: 'Cashier Alerts',
+    body: 'Know The Moment Chips Land In Your Wallet Or A Cashout Is Decided, Even When Smarter Poker Is Closed.',
+  },
+  cashier_receipt: {
+    eyebrow: 'Notifications',
+    title: 'Receipt Alerts',
+    body: 'Turn On Notifications And Every Buy-In And Cashout Receipt Reaches This Device The Moment It Is Issued.',
+  },
+  tournament_registration: {
+    eyebrow: 'Notifications',
+    title: 'Start Alerts',
+    body: 'Turn On Notifications And We Will Alert You Fifteen Minutes And Two Minutes Before Your Tournament Starts.',
+  },
+};
+
+/**
+ * #ClubArenaConsole (2026-09-27, owner review of #5489): IN CONTEXT THE OFFER
+ * IS ITS OWN CONSOLE. A message and two actions is SpadeConsole + plates
+ * (skill section 4, step 4): the title engraved in the painted head, the copy
+ * on the black glass, Not Now on the steel plate and Turn On on the lit
+ * plate, all printed into the approved master. It is a separate surface
+ * placed BESIDE the console it relates to, never nested inside another
+ * console's glass (FRAMES SHOULD NEVER SIT ON TOP OF FRAMES), the same way the
+ * cashier's wallet is a separate master above its console.
+ *
+ * All three wear the spade chassis because it is the family whose primary
+ * plate is the lit blue glass (Turn On) beside the steel secondary (Not Now).
+ * The crest follows the skill's section map: the diamond for wallet and
+ * transaction surfaces. On Game Details the offer sits inside the Details
+ * panel, whose painted shell already carries a centred crown notch, so it
+ * wears the FLAT head: a second emblem directly under the shell's would read
+ * as art on art.
+ */
+const CONTEXT_FAMILY: Record<
+  'cashier' | 'cashier_receipt' | 'tournament_registration',
+  { family: ConsoleFamily; crest: ConsoleCrest }
+> = {
+  cashier: { family: 'spade', crest: 'diamond' },
+  cashier_receipt: { family: 'spade', crest: 'diamond' },
+  tournament_registration: { family: 'spade', crest: 'flat' },
+};
+
+export interface PushEnableBannerProps {
+  /** Where this banner sits. Defaults to the Notifications page recovery door. */
+  surface?: PushPromptSurface;
+  /** Required for a contextual surface: its cooldown is per account. */
+  userId?: string | null;
+}
+
+export default function PushEnableBanner({
+  surface = 'notifications_page',
+  userId = null,
+}: PushEnableBannerProps = {}) {
+  const contextual = isContextualSurface(surface);
   const [state, setState] = useState<BannerState>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  /** One "shown" per mount, however often the state is re-evaluated. */
+  const recordedShown = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -56,33 +139,53 @@ export default function PushEnableBanner() {
 
   const evaluate = useCallback(async () => {
     if (typeof window === 'undefined') return;
-
-    if (!isWebPushSupported()) {
-      // iOS Safari has no PushManager until the site is installed. That is a
-      // prerequisite, not a dead end, so say so.
-      if (mounted.current) setState(isIos() && !isIosStandalonePwa() ? 'install' : null);
-      return;
-    }
-
-    // An explicit "off" is a decision, not a gap. Do not nag past it; Settings
-    // is where somebody who changes their mind goes.
-    if (isOptedOut()) {
+    // A contextual nudge belongs to an account (its cooldown is keyed on it)
+    // and waits out its window. The Notifications page door never cools down.
+    if (contextual && (!userId || isCoolingDown(surface, userId))) {
       if (mounted.current) setState(null);
       return;
     }
-
-    if (notificationPermission() === 'denied') {
-      if (mounted.current) setState('blocked');
-      return;
-    }
-
-    const subscribed = await hasLocalSubscription();
-    if (mounted.current) setState(subscribed ? null : 'ask');
-  }, []);
+    const supported = isWebPushSupported();
+    const optedOut = supported && isOptedOut();
+    const permission = notificationPermission();
+    // Only ask the service worker when the cheap answers leave an offer open.
+    const subscribed =
+      supported && !optedOut && permission !== 'denied' ? await hasLocalSubscription() : false;
+    const offer = decidePushOffer(
+      {
+        supported,
+        // iOS Safari has no PushManager until the site is installed. That is a
+        // prerequisite, not a dead end, so say so.
+        iosNeedsInstall: isIos() && !isIosStandalonePwa(),
+        // An explicit "off" is a decision, not a gap. Do not nag past it;
+        // Settings is where somebody who changes their mind goes.
+        optedOut,
+        permission,
+        subscribed,
+      },
+      contextual
+    );
+    if (mounted.current) setState(offer);
+  }, [contextual, surface, userId]);
 
   useEffect(() => {
     void evaluate();
   }, [evaluate]);
+
+  // Record the showing once, and start a contextual surface's cooldown the
+  // moment the player has actually seen it.
+  useEffect(() => {
+    if (!state || recordedShown.current) return;
+    recordedShown.current = true;
+    if (contextual && userId) startCooldown(surface, userId);
+    if (state === 'install') recordPushPromptEvent(surface, 'unsupported', 'ios_install_shown');
+    else recordPushPromptEvent(surface, 'shown', state === 'blocked' ? 'blocked' : null);
+  }, [state, contextual, surface, userId]);
+
+  const handleDismiss = () => {
+    if (state === 'ask') recordPushPromptEvent(surface, 'declined', 'not_now');
+    setState(null);
+  };
 
   /**
    * DELIBERATE: enablePush() is awaited straight out of the click handler.
@@ -93,7 +196,7 @@ export default function PushEnableBanner() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const result = await enablePush();
+    const result = await enablePush({ surface });
     if (!mounted.current) return;
     setBusy(false);
     if (result.ok) {
@@ -109,6 +212,69 @@ export default function PushEnableBanner() {
 
   if (!state) return null;
 
+  if (contextual) {
+    const key = surface as keyof typeof CONTEXT_COPY;
+    const dress = CONTEXT_FAMILY[key];
+    if (state === 'install') {
+      return (
+        <SpadeConsole
+          as="section"
+          family={dress.family}
+          crest={dress.crest}
+          eyebrow="Notifications"
+          title="Add To Home Screen"
+          pill="Install"
+          pillInk="blue"
+          foot="plates"
+          plates={{
+            secondary: { label: 'Not Now', onClick: handleDismiss },
+            primary: { label: 'Got It', ink: 'white', onClick: handleDismiss },
+          }}
+          className="ca-push-offer"
+          data-surface={surface}
+          aria-label="Add Smarter Poker To Your Home Screen"
+        >
+          <p className="sc-copy">
+            Apple Devices Can Only Send Notifications From An Installed App. In Safari, Tap Share,
+            Then Add To Home Screen, Then Open Smarter Poker From There.
+          </p>
+        </SpadeConsole>
+      );
+    }
+    const copy = CONTEXT_COPY[key];
+    return (
+      <SpadeConsole
+        as="section"
+        family={dress.family}
+        crest={dress.crest}
+        eyebrow={copy.eyebrow}
+        title={copy.title}
+        pill="Off"
+        pillInk="muted"
+        foot="plates"
+        plates={{
+          secondary: { label: 'Not Now', onClick: handleDismiss, disabled: busy },
+          primary: {
+            label: busy ? 'Enabling...' : 'Turn On',
+            ink: 'white',
+            onClick: handleEnable,
+            disabled: busy,
+          },
+        }}
+        className="ca-push-offer"
+        data-surface={surface}
+        aria-label={copy.title}
+      >
+        <p className="sc-copy">{copy.body}</p>
+        {/* The one string here that is not a literal: whatever the push
+            service said. Title Cased where it is printed. */}
+        {error && <p className="sc-copy sc-ink--red">{titleCase(error)}</p>}
+      </SpadeConsole>
+    );
+  }
+
+  // The Notifications page door (2026-09-14 ruling): inked on that page's
+  // glass, one lit word, no frame of its own. Unchanged.
   if (state === 'install') {
     return (
       <div className="ca-push-banner">

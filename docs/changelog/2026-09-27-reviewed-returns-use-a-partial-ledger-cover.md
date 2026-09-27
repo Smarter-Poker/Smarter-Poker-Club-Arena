@@ -1,0 +1,7 @@
+# Reviewed overlay returns use their exact partial ledger cover
+
+The installed reviewed-return discovery selected two ledger legs after reading 4,925 disk blocks through a broad tournament/category index. Its new partial covering index includes only the exact reversal, prize-liability, matching entity, and reviewed-return-kind predicate already used by the installed query. Only a UUID and bounded numeric amount enter its tuples; JSON and arbitrary text stay outside the index.
+
+The maintained native online build runs as one top-level `CREATE INDEX CONCURRENTLY` command. The short recording migration refuses missing, invalid, drifted, or actively building state, verifies the exact financial source and authority, and never runs a payer or rewrites a financial function. Recovery is restricted to a terminal interrupted build of the same index through the maintained concurrent reindex command.
+
+The PG17 acceptance covers signed/NULL/duplicate return semantics, the complete existing caller oracle, real old-snapshot waits and concurrent writers, a genuinely interrupted invalid build and its recovery, index/column/function/permission drift, rollback, and financial-row preservation. In the isolated data the projection read 7 buffers after the index versus 1,411 before; those are local measurements, not production timing. Production installation, same-query timing, natural cron completion, and protected source delivery are separate evidence.

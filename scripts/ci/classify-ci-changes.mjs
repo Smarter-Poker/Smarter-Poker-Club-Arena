@@ -58,6 +58,8 @@ const cashEvidence =
 // The discovery privacy fixture must execute even when only its inputs change.
 const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
+const backedPayoutScan =
+  /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
@@ -268,6 +270,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
       matches(settlementConservationIndex) ||
@@ -311,6 +314,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
       matches(settlementConservationIndex) ||

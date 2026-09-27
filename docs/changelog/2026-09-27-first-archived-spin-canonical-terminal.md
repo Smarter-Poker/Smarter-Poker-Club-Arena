@@ -98,3 +98,9 @@ Four shared metadata files now pin the exact combined classifier, workflow and
 nested bindings. No financial fixture, installed migration or oracle changed.
 The prior 8690 hosted nine-image evidence remains retained; the merged candidate
 must pass its own required checks before protected delivery.
+
+The subsequent integration with main eb6e94939 also retains the BBJ scoped-ledger
+qualification in shard 4. Both parents' added audit records are preserved, with
+only current classifier and dependent metadata pins updated. The 214 archived
+Spin inputs are unchanged. Hosted run 36297476620 passed for b501 before this
+new integration; its nine original cases remain separately retained and reviewed.

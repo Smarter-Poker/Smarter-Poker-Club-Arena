@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { realpathSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { PassThrough, Writable } from 'node:stream';
 import { WebSocket } from 'ws';
 const transport = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock('../services/supabase/client.js', () => ({
@@ -1147,9 +1148,12 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     expect(result.changed).toEqual({ name: 'test', big_blind: 4 });
   });
 
-  const holdingSql = async (query: string) => {
+  const holdingSql = async (
+    query: string,
+    spawnPsql = (command: string, args: string[]) => spawn(command, args)
+  ) => {
     sql('SELECT to_json(true)'); // Validate the disposable socket before opening another connection.
-    const child = spawn(process.env.CA_DEPARTURE_PSQL!, [
+    const child = spawnPsql(process.env.CA_DEPARTURE_PSQL!, [
       '-X',
       '-qAt',
       '-v',
@@ -1171,7 +1175,8 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         error += String(data);
       });
       child.once('error', (e) => resolve({ code: null, error: String(e) }));
-      child.once('exit', (code) => resolve({ code, error }));
+      // Match concurrentSql: process exit precedes completion of the stdio pipes.
+      child.once('close', (code) => resolve({ code, error }));
     });
     const ready = new Promise<void>((resolve, reject) => {
       child.stdout.on('data', (data) => {
@@ -1179,7 +1184,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         if (output.includes('SQL_LOCK_READY')) resolve();
       });
       child.once('error', reject);
-      child.once('exit', (code) => {
+      child.once('close', (code) => {
         if (!output.includes('SQL_LOCK_READY'))
           reject(new Error('Lock holder exited ' + code + ': ' + error));
       });
@@ -1200,6 +1205,74 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       },
     };
   };
+
+  it('retains the lock holder rejection after process exit until stderr is drained', async () => {
+    const child = new EventEmitter();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const statements: string[] = [];
+    const stdin = new Writable({
+      write(chunk, _encoding, callback) {
+        statements.push(String(chunk));
+        if (statements.length === 1) stdout.write('SQL_LOCK_READY\n');
+        callback();
+      },
+      final(callback) {
+        child.emit('exit', 3);
+        queueMicrotask(() => {
+          stderr.write('ERROR: CASH_PURCHASE_ONLY\n');
+          stdout.end();
+          stderr.end();
+          child.emit('close', 3);
+          callback();
+        });
+      },
+    });
+    const spawnPsql = vi.fn(
+      () =>
+        Object.assign(child, { stdin, stdout, stderr }) as unknown as ChildProcessWithoutNullStreams
+    );
+    const holder = await holdingSql('SELECT 1', spawnPsql);
+    const first = holder.finish(true, 'SELECT 2');
+    expect(holder.finish(false)).toBe(first);
+    expect(await first).toEqual({ code: 3, error: 'ERROR: CASH_PURCHASE_ONLY\n' });
+    expect(statements).toEqual([
+      "BEGIN;\nSET LOCAL statement_timeout='5s';\nSELECT 1;\n\\echo SQL_LOCK_READY\n",
+      'SELECT 2;\nCOMMIT;\n',
+    ]);
+    expect(spawnPsql).toHaveBeenCalledOnce();
+  });
+
+  it('accepts the lock holder readiness delivered after exit and before stdout closes', async () => {
+    const child = new EventEmitter();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    let started = false;
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback) {
+        if (started) {
+          callback();
+          return;
+        }
+        started = true;
+        child.emit('exit', 0);
+        queueMicrotask(() => {
+          stdout.write('SQL_LOCK_READY\n');
+          stdout.end();
+          stderr.end();
+          child.emit('close', 0);
+          callback();
+        });
+      },
+    });
+    const holder = await holdingSql(
+      'SELECT 1',
+      () =>
+        Object.assign(child, { stdin, stdout, stderr }) as unknown as ChildProcessWithoutNullStreams
+    );
+    expect(await holder.finish(false)).toEqual({ code: 0, error: '' });
+  });
+
   const waitForDatabaseLock = async (application: string) => {
     for (let attempt = 0; attempt < 100; attempt++) {
       if (

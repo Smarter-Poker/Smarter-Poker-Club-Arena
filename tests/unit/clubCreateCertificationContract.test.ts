@@ -99,6 +99,13 @@ describe('Create Club production certification contract', () => {
     );
     expect(migration).toContain('v_ledger_archived_count <> v_ledger_count');
     expect(migration).toContain('Reserved Certification Ledger Actor Archive Copied');
+    expect(migration).toContain("'^club-opening-grant:' || l.club_id::text || '(:[0-9]+)?$'");
+    expect(migration).toContain("l.from_type IN ('issuance_reserve', 'system_mint')");
+    expect(migration).toContain("l.from_type = 'settlement_suspense'");
+    expect(migration).toContain("l.from_type = 'table_stack'");
+    expect(migration).toContain('l.amount = 100000');
+    expect(migration).toContain('l.to_entity_id = p_user_id');
+    expect(migration).toContain('OR NOT (');
     expect(migration).toContain('Test-account ledger actor testimony is append-only');
     expect(migration).toContain('REVOKE ALL ON TABLE public.ca_test_account_ledger_actor_archive');
     expect(migration).not.toMatch(

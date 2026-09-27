@@ -162,9 +162,10 @@ BEGIN
     v_new,
     $$  SELECT count(*) INTO v_audit_count
     FROM public.audit_trail WHERE actor_id = p_user_id;$$,
-    $$  -- Refuse any certification identity that reached gameplay or a
-  -- recognized tournament receipt. This door is solely for Create Club's
-  -- opening-grant testimony, including its historical retirement variants.
+    $$  -- Refuse every financial row except the exact Create Club opening
+  -- grant contract or one of the two pre-contract certification-only opening
+  -- variants. Namespace admission alone is not enough: an unrelated mint or
+  -- adjustment must keep its live actor and block account deletion.
   IF EXISTS (
     SELECT 1
       FROM public.chip_ledger l
@@ -173,9 +174,38 @@ BEGIN
          l.hand_id IS NOT NULL
          OR l.table_id IS NOT NULL
          OR l.tournament_id IS NOT NULL
-         OR l.category IS NULL
-         OR l.category NOT IN ('mint', 'adjustment')
          OR l.status IS DISTINCT FROM 'posted'
+         OR NOT (
+           (
+             l.category = 'mint'
+             AND l.amount = 100000
+             AND l.from_type IN ('issuance_reserve', 'system_mint')
+             AND l.from_entity_id IS NULL
+             AND l.to_type = 'club_treasury'
+             AND l.to_entity_id = l.club_id
+             AND l.idempotency_key IS NOT NULL
+             AND l.idempotency_key ~
+                   ('^club-opening-grant:' || l.club_id::text || '(:[0-9]+)?$')
+           )
+           OR (
+             l.category = 'adjustment'
+             AND l.amount = 100000
+             AND l.idempotency_key IS NULL
+             AND l.from_entity_id IS NULL
+             AND (
+               (
+                 l.from_type = 'settlement_suspense'
+                 AND l.to_type = 'club_treasury'
+                 AND l.to_entity_id = l.club_id
+               )
+               OR (
+                 l.from_type = 'table_stack'
+                 AND l.to_type = 'player_wallet'
+                 AND l.to_entity_id = p_user_id
+               )
+             )
+           )
+         )
          OR EXISTS (
            SELECT 1
              FROM public.accounting_tournament_fee_recognitions r

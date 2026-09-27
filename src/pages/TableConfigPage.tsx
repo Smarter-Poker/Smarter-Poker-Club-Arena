@@ -643,6 +643,7 @@ export default function TableConfigPage({
     onReset: () => {
       templateRevision.current += 1;
       setTemplates([]);
+      setSavingTemplate(false);
     },
     read: async (signal) => {
       const revision = templateRevision.current;

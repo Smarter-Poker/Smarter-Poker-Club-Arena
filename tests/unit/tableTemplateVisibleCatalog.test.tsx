@@ -222,6 +222,9 @@ it('does not insert a former club save into the newly selected club', async () =
   catalog.read.mockResolvedValue(ok([template('B')]));
   result.rerender(view('club-b'));
   await screen.findByText('Template B');
+  expect(
+    (screen.getByRole('button', { name: 'Save As Template' }) as HTMLButtonElement).disabled
+  ).toBe(false);
   await act(async () => pending.resolve(ok(template('Saved'))));
   expect(screen.queryByText('Template Saved')).toBeNull();
   expect(toast.success).not.toHaveBeenCalled();

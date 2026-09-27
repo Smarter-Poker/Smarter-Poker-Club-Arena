@@ -26,6 +26,7 @@ import {
   HorseDecisionJournalStore,
   horseJournalCapacityReason,
 } from './horseDecisionJournal/store.js';
+import { horseJournalFailureKind } from './horseDecisionJournal/failure.js';
 import {
   horseJournalJson,
   journalHash,
@@ -1769,6 +1770,107 @@ describe('/health reads the journal from the thread that runs it', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe('/health shows every decision shard, never only the one that answered last', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+  // Two shards as /health saw them on e6b9dc5d at 21:53 UTC on 2026-09-27:
+  // one capturing, one stopped for good since 21:22:51.
+  const report = (mode: 'ready' | 'failed', patch: Record<string, unknown> = {}) => ({
+    mode,
+    lastFailureReason: null,
+    pausedReason: null,
+    pausedSince: null,
+    failedSince: null,
+    queued: 6,
+    ...STATS_ARCHIVE,
+    records: 4886577,
+    maxRowid: 4935653,
+    statsAgeMs: 1087,
+    reportAgeMs: null,
+    capture: 'copied text is never shown',
+    ...patch,
+  });
+  const failed = report('failed', {
+    lastFailureReason: 'termination_unverified',
+    failedSince: '2026-09-27T21:22:51.994Z',
+    queued: 64,
+    records: 4774445,
+    maxRowid: 4823521,
+    statsAgeMs: 1971018,
+  });
+  it('reports the least healthy shard and counts the shards by mode', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    m.relayHorseDecisionJournalHealth(failed, 'shard-2');
+    // The running shard answers last; the stopped one must still show.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    const health = m.horseDecisionJournalHealth();
+    expect(health).toMatchObject({
+      mode: 'failed',
+      lastFailureReason: 'termination_unverified',
+      failedSince: '2026-09-27T21:22:51.994Z',
+      queued: 70,
+      publishers: { total: 2, byMode: { ready: 1, failed: 1 } },
+    });
+    // The catalog is one shared archive: its figures are the freshest shard's.
+    expect(health.records).toBe(4886577);
+    expect(health.maxRowid).toBe(4935653);
+    expect(health.statsAgeMs).toBeLessThan(1971018);
+    expect(health.capture).toMatch(
+      /^1 of 2 decision-shard publishers running; least healthy: not running: capture stopped for good at termination_unverified since 2026-09-27T21:22:51\.994Z;/
+    );
+    // Every shard capturing again: ready, and the sentence says all of them.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-2');
+    expect(m.horseDecisionJournalHealth()).toMatchObject({
+      mode: 'ready',
+      lastFailureReason: null,
+      publishers: { total: 2, byMode: { ready: 2 } },
+    });
+    expect(m.horseDecisionJournalHealth().capture).toMatch(
+      /^2 of 2 decision-shard publishers running; least healthy: running:/
+    );
+  });
+  it('keeps the single-shard sentence unchanged', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(failed);
+    const health = m.horseDecisionJournalHealth();
+    expect(health.publishers).toEqual({ total: 1, byMode: { failed: 1 } });
+    expect(health.capture).toMatch(
+      /^not running: capture stopped for good at termination_unverified/
+    );
+  });
+});
+
+describe('a competing writer on the shared archive is a lock, not a dead writer', () => {
+  it('refuses as RETRYABLE while the other shard holds the catalog, and the same store then succeeds', () => {
+    const dir = folder(),
+      options = { directory: join(dir, 'archive'), maxBytes: 1024 * 1024, maxSegments: 100 };
+    const a = store(dir, { archive: options }),
+      b = store(dir, { archive: options });
+    const catalogA = (a as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    catalogA.exec('BEGIN IMMEDIATE');
+    let refused: unknown = null;
+    try {
+      b.appendBatch([record(1)]);
+    } catch (error) {
+      refused = error;
+    }
+    expect(horseJournalFailureKind(refused)).toBe('RETRYABLE');
+    catalogA.exec('ROLLBACK');
+    // Nothing was half written: the same writer, asked again, records it, and
+    // the other writer sees the same record as a replay.
+    expect(b.appendBatch([record(1)])).toEqual(['recorded']);
+    expect(a.appendBatch([record(1)])).toEqual(['replayed']);
+    expect(b.storageStats().archive).toMatchObject({ records: 1, pendingSegments: 0 });
   });
 });
 

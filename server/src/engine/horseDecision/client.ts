@@ -237,8 +237,11 @@ function errorMessage(error: unknown): string {
  * .receive), so a full window can never starve its timers, its CANCEL handling
  * or its governor's sampler.
  */
+let journalRelaySources = 0;
 export class LiveHorseDecisionWorkerClient {
   private readonly journalConfigured = horseDecisionJournalConfigured();
+  /** Each shard's journal report keeps its own /health slot (HorseDecisionJournal.ts). */
+  private readonly journalRelaySource = `shard-${++journalRelaySources}`;
   private retirementCaptureCount = 0;
   private retirementCaptureBytes = 0;
   private readonly committedDecisions = new HorseCommittedDecisionTracker();
@@ -1156,7 +1159,7 @@ export class LiveHorseDecisionWorkerClient {
       this.statusSampledAt = this.lastCompletedAt;
       // The journal publisher runs in this worker; /health runs here. Without
       // this relay /health answered `starting` for a journal that had failed.
-      relayHorseDecisionJournalHealth(message.horseJournal);
+      relayHorseDecisionJournalHealth(message.horseJournal, this.journalRelaySource);
     }
     if (!active.settled) {
       active.settled = true;

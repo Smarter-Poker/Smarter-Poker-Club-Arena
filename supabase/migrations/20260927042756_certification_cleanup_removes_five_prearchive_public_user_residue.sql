@@ -22,10 +22,6 @@ SET LOCAL lock_timeout = '4s';
 -- surfaces. Keep the exhaustive guard bounded, but give its read-only scans
 -- enough time to finish before the exact five-row mutation.
 SET LOCAL statement_timeout = '15min';
-SET LOCAL max_parallel_workers_per_gather = 8;
-SET LOCAL min_parallel_table_scan_size = 0;
-SET LOCAL parallel_setup_cost = 0;
-SET LOCAL parallel_tuple_cost = 0;
 
 DO $cleanup$
 DECLARE
@@ -42,6 +38,10 @@ DECLARE
   v_validated integer := 0;
   v_deleted integer := 0;
   v_rakeback_rows bigint := 0;
+  v_old_max_parallel text := current_setting('max_parallel_workers_per_gather');
+  v_old_min_parallel_scan text := current_setting('min_parallel_table_scan_size');
+  v_old_parallel_setup_cost text := current_setting('parallel_setup_cost');
+  v_old_parallel_tuple_cost text := current_setting('parallel_tuple_cost');
 BEGIN
   IF public.fn_platform_frozen() THEN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_REFUSES_PLATFORM_FREEZE'
@@ -200,8 +200,12 @@ BEGIN
 
   -- This ten-million-row table has a composite primary key led by
   -- rake_record_id, so the generic serial EXISTS plan cannot use its index.
-  -- Count its exact five user IDs with the bounded parallel scan configured
-  -- above, then exclude only this already-guarded column from the loop.
+  -- Count its exact five user IDs with a temporary bounded parallel plan,
+  -- restore every planner setting, then exclude only this guarded column.
+  PERFORM set_config('max_parallel_workers_per_gather', '8', true);
+  PERFORM set_config('min_parallel_table_scan_size', '0', true);
+  PERFORM set_config('parallel_setup_cost', '0', true);
+  PERFORM set_config('parallel_tuple_cost', '0', true);
   SELECT count(*)
     INTO v_rakeback_rows
     FROM public.rakeback_stats_applied r
@@ -210,6 +214,10 @@ BEGIN
     RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_IS_NOT_EMPTY: rakeback_stats_applied.user_id'
       USING ERRCODE = '55000';
   END IF;
+  PERFORM set_config('max_parallel_workers_per_gather', v_old_max_parallel, true);
+  PERFORM set_config('min_parallel_table_scan_size', v_old_min_parallel_scan, true);
+  PERFORM set_config('parallel_setup_cost', v_old_parallel_setup_cost, true);
+  PERFORM set_config('parallel_tuple_cost', v_old_parallel_tuple_cost, true);
 
   -- The older feature tables did not consistently declare user foreign
   -- keys. Enumerate every extant public UUID user-bearing column without a

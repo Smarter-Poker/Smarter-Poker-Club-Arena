@@ -53,7 +53,7 @@ describe('pre-archive certification public-user residue cleanup', () => {
     expect(migration.trimStart()).toMatch(/^--[\s\S]*\nBEGIN;/);
     expect(migration.trimEnd()).toMatch(/COMMIT;$/);
     expect(migration).toContain("SET LOCAL statement_timeout = '15min'");
-    expect(migration).toContain('SET LOCAL max_parallel_workers_per_gather = 8');
+    expect(migration).not.toContain('SET LOCAL max_parallel_workers_per_gather');
     expect(migration).toContain('IF public.fn_platform_frozen() THEN');
     expect(migration).toContain(
       'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_REFUSES_PLATFORM_FREEZE'
@@ -159,6 +159,14 @@ describe('pre-archive certification public-user residue cleanup', () => {
   });
 
   it('guards the unindexed ten-million-row rakeback surface with a bounded parallel count', () => {
+    const parallelStart = migration.indexOf(
+      "set_config('max_parallel_workers_per_gather', '8', true)"
+    );
+    const rakebackCount = migration.indexOf('FROM public.rakeback_stats_applied r');
+    const parallelRestore = migration.indexOf(
+      "set_config('max_parallel_workers_per_gather', v_old_max_parallel, true)"
+    );
+    const catalogLoop = migration.indexOf('FOR v_surface IN');
     expect(migration).toContain('FROM public.rakeback_stats_applied r');
     expect(migration).toContain('WHERE r.user_id = ANY (v_target_ids)');
     expect(migration).toContain('IF v_rakeback_rows <> 0 THEN');
@@ -168,6 +176,18 @@ describe('pre-archive certification public-user residue cleanup', () => {
     expect(migration.indexOf('FROM public.rakeback_stats_applied r')).toBeLessThan(
       migration.indexOf('DELETE FROM public.users u')
     );
+    expect(parallelStart).toBeGreaterThan(-1);
+    expect(parallelStart).toBeLessThan(rakebackCount);
+    expect(rakebackCount).toBeLessThan(parallelRestore);
+    expect(parallelRestore).toBeLessThan(catalogLoop);
+    for (const setting of [
+      'max_parallel_workers_per_gather',
+      'min_parallel_table_scan_size',
+      'parallel_setup_cost',
+      'parallel_tuple_cost',
+    ]) {
+      expect(migration).toContain(`current_setting('${setting}')`);
+    }
   });
 
   it('refuses a changed public-users delete graph before the first mutation', () => {

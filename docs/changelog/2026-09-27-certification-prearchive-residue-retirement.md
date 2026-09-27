@@ -3,9 +3,9 @@
 ## Change #1 — Separate The Five Clean August Identity Shadows
 
 **File:** `supabase/migrations/20260927042756_certification_cleanup_removes_five_prearchive_public_user_residue.sql`
-**Lines:** 1-334; exact preimages, refusal checks, and final delete
+**Lines:** 1-342; exact preimages, refusal checks, and final delete
 **What existed:** One proposed cleanup grouped five clean August `public.users` shadows with a September identity that has protected diamond financial testimony.
-**What changed:** The migration now targets only the five August rows whose complete production readback was empty. It pins each ID, email, username, exact `NULL` avatar, timestamps, whole protected-surface state, and the unchanged `public.users` trigger/foreign-key delete graph before deleting exactly five rows. Its exhaustive catalog guard has a bounded 15-minute statement budget. The 10-million-row `rakeback_stats_applied.user_id` surface is guarded by an exact parallel count inside the same transaction because its composite index starts with another key; the original serial scan exceeded 120 seconds and rolled back without mutation, while the parallel production readback proved zero matches in two seconds.
+**What changed:** The migration now targets only the five August rows whose complete production readback was empty. It pins each ID, email, username, exact `NULL` avatar, timestamps, whole protected-surface state, and the unchanged `public.users` trigger/foreign-key delete graph before deleting exactly five rows. Its exhaustive catalog guard has a bounded 15-minute statement budget. The 10-million-row `rakeback_stats_applied.user_id` surface is guarded by an exact parallel count inside the same transaction because its composite index starts with another key; the original serial scan exceeded 120 seconds and rolled back without mutation, while the parallel production readback proved zero matches in two seconds. The count temporarily raises parallelism and restores every prior planner setting before the remaining catalog loop.
 **Why:** The September identity is not an orphan and cannot share the clean-row deletion path. Splitting it preserves financial testimony and keeps the August correction fail closed.
 **Verified:** YES — file reread, exhaustive live readback was read-only, focused contracts and migration uniqueness passed.
 **TypeScript:** PASS — focused Vitest TypeScript contracts passed.
@@ -23,7 +23,7 @@
 ## Change #3 — Retain Regression Contracts
 
 **File:** `tests/unit/certificationCleanupRemovesFivePrearchivePublicUserResidue.test.ts`; `tests/unit/certificationIdentityArchiveRetirement.test.ts`
-**Lines:** 1-194 and 1-110; complete source-contract suites
+**Lines:** 1-214 and 1-110; complete source-contract suites
 **What existed:** The earlier contract covered the mixed six-row proposal and did not distinguish protected diamond testimony.
 **What changed:** Contracts now lock the five-row scope, exact username/avatar preimages, all catalog refusal surfaces, unchanged `public.users` delete graphs, immutable archive ACL/trigger/no-FK rules, archive-before-delete ordering, exact two-delete limit, and the prohibition on financial-row mutation.
 **Why:** Future edits must fail if they widen deletion, weaken immutability, or treat protected testimony as disposable residue.

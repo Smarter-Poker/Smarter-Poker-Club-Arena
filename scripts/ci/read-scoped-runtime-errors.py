@@ -114,8 +114,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise RuntimeError('Health redirect refused')
 
 
-def health():
-    url = 'https://engine.smarter.poker/health?runtime_observation=' + str(time.time_ns())
+def health(origin='https://engine.smarter.poker'):
+    url = origin+'/health?runtime_observation=' + str(time.time_ns())
     with urllib.request.build_opener(NoRedirect).open(url, timeout=10) as r:
         if r.status != 200:
             raise RuntimeError('Health unavailable')
@@ -131,9 +131,15 @@ def health():
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         scopes = selection(json.loads(base64.b64decode(sys.argv[2], validate=True)))
+        before = health('http://127.0.0.1:8080')
         raw = capture()
+        after = health('http://127.0.0.1:8080')
+        if before != after:
+            raise RuntimeError('Host engine changed during observation')
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
                           'window': 'last 15 minutes; last 20000 physical lines',
+                          'hostEngineBefore': before, 'hostEngineAfter': after,
+                          'perRecordEngineIdentity': 'unproven; the retained window may include an earlier process',
                           'inputBytes': len(raw), **extract(raw, scopes)}))
         return
     if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
@@ -170,10 +176,10 @@ def main():
         if result.get('schema') != 'scoped-runtime-errors/v1' or result.get('readOnly') is not True:
             raise RuntimeError('Observation contract unavailable')
         after = health()
-        if before != after:
-            raise RuntimeError('Engine changed during observation')
+        if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
+            raise RuntimeError('Public and host engine identity changed or differ')
         output = {**result, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                  'engine': after, 'selection': scopes, 'diagnosticOnly': True}
+                  'engineAtObservation': after, 'selection': scopes, 'diagnosticOnly': True}
         serialized = json.dumps(output, indent=2)+'\n'
         if key in serialized or pin in serialized:
             raise RuntimeError('Observation refused')

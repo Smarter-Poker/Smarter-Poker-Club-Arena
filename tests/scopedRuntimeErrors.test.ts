@@ -29,6 +29,10 @@ describe('explicit bounded original runtime error observation', () => {
       "'docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine'"
     );
     expect(source).toContain('if before != after:');
+    expect(source).toContain("health('http://127.0.0.1:8080')");
+    expect(source).toContain("result.get('hostEngineBefore') != before");
+    expect(source).toContain("result.get('hostEngineAfter') != after");
+    expect(source).toContain("'perRecordEngineIdentity': 'unproven;");
     expect(source).toContain('shutil.rmtree(directory)');
     expect(source).not.toMatch(/docker.*(?:restart|exec|stop)|systemctl|\.env(?:\b|\.)|shell=True/);
   });

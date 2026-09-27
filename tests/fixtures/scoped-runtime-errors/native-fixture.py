@@ -69,15 +69,20 @@ class NativeLogReader(unittest.TestCase):
             docker.chmod(0o700)
             environment = {'PATH': str(directory)+':/usr/bin:/bin'}
             encoded = base64.b64encode(json.dumps(SCOPES).encode()).decode()
-            result = subprocess.run([sys.executable, str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'), '--remote', encoded], capture_output=True, text=True, env=environment, timeout=10)
+            # Host health is simulated; the maintained remote main and actual
+            # fixed subprocess entry are exercised with a real local pipe.
+            program = "import importlib.util,sys; s=importlib.util.spec_from_file_location('r',"+repr(str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'))+"); m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.health=lambda origin: {'version':'abcdef012345','instanceId':'1-fixture'};sys.argv=['reader','--remote',"+repr(encoded)+"];m.main()"
+            result = subprocess.run([sys.executable, '-c', program], capture_output=True, text=True, env=environment, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             output = json.loads(result.stdout)
             self.assertTrue(output['readOnly'])
             self.assertEqual(output['records'][0]['symbolicErrors'], ['F06_ORIGINAL_CHANGED'])
+            self.assertEqual(output['hostEngineBefore'], output['hostEngineAfter'])
+            self.assertIn('unproven', output['perRecordEngineIdentity'])
 
     def test_transport_admission_ephemeral_permissions_and_failure_cleanup(self):
         original_run = subprocess.run
-        for fail in ['none', 'transport', 'identity']:
+        for fail in ['none', 'transport', 'identity', 'host_identity']:
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as name:
                 directory = Path(name)
                 generated = directory/'fixture_key'
@@ -102,7 +107,8 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(args[-2], 'root@fixture.example')
                     self.assertRegex(args[-1], r"^python3 - --remote '[A-Za-z0-9+/=]+'$")
                     self.assertEqual(kwargs['input'], (ROOT/'scripts/ci/read-scoped-runtime-errors.py').read_bytes())
-                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, **reader.extract(b'', SCOPES)}
+                    host = {**identity, 'instanceId': 'other-host'} if fail == 'host_identity' else identity
+                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
                     return subprocess.CompletedProcess(args, 1 if fail == 'transport' else 0, json.dumps(output).encode(), b'sensitive transport error')
 
                 current = Path.cwd()

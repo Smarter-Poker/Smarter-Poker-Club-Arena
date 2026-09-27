@@ -8,8 +8,10 @@ on:
     types: [completed]
 
 concurrency:
+  # This certificate creates real, reserved fixtures and its `always()` steps
+  # retire them. A later publish must queue behind it, never cancel cleanup.
   group: club-create-certification
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -20,7 +22,10 @@ jobs:
       github.event_name == 'repository_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Each guarded account cleanup may wait six minutes for an active platform
+    # freeze to clear. Keep enough time for install, provenance, both fixture
+    # families, UI proof and both cleanup paths.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,7 +76,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx
-        run: npx playwright test tests/e2e/production-create-club.spec.ts --project=chromium --workers=1
+        # A retry would create another real club before `always()` cleanup.
+        run: npx playwright test tests/e2e/production-create-club.spec.ts --project=chromium --workers=1 --retries=0
       - name: Retire The Created Club
         if: always()
         env:

@@ -28,7 +28,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { LEAGUE_MATCHUPS, runMatchup } from './HorseLeague.js';
+import {
+  KNOWN_MATCHUP_NAMES,
+  LEAGUE_MATCHUPS,
+  UNMEASURABLE_MATCHUPS,
+  runMatchup,
+} from './HorseLeague.js';
 import { horseLeagueComputeResponseIsValid } from './HorseLeagueComputeWorkerClient.js';
 
 describe('a league matchup that measures nothing says so', { timeout: 120_000 }, () => {
@@ -93,4 +98,68 @@ describe('a league matchup that measures nothing says so', { timeout: 120_000 },
     expect(horseLeagueComputeResponseIsValid(wrap({ ...r, divergentPairs: -1 }))).toBe(false);
     expect(horseLeagueComputeResponseIsValid(wrap({ ...r, inert: undefined }))).toBe(false);
   });
+});
+
+/**
+ * A MATCHUP THE LEAGUE WILL NOT MEASURE SAYS SO OUT LOUD (2026-09-27)
+ *
+ * The sibling failure to an inert row. v16_ratio_rescale, v31_gto_suit_aware
+ * and v18_exploit_size were each retired by COMMENTING THEM OUT, which removes
+ * the row entirely - and `fn_audit_nightly_job_health` raises
+ * `league_matchup_inert` only from rows WHERE hands > 0. A matchup with no row
+ * is invisible to the detector built to catch exactly this.
+ *
+ * The cost was measurable in the audit: `league_card_stale` still advised
+ * fixing the runner so v16_ratio_rescale could satisfy "any three-run gate",
+ * 22 days after it left the card. Nothing could move that decision, because
+ * nothing in the database admitted the experiment had been stopped.
+ *
+ * These pins make the silent removal impossible: the name has to live in one
+ * of the two lists, and a registry entry has to carry its reasoning.
+ */
+describe('a matchup the league refuses to measure says so', () => {
+  it('names every retired matchup, with the reasoning attached', () => {
+    const retired = ['v16_ratio_rescale', 'v31_gto_suit_aware', 'v18_exploit_size'];
+    for (const name of retired) {
+      const entry = UNMEASURABLE_MATCHUPS.find((m) => m.name === name);
+      expect(entry, `${name} vanished from both the card and the refusal registry`).toBeDefined();
+      // Every field reaches the refusal row, so an empty one is a silent row.
+      expect(entry!.reason.length).toBeGreaterThan(80);
+      expect(entry!.lastMeasuredOnCard.length).toBeGreaterThan(10);
+      expect(entry!.divergenceProbes.length).toBeGreaterThan(10);
+      expect(entry!.whatWouldChangeIt.length).toBeGreaterThan(30);
+    }
+  });
+
+  it('keeps the card and the refusal registry disjoint and complete', () => {
+    const card = LEAGUE_MATCHUPS.map((m) => m.name);
+    const refused = UNMEASURABLE_MATCHUPS.map((m) => m.name);
+    for (const name of refused) {
+      expect(card, `${name} is both measured and refused`).not.toContain(name);
+    }
+    expect(new Set(KNOWN_MATCHUP_NAMES).size).toBe(card.length + refused.length);
+  });
+
+  it('keeps the two watched matchups ON the card', () => {
+    // v16_deep_reads measures again since #5052; shortdeck_v17 is under an
+    // ablation watch. Either one leaving the card silently would strand its
+    // verdict the way the three above were stranded.
+    const card = LEAGUE_MATCHUPS.map((m) => m.name);
+    expect(card).toContain('v16_deep_reads');
+    expect(card).toContain('shortdeck_v17');
+  });
+
+  it('still cannot tell the two arms apart, which is why they are refused', async () => {
+    // The registry claims these are inert. A claim nobody rechecks is how the
+    // card went stale in the first place, so recheck it at the documented
+    // seed. If either of these starts diverging the layer became REACHABLE:
+    // put it back on the card rather than relaxing this pin.
+    for (const name of ['v16_ratio_rescale', 'v31_gto_suit_aware']) {
+      const entry = UNMEASURABLE_MATCHUPS.find((m) => m.name === name)!;
+      const seats = name === 'v31_gto_suit_aware' ? 2 : undefined;
+      const r = await runMatchup({ name: entry.name, seats, a: entry.a, b: entry.b }, 1000, 4242);
+      expect(r.divergentPairs, `${name} now diverges - put it back on the card`).toBe(0);
+      expect(r.inert).toBe(true);
+    }
+  }, 240_000);
 });

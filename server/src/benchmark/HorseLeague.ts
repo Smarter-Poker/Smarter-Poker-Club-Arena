@@ -759,25 +759,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
   // ── V16 strategy matchups (2026-08-26) ──
   { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
-  /*
-   * v16_ratio_rescale is NOT on the card (2026-09-05). Measured 2026-09-04:
-   * 0.00 bb100 with 0.00 stderr over 12,000 hands - the flag changed no
-   * decision at all (08-31, before V38, it read +0.35 +/- 0.24, unresolved).
-   * The flag rescales two thresholds in HorseLogic: the OOP check-raise
-   * bluff gate (betRatio <= 0.6 vs 1.5, which on the bet/(pot+bet) scale is
-   * "bet at most 1.5x pot" either way and never binds) and the heads-up river
-   * bluff-catch gate (0.4 vs 0.667). V38 - opts.v38Ev, default ON since
-   * 2026-09-03 - returns a call or a fold for EVERY river spot and every
-   * solverless flop/turn spot before that second gate is reached, so no hand
-   * can differ between the arms. Same shape as v18_exploit_size and
-   * v31_gto_suit_aware below: a matchup that always reports 0.00 +/- 0.00
-   * spends 12,000 hands a night measuring nothing. The default stays OFF;
-   * the promotion rule (three significant positive runs) cannot be met by a
-   * flag that no longer reaches code.
-   * Re-measured 2026-09-21 with runMatchup's divergence count: 0 of 1,000 and
-   * 0 of 6,000 pairs diverged at seeds 4242 and 20260921. INERT; still off.
-   */
-  // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  // v16_ratio_rescale left the card 2026-09-05 (dead by precedence under V38).
+  // It is NOT silent: see UNMEASURABLE_MATCHUPS below, which writes a refusal
+  // row with the reason every night. Read that row before touching v16Ratio.
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
   { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
   // Measurable because playHand's sandbox settlement now feeds
@@ -797,22 +781,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // shape hu_mind_layer uses.
   { name: 'v29_gto_flop', seats: 2, pairs: 6000, a: {}, b: { v29GtoFlop: false } },
   { name: 'v30_gto_turn_river', seats: 2, pairs: 6000, a: {}, b: { v30GtoTurnRiver: false } },
-  /*
-   * v31_gto_suit_aware is NOT on the card. Measured 2026-09-01: it returned
-   * 0.00 bb100 with 0.00 stderr over 12,000 hands, which is not "no edge" -
-   * an exact zero with zero variance means the flag changed no decision at
-   * all. Live telemetry says why: v31_gto_open fired 195 times against
-   * 924,871 decides on the same day, so at 6,000 pairs the matchup expects
-   * roughly TWO firings, and observing zero difference is the likely
-   * outcome rather than a surprising one. The league cannot resolve a layer
-   * this rare at any sample size it can afford, and a matchup that always
-   * reports 0.00 +/- 0.00 spends 12,000 hands teaching us nothing while the
-   * card is only completing one matchup a night. Ablate it deliberately with
-   * a temporary pairs bump if it ever needs a verdict.
-   * Re-measured 2026-09-21: 0 of 1,000 and 0 of 6,000 pairs diverged at seeds
-   * 4242 and 20260921 (INERT); a heads-up v11 control diverged in 7 and 2 of 1,000.
-   */
-  // { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
+  // v31_gto_suit_aware left the card 2026-09-01 (too rare to resolve: ~2 firings
+  // per 6,000 pairs). See UNMEASURABLE_MATCHUPS below - it writes a nightly
+  // refusal row carrying that reason.
   { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
   // The depth ceiling only changes a decision ABOVE it, so dealing this at
   // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
@@ -827,30 +798,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
     b: { v33DepthCeiling: false },
   },
   { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
-  /*
-   * v18_exploit_size is NOT on the card, and this one is impossible by
-   * CONSTRUCTION rather than merely underpowered - it reported 0.00 +/- 0.00
-   * on 2026-08-28 and 2026-09-01 (the 2026-08-31 row read -0.04 +/- 0.15).
-   * Re-measured 2026-09-21: 0 of 1,000 and 0 of 6,000 pairs diverged at seeds
-   * 4242 and 20260921. INERT.
-   *
-   * The layer multiplies its river raise by (exploit.valueThinMod - 1), and
-   * only counts a firing when abs(valueThinMod - 1) > 0.03. HorseMind.exploit
-   * moves valueThinMod off 1 ONLY when the opponent's fold-vs-aggression rate
-   * leaves the middle band - above 0.62 (a folder) or below 0.35 (a station).
-   * A league matchup is a MIRROR: both arms are the same brain, differing
-   * only in the flag under test, so each arm's opponent folds at the brain's
-   * own middling rate and valueThinMod stays exactly 1. The multiplier is
-   * then exactly 1, the telemetry gate never opens, and the two arms play
-   * byte-identical poker. 0.00 +/- 0.00 is the correct answer to the question
-   * this matchup was asking; the question was just unanswerable.
-   *
-   * Measuring it needs an exploitable opponent, which self-play cannot
-   * produce. It is pinned deterministically instead, where the effect is
-   * exact and costs no hands at all:
-   * server/src/engine/V18ExploitSizingIsMeasurable.test.ts
-   */
-  // { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
+  // v18_exploit_size left the card 2026-09-01 (a mirror cannot exploit itself).
+  // See UNMEASURABLE_MATCHUPS below for the refusal row and the deterministic
+  // pin that replaced it.
   // 2026-08-27: the bet-ratio scale repair. There is no "off" for a fixed
   // arithmetic bug, so this measures the sizing-read layer as a whole
   // against playing without size reads at all - if the repair helps, this
@@ -954,6 +904,129 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       handReading: false,
     },
   },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Matchups the league REFUSES to measure, and says so every night
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A MATCHUP RETIRED BY COMMENTING IT OUT IS A SILENT MATCHUP (2026-09-27).
+ *
+ * Three matchups were taken off the card between 2026-09-01 and 2026-09-05
+ * because each reported 0.00 +/- 0.00 - correctly, on the evidence. But the
+ * retirement was done by commenting the entry out, and that has a cost nobody
+ * priced: `fn_audit_nightly_job_health` raises `league_matchup_inert` from
+ * rows WHERE hands > 0, so a matchup with no row at all is invisible to the
+ * very detector built to catch it. The reasoning survived only in source
+ * comments, which no query reaches.
+ *
+ * The consequence showed up in the audit itself. `league_card_stale` still
+ * recommends fixing the runner so v16_ratio_rescale can satisfy "any three-run
+ * gate" - a matchup that left the card on 2026-09-05. The audit is reasoning
+ * about a live experiment; the code retired it 22 days earlier; nothing
+ * reconciles the two, so the v16Ratio decision cannot move in either
+ * direction. That is not a measurement problem, it is a reporting one.
+ *
+ * So the refusal becomes a ROW. Every night the runner writes one row per
+ * entry below with status 'refused' and the reason attached, and the audit
+ * raises `league_matchup_refused` from it. The verdict is then queryable,
+ * dated, and arguable from the same table as every measurement.
+ *
+ * These rows carry hands = 0. That is what distinguishes them from an inert
+ * measurement (hands > 0, bb100 = 0, stderr = 0), which remains a harness
+ * FAULT and is still reported as one.
+ */
+export interface UnmeasurableMatchup {
+  /** The name this matchup used on the card; the refusal row keeps it. */
+  name: string;
+  /** The arms that WOULD be dealt, so a reader can reproduce the probe. */
+  a: HorseDecideOpts;
+  b: HorseDecideOpts;
+  /** One line: why the league cannot answer this question. */
+  reason: string;
+  /** Last night it ran on the card, and what it said. */
+  lastMeasuredOnCard: string;
+  /** Divergence probes run since, with seeds - the evidence for "inert". */
+  divergenceProbes: string;
+  /** What would have to change for this to become measurable again. */
+  whatWouldChangeIt: string;
+}
+
+export const UNMEASURABLE_MATCHUPS: UnmeasurableMatchup[] = [
+  {
+    name: 'v16_ratio_rescale',
+    a: { v16Ratio: true },
+    b: {},
+    reason:
+      'Dead by precedence, not for want of an edge. The flag rescales two HorseLogic ' +
+      'thresholds: the OOP check-raise bluff gate (betRatio <= 0.6 vs 1.5, which on the ' +
+      'bet/(pot+bet) scale is "at most 1.5x pot" either way and never binds) and the ' +
+      'heads-up river bluff-catch gate (0.4 vs 0.667). V38 (opts.v38Ev, default ON since ' +
+      '2026-09-03) returns a call or a fold for EVERY river spot, and for every solverless ' +
+      'flop/turn spot, before the second gate is reached - so no hand can differ.',
+    lastMeasuredOnCard:
+      '2026-09-04: 0.00 +/- 0.00 over 12,000 hands. On 2026-08-31, before V38 defaulted on, ' +
+      'it read +0.35 +/- 0.24 and was never resolved.',
+    divergenceProbes:
+      '0 of 1,000 pairs at seeds 4242 and 20260921 (2026-09-21); 0 of 1,000 at seeds 4242 ' +
+      'and 20260927 (2026-09-27), against controls that diverged on the same harness.',
+    whatWouldChangeIt:
+      'Turn opts.v38Ev off on both arms, or lift the rescaled gates above the V38 return. ' +
+      'Until one of those happens the promotion rule (three significant positive runs) ' +
+      'cannot be met by a flag that no longer reaches code, and the default stays OFF. ' +
+      'Read this row, not the absence of one, when deciding v16Ratio.',
+  },
+  {
+    name: 'v31_gto_suit_aware',
+    a: {},
+    b: { v31GtoSuitAware: false },
+    reason:
+      'Too rare for any sample the league can afford. Live telemetry on 2026-09-01: ' +
+      'v31_gto_open fired 195 times against 924,871 decides, so at 6,000 pairs this ' +
+      'matchup expects roughly TWO firings - observing no difference is the likely ' +
+      'outcome rather than a surprising one. The league cannot resolve a layer this rare.',
+    lastMeasuredOnCard: '2026-09-01: 0.00 +/- 0.00 over 12,000 hands.',
+    divergenceProbes:
+      '0 of 1,000 pairs at seeds 4242 and 20260921 (2026-09-21); 0 of 1,000 at seeds 4242 ' +
+      'and 20260927 (2026-09-27), while a heads-up v11 control on the same harness and the ' +
+      'same seeds diverged in 7 and 6 of 1,000 - the probe is live, the zero is real.',
+    whatWouldChangeIt:
+      'A deliberate one-off with a large temporary pairs bump, or a seeded scenario matrix ' +
+      'that forces suit-aware nodes. V31 is certified through fn_audit_gto_v31_certified ' +
+      'and benchmark/GtoV31CandidateEvaluation.ts, which is where its verdict lives now.',
+  },
+  {
+    name: 'v18_exploit_size',
+    a: {},
+    b: { v18ExploitSize: false },
+    reason:
+      'Unanswerable by self-play. A league matchup is a MIRROR - both arms are the same ' +
+      'brain differing only in the flag under test - so each arm\'s opponent folds at the ' +
+      "brain's own middling rate. The layer multiplies its river raise by " +
+      '(exploit.valueThinMod - 1) and only counts a firing when abs(valueThinMod - 1) > ' +
+      '0.03, and HorseMind.exploit moves valueThinMod off 1 only when the opponent\'s ' +
+      'fold-vs-aggression rate leaves the middle band (above 0.62, or below 0.35). In ' +
+      'self-play it stays at 1, the multiplier is exactly 1, and the gate never opens.',
+    lastMeasuredOnCard:
+      '2026-09-01: 0.00 +/- 0.00 over 12,000 hands (2026-08-28 the same; 2026-08-31 read ' +
+      '-0.04 +/- 0.15).',
+    divergenceProbes:
+      '0 of 1,000 pairs at seeds 4242 and 20260921 (2026-09-21). Re-probed 2026-09-27: 0 of ' +
+      '1,000 at seed 4242 and 1 of 1,000 at seed 20260927 - so "byte-identical" is no longer ' +
+      'exactly true, but a single divergent pair in a thousand yields bb100 = stderr exactly ' +
+      '(z = 1.0). That is noise wearing the shape of a measurement, not an edge.',
+    whatWouldChangeIt:
+      'An exploitable opponent, which self-play cannot produce. The effect is pinned ' +
+      'deterministically instead, where it is exact and costs no hands at all: ' +
+      'server/src/engine/V18ExploitSizingIsMeasurable.test.ts',
+  },
+];
+
+/** Names the league knows about: measured tonight, or refused with a reason. */
+export const KNOWN_MATCHUP_NAMES: readonly string[] = [
+  ...LEAGUE_MATCHUPS.map((m) => m.name),
+  ...UNMEASURABLE_MATCHUPS.map((m) => m.name),
 ];
 
 // V12.3: the old comment here claimed hour 4 was "the quietest hour on the
@@ -1336,7 +1409,18 @@ async function alreadyRanToday(date: string): Promise<boolean> {
      * WINDOW rather than by this flag - see the budget clip in runLeague,
      * which stops a resumed attempt at the window edge.
      */
-    const distinct = new Set((data ?? []).map((r) => (r as { matchup: string }).matchup));
+    // ONLY CARD MATCHUPS COUNT AS THE NIGHT'S WORK (2026-09-27). The nightly
+    // refusal rows (UNMEASURABLE_MATCHUPS) share this table and this run_date,
+    // so counting every distinct name would let three refusals stand in for
+    // three unrun matchups and latch a partial card as done - the same
+    // "a row exists, therefore the night is finished" mistake the 2026-09-04
+    // note above retired, arriving through a different door.
+    const cardNames = new Set(LEAGUE_MATCHUPS.map((m) => m.name));
+    const distinct = new Set(
+      (data ?? [])
+        .map((r) => (r as { matchup: string }).matchup)
+        .filter((name) => cardNames.has(name))
+    );
     if (distinct.size < LEAGUE_MATCHUPS.length) return false;
 
     // A complete matchup card is not complete Phase 4 evidence when a
@@ -1533,6 +1617,53 @@ class RequiredV31AgreementError extends Error {
   override readonly name = 'RequiredV31AgreementError';
 }
 
+/**
+ * Write one refusal row per UNMEASURABLE_MATCHUPS entry for this run date.
+ *
+ * `hands: 0` is the load-bearing part. An inert MEASUREMENT has hands > 0 with
+ * bb100 = 0 and stderr = 0, and stays a harness fault; a REFUSAL never dealt a
+ * hand and is a judgement, with its reasoning in the row. The audit tells them
+ * apart on exactly that column.
+ *
+ * Best-effort: a night that cannot write its refusals still runs its card.
+ */
+async function writeRefusedMatchups(date: string): Promise<void> {
+  if (UNMEASURABLE_MATCHUPS.length === 0) return;
+  try {
+    const { error } = await supabase.from('horse_league_results').upsert(
+      UNMEASURABLE_MATCHUPS.map((m) => ({
+        run_date: date,
+        matchup: m.name,
+        status: 'refused',
+        refusal_reason:
+          `${m.reason} Last measured on the card - ${m.lastMeasuredOnCard} ` +
+          `Divergence probes: ${m.divergenceProbes} ` +
+          `What would change this: ${m.whatWouldChangeIt}`,
+        hands: 0,
+        bb100: 0,
+        stderr: 0,
+        config_a: m.a as never,
+        config_b: m.b as never,
+        duration_ms: 0,
+        illegal_actions: 0,
+        truncated_streets: 0,
+        candidate_policy_hits: 0,
+        candidate_execution_mismatches: 0,
+        candidate_node_roles: [],
+        candidate_benchmark_components: [],
+      })),
+      { onConflict: 'run_date,matchup' }
+    );
+    if (error) throw new Error(error.message);
+    console.log(
+      `[HorseLeague] run ${date}: ${UNMEASURABLE_MATCHUPS.length} matchup(s) refused with a ` +
+        `reason - ${UNMEASURABLE_MATCHUPS.map((m) => m.name).join(', ')}`
+    );
+  } catch (err) {
+    reportError(err, 'HorseLeague.writeRefusedMatchups');
+  }
+}
+
 export async function runLeague(
   runDate?: string,
   shouldContinue: () => boolean = () => true,
@@ -1594,6 +1725,13 @@ export async function runLeague(
       `of a possible ${Math.round(MAX_RUN_MS / 60000)}, clipped to the window), ` +
       `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
+  // ── THE REFUSALS GO DOWN FIRST (2026-09-27) ────────────────────────────────
+  // Before any hand is dealt, because a refusal is the one part of the night
+  // that cannot fail to be true and must survive a run the budget cuts short.
+  // Without these rows a retired matchup is indistinguishable from a matchup
+  // nobody thought about, which is how v16_ratio_rescale spent 22 days as an
+  // open question in the audit and a closed one in the source.
+  await writeRefusedMatchups(date);
   try {
     if (!shouldContinue()) return results;
     // CAPACITY ROOT FIX (2026-09-08): this is the only compute lane the
@@ -1836,11 +1974,22 @@ export async function runLeague(
       );
       if (!shouldContinue()) break;
       results.push(r);
+      // An inert result is a harness FAULT, not a resolved zero, and the row
+      // must say which it is - `bb100 = 0, stderr = 0` alone cannot.
+      const inertReason =
+        r.inert === true
+          ? `${r.matchup} measured nothing: ${r.divergentPairs ?? 0} of ${r.hands / 2} ` +
+            `duplicate pairs settled differently between config A and config B, stderr ` +
+            `${round2(r.stderr)}. The flag under test changed no measurable decision, so ` +
+            `0.00 +/- 0.00 is the absence of an experiment, not the absence of an edge.`
+          : null;
       try {
         const { error } = await supabase.from('horse_league_results').upsert(
           {
             run_date: date,
             matchup: r.matchup,
+            status: r.inert === true ? 'inert' : 'measured',
+            refusal_reason: inertReason,
             hands: r.hands,
             bb100: round2(r.bb100),
             stderr: round2(r.stderr),
@@ -1866,12 +2015,7 @@ export async function runLeague(
         // it is a harness FAILURE, not a resolved zero, and it is reported
         // through the same channel every other league fault uses.
         reportError(
-          new Error(
-            `[HorseLeague] ${r.matchup} is INERT: ${r.hands} hands, ${r.divergentPairs} of ` +
-              `${r.hands / 2} pairs diverged between config A and config B, stderr ` +
-              `${round2(r.stderr)}. The flag under test changed no measurable decision; ` +
-              `0.00 +/- 0.00 is not a measurement.`
-          ),
+          new Error(`[HorseLeague] INERT - ${inertReason}`),
           'HorseLeague.inert',
           { matchup: r.matchup, hands: r.hands, config_a: m.a, config_b: m.b }
         );

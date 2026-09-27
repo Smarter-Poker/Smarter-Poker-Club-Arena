@@ -78,7 +78,7 @@ class FirstArchivedBankObserverTests(unittest.TestCase):
             if kind.startswith('own_replay_'):
                 self.assertIn('IF phase=1 THEN ',derived)
                 self.assertNotIn('IF phase=0 THEN UPDATE public.union_wallets',derived)
-            elif kind=='external_replay_commit':
+            elif kind=='external_replay_blocked':
                 self.assertIn('IF phase=1 THEN PERFORM pg_advisory_xact_lock('+R.REPLAY_KEY+'); END IF;',derived)
             elif kind in ('external_commit','external_after_observation'):self.assertEqual(source,derived)
         with self.assertRaises(ValueError):R.derived_source(source,'unknown',P)

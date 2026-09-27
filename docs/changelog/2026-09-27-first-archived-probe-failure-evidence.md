@@ -93,10 +93,19 @@ after the authentic fixture checks. Actual external committed updates retain the
 immutable journal entries until normal allocation disposal; this variant never
 claims those synthetic rows were rolled back or the original fixture restored.
 Original nine images, including all original admission/committed concurrency
-checks, remain mandatory. The additional variant exercises committed changes in
-both observation intervals, own parent/subtransaction changes in both intervals,
+checks, remain mandatory. The additional variant exercises committed changes before the first invocation, an external writer blocked during
+replay by the canonical bank lock, own parent/subtransaction changes in both intervals,
 own no-op and offsetting changes, and an external commit after observation.
 Source-bound barriers and original SQL output distinguish actual concurrency
 from synthetic parser controls. Post-abort verification and production use remain
 unqualified until independently validated; no settlement or alert is closed by
 this observer change.
+
+The first native MVCC attempt exposed a mistaken test schedule: the canonical
+completion owner locks the union wallet FOR NO KEY UPDATE before its payer.
+An external UPDATE cannot commit between the first completion and replay while
+that lock remains. The corrected case observes the actual external transaction
+blocked by that owner, releases only the synthetic replay barrier, retains the
+canonical PZ002 abort, then verifies the external commit and journal. Production
+lock timeouts and canonical locking remain unchanged. The original failed run
+and successful cleanup remain retained evidence, not a passing qualification.

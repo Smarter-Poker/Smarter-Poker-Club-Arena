@@ -13,10 +13,10 @@ UNION='fade0000-0000-0000-0000-000000000001'
 ROW='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 OPKEY="hashtextextended('archived-spin-first-operation:2aa4cba1-506f-426b-a1ba-d8e22e018533',0)"
 REPLAY_KEY="hashtextextended('archived-spin-first-bank-replay-observation',0)"
-SUCCESS=('external_commit','external_replay_commit','external_after_observation')
+SUCCESS=('external_commit','external_replay_blocked','external_after_observation')
 EXTERNAL=(*SUCCESS,'offset_external')
-BARRIERS=('external_commit','external_replay_commit','offset_external')
-KINDS=('external_commit','external_replay_commit','own_parent','own_child','own_noop','offset_external','own_replay_parent','own_replay_child','external_after_observation')
+BARRIERS=('external_commit','external_replay_blocked','offset_external')
+KINDS=('external_commit','external_replay_blocked','own_parent','own_child','own_noop','offset_external','own_replay_parent','own_replay_child','external_after_observation')
 
 def require(value,message):
     if not value:raise ValueError(message)
@@ -24,7 +24,7 @@ def require(value,message):
 def derived_source(source,kind,P):
     require(kind in KINDS,'unknown bank scenario')
     if kind in ('external_commit','external_after_observation'):return source
-    if kind=='external_replay_commit':
+    if kind=='external_replay_blocked':
         anchor="  PERFORM set_config('request.jwt.claims',"
         require(source.count(anchor)==1,'replay barrier anchor differs')
         return source.replace(anchor,"  IF phase=1 THEN PERFORM pg_advisory_xact_lock("+REPLAY_KEY+"); END IF;\n"+anchor,1)
@@ -84,6 +84,8 @@ def validate(e,execution,P,A,R):
     seed_expected=copy.deepcopy(e['original_before']['rows']);seed_expected[REL]=e['seed_after']
     require(e['original_before']['rows'][REL]==[] and e['after_seed']['rows']==seed_expected,'synthetic seed changed unrelated rows')
     previous=e['after_seed']['rows']
+    postabort=P.C.load('bank_postabort_validator',P.ROOT/'scripts/qualification/spin-first-archived-postabort.py')
+    expected_preimage,expected_funding=postabort.expected_original(P.ROOT)
     source=(P.ROOT/P.PROBE).read_text()
     for c in e['cases']:
         require(c['before']['rows']==previous,'synthetic case starting state differs')
@@ -94,13 +96,14 @@ def validate(e,execution,P,A,R):
         for stage in ('before','expected_durable','after'):require(set(c[stage]['sequences'])==set(P.C.SEQUENCES),'bank scenario sequence observation missing')
         if c['kind'] in SUCCESS:
             d=P.parse_abort(c['original_output'],R,A);P.validate_financial_detail(d,c['before']['rows'],A)
-            if c['kind'] in ('external_commit','external_replay_commit'):
-                actual=P.BANK.validate_history(d['bank_observations'],d['fee_capture_diagnostic']['transaction_id'])
-                expected=['external committed version','unchanged'] if c['kind']=='external_commit' else ['unchanged','external committed version']
-                require(actual==expected,'external commit not observed in intended interval')
+            if c['kind']=='external_commit':
+                require(P.BANK.validate_history(d['bank_observations'],d['fee_capture_diagnostic']['transaction_id'])==['external committed version','unchanged'],'external commit not observed in intended interval')
             else:require(all(v in ('unchanged','unchanged empty scope') for v in P.BANK.validate_history(d['bank_observations'],d['fee_capture_diagnostic']['transaction_id'])),'after-observation commit misrepresented')
             xid=d['fee_capture_diagnostic']['transaction_id']
+            result=postabort.validate_receipt(d,c['postabort'],expected_preimage,expected_funding)
+            require(result['bank_transition']==('external committed version' if c['kind'] in ('external_after_observation','external_replay_blocked') else 'unchanged'),'postabort bank interval differs')
         else:
+            require('postabort' not in c,'failed probe cannot qualify postabort successful path')
             d=parse_fault(c['original_output'],P,A);xid=d['transaction_id'];before=d['before'][0];inside=d['inside'][0]
             require(before['id']==inside['id']==ROW,'fault row identity differs')
             expected=copy.deepcopy(before);expected['rake_wallet']+=0 if c['kind'] in ('own_noop','offset_external') else 1
@@ -114,6 +117,12 @@ def validate(e,execution,P,A,R):
             wait=c['wait'];require(wait['worker']==e['pids']['worker'] and wait['holder']==e['pids']['observer']
                 and wait['blockers']==[wait['holder']] and wait['waiting'] is True and wait['held'] is True,'bank race actual operation blocker absent')
             require(c['release'] is True,'bank operation barrier unreleased')
+        if c['kind']=='external_replay_blocked':
+            wait=c['external_wait']
+            require(wait['pid']==e['pids']['external'] and wait['blockers']==[e['pids']['worker']]
+                and wait['wait_event_type']=='Lock' and wait['wait_event']=='transactionid'
+                and wait['worker_blockers']==[e['pids']['observer']]
+                and wait['waiting_xids']==[xid],'external replay writer was not blocked by canonical bank owner')
         if c['kind'] in EXTERNAL:
             writer=c['writer'];require(writer['status']=='committed' and writer['transaction_id']!=xid and int(writer['transaction_id'])>int(xid),'external writer not actually committed/new')
             require(type(writer['before']) in (int,Decimal) and type(writer['after']) in (int,Decimal) and writer['after']==writer['before']+1,'external writer amount differs')
@@ -135,12 +144,14 @@ def run(args,parent,worker,observer,external,snapshot,source,P,A,R,deadline):
     original=(P.ROOT/P.C.PROBE).read_text()
     setup="SET timezone='UTC';\n"+original[original.index('CREATE FUNCTION pg_temp.archive_financial_snapshot()'):original.index('CREATE TEMP TABLE archive_before')]
     external.no_errors(external.command(setup+'\n'+P.C.SEQUENCE_SQL))
+    postabort=P.C.load('bank_postabort_runtime',P.ROOT/'scripts/qualification/spin-first-archived-postabort.py')
+    expected_preimage,expected_funding=postabort.expected_original(P.ROOT)
     for kind in KINDS:
         c={'kind':kind,'base_sha256':P.PROBE_SHA,'derived_source':derived_source(source,kind,P),'before':observer.json(snapshot)}
         c['derived_sha256']=hashlib.sha256(c['derived_source'].encode()).hexdigest();e['cases'].append(c)
         c['expected_durable']=c['before']
         barrier=kind in BARRIERS
-        barrier_key=REPLAY_KEY if kind=='external_replay_commit' else OPKEY
+        barrier_key=REPLAY_KEY if kind=='external_replay_blocked' else OPKEY
         if barrier:
             observer.no_errors(observer.command('SELECT pg_advisory_lock('+barrier_key+');'));parent['mvcc_operation_barrier']=barrier_key
             worker.start(c['derived_source'])
@@ -155,7 +166,20 @@ def run(args,parent,worker,observer,external,snapshot,source,P,A,R,deadline):
             external.no_errors(external.command('BEGIN;'))
             tx=external.json('SELECT to_jsonb(pg_current_xact_id()::text);')
             before=external.json("SELECT to_jsonb(rake_wallet) FROM public.union_wallets WHERE id='"+ROW+"';")
-            external.no_errors(external.command("UPDATE public.union_wallets SET rake_wallet=rake_wallet+1 WHERE id='"+ROW+"';"))
+            update="UPDATE public.union_wallets SET rake_wallet=rake_wallet+1 WHERE id='"+ROW+"';"
+            if kind=='external_replay_blocked':
+                external.start(update)
+                while time.monotonic()<deadline:
+                    wait=observer.json("SELECT jsonb_build_object('pid',pid,'blockers',to_jsonb(pg_blocking_pids(pid)),'wait_event_type',wait_event_type,'wait_event',wait_event,'worker_blockers',to_jsonb(pg_blocking_pids("+str(worker.pid)+")),'waiting_xids',(SELECT coalesce(jsonb_agg(transactionid::text ORDER BY transactionid::text),'[]'::jsonb) FROM pg_locks WHERE pid="+str(external.pid)+" AND locktype='transactionid' AND NOT granted)) FROM pg_stat_activity WHERE pid="+str(external.pid)+";")
+                    if wait['blockers']==[worker.pid] and wait['waiting_xids'] and wait['worker_blockers']==[observer.pid]:break
+                    if external.poll() is not None:raise ValueError('external update did not wait for canonical bank owner')
+                    time.sleep(0.01)
+                else:raise TimeoutError('external bank ownership wait not observed')
+                c['external_wait']=wait
+                c['release']=observer.json('SELECT to_jsonb(pg_advisory_unlock('+barrier_key+'));');parent.pop('mvcc_operation_barrier',None)
+                c['original_output']=worker.wait()
+                external.no_errors(external.wait())
+            else:external.no_errors(external.command(update))
             writer_inside=external.json(snapshot)['rows']
             external.no_errors(external.command('COMMIT;'))
             c['writer']={'transaction_id':tx,'before':before,'after':external.json("SELECT to_jsonb(rake_wallet) FROM public.union_wallets WHERE id='"+ROW+"';"),'status':observer.json("SELECT to_jsonb(pg_xact_status('"+tx+"'::xid8));")}
@@ -163,13 +187,24 @@ def run(args,parent,worker,observer,external,snapshot,source,P,A,R,deadline):
             c['writer']['inside_rows']=writer_inside
             c['writer']['journal_additions']=external_delta(c['before']['rows'],c['expected_durable']['rows'],c['writer'],e['external_application'])
         if barrier:
-            external_commit();c['release']=observer.json('SELECT to_jsonb(pg_advisory_unlock('+barrier_key+'));');parent.pop('mvcc_operation_barrier',None)
-            c['original_output']=worker.wait()
+            external_commit()
+            if kind!='external_replay_blocked':
+                c['release']=observer.json('SELECT to_jsonb(pg_advisory_unlock('+barrier_key+'));');parent.pop('mvcc_operation_barrier',None)
+                c['original_output']=worker.wait()
         else:c['original_output']=worker.command(c['derived_source'])
         if kind=='external_after_observation':external_commit()
         d=P.parse_abort(c['original_output'],R,A) if kind in SUCCESS else parse_fault(c['original_output'],P,A)
         xid=d['fee_capture_diagnostic']['transaction_id'] if 'fee_capture_diagnostic' in d else d['transaction_id']
         c['rollback_output']=worker.command('ROLLBACK; SELECT to_jsonb(pg_current_xact_id_if_assigned() IS NULL);')
         c['after']=observer.json(snapshot);c['transaction_status']=observer.json("SELECT jsonb_build_object('transaction_id','"+xid+"','status',pg_xact_status('"+xid+"'::xid8));")
+        if kind in SUCCESS:
+            query=postabort.bind_query(d)
+            raw=observer.command(query);observer.no_errors(raw)
+            evidence=postabort.decode_json(raw.strip())
+            result=postabort.validate(d,evidence,expected_preimage,expected_funding)
+            c['postabort']={'query':query,'query_sha256':hashlib.sha256(query.encode()).hexdigest(),
+                'original_output':raw,'evidence':evidence,'validation':result}
+            postabort.validate_receipt(d,c['postabort'],expected_preimage,expected_funding)
+
     e['final_rows']=observer.json(snapshot)['rows']
     validate(e,args.execution,P,A,R)

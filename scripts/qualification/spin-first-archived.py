@@ -36,7 +36,10 @@ CONCURRENCY = 'scripts/qualification/spin-first-archived-concurrency.py'
 CONCURRENCY_TEST = 'scripts/qualification/test_first_archived_concurrency.py'
 MIGRATION = 'supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql'
 COMPONENTS = tuple('supabase/components/spin-archived-first-'+n+'.sql' for n in ('witness','admission','bridge'))
-INPUTS = (MODULE, MANIFEST, BANK_OBSERVER, BANK_RACES, BANK_TEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
+POSTABORT='scripts/qualification/spin-first-archived-postabort.py'
+POSTABORT_TEST='scripts/qualification/test_first_archived_postabort.py'
+POSTABORT_SQL=BASE+'first-postabort-bank-readback.sql'
+INPUTS = (MODULE, MANIFEST, POSTABORT, POSTABORT_TEST, POSTABORT_SQL, BANK_OBSERVER, BANK_RACES, BANK_TEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
           *(BASE+n for n in (*SEED, *PROVIDER, 'first-captured-state.json',
             'full-provider-catalog.json', 'full-authority-catalog.json',
             'index-sequence-catalog.json', 'fee-resolution-provider.json',

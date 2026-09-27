@@ -47,7 +47,7 @@ HORSE_MANIFEST_SHA256 = '300b84d68730072e9c4efa66a2cff60df51c233918d91ccc458a18e
 _archive_spec = importlib.util.spec_from_file_location('spin_first_archived', ROOT / 'scripts/qualification/spin-first-archived.py')
 ARCHIVE = importlib.util.module_from_spec(_archive_spec)
 _archive_spec.loader.exec_module(ARCHIVE)
-ARCHIVE_MANIFEST_SHA256 = 'a09a34bfd56c01c5056b7e5a3318605ec2a41ff7a2b7c393aa444886c8a477ee'
+ARCHIVE_MANIFEST_SHA256 = 'e9eb95f9ab8cafd6b7e5667999d88d24d1a991318a6b05d6ced40c2a010f38a6'
 FEE_MANIFEST_SHA256 = '235b524090286e316d902093a53be8a6948d5853ced8e621048ba249d6a4be14'
 MIXED_MANIFEST_SHA256 = '6f8acad52d40393a839b9d4f94c59bafe69ecbb1cecde195e455c15960c35cab'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'

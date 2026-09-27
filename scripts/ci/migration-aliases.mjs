@@ -56,7 +56,13 @@ function root(repo) {
  */
 export function loadAliases(repo, { files } = {}) {
   const base = root(repo);
-  const out = { byVersion: new Map(), byFile: new Map(), rejected: [], error: null };
+  const out = {
+    byVersion: new Map(),
+    byFile: new Map(),
+    superseded: new Map(),
+    rejected: [],
+    error: null,
+  };
   const path = join(base, ALIASES_PATH);
   if (!existsSync(path)) {
     out.error = `${ALIASES_PATH} not found`;
@@ -110,6 +116,28 @@ export function loadAliases(repo, { files } = {}) {
     out.byVersion.set(v, row);
     if (!out.byFile.has(base)) out.byFile.set(base, []);
     out.byFile.get(base).push(row);
+  }
+  // A merged file that must never run, marked here because it is byte-pinned
+  // and cannot carry its own "-- SUPERSEDED BY" line. Same terms as the header:
+  // the superseding version must have a file in this tree, and a reason.
+  for (const row of Array.isArray(raw.superseded) ? raw.superseded : []) {
+    const file = String(row?.file ?? '');
+    const by = String(row?.by ?? '');
+    const label = `superseded ${file || '?'} by ${by || '?'}`;
+    const base = file.startsWith(DIR) ? file.slice(DIR.length) : '';
+    if (!base || !/^\d{14}$/.test(by) || String(row?.reason ?? '').length < 40) {
+      out.rejected.push(`${label}: malformed row`);
+      continue;
+    }
+    if (!present.has(base)) {
+      out.rejected.push(`${label}: the file is not in this tree`);
+      continue;
+    }
+    if (![...present].some((f) => f.startsWith(`${by}_`))) {
+      out.rejected.push(`${label}: no file carries ${by}`);
+      continue;
+    }
+    out.superseded.set(base, row);
   }
   return out;
 }

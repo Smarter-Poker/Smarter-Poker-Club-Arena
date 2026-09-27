@@ -166,16 +166,33 @@ describe('a merged migration is installed, or says what replaced it', () => {
     expect(stampedAt('20260918023630_x.sql')).toBe(Date.UTC(2026, 8, 18, 2, 36, 30));
   });
 
-  it('the two MTT activations that never ran name the one that did', () => {
-    const files = fs.readdirSync(MIGRATIONS);
+  it('the two MTT activations that never ran are marked, without touching their pinned bytes', () => {
+    const loaded = loadAliases(REPO);
     for (const f of [
       '20260917232311_mtt_activate_unlimited_admission.sql',
       '20260918005913_mtt_activate_unlimited_with_original_funding.sql',
     ]) {
-      expect(supersededBy(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'), files), f).toBe(
-        '20260918023630'
-      );
+      expect(loaded.superseded.get(f)?.by, f).toBe('20260918023630');
     }
+  });
+
+  it('a registry mark is refused when the superseding version has no file', () => {
+    const dir = fixture(
+      {
+        aliases: [],
+        superseded: [
+          {
+            file: 'supabase/migrations/20260101000001_a.sql',
+            by: '20990101000000',
+            reason: 'a reason long enough to count as a sentence of explanation',
+          },
+        ],
+      },
+      ['20260101000001_a.sql']
+    );
+    const loaded = loadAliases(dir);
+    expect(loaded.superseded.size).toBe(0);
+    expect(loaded.rejected[0]).toMatch(/no file carries/);
   });
 });
 

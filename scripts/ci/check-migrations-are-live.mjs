@@ -333,7 +333,7 @@ function main() {
     if (recorded.has(slug) || recordedPrefixes.has(slug.slice(0, NAME_PREFIX))) continue;
     if (aliasedLive(file)) continue;
     const sql = readFileSync(join(DIR, file), 'utf8');
-    const by = supersededBy(sql, dirFiles);
+    const by = supersededBy(sql, dirFiles) || aliases.superseded.get(file)?.by || null;
     if (by) {
       superseded.push({ file, by });
       continue;

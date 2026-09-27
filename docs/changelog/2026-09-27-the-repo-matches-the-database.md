@@ -42,12 +42,15 @@ database), plus Commander, Diamond Arena and PepNationLab for attribution.
   second time, and both gates read it through
   `scripts/ci/migration-aliases.mjs`. A row is honoured only when its file is
   in the tree and the applied version has no file of its own, and
-  `check-recorded-migrations-evidence.mjs` asks production for the recorded md5.
+  `check-recorded-migrations-evidence.mjs` asks production for the recorded md5
+  (as `fn_ca_migration_text` reports it).
 - **Never installed, superseded.**
   `20260917232311_mtt_activate_unlimited_admission` and
-  `20260918005913_mtt_activate_unlimited_with_original_funding` now begin
-  `-- SUPERSEDED BY 20260918023630`; production activated unlimited MTT
-  admission once, through that file (recorded as `20260918051115`).
+  `20260918005913_mtt_activate_unlimited_with_original_funding` are marked
+  superseded by `20260918023630` in the `superseded` section of the alias
+  table, because both are byte-pinned by the MTT activation source binding and
+  cannot carry a header; production activated unlimited MTT admission once,
+  through that file (recorded as `20260918051115`).
 - **Self-marked, never backfilled as live.** `20260910125453` ("NOT APPLIED")
   and `20260917181100` ("UNAPPLIED CANDIDATE") are recorded in production but
   their own text says they are candidates. They are left for their owners.
@@ -71,7 +74,8 @@ database), plus Commander, Diamond Arena and PepNationLab for attribution.
 every pull request into `main` and every push to `main`: an installed
 migration must have a file (24-hour grace for work in flight; a branch that
 adds the missing file passes), and a merged migration must be installed
-within 24 hours or say `-- SUPERSEDED BY <version>`. It runs trusted code from
+within 24 hours or be marked superseded by a named file (a
+`-- SUPERSEDED BY <version>` first line, or a registry row for a pinned file). It runs trusted code from
 the default branch only, reads nothing from the branch but its filenames, and
 has no schedule. `tests/an-installed-migration-and-its-file-agree.law.test.ts`
 pins the alias table, the grace, the marker and the workflow's shape.

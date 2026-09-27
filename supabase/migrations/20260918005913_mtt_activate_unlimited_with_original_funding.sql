@@ -1,7 +1,3 @@
--- SUPERSEDED BY 20260918023630
--- (2026-09-27 reconciliation) Never installed: production activated unlimited MTT
--- admission once, through 20260918023630_mtt_activate_unlimited_with_satellite_entry_club
--- (recorded as 20260918051115). This file must never run; it stays as history.
 -- Successor to uninstalled232311; requires the original-funding guard.
 -- Row-only one-way activation. Install only after compatible application
 -- publication and verified retirement of old untagged writers. Database state

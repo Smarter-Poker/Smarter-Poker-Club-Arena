@@ -155,6 +155,18 @@ describe('pre-archive certification public-user residue cleanup', () => {
     expect(lastValidation).toBeLessThan(migration.indexOf('DELETE FROM public.users u'));
   });
 
+  it('refuses a changed public-users delete graph before the first mutation', () => {
+    const graphRefusal = migration.indexOf(
+      'PREARCHIVE_CERTIFICATION_PUBLIC_USER_DELETE_GRAPH_CHANGED'
+    );
+    expect(migration).toContain("t.tgrelid = 'public.users'::regclass");
+    expect(migration).toContain('AND NOT t.tgisinternal');
+    expect(migration).toContain("fk.contype = 'f'");
+    expect(migration).toContain("fk.confrelid = 'public.users'::regclass");
+    expect(graphRefusal).toBeGreaterThan(-1);
+    expect(graphRefusal).toBeLessThan(migration.indexOf('DELETE FROM public.users u'));
+  });
+
   it('deletes only the five exact shadows', () => {
     expect(migration).not.toContain('DELETE FROM public.signup_errors');
     expect(migration).toContain('DELETE FROM public.users u');

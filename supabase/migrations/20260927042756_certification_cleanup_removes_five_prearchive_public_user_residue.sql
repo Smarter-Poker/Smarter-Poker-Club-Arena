@@ -239,6 +239,20 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- A trigger or referencing foreign key added after the readback could turn
+  -- this exact-row delete into wider work. Refuse any changed delete graph
+  -- before the first mutation instead of relying on cascade/trigger behavior.
+  IF EXISTS (
+       SELECT 1 FROM pg_catalog.pg_trigger t
+        WHERE t.tgrelid = 'public.users'::regclass AND NOT t.tgisinternal
+     ) OR EXISTS (
+       SELECT 1 FROM pg_catalog.pg_constraint fk
+        WHERE fk.contype = 'f' AND fk.confrelid = 'public.users'::regclass
+     ) THEN
+    RAISE EXCEPTION 'PREARCHIVE_CERTIFICATION_PUBLIC_USER_DELETE_GRAPH_CHANGED'
+      USING ERRCODE = '55000';
+  END IF;
+
   -- Every target and every protected surface has passed before the first
   -- mutation. Remove only the five locked public.users preimages.
   DELETE FROM public.users u

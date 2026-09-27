@@ -6,6 +6,7 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import { rawProfileHeading } from './support/rawProfileHeading';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
@@ -627,7 +628,7 @@ test.describe('production Table Studio realtime contract', () => {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         });
       }
-      const otherName = await otherPage.locator('#profile-heading').innerText();
+      const otherName = await rawProfileHeading(otherPage);
       const otherMode = await otherPage.locator('html').getAttribute('data-theme');
       await primaryPage.emulateMedia({ colorScheme: 'light' });
       await mobilePage.emulateMedia({ colorScheme: 'dark' });

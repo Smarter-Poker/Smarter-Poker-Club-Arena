@@ -24,6 +24,11 @@ const incomePins = JSON.parse(
 );
 const incomePath = incomePins.migration;
 const incomeMigration = read(incomePath);
+const coverPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/wallet-cover-expectations.json')
+);
+const coverPath = coverPins.migration;
+const coverMigration = read(coverPath);
 const successorScalar = read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql');
 const successorPins = JSON.parse(
   read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json')
@@ -46,6 +51,11 @@ describe('backed payout discovery is the same accounting question in a batch', (
     successorPath,
     inlinePath,
     incomePath,
+    coverPath,
+    'scripts/ci/fixtures/backed-payout-scan/wallet-cover-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/wallet-cover-build-online.sql',
+    'scripts/ci/fixtures/backed-payout-scan/wallet-cover-recover-online.sql',
+    'scripts/ci/fixtures/backed-payout-scan/wallet-cover-expectations.json',
     'scripts/ci/fixtures/backed-payout-scan/seat-income-native.py',
     'scripts/ci/fixtures/backed-payout-scan/seat-income-expectations.json',
     'scripts/ci/fixtures/backed-payout-scan/seat-income-cases.sql',
@@ -270,6 +280,38 @@ describe('backed payout discovery is the same accounting question in a batch', (
       'outgoing bytes changed',
       'income fresh statement misses payout or ticket state',
       'income transaction rollback',
+    ])
+      expect(native).toContain(proof);
+  });
+
+  it('covers the existing six wallet receipt categories with unchanged financial authority', () => {
+    const build = read('scripts/ci/fixtures/backed-payout-scan/wallet-cover-build-online.sql');
+    expect(createHash('md5').update(coverPins.definition).digest('hex')).toBe(
+      coverPins.definitionMD5
+    );
+    expect(coverMigration).toContain(coverPins.definitionMD5);
+    expect(coverMigration).toContain(incomePins.afterDefinitionMD5);
+    expect(stripComments(build).match(/;/g)).toHaveLength(1);
+    expect(stripComments(build)).toMatch(
+      /^\s*CREATE INDEX CONCURRENTLY idx_wallet_tx_tournament_receipts_cover/
+    );
+    expect(build).toContain('INCLUDE (type, category, amount)');
+    for (const kind of ['tournament_buyin', 'rebuy', 'addon', 'refund', 'prize', 'bounty'])
+      expect(coverPins.predicate).toContain("'" + kind + "'");
+    expect(coverMigration).toContain('numeric(15,2)');
+    expect(stripComments(coverMigration)).not.toMatch(
+      /\b(?:CREATE|ALTER|DROP|GRANT|REVOKE|EXECUTE)\s+(?:INDEX|FUNCTION|TABLE|ALL)/i
+    );
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'wallet-cover-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/wallet-cover-native.py');
+    for (const proof of [
+      'waiting for old snapshots',
+      'real interrupted build leaves invalid durable state',
+      'index changes financial output',
+      'financial data changed',
+      'oversized-excluded-label',
     ])
       expect(native).toContain(proof);
   });

@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 169880,
-      "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
+      "bytes": 170081,
+      "sha256": "0c6ccc9cfed5b78ab726fcb937a3d6d6a5851ff89fcafd4463323f91828868db"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 25086,
-      "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+      "bytes": 25462,
+      "sha256": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -562,5 +562,30 @@
         }
       }
     ]
+  },
+  "settlement_conservation_index_20260927": {
+    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 169880,
+          "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
+        },
+        "current": {
+          "bytes": 170081,
+          "sha256": "0c6ccc9cfed5b78ab726fcb937a3d6d6a5851ff89fcafd4463323f91828868db"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 25086,
+          "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+        },
+        "current": {
+          "bytes": 25462,
+          "sha256": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+        }
+      }
+    }
   }
 }

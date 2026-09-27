@@ -1400,6 +1400,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
 
+      - name: Settlement conservation preserves full results through a narrow online index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

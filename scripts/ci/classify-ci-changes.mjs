@@ -57,6 +57,8 @@ const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
+const settlementConservationIndex =
+  /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
@@ -240,6 +242,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
+      matches(settlementConservationIndex) ||
       matches(certificationRetirement),
     tests:
       bbjFixture ||
@@ -275,6 +278,7 @@ export function classifyChangedPaths(paths) {
       matches(discoveryPrivacy) ||
       matches(scopedAuditReads) ||
       matches(settlementAttribution) ||
+      matches(settlementConservationIndex) ||
       matches(certificationRetirement),
     phase4: phase4Changed,
     fixture: matches(fixture),

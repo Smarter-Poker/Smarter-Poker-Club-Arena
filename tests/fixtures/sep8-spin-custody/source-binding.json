@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9ed8fdd6606e17df2747eb0d65965ec639f867579c13532a922d247c946879ff",
+    "scripts/ci/classify-ci-changes.mjs": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -442,6 +442,17 @@
       }
     ]
   },
+  "satellite_combined_main_integration_20260927": {
+    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
+    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
+    "updated_active_pins": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
+        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
+      }
+    ]
+  },
   "bbjSettlementIntegration20260927": {
     "reason": "Preserve both existing native qualifications and both parents full histories and assertions; update only exact integrated CI/classifier and nested binding bytes.",
     "parents": [
@@ -456,6 +467,15 @@
         "current": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
       }
     ]
+  },
+  "settlement_conservation_index_20260927": {
+    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+      }
+    }
   },
   "productionAlertsSettlementIntegration20260927": {
     "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
@@ -476,6 +496,16 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d",
         "current": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+      }
+    ]
+  },
+  "certificationPlayerIndexIntegration20260927": {
+    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
+    "files": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
+        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
       }
     ]
   },
@@ -510,7 +540,7 @@
     "changes": {
       "repository_files/scripts/ci/classify-ci-changes.mjs": {
         "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
-        "after": "9ed8fdd6606e17df2747eb0d65965ec639f867579c13532a922d247c946879ff"
+        "after": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
       }
     }
   },
@@ -534,15 +564,14 @@
       }
     }
   },
-  "certificationPlayerIndexIntegration20260927": {
-    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
-    "files": [
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
-        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
       }
-    ]
+    }
   },
   "strandedPlayerReadQualification20260927": {
     "status": "source_changed_native_pass_hosted_pending",
@@ -554,5 +583,18 @@
         "after": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
       }
     ]
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      "scripts/ci/classify-ci-changes.mjs"
+    ]
+  },
+  "coverageProtectedMainSecondIntegration20260927": {
+    "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
+    "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
+    "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
   }
 }

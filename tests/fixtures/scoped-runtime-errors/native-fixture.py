@@ -20,6 +20,56 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def mux_record(self, **changes):
+        return {**dict(attempt=7, startedAt=1790534274869, outcome='subscribed',
+                      authorityReturnedAtMs=1200.5, ensureStartedAtMs=None,
+                      tableReadyAtMs=1201, ackQueuedAtMs=1202,
+                      firstHubFrameQueuedAtMs=1203, hubSubscribedAtMs=1204,
+                      totalMs=1205), **changes}
+
+    def mux_line(self, record):
+        return STAMP+'[EngineWS] mux subscription timing '+json.dumps(record)
+
+    def test_anonymous_mux_timings_require_explicit_completed_window(self):
+        window = {'since': '2026-09-27T14:25:00Z', 'until': '2026-09-27T14:40:00Z'}
+        self.assertFalse(reader.mux_timing_requested(None, None))
+        self.assertTrue(reader.mux_timing_requested(True, window))
+        for flag, selected in [(True, None), (False, window), ('true', window), (1, window), ({}, window)]:
+            with self.subTest(flag=flag), self.assertRaises(ValueError):
+                reader.mux_timing_requested(flag, selected)
+
+    def test_native_mux_timing_pipe_keeps_only_exact_anonymous_fields(self):
+        source = '\n'.join([self.mux_line(self.mux_record()),
+                            STAMP+'[Other] '+json.dumps(self.mux_record()),
+                            self.mux_line(self.mux_record()).replace('timing ', 'timing_extra '),
+                            self.mux_line(self.mux_record(token='PRIVATE_SECRET')),
+                            self.mux_line(self.mux_record(outcome='PRIVATE_SECRET')),
+                            self.mux_line(self.mux_record(totalMs=float('nan'))),
+                            self.mux_line(self.mux_record(totalMs=10**1000)),
+                            self.mux_line(self.mux_record(attempt=True)),
+                            self.mux_line(self.mux_record(authorityReturnedAtMs=-1)),
+                            self.mux_line(self.mux_record(firstHubFrameQueuedAtMs='PRIVATE_SECRET'))])
+        raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr(source)+')'])
+        result = reader.extract_mux_timings(raw)
+        self.assertEqual(result['matchingRecords'], 1)
+        self.assertEqual(result['records'], [{'timestamp': STAMP.strip(), **self.mux_record()}])
+        self.assertEqual(result['invalidRecords'], 7)
+        self.assertNotIn('PRIVATE_SECRET', json.dumps(result))
+        self.assertIn('cannot identify', result['attribution'])
+        self.assertIn('unknown', result['absenceMeans'])
+
+    def test_mux_timing_truncation_and_malformed_records_remain_unknown(self):
+        source = '\n'.join(self.mux_line(self.mux_record(attempt=i+1)) for i in range(53))
+        source += '\n'+STAMP+'[EngineWS] mux subscription timing {broken}'
+        source += '\n'+STAMP+'[EngineWS] mux subscription timing '+('x'*4097)
+        result = reader.extract_mux_timings(source.encode())
+        self.assertEqual(result['matchingRecords'], 53)
+        self.assertEqual(len(result['records']), 50)
+        self.assertEqual(result['omittedRecords'], 3)
+        self.assertEqual(result['invalidRecords'], 2)
+        self.assertEqual(result['records'][0]['attempt'], 4)
+        self.assertEqual(reader.extract_mux_timings(b'')['records'], [])
+
     def test_historical_window_is_exactly_fifteen_minutes_and_recent(self):
         now = datetime.datetime(2026, 9, 27, 16, tzinfo=datetime.timezone.utc)
         start = '2026-09-27T14:25:00Z'
@@ -161,10 +211,13 @@ class NativeLogReader(unittest.TestCase):
             directory = Path(name)
             docker = directory/'docker'
             marker = directory/'called'
-            docker.write_text('#!'+sys.executable+'\nimport sys\nfrom pathlib import Path\nassert sys.argv[1:]=='+repr(reader.log_command(window)[1:])+'\nPath('+repr(str(marker))+').write_text("read")\nprint('+repr(STAMP+'[ServerTableEngine.'+TABLE+'.watchdog_kill] Engine self-terminating for restart: tournament_table_zombie')+')\n')
+            docker.write_text('#!'+sys.executable+'\nimport sys\nfrom pathlib import Path\nassert sys.argv[1:]=='+repr(reader.log_command(window)[1:])+'\nPath('+repr(str(marker))+').write_text("read")\nprint('+repr(STAMP+'[ServerTableEngine.'+TABLE+'.watchdog_kill] Engine self-terminating for restart: tournament_table_zombie')+')\nprint('+repr(self.mux_line(self.mux_record()))+')\n')
             docker.chmod(0o700)
-            for value, accepted in [(start, True), ('2000-01-01T00:00:00Z', False), ('2026-09-27T14:25:00Z; restart', False)]:
-                encoded = base64.b64encode(json.dumps({'scopes': SCOPES, 'windowStart': value}).encode()).decode()
+            for value, flag, accepted in [(start, None, True), (start, True, True), (None, True, False), (start, 'true', False), (start, False, False), ('2000-01-01T00:00:00Z', None, False), ('2026-09-27T14:25:00Z; restart', None, False)]:
+                request = {'scopes': SCOPES, 'windowStart': value}
+                if flag is not None:
+                    request['muxTiming'] = flag
+                encoded = base64.b64encode(json.dumps(request).encode()).decode()
                 program = "import importlib.util,sys; s=importlib.util.spec_from_file_location('r',"+repr(str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'))+"); m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.health=lambda origin: {'version':'abcdef012345','instanceId':'1-fixture'};sys.argv=['reader','--remote',"+repr(encoded)+"];m.main()"
                 result = subprocess.run([sys.executable, '-c', program], capture_output=True, text=True, env={'PATH': str(directory)+':/usr/bin:/bin'}, timeout=10)
                 self.assertEqual(result.returncode == 0, accepted)
@@ -173,11 +226,14 @@ class NativeLogReader(unittest.TestCase):
                     output = json.loads(result.stdout)
                     self.assertEqual(output['window'], reader.window_description(window))
                     self.assertEqual(output['records'][0]['engineReasons'], ['tournament_table_zombie'])
+                    self.assertEqual('muxSubscriptionTimings' in output, flag is True)
+                    if flag is True:
+                        self.assertEqual(output['muxSubscriptionTimings']['records'], [{'timestamp': STAMP.strip(), **self.mux_record()}])
                     marker.unlink()
 
     def test_transport_admission_ephemeral_permissions_and_failure_cleanup(self):
         original_run = subprocess.run
-        for fail in ['none', 'transport', 'identity', 'host_identity', 'window']:
+        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux']:
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as name:
                 directory = Path(name)
                 generated = directory/'fixture_key'
@@ -185,7 +241,13 @@ class NativeLogReader(unittest.TestCase):
                 private = generated.read_text()
                 pin = 'fixture.example '+(directory/'fixture_key.pub').read_text()
                 event = directory/'event.json'
-                event.write_text(json.dumps({'action': 'audit-production-integrity', 'client_payload': {'tournament_log_observation': SCOPES}}))
+                payload = {'tournament_log_observation': SCOPES}
+                mux = fail in ['mux', 'missing_mux']
+                start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') if mux else None
+                window = reader.log_window(start)
+                if mux:
+                    payload.update(tournament_log_window_start=start, mux_subscription_timing=True)
+                event.write_text(json.dumps({'action': 'audit-production-integrity', 'client_payload': payload}))
                 identity = {'version': 'abcdef012345', 'instanceId': '1-fixture'}
                 calls = []
 
@@ -205,8 +267,13 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(args[-2], 'root@fixture.example')
                     self.assertRegex(args[-1], r"^python3 - --remote '[A-Za-z0-9+/=]+'$")
                     self.assertEqual(kwargs['input'], (ROOT/'scripts/ci/read-scoped-runtime-errors.py').read_bytes())
+                    import base64
+                    request = json.loads(base64.b64decode(args[-1].split("'")[1]))
+                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {})})
                     host = {**identity, 'instanceId': 'other-host'} if fail == 'host_identity' else identity
-                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.window_description(None), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
+                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.window_description(window), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
+                    if fail in ['mux', 'extra_mux']:
+                        output['muxSubscriptionTimings'] = reader.extract_mux_timings(self.mux_line(self.mux_record()).encode())
                     if fail == 'window':
                         output['window'] = {'since': 'unrequested'}
                     return subprocess.CompletedProcess(args, 1 if fail == 'transport' else 0, json.dumps(output).encode(), b'sensitive transport error')
@@ -217,7 +284,7 @@ class NativeLogReader(unittest.TestCase):
                     env = {'GITHUB_EVENT_NAME': 'repository_dispatch', 'GITHUB_EVENT_PATH': str(event), 'RUNNER_TEMP': str(directory), 'HETZNER_HOST': 'fixture.example', 'HETZNER_SSH_PRIVATE_KEY': private, 'HETZNER_HOST_KEY': pin}
                     after = {**identity, 'instanceId': '2-changed'} if fail == 'identity' else identity
                     with patch.dict(os.environ, env), patch.object(sys, 'argv', [str(ROOT/'scripts/ci/read-scoped-runtime-errors.py')]), patch.object(reader, 'health', side_effect=[identity, after]), patch.object(subprocess, 'run', side_effect=transport):
-                        if fail == 'none':
+                        if fail in ['none', 'mux']:
                             reader.main()
                         else:
                             with self.assertRaises(RuntimeError):
@@ -225,8 +292,12 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(len(calls), 1)
                     self.assertFalse(list(directory.glob('scoped-engine-read-*')))
                     output = directory/'artifacts/scoped-runtime-errors/observation.json'
-                    self.assertEqual(output.exists(), fail == 'none')
+                    self.assertEqual(output.exists(), fail in ['none', 'mux'])
                     if output.exists():
+                        saved = json.loads(output.read_text())
+                        self.assertEqual('muxSubscriptionTimings' in saved, mux)
+                        if mux:
+                            self.assertEqual(saved['muxSubscriptionTimings']['matchingRecords'], 1)
                         self.assertNotIn(private, output.read_text())
                         self.assertNotIn('sensitive transport error', output.read_text())
                 finally:

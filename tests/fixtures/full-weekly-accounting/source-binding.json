@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "9ed8fdd6606e17df2747eb0d65965ec639f867579c13532a922d247c946879ff",
+    "scripts/ci/classify-ci-changes.mjs": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "3226e19ae44b34f3494c3c6646a126afbca50ba6e3328e7c95783c327b894eb7",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "940bc5157237c190679b2c6c510e3e3cc4024c7a39ede28e3c943757a7893854",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "9e74d166d1f085e11cf9456e086eadac487a8448d871c8569dc4874d0a3c0b09",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "dddcd001d044e098a60a02915d75ecb6dd0a255f95b88ceda232489dc13db779",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2687,6 +2687,27 @@
       }
     ]
   },
+  "satellite_combined_main_integration_20260927": {
+    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
+    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
+    "updated_active_pins": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
+        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "before_sha256": "734b3df06cae8e5a2d82885138fa59ad835cf313f72bcf14fdca8347d5ac2c41",
+        "after_sha256": "627e31c69176f5c1a159f1bbcb94f6b42efd6964c44d8fa6cc5046c4b0f49aac"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "before_sha256": "7c9a72d19b33c5e3996237167442e477262fa5d443d434ef328e552be2363178",
+        "after_sha256": "13b9259dca1807cec2fb501887c48c7cc79f2aaa807f5b1de9682f49623286b3"
+      }
+    ]
+  },
   "bbjSettlementIntegration20260927": {
     "reason": "Preserve both existing native qualifications and both parents full histories and assertions; update only exact integrated CI/classifier and nested binding bytes.",
     "parents": [
@@ -2713,6 +2734,23 @@
         "current": "301bb7166acbe61eac366ba1744f4bc403b785630f9426012135477940e9dae8"
       }
     ]
+  },
+  "settlement_conservation_index_20260927": {
+    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "32993071b17bc72ae19c6a515feb6b64e4c3061b7805be27eea54dbca872cac5",
+        "current": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "301bb7166acbe61eac366ba1744f4bc403b785630f9426012135477940e9dae8",
+        "current": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
+      }
+    }
   },
   "productionAlertsSettlementIntegration20260927": {
     "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
@@ -2757,6 +2795,26 @@
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
         "previous": "3906e100fae8a55553a597f4bf06ac3616da8272456654bb2f8e886219717db4",
         "current": "c45c746ffb9c2da4f42cf42e1fbfc5d670e7e05fc21f387ae2053d69755f2e5f"
+      }
+    ]
+  },
+  "certificationPlayerIndexIntegration20260927": {
+    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
+    "files": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
+        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "089358bbb769de16712b218c0a3e6b6a4fec5f986e4c3d6ce027eb37b2c36cec",
+        "sha256": "ff9ce565dd76970acd84c80f5981b08154ee497487edc739da6a6cf4a70d7952"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "5317831b963c3b9025f167272005448145c402ce03f456e6c8bd24b0fe1fa438",
+        "sha256": "18336e862e25f65de184b0422a18801388edd3107fc594597660d260998ec7b7"
       }
     ]
   },
@@ -2811,19 +2869,19 @@
         "section": "repository_fixtures",
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
-        "current": "9ed8fdd6606e17df2747eb0d65965ec639f867579c13532a922d247c946879ff"
+        "current": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
       },
       {
         "section": "repository_fixtures",
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
         "previous": "ae57af9f463caea7f871c4ea4c2440651dd0a06d01ba3998c11649b4236e8402",
-        "current": "3226e19ae44b34f3494c3c6646a126afbca50ba6e3328e7c95783c327b894eb7"
+        "current": "940bc5157237c190679b2c6c510e3e3cc4024c7a39ede28e3c943757a7893854"
       },
       {
         "section": "repository_fixtures",
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
         "previous": "0654d6ce29995e19bfc4bb8eb8e9fb3eb4eaf8bc1217ce16f34b83e51a1e5360",
-        "current": "9e74d166d1f085e11cf9456e086eadac487a8448d871c8569dc4874d0a3c0b09"
+        "current": "dddcd001d044e098a60a02915d75ecb6dd0a255f95b88ceda232489dc13db779"
       }
     ]
   },
@@ -2852,38 +2910,35 @@
     "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
     "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
-        "previous": "32993071b17bc72ae19c6a515feb6b64e4c3061b7805be27eea54dbca872cac5",
-        "current": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
+        "before": "32993053f035d9388c2e0d98f50a44ece7b290a1219f43d82a43ac79a02e7339",
+        "after": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
       },
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "previous": "301bb7166acbe61eac366ba1744f4bc403b785630f9426012135477940e9dae8",
-        "current": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
+        "before": "301bb769b458e0b91959b281f3c9fe62fec84774fda0f98788c0bf0e716d959f",
+        "after": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
       }
     }
   },
-  "certificationPlayerIndexIntegration20260927": {
-    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
-    "files": [
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
-        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
       },
-      {
-        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "previous_sha256": "089358bbb769de16712b218c0a3e6b6a4fec5f986e4c3d6ce027eb37b2c36cec",
-        "sha256": "ff9ce565dd76970acd84c80f5981b08154ee497487edc739da6a6cf4a70d7952"
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "ae57af9f463caea7f871c4ea4c2440651dd0a06d01ba3998c11649b4236e8402",
+        "after": "c845627aa750872af3128a38dfe340d61654119e81f4ee2c3608f0cc80ad17d7"
       },
-      {
-        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
-        "previous_sha256": "5317831b963c3b9025f167272005448145c402ce03f456e6c8bd24b0fe1fa438",
-        "sha256": "18336e862e25f65de184b0422a18801388edd3107fc594597660d260998ec7b7"
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "0654d6ce29995e19bfc4bb8eb8e9fb3eb4eaf8bc1217ce16f34b83e51a1e5360",
+        "after": "03a5e7adbe0c50cf5a167107174bffb622f62295595e2a372f97586eca8fd617"
       }
-    ]
+    }
   },
   "strandedPlayerReadQualification20260927": {
     "status": "source_changed_native_pass_hosted_pending",
@@ -2905,5 +2960,20 @@
         "after": "4110b0f503aab2a1d9137bead25d2efd9a6f53b35945060735d4e5c2fcd3c416"
       }
     ]
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "tests/fixtures/sep8-spin-custody/source-binding.json"
+    ]
+  },
+  "coverageProtectedMainSecondIntegration20260927": {
+    "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
+    "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
+    "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
   }
 }

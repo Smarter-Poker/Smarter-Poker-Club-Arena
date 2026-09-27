@@ -3,6 +3,7 @@
 import base64
 import datetime
 import json
+import math
 import os
 import re
 import selectors
@@ -60,6 +61,59 @@ def log_command(window):
 def window_description(window):
     return ({**window, 'durationMinutes': 15, 'maximumPhysicalLines': 20000}
             if window else 'last 15 minutes; last 20000 physical lines')
+
+
+def mux_timing_requested(value, window):
+    # Anonymous transport phases cannot be scoped to a table. Require a
+    # separate explicit opt-in and the original completed incident interval.
+    if value is None:
+        return False
+    if value is not True or window is None:
+        raise ValueError('Anonymous timing requires an explicit completed window')
+    return True
+
+
+def extract_mux_timings(raw):
+    prefix = '[EngineWS] mux subscription timing '
+    offsets = {'authorityReturnedAtMs', 'ensureStartedAtMs', 'tableReadyAtMs',
+               'ackQueuedAtMs', 'firstHubFrameQueuedAtMs', 'hubSubscribedAtMs'}
+    outcomes = {'interrupted', 'access_refused', 'banned', 'table_unavailable',
+                'ip_restricted', 'subscribed', 'error'}
+    fields = offsets | {'attempt', 'startedAt', 'outcome', 'totalMs'}
+    records, invalid = [], 0
+
+    def number(value, maximum):
+        return (type(value) in (int, float) and 0 <= value <= maximum
+                and (type(value) is int or math.isfinite(value)))
+
+    for line in raw.decode('utf-8', errors='replace').splitlines():
+        stamp = STAMP.match(line)
+        body = line[stamp.end():] if stamp else line
+        if not body.startswith(prefix):
+            continue
+        try:
+            if stamp is None or len(body) > 4096:
+                raise ValueError('Unbounded or undated timing')
+            record = json.loads(body[len(prefix):])
+            if not isinstance(record, dict) or set(record) != fields:
+                raise ValueError('Unknown timing fields')
+            if record['outcome'] not in outcomes:
+                raise ValueError('Unknown timing outcome')
+            for field in ['attempt', 'startedAt']:
+                if type(record[field]) is not int or not 0 < record[field] <= 9007199254740991:
+                    raise ValueError('Invalid timing identity')
+            if not number(record['totalMs'], 900000):
+                raise ValueError('Invalid duration')
+            for field in offsets:
+                if record[field] is not None and not number(record[field], record['totalMs']):
+                    raise ValueError('Invalid timing offset')
+            records.append({'timestamp': stamp.group(1), **record})
+        except (ValueError, TypeError):
+            invalid += 1
+    return {'records': records[-50:], 'matchingRecords': len(records),
+            'omittedRecords': max(0, len(records)-50), 'invalidRecords': invalid,
+            'attribution': 'anonymous phases cannot identify a table or user; offsets end at enqueue, not browser receipt',
+            'absenceMeans': 'unknown; bounded retained logs may omit attempts'}
 
 
 def selection(value):
@@ -174,9 +228,10 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
         if isinstance(request, list):
-            scopes, window = selection(request), None
-        elif isinstance(request, dict) and set(request) == {'scopes', 'windowStart'}:
+            scopes, window, mux_timing = selection(request), None, False
+        elif isinstance(request, dict) and set(request) in ({'scopes', 'windowStart'}, {'scopes', 'windowStart', 'muxTiming'}):
             scopes, window = selection(request['scopes']), log_window(request['windowStart'])
+            mux_timing = mux_timing_requested(request.get('muxTiming'), window)
         else:
             raise ValueError('Invalid observation request')
         before = health('http://127.0.0.1:8080')
@@ -184,11 +239,12 @@ def main():
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
+        extra = {'muxSubscriptionTimings': extract_mux_timings(raw)} if mux_timing else {}
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
                           'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
                           'perRecordEngineIdentity': 'unproven; the retained window may include an earlier process',
-                          'inputBytes': len(raw), **extract(raw, scopes)}))
+                          'inputBytes': len(raw), **extract(raw, scopes), **extra}))
         return
     if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
         raise RuntimeError('Explicit observation dispatch required')
@@ -197,6 +253,7 @@ def main():
         raise RuntimeError('Wrong event')
     scopes = selection(event.get('client_payload', {}).get('tournament_log_observation'))
     window = log_window(event.get('client_payload', {}).get('tournament_log_window_start'))
+    mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -211,8 +268,10 @@ def main():
             path.chmod(0o600)
         for args in [['ssh-keygen', '-y', '-f', str(directory/'key')], ['ssh-keygen', '-l', '-f', str(directory/'known_hosts')]]:
             subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=5)
-        encoded = base64.b64encode(json.dumps({'scopes': scopes, 'windowStart':
-                                             window['since'] if window else None}).encode()).decode()
+        request = {'scopes': scopes, 'windowStart': window['since'] if window else None}
+        if mux_timing:
+            request['muxTiming'] = True
+        encoded = base64.b64encode(json.dumps(request).encode()).decode()
         # Only validated UUID scope and an exact recent fifteen-minute interval
         # enter the fixed reader. Host, account, container and command stay fixed.
         args = ['ssh', '-i', str(directory/'key'), '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
@@ -227,6 +286,8 @@ def main():
             raise RuntimeError('Observation contract unavailable')
         if result.get('window') != window_description(window):
             raise RuntimeError('Observation window differs')
+        if ('muxSubscriptionTimings' in result) != mux_timing:
+            raise RuntimeError('Anonymous timing observation differs')
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')

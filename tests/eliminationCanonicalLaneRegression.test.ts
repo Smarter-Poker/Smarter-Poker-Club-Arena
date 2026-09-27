@@ -8,7 +8,7 @@ import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const migration = read(
-  'supabase/migrations/20260927165023_ordinary_eliminations_acquire_their_canonical_lane_before_ro.sql'
+  'supabase/migrations/20260927170836_ordinary_eliminations_acquire_their_canonical_lane_before_rows.sql'
 );
 
 describe('ordinary elimination owns its original canonical transaction', () => {

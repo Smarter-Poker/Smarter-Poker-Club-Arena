@@ -234,6 +234,17 @@
       "recoveredFrom": "File bytes equal the installed schema_migrations statements; public.fn_ca_migration_text(20260927150429) returned MD5 e5155bf7efde88d48b1185fdafe379f7 and byte_len 8624 on 2026-09-27 at 15:15 UTC.",
       "refusedBy": [],
       "liveVerdict": "Installed once after independent PostgreSQL 17 accounting, authorization, snapshot and drift qualification. This dynamic replacement has no statically parsed new object or @live-proof line and cannot be edited after installation. Live readback retains fn_cashier_statement_rows OID 54141976, postgres owner, postgres-only EXECUTE, SECURITY DEFINER, STABLE and public, pg_temp search path; definition MD5 is 49e310be00e91afc9a9b7582bb048184. Nine other guarded Cashier functions remained unchanged at installation. Only authorized all-scope totals precompute existing receipt omissions; no grants, triggers, financial rows, indexes or timeout changed. The first whole production read still exceeded 8 seconds and a later warm whole read passed; authenticated browser availability remains unresolved. This records immutable installed SQL, not completion or permission to replay it."
+    },
+    {
+      "version": "20260927170836",
+      "name": "ordinary_eliminations_acquire_their_canonical_lane_before_rows",
+      "file": "supabase/migrations/20260927170836_ordinary_eliminations_acquire_their_canonical_lane_before_rows.sql",
+      "md5": "91b1418814f3a43e01a3ba00bd2520e3",
+      "appliedToProductionAt": "2026-09-27T17:08:36Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "Exact installer bytes independently compared with supabase_migrations.schema_migrations.statements; task evidence three-installed-1708.json",
+      "refusedBy": [],
+      "liveVerdict": "Installed once after independent full PostgreSQL17 qualification. This dynamic substitution creates no statically parsed new object and carries no @live-proof line; its immutable SQL is recorded byte for byte. Live readback17:08:57 keeps functionOID24464413, postgres owner, service-role/postgres-only EXECUTE, SECURITY DEFINER, VOLATILE and public,pg_temp search path. DefinitionMD5a5585b9d7fb061f12c29f1262a5a1b6c matches the qualified postimage. Only the existing canonical lane prefix is added before the first row lock; removing it recovers the complete original2c34f4cb body. Private financial core, lane helper, source guard and source triggers stay unchanged. No financial or player data is corrected by this installation; original event progress and protected publication remain separate evidence. Never replay installed SQL."
     }
   ]
 }

@@ -12,7 +12,7 @@ from collections import Counter
 sys.dont_write_bytecode = True
 from satellite_qualifier_fixture import module, sha, function_sql
 
-MIGRATION = 'supabase/migrations/20260927165023_ordinary_eliminations_acquire_their_canonical_lane_before_ro.sql'
+MIGRATION = 'supabase/migrations/20260927170836_ordinary_eliminations_acquire_their_canonical_lane_before_rows.sql'
 CAPTURE = 'scripts/ci/fixtures/elimination-canonical-lane/current-authorities-20260927.json'
 HAND = 'scripts/ci/fixtures/elimination-canonical-lane/current-hand-lane.json'
 PROBE = 'scripts/ci/probes/elimination-canonical-lane.sql'

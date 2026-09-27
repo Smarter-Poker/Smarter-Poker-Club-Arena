@@ -44,3 +44,5 @@ receipts, but finishing places must still follow the complete event's original
 candidate order. This change does not edit those registrations, positions or
 receipts, nor weaken the whole-roster movement guard. The two older selected
 stalls have coherent rosters and are a separate diagnosis.
+
+Installed once as20260927170836 at17:08:36UTC; exact10,651 SQL bytes SHA25603f7fa6f15b64ff309a5982a3f845cb36664a0843e0e781a85f3940b0e1178f5 match durable history. Readback17:08:57 keeps originalOID24464413 and authority with qualified postdefinitiona5585b9d7fb061f12c29f1262a5a1b6c. File renamed to actual provider history without changing SQL. Installation did not invoke an elimination or rewrite any player record. Natural backlog progress remains a separate acceptance item.

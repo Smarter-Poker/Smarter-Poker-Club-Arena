@@ -36,6 +36,7 @@ const locatedPlayer: PlayerSearchResult = {
   relationship: 'public',
   presence_status: 'playing',
   sensitive_accounts: [],
+  affiliations: { clubs: [], unions: [], has_hidden: false },
   tables: [
     {
       id: 'seat-1',
@@ -69,7 +70,8 @@ describe('Club Entry live-watch handoff', () => {
       id: 'club-uuid-1',
       club_id: 48291,
       slug: 'midnight-club',
-      name: 'Midnight Club',
+      name: 'midnight club',
+      description: 'play deep stack poker together',
       member_count: 42,
       requires_approval: false,
       membership_status: null,
@@ -81,7 +83,7 @@ describe('Club Entry live-watch handoff', () => {
         id: 'club-uuid-1',
         club_id: 48291,
         slug: 'midnight-club',
-        name: 'Midnight Club',
+        name: 'midnight club',
       },
     });
 
@@ -95,6 +97,8 @@ describe('Club Entry live-watch handoff', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: 'Confirm Join Midnight Club' }));
+
+    expect(screen.getByText('Play Deep Stack Poker Together')).toBeInTheDocument();
 
     await waitFor(() =>
       expect(screen.getByLabelText('current route')).toHaveTextContent(

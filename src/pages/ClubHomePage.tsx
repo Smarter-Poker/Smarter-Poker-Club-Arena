@@ -1056,19 +1056,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       cancelled = true;
     };
   }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible, openingSetupReadRevision]);
-  /* THE LATCH IS ASKED FOR ONCE (2026-09-23). The first render in which every
+  /* THE LATCH IS ASKED FOR ONCE AT A TIME (2026-09-23). The first render in which every
      step is complete or validly skipped asks the server to record the list as
      finished, so it never comes back when a table closes or a member leaves.
-     One request per club per page, guarded while it is in flight; a refusal
-     or a failure is reported by the hook and today's behaviour stands. No
-     timer, no polling, no retry loop. */
+     A refusal clears the in-flight guard: a later unresolved -> resolved
+     transition may retry after the missing server state arrives. No timer,
+     polling or automatic retry loop. */
   const launchLatchRequestedRef = useRef<string | null>(null);
   const completeLaunchChecklist = launchSkips.complete;
   const latchOpeningChecklist = useCallback(() => {
     const latchClubId = club?.id;
     if (!latchClubId || launchLatchRequestedRef.current === latchClubId) return;
     launchLatchRequestedRef.current = latchClubId;
-    void completeLaunchChecklist();
+    void completeLaunchChecklist().then((completed) => {
+      if (!completed && launchLatchRequestedRef.current === latchClubId) {
+        launchLatchRequestedRef.current = null;
+      }
+    });
   }, [club?.id, completeLaunchChecklist]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
@@ -4855,10 +4859,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* THE OWNER'S OPENING JOURNEY, SHOWN TO THE OWNER. The wizard state and the
      agent state are read for the owner alone, so a staff viewer could never
      finish the list and was left with a permanent Owner Required row. */
-  const showLaunchChecklist =
-    openingChecklistEligible &&
-    isOwner &&
-    launchTasks.some((task) => !task.complete && !task.skipped);
+  const showLaunchChecklist = openingChecklistEligible && isOwner;
   /* Every step complete or validly skipped: the one moment the lobby asks the
      server to latch the list finished (latchOpeningChecklist above). */
   const launchChecklistFinished =
@@ -5555,6 +5556,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             openingBank={Number(club.chip_treasury) || 0}
             tasks={launchTasks}
             skips={launchSkips}
+            waitForCompletion
           />
         )}
         <ClubLaunchCompletionLatch

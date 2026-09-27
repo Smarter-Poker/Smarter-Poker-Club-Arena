@@ -136,7 +136,7 @@ describe('opening checklist wiring', () => {
     );
   });
 
-  it('asks for the latch once, behind an in-flight guard, with no timer', () => {
+  it('asks for the latch once at a time and re-arms after a refusal, with no timer', () => {
     const latch = PAGE.slice(
       PAGE.indexOf('const launchLatchRequestedRef = useRef<string | null>(null);'),
       PAGE.indexOf('}, [club?.id, completeLaunchChecklist]);')
@@ -145,7 +145,9 @@ describe('opening checklist wiring', () => {
       'if (!latchClubId || launchLatchRequestedRef.current === latchClubId) return;'
     );
     expect(latch).toContain('launchLatchRequestedRef.current = latchClubId;');
-    expect(latch).toContain('void completeLaunchChecklist();');
+    expect(latch).toContain('void completeLaunchChecklist().then((completed) => {');
+    expect(latch).toContain('if (!completed && launchLatchRequestedRef.current === latchClubId) {');
+    expect(latch).toContain('launchLatchRequestedRef.current = null;');
     expect(latch).not.toMatch(/setTimeout|setInterval/);
     expect(PAGE.split('completeLaunchChecklist()').length - 1).toBe(1);
     /* The moment: every step complete or validly skipped, for the owner. */
@@ -156,6 +158,8 @@ describe('opening checklist wiring', () => {
       /<ClubLaunchCompletionLatch\s+resolved=\{launchChecklistFinished\}\s+onResolved=\{latchOpeningChecklist\}\s+\/>/
     );
     expect(PAGE.split('<ClubLaunchCompletionLatch').length - 1).toBe(1);
+    expect(PAGE).toContain('const showLaunchChecklist = openingChecklistEligible && isOwner;');
+    expect(PAGE).toContain('waitForCompletion');
   });
 
   it('shows the opening journey to the owner, whose state is the only one loaded', () => {

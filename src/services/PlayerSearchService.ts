@@ -59,7 +59,6 @@ export interface PlayerClubAffiliation {
   club_id?: number | null;
   club_slug?: string | null;
   club_name: string;
-  role: string | null;
   is_gated: boolean;
   viewer_membership_status: string | null;
   viewer_action: 'member' | 'pending' | 'join' | 'request_join' | 'unavailable';
@@ -74,11 +73,15 @@ export interface PlayerUnionAffiliation {
 export interface PlayerAffiliations {
   clubs: PlayerClubAffiliation[];
   unions: PlayerUnionAffiliation[];
-  /** Gated clubs the viewer is not entitled to see named. Counted, never listed. */
-  hidden_count: number;
+  /** True when at least one gated club is intentionally withheld. Never leaks how many. */
+  has_hidden: boolean;
 }
 
-export const EMPTY_AFFILIATIONS: PlayerAffiliations = { clubs: [], unions: [], hidden_count: 0 };
+export const EMPTY_AFFILIATIONS: PlayerAffiliations = {
+  clubs: [],
+  unions: [],
+  has_hidden: false,
+};
 
 /** Minimum characters before the server widens matching from substring to trigram-similar. */
 export const FUZZY_MIN_CHARS = 3;
@@ -112,12 +115,12 @@ export interface PlayerSearchPage {
  * keeps the modal from having to null-check three levels deep on every render.
  */
 export function normalizeAffiliations(value: unknown): PlayerAffiliations {
-  if (!value || typeof value !== 'object') return { clubs: [], unions: [], hidden_count: 0 };
+  if (!value || typeof value !== 'object') return EMPTY_AFFILIATIONS;
   const raw = value as Record<string, unknown>;
   return {
     clubs: Array.isArray(raw.clubs) ? (raw.clubs as PlayerClubAffiliation[]) : [],
     unions: Array.isArray(raw.unions) ? (raw.unions as PlayerUnionAffiliation[]) : [],
-    hidden_count: Number(raw.hidden_count) || 0,
+    has_hidden: raw.has_hidden === true || Number(raw.hidden_count) > 0,
   };
 }
 
@@ -134,6 +137,7 @@ export interface TableWatchAccess {
 }
 
 export interface PlayerSearchPreferences {
+  /** Legacy compatibility only: every authenticated player remains searchable. */
   discoverable: boolean;
   showDisplayName: boolean;
   showPresence: boolean;

@@ -42,26 +42,38 @@ production before writing the migration). Re-keyed both the `seat_income` and
 2026-09-25 fix) is unaffected: it still has no `tournament_satellite_awards`
 row under either join key.
 
-Migration: `supabase/migrations/20260927091102_conservation_delta_seat_award_join_by_payout_id.sql`.
+Migration: `supabase/migrations/20260927212910_conservation_delta_seat_award_join_by_payout_id.sql`.
+
+## Update, 21:30 UTC: rebuilt on the current function body
+
+The first migration (20260927091102) was never applied and was written against the 09:11 body. At 15:09 main
+applied 20260927150903, which taught the same function about a reviewed void's overlay return. Applying the
+09:11 body would have silently removed that. The migration is now 20260927212910, restating the live body
+(prosrc md5 ce248ae34ecb66dd36a55c50fee8d07b) with only the two award joins changed, and it restates the
+service-role-only grants the definer-authorization check requires. Re-measured read-only against production:
+16 open alerts, 14 go to 0.00 (including three filed after the first probe: Saturday Night Big Stack +2,850.00,
+Friday Night Feature +480.00, Saturday Stackfest Opener +160.00); the two Sunday $200 Deep Stack events stay at
+-180.00. Across all 493 finished events of the last 10 days with a satellite payout on either side, 14 change,
+every one from non-zero to 0.00, and none moves away from 0.00.
 
 ## Verified before shipping
 
 Recomputed all 14 flagged tournaments' deltas with the corrected join
 (rolled-back probe against production, no committed side effects):
 
-| Tournament | Reported delta | Corrected delta |
-|---|---|---|
-| DSS Thursday $22 NLH Deepstack | +80.00 | **0.00** |
-| Six-Card Feature | +160.00 | **0.00** |
-| Friday Night Feature | +2070.00 | **0.00** |
-| Sunday Funday Six-Card Closer | +350.00 | **0.00** |
-| DSS Monday $22 NLH Deepstack | +260.00 | **0.00** |
-| Wednesday Feature (x2) | +40.00 / +20.00 | **0.00** / **0.00** |
-| DSS Wednesday $22 NLH Deepstack | +40.00 | **0.00** |
-| Sunday Funday Warm-Up | +1950.00 | **0.00** |
-| Sunday Funday Main Event | +1300.00 | **0.00** |
-| DSS Tuesday $22 NLH Deepstack | +360.00 | **0.00** |
-| Sunday $200 Deep Stack (x2) | -180.00 | **-180.00 (unchanged)** |
+| Tournament                      | Reported delta  | Corrected delta         |
+| ------------------------------- | --------------- | ----------------------- |
+| DSS Thursday $22 NLH Deepstack  | +80.00          | **0.00**                |
+| Six-Card Feature                | +160.00         | **0.00**                |
+| Friday Night Feature            | +2070.00        | **0.00**                |
+| Sunday Funday Six-Card Closer   | +350.00         | **0.00**                |
+| DSS Monday $22 NLH Deepstack    | +260.00         | **0.00**                |
+| Wednesday Feature (x2)          | +40.00 / +20.00 | **0.00** / **0.00**     |
+| DSS Wednesday $22 NLH Deepstack | +40.00          | **0.00**                |
+| Sunday Funday Warm-Up           | +1950.00        | **0.00**                |
+| Sunday Funday Main Event        | +1300.00        | **0.00**                |
+| DSS Tuesday $22 NLH Deepstack   | +360.00         | **0.00**                |
+| Sunday $200 Deep Stack (x2)     | -180.00         | **-180.00 (unchanged)** |
 
 12 of 14 false positives resolve to exactly 0.00. The two `-180.00`
 ("Sunday $200 Deep Stack") rows are **not** explained by this bug and remain

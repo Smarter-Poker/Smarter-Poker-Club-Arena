@@ -32,7 +32,7 @@
  * (tournament_id, position) join, or replaced payout_id with some other
  * derived key. Join on `a.payout_id = sp.id` in both CTEs; do not reach for
  * `position`/`place` again, even as a fallback - see the 2026-09-27 changelog
- * and migration 20260927091102 for the exact incident this guards.
+ * and migration 20260927212910 (which supersedes the unapplied 20260927091102) for the exact incident this guards.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -78,7 +78,10 @@ describe('fn_tournament_conservation_delta joins a satellite award by payout_id'
       ),
     ].map((m) => m[1].trim());
 
-    expect(joins.length, 'expected at least one join to tournament_satellite_awards').toBeGreaterThan(0);
+    expect(
+      joins.length,
+      'expected at least one join to tournament_satellite_awards'
+    ).toBeGreaterThan(0);
 
     for (const predicate of joins) {
       expect(predicate).toMatch(/a\.payout_id\s*=\s*sp\.id/i);
@@ -88,7 +91,16 @@ describe('fn_tournament_conservation_delta joins a satellite award by payout_id'
   it('never falls back to (tournament_id, place) vs (tournament_id, position)', () => {
     // This is the exact predicate that silently missed a real award row
     // whenever tournament_payouts.position was NULL.
-    expect(delta.body).not.toMatch(/a\.tournament_id\s*=\s*sp\.tournament_id\s+AND\s+a\.place\s*=\s*sp\.position/i);
+    expect(delta.body).not.toMatch(
+      /a\.tournament_id\s*=\s*sp\.tournament_id\s+AND\s+a\.place\s*=\s*sp\.position/i
+    );
     expect(delta.body).not.toMatch(/a\.place\s*=\s*sp\.position/i);
+  });
+  it('keeps every term the function already had (the reviewed-void overlay return)', () => {
+    // The first version of this fix was written against an older body and
+    // would have dropped the 2026-09-27 15:09 reviewed-void overlay return.
+    // A join fix restates the whole function; it must not lose a term.
+    expect(delta.body).toMatch(/reviewed_void_overlay_return/);
+    expect(delta.body).toMatch(/tournament_conservation_baseline/);
   });
 });

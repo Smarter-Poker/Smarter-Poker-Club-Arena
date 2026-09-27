@@ -1,56 +1,53 @@
--- 20260927091102_conservation_delta_seat_award_join_by_payout_id
+-- 20260927212910_conservation_delta_seat_award_join_by_payout_id
 --
--- ROOT CAUSE (CLAUDE.md 10.11/10.12): fn_tournament_money_conservation raised
--- 14 fresh "retained/paid money it never collected/paid out" alerts against
--- LIVE, healthy tournaments starting 2026-09-26 (financial_alerts ids
--- 7e64474e, 2d8cb02d, 5a088deb, 9bd7f8f3, dda954bc, 52bfd60a, 268aca2f,
--- 12925ad3, 38a22616, 30a45430, ee15360d, eaf6126a, 80d0c9bb + one more).
--- Every one is a false positive of fn_tournament_conservation_delta itself,
--- not a real shortfall or overpayment.
+-- Reserved by scripts/reserve-migration-version.sh on 2026-09-27 21:29:10 UTC.
+-- Supersedes 20260927091102 from the same pull request (#5396), which was
+-- never applied: it was written against the function body of 09:11 and would
+-- have dropped the reviewed-void overlay return that 20260927150903 added at
+-- 15:09. This file restates the CURRENT live body (prosrc md5
+-- ce248ae34ecb66dd36a55c50fee8d07b, read 2026-09-27 21:31 UTC) with exactly
+-- two predicates changed.
 --
--- Traced "Six-Card Feature" (cf03a62c-3f77-43b4-82ff-c68c8b1cace1, delta
--- reported +160.00) to the exact rows. Its seat_income CTE counted 9
--- satellite_ticket/satellite_seat payout rows worth 180.00 as "arrived",
--- but 8 of those 9 (160.00) are tickets with tournament_tickets.status =
--- 'issued' -- STILL UNREDEEMED, never entered this tournament at all.
+-- WHAT WAS WRONG
 --
--- The CTE finds a payout's tournament_satellite_awards row by
---   a.tournament_id = sp.tournament_id AND a.place = sp.position
--- but tournament_payouts.position is NULL for these ticket-delivery rows
--- (a data-entry gap on that column, not a signal). When the join misses,
--- the code's own COALESCE(a.delivery_kind, 'seat') falls back to "no award
--- row = the legacy direct-seat path, which always arrived" -- which is
--- true when there really is no award row, and silently wrong when there is
--- one the join simply failed to find. Confirmed for all 8 phantom rows:
--- each has a real, unique tournament_satellite_awards row (place 1-5, on
--- the satellite side) reachable by its own payout_id, every one still
--- status='issued' with redeemed_at IS NULL.
+-- fn_tournament_conservation_delta found a satellite payout's award row by
+--     a.tournament_id = sp.tournament_id AND a.place = sp.position
+-- but tournament_payouts.position is NULL on ticket-delivery payout rows. The
+-- join then misses an award that exists, and COALESCE(a.delivery_kind,'seat')
+-- reads the miss as "legacy direct seat, always arrived". Every unredeemed
+-- ticket aimed at an event was counted as an entry into it, so
+-- fn_tournament_money_conservation filed "Tournament retained money it never
+-- paid out" against healthy, fully-paid events. Measured on 16 open
+-- financial_alerts: e.g. Saturday Night Big Stack (fb3d92ce) +2,850.00 from
+-- 72 counted seat payouts of which 57 are still-issued tickets; the target's
+-- own escrow records the 15 real arrivals and closed at exact zero.
 --
--- tournament_satellite_awards.payout_id is UNIQUE, NOT NULL on all 2,084
--- live rows, and FK-constrained to tournament_payouts.id (measured on
--- production before writing this migration). It is the row's own foreign
--- key back to the exact payout that created it and can never fan out or
--- miss on a NULL column the way (tournament_id, place) vs
--- (tournament_id, position) can. Re-keying both the seat_income and
--- seat_paid_out CTEs on it fixes the phantom match without touching any
--- of the surrounding delivery_kind/ticket-status logic those CTEs already
--- encode correctly.
+-- WHAT THIS CHANGES
 --
--- VERIFIED (rolled back, no committed side effects): recomputing
--- cf03a62c's delta with the corrected join is exactly 0.00 (240.00 wallet
--- buy-ins - 26.00 rake - 600.00 prizes + 366.00 overlay + 20.00 real
--- seat_income [the one genuine satellite_seat delivery] - 0.00
--- seat_paid_out = 0.00), against the current reported +160.00. The 8
--- unredeemed tickets correctly drop out of seat_income and the tournament
--- balances to the cent.
+-- Both award joins key on a.payout_id = sp.id. tournament_satellite_awards.
+-- payout_id is UNIQUE, NOT NULL and FK-bound to tournament_payouts.id, so it
+-- cannot miss on a NULL column or fan out. A payout that truly has no award
+-- row (the legacy seat path, and the 2026-09-25 cash delivery) still has none
+-- under the new key, so those branches read exactly as before.
 --
--- This is a detection fix only: fn_tournament_conservation_delta is a
--- read-only, SECURITY DEFINER STABLE SQL function with no side effects.
--- No chips move as a result of this migration; it only corrects what the
--- nightly conservation scan reports. The 14 open financial_alerts rows
--- this bug raised are resolved separately in application code (this
--- fleet's board, not this migration) once this fix is confirmed live.
+-- MEASURED (read-only, the corrected body as a pg_temp function, 21:3x UTC):
+--   * the 16 alerted events: 14 read 0.00 (they read +20.00 .. +2,850.00);
+--     the two Sunday $200 Deep Stack events stay at -180.00 each - a separate,
+--     real finding this change does not touch;
+--   * every COMPLETED/CANCELLED event of the last 10 days with a satellite
+--     payout on either side (493 events): 14 change, all from non-zero to
+--     0.00; none moves from 0.00 to non-zero.
+--
+-- Read-only function; no money moves. Grants are restated because CREATE OR
+-- REPLACE keeps them but scripts/ci/check-definer-authorization.mjs reads the
+-- declaring migration.
+--
+-- Law: tests/a-satellite-award-is-found-by-its-payout-id.law.test.ts
+--
+-- @live-proof: (SELECT position('a.payout_id = sp.id' in pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) > 0 AND position('a.place = sp.position' in pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) = 0)
+
 BEGIN;
+SET LOCAL lock_timeout = '5s';
 
 CREATE OR REPLACE FUNCTION public.fn_tournament_conservation_delta(p_tournament_id uuid)
  RETURNS numeric
@@ -91,7 +88,14 @@ AS $function$
              AND l.to_type = 'prize_liability'), 0),
         COALESCE((SELECT o.amount FROM public.tournament_guarantee_overlays o
            WHERE o.tournament_id = t.id), 0)
-      ) AS funded_overlay,
+      )
+      -- A REVIEWED VOID RETURNS ITS OVERLAY (2026-09-27): one 'reversal' leg
+      -- out of prize_liability back to the funder. The event kept none of it.
+      - COALESCE((SELECT sum(r.amount) FROM public.chip_ledger r
+           WHERE r.tournament_id = t.id AND r.category = 'reversal'
+             AND r.from_type = 'prize_liability' AND r.from_entity_id = t.id
+             AND r.metadata->>'kind' = 'reviewed_void_overlay_return'), 0)
+      AS funded_overlay,
 
       -- ACKNOWLEDGED PRE-FUNDING MINTING. Replaces the 2026-08-27T12:00:00Z
       -- date literal that used to live here: same intent, but one auditable row
@@ -113,15 +117,6 @@ AS $function$
       -- entry. Measured: gating this side the same way as the paid side below
       -- put "Wednesday Feature" at +40.00 and "DSS Wednesday $22 NLH
       -- Deepstack" at +20.00, both of which are correctly 0.00.
-      --
-      -- JOIN BY payout_id, NOT (tournament_id, place) VS (tournament_id,
-      -- position) (2026-09-27). tournament_payouts.position is NULL on some
-      -- genuine ticket-delivery rows (a gap on that column, not a "no award"
-      -- signal), which silently missed a real award row and let an
-      -- UNREDEEMED ticket fall through to the "no award row = legacy seat,
-      -- always arrived" default. payout_id is the award's own unique,
-      -- NOT NULL, FK-constrained pointer back to the exact payout that
-      -- created it, so it can never miss on a null sibling column.
       COALESCE((SELECT sum(sp.amount)
          FROM public.tournament_payouts sp
          LEFT JOIN public.tournament_satellite_awards a
@@ -159,13 +154,6 @@ AS $function$
       -- first guess - would have broken 245 healthy events to fix the same 41,
       -- because for those the cancelled-ticket gate had already excluded the row
       -- and this would have subtracted it twice.
-      --
-      -- Re-keyed on payout_id (2026-09-27), same reasoning as seat_income
-      -- above: a true cash-delivery-with-no-award-row case still has no
-      -- tournament_satellite_awards row under either join, so this term is
-      -- unchanged for it; a ticket/seat delivery whose payout row happens to
-      -- carry a NULL position is now found correctly instead of silently
-      -- falling through to the cash-delivery default.
       COALESCE((SELECT sum(sp.amount)
          FROM public.tournament_payouts sp
          LEFT JOIN public.tournament_satellite_awards a
@@ -194,5 +182,8 @@ AS $function$
   , 2)
   FROM m;
 $function$;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_conservation_delta(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_conservation_delta(uuid) TO service_role;
 
 COMMIT;

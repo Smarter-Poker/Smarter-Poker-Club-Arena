@@ -15,18 +15,18 @@ database), plus Commander, Diamond Arena and PepNationLab for attribution.
 
 | Direction                                 | Before                        | After (all reconciliation PRs merged)                       |
 | ----------------------------------------- | ----------------------------- | ----------------------------------------------------------- |
-| Installed, no file, all time              | 1,272                         | 19                                                          |
-| Installed, no file, since 2026-09-01      | 133                           | 10                                                          |
+| Installed, no file, all time              | 1,272                         | 35                                                          |
+| Installed, no file, since 2026-09-01      | 133                           | 15                                                          |
 | Installed, no file, 7-day gate window     | 11                            | 8, all under 24 hours old and carried by open pull requests |
 | Merged, not installed, 21-day gate window | 0 failing, 9 to 12 unprovable | 0 failing; 2 explicitly marked superseded; 2 aliased        |
 
 ## How Each Gap Was Settled
 
-- **Genuinely missing source (1,194 files).** Recovered byte-exact from
+- **Genuinely missing source (1,179 files, plus 5 stubs).** Recovered byte-exact from
   `schema_migrations.statements`; every body hashes to
   `md5(array_to_string(statements, chr(10)) || chr(10))` for its version.
   Below the 2026-09-15 freeze they carry the legacy `-- BACKFILLED` header,
-  which the guards already honour for that range; 76 of them are byte-identical
+  which the guards already honour for that range; 72 of them are byte-identical
   to the recoveries on the abandoned pull request #4425 and reuse its exact
   files. Two at or after the freeze are headerless, as the recording manifest
   requires. Ten carried unqualified `UPDATE`/`DELETE` statements on temporary
@@ -56,6 +56,16 @@ database), plus Commander, Diamond Arena and PepNationLab for attribution.
   their own text says they are candidates. They are left for their owners.
 
 ## What Stays Open, And Why
+
+- Sixteen recoveries create a trigger on a money table. The required trusted
+  check "Money trigger declaration authority" accepts such a file only with an
+  independently reviewed contract in `scripts/ci/money-trigger-recovery-policy.json`
+  and a declaration migration applied to production, which this read-only
+  reconciliation may not do. They are held back for the money-trigger owners:
+  `20260420005652`, `20260420011512`, `20260721185147`, `20260815165118`,
+  `20260815192707`, `20260819211747`, `20260820120810`, `20260820121527`,
+  `20260820122738`, `20260821191431`, `20260823042107`, `20260903191338`,
+  `20260904081210`, `20260911161027`, `20260912061157`, `20260914003624`.
 
 - Eight migrations applied today whose files are on open, active pull requests
   (#5392, #5394, #5403, #5410, #5424, #5426, #5427, #5431). They land with

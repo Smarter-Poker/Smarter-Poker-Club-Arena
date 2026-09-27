@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82",
+    "scripts/ci/classify-ci-changes.mjs": "15ff6f4ae55a228434922b0af166bcd14108ad6f485accdda0dda549534d5c6a",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "b51e48d53af1114f4b86464984695e3f5240334bba4479339190b87e41648386",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "84e440cb25f853851cba513b207f125722fda614b985aa772ddc15fc08e734a2",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "b15abadc751b686071293017d585399bc0e7ababbf4169f3a20562d5579228bf",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "e9457bb5dfd28a1a71adb3455f7999fbcc3423e5cf3b9e7443f56b3529faf8e6",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2569,5 +2569,28 @@
     "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "playerSearchPrivacyRouting20260927": {
+    "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in the existing database qualification route. Only the classifier and its two dependent source-binding records moved; no accounting fixture, financial assertion or captured production input changed.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82",
+        "current": "15ff6f4ae55a228434922b0af166bcd14108ad6f485accdda0dda549534d5c6a"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "b51e48d53af1114f4b86464984695e3f5240334bba4479339190b87e41648386",
+        "current": "84e440cb25f853851cba513b207f125722fda614b985aa772ddc15fc08e734a2"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "b15abadc751b686071293017d585399bc0e7ababbf4169f3a20562d5579228bf",
+        "current": "e9457bb5dfd28a1a71adb3455f7999fbcc3423e5cf3b9e7443f56b3529faf8e6"
+      }
+    ]
   }
 }

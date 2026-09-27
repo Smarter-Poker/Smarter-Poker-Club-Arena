@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82",
+    "scripts/ci/classify-ci-changes.mjs": "15ff6f4ae55a228434922b0af166bcd14108ad6f485accdda0dda549534d5c6a",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
@@ -321,5 +321,14 @@
     "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
+  },
+  "playerSearchPrivacyRouting20260927": {
+    "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in the existing database qualification route. The classifier diff adds only the new harness, fixture and regression-test path family; every existing financial route and captured fixture remains unchanged.",
+    "changes": {
+      "repository_files/scripts/ci/classify-ci-changes.mjs": {
+        "before": "3b43c4a20f6c1030452d8c634fda9a340f2d50687afcdf89650f64f2d83b1a82",
+        "after": "15ff6f4ae55a228434922b0af166bcd14108ad6f485accdda0dda549534d5c6a"
+      }
+    }
   }
 }

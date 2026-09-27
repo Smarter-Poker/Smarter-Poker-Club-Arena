@@ -11,12 +11,10 @@
 
 BEGIN;
 
--- Every contains/fuzzy identity path used below has an indexable trigram
--- expression. The user-facing locator is global by design, so it must not
--- turn a two-character query into an avoidable sequential-scan amplifier.
-CREATE INDEX IF NOT EXISTS profiles_lower_alias_trgm_idx
-  ON public.profiles USING gin (lower(alias) gin_trgm_ops)
-  WHERE alias IS NOT NULL;
+-- The existing idx_profiles_alias_trgm index already covers lower(alias)
+-- with gin_trgm_ops. Do not create a duplicate index here: this migration
+-- only replaces functions and must not acquire an unnecessary lock on the
+-- live profiles table.
 
 -- Click-time access is authoritative. A stale search card must never route an
 -- observer to a closed table merely because the row still exists.

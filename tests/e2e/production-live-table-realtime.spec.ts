@@ -42,6 +42,25 @@ const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
+/**
+ * THE MTT HUD WITNESS GETS THE TIME ITS CLOCK NEEDS (2026-09-27).
+ *
+ * Since #5381 the MTT case is certified by a natural blind change seen in two
+ * spectator HUDs across the network loss, so `eligibleHudClock` reserves the
+ * remaining boundary, the NEXT level's whole interval and 60 s of setup and
+ * recovery, and refuses a table when that does not fit the case's remaining
+ * deadline. Under the shared 300 s case deadline about 368 s remained at
+ * qualification, so a five-minute level (the fixture union's standard: every
+ * running freeroll at 2026-09-27 16:19Z, 5 min at levels 15 to 21) could only
+ * qualify with 8 s left in its level, and the only sub-two-minute event had no
+ * table with three dealable seats. The certificate for 6b6eabb1 (run
+ * 36332268785) refused its one MTT candidate for exactly this and failed with
+ * three of four cases green. This is the case's own budget, sized to what the
+ * witness costs on the fixture's natural clocks: two full levels of up to
+ * seven minutes plus the reserve. `eligibleHudClock` still refuses longer
+ * levels rather than scheduling a predictable timeout.
+ */
+const MTT_HUD_CASE_TIMEOUT_MS = 900_000;
 const PRESENTATION_DEADLINE_MS = 3_000;
 const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const;
 
@@ -998,7 +1017,10 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       request,
     }, testInfo) => {
       // Baseline readiness must not consume the existing continuity proof budget.
-      testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS);
+      // The MTT case carries the budget its natural HUD witness needs.
+      testInfo.setTimeout(
+        (gameFormat === 'mtt' ? MTT_HUD_CASE_TIMEOUT_MS : testInfo.timeout) + CAUSAL_HAND_TIMEOUT_MS
+      );
       await certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat);
     });
   }

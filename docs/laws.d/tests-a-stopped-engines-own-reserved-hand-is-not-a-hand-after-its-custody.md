@@ -1,0 +1,3 @@
+# tests/a-stopped-engines-own-reserved-hand-is-not-a-hand-after-its-custody.law.test.ts
+
+`fn_park_stopped_time_bank_custody` must not answer `hand_after_custody` for the stopping engine's own same-generation `reserved` F06 permit (a hand reserved but never dealt): that permit is not a later hand. A reserved permit of another generation, every accepted or aborted_unsettled permit, and every hand_history, hand_atomic_commits or hand_state_snapshots row after the custody still refuse. Six tournament managers were quarantined for 24 hours on 2026-09-26/27 and every engine release failed its restart certificate because of this refusal.

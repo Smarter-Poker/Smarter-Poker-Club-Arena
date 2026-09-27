@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4",
+    "scripts/ci/classify-ci-changes.mjs": "6486aa72a51ff97c68f6e094066c099005f1b292387b69a07e9fa60737c347a3",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "9195d331bbff05fc45dcdbbbcce4476fefb64349bda8c7b11c71bb726f4398bd",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "f3f20a253aff9d4d1ae5a74fd5abb338bf56912b4a3e8000f33aae4150dde7f7",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "4110b0f503aab2a1d9137bead25d2efd9a6f53b35945060735d4e5c2fcd3c416",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "0b6e268dfc0d88b546b74e624a9cfdfb02553cd05fb389b8ca62b6089b44764d",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2237,6 +2237,15 @@
         "tests/fixtures/earlybird-fee-custody/source-binding.json"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -2546,5 +2555,49 @@
         "after": "4110b0f503aab2a1d9137bead25d2efd9a6f53b35945060735d4e5c2fcd3c416"
       }
     ]
+  },
+  "bbjCumulativeReadQualification20260927": {
+    "reason": "Add required native qualification for the one-statement BBJ cumulative/recent read split; preserve every existing qualification route and historical assertion. Exact reviewed CI/classifier bytes and nested bindings only.",
+    "updates": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "32993071b17bc72ae19c6a515feb6b64e4c3061b7805be27eea54dbca872cac5",
+        "after": "67dbc5bb34e851f0de1ee362bca0297a9f1da527315adbe47270f1f58918dec6"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "301bb7166acbe61eac366ba1744f4bc403b785630f9426012135477940e9dae8",
+        "after": "27c2adde4f3dba1c89cbc598707099ca9b1d2794e06b5b3ec997403c6339b32d"
+      }
+    }
+  },
+  "bbjCumulativeIntegration20260927": {
+    "protectedMain": "13ebc7240c4ae89607a3b722a068e36e63550b74",
+    "ownParent": "8cdc721f3456e87e2d902a32589970922b11c132",
+    "reason": "Retain both complete qualification histories and map entries; resolve only conflicting pins to actual integrated classifier and nested bindings. No assertions removed.",
+    "updates": {
+      "repository_fixtures/scripts/ci/classify-ci-changes.mjs": {
+        "own": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb",
+        "protectedMain": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
+        "integrated": "8d146d60454aac30fec70cf21fc71d151ef76d92d59c494a7448e762751646ce"
+      },
+      "repository_fixtures/tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "own": "67dbc5bb34e851f0de1ee362bca0297a9f1da527315adbe47270f1f58918dec6",
+        "protectedMain": "d575ba627a99bfc47b5606fd72ab43610443b8ee42df4b0ac47f628280048b8b",
+        "integrated": "86aa05eceb1bf1971c8c0de346104f721a7e497a3c9553a78abd9b4b8eebbfe9"
+      },
+      "repository_fixtures/tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "own": "27c2adde4f3dba1c89cbc598707099ca9b1d2794e06b5b3ec997403c6339b32d",
+        "protectedMain": "c45c746ffb9c2da4f42cf42e1fbfc5d670e7e05fc21f387ae2053d69755f2e5f",
+        "integrated": "4ba6e62e6e3f80b735e5fbea3b98213f5f14596cdc201a4e60fdaa5cce8bb6ac"
+      }
+    }
+  },
+  "bbjCumulativeCoverIntegration20260927": {
+    "sourceHead": "21dfdbb2c0a1cc39cee5ab7b3328c598ad2c2c46",
+    "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
+    "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
   }
 }

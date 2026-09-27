@@ -112,6 +112,7 @@ import {
 import {
   classifyTournamentPreflopBranch,
   tournamentMZone,
+  tournamentNextLevelProjectionApplies,
   tournamentPositionForSeat,
   tournamentPreflopPolicy,
   type TournamentAnteType,
@@ -3417,10 +3418,10 @@ export class HorseLogic {
       const voluntaryAllInSeats = new Set(
         history.filter((action) => action.action === 'all_in').map((action) => action.seat)
       );
-      const imminentLevel =
-        typeof tournament.nextBlindInMin === 'number' &&
-        tournament.nextBlindInMin <= 3 &&
-        (tournament.nextBlindMult ?? 1) > 1.15;
+      const imminentLevel = tournamentNextLevelProjectionApplies(
+        tournament.nextBlindInMin,
+        tournament.nextBlindMult
+      );
       const branchMZone = imminentLevel
         ? tournamentMZone(
             Math.min(tournament.m.effectiveM, tournament.m.projectedEffectiveM),

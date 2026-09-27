@@ -1,4 +1,5 @@
 import importlib.util
+import datetime
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,38 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_historical_window_is_exactly_fifteen_minutes_and_recent(self):
+        now = datetime.datetime(2026, 9, 27, 16, tzinfo=datetime.timezone.utc)
+        start = '2026-09-27T14:25:00Z'
+        self.assertEqual(reader.log_window(start, now), {
+            'since': start, 'until': '2026-09-27T14:40:00Z'})
+        self.assertEqual(reader.log_window(None, now), None)
+        for value in ['', {}, '2026-09-27T14:25:00Z; reboot', '2026-09-27T14:25:00+00:00',
+                      '2026-09-27T15:46:00Z', '2026-09-26T15:59:59Z', '2026-02-30T01:00:00Z']:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                reader.log_window(value, now)
+        command = reader.log_command(reader.log_window(start, now))
+        self.assertEqual(command, ['docker', 'logs', '--since', start, '--until',
+                                  '2026-09-27T14:40:00Z', '--tail', '20000',
+                                  '--timestamps', 'club-arena-engine'])
+        self.assertEqual(reader.log_command(None), reader.COMMAND)
+
+    def test_actual_watchdog_context_keeps_only_selected_identity_and_named_reason(self):
+        source = '\n'.join([
+            STAMP+'[ServerTableEngine.'+TABLE+'.watchdog_kill] Error: Engine self-terminating for restart: tournament_table_zombie',
+            STAMP+"  password: 'NEVER_PRINT_THIS', player: 'PRIVATE_NAME'",
+            STAMP+'[ServerTableEngine.10000000-0000-4000-8000-000000000001.watchdog_kill] Engine self-terminating for restart: post_hand_settlement_failed',
+            STAMP+'[Other] '+TABLE+' F06_UNRELATED'])
+        result = reader.extract(source.encode(), SCOPES)
+        self.assertEqual(result['matchingRecords'], 1)
+        record = result['records'][0]
+        self.assertEqual(record['scopeIds'], [TABLE])
+        self.assertEqual(record['context'], 'ServerTableEngine.watchdog_kill')
+        self.assertEqual(record['engineReasons'], ['tournament_table_zombie'])
+        self.assertNotIn('PRIVATE_NAME', json.dumps(result))
+        self.assertNotIn('NEVER_PRINT_THIS', json.dumps(result))
+        self.assertNotIn('post_hand_settlement_failed', json.dumps(result))
+
     def test_scope_and_malicious_input(self):
         self.assertEqual(reader.selection(SCOPES), SCOPES)
         for value in [[], SCOPES*3, SCOPES*2, [{'tournamentId': EVENT, 'tableIds': [TABLE], 'command': 'restart'}], [{'tournamentId': '../secrets', 'tableIds': [TABLE]}], [{'tournamentId': EVENT, 'tableIds': [TABLE]*2}], [{'tournamentId': EVENT, 'tableIds': 'bad'}]]:
@@ -120,9 +153,31 @@ class NativeLogReader(unittest.TestCase):
             self.assertEqual(output['hostEngineBefore'], output['hostEngineAfter'])
             self.assertIn('unproven', output['perRecordEngineIdentity'])
 
+    def test_real_remote_historical_entry_and_invalid_window_admission(self):
+        import base64
+        start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        window = reader.log_window(start)
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            docker = directory/'docker'
+            marker = directory/'called'
+            docker.write_text('#!'+sys.executable+'\nimport sys\nfrom pathlib import Path\nassert sys.argv[1:]=='+repr(reader.log_command(window)[1:])+'\nPath('+repr(str(marker))+').write_text("read")\nprint('+repr(STAMP+'[ServerTableEngine.'+TABLE+'.watchdog_kill] Engine self-terminating for restart: tournament_table_zombie')+')\n')
+            docker.chmod(0o700)
+            for value, accepted in [(start, True), ('2000-01-01T00:00:00Z', False), ('2026-09-27T14:25:00Z; restart', False)]:
+                encoded = base64.b64encode(json.dumps({'scopes': SCOPES, 'windowStart': value}).encode()).decode()
+                program = "import importlib.util,sys; s=importlib.util.spec_from_file_location('r',"+repr(str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'))+"); m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.health=lambda origin: {'version':'abcdef012345','instanceId':'1-fixture'};sys.argv=['reader','--remote',"+repr(encoded)+"];m.main()"
+                result = subprocess.run([sys.executable, '-c', program], capture_output=True, text=True, env={'PATH': str(directory)+':/usr/bin:/bin'}, timeout=10)
+                self.assertEqual(result.returncode == 0, accepted)
+                self.assertEqual(marker.exists(), accepted)
+                if accepted:
+                    output = json.loads(result.stdout)
+                    self.assertEqual(output['window'], reader.window_description(window))
+                    self.assertEqual(output['records'][0]['engineReasons'], ['tournament_table_zombie'])
+                    marker.unlink()
+
     def test_transport_admission_ephemeral_permissions_and_failure_cleanup(self):
         original_run = subprocess.run
-        for fail in ['none', 'transport', 'identity', 'host_identity']:
+        for fail in ['none', 'transport', 'identity', 'host_identity', 'window']:
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as name:
                 directory = Path(name)
                 generated = directory/'fixture_key'
@@ -151,7 +206,9 @@ class NativeLogReader(unittest.TestCase):
                     self.assertRegex(args[-1], r"^python3 - --remote '[A-Za-z0-9+/=]+'$")
                     self.assertEqual(kwargs['input'], (ROOT/'scripts/ci/read-scoped-runtime-errors.py').read_bytes())
                     host = {**identity, 'instanceId': 'other-host'} if fail == 'host_identity' else identity
-                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
+                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.window_description(None), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
+                    if fail == 'window':
+                        output['window'] = {'since': 'unrequested'}
                     return subprocess.CompletedProcess(args, 1 if fail == 'transport' else 0, json.dumps(output).encode(), b'sensitive transport error')
 
                 current = Path.cwd()

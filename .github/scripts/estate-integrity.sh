@@ -322,6 +322,11 @@ read_shared_file() {
 
 for f in "${SHARED_FILES[@]}"; do
   DIGESTS=""
+  # Compare every repository's actual response. Identical consecutive bytes
+  # need only one successful digest; do not restart Perl for the same content.
+  # This bounded cache resets per file and never contains an absent/error read.
+  LAST_PAYLOAD=""
+  LAST_DIGEST=""
   PRESENT=0
   MISSING=""
   RETIRED_SEEN=""
@@ -354,7 +359,16 @@ for f in "${SHARED_FILES[@]}"; do
       add "\`$f\` in **$r** exists and is EMPTY - zero bytes. Not a drifted copy and not a deletion: the path is there and there is nothing in it, so whatever it is supposed to do is not happening in that repo. That is a third repair, distinct from copying a stale file forward and from restoring a deleted one."
       D="$EMPTY_SHA12"
     else
-      D=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | shasum -a256 | cut -c1-12)
+      if [ "$PAYLOAD" = "$LAST_PAYLOAD" ] && [ -n "$LAST_DIGEST" ]; then
+        D="$LAST_DIGEST"
+      elif D=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | shasum -a256 | cut -c1-12) \
+        && [[ "$D" =~ ^[0-9a-f]{12}$ ]]; then
+        LAST_PAYLOAD="$PAYLOAD"
+        LAST_DIGEST="$D"
+      else
+        add "\`$f\` in **$r** — COULD NOT TELL: could not decode or hash the returned content; no digest is verified for this repository."
+        continue
+      fi
     fi
     # A date this cannot read is reported as `unknown`, never as an old one:
     # an unreadable date must not make a current repo look stale (10.86 r2).

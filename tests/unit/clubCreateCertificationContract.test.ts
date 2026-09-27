@@ -84,6 +84,10 @@ describe('Create Club production certification contract', () => {
     expect(migration).toContain('CREATE TABLE public.ca_test_account_ledger_actor_archive');
     expect(migration).toContain('to_jsonb(l)');
     expect(migration).toContain('ALTER COLUMN performed_by DROP NOT NULL');
+    expect(migration).toContain('LOCK TABLE public.chip_ledger IN ACCESS EXCLUSIVE MODE');
+    expect(migration.indexOf('LOCK TABLE public.chip_ledger')).toBeLessThan(
+      migration.indexOf('CREATE TABLE public.ca_test_account_ledger_actor_archive')
+    );
     expect(migration).toContain("<> 'ce4ab3013be283d66ab9afd1e861b552'");
     expect(migration).toContain('CHIP_LEDGER_ACTOR_TRIGGER_PREIMAGE_CHANGED');
     expect(migration).toContain('BEFORE INSERT OR UPDATE OF performed_by');

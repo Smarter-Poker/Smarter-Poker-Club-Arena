@@ -17,6 +17,13 @@ BEGIN;
 
 SET LOCAL lock_timeout = '4s';
 
+-- Acquire the only hot-table lock before this transaction creates or locks
+-- any archive/catalog object. This fixed order prevents a schema observer
+-- holding chip_ledger from deadlocking against the new archive relation.
+LOCK TABLE public.chip_ledger IN ACCESS EXCLUSIVE MODE;
+
+ALTER TABLE public.chip_ledger ALTER COLUMN performed_by DROP NOT NULL;
+
 CREATE TABLE public.ca_test_account_ledger_actor_archive (
   ledger_id uuid PRIMARY KEY,
   actor_id uuid NOT NULL,
@@ -54,8 +61,6 @@ REVOKE ALL ON FUNCTION public.fn_guard_test_account_ledger_actor_archive()
 CREATE TRIGGER trg_ca_test_account_ledger_actor_archive_immutable
 BEFORE UPDATE OR DELETE ON public.ca_test_account_ledger_actor_archive
 FOR EACH ROW EXECUTE FUNCTION public.fn_guard_test_account_ledger_actor_archive();
-
-ALTER TABLE public.chip_ledger ALTER COLUMN performed_by DROP NOT NULL;
 
 DO $preimage$
 DECLARE

@@ -37,6 +37,8 @@ export const PATHS = Object.freeze(['normal', 'bypass', 'fallback']);
 const SHA40 = /^[0-9a-f]{40}$/;
 const SHA64 = /^[0-9a-f]{64}$/;
 const HOUR_MS = 3_600_000;
+/** Catalog rows scanned for sequence continuity after a stratum's last row. */
+export const CAPTURE_TAIL_ROWS = 20_000;
 
 export const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 export const cellKey = (c) => `${c.format}|${c.branch}|${c.size}|${c.anteMode}|${c.path}`;
@@ -399,6 +401,88 @@ export function assembleChain({ records, decisionRecord, handKey, deps }) {
   };
 }
 
+/* CAPTURE SHED IS NAMED, NOT GUESSED (2026-09-27). The 2026-09-27 population
+   on 6b6eabb1 admitted 68 incomplete tournament chains whose completed-hand
+   record or execution witness was absent. Their hands were committed in
+   hand_history and hand_atomic_commits within seconds; the records were never
+   archived because the publisher sheds a record at its queue bound after it
+   has already spent that record's sequence number (HorseDecisionJournal.ts,
+   `queue_capacity`). The only journal-side evidence of a shed record is the
+   hole it leaves in its producer's sequence. The observer used to report the
+   missing link and nothing about capture, so a shed record and a record that
+   was never produced looked the same. Each stratum now reports its producers'
+   sequence continuity, and each chain says when its producer first shed a
+   record at or after the decision. That is an observed interval, not a claim
+   that the shed record was this chain's. */
+
+/** Sequence continuity per producer over catalog rows [{ rowid, producer,
+ * sequence }]. A producer's sequence is dense by construction (one ++ per
+ * record attempt), so every hole is a record attempted and never archived.
+ * Producers are labelled by first appearance; their ids never leave here. */
+export function captureContinuity(rows) {
+  const byProducer = new Map();
+  for (const row of rows) {
+    let p = byProducer.get(row.producer);
+    if (!p) byProducer.set(row.producer, (p = { firstRowid: row.rowid, entries: [] }));
+    p.entries.push([row.sequence, row.rowid]);
+  }
+  const producers = new Map();
+  let label = 0;
+  for (const [producer, p] of [...byProducer].sort((a, b) => a[1].firstRowid - b[1].firstRowid)) {
+    p.entries.sort((a, b) => a[0] - b[0]);
+    const gaps = [];
+    for (let i = 1; i < p.entries.length; i++) {
+      const [before, beforeRowid] = p.entries[i - 1];
+      const [after, afterRowid] = p.entries[i];
+      if (after === before) throw Error('Horse archive sequence duplicated');
+      if (after !== before + 1)
+        gaps.push({ afterSequence: before, nextSequence: after, beforeRowid, afterRowid });
+    }
+    const first = p.entries[0][0],
+      last = p.entries[p.entries.length - 1][0];
+    producers.set(producer, {
+      label: `producer ${++label}`,
+      archived: p.entries.length,
+      firstSequence: first,
+      lastSequence: last,
+      notArchived: last - first + 1 - p.entries.length,
+      gaps,
+    });
+  }
+  return producers;
+}
+
+/** The first shed hole in this producer's sequence at or after `sequence`:
+ * the hole begins after an archived record whose sequence is >= the given one,
+ * or the given sequence itself lies inside a hole. Null when none was seen. */
+export function firstShedAtOrAfter(continuity, producer, sequence) {
+  const p = continuity.get(producer);
+  if (!p) return null;
+  let lo = 0,
+    hi = p.gaps.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (p.gaps[mid].nextSequence <= sequence) lo = mid + 1;
+    else hi = mid;
+  }
+  return p.gaps[lo] ?? null;
+}
+
+/** The capture mark copied beside a chain: how long after the decision its
+ * own producer first shed a record, or that it shed none in the scanned rows. */
+export function captureMark(continuity, record, shedAtMs) {
+  const p = continuity.get(record.producerId);
+  if (!p) return { status: 'producer_not_scanned' };
+  const gap = firstShedAtOrAfter(continuity, record.producerId, record.sequence);
+  if (!gap) return { status: 'no_shed_after_decision', producer: p.label };
+  const atMs = shedAtMs(gap);
+  return {
+    status: 'shed_after_decision',
+    producer: p.label,
+    firstShedAfterDecisionMs: Number.isSafeInteger(atMs) ? Math.max(0, atMs - record.atMs) : null,
+  };
+}
+
 /** The public shape of one admitted chain. No hand key, actor, card, seed or
  * record body leaves the observer; the archive rowid is a locator only. */
 function chainSummary(chain, extra) {
@@ -538,6 +622,9 @@ async function observe(declarationB64) {
       output.archiveFirstAtMs = null;
     }
     output.archiveLastAtMs = maxRowid ? atMsOf(maxRowid) : null;
+    const continuityRows = catalog.prepare(
+      'SELECT rowid, producer_id, sequence FROM archive_events WHERE rowid >= ? AND rowid < ?'
+    );
     const handRows = catalog.prepare(
       'SELECT rowid, hand_key FROM archive_events WHERE rowid >= ? AND rowid < ? ORDER BY rowid LIMIT 4096'
     );
@@ -571,6 +658,45 @@ async function observe(declarationB64) {
         stratum.status = 'stratum empty: no archived records';
         continue;
       }
+      // Sequence continuity over the stratum and a bounded tail after it: a
+      // hand's trailing records (its witnesses and completed hand) are written
+      // after the stratum's last decision.
+      const scanEnd = Math.min(maxRowid + 1, nextRowid + CAPTURE_TAIL_ROWS);
+      const continuity = captureContinuity(
+        continuityRows.all(firstRowid, scanEnd).map((r) => ({
+          rowid: Number(r.rowid),
+          producer: String(r.producer_id),
+          sequence: Number(r.sequence),
+        }))
+      );
+      const gapTimes = new Map();
+      const shedAtMs = (gap) => {
+        if (!gapTimes.has(gap.beforeRowid)) {
+          let at = null;
+          try {
+            at = atMsOf(gap.beforeRowid);
+          } catch {
+            at = null;
+          }
+          gapTimes.set(gap.beforeRowid, at);
+        }
+        return gapTimes.get(gap.beforeRowid);
+      };
+      stratum.capture = {
+        scannedRowids: [firstRowid, scanEnd],
+        producers: [...continuity.values()].map((p) => {
+          const at = p.gaps.length ? shedAtMs(p.gaps[0]) : null;
+          return {
+            producer: p.label,
+            archived: p.archived,
+            firstSequence: p.firstSequence,
+            lastSequence: p.lastSequence,
+            notArchived: p.notArchived,
+            holes: p.gaps.length,
+            firstShedAt: Number.isSafeInteger(at) ? new Date(at).toISOString() : null,
+          };
+        }),
+      };
       const seen = new Set();
       let cursor = firstRowid;
       while (seen.size < declaration.selection.handsPerStratum && cursor < nextRowid) {
@@ -648,6 +774,8 @@ async function observe(declarationB64) {
               atMs: decisionRecord.atMs,
               at: new Date(decisionRecord.atMs).toISOString(),
               review: { status: verdict.status, gaps: verdict.gaps },
+              decisionId: decisionRecord.eventId,
+              capture: captureMark(continuity, decisionRecord, shedAtMs),
               ...chainSummary(chain, {}),
             });
             if (result.admitted) {
@@ -958,6 +1086,7 @@ export function buildReport({ loaded, observationFile, observation, commandLine,
       byFormatPath: Object.values(byFormatPath),
       perRelease,
       rejected: remote.population?.rejected ?? {},
+      incompleteByCapture: tallyIncompleteByCapture(chains),
     },
     observedCells: Object.fromEntries(Object.entries(merged).filter(([, c]) => c.observed > 0)),
     unobservedCells: Object.entries(merged)
@@ -966,6 +1095,22 @@ export function buildReport({ loaded, observationFile, observation, commandLine,
     chains,
   };
   return report;
+}
+
+/** Incomplete chains by their producer's capture mark: whether it shed a
+ * record at or after the decision, and within a minute or later. A chain from
+ * an observation made before capture marks existed is counted as unmarked. */
+export function captureBucket(capture) {
+  if (!capture) return 'unmarked';
+  if (capture.status !== 'shed_after_decision') return capture.status;
+  const ms = capture.firstShedAfterDecisionMs;
+  if (!Number.isSafeInteger(ms)) return 'shed_after_decision:time_unavailable';
+  return ms <= 60_000 ? 'shed_within_60s_of_decision' : 'shed_later_than_60s_after_decision';
+}
+export function tallyIncompleteByCapture(chains) {
+  const tally = {};
+  for (const chain of chains) if (!chain.complete) count(tally, captureBucket(chain.capture));
+  return tally;
 }
 
 const short = (sha) => (typeof sha === 'string' ? sha.slice(0, 10) : 'none');
@@ -1031,6 +1176,34 @@ export function renderMarkdown(report, loaded) {
     lines.push(
       `| ${st.index} | ${st.start} | ${st.firstRowid ?? 'none'} | ${st.nextRowid ?? 'none'} | ${st.hands} | ${st.preflopDecisions} | ${st.admitted} | ${st.status} |`
     );
+  lines.push('');
+  lines.push('## Capture continuity');
+  lines.push('');
+  lines.push(
+    "A producer's journal sequence is spent once per record attempt, so a hole in it is a record the publisher attempted and never archived (shed at its queue bound, or lost with a failed writer). Scanned: each stratum's rows and a tail of at most " +
+      CAPTURE_TAIL_ROWS +
+      ' rows after it. Producers are numbered by first appearance.'
+  );
+  lines.push('');
+  lines.push(
+    '| Stratum | Producer | Archived | Sequence range | Not archived | Holes | First shed |'
+  );
+  lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+  let captureRows = 0;
+  for (const st of report.strata)
+    for (const p of st.capture?.producers ?? []) {
+      captureRows++;
+      lines.push(
+        `| ${st.index} | ${p.producer} | ${p.archived} | ${p.firstSequence} to ${p.lastSequence} | ${p.notArchived} | ${p.holes} | ${p.firstShedAt ?? 'none'} |`
+      );
+    }
+  if (!captureRows) lines.push('| none | none | 0 | none | 0 | 0 | none |');
+  lines.push('');
+  lines.push(
+    'Incomplete chains by the capture mark of their own producer: `' +
+      JSON.stringify(report.summary.incompleteByCapture ?? {}) +
+      '`. A shed after the decision is an observed interval beside the gap, not proof that the shed record was the missing one.'
+  );
   lines.push('');
   lines.push('## Summary');
   lines.push('');
@@ -1098,16 +1271,16 @@ export function renderMarkdown(report, loaded) {
   if (!report.chains.length) lines.push('No chain was admitted.');
   else {
     lines.push(
-      '| Id | Cell | Release | Serving | At | Lane | Attribution | Selected | Accepted | Links | Review |'
+      '| Id | Cell | Release | Serving | At | Lane | Attribution | Selected | Accepted | Links | Review | Capture |'
     );
-    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
     for (const c of report.chains) {
       const attr = c.attribution
         ? `${c.attribution.status}/${c.attribution.route}/${c.attribution.reason}`
         : 'none';
       const links = CHAIN_LINKS.map((l) => `${l}=${c.links[l]}`).join(' ');
       lines.push(
-        `| ${c.id} | ${c.cellKey} | \`${short(c.sourceRelease)}\` | ${c.isServingRelease ? 'yes' : 'no'} | ${c.at} | ${c.lane} | ${attr} | ${c.selectedAction} | ${c.acceptedAction ?? 'none'} | ${links} | ${c.review.status}${c.review.gaps.length ? ' ' + c.review.gaps.join(',') : ''} |`
+        `| ${c.id} | ${c.cellKey} | \`${short(c.sourceRelease)}\` | ${c.isServingRelease ? 'yes' : 'no'} | ${c.at} | ${c.lane} | ${attr} | ${c.selectedAction} | ${c.acceptedAction ?? 'none'} | ${links} | ${c.review.status}${c.review.gaps.length ? ' ' + c.review.gaps.join(',') : ''} | ${captureBucket(c.capture)} |`
       );
     }
   }

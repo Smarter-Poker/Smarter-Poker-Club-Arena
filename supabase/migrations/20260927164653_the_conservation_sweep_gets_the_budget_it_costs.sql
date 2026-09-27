@@ -43,6 +43,8 @@
 -- no money. The per-check cost (fn_chip_integrity_report) is its own
 -- performance defect and is reported, not hidden, by this budget.
 
+-- @live-proof: EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'ca-conservation-sweep-hourly' AND schedule = '52 * * * *' AND command = 'SET statement_timeout = ''600s''; SELECT public.fn_ca_conservation_sweep();')
+
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';

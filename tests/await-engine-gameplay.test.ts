@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   awaitEngineGameplay,
   gameplayHasResumed,
@@ -73,7 +74,7 @@ describe('the existing certification waits only for its engine maintenance bound
         },
         report: () => {},
       })
-    ).rejects.toThrow('ten-minute');
+    ).rejects.toThrow('twelve-minute');
     expect(elapsed).toBe(GAMEPLAY_WAIT_MS);
     expect(fetchImpl).toHaveBeenCalledTimes(GAMEPLAY_WAIT_MS / 5000);
   });
@@ -114,7 +115,61 @@ describe('the existing certification waits only for its engine maintenance bound
           return reply(health(idle));
         },
       })
-    ).rejects.toThrow('ten-minute');
+    ).rejects.toThrow('twelve-minute');
+  });
+
+  it('covers the September 27 recorded v3 release and all eight resume waves', async () => {
+    // Run 36292616717 started at 03:53:01.395Z and exhausted the former 600s
+    // budget 62.457s before this unchanged engine finished its actual waves.
+    const startedAt = Date.parse('2026-09-27T03:53:01.395Z');
+    const freezeAt = Date.parse('2026-09-27T03:55:00.190Z');
+    const releaseAt = Date.parse('2026-09-27T04:03:52.999Z');
+    const wavesFinishedAt = Date.parse('2026-09-27T04:04:03.902Z');
+    let elapsed = 0;
+    const fetchImpl = vi.fn(async () => {
+      const at = startedAt + elapsed;
+      const maintenance =
+        at < freezeAt
+          ? { active: true, phase: 'last_hand' }
+          : at < releaseAt
+            ? frozen
+            : { ...idle, resumeWaves: { total: 8, done: at < wavesFinishedAt ? 7 : 8 } };
+      return reply(health(maintenance));
+    });
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl,
+        now: () => elapsed,
+        pause: async (ms: number) => {
+          elapsed += ms;
+        },
+        report: () => {},
+      })
+    ).toBe(SHA);
+    expect(elapsed).toBe(665_000);
+    expect(elapsed).toBeGreaterThan(600_000);
+    expect(GAMEPLAY_WAIT_MS - elapsed).toBeGreaterThan(15_000 + 5_000);
+  });
+
+  it('leaves time for every real-hand case and fixture cleanup in the enclosing job', () => {
+    const workflow = readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8');
+    const liveJob = workflow.slice(workflow.indexOf('\n  live-table-e2e:'));
+    const jobMs = Number(liveJob.match(/timeout-minutes: (\d+)/)?.[1]) * 60_000;
+    const suite = readFileSync('tests/e2e/production-live-table-realtime.spec.ts', 'utf8');
+    const caseMs = Number(suite.match(/test\.setTimeout\(([\d_]+)\)/)?.[1]?.replaceAll('_', ''));
+    const handMs = Number(
+      suite.match(/const CAUSAL_HAND_TIMEOUT_MS = ([\d_]+);/)?.[1]?.replaceAll('_', '')
+    );
+    const formats = suite.match(/const TOURNAMENT_FORMATS = \[([^\]]+)\]/)?.[1];
+    const tournamentCount = formats?.match(/'[^']+'/g)?.length ?? 0;
+    expect(tournamentCount).toBeGreaterThan(0);
+    // The three tournament cases extend their existing 300s timeout by 90s.
+    // The cash case retains 300s. Keep five further minutes for setup/cleanup,
+    // independent of the prerequisite; a matching job timeout cannot pass.
+    expect(suite).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    expect(
+      jobMs - GAMEPLAY_WAIT_MS - tournamentCount * (caseMs + handMs) - caseMs
+    ).toBeGreaterThanOrEqual(5 * 60_000);
   });
 
   it.each([

@@ -14,9 +14,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { migrationCorpus } from './helpers/migrationCorpus';
+
+// Keep numeric migration-version ordering, including legacy short versions.
+const bombSettingsDefinitions = migrationCorpus()
+  .filter(({ sql }) =>
+    /CREATE OR REPLACE FUNCTION public\.fn_update_table_bomb_settings\(/.test(sql)
+  )
+  .sort((a, b) => Number(a.name.split('_')[0]) - Number(b.name.split('_')[0]));
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -208,17 +216,9 @@ describe('the sentence is true of the engine (read-only pin)', () => {
   it('the RPC still reads the value through an integer cast, which is why the page must round', () => {
     // The newest definition is the live one: migrations apply in version
     // order, and the version is the digits before the first underscore.
-    const DIR = resolve(process.cwd(), 'supabase/migrations');
-    const defining = readdirSync(DIR)
-      .filter((f) => f.endsWith('.sql'))
-      .filter((f) =>
-        /CREATE OR REPLACE FUNCTION public\.fn_update_table_bomb_settings\(/.test(
-          readFileSync(resolve(DIR, f), 'utf8')
-        )
-      )
-      .sort((a, b) => Number(a.split('_')[0]) - Number(b.split('_')[0]));
+    const defining = bombSettingsDefinitions;
     expect(defining.length).toBeGreaterThan(0);
-    const SQL = readFileSync(resolve(DIR, defining[defining.length - 1]), 'utf8');
+    const SQL = defining[defining.length - 1].sql;
     expect(SQL).toMatch(/\(p_settings ->> 'bomb_pot_frequency'\)::int/);
   });
 });

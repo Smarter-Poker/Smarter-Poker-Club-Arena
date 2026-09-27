@@ -10,6 +10,7 @@ describe('certification identity retention qualification', () => {
     'scripts/ci/test-certification-retirement-postgres.py',
     'scripts/ci/fixtures/certification-retirement/setup.sql',
     'scripts/ci/fixtures/certification-retirement/baseline.json',
+    'scripts/ci/fixtures/certification-retirement/archive-preimage.json',
     'tests/unit/productionE2EAccount.test.ts',
   ])('runs native and unit qualification when %s changes', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });

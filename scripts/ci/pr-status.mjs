@@ -326,7 +326,7 @@ export async function readPages(path, key, read = gh) {
     }
     expected = answer.total_count;
     for (const row of answer[key]) {
-      if (!Number.isSafeInteger(row?.id) || seen.has(row.id)) {
+      if (!Number.isSafeInteger(row?.id) || row.id <= 0 || seen.has(row.id)) {
         throw new Error(`Invalid or repeated ${key} identity for ${path}`);
       }
       seen.add(row.id);
@@ -355,7 +355,11 @@ export function requiredContextProblems(required, checks, sha) {
     if (
       check.head_sha !== sha ||
       !Number.isSafeInteger(check.id) ||
+      check.id <= 0 ||
       !Number.isSafeInteger(check.app?.id) ||
+      check.app.id <= 0 ||
+      typeof check.app.slug !== 'string' ||
+      !check.app.slug ||
       typeof check.name !== 'string' ||
       !['queued', 'in_progress', 'completed', 'waiting', 'requested', 'pending'].includes(
         check.status
@@ -463,7 +467,30 @@ export async function commitState(sha, required, read = gh) {
     jobsByRun.set(run.id, jobs);
   }
 
-  const requiredProblems = requiredContextProblems(required, checks, sha);
+  // Validate the complete inventory before filtering provider-ineligible events.
+  requiredContextProblems(required, checks, sha);
+  const eligibleChecks = checks.filter((check) => {
+    if (check.app.slug !== 'github-actions') return true;
+    if (!Number.isSafeInteger(check.check_suite?.id) || check.check_suite.id <= 0) {
+      throw new Error(`Actions check ${check.id} has no readable matching workflow source`);
+    }
+    const source = runs.find((run) => run.check_suite_id === check.check_suite?.id);
+    if (!source || typeof source.event !== 'string') {
+      throw new Error(`Actions check ${check.id} has no readable matching workflow source`);
+    }
+    // GitHub does not evaluate workflow_dispatch/workflow_run/schedule job
+    // checks for PR rules. External App verdicts have no such event restriction.
+    return [
+      'push',
+      'pull_request',
+      'pull_request_review',
+      'pull_request_target',
+      'deployment',
+      'deployment_status',
+      'merge_group',
+    ].includes(source.event);
+  });
+  const requiredProblems = requiredContextProblems(required, eligibleChecks, sha);
 
   // Name the job and the step. This is the part an agent actually needs, and
   // the part /commits/:sha/status could never give even if it worked.

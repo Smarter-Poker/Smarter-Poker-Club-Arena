@@ -7,3 +7,5 @@ The read-only helper now reads counted, paginated Actions and Checks inventories
 Historical instructions to stop for disabled autopilot were replaced with the current task-owned protected delivery procedure. This does not change required checks, trusted reporters, merge protection, release scheduling or any publication path.
 
 Regression coverage exercises standalone success, missing/foreign reporters, stale success versus queued/failed attempts, malformed or changing pages, second-page checks and actual CLI handling of403/429/503 responses without network or production writes. The original false-red output is retained in task evidence. Local checks, hosted checks, protected merge and any publication are recorded separately by the owning task.
+
+Source admission also associates GitHub Actions check suites with their exact workflow run event: manual, workflow-completion and scheduled jobs cannot satisfy PR requirements. External App checks keep their distinct source contract. Nonpositive or missing check/App identities remain unknown.

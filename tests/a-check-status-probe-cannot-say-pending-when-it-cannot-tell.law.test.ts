@@ -93,7 +93,7 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     expect(src).toContain('requiredContextProblems');
     expect(src).toContain('stateForChecks');
     expect(src).toMatch(
-      /requiredProblems\s*=\s*requiredContextProblems\(required,\s*checks,\s*sha\)/
+      /requiredProblems\s*=\s*requiredContextProblems\(required,\s*eligibleChecks,\s*sha\)/
     );
     expect(src).toMatch(/\.filter\(\(rule\) => rule\.type === 'required_status_checks'\)/);
     expect(src).toMatch(/\.flatMap\(\(rule\) => rule\.parameters\?\.required_status_checks/);
@@ -111,7 +111,12 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
         { name: 'Build', status: 'completed', conclusion: 'success' },
         { name: 'Test', status: 'completed', conclusion: 'skipped' },
         { name: 'Audit', status: 'completed', conclusion: 'neutral' },
-      ].map((check, id) => ({ ...check, id: id + 1, head_sha: 'a'.repeat(40), app: { id: 1 } })),
+      ].map((check, id) => ({
+        ...check,
+        id: id + 1,
+        head_sha: 'a'.repeat(40),
+        app: { id: 1, slug: 'fixture' },
+      })),
       'a'.repeat(40)
     );
 
@@ -142,7 +147,12 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
       [
         { name: 'Build', status: 'completed', conclusion: 'success' },
         { name: 'Test', status: 'completed', conclusion: 'success' },
-      ].map((check, id) => ({ ...check, id: id + 1, head_sha: 'a'.repeat(40), app: { id: 1 } })),
+      ].map((check, id) => ({
+        ...check,
+        id: id + 1,
+        head_sha: 'a'.repeat(40),
+        app: { id: 1, slug: 'fixture' },
+      })),
       'a'.repeat(40)
     );
 

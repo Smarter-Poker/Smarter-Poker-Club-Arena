@@ -15,7 +15,7 @@ const check = (extra = {}) => ({
   id: 10,
   name: 'Money trigger declaration authority',
   head_sha: sha,
-  app: { id: authority },
+  app: { id: authority, slug: 'trusted-fixture' },
   status: 'completed',
   conclusion: 'success',
   ...extra,
@@ -74,7 +74,7 @@ describe('required standalone verdicts retain source and reporter authority', ()
     ).rejects.toThrow(/identity/);
   });
   it('does not accept the same name from a foreign reporter', () => {
-    expect(verdict([check({ app: { id: 15368 } })])).toEqual([
+    expect(verdict([check({ app: { id: 15368, slug: 'foreign-fixture' } })])).toEqual([
       { context: check().name, integrationId: authority, state: 'missing', conclusions: [] },
     ]);
   });
@@ -92,7 +92,7 @@ describe('required standalone verdicts retain source and reporter authority', ()
     const problems = verdict([
       check(),
       check({ id: 11, status: 'queued', conclusion: null }),
-      check({ id: 12, app: { id: 15368 } }),
+      check({ id: 12, app: { id: 15368, slug: 'foreign-fixture' } }),
     ]);
     expect(problems[0].state).toBe('running');
     expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
@@ -114,12 +114,95 @@ describe('required standalone verdicts retain source and reporter authority', ()
       { context: check().name, integrationId: 15368, state: 'missing', conclusions: [] },
     ]);
   });
+  it.each([0, -1])('nonpositive check or App ID %s is unreadable', (id) => {
+    const unbound = new Map([[check().name, new Set([null])]]);
+    expect(() => requiredContextProblems(unbound, [check({ id })], sha)).toThrow();
+    expect(() => requiredContextProblems(unbound, [check({ app: { id } })], sha)).toThrow();
+  });
+  it.each(['workflow_dispatch', 'workflow_run', 'schedule'])(
+    'an Actions %s success does not satisfy a PR rule',
+    async (event) => {
+      const actionsRequired = new Map([[check().name, new Set([15368])]]);
+      const run = {
+        id: 50,
+        workflow_id: 4,
+        check_suite_id: 55,
+        head_sha: sha,
+        name: 'CI',
+        event,
+        status: 'completed',
+        conclusion: 'success',
+      };
+      const st = await commitState(sha, actionsRequired, async (path) => {
+        if (path.startsWith('/actions/runs?')) return { total_count: 1, workflow_runs: [run] };
+        if (path.includes('/check-runs?'))
+          return {
+            total_count: 1,
+            check_runs: [
+              check({ app: { id: 15368, slug: 'github-actions' }, check_suite: { id: 55 } }),
+            ],
+          };
+        return { total_count: 0, jobs: [] };
+      });
+      expect(st.state).toBe('RED');
+      expect(st.requiredProblems[0].state).toBe('missing');
+    }
+  );
+  it.each([
+    'push',
+    'pull_request',
+    'pull_request_review',
+    'pull_request_target',
+    'deployment',
+    'deployment_status',
+    'merge_group',
+  ])('eligible Actions %s can satisfy the exact App rule', async (event) => {
+    const run = {
+      id: 50,
+      workflow_id: 4,
+      check_suite_id: 55,
+      head_sha: sha,
+      name: 'CI',
+      event,
+      status: 'completed',
+      conclusion: 'success',
+    };
+    const st = await commitState(sha, new Map([[check().name, new Set([15368])]]), async (path) => {
+      if (path.startsWith('/actions/runs?')) return { total_count: 1, workflow_runs: [run] };
+      if (path.includes('/check-runs?'))
+        return {
+          total_count: 1,
+          check_runs: [
+            check({ app: { id: 15368, slug: 'github-actions' }, check_suite: { id: 55 } }),
+          ],
+        };
+      return { total_count: 0, jobs: [] };
+    });
+    expect(st.state).toBe('GREEN');
+  });
+  it('an Actions check with no matching run source stays unknown', async () => {
+    await expect(
+      commitState(sha, required, async (path) =>
+        path.startsWith('/actions/runs?')
+          ? { total_count: 0, workflow_runs: [] }
+          : {
+              total_count: 1,
+              check_runs: [
+                check({ app: { id: 15368, slug: 'github-actions' }, check_suite: { id: 55 } }),
+              ],
+            }
+      )
+    ).rejects.toThrow(/workflow source/);
+  });
   it('an unbound context cannot hide a failing reporter behind another success', () => {
     const unbound = new Map([[check().name, new Set([null])]]);
     expect(
       requiredContextProblems(
         unbound,
-        [check(), check({ id: 11, app: { id: 15368 }, conclusion: 'failure' })],
+        [
+          check(),
+          check({ id: 11, app: { id: 15368, slug: 'foreign-fixture' }, conclusion: 'failure' }),
+        ],
         sha
       )[0].state
     ).toBe('not_successful');
@@ -163,7 +246,10 @@ describe('required standalone verdicts retain source and reporter authority', ()
     await expect(
       readPages('/checks?filter=all', 'check_runs', async () =>
         ++n === 1
-          ? { total_count: 101, check_runs: Array.from({ length: 100 }, (_, id) => check({ id })) }
+          ? {
+              total_count: 101,
+              check_runs: Array.from({ length: 100 }, (_, id) => check({ id: id + 1 })),
+            }
           : { total_count: 102, check_runs: [check({ id: 101 })] }
       )
     ).rejects.toThrow(/changing/);

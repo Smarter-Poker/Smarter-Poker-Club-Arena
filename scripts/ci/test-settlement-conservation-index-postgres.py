@@ -12,7 +12,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/settlement-conservation-index'
 PG = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
-MIGRATION = ROOT / 'supabase/migrations/20260927134343_settlement_conservation_reads_only_relevant_union_transactio.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927140441_settlement_conservation_reads_only_relevant_union_transactions.sql'
 ONLINE = ROOT / 'scripts/ops/build-settlement-conservation-index-concurrently.sql'
 RECOVERY = ROOT / 'scripts/ops/recover-settlement-conservation-index-concurrently.sql'
 cluster = Path(tempfile.mkdtemp(prefix='settlement-index-', dir=os.environ.get('TMPDIR')))

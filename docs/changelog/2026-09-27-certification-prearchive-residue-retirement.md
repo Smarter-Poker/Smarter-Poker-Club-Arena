@@ -1,5 +1,9 @@
 # Certification Pre-Archive Residue Retirement
 
+## Resumption Receipt
+
+Policy version 2.9 was freshly emitted at `2026-09-27T05:39:10.501Z` from the canonical owner policy, operating law, hardening standard, and reference index. Manifest SHA-256: `7663cc909626f7e9966931d27166ad8774addc801f7ad1898a2d7564bc13c378`. The repository instructions, publishing route, full Club Arena Console skill, and current task state were reread before continuation. The owned checkout is `/Volumes/SmarterWork/agent-work/create-club-cert-selector-fix` on `agent/cowork/retire-prearchive-cert-residue`; the operation owner is this task. Scope is limited to reserved certification identities, migration evidence, protected delivery, and final Create Club certification. Real clubs, unions, horses, users, wallets, chips, and settings are excluded.
+
 ## Change #1 — Separate The Five Clean August Identity Shadows
 
 **File:** `supabase/migrations/20260927042756_certification_cleanup_removes_five_prearchive_public_user_residue.sql`
@@ -29,3 +33,13 @@
 **Why:** Future edits must fail if they widen deletion, weaken immutability, or treat protected testimony as disposable residue.
 **Verified:** YES — focused suites passed after final formatting.
 **TypeScript:** PASS — focused Vitest TypeScript contracts passed.
+
+## Change #4 — Retire The Last Pre-Archive Club-Create Shadow
+
+**File:** `supabase/migrations/20260927053730_retire_last_prearchive_club_create_identity.sql`; `tests/unit/lastPrearchiveClubCreateIdentityRetirement.test.ts`
+**Lines:** 1-182 and 1-79; complete one-time migration and source contract
+**What existed:** One August 31 Club Create certification identity survived only as an exact Auth-less `public.users` row after its older workflow cleanup. It had no authority, custody, gameplay, audit, archive, asset, UUID, or email-bearing surface across the complete production catalog.
+**What changed:** A byte-pinned, serializable, freeze-refusing transaction scans every current public identity-bearing UUID column, every Auth/Storage UUID column, and every other Auth/Public email-bearing column, refuses delete-graph drift, and deletes exactly the one unchanged row. Its contract forbids wider deletes and pins all guards before mutation.
+**Why:** Global certification cleanup cannot be claimed while the historical shadow remains, and widening the reusable cleanup RPC would weaken its live-marker boundary.
+**Verified:** YES — the preimage and 935 public, 65 Auth/Storage, and 22 other email-bearing surfaces were read-only audited before source creation; production installation remains a separate gate.
+**TypeScript:** PASS — focused source contract added.

@@ -1396,6 +1396,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-audit-reads.py
 
+      - name: BBJ cumulative and recent reads preserve all financial outcomes
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-bbj-cumulative-reads.py
+
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
@@ -1437,6 +1441,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-settlement-suspense-restatement.py
+      - name: Jackpot facts preserve exact totals through the covering contribution index
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-bbj-contribution-cover-postgres.py
       - name: The satellite seat preimage guard accepts the installed seat authority and refuses a broken contract
         if: matrix.shard == 4
         env:

@@ -13,6 +13,7 @@ describe('classifyTournamentOwner: three outcomes, not two', () => {
       classifyTournamentOwner({
         managerRegistered: true,
         managerOwnsLease: true,
+        managerIsDealing: true,
         admissionInFlight: false,
       })
     ).toBe('owned');
@@ -25,6 +26,7 @@ describe('classifyTournamentOwner: three outcomes, not two', () => {
       classifyTournamentOwner({
         managerRegistered: true,
         managerOwnsLease: false,
+        managerIsDealing: false,
         admissionInFlight: false,
       })
     ).toBe('quarantined');
@@ -32,6 +34,7 @@ describe('classifyTournamentOwner: three outcomes, not two', () => {
       classifyTournamentOwner({
         managerRegistered: true,
         managerOwnsLease: false,
+        managerIsDealing: false,
         admissionInFlight: true,
       })
     ).toBe('quarantined');
@@ -42,6 +45,7 @@ describe('classifyTournamentOwner: three outcomes, not two', () => {
       classifyTournamentOwner({
         managerRegistered: false,
         managerOwnsLease: false,
+        managerIsDealing: false,
         admissionInFlight: true,
       })
     ).toBe('admitting');
@@ -49,6 +53,7 @@ describe('classifyTournamentOwner: three outcomes, not two', () => {
       classifyTournamentOwner({
         managerRegistered: false,
         managerOwnsLease: false,
+        managerIsDealing: false,
         admissionInFlight: false,
       })
     ).toBe('unowned');

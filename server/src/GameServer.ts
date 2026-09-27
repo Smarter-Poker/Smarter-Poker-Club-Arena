@@ -244,6 +244,10 @@ import {
   selectRunningResumes,
 } from './tournamentResumeBudget.js';
 import { QuarantinedTournamentManagers } from './tournament/quarantinedTournamentManagers.js';
+import {
+  RETAINED_MIXED_ADMISSION,
+  retainedMixedAdmissionVerdict,
+} from './tournament/retainedMixedAdmission.js';
 
 /** Error context for a re-offered stop of a manager that could not be stopped. */
 const QUARANTINED_MANAGER_STOP_RETRY = 'GameServer.quarantined_tournament_manager_stop_retry';
@@ -1867,6 +1871,21 @@ export class GameServer {
    * reveal hold, before its first deal).
    */
   private tournamentManagerAdmittedAtMs: WeakMap<TournamentManager, number> = new WeakMap();
+  /**
+   * Admissions that published a manager and never produced a dealer, by
+   * tournament. `sinceMs` dates from the FIRST retention of this exact
+   * manager, which is the number that says "this has been holding a lease and
+   * dealing nothing for ten minutes". See tournament/retainedMixedAdmission.ts
+   * for why an unbounded retention was a thirty-six-hour silent stall.
+   */
+  /* Lazily built, like tournamentManagerQuarantine and the F06 custody maps
+     beside it: the discovery lanes are exercised against an
+     Object.create(GameServer.prototype) harness that runs no constructor, so
+     a class-field initializer here is undefined at the one place it is read. */
+  private retainedMixedAdmissions?: Map<
+    string,
+    { manager: TournamentManager; transferId: string; sinceMs: number }
+  >;
   /** Re-entrancy guard for the event-driven managerless bounty-outbox drain. */
   private bountyRecoverySweepInFlight = false;
   /** A committed outbox event arrived while the current bounded drain was active. */
@@ -2513,6 +2532,53 @@ export class GameServer {
     return admittedAt === undefined || nowMs - admittedAt >= 15 * 60 * 1000;
   }
 
+  /**
+   * This admission published a manager and did not produce a dealer. Record
+   * it so the RUNNING pass can offer the continuation again and /health can
+   * count it; bookkeeping here must never change the retention itself, which
+   * is why every failure is swallowed into the same counter the quarantine's
+   * own bookkeeping uses.
+   */
+  private retainMixedAdmission(
+    tournamentId: string,
+    manager: TournamentManager,
+    transferId: string
+  ): void {
+    try {
+      const now = Date.now();
+      const retained = (this.retainedMixedAdmissions ??= new Map());
+      const previous = retained.get(tournamentId);
+      // The age dates from the first retention of THIS manager. A replacement
+      // manager starts its own window, exactly as the quarantine does.
+      const sinceMs = previous && previous.manager === manager ? previous.sinceMs : now;
+      retained.set(tournamentId, { manager, transferId, sinceMs });
+      (this.tournamentManagerQuarantine ??= new QuarantinedTournamentManagers()).record(
+        tournamentId,
+        RETAINED_MIXED_ADMISSION,
+        now,
+        manager
+      );
+    } catch {
+      this.tournamentQuarantineBookkeepingFailures =
+        (this.tournamentQuarantineBookkeepingFailures ?? 0) + 1;
+    }
+  }
+
+  /** Identity-exact: only the manager this retention was recorded against. */
+  private releaseRetainedMixedAdmission(tournamentId: string, manager: TournamentManager): void {
+    try {
+      if (this.retainedMixedAdmissions?.get(tournamentId)?.manager === manager) {
+        this.retainedMixedAdmissions.delete(tournamentId);
+      }
+      if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager) {
+        this.tournamentManagerQuarantine.forget(tournamentId);
+      }
+    } catch {
+      this.tournamentQuarantineBookkeepingFailures =
+        (this.tournamentQuarantineBookkeepingFailures ?? 0) + 1;
+    }
+  }
+
   private retireTournamentManagerInDiscovery(
     tournamentId: string,
     manager: TournamentManager,
@@ -2879,9 +2945,23 @@ export class GameServer {
               tournamentId,
               transferId: transfer.transferId,
             });
+            /* AND IT IS COUNTED FROM HERE (2026-09-27). The return below is
+               right - an original whose outcome is unknown may not be
+               abandoned - but on 2026-09-26 it was also the last thing that
+               ever happened to seventy-two RUNNING events. `manager.resume()`
+               is on the far side of it, so no dealer was ever built; the
+               manager stayed registered and went on proving its lease, so the
+               re-adoption lane skipped the id and no other process could take
+               it; and nothing counted the retention or offered this
+               continuation again. See tournament/retainedMixedAdmission.ts. */
+            this.retainMixedAdmission(tournamentId, manager, transfer.transferId);
             return; // Unknown originals retain this admitted process and every reservation.
           }
           reservation.complete();
+          // The admission kept its promise: this id is no longer retained, and
+          // the quarantine entry that named it stops here rather than on the
+          // next RUNNING pass.
+          this.releaseRetainedMixedAdmission(tournamentId, manager);
           this.completedF06TournamentCustody ??= new Map();
           if (packet) {
             const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
@@ -8405,6 +8485,88 @@ export class GameServer {
    * unreadable board says nothing about who is still stuck, so it must not
    * settle anything - the same rule the resume cooldowns follow.
    */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A LEASE IS HELD BY A DEALER, NOT BY AN ADMISSION (2026-09-27)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The other half of settleQuarantinedTournamentManagers, for the state that
+   * pass could not see. It walks managers that were ADMITTED, hold a live
+   * lease, and never became dealers, and gives each of them the same two
+   * outcomes every stuck owner gets: another attempt at the thing that failed,
+   * or the slot back.
+   *
+   * Nothing here repairs a row and nothing here is scheduled (CLAUDE.md
+   * 10.12): the continuation offered is the SAME `continueAdmission` the
+   * admission built, on the quarantine's own 10s-doubling-to-60s schedule, and
+   * the verdict is read on the RUNNING pass that already walks the board.
+   *
+   * See tournament/retainedMixedAdmission.ts for the incident and the rule.
+   */
+  private settleRetainedMixedAdmissions(
+    quarantine: QuarantinedTournamentManagers,
+    now: number,
+    generation: number
+  ): void {
+    const admissions = this.retainedMixedAdmissions;
+    if (!admissions || admissions.size === 0) return;
+    const dueNow = new Set(quarantine.due(now));
+    for (const [tournamentId, retained] of [...admissions]) {
+      // Identity-exact, like the quarantine settle: an empty slot or a
+      // replacement manager ends this retention, whatever else is true.
+      const manager = this.tournamentEngines.get(tournamentId);
+      if (manager !== retained.manager) {
+        admissions.delete(tournamentId);
+        continue;
+      }
+      const verdict = retainedMixedAdmissionVerdict({
+        managerIsDealing: manager.isRunning(),
+        // A drained packet's originals are live objects in THIS process
+        // holding reserved permits that only they can attest. Such a
+        // retention is retried for as long as it takes, never abandoned.
+        hasInProcessOriginals: this.drainedF06TournamentCustody?.has(tournamentId) ?? false,
+        retainedForMs: now - retained.sinceMs,
+      });
+      if (verdict === 'dealing') {
+        this.releaseRetainedMixedAdmission(tournamentId, manager);
+        continue;
+      }
+      if (verdict === 'give_up_the_lease') {
+        admissions.delete(tournamentId);
+        reportError(
+          new Error(
+            `Tournament ${tournamentId} was admitted ${Math.round((now - retained.sinceMs) / 1000)}s ` +
+              'ago, holds its lease and has never built a dealer: handing the lease back so the ' +
+              'event can be admitted again'
+          ),
+          RETAINED_MIXED_ADMISSION,
+          { tournamentId, transferId: retained.transferId, retainedForMs: now - retained.sinceMs }
+        );
+        /* Dropping the lease authority is what ENDS the recovery ownership:
+           isF06RecoveryOwner() reads hasCurrentTournamentLeaseAuthority(), and
+           retireTournamentManagerInDiscovery refuses to stop a recovery owner.
+           So this is not a second teardown path - it is the one condition the
+           existing teardown path was waiting for, and the ordinary lease-loss
+           sweep then retires this manager and releases the row. The quarantine
+           entry stays: the manager is still holding the slot until it does. */
+        manager.fenceForTournamentLeaseLoss();
+        continue;
+      }
+      if (!dueNow.has(tournamentId)) continue;
+      const continuation = this.mixedF06AdmissionContinuations?.get(tournamentId);
+      if (!continuation || continuation.manager !== manager) continue;
+      // Charge the attempt BEFORE the retry, exactly as the stop retry does,
+      // so a continuation that stays stuck backs off on its own schedule
+      // instead of being re-offered every five seconds.
+      quarantine.record(tournamentId, RETAINED_MIXED_ADMISSION, now, manager);
+      this.launchDiscoveryJob(
+        continuation.run(),
+        'GameServer.retained_mixed_admission_retry_failed',
+        { tournamentId, transferId: retained.transferId }
+      );
+    }
+  }
+
   private settleQuarantinedTournamentManagers(
     running: readonly { id: string }[],
     generation: number
@@ -8415,6 +8577,7 @@ export class GameServer {
     // replacement manager admitted for the same tournament: "some manager is
     // present" is the very conflation that hid this.
     quarantine.settle((id) => this.tournamentEngines.get(id) === quarantine.heldBy(id));
+    this.settleRetainedMixedAdmissions(quarantine, now, generation);
     /* The number nobody had. A RUNNING tournament this process has just read
        from the board and is not dealing, whether the slot is empty (normal for
        a pass or two after a restart or a thaw) or a quarantined manager holds
@@ -8435,6 +8598,11 @@ export class GameServer {
     }
     for (const tournamentId of quarantine.due(now)) {
       if (!this.directAdmissionIsCurrent(generation)) return;
+      // A retained admission is retried by its own continuation above, not by
+      // the stop path: retireTournamentManagerInDiscovery refuses an F06
+      // recovery owner by design, so an attempt charged here is an attempt the
+      // continuation never gets and a backoff that doubles for nothing.
+      if (this.retainedMixedAdmissions?.has(tournamentId)) continue;
       const manager = this.tournamentEngines.get(tournamentId);
       // Only the exact manager this quarantine was recorded against.
       if (!manager || manager !== quarantine.heldBy(tournamentId)) continue;

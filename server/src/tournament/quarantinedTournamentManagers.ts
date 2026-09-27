@@ -91,6 +91,24 @@ export interface TournamentOwnerObservation {
    * which is not the same question.
    */
   managerOwnsLease: boolean;
+  /**
+   * OWNING THE LEASE IS NOT DEALING (2026-09-27). Read from the manager's own
+   * gameplay lifecycle, and the third question this classifier has to ask.
+   *
+   * On 2026-09-26 a mixed manager-custody recovery threw once, was caught into
+   * `GameServer.mixed_original_recovery_retained`, and returned before
+   * `manager.resume()`. The manager stayed registered and went on proving its
+   * lease every fifteen seconds, so BOTH of the questions above answered yes
+   * and this returned 'owned' - for seventy-two RUNNING events, for thirty-six
+   * hours, with 32, 20, 16 and 12 players sitting at tables that never saw
+   * another card. tournamentManagersQuarantined read 0 throughout.
+   *
+   * 'A manager that owns nothing is not a manager' was the 2026-09-21 law.
+   * This is the half of it that was still missing: a manager that owns the
+   * LEASE and no DEALER is not a manager either. See retainedMixedAdmission.ts
+   * for what is then done about it.
+   */
+  managerIsDealing: boolean;
   /** An admission (start, resume or retry) for this tournament is in flight. */
   admissionInFlight: boolean;
 }
@@ -99,7 +117,11 @@ export function classifyTournamentOwner(
   observation: TournamentOwnerObservation
 ): TournamentOwnerVerdict {
   if (observation.managerRegistered) {
-    return observation.managerOwnsLease ? 'owned' : 'quarantined';
+    // Both terms, not either: the slot is owned only when a manager holds the
+    // lease AND is dealing with it. Losing the lease and never taking up a
+    // dealer are different failures with the same remedy - the manager has to
+    // leave - so they share the verdict that says nobody is dealing this.
+    return observation.managerOwnsLease && observation.managerIsDealing ? 'owned' : 'quarantined';
   }
   return observation.admissionInFlight ? 'admitting' : 'unowned';
 }

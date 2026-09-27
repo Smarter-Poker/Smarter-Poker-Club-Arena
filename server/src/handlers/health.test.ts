@@ -102,6 +102,7 @@ describe('handleHealth', () => {
       pendingSegments: 1,
       retiredSegments: 0,
       retiredRecords: 0,
+      heldSegments: 0,
       compressedBytes: 6_476_021_020,
       maxBytes: 8 * 1024 * 1024 * 1024,
       records: 7_000_000,

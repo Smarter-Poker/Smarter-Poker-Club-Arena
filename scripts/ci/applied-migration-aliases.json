@@ -1,0 +1,474 @@
+{
+  "_read_this_first": "Each row says: production recorded this migration under an apply-time version and name (the Supabase MCP stamps its own), and the repository already carries the same migration as `file` under the version and name its author gave it. The gates match migrations by name; these rows are the migrations whose names differ, so without them the same migration reads as 'installed with no file' in one direction and 'merged but not installed' in the other. A row is not a pardon: scripts/ci/migration-aliases.mjs honours it only when `file` exists in this tree and the applied version has no file of its own, and scripts/ci/check-recorded-migrations-evidence.mjs asks production that `appliedVersion` exists with `appliedMd5`. `sameBytes` false means the authored file and the applied SQL differ in text (a condensed or revised apply); the applied SQL is in supabase_migrations.schema_migrations.statements.",
+  "_how_to_add_a_row": "Only when the applied migration and the file are the same change: the same declared objects and the same intent, applied within the file's own session. Give the evidence in `basis`. If they are different changes, the applied one needs its own backfilled file instead.",
+  "aliases": [
+    {
+      "appliedVersion": "20260415014641",
+      "appliedName": "atomic_table_rebuy_v2",
+      "appliedMd5": "7bef872e735718038e583566fa3b587a",
+      "file": "supabase/migrations/20260415_atomic_table_rebuy.sql",
+      "fileMd5": "12911e535eb148f1e38f97b353b1afb9",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260415121023",
+      "appliedName": "fix_agent_commission_credit_bug009_v2",
+      "appliedMd5": "2b66967466fa296eb8d24aeda48f931c",
+      "file": "supabase/migrations/20260415_fix_agent_commission_credit.sql",
+      "fileMd5": "31843301e91c242d323378d7939a10d5",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.75"
+    },
+    {
+      "appliedVersion": "20260415175516",
+      "appliedName": "create_missing_tables_bugs_013_014_015_v2",
+      "appliedMd5": "9687456ca0415ef52c1837cf84d06039",
+      "file": "supabase/migrations/20260415_bugs_014_015_missing_tables.sql",
+      "fileMd5": "b241c6efc54b9acf921d500438cc9fa5",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.75"
+    },
+    {
+      "appliedVersion": "20260415203604",
+      "appliedName": "bug_018_log_wallet_transaction_balance_after",
+      "appliedMd5": "1683b1b6afccf0c009afd76410fea208",
+      "file": "supabase/migrations/20260306_log_wallet_transaction.sql",
+      "fileMd5": "becdea9acd308fedd9b8be836d31e8d1",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.5"
+    },
+    {
+      "appliedVersion": "20260415204005",
+      "appliedName": "bug_018_atomic_table_rpcs_balance_after",
+      "appliedMd5": "e932a1950bd786d2f29b828342a92091",
+      "file": "supabase/migrations/20260415_bug_018_balance_after.sql",
+      "fileMd5": "eef83d29ebd942cfab57fd98f51cb438",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 0.75, name tokens 0.6"
+    },
+    {
+      "appliedVersion": "20260416001954",
+      "appliedName": "bug_021_hand_history_rls_authenticated_select",
+      "appliedMd5": "69656e26d26422992edd24369b097ae4",
+      "file": "supabase/migrations/20260416_bug_021_hand_history_authenticated_select.sql",
+      "fileMd5": "b3773584f0acda4193b5cbdcdee369c5",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.83"
+    },
+    {
+      "appliedVersion": "20260419215359",
+      "appliedName": "phase33_fix_atomic_chip_transfer_validation",
+      "appliedMd5": "06455ea4dfb351b1d1a6ccd56c74b4d2",
+      "file": "supabase/migrations/20260312_atomic_chip_transfer.sql",
+      "fileMd5": "27183839770f8fb4dee1e2bf3541f053",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.6"
+    },
+    {
+      "appliedVersion": "20260428204959",
+      "appliedName": "x2_001_audit_trail",
+      "appliedMd5": "c06f284c75c4b888f74a24b7ceae1fd0",
+      "file": "supabase/migrations/20260428000001_audit_trail.sql",
+      "fileMd5": "1907ff67b818d80540f6bf8cf19344c3",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205023",
+      "appliedName": "x2_002_chip_escrow_holds",
+      "appliedMd5": "9171e70670c17542f2439b0ca8906170",
+      "file": "supabase/migrations/20260428000002_chip_escrow_holds.sql",
+      "fileMd5": "20d14b11232b20ea707ce48438fdf7d0",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205039",
+      "appliedName": "x2_003_settlement_idempotency_keys",
+      "appliedMd5": "fea8f7820336e3300fbb0992ea7c4703",
+      "file": "supabase/migrations/20260428000003_settlement_idempotency_keys.sql",
+      "fileMd5": "612ae8952d89b5a06cbc127c1f7f9471",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205122",
+      "appliedName": "x2_004_club_wallets",
+      "appliedMd5": "be4ba2cc74b30e712ac60da6a996af9c",
+      "file": "supabase/migrations/20260428000004_club_wallets.sql",
+      "fileMd5": "7c7c98effd2d0bb881ff82d911334f60",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205157",
+      "appliedName": "x2_005_rakeback_period_payouts",
+      "appliedMd5": "13c47371efb5617cbc5611ebecfd03e5",
+      "file": "supabase/migrations/20260428000005_rakeback_period_payouts.sql",
+      "fileMd5": "fe621963180ac5509212f9b23d2bad45",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205223",
+      "appliedName": "x2_006_sub_agents",
+      "appliedMd5": "eb10228c2271450d46b791469e1090ca",
+      "file": "supabase/migrations/20260428000006_sub_agents.sql",
+      "fileMd5": "afc5956451f23ec6380c027341c39aed",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205257",
+      "appliedName": "x2_007_seed_reveals",
+      "appliedMd5": "8328fee0b2966648590a24b0b8ca6b7c",
+      "file": "supabase/migrations/20260428000007_seed_reveals.sql",
+      "fileMd5": "6926d037d256764e5f6e243ba974684b",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260428205349",
+      "appliedName": "x2_008_chat_moderation",
+      "appliedMd5": "e06777e91c095f521e0162179adf6fd4",
+      "file": "supabase/migrations/20260428000008_chat_moderation.sql",
+      "fileMd5": "1fcc920c0048947e49a833f2a9a25faf",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260724040251",
+      "appliedName": "rake_audit_sweep2_db_fixes",
+      "appliedMd5": "a150e990556fb10bda8747a818734020",
+      "file": "supabase/migrations/20260724b_rake_audit_sweep2_db_fixes.sql",
+      "fileMd5": "8eb9199fd450c83fcb8ecda9e861d1f6",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260724053657",
+      "appliedName": "add_idempotency_to_credit_player_wallet",
+      "appliedMd5": "4de79cd953a86ee058933afb761d3d19",
+      "file": "supabase/migrations/20260724e_credit_player_wallet_idempotency.sql",
+      "fileMd5": "eab189edd7a4f70fce579a4a00671991",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.8"
+    },
+    {
+      "appliedVersion": "20260724061709",
+      "appliedName": "tourney_audit_sweep6_satellite_and_waitlist",
+      "appliedMd5": "c3556834ce32d2f4c08165050fbfa292",
+      "file": "supabase/migrations/20260724f_tourney_audit_sweep6.sql",
+      "fileMd5": "7ca022584c32062b4149b3e34bf7423e",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.6"
+    },
+    {
+      "appliedVersion": "20260724163603",
+      "appliedName": "atomic_distribute_rake",
+      "appliedMd5": "6ebf05035f0f8a9188d0eae29d54fdbf",
+      "file": "supabase/migrations/20260724f_atomic_distribute_rake.sql",
+      "fileMd5": "6476c2abe6d9cfeca29bfec0b2f6ef64",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260724164119",
+      "appliedName": "fix_active_player_count_exclude_closed_tables",
+      "appliedMd5": "51f388b34471c4384a3d21cab75f3cbe",
+      "file": "supabase/migrations/20260724h_fix_active_player_count.sql",
+      "fileMd5": "f6221d9f3b8af8fde4ee0039356b27fc",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.5"
+    },
+    {
+      "appliedVersion": "20260724164425",
+      "appliedName": "rakeback_credit_idempotency",
+      "appliedMd5": "2558bd17c2c4aee339f1f7bb6c8b1862",
+      "file": "supabase/migrations/20260724g_rakeback_credit_idempotency.sql",
+      "fileMd5": "39416533e9ee99d605848a9aa9027405",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260724164501",
+      "appliedName": "rakeback_player_stats_idempotent",
+      "appliedMd5": "04c18347ac9cb10611a87b4594bba6e4",
+      "file": "supabase/migrations/20260724h_rakeback_player_stats_idempotent.sql",
+      "fileMd5": "36f098654abeb27748807ff8c675c94d",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260724170850",
+      "appliedName": "auto_cashout_on_cash_table_close",
+      "appliedMd5": "639f52b1c55b41971b8d55309e0e8af4",
+      "file": "supabase/migrations/20260724i_auto_cashout_on_cash_table_close.sql",
+      "fileMd5": "353ff75b9677a2a73aca3c22653f2310",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260818235043",
+      "appliedName": "bbj_recent_hits_with_real_cards",
+      "appliedMd5": "fa9b1aca4e0a9376946566e74c2997ad",
+      "file": "supabase/migrations/20260826_bbj_recent_hits_fix.sql",
+      "fileMd5": "cb889442e752457f7a2a95d877f71ed5",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.5"
+    },
+    {
+      "appliedVersion": "20260820020442",
+      "appliedName": "user_rank_derives_from_board",
+      "appliedMd5": "e05b68186fda82e09c584735d6d03f79",
+      "file": "supabase/migrations/20260820a_user_rank_derives_from_board.sql",
+      "fileMd5": "c4211528a79a4ecadd6fe89c33ae690d",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260820021554",
+      "appliedName": "challenge_catalog_is_single_source_of_truth",
+      "appliedMd5": "de78e642e408c3ae0874b3caee7da80b",
+      "file": "supabase/migrations/20260820c_challenge_catalog_single_source_of_truth.sql",
+      "fileMd5": "baa4842c4d1140be20466ee06cd90d76",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260820021654",
+      "appliedName": "bump_challenge_progress_reports_partial_progress",
+      "appliedMd5": "6a60a12ff1419f6c3e3beee9dec784f0",
+      "file": "supabase/migrations/20260820d_bump_challenge_progress.sql",
+      "fileMd5": "80bde98ff6677edee6b1c212840083f2",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.6"
+    },
+    {
+      "appliedVersion": "20260820060709",
+      "appliedName": "rakeback_recompute_conflict_target",
+      "appliedMd5": "3d2c8abf81eb1f90f03832eb3a220d85",
+      "file": "supabase/migrations/20260820f_rakeback_recompute_conflict_target.sql",
+      "fileMd5": "a7cba0db8fc2674c1cfbe9c87f5e67cc",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260820221746",
+      "appliedName": "spin_tier_availability_public_view",
+      "appliedMd5": "3810f1a95601dc858c0655fbaf4637fd",
+      "file": "supabase/migrations/20260820p_spin_tier_availability_public_view.sql",
+      "fileMd5": "e9e51aa910be213cd4007a8e3e91a19b",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260821031405",
+      "appliedName": "release_seats_when_tournament_finishes_trigger",
+      "appliedMd5": "1f107912f10aa4b86ae5e64c4de2cd06",
+      "file": "supabase/migrations/20260821_release_seats_on_tournament_finish_trigger.sql",
+      "fileMd5": "20c75119c706f1f8f30102b4e525d793",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.57"
+    },
+    {
+      "appliedVersion": "20260821163244",
+      "appliedName": "raise_cash_table_cap_to_six",
+      "appliedMd5": "8ae8fa937f0c76967528a392db1bc445",
+      "file": "supabase/migrations/20260821f_raise_cash_table_cap_to_six.sql",
+      "fileMd5": "e76f274b5e1b7ad715016e9d5e400e58",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260821174930",
+      "appliedName": "fn_batch_active_player_counts_v3_one_club_at_a_time",
+      "appliedMd5": "cc145a4752693f2f1c4ce8218b5cc33e",
+      "file": "supabase/migrations/20260821_active_counts_one_club_at_a_time.sql",
+      "fileMd5": "f288546851310c2c35a5f5c53fe97e70",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 0.5, name tokens 0.67"
+    },
+    {
+      "appliedVersion": "20260821194938",
+      "appliedName": "retire_500x_spin_tier",
+      "appliedMd5": "bae29284362b0f9dff55104ba400836e",
+      "file": "supabase/migrations/20260821g_retire_500x_spin_tier.sql",
+      "fileMd5": "b566667c6c68c4dfb5d8dd88074dcebd",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260821201702",
+      "appliedName": "spin_availability_can_draw_500x_compat_shim",
+      "appliedMd5": "7322d8a933beeaa8858c9152379c62ee",
+      "file": "supabase/migrations/20260821h_spin_availability_500x_compat_shim.sql",
+      "fileMd5": "a4f1b2289f4c7c77064955048fd643a9",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.71"
+    },
+    {
+      "appliedVersion": "20260821204940",
+      "appliedName": "reapply_500x_retirement_view",
+      "appliedMd5": "7abdb172cf506db6fc377264ddd5fea7",
+      "file": "supabase/migrations/20260822000000_reapply_500x_retirement.sql",
+      "fileMd5": "e069e6d0a9dbf988935e15673c07fcf5",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.75"
+    },
+    {
+      "appliedVersion": "20260821213042",
+      "appliedName": "leaderboard_by_dates_functions",
+      "appliedMd5": "c703b034eb118621ec0b5bd0b660847f",
+      "file": "supabase/migrations/20260821_leaderboard_by_dates_rpcs.sql",
+      "fileMd5": "3212b654cd95f8368e9a6751cec63a8d",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.75"
+    },
+    {
+      "appliedVersion": "20260822181607",
+      "appliedName": "credit_player_wallet_once_and_credit_and_log",
+      "appliedMd5": "5148016409017063a8968607d416a4be",
+      "file": "supabase/migrations/20260822190000_credit_player_wallet_once.sql",
+      "fileMd5": "d7d47bd1c5fed088015a49f9a3ac231f",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.8"
+    },
+    {
+      "appliedVersion": "20260823032921",
+      "appliedName": "rls_on_by_default_for_new_public_tables",
+      "appliedMd5": "9c63a627959f68113e253e6e5aee0652",
+      "file": "supabase/migrations/20260823050000_rls_on_by_default.sql",
+      "fileMd5": "5031d517dd8d782d577cfd51434562a0",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.5"
+    },
+    {
+      "appliedVersion": "20260823135842",
+      "appliedName": "player_number_guarantee",
+      "appliedMd5": "cf5a0bde19df600e470b17dc8c875066",
+      "file": "supabase/migrations/20260823_01_player_number_guarantee.sql",
+      "fileMd5": "bce43933a480eeae1c7ed43e3cc9645c",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260823140123",
+      "appliedName": "member_fee_rollup",
+      "appliedMd5": "126f66a18c8fa3644dea45271d05c60b",
+      "file": "supabase/migrations/20260823_02_member_fee_rollup.sql",
+      "fileMd5": "a50195dbcf3e4974701699c1fd8eb3b6",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260823140232",
+      "appliedName": "club_bank_cashier_access_and_send",
+      "appliedMd5": "776f219b634db5f52d5ead25bb045d9f",
+      "file": "supabase/migrations/20260823140000_club_bank_cashier.sql",
+      "fileMd5": "5ed6b71bd09d6a8bf456d759171225e1",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 0.75, name tokens 0.6"
+    },
+    {
+      "appliedVersion": "20260823141550",
+      "appliedName": "club_members_overview",
+      "appliedMd5": "2132ff5bdeb3a968f54ce0635db7d2d3",
+      "file": "supabase/migrations/20260823_03_club_members_overview.sql",
+      "fileMd5": "a639fc1a76fed27132c2cce22a70c9d4",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260823142707",
+      "appliedName": "member_management_rpcs",
+      "appliedMd5": "b93634bdd4376a655cc313f0e0fc9ecd",
+      "file": "supabase/migrations/20260823_04_member_management_rpcs.sql",
+      "fileMd5": "04b615b92e4778c64169f6b3386adfe0",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260823143025",
+      "appliedName": "club_bank_membership_status_accepts_approved",
+      "appliedMd5": "3a6c900f41986cb56291083e3966afce",
+      "file": "supabase/migrations/20260823180000_club_bank_membership_status.sql",
+      "fileMd5": "49507bc0ecaf5038b6845b647cbbad84",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.67"
+    },
+    {
+      "appliedVersion": "20260823144055",
+      "appliedName": "promo_vault",
+      "appliedMd5": "8b55ca2d1184f08aa55c014400e1f7ad",
+      "file": "supabase/migrations/20260823_05_promo_vault.sql",
+      "fileMd5": "818d1583725f2da283a99b28513ff75d",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260823205648",
+      "appliedName": "spin_seat_lifecycle_paid_seats_and_cleanup",
+      "appliedMd5": "0b815c063fe2b4b007529029b4fdc5eb",
+      "file": "supabase/migrations/20260823280000_spin_seat_lifecycle.sql",
+      "fileMd5": "2aa2ce18d7a6b57d77c3bc0a3eb5822b",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 0.67, name tokens 0.5"
+    },
+    {
+      "appliedVersion": "20260824034344",
+      "appliedName": "reconcile_tournament_denormals_recurring",
+      "appliedMd5": "ea27fb43ad28ac2044607c0c404de573",
+      "file": "supabase/migrations/20260824020200_reconcile_tournament_denormals.sql",
+      "fileMd5": "f8d13512a7c1bad7c22630aeefad2814",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 0.75"
+    },
+    {
+      "appliedVersion": "20260903073351",
+      "appliedName": "the_union_branch_belongs_to_production_not_to_every_club_rpc",
+      "appliedMd5": "d8efd96e41c702ed92a1e61ef393410b",
+      "file": "supabase/migrations/20260903150000_the_union_branch_belongs_to_production.sql",
+      "fileMd5": "73eed1c46b9d0521258930f7fe2a353b",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 0.5, name tokens 0.57"
+    },
+    {
+      "appliedVersion": "20260905103820",
+      "appliedName": "a_horse_is_stamped_on_its_seat_functions",
+      "appliedMd5": "bf4fdf695d069fddfc186eba83fa36c2",
+      "file": "supabase/migrations/20260905103622_a_horse_is_stamped_on_its_seat_and_the_felt_can_see_it.sql",
+      "fileMd5": "4e12b761f001c67395e387a3afd7955e",
+      "sameBytes": false,
+      "basis": "the authored file was applied in two parts: its functions, then its trigger"
+    },
+    {
+      "appliedVersion": "20260905103832",
+      "appliedName": "a_horse_is_stamped_on_its_seat_trigger",
+      "appliedMd5": "f21b22227482b55a3723fdc41234f089",
+      "file": "supabase/migrations/20260905103622_a_horse_is_stamped_on_its_seat_and_the_felt_can_see_it.sql",
+      "fileMd5": "4e12b761f001c67395e387a3afd7955e",
+      "sameBytes": false,
+      "basis": "the authored file was applied in two parts: its functions, then its trigger"
+    },
+    {
+      "appliedVersion": "20260906021005",
+      "appliedName": "leaderboard_settlement_follows_published_period",
+      "appliedMd5": "b3d75d321eba3bb23167a3e7143a2ff3",
+      "file": "supabase/migrations/20260906022137_leaderboard_settlement_follows_the_published_period.sql",
+      "fileMd5": "a36a024180d1fae624b99b83129cc8c2",
+      "sameBytes": false,
+      "basis": "declared objects jaccard 1, name tokens 1.0"
+    },
+    {
+      "appliedVersion": "20260909012215",
+      "appliedName": "retire_the_stranded_half_chips_on_the_felt",
+      "appliedMd5": "994a6b7c754d95efeb1d114cee1c46ee",
+      "file": "supabase/migrations/20260909012046_retire_the_six_stranded_half_chips_on_the_felt.sql",
+      "fileMd5": "ff4bab2a6eb0c1638e5dbac088df6045",
+      "sameBytes": false,
+      "basis": "the authored file was applied under a shortened name two minutes later"
+    }
+  ]
+}

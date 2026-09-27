@@ -734,7 +734,8 @@ jobs:
             echo '```'
             echo ""
             echo "Apply each one with the Supabase MCP \`apply_migration\`, or - if it was"
-            echo "superseded - delete the file in the pull request that says why."
+            echo "superseded - put \"-- SUPERSEDED BY <version>\" on its first line in a pull"
+            echo "request that says why. History is never deleted."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The detector always finishes so it can publish its code. This final

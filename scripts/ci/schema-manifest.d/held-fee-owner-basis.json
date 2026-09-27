@@ -1,0 +1,13 @@
+{
+  "_owner": "agent/claude/held-fee-owner-basis-20260927",
+  "tables": [
+    "accounting_tournament_fee_owner_operations",
+    "accounting_tournament_fee_owner_bases"
+  ],
+  "functions": [
+    "fn_accounting_tournament_fee_owner_basis_is_append_only",
+    "fn_accounting_tournament_owner_basis_terms_at",
+    "fn_accounting_tournament_source_terms_at",
+    "fn_ca_recognize_held_tournament_fees_by_owner_basis"
+  ]
+}

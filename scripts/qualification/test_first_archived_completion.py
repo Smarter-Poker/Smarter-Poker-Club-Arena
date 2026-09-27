@@ -52,6 +52,10 @@ class FirstArchivedCompletionTests(unittest.TestCase):
   self.assertEqual(C.FAULTS,('own_parent','own_child','own_noop','own_offset','deferred_commit'))
   for kind in C.FAULTS:
    derived=C.fault_source(source,kind,P,B);self.assertNotEqual(derived,source);self.assertNotIn("ERRCODE='PZ002'",derived)
+   if kind!='deferred_commit':
+    self.assertTrue(derived.endswith('$completion$;\n'))
+    self.assertNotIn("SELECT current_setting('ca.first_archived_completion_evidence')",derived)
+    self.assertNotIn('COMMIT;',derived)
   offset=C.fault_source(source,'own_offset',P,B);self.assertIn('rake_wallet=rake_wallet+1',offset);self.assertIn('rake_wallet=rake_wallet-1',offset)
   child=C.fault_source(source,'own_child',P,B);self.assertIn('EXCEPTION WHEN division_by_zero',child)
   deferred=C.fault_source(source,'deferred_commit',P,B);self.assertIn("ERRCODE='PZ005'",deferred);self.assertIn('CREATE TEMP TABLE completion_commit_fault',deferred);self.assertIn('DEFERRABLE INITIALLY DEFERRED',deferred)

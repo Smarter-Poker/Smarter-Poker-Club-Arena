@@ -13,12 +13,12 @@
       "sha256": "3f732e69061919510603abb469f7c9bb435fdc30d3bd6bfb5b8df150d2146ea8"
     },
     "scripts/qualification/spin-first-archived-completion-cases.py": {
-      "bytes": 18083,
-      "sha256": "a46dbf2c798121395123241c7f811af92210c7242bdc1bb022f2ebca179be631"
+      "bytes": 18507,
+      "sha256": "6b0bc4a1bffca69529c1b54da44d0ae24b06fe27d82b7a5de33d9429fd137a10"
     },
     "scripts/qualification/test_first_archived_completion.py": {
-      "bytes": 7642,
-      "sha256": "6c729b286c49b484e9f3d98e91960f85f6eb7e1dba6ab895b3f584807030ca8e"
+      "bytes": 7866,
+      "sha256": "024587f53144145134c2aed4c6017bf2c2ba70553c647693c9f1d0bee64590e6"
     },
     "scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql": {
       "bytes": 27848,

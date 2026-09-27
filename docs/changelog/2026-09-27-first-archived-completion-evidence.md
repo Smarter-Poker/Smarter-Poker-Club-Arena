@@ -21,3 +21,11 @@ TypeScript compilation passed; 762 source pins passed. Native completion
 qualification, protected delivery and production acceptance remain pending.
 The held fee of 24 and oldest alert remain unresolved. No fabricated history,
 fee recognition, production payment or alert closure is claimed.
+
+The first isolated completion run correctly refused its own-bank mutation but
+then attempted the success SELECT, producing a second 25P02 error. Derived
+precommit-failure scripts now omit only the exact success SELECT/COMMIT suffix;
+the existing caller retains explicit rollback ownership. Original completion
+and deferred-COMMIT failure scripts keep that suffix. Strict original-error
+validation is unchanged. Failed execution 7b7624b2-a4ff-469a-9637-6d0ede7af75a
+and all original evidence are retained; cleanup was verified.

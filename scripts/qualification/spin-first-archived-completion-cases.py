@@ -18,6 +18,12 @@ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.completion_c
   # The financial owners/constraint checks finish first; COMMIT must fail AFTER
   # the genuine will-commit SELECT was emitted. Never count that row as commit.
   return source.replace("SELECT current_setting('ca.first_archived_completion_evidence')", "SET CONSTRAINTS completion_commit_fault DEFERRED;\nINSERT INTO completion_commit_fault VALUES(1);\nSELECT current_setting('ca.first_archived_completion_evidence')",1)
+ # A precommit refusal leaves BEGIN aborted. Do not run the success SELECT or
+ # COMMIT afterward: that adds 25P02 and implicitly rolls back before the
+ # existing caller can independently record its explicit rollback witness.
+ tail="SELECT current_setting('ca.first_archived_completion_evidence')::jsonb AS evidence;\nCOMMIT;\n"
+ require(source.endswith(tail),'completion success tail differs')
+ source=source[:-len(tail)]
  if kind=='own_offset':
   injection="  IF phase=0 THEN UPDATE public.union_wallets SET rake_wallet=rake_wallet+1 WHERE id='"+B.ROW+"'; UPDATE public.union_wallets SET rake_wallet=rake_wallet-1 WHERE id='"+B.ROW+"'; END IF;\n"
   require(source.count(P.BANK_FAULT_ANCHOR)==1,'completion offset anchor differs')

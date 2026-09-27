@@ -52,6 +52,7 @@ describe('pre-archive certification public-user residue cleanup', () => {
   it('is one forward transaction, refuses a freeze, and does not widen the cleanup RPC', () => {
     expect(migration.trimStart()).toMatch(/^--[\s\S]*\nBEGIN;/);
     expect(migration.trimEnd()).toMatch(/COMMIT;$/);
+    expect(migration).toContain("SET LOCAL statement_timeout = '15min'");
     expect(migration).toContain('IF public.fn_platform_frozen() THEN');
     expect(migration).toContain(
       'PREARCHIVE_CERTIFICATION_PUBLIC_USER_RESIDUE_REFUSES_PLATFORM_FREEZE'

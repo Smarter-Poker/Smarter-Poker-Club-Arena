@@ -18,7 +18,10 @@
 BEGIN;
 
 SET LOCAL lock_timeout = '4s';
-SET LOCAL statement_timeout = '120s';
+-- The production catalog currently contains hundreds of no-FK UUID identity
+-- surfaces. Keep the exhaustive guard bounded, but give its read-only scans
+-- enough time to finish before the exact five-row mutation.
+SET LOCAL statement_timeout = '15min';
 
 DO $cleanup$
 DECLARE

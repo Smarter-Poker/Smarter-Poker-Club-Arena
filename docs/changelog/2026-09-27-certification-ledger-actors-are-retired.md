@@ -50,6 +50,9 @@ See https://supabase.com/docs/reference/javascript/auth-admin-deleteuser and
 https://supabase.com/docs/guides/auth/managing-user-data for the supported operation
 and the surviving JWT lifetime limitation.
 
-Production installation, exact provider history and protected delivery are
-separate acceptance steps. No fixture financial mutation or live synthetic
-custody race is needed to qualify this repair.
+Installed once as migration `20260927032118` at 2026-09-27 03:21:18 UTC,
+8344 bytes, MD5 `a88d7dcb45517bcd1a39898a6629ade0`. Readback preserved
+the cleanup OID, owner, ACL and settings, the immutable actor foreign key, and
+the existing fixture ledger/profile/wallet fingerprints. Protected source
+delivery and actual Auth/browser behavior remain separate acceptance steps. No
+live synthetic custody race or financial mutation was used for qualification.

@@ -16,7 +16,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/certification-retirement'
-MIGRATION = ROOT / 'supabase/migrations/20260927005508_reserved_certification_ledger_actors_are_retired_not_deleted.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260927032118_reserved_certification_ledger_actors_are_retired_not_deleted.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 parser.add_argument('--scratch', default=os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))

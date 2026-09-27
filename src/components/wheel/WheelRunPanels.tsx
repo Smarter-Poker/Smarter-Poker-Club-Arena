@@ -58,7 +58,7 @@ export function WheelBonusQueue({
         onClick={() => onPlay(next)}
       >
         Play Game
-        <TapHaptic disabled={disabled} />
+        <TapHaptic disabled={disabled} radius="0px" />
       </button>
     </section>
   );
@@ -91,7 +91,7 @@ export function WheelRunResume({
       <div className={styles.cardActions}>
         <button type="button" className={styles.cardButtonQuiet} disabled={busy} onClick={onEnd}>
           End Run
-          <TapHaptic disabled={busy} />
+          <TapHaptic disabled={busy} radius="0px" />
         </button>
         <button
           type="button"
@@ -100,7 +100,7 @@ export function WheelRunResume({
           onClick={onResume}
         >
           {left === 0 ? 'Run Complete' : `Resume Run (${left.toLocaleString()} Left)`}
-          <TapHaptic disabled={busy || left === 0} />
+          <TapHaptic disabled={busy || left === 0} radius="0px" />
         </button>
       </div>
     </section>

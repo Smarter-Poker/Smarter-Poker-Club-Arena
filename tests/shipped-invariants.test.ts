@@ -584,9 +584,11 @@ it('tournament payment completion requires durable debt or terminal batch proof'
     "receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
   );
   expect(recovery).toContain('const receipt = await requestTournamentTerminalReceipt(');
-  expect(terminalClient).toContain("supabase.rpc('fn_complete_tournament_terminal'");
+  expect(terminalClient).toContain("terminalAuthority.rpc('fn_complete_tournament_terminal'");
   expect(terminalClient).toContain('verifyTournamentCompletionReceipt(');
-  expect(terminalClient).toContain("supabase.rpc('fn_resolve_tournament_terminal_outcome'");
+  expect(terminalClient).toContain(
+    "terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'"
+  );
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain(
     'FAIL stale smaller replay hides debt'
   );

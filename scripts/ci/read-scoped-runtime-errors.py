@@ -22,6 +22,9 @@ ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY)_[A-Z0-9_]{1
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.watchdog_kill\]')
 ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
+# Successor admission is owned by GameServer, before or while a new manager
+# recovers its originals. Keep this an exact call-site list, never GameServer.*.
+ADMISSION_CONTEXT = re.compile(r'^\[(GameServer\.(?:Tournament_resume_failed_for_t|tournament_admission_retry_failed|mixed_original_recovery_retained))\]')
 HEADER = re.compile(r'^\[[^\]\r\n]{1,160}\]')
 MAX_BYTES = 8 * 1024 * 1024
 HEALTH_TIMEOUT = 10
@@ -100,7 +103,7 @@ def extract(raw, scopes):
         body = line[ts.end():] if ts else line
         if HEADER.match(body):
             finish()
-            match = CONTEXT.match(body)
+            match = CONTEXT.match(body) or ADMISSION_CONTEXT.match(body)
             context = match.group(1) if match else None
             engine_match = ENGINE_CONTEXT.match(body)
             if engine_match and engine_match.group(1) in allowed:

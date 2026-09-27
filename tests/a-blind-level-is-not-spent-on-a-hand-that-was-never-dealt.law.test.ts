@@ -48,6 +48,7 @@ import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
 const MANAGER = join(ROOT, 'server', 'src', 'tournament', 'TournamentManagerBase.ts');
+const SETTLEMENT = join(ROOT, 'server', 'src', 'engine', 'ServerTableEngineSettlement.ts');
 
 /** Block and line comments removed, so nothing below can match documentation. */
 function codeOnly(source: string): string {
@@ -86,6 +87,24 @@ describe('a blind level is not spent on a hand that was never dealt', () => {
       assignment < zeroStackBranch,
       'the witness must be recorded for EVERY hand, before the zero-stack gate'
     ).toBe(true);
+  });
+
+  it('the engine reports EVERY accepted hand to the manager, not only a bust (2026-09-27)', () => {
+    // The witness above is only as good as the event that feeds it. Until
+    // 2026-09-27 the engine invoked the callback only when a final stack was
+    // zero, so levels were held while tables dealt hundreds of hands: 441 of
+    // 466 leased, dealing SNG/Spin events two or more levels behind schedule.
+    // The zero-stack gate belongs to the manager (it decides whether to wake
+    // the sweep); the engine must not filter the event itself.
+    const settlement = codeOnly(readFileSync(SETTLEMENT, 'utf8'));
+    const call = settlement.indexOf('this.handCompleteCallback(this.tableId, finalStacks)');
+    expect(call, 'postHandTasks must invoke the hand-complete callback').toBeGreaterThan(-1);
+    const guardStart = settlement.lastIndexOf('if (', call);
+    const guard = settlement.slice(guardStart, settlement.indexOf('{', guardStart));
+    expect(guard).toContain('this.handCompleteCallback');
+    expect(guard, 'the engine must not gate the callback on a zero stack').not.toMatch(
+      /finalStacks\.some|stack\)\s*<=\s*0/
+    );
   });
 
   it('the witness starts at zero, so an adopted manager cannot inherit a clean one', () => {

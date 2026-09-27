@@ -3,6 +3,9 @@ import { expect, test } from '@playwright/test';
 const certificationEnabled = process.env.E2E_NEW_CLUB_CERT === '1';
 
 test.describe('Production Create A Club Certificate', () => {
+  // A retry is a second real side effect, not another observation. The
+  // workflow also passes --retries=0 so manual and hosted invocations agree.
+  test.describe.configure({ retries: 0 });
   test.skip(!certificationEnabled, 'Runs only with an isolated production certification account.');
 
   test('a brand-new player creates and opens a real standalone club', async ({ page }) => {
@@ -80,7 +83,11 @@ test.describe('Production Create A Club Certificate', () => {
     await expect(page.getByText('New Club Opening Checklist', { exact: true })).toBeVisible({
       timeout: 60_000,
     });
-    await expect(page.getByText(/100,000(?:\.00)?/).first()).toBeVisible({ timeout: 60_000 });
+    // Prove the painted opening-bank command, not the hidden screen-reader
+    // wallet announcement that happens to contain the same number.
+    await expect(page.getByLabel(/^100,000(?:\.00)? Club Bank Chips$/)).toBeVisible({
+      timeout: 60_000,
+    });
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });
   });
 });

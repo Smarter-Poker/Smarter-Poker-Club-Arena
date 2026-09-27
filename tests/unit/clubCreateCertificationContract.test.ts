@@ -53,12 +53,39 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain('production-e2e-provenance.mjs build-info');
     expect(workflow).toContain('"$origin_sha" == "$expected"');
     expect(workflow).toContain('"$public_sha" == "$expected"');
+    expect(workflow).toContain('cancel-in-progress: false');
+    expect(workflow).toContain('timeout-minutes: 30');
+    expect(workflow).toContain('--workers=1 --retries=0');
+  });
+
+  it('hard-deletes the direct RPC fixture through the guarded reserved-account door', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+    const account = read('scripts/ci/production-e2e-account.mjs');
+    const migration = read(
+      'supabase/migrations/20260927001500_legacy_create_club_certificates_use_the_guarded_cleanup_door.sql'
+    );
+    expect(script).toContain('`ca-customization-cert-postdeploy-direct-${stamp}@example.invalid`');
+    expect(script).toContain('cleanupProductionE2EAccount({');
+    expect(script).toContain('record: { id: userId, email }');
+    expect(script).not.toContain('Fixture User Delete Skipped');
+    expect(script).toContain('await cleanupLegacyDirectCertificates()');
+    expect(script).toContain('It Still Owns A Club.');
+    expect(account).toContain("const LEGACY_DIRECT_PREFIX = 'club-create-cert-'");
+    expect(migration).toContain("md5(v_old) <> '5097fd85191359890d70eb84c4ce507c'");
+    expect(migration).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
   });
 
   it('targets the unique keyboard-enabled action-bar control', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
     expect(spec).toContain("getByTitle('Create A Club (C)', { exact: true })");
+    expect(spec).toContain('test.describe.configure({ retries: 0 })');
     expect(spec).not.toContain("getByRole('button', { name: 'Create A Club', exact: true })");
+  });
+
+  it('proves the visible opening-bank command instead of a hidden live-region match', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+    expect(spec).toContain('getByLabel(/^100,000(?:\\.00)? Club Bank Chips$/)');
+    expect(spec).not.toContain('getByText(/100,000(?:\\.00)?/).first()');
   });
 
   it('bakes replayed cards from the authoritative server club and reports a failed URL write', () => {

@@ -13,9 +13,10 @@
  *   rule (sit-outs count in `playersAtTable`, are excluded from covering
  *   stacks) is asserted from source text and executed only at the worker
  *   boundary in `horseDecision/workerRuntime.test.ts`.
- * - `HorseLogic.ts` and `HorsePreflop.ts` keep their own `3` / `1.15`
- *   projection-gate literals; they are held to the domain by behaviour, not
- *   by a shared symbol.
+ * - `HorseLogic.ts`, `HorsePreflop.ts` and the receipt matcher in
+ *   `HorsePhase6Attribution.ts` ask the atlas's
+ *   `tournamentNextLevelProjectionApplies`; the shared symbol is pinned in
+ *   `HorsePhase6RouteRefusal.test.ts` and the boundary behaviour here.
  * - The 215,424-coordinate totality loop lives in
  *   `HorsePhase6Tournament.test.ts` and is bound to the domain there; it is
  *   not duplicated here.

@@ -62,7 +62,12 @@ import { horseVariantRulesFor } from '../VariantRules.js';
 import { horsePolicyRegistration } from '../HorsePolicyRegistry.js';
 import { buildJointCardLayout, type JointCardLayoutInput } from '../multiway/JointCardLayout.js';
 import { validateDealtSeatCensus } from '../multiway/DealtSeatCensus.js';
-import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
+import {
+  buildTournamentMState,
+  TOURNAMENT_ANTE_TYPES,
+  TOURNAMENT_CONTEXT_INCOMPLETE,
+  TOURNAMENT_CONTEXT_STATUSES,
+} from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
 import { gtoPostflopCount } from '../GtoPostflop.js';
@@ -1083,7 +1088,7 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
     }
     const status = tournament.contextStatus;
-    if (!['complete', 'incomplete', 'warming', 'stale'].includes(status ?? '')) {
+    if (!(TOURNAMENT_CONTEXT_STATUSES as readonly string[]).includes(status ?? '')) {
       throw new Error('Phase 6 tournament context status is invalid');
     }
     if (
@@ -1153,7 +1158,7 @@ export class HorseDecisionWorkerRuntime {
       !positive(tournament.currentBigBlind) ||
       Math.abs((tournament.currentBigBlind as number) - gs.bigBlind) > 0.005 ||
       !nonNegative(tournament.currentAnte) ||
-      !['none', 'per_player', 'big_blind'].includes(tournament.anteType ?? '') ||
+      !(TOURNAMENT_ANTE_TYPES as readonly string[]).includes(tournament.anteType ?? '') ||
       !nullablePositive(tournament.nextSmallBlind) ||
       !nullablePositive(tournament.nextBigBlind) ||
       !nullableNonNegative(tournament.nextAnte) ||

@@ -1243,6 +1243,18 @@ export class GameServer {
       );
     }
     for (const [tournamentId, manager] of lostManagers) {
+      /* A LOST LEASE DOES NOT RETRY A QUARANTINED STOP (2026-09-27).
+         The first lost-lease stop runs at once. If it fails, the manager
+         stays in tournamentEngines, never proves lease authority again, and
+         so is back in this set on every ~5s pass. Relaunching the stop here
+         each time ignored the quarantine's 10s-to-60s backoff and, because
+         each failure re-recorded the quarantine, pushed its due time forward
+         so its own retry never fired: production /health on f2e484a3 showed
+         six managers with ~16,000 attempts in ~84,000s, one every ~5.2s,
+         every one a futile fenced request. #5317 closed the same hole in the
+         discovery sweeps; this is the lease pass. The fence above still runs
+         on every pass; only the stop is left to the quarantine. */
+      if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager) continue;
       this.launchServerLifecycleJob(
         this.stopTournamentManagerIfOwned(
           tournamentId,
@@ -2163,13 +2175,17 @@ export class GameServer {
             new QuarantinedTournamentManagers());
           const custodyRefusal = this.tournamentCustodyRefusals?.get(manager);
           if (this.tournamentEngines.get(tournamentId) === manager) {
-            quarantine.record(
-              tournamentId,
-              errorContext,
-              Date.now(),
-              manager,
-              custodyRefusal ? f06CustodyRefusalKey(custodyRefusal) : undefined
-            );
+            const refusalKey = custodyRefusal ? f06CustodyRefusalKey(custodyRefusal) : undefined;
+            /* The quarantine's own retry charged this attempt before it ran
+               (settleQuarantinedTournamentManagers). Charging it again here
+               counted every retry twice on /health and skipped the 20s step
+               of the backoff, so only what the attempt learned is kept. */
+            const alreadyCharged =
+              errorContext === QUARANTINED_MANAGER_STOP_RETRY &&
+              quarantine.amend(tournamentId, manager, refusalKey);
+            if (!alreadyCharged) {
+              quarantine.record(tournamentId, errorContext, Date.now(), manager, refusalKey);
+            }
           } else {
             quarantine.forget(tournamentId);
           }

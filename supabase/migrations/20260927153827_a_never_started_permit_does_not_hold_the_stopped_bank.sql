@@ -1,7 +1,7 @@
--- 20260927150704_a_never_started_permit_does_not_hold_the_stopped_bank.sql
+-- 20260927153827_a_never_started_permit_does_not_hold_the_stopped_bank.sql
 --
--- Version reserved by scripts/new-migration.mjs against origin/main and every
--- remote branch, so it cannot collide with another agent's in-flight work.
+-- Version 20260927150704 was reserved by scripts/new-migration.mjs; the guarded install on
+-- 2026-09-27 recorded it as 20260927153827, and the file carries the applied version.
 --
 -- WHAT THIS CHANGES, AND WHY:
 --
@@ -55,7 +55,7 @@
 -- resolve to the same function through the two defaults, and behave exactly
 -- as before.
 --
--- Changelog: docs/changelog/2026-09-27-a-never-started-permit-does-not-hold-the-stopped-bank.md
+-- Changelog: docs/changelog/a-never-started-permit-does-not-hold-the-stopped-bank-2026-09-27.md
 --
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten

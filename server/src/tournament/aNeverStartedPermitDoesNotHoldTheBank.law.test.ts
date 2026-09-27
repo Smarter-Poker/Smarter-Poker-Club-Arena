@@ -54,7 +54,7 @@ vi.mock('../services/supabase/client.js', () => ({
         data: { ok: false, refused, table_id: args.p_table_id, ...extra },
         error: null,
       });
-      /* The database half, reduced to its rules (20260927150704). */
+      /* The database half, reduced to its rules (20260927153827). */
       let released: string | null = null;
       if (args.p_unstarted_permit_id !== undefined) {
         const permit = db.permits.get(args.p_unstarted_permit_id);
@@ -307,7 +307,7 @@ describe('the wiring', () => {
 
   it('the database releases only a reserved permit of a dead generation with no start witness, in the park transaction', () => {
     const migration = read(
-      '../../../supabase/migrations/20260927150704_a_never_started_permit_does_not_hold_the_stopped_bank.sql'
+      '../../../supabase/migrations/20260927153827_a_never_started_permit_does_not_hold_the_stopped_bank.sql'
     );
     for (const guard of [
       'p_unstarted_permit_id uuid DEFAULT NULL',

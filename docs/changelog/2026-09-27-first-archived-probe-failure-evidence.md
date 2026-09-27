@@ -59,3 +59,17 @@ The expected error precedes the reconciliation insert in the pinned owner.
 That relation is not added to the finite fixture or claimed snapshotted. The
 unavailable original fee terms and the original bank mismatch remain unresolved.
 No installed function, migration, fee disposition or isolation policy changes.
+
+## Lease timestamp observation correction
+
+Hosted run 36325576281 refused the operation-authority check before cancellation.
+Its original error omitted the individual values, so the exact failing field is
+not known. Source inspection found an invalid equality: the captured lease owner
+calls clock_timestamp() separately for acquisition and heartbeat, while the probe
+required identical timestamps. The observer now requires both timestamps, an
+acquisition no earlier than this transaction, and a heartbeat between acquisition
+and the actual inside observation. Full lease identity and replay equality remain
+required. Authority failures now retain the original admission, lease and time
+bounds in DETAIL. The installed lease owner is unchanged. Native controls evaluate
+the exact maintained predicate against equal, distinct, missing, reversed, old and
+future timestamps. Qualification remains pending on this corrected candidate.

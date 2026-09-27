@@ -49,6 +49,13 @@ def valid():
     result['bank_fault']={'kind':'isolated-derived-own-bank-mutation','production_sql':False,'base_probe_sha256':P.PROBE_SHA,
         'derived_source':derived,'derived_sha256':P.hashlib.sha256(derived.encode()).hexdigest(),'before':copy.deepcopy(before),'after':copy.deepcopy(before),
         'original_output':fault_raw,'detail':diagnostic,'rollback_output':'true','transaction_status':{'transaction_id':'10001','status':'aborted'}}
+    time_sql=P.lease_time_control_sql(source)
+    result['lease_time_controls']={'base_probe_sha256':P.PROBE_SHA,'derived_sql':time_sql,
+        'derived_sha256':P.hashlib.sha256(time_sql.encode()).hexdigest(),'observed':[
+          {'case':name,'refused':refused,'expected_refusal':refused,'old_equality_refused':old}
+          for name,refused,old in [('equal',False,False),('separate_clock_calls',False,True),
+          ('missing_acquired',True,True),('missing_heartbeat',True,True),('reversed',True,True),
+          ('before_transaction',True,True),('after_observation',True,True)]]}
     result['fee_protocol']=[]
     key=int(P.uuid.UUID(result['execution']))%2147483646+1
     for kind in ('lock_restoration','unexpected_success','wrong_error'):
@@ -164,6 +171,14 @@ class FirstArchivedProductionProbeTests(unittest.TestCase):
         for i,change in enumerate(changes):
             d=valid();change(d)
             with self.subTest(i=i),self.assertRaises((ValueError,KeyError)):P.validate_evidence(d,d['execution'],A)
+
+    def test_lease_timestamp_controls_require_exact_native_results(self):
+        c=valid()['lease_time_controls'];P.validate_lease_time_controls(c)
+        for change in [lambda d:d['observed'].pop(),lambda d:d['observed'][1].update(refused=True),
+            lambda d:d['observed'][2].update(refused=False),lambda d:d['observed'][0].update(refused=0),
+            lambda d:d.update(derived_sql='SELECT true;'),lambda d:d.update(base_probe_sha256='wrong')]:
+            altered=copy.deepcopy(c);change(altered)
+            with self.assertRaises(ValueError):P.validate_lease_time_controls(altered)
 
     def test_injection_is_only_after_canonical_call_and_role_restoration(self):
         source=(P.ROOT/P.PROBE).read_text();derived=P.bank_fault_source(source)

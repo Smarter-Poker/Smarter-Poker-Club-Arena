@@ -21,7 +21,7 @@ require=C.require
 
 
 PROBE='scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql'
-PROBE_SHA='cf78dfb99f43fd0d31ada89dc2ee52a754b23003ba5c13add94ab629a8920235'
+PROBE_SHA='14d09569dd366fbeff1ca4c87bffc58014f36ed382b1c04dab15676f57bfc732'
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 
 
@@ -251,6 +251,39 @@ def run_protocol(args,e,worker,observer,snapshot,source,R,A,deadline):
     validate_protocol(e['fee_protocol'],args.execution,A,R,e['backend_pids'],e['bank_fault']['after']['rows'])
 
 
+def lease_time_control_sql(source):
+    parts=re.findall(r"-- BEGIN LEASE TIME REFUSAL\n(.*?)-- END LEASE TIME REFUSAL",source,re.S)
+    require(len(parts)==1,'lease time predicate source missing/duplicated')
+    predicate=parts[0].strip().replace('transaction_timestamp()', 'started_at')
+    return """WITH bounds AS (SELECT '2026-09-27T12:00:00Z'::timestamptz started_at,
+      '2026-09-27T12:00:01Z'::timestamptz inside_observed_at),
+    cases(ord,name,acquired,heartbeat,expected_refusal) AS (VALUES
+      (1,'equal',0,0,false),(2,'separate_clock_calls',1,2,false),
+      (3,'missing_acquired',NULL,2,true),(4,'missing_heartbeat',1,NULL,true),
+      (5,'reversed',2,1,true),(6,'before_transaction',-1,2,true),
+      (7,'after_observation',1,1000001,true)),
+    actual AS (SELECT *,jsonb_build_object('acquired_at',started_at+acquired*interval '1 microsecond',
+      'heartbeat_at',started_at+heartbeat*interval '1 microsecond') lease FROM cases CROSS JOIN bounds)
+    SELECT jsonb_agg(jsonb_build_object('case',name,'refused',("""+predicate+"""),
+      'expected_refusal',expected_refusal,'old_equality_refused',
+      lease->'heartbeat_at' IS DISTINCT FROM lease->'acquired_at') ORDER BY ord) FROM actual;"""
+
+
+def validate_lease_time_controls(c):
+    expected=[('equal',False,False),('separate_clock_calls',False,True),
+      ('missing_acquired',True,True),('missing_heartbeat',True,True),
+      ('reversed',True,True),('before_transaction',True,True),('after_observation',True,True)]
+    require(isinstance(c,dict) and set(c)=={'base_probe_sha256','derived_sql','derived_sha256','observed'},'lease controls inventory differs')
+    sql=lease_time_control_sql((ROOT/PROBE).read_text())
+    require(c['base_probe_sha256']==PROBE_SHA and c['derived_sql']==sql
+      and c['derived_sha256']==hashlib.sha256(sql.encode()).hexdigest(),'lease control source differs')
+    require(isinstance(c['observed'],list) and len(c['observed'])==len(expected),'lease controls missing')
+    for row,(name,refused,old_refused) in zip(c['observed'],expected):
+        require(set(row)=={'case','refused','expected_refusal','old_equality_refused'} and row['case']==name
+          and row['refused'] is refused and row['expected_refusal'] is refused
+          and row['old_equality_refused'] is old_refused,'lease timestamp regression differs')
+
+
 def run(args,e,sessions,deadline,R,A):
     database='qual_spin_expiry_'+args.execution.replace('-','')
     def new(name):
@@ -268,6 +301,10 @@ def run(args,e,sessions,deadline,R,A):
     e['backend_pids']={n:c.pid for n,c in sessions};e['before']=observer.json(snapshot)
     require(not e['before']['rows']['smarter_private.spin_archived_first_admission'],'probe requires unadmitted source')
     source=(ROOT/PROBE).read_bytes();require(hashlib.sha256(source).hexdigest()==PROBE_SHA,'exact probe source changed')
+    time_sql=lease_time_control_sql(source.decode())
+    e['lease_time_controls']={'base_probe_sha256':PROBE_SHA,'derived_sql':time_sql,
+        'derived_sha256':hashlib.sha256(time_sql.encode()).hexdigest(),'observed':observer.json(time_sql)}
+    validate_lease_time_controls(e['lease_time_controls'])
     e['probe_sha256']=PROBE_SHA;e['original_probe_output']=worker.command(source.decode())
     e['detail']=parse_abort(e['original_probe_output'],R,A)
     worker.no_errors(worker.command('ROLLBACK;'))
@@ -302,6 +339,7 @@ def validate_evidence(document,execution,archive):
     require(d['probe_sha256']==PROBE_SHA,'probe bytes differ')
     require(d['environment']['max_locks']==1024 and d['environment']['max_connections']==8,'probe observed capacity differs')
     R=C.load('probe_retained_json',ROOT/C.SESSION)
+    validate_lease_time_controls(d['lease_time_controls'])
     detail=parse_abort(d['original_probe_output'],R,archive)
     require(detail==d['detail'],'probe structured detail changed')
     require(d['probe_transaction_status']=={'transaction_id':detail['fee_capture_diagnostic']['transaction_id'],'status':'aborted'},'probe xid not durably aborted')

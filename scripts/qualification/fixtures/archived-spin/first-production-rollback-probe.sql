@@ -26,7 +26,7 @@ DECLARE
  before_state jsonb; inside_state jsonb; response jsonb; replay jsonb;
  accounts jsonb; expected_accounts jsonb; row_before jsonb; row_after jsonb;
  terminal jsonb; escrow jsonb; custody jsonb; accounting jsonb; admission jsonb; lease jsonb;
- expected_amount numeric; added jsonb;
+ expected_amount numeric; added jsonb; inside_observed_at timestamptz;
  fee_diagnostic jsonb; fee_state text; fee_message text; fee_context text;
  fee_capture_before jsonb; fee_capture_after jsonb; fee_owner_md5 text;
 BEGIN
@@ -63,7 +63,7 @@ BEGIN
    OR EXISTS(SELECT 1 FROM public.hand_atomic_commits WHERE table_id='6eaddeaf-1511-4265-bb38-37811ae82ad9'::uuid) THEN
    RAISE EXCEPTION 'PROBE_HISTORY_AUTHORITY_CHANGED'; END IF;
   IF phase=0 THEN before_state:=snap;
-  ELSIF phase=1 THEN inside_state:=snap;
+  ELSIF phase=1 THEN inside_state:=snap; inside_observed_at:=clock_timestamp();
   ELSE
    IF snap IS DISTINCT FROM inside_state OR replay IS DISTINCT FROM response THEN
     RAISE EXCEPTION 'PROBE_SAME_OPERATION_REPLAY_CHANGED'; END IF;
@@ -150,8 +150,19 @@ BEGIN
  OR lease->>'instance_id' IS DISTINCT FROM admission->>'owner_instance'
  OR lease->>'engine_version' IS DISTINCT FROM 'archived-database-projection-v1'
  OR (lease->>'protocol_version')::integer IS DISTINCT FROM 2
- OR lease->>'acquired_at' IS NULL OR lease->'heartbeat_at' IS DISTINCT FROM lease->'acquired_at' THEN
-  RAISE EXCEPTION 'PROBE_OPERATION_AUTHORITY_CHANGED'; END IF;
+ OR (
+  -- BEGIN LEASE TIME REFUSAL
+  lease->>'acquired_at' IS NULL OR lease->>'heartbeat_at' IS NULL
+  OR (lease->>'acquired_at')::timestamptz < transaction_timestamp()
+  OR (lease->>'heartbeat_at')::timestamptz < (lease->>'acquired_at')::timestamptz
+  OR (lease->>'heartbeat_at')::timestamptz > inside_observed_at
+  -- END LEASE TIME REFUSAL
+ ) THEN
+  RAISE EXCEPTION USING MESSAGE='PROBE_OPERATION_AUTHORITY_CHANGED',
+   DETAIL=jsonb_build_object('operation',operation,'event',event,'admission',admission,'lease',lease,
+    'transaction_id',txid_current()::text,'transaction_started_at',transaction_timestamp(),
+    'inside_observed_at',inside_observed_at,'production_settlement_complete',false)::text;
+ END IF;
  terminal:=inside_state->'public.tournament_terminal_settlements'->0;
  custody:=inside_state->'public.accounting_tournament_fee_custody_obligations'->0;
  escrow:=inside_state->'public.tournament_escrow'->0;

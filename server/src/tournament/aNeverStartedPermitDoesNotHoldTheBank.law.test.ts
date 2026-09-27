@@ -25,7 +25,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const db = vi.hoisted(() => ({
   rows: new Map<string, any>(),
-  permits: new Map<string, { state: string; hand_number: number }>(),
+  permits: new Map<string, { state: string; hand_number: number; generation: string }>(),
   liveGenerations: new Set<string>(),
   startWitnesses: new Set<string>(),
   echoRelease: true,
@@ -72,8 +72,14 @@ vi.mock('../services/supabase/client.js', () => ({
           released = args.p_unstarted_permit_id;
         }
       }
+      // #5409 (20260927142925): a reserved permit of the caller's own generation
+      // is not evidence of a later hand; anything else above the custody refuses.
       for (const [id, permit] of db.permits)
-        if (permit.hand_number > args.p_hand_number && permit.state !== 'never_started')
+        if (
+          permit.hand_number > args.p_hand_number &&
+          permit.state !== 'never_started' &&
+          !(permit.state === 'reserved' && permit.generation === args.p_generation)
+        )
           return refuse('hand_after_custody', { evidence: 'f06_hand_permits', permit: id });
       db.rows.set(args.p_table_id, { hand: args.p_hand_number, players: args.p_players });
       return {
@@ -131,7 +137,7 @@ async function reservedPermit(): Promise<F06HandPermit> {
     () => true
   );
   await permit.reserve();
-  db.permits.set(permitId, { state: 'reserved', hand_number: 13 });
+  db.permits.set(permitId, { state: 'reserved', hand_number: 13, generation });
   return permit;
 }
 
@@ -177,15 +183,18 @@ beforeEach(() => {
 });
 
 describe('the production wedge, reproduced', () => {
-  it('without the attestation the reserved permit holds the bank, the stop and the certificate', async () => {
+  it('without the attestation the reserved permit stays open and the preparation stays unresolved', async () => {
     const e = await terminalEngineHolding(await reservedPermit());
     // The engine of every release before this one sends eight arguments.
     e.unstartedPermitAttestation = () => null;
     await e.persistStoppedTimeBankCustody();
     expect(parkCall()!.args).not.toHaveProperty('p_unstarted_permit_id');
-    expect(e.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    // #5409 lets the bank land over the engine's own reserved permit ...
+    expect(e.hasUnretiredStoppedTimeBankCustody()).toBe(false);
+    // ... but the permit is still open for the successor to meet, and this
+    // engine still reports an unresolved preparation to the restart census.
+    expect(db.permits.get(permitId)!.state).toBe('reserved');
     expect(e.hasUnresolvedF06Preparation()).toBe(true);
-    expect(e.maintenanceDurabilityReason()).toBe('stopped_bank_custody_unwritten');
   });
 });
 
@@ -208,15 +217,15 @@ describe('a never-started permit is attested and released with the park', () => 
     expect(e.maintenanceDurabilityReason() ?? '').not.toMatch(/^stopped_bank_custody_/);
   });
 
-  it('a permit whose start ran is never attested, and the park keeps refusing over it', async () => {
+  it('a permit whose start ran is never attested and never closed by the park', async () => {
     const permit = await reservedPermit();
     permit.start(() => {});
     const e = await terminalEngineHolding(permit);
     await e.persistStoppedTimeBankCustody();
     expect(parkCall()!.args).not.toHaveProperty('p_unstarted_permit_id');
+    // The hand that may have happened is left for the abandoned-generation
+    // door to decide from rows; this path never voids it.
     expect(db.permits.get(permitId)!.state).toBe('reserved');
-    expect(db.rows.has(table)).toBe(false);
-    expect(e.hasUnretiredStoppedTimeBankCustody()).toBe(true);
     expect(e.f06CurrentPermit).toBe(permit);
   });
 
@@ -229,7 +238,8 @@ describe('a never-started permit is attested and released with the park', () => 
     const e = await terminalEngineHolding(permit);
     await e.persistStoppedTimeBankCustody();
     expect(parkCall()!.args).not.toHaveProperty('p_unstarted_permit_id');
-    expect(e.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    expect(db.permits.get(permitId)!.state).toBe('reserved');
+    expect(e.hasUnresolvedF06Preparation()).toBe(true);
   });
 
   it('the database refuses a generation that still holds the lease, and nothing is acknowledged', async () => {
@@ -322,6 +332,7 @@ describe('the wiring', () => {
     // The ordinary refusals are all still there, verbatim.
     for (const guard of [
       "'newer_park'",
+      'AND h.generation = p_generation',
       "'mixed_transfer_recorded'",
       "'mixed_custody_adopted'",
       "'custody_transfer_busy'",

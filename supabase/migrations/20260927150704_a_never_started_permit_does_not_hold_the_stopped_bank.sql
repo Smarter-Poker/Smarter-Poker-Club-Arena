@@ -46,8 +46,9 @@
 --   * records the same receipt that door records
 --     (smarter_private.f06_prepared_hand_cancellations) and closes the permit
 --     `never_started` with evidence_id = permit_id, as that door does.
--- Then the ordinary checks run unchanged, and the bank is written only if
--- they pass. A refusal writes nothing at all (one transaction). Every
+-- Then the ordinary checks run unchanged (including #5409's exemption of a
+-- reserved permit of the caller's own generation, 20260927142925), and the
+-- bank is written only if they pass. A refusal writes nothing at all (one transaction). Every
 -- existing refusal, the lock wait, the ACL and the security posture are
 -- unchanged. Callers that pass eight arguments (the engine on every release
 -- before this one, and smarter_private.fn_fenced_manager_stopped_custody_park)
@@ -75,8 +76,9 @@ BEGIN
     RAISE EXCEPTION 'UNSTARTED_PERMIT_PREIMAGE: fn_park_stopped_time_bank_custody(8) is missing';
   END IF;
   IF position('v_attempt >= 40' IN p.prosrc) = 0
-     OR position('hand_after_custody' IN p.prosrc) = 0 THEN
-    RAISE EXCEPTION 'UNSTARTED_PERMIT_PREIMAGE: the park is not the reviewed image (20260926145903)';
+     OR position('hand_after_custody' IN p.prosrc) = 0
+     OR position('AND h.generation = p_generation' IN p.prosrc) = 0 THEN
+    RAISE EXCEPTION 'UNSTARTED_PERMIT_PREIMAGE: the park is not the reviewed image (20260926145903 + 20260927142925)';
   END IF;
   IF to_regprocedure('public.fn_park_stopped_time_bank_custody(uuid,uuid,uuid,bigint,text,jsonb,jsonb,text,uuid,bigint)') IS NOT NULL THEN
     RAISE EXCEPTION 'UNSTARTED_PERMIT_PREIMAGE: the ten-argument park already exists';
@@ -318,9 +320,20 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'refused', 'hand_after_custody',
                               'evidence', 'hand_state_snapshots', 'table_id', p_table_id);
   END IF;
+  /* A STOPPED ENGINE'S OWN RESERVED HAND IS NOT A HAND AFTER ITS CUSTODY
+     (2026-09-27, 20260927142925, #5409). A reserved permit of the caller's
+     own generation is not evidence of a later hand; a reserved permit of
+     ANOTHER generation, and every accepted or aborted_unsettled permit,
+     still refuses. Unchanged here. The attestation above goes one step
+     further for the one permit the engine names: it is closed
+     never_started with a receipt, so the successor never meets it as
+     hand_permit_unresolved and this engine's preparation is resolved. */
   IF EXISTS (SELECT 1 FROM smarter_private.f06_hand_permits h
               WHERE h.table_id = p_table_id AND h.hand_number > p_hand_number
-                AND h.state <> 'never_started') THEN
+                AND h.state <> 'never_started'
+                AND NOT (h.state = 'reserved'
+                         AND p_generation IS NOT NULL
+                         AND h.generation = p_generation)) THEN
     RETURN jsonb_build_object('ok', false, 'refused', 'hand_after_custody',
                               'evidence', 'f06_hand_permits', 'table_id', p_table_id);
   END IF;
@@ -401,6 +414,7 @@ BEGIN
      OR position('unstarted_permit_generation_live' IN p.prosrc) = 0
      OR position('unstarted_permit_start_witness' IN p.prosrc) = 0
      OR position('f06_prepared_hand_cancellations' IN p.prosrc) = 0
+     OR position('AND h.generation = p_generation' IN p.prosrc) = 0
      OR position('fn_engine_lease_stale_seconds' IN p.prosrc) = 0 THEN
     RAISE EXCEPTION 'UNSTARTED_PERMIT_POSTIMAGE: a guard is missing from the body';
   END IF;

@@ -45,10 +45,24 @@ export function DeviceCheck({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [smooth, setSmooth] = useState<{ fps: number; slowShare: number } | null>(null);
   const [measuring, setMeasuring] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [fallback, setFallback] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const raf = useRef(0);
+  const refresh = useRef(0);
   const graphics = useMemo(() => (isOpen ? probeGraphics() : null), [isOpen]);
-  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(raf.current);
+      clearTimeout(refresh.current);
+    },
+    []
+  );
+  // Closed mid-measure: stop sampling the display at once.
+  useEffect(() => {
+    if (isOpen) return;
+    cancelAnimationFrame(raf.current);
+    setMeasuring(false);
+  }, [isOpen]);
 
   const soundOn = soundService.isEnabled();
   const session = currentAudioSession();
@@ -62,6 +76,7 @@ export function DeviceCheck({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       ['Device', deviceLabel()],
       ['Vibration', vibrationSummary()],
       ['Vibrations Setting', isVibrationPreferred() ? 'On' : 'Off'],
+      ['Device Accepted Buzz', buzzAnswer === null ? 'Not Tried' : buzzAnswer ? 'Yes' : 'No'],
       [
         'Test Buzz',
         felt === null
@@ -107,7 +122,19 @@ export function DeviceCheck({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             : 'Not Measured',
       ],
     ];
-  }, [felt, buzzAsked, heard, soundAsked, soundOn, session, graphics, smooth, measuring, tick]);
+  }, [
+    felt,
+    buzzAsked,
+    buzzAnswer,
+    heard,
+    soundAsked,
+    soundOn,
+    session,
+    graphics,
+    smooth,
+    measuring,
+    tick,
+  ]);
 
   const testBuzz = useCallback(() => {
     // Inside the tap: on an iPhone browser the finger on this button's switch is the buzz.
@@ -125,9 +152,17 @@ export function DeviceCheck({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setSoundNote('Sounds Are Off In Settings. Turn Them On To Test.');
       return;
     }
+    const engine = soundService.audioState();
+    if (engine === 'unavailable' || engine === 'closed') {
+      setSoundNote('This Browser Has No Working Sound Engine, So Nothing Can Play.');
+      return;
+    }
     setSoundNote(null);
     soundService.playWin();
     setTick((t) => t + 1);
+    // The engine resumes asynchronously inside this tap: read it again shortly.
+    clearTimeout(refresh.current);
+    refresh.current = window.setTimeout(() => setTick((t) => t + 1), 400);
   }, []);
 
   const measure = useCallback(() => {
@@ -151,8 +186,12 @@ export function DeviceCheck({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     try {
       await navigator.clipboard.writeText(text);
       setCopied('Report Copied. Paste It Anywhere To Share It.');
+      setFallback(null);
     } catch {
-      setCopied(text);
+      // Copying was refused (no clipboard, or a browser that blocks it): the
+      // report goes in a box the player can select and copy by hand.
+      setCopied('Copy Was Blocked. The Report Is In The Box Below To Select And Copy.');
+      setFallback(text);
     }
   }, [rows]);
 
@@ -225,6 +264,16 @@ export function DeviceCheck({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           <p className={styles.note} role="status">
             {copied}
           </p>
+        )}
+        {fallback && (
+          <textarea
+            className={styles.fallback}
+            readOnly
+            value={fallback}
+            aria-label="Device Check Report"
+            rows={8}
+            onFocus={(e) => e.currentTarget.select()}
+          />
         )}
       </div>
     </Modal>

@@ -90,10 +90,14 @@ describe('private journal archive admission and read-only selection', () => {
       directory: join(configurationDirectory, 'archive'),
       maxBytes: 4096,
       maxSegments: 2,
+      hold: {
+        fromMs: Date.parse('2026-09-18T21:56:28Z'),
+        untilMs: Date.parse('2026-09-25T19:34:06Z'),
+      },
     });
     expect(() =>
       runtimeHorseJournalArchiveOptions(configurationDirectory, {
-        HORSE_DECISION_JOURNAL_ARCHIVE_MAX_SEGMENTS: '500001',
+        HORSE_DECISION_JOURNAL_ARCHIVE_MAX_SEGMENTS: '2000001',
       })
     ).toThrow();
     expect(() => runtimeHorseJournalArchiveOptions('relative/journal', {})).toThrow();

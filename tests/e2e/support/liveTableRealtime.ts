@@ -503,20 +503,49 @@ export async function liveTablePresentationEvidence(
 }
 
 /**
- * The banner is intentionally delayed by the app's 1.2-second grace period.
- * Seeing it at all inside this guard therefore means the grace was exhausted;
- * do not wait for it to disappear and call the connection healthy afterward.
+ * A cold deep link has no retained table state. Its initial Connecting status
+ * is required after the ordinary grace; admission and the first snapshot still
+ * have the caller's unchanged navigation deadline. Every other visible status
+ * is a refusal or lost connection and fails even during initial readiness.
  */
-export async function whileConnectionBannerStaysHidden<T>(
+export function whileInitialTableConnects<T>(
   page: Page,
   operation: Promise<T>,
   phase: string
 ): Promise<T> {
+  return monitorTableConnection(page, operation, phase, true);
+}
+
+/**
+ * The banner is intentionally delayed by the app's 1.2-second grace period.
+ * Seeing it at all inside this guard therefore means the grace was exhausted;
+ * do not wait for it to disappear and call the connection healthy afterward.
+ */
+export function whileConnectionBannerStaysHidden<T>(
+  page: Page,
+  operation: Promise<T>,
+  phase: string
+): Promise<T> {
+  return monitorTableConnection(page, operation, phase, false);
+}
+
+async function monitorTableConnection<T>(
+  page: Page,
+  operation: Promise<T>,
+  phase: string,
+  initialReadiness: boolean
+): Promise<T> {
   const banner = page.getByTestId('table-connection-banner');
+  async function unexpectedBanner(): Promise<boolean> {
+    if (!(await banner.isVisible().catch(() => false))) return false;
+    if (!initialReadiness) return true;
+    const classes = (await banner.getAttribute('class'))?.split(/\s+/) ?? [];
+    return !classes.includes('table-conn-banner--connecting');
+  }
   let stopped = false;
   const monitor = (async (): Promise<never> => {
     while (!stopped) {
-      if (await banner.isVisible().catch(() => false)) {
+      if (await unexpectedBanner()) {
         const text = (await banner.textContent().catch(() => null))?.trim() || 'connection banner';
         throw new Error(`${phase}: ${text} became visible after its grace period`);
       }
@@ -529,7 +558,7 @@ export async function whileConnectionBannerStaysHidden<T>(
     const result = await Promise.race([operation, monitor]);
     // Close the final 100ms polling interval: an operation and the banner can
     // settle in the same turn, with Promise.race choosing the operation first.
-    if (await banner.isVisible().catch(() => false)) {
+    if (await unexpectedBanner()) {
       const text = (await banner.textContent().catch(() => null))?.trim() || 'connection banner';
       throw new Error(`${phase}: ${text} became visible as the guarded operation completed`);
     }

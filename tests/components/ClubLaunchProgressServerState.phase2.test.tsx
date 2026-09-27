@@ -205,16 +205,22 @@ describe('writing skips', () => {
     await waitFor(() => expect(result.current.completedAt).toBeNull());
 
     act(() => result.current.skip('plo'));
-    expect(result.current.skippedIds).toEqual(['plo']);
-    await waitFor(() => expect(store.skipped).toEqual(['plo']));
+    expect(result.current.skippedIds).toEqual([]);
+    await waitFor(() => {
+      expect(store.skipped).toEqual(['plo']);
+      expect(result.current.skippedIds).toEqual(['plo']);
+    });
     expect(calls('fn_club_opening_checklist_skip').at(-1)).toEqual([
       'fn_club_opening_checklist_skip',
       { p_club_id: 'club-a', p_task_id: 'plo', p_skipped: true },
     ]);
 
     act(() => result.current.undoSkip('plo'));
-    expect(result.current.skippedIds).toEqual([]);
-    await waitFor(() => expect(store.skipped).toEqual([]));
+    expect(result.current.skippedIds).toEqual(['plo']);
+    await waitFor(() => {
+      expect(store.skipped).toEqual([]);
+      expect(result.current.skippedIds).toEqual([]);
+    });
     expect(calls('fn_club_opening_checklist_skip').at(-1)?.[1]).toEqual({
       p_club_id: 'club-a',
       p_task_id: 'plo',
@@ -223,7 +229,30 @@ describe('writing skips', () => {
     expect(localStorage.getItem(KEY)).toBeNull();
   });
 
-  it('keeps today behaviour when a server write fails: the step resolves and this browser keeps it', async () => {
+  it('does not publish a final skip until its delayed server write succeeds', async () => {
+    let finishSkip!: (reply: Reply) => void;
+    server();
+    const original = h.rpc.getMockImplementation();
+    h.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === 'fn_club_opening_checklist_skip') {
+        return new Promise<Reply>((resolve) => {
+          finishSkip = resolve;
+        });
+      }
+      return original?.(name, args);
+    });
+    const { result } = mountServer();
+    await waitFor(() => expect(result.current.completedAt).toBeNull());
+
+    act(() => result.current.skip('spin'));
+    expect(result.current.skippedIds).toEqual([]);
+    expect(calls('fn_club_opening_checklist_complete')).toEqual([]);
+
+    await act(async () => finishSkip(state(['spin'])));
+    expect(result.current.skippedIds).toEqual(['spin']);
+  });
+
+  it('keeps a rejected final skip visible and saves it only for the next-load migration', async () => {
     const { replies } = server();
     const { result } = mountServer();
     await waitFor(() => expect(result.current.completedAt).toBeNull());
@@ -237,8 +266,38 @@ describe('writing skips', () => {
         { taskId: 'spin', skipped: true }
       )
     );
-    expect(result.current.skippedIds).toEqual(['spin']);
+    expect(result.current.skippedIds).toEqual([]);
     expect(JSON.parse(localStorage.getItem(KEY) || '[]')).toEqual(['spin']);
+  });
+
+  it('merges two concurrent rejected skips into the next-load migration copy', async () => {
+    const finishSkips: Array<(reply: Reply) => void> = [];
+    server();
+    const original = h.rpc.getMockImplementation();
+    h.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === 'fn_club_opening_checklist_skip') {
+        return new Promise<Reply>((resolve) => finishSkips.push(resolve));
+      }
+      return original?.(name, args);
+    });
+    const { result } = mountServer();
+    await waitFor(() => expect(result.current.completedAt).toBeNull());
+
+    act(() => {
+      result.current.skip('identity');
+      result.current.skip('spin');
+    });
+    expect(finishSkips).toHaveLength(2);
+    expect(result.current.skippedIds).toEqual([]);
+
+    await act(async () => {
+      finishSkips[0](failure());
+      finishSkips[1](failure());
+    });
+
+    expect(result.current.skippedIds).toEqual([]);
+    expect(JSON.parse(localStorage.getItem(KEY) || '[]')).toEqual(['identity', 'spin']);
+    expect(h.reportError).toHaveBeenCalledTimes(2);
   });
 
   it('an undo that lands also clears the step from a browser copy still waiting to move', async () => {

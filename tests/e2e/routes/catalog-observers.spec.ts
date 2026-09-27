@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { waitForGameCreationAuthority } from '../support/gameCreationReadiness';
 
 const CLUB_ID = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 
@@ -72,7 +73,14 @@ test.describe('Visible catalog production reads', () => {
     const match = (url: URL) =>
       url.searchParams.get('club_id') === `eq.${CLUB_ID}` &&
       url.searchParams.get('is_deleted') === 'eq.false';
-    await page.goto(`clubs/${CLUB_ID}/create-table/nlh`, { waitUntil: 'domcontentloaded' });
+    // Wait for the same caller-bound read that opens GameCreationGuard before
+    // starting the unchanged control assertion. The overall 150s test and 90s
+    // read budgets stay fixed; a completed denial or failed read is not ready.
+    const permission = waitForGameCreationAuthority(page, CLUB_ID, 90_000);
+    await Promise.all([
+      permission,
+      page.goto(`clubs/${CLUB_ID}/create-table/nlh`, { waitUntil: 'domcontentloaded' }),
+    ]);
     await expect(page.getByRole('button', { name: 'MTT', exact: true })).toBeVisible();
     const firstRead = read(page, 'table_templates', match);
     await page.getByRole('button', { name: 'MTT', exact: true }).click();

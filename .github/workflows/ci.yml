@@ -1384,9 +1384,29 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
 
+      - name: Backed payout discovery preserves every conservation term
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-backed-payout-scan-postgres.py
+
+      - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-certification-player-index-postgres.py
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
+
+      - name: Player search enforces global discovery and private account boundaries
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-player-search-privacy-postgres.py
+
+      - name: Satellite conservation keeps exact results through an online source index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-audit-index-postgres.py
+
+      - name: Satellite pool-transfer reads keep exact financial results
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-satellite-ledger-audit-index-postgres.py
 
       - name: Achievement and rate history reads enforce account and finance scope
         if: matrix.shard == 4
@@ -1400,9 +1420,20 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-cumulative-reads.py
 
+      - name: Chip store coverage preserves results with one ledger read
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-chip-store-coverage.py
+
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
+
+      - name: Stranded player reads preserve every event and latest stack
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-stranded-player-read-postgres.py
+      - name: Settlement conservation preserves full results through a narrow online index
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
 
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1

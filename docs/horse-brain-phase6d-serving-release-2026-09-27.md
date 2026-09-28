@@ -311,3 +311,55 @@ join because a shard had stopped capturing outright.
   (the 6C store-identity lane) before they can be replayed; unchanged limitation from
   2026-09-27.
 - `DECIDE_DEEP` decisions (3 of 137) are not yet supported by the standalone replay tool.
+
+## Correction 2026-09-28: two conclusions above were wrong, and the G5, G6 and G8 statuses change
+
+Written 2026-09-28 at about 19:50Z, against the same release `763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f` that the section above describes (still serving at the time of this read: engine `/health` `releaseSha` 763e4cec, `horseJournal.mode` ready, 2 of 2 publishers). The section above is kept as written; this section supersedes its statements in the places named here. Evidence: `docs/evidence/phase6d/incomplete-chains-diagnosis-2026-09-28-763e4cec.json` and `docs/evidence/phase6d/phase6c-replay-serving-763e4cec-stores-2026-09-28T19-43-08-140Z.{md,json}`. Aggregate only; no hand key, player or table id, card or record content.
+
+### C1. The 75 incomplete chains were shed by the producers' queue, not by the archive's byte cap
+
+The section above (sections 2, 4 and 6) attributed all 75 incomplete chains to "the archive at its configured byte cap ... not a capture-path or writer defect". That is wrong, and the first sentence of its own evidence already contradicts it: both producers shed within a tenth of a second of the window opening, and a ring that is full does not refuse a new record, it retires an old one.
+
+- The archive is a ring. Reaching `maxBytes` is its steady state: the oldest published segment outside the evidence hold is retired to make room, and nothing recently captured is lost by that (`heldSegments` 237,613, 1,485,549,598 of 4,294,967,296 hold-budget bytes, `holdTrimmedSegments` 0). The chains the population admitted were all found; what is missing from the 75 was never archived, the finding the 2026-09-27 diagnosis had already made for `6b6eabb1`.
+- The records that were not archived are the records the producers refused. Over the declared hour (`collected_at` 14:12:00Z to 15:12:00Z, `source_release` 763e4cec, 104 flush receipts) the two decision-shard publishers counted `phase15_journal_queue_capacity` 142,745 against `phase15_journal_enqueued` 362,935: 28.2% of the 505,680 records offered were refused at the queue. The population's own per-producer sequence continuity counts 87,288 and 52,641, together 139,929, not archived in the same hour, within 2.0% of the refusals (the difference is the receipts' flush boundary against the sequence range). `phase15_journal_lock_retry` was 1,876 and `phase15_journal_capture_unavailable` 580 (14:12:29Z to 14:24:57Z), the same contention at smaller size.
+- Cause: every decision-shard writer shared one SQLite archive catalog, so the fleet's batches serialised on one write lock and the 64-record / 4 MiB queue in front of each writer filled and refused. Measured locally, one shared catalog managed 1,368 records per second with a 252 ms p95 batch; one catalog per shard managed 2,204 records per second with 18 ms. The fix is PR #5541 (one archive catalog per shard writer, queue bound 4,096 records / 16 MiB, legacy-bootstrap race closed). It is not on 763e4cec. The section above's "raising `maxBytes` ... is an operational decision" was the wrong remedy for a defect that raising `maxBytes` would not have touched.
+
+The same journal is what 6A/6D (this document) and the 6B route proof read, so the 75 incomplete chains here and the "retained journal records only" caveat on the 6B counts have one cause. It is a Horse Brain capture defect, and 0 of the 137 chains diverged in the replay below because the defect loses evidence, it does not change decisions.
+
+### C2. The 28 chart-store decisions reproduce; only DECIDE_DEEP remains a named exclusion
+
+The section above recorded 28 decisions as `reference_unavailable:chart_store` and called them "unavailable external input" that "need the chart store loaded offline with a verified identity ... before they can be replayed". That was already false when it was written: #5490 and #5513, both inside 763e4cec, load the stores offline by journaled identity (the protocol's sections 11 and 12), and the 763e4cec records carry `solverStoreIdentity`. The replay was run without `--store-snapshot`, so the refusal was the tool being given no store, not an input that could not be had.
+
+Rerun, 2026-09-28T19:43Z, exactly as protocol sections 11 and 12:
+
+- Store rows exported at 19:38:44Z to 19:39:26Z inside `club-arena-engine` by `server/scripts/phase6c-store-export-rows.mjs` (the Mac's database keys are stale), read-only, then passed through the loaders' completeness checks and the production store modules by `phase6c-store-snapshot.mjs --from-rows`: chart store 240 entries `2c8a2d9f448e5dd22f4433faeb40f70ac6a111d6c7e7bacae89e4fbf106a5dbf` revision 2026-07-19T15:11:48.555537Z, postflop store 7747 entries `dff78313b437357d3657fe256fc3b3b82cd4740afffe9125e530dfcc79f57c1d` revision 2026-09-03T18:18:13.594197Z. Both are the identities section 11.1 of the replay protocol pinned and section 12.1 found journaled by d37a7de8, so the stores did not change between then and the read.
+- The 137 admitted decisions were re-exported by journaled `eventId` with `server/scripts/phase6d-chain-export.mjs` against the committed declaration (137 wanted, 137 found, 0 missing, observer image equal to the serving image after).
+- `node scripts/phase6c-replay.mjs <export> --engine-sha 763e4cec... --population docs/evidence/phase6d/population-2026-09-28-763e4cec.json --label serving-763e4cec-stores --store-snapshot <chart> --store-snapshot <postflop> --negative-controls 3`, run from a checkout of the serving release itself: decision-code files that differ from the serving release, none. No pin file is passed; the journaled digest alone selects the store.
+
+| Verdict                                     | Section above | This rerun |
+| ------------------------------------------- | ------------: | ---------: |
+| reproduced (action, route, atlas cell, RNG) |           106 |        134 |
+| diverged                                    |             0 |          0 |
+| refused `reference_unavailable:chart_store` |            28 |          0 |
+| refused `replay_unsupported:DECIDE_DEEP`    |             3 |          3 |
+
+All 134 replayed decisions are clean and every receipt digest equals its original; independent qualification agreed on 134 and disagreed on none. The 28 are the chart routes: 13 `chart_open_jam` and 4 `chart_bb_defend` in mtt, 2 and 3 in spin, 3 and 3 in hu_sng, each identified by the journaled chart-store digest. Negative controls on the batch's own records, three each, all passed: substituted action (diverged `action`), substituted RNG (`rng_stream_mismatch`), stale M state (refused by the independent M-state check), a re-signed record naming a different chart store of the same size (refused by name with the true store loaded), the same record with no pin (reproduced by digest alone), the store with one frequency moved at the same entry count (digest `c202612f0c72`, refused by name) and the untampered snapshot reloaded (reproduced). `DECIDE_DEEP` (3 of 137) stays the one named exclusion of protocol section 11.3.
+
+The private exports (store rows, snapshots, the 137-record export) stayed on the archive volume outside the repository and were removed after this run.
+
+### C3. Corrected gate status for 6A and 6D on 763e4cec
+
+Only the rows named here change from the table in section 5 of the 2026-09-28 section above; every other row stands.
+
+| Gate                      | Was          | Now                         | Basis                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G5 Reachability           | verified now | defective                   | 62 of 137 admitted chains are complete (five links). 75 are not because the journal refused the records that would have completed them (C1): 51 lack the execution witness for the accepted action, 38 lack the accepted hand, 36 the hand binding. Reachability of the request, calculation and reference links is real on 137 of 137; the outcome half of the chain is not, and a capture that loses 28% of decisions cannot be called reached. Fixed in #5541; unverified. |
+| G6 Outcome receipts       | verified now | defective                   | The attribution receipts are counted, but the completed-hand and accepted-action receipts they join to are absent on 75 of 137 chains, every one marked shed within 60 seconds of its decision by its producer. Same cause and same fix as G5.                                                                                                                                                                                                                                |
+| G8 Performance and replay | verified now | verified now (strengthened) | 134 of 134 replayable admitted decisions reproduced on 763e4cec, 0 diverged; the 28 chart-store decisions previously counted as unavailable external input reproduce (C2); 3 `DECIDE_DEEP` are the only named exclusion.                                                                                                                                                                                                                                                      |
+
+G1, G2, G3, G4, G7, G9 and G10 are unchanged. The 6B route proof of the same window rests on the same shedding journal: its G5 and G6 rows in `docs/horse-brain-phase6b-route-proof-2026-09-26.md` ("retained records only") are `defective` on 763e4cec for the same reason, see the correction note there.
+
+### C4. What to do next, and what is not claimed
+
+- The target is a release containing #5541 whose own population shows complete five-link chains and capture continuity with no producer drops (`phase15_journal_queue_capacity` and `phase15_journal_lock_retry` near zero at load comparable to 13:00Z to 15:00Z). That is verified in a later section once such a release serves, not here.
+- Nothing above changes a decision, a route or a payout; the correction is to what this document said about capture and about what could be replayed.

@@ -2464,6 +2464,38 @@ export class GameServer {
 
   private terminalMixedF06Admissions = new Map<string, unknown>();
 
+  /**
+   * A TRANSFER READ FROM THE DATABASE IS RE-READ AFTER IT IS REFUSED (2026-09-28).
+   *
+   * `performTournamentManagerAdmission` keeps the transfer it discovered with
+   * `fn_f06_find_mixed_manager_custody` in `durableMixedF06Custody` and, while
+   * an entry exists, never asks the database again. Nothing removed that entry
+   * except this process completing the transfer itself. So when another door
+   * closed the transfer (20260928033651 closed 114e9349 and bc3628dd at
+   * 03:37:39 UTC), engine 41b91390 kept re-admitting the closed transfer every
+   * few minutes, refused `f06_mixed_successor_custody_unproven` each time, and
+   * events 160eb0c9 and 5ce1a271 could never be resumed by this process. The
+   * find door would have answered `receipt: null`.
+   *
+   * A discovered transfer is only a copy of an immutable row; the database is
+   * the owner of whether it is still open. After a refused admission, once its
+   * lease is confirmed released, the copy is dropped so the next attempt asks
+   * again. A transfer this process prepared itself (a drained packet is still
+   * held) is never dropped here: its original engine objects are the custody.
+   */
+  private forgetRefusedDiscoveredMixedF06Transfer(
+    tournamentId: string,
+    packet: unknown,
+    transfer: MixedF06Transfer | null
+  ): void {
+    if (packet || !transfer) return;
+    if (this.drainedF06TournamentCustody?.has(tournamentId)) return;
+    if (this.tournamentEngines.has(tournamentId)) return;
+    if (this.durableMixedF06Custody?.get(tournamentId) === transfer) {
+      this.durableMixedF06Custody.delete(tournamentId);
+    }
+  }
+
   private mixedF06PreparationBlockers(): readonly string[] {
     const represented = new Set([...this.enginesIncludingMixedF06Custody()].map(([id]) => id));
     const pending = new Set<string>();
@@ -2816,6 +2848,7 @@ export class GameServer {
       } catch (error) {
         this.tournamentManagerPendingLeaseReleases.set(tournamentId, lease.leaseGeneration);
         await this.awaitTournamentManagerLeaseRelease(tournamentId);
+        this.forgetRefusedDiscoveredMixedF06Transfer(tournamentId, packet, durableMixed);
         throw error;
       }
     }

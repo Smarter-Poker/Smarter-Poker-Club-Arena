@@ -1,0 +1,16 @@
+{
+  "_owner": "fix/union-settlement-scale. NOT YET APPLIED when pushed (2026-09-28): migrations 20260928141826_a_closed_week_s_inventory_is_read_from_its_sealed_checkpoint and 20260928141849_a_scope_that_times_out_does_not_starve_the_others are applied to production by the accounting coordinator after review. Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": [
+    "union_pnl_inventory_checkpoints",
+    "union_pnl_inventory_checkpoint_rows",
+    "union_pnl_inventory_checkpoint_issues",
+    "weekly_accounting_scheduler_visits"
+  ],
+  "functions": [
+    "fn_union_pnl_inventory_as_of_legacy",
+    "fn_union_pnl_inventory_state",
+    "fn_union_pnl_inventory_population",
+    "fn_union_pnl_inventory_checkpoint_seal",
+    "fn_union_pnl_inventory_checkpoint_due"
+  ]
+}

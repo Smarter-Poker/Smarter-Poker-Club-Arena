@@ -8,9 +8,12 @@
  */
 import { createHash } from 'node:crypto';
 
-export const IDENT_START = /[A-Za-z_\u0080-￿]/;
-export const IDENT_PART = /[A-Za-z0-9_$\u0080-￿]/;
-export const DOLLAR_TAG = /\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/y;
+// Every UTF-16 code unit from U+0080 up counts as an identifier character, as in
+// scripts/ci/check-unqualified-writes.mjs. It is spelled as a negated ASCII class
+// so this file carries no backslash-u escape: the publishing bridge rewrites some.
+export const IDENT_START = /[A-Za-z_]|[^\x00-\x7f]/;
+export const IDENT_PART = /[A-Za-z0-9_$]|[^\x00-\x7f]/;
+export const DOLLAR_TAG = /\$(?:(?:[A-Za-z_]|[^\x00-\x7f])(?:[A-Za-z0-9_]|[^\x00-\x7f])*)?\$/y;
 
 /**
  * The tokens of ONE lexical level of text[start,end): comments are skipped, a

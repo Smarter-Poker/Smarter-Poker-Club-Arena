@@ -29,6 +29,7 @@ import {
   HORSE_JOURNAL_ARCHIVE_RECORDS,
   HORSE_JOURNAL_ARCHIVE_SEGMENTS,
   archiveRecordCap,
+  horseJournalHoldBudget,
   type HorseJournalArchiveOptions,
 } from './config.js';
 import { isAbsolute, join } from 'node:path';
@@ -277,6 +278,60 @@ const RING_RETIRE_LIMIT = 1024;
  * archive_retired, finished at the next open or append, never by a timer. */
 const RING_UNLINK_LIMIT = 4096;
 type RingRefusal = 'archive_bytes' | 'archive_segments' | 'archive_catalog_capacity';
+/* A RETIREMENT MUST NOT SCAN THE CATALOG (2026-09-28). archive_events names
+   its segment in `segment_sha REFERENCES archive_segments(sha)`, and there is
+   no index on segment_sha (building one on a five-million-row catalog at open
+   would outlast the writer's start fence). With SQLite foreign-key enforcement
+   on, every `DELETE FROM archive_segments` therefore made SQLite look for
+   child rows by a FULL SCAN of archive_events: EXPLAIN QUERY PLAN reads
+   `SCAN archive_events`, linear in the catalog (about 0.13 s per million rows
+   measured locally, so about 0.7 s a retirement at production's 5.4 million
+   rows, more when two writers share the page cache). On 41b91390 the archive
+   reached its 8 GiB byte bound at 01:03:30 UTC on 2026-09-28; from that append
+   on every batch retired at least one segment, each append held the shared
+   catalog's write lock for seconds, the other shard's writer met BUSY a dozen
+   times in a row, its replacements met the same lock while opening, and at
+   01:04:07 that shard stopped for good at retry_exhausted; the surviving shard
+   captured about 400 records a minute (from about 4,000) and stopped at
+   termination_unverified at 01:20:19, a writer still inside a retirement scan
+   when the publisher's one-second termination fence ran out. The previous
+   release (cfe8a739) did the same at 00:06. The evidence hold was not the
+   cause: 486,011 unheld segments were still retirable.
+   The catalog connection now opens with foreign-key enforcement OFF, and the
+   invariant the constraint guarded is enforced by the one code path that can
+   break it: an event row is inserted only in finishPending, in the same
+   transaction as its segment row, and retireSegment deletes exactly the
+   segment's `records` rows before its catalog row, refusing as index
+   corruption otherwise (unchanged). Every statement of the ring is a rowid or
+   primary-key search; RING_STATEMENTS lists them so the suite can prove that
+   none scans archive_events under the connection options the writer uses. */
+export const HORSE_ARCHIVE_CATALOG_CONNECTION = Object.freeze({
+  allowExtension: false,
+  enableForeignKeyConstraints: false,
+});
+const SQL_OLDEST_EVENT = 'SELECT min(rowid) AS n FROM archive_events';
+const SQL_COUNT_SEGMENT_RUN =
+  'SELECT count(*) AS n FROM archive_events WHERE rowid>=? AND rowid<? AND segment_sha=?';
+const SQL_DELETE_SEGMENT_RUN =
+  'DELETE FROM archive_events WHERE rowid>=? AND rowid<? AND segment_sha=?';
+const SQL_DELETE_SEGMENT_EVENT = 'DELETE FROM archive_events WHERE event_id=? AND segment_sha=?';
+const SQL_DELETE_SEGMENT = 'DELETE FROM archive_segments WHERE sha=?';
+const SQL_RETIRABLE_COLUMNS =
+  'SELECT sha,compressed_sha,bytes,decoded_bytes,records FROM archive_segments';
+const SQL_OLDEST_BELOW_HOLD = SQL_RETIRABLE_COLUMNS + ' WHERE rowid<? ORDER BY rowid LIMIT 1';
+const SQL_OLDEST_ABOVE_HOLD = SQL_RETIRABLE_COLUMNS + ' WHERE rowid>? ORDER BY rowid LIMIT 1';
+/** Every catalog statement a retirement runs, for the no-scan proof. */
+export const RING_STATEMENTS: readonly string[] = Object.freeze([
+  SQL_OLDEST_EVENT,
+  SQL_COUNT_SEGMENT_RUN,
+  SQL_DELETE_SEGMENT_RUN,
+  SQL_DELETE_SEGMENT_EVENT,
+  SQL_DELETE_SEGMENT,
+  SQL_OLDEST_BELOW_HOLD,
+  SQL_OLDEST_ABOVE_HOLD,
+  'INSERT OR REPLACE INTO archive_retired VALUES(?,?)',
+  'UPDATE archive_meta SET bytes=bytes-?,segments=segments-1,records=records-? WHERE id=1',
+]);
 const SHA = /^[0-9a-f]{64}$/;
 const digest = (bytes: Uint8Array | string): string =>
   createHash('sha256').update(bytes).digest('hex');
@@ -479,9 +534,8 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       }
       privatePath(this.catalogPath);
       const db = (this.catalog = new DatabaseSync(this.catalogPath, {
+        ...HORSE_ARCHIVE_CATALOG_CONNECTION,
         readOnly: this.archiveReadOnly,
-        allowExtension: false,
-        enableForeignKeyConstraints: true,
       }));
       db.exec(
         'PRAGMA busy_timeout=250; PRAGMA trusted_schema=OFF; PRAGMA cache_size=-2048; PRAGMA temp_store=FILE;'
@@ -533,6 +587,18 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           CREATE TABLE IF NOT EXISTS archive_hold(id INTEGER PRIMARY KEY CHECK(id=1), from_ms INTEGER NOT NULL,
             until_ms INTEGER NOT NULL, first_rowid INTEGER NOT NULL, last_rowid INTEGER NOT NULL,
             segments INTEGER NOT NULL, records INTEGER NOT NULL) STRICT;`);
+        // The hold's bytes and the segments its budget trimmed (2026-09-28).
+        // Added in place to a hold table an earlier writer created; no rewrite
+        // of existing rows and no version bump.
+        const holdColumns = new Set(
+          db
+            .prepare('PRAGMA table_info(archive_hold)')
+            .all()
+            .map((c) => String(c.name))
+        );
+        for (const column of ['bytes', 'trimmed_segments'])
+          if (!holdColumns.has(column))
+            db.exec(`ALTER TABLE archive_hold ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
         db.prepare('INSERT OR IGNORE INTO archive_meta VALUES(1,?,0,0,0,?,?)').run(
           identity.sha256,
           archive.maxBytes,
@@ -878,11 +944,10 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
    * held rowids, then above them. Two rowid seeks, never a scan across the
    * held segments. */
   private oldestRetirable(): Record<string, SQLOutputValue> | undefined {
-    const db = this.catalog!,
-      columns = 'SELECT sha,compressed_sha,bytes,decoded_bytes,records FROM archive_segments';
+    const db = this.catalog!;
     return (
-      db.prepare(columns + ' WHERE rowid<? ORDER BY rowid LIMIT 1').get(this.held.first) ??
-      db.prepare(columns + ' WHERE rowid>? ORDER BY rowid LIMIT 1').get(this.held.last)
+      db.prepare(SQL_OLDEST_BELOW_HOLD).get(this.held.first) ??
+      db.prepare(SQL_OLDEST_ABOVE_HOLD).get(this.held.last)
     );
   }
   /** Resolve the evidence hold at open, once per window. The published
@@ -897,18 +962,19 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     const db = this.catalog!,
       hold = this.archive!.hold;
     const row = db.prepare('SELECT * FROM archive_hold WHERE id=1').get();
+    let first = 1,
+      last = 0,
+      trimmedBefore = 0;
     if (
       hold &&
       row &&
       Number(row.from_ms) === hold.fromMs &&
       Number(row.until_ms) === hold.untilMs
     ) {
-      this.held = { first: Number(row.first_rowid), last: Number(row.last_rowid) };
-      return;
-    }
-    let first = 1,
-      last = 0;
-    if (hold) {
+      first = Number(row.first_rowid);
+      last = Number(row.last_rowid);
+      trimmedBefore = Number(row.trimmed_segments ?? 0);
+    } else if (hold) {
       const at = (rowid: number) =>
         db
           .prepare(
@@ -950,29 +1016,106 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         last = 0;
       }
     }
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      if (hold) {
-        const counts = db
-          .prepare(
-            'SELECT count(*) AS n,coalesce(sum(records),0) AS r FROM archive_segments WHERE rowid>=? AND rowid<=?'
-          )
-          .get(first, last)!;
-        db.prepare('INSERT OR REPLACE INTO archive_hold VALUES(1,?,?,?,?,?,?)').run(
-          hold.fromMs,
-          hold.untilMs,
-          first,
-          last,
-          Number(counts.n),
-          Number(counts.r)
+    // The hold's own budget: see horseJournalHoldBudget. Checked at every
+    // open, against this writer's allocation, so a lowered allocation trims a
+    // hold that fitted the old one. A trim keeps the oldest held segments.
+    let trimmed = 0,
+      totals = this.rangeTotals(first, last);
+    if (hold) {
+      const budget = horseJournalHoldBudget(this.archive!.maxBytes, this.archive!.maxSegments);
+      if (
+        totals.bytes > budget.bytes ||
+        totals.segments > budget.segments ||
+        totals.records > budget.records
+      ) {
+        const kept = this.lastWithin(first, last, budget);
+        trimmed = totals.segments - this.rangeTotals(first, kept).segments;
+        last = kept;
+        if (last < first) {
+          first = 1;
+          last = 0;
+        }
+        totals = this.rangeTotals(first, last);
+        // Counts only; no paths, digests or record bodies.
+        console.warn(
+          `[HorseDecisionJournal] evidence hold exceeds its budget of half the archive; kept its oldest ${totals.segments} segments (${totals.bytes} bytes) and released ${trimmed} to the ring so capture keeps running`
         );
-      } else db.exec('DELETE FROM archive_hold');
-      db.exec('COMMIT');
-    } catch (e) {
-      rollback(db);
-      throw e;
+      }
+    }
+    const unchanged =
+      hold &&
+      row &&
+      Number(row.from_ms) === hold.fromMs &&
+      Number(row.until_ms) === hold.untilMs &&
+      Number(row.first_rowid) === first &&
+      Number(row.last_rowid) === last &&
+      Number(row.segments) === totals.segments &&
+      Number(row.records) === totals.records &&
+      Number(row.bytes ?? -1) === totals.bytes &&
+      trimmed === 0;
+    if (!unchanged) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        if (hold)
+          db.prepare(
+            'INSERT OR REPLACE INTO archive_hold(id,from_ms,until_ms,first_rowid,last_rowid,segments,records,bytes,trimmed_segments) VALUES(1,?,?,?,?,?,?,?,?)'
+          ).run(
+            hold.fromMs,
+            hold.untilMs,
+            first,
+            last,
+            totals.segments,
+            totals.records,
+            totals.bytes,
+            trimmedBefore + trimmed
+          );
+        else db.exec('DELETE FROM archive_hold');
+        db.exec('COMMIT');
+      } catch (e) {
+        rollback(db);
+        throw e;
+      }
     }
     this.held = { first, last };
+  }
+  /** Published segments, records and bytes in a rowid range: one rowid range
+   * read of archive_segments (about 240,000 rows for the default hold). */
+  private rangeTotals(
+    first: number,
+    last: number
+  ): { segments: number; records: number; bytes: number } {
+    const t = this.catalog!.prepare(
+      'SELECT count(*) AS n,coalesce(sum(records),0) AS r,coalesce(sum(bytes),0) AS b FROM archive_segments WHERE rowid>=? AND rowid<=?'
+    ).get(first, last)!;
+    return { segments: Number(t.n), records: Number(t.r), bytes: Number(t.b) };
+  }
+  /** The last rowid in [first, last] such that the segments from first up to
+   * it fit the budget; first - 1 when not even the first one does. Walks the
+   * range once in rowid order, in bounded pages. */
+  private lastWithin(
+    first: number,
+    last: number,
+    budget: { bytes: number; segments: number; records: number }
+  ): number {
+    const page = this.catalog!.prepare(
+      'SELECT rowid AS id,bytes,records FROM archive_segments WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT 4096'
+    );
+    let kept = first - 1,
+      bytes = 0,
+      records = 0,
+      segments = 0;
+    for (;;) {
+      const rows = page.all(kept, last);
+      if (!rows.length) return kept;
+      for (const r of rows) {
+        bytes += Number(r.bytes);
+        records += Number(r.records);
+        segments += 1;
+        if (bytes > budget.bytes || records > budget.records || segments > budget.segments)
+          return kept;
+        kept = Number(r.id);
+      }
+    }
   }
   /** Retire one published segment inside the caller's transaction: its index
    * rows, its catalog row and its usage leave together, and its file name is
@@ -999,32 +1142,19 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       bytes < 1
     )
       throw Error('Horse archive segment corruption');
-    const first = Number(db.prepare('SELECT min(rowid) AS n FROM archive_events').get()!.n);
+    const first = Number(db.prepare(SQL_OLDEST_EVENT).get()!.n);
     const contiguous =
       Number.isSafeInteger(first) &&
-      Number(
-        db
-          .prepare(
-            'SELECT count(*) AS n FROM archive_events WHERE rowid>=? AND rowid<? AND segment_sha=?'
-          )
-          .get(first, first + records, sha)!.n
-      ) === records;
+      Number(db.prepare(SQL_COUNT_SEGMENT_RUN).get(first, first + records, sha)!.n) === records;
     let deleted = 0;
     if (contiguous)
-      deleted = Number(
-        db
-          .prepare('DELETE FROM archive_events WHERE rowid>=? AND rowid<? AND segment_sha=?')
-          .run(first, first + records, sha).changes
-      );
+      deleted = Number(db.prepare(SQL_DELETE_SEGMENT_RUN).run(first, first + records, sha).changes);
     else
       for (const record of this.readSegment(row).records)
-        deleted += Number(
-          db
-            .prepare('DELETE FROM archive_events WHERE event_id=? AND segment_sha=?')
-            .run(record.eventId, sha).changes
-        );
+        deleted += Number(db.prepare(SQL_DELETE_SEGMENT_EVENT).run(record.eventId, sha).changes);
     if (deleted !== records) throw Error('Horse archive index corruption');
-    db.prepare('DELETE FROM archive_segments WHERE sha=?').run(sha);
+    // No foreign-key scan here: see HORSE_ARCHIVE_CATALOG_CONNECTION.
+    db.prepare(SQL_DELETE_SEGMENT).run(sha);
     db.prepare('INSERT OR REPLACE INTO archive_retired VALUES(?,?)').run(sha, bytes);
     db.prepare(
       'UPDATE archive_meta SET bytes=bytes-?,segments=segments-1,records=records-? WHERE id=1'
@@ -1287,6 +1417,12 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       /** Published segments the evidence hold keeps from the ring. */
       heldSegments: number;
       heldRecords: number;
+      /** Compressed bytes of the held segments, the hold's budget (half the
+       * byte allocation), and the window's segments the budget released to
+       * the ring. */
+      heldBytes: number;
+      holdBudgetBytes: number;
+      holdTrimmedSegments: number;
       catalogBytes: number;
       maxRowid: number;
       maxBytes: number;
@@ -1333,7 +1469,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         const hold = this.catalog
           .prepare("SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='archive_hold'")
           .get()
-          ? this.catalog.prepare('SELECT segments,records FROM archive_hold WHERE id=1').get()
+          ? this.catalog.prepare('SELECT * FROM archive_hold WHERE id=1').get()
           : undefined;
         archive = {
           compressedBytes: Number(usage.bytes),
@@ -1345,6 +1481,14 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           retiredRecords: Number(ring?.retired_records ?? 0),
           heldSegments: Number(hold?.segments ?? 0),
           heldRecords: Number(hold?.records ?? 0),
+          // Absent from a hold row an earlier writer made until a writer of
+          // this release opens the catalog.
+          heldBytes: Number(hold?.bytes ?? 0),
+          holdBudgetBytes: horseJournalHoldBudget(
+            Number(usage.max_bytes),
+            Number(usage.max_segments)
+          ).bytes,
+          holdTrimmedSegments: Number(hold?.trimmed_segments ?? 0),
           catalogBytes:
             Number(this.catalog.prepare('PRAGMA page_count').get()!.page_count) *
             CATALOG_PAGE_BYTES,

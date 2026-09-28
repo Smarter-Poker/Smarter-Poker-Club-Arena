@@ -110,6 +110,29 @@ export const HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS: readonly number[] = Object.free
   25, 50, 100, 200, 400, 800, 1000, 1000, 1000, 1000, 1000, 1000,
 ]);
 
+/* A STOPPED CAPTURE RE-ARMS ITSELF (2026-09-28). The replacement budget (two
+   restarts, reset by a durable ACK) and the one-second termination fence ended
+   capture for the life of the process: on 41b91390 one shard stopped at
+   retry_exhausted at 01:04:07 UTC and the other at termination_unverified at
+   01:20:19, and neither would have captured again until the next engine
+   release, although the condition behind both (a writer slowed by catalog
+   scans, see HORSE_ARCHIVE_CATALOG_CONNECTION in the store) is the kind that
+   passes. A publisher that stopped at one of these fence reasons now starts a
+   fresh writer, with a fresh budget and the queue it kept, once a minute, and
+   only after the writer it retired has actually exited (the terminate promise
+   itself, not the one-second fence), so a publisher never owns two live
+   writers. It keeps doing so until a writer captures. Integrity refusals
+   (ack_mismatch, writer_unavailable), a journal that never started, a missing
+   restart and a shutdown stay terminal. */
+export const HORSE_JOURNAL_REARM_MS = 60_000;
+const HORSE_JOURNAL_REARMABLE: readonly HorseJournalFailureReason[] = Object.freeze([
+  'retry_exhausted',
+  'termination_unverified',
+  'restart_failed',
+]);
+const rearmable = (reason: HorseJournalFailureReason | null): boolean =>
+  reason !== null && HORSE_JOURNAL_REARMABLE.includes(reason);
+
 const HORSE_JOURNAL_MODES = [
   'starting',
   'ready',
@@ -133,6 +156,9 @@ const HEALTH_STATS_FIELDS = [
   'retiredSegments',
   'retiredRecords',
   'heldSegments',
+  'heldBytes',
+  'holdBudgetBytes',
+  'holdTrimmedSegments',
   'compressedBytes',
   'maxBytes',
   'records',
@@ -167,6 +193,12 @@ export interface HorseJournalHealth {
   retiredRecords: number | null;
   /** Published segments the evidence hold keeps from the ring. */
   heldSegments: number | null;
+  /** Their compressed bytes, the hold's budget (half the byte allocation;
+   * the other half always belongs to new capture), and how many segments of
+   * the hold window the budget released to the ring. */
+  heldBytes: number | null;
+  holdBudgetBytes: number | null;
+  holdTrimmedSegments: number | null;
   compressedBytes: number | null;
   maxBytes: number | null;
   records: number | null;
@@ -198,6 +230,9 @@ const EMPTY_HEALTH: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number
     retiredSegments: null,
     retiredRecords: null,
     heldSegments: null,
+    heldBytes: null,
+    holdBudgetBytes: null,
+    holdTrimmedSegments: null,
     compressedBytes: null,
     maxBytes: null,
     records: null,
@@ -218,10 +253,14 @@ export function horseJournalCaptureLine(h: Omit<HorseJournalHealth, 'capture'>):
     : sentence;
 }
 function horseJournalModeSentence(h: Omit<HorseJournalHealth, 'capture'>): string {
+  const hold =
+    h.heldBytes === null
+      ? ''
+      : ` heldBytes=${h.heldBytes} holdBudgetBytes=${h.holdBudgetBytes ?? 0} holdTrimmed=${h.holdTrimmedSegments ?? 0}`;
   const counts =
     h.segments === null
       ? ''
-      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} held=${h.heldSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}`;
+      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} held=${h.heldSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}${hold}`;
   const ring = h.maxSegments === null ? 'a ring' : `a ring of ${h.maxSegments} segments`;
   switch (h.mode) {
     case 'ready':
@@ -229,13 +268,17 @@ function horseJournalModeSentence(h: Omit<HorseJournalHealth, 'capture'>): strin
     case 'paused':
       return h.pausedReason === 'archive_storage_capacity'
         ? `not running: paused since ${h.pausedSince} because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute;${counts}`
-        : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute;${counts}`;
+        : (h.heldSegments ?? 0) > 0
+          ? `not running: paused since ${h.pausedSince} at ${h.pausedReason}: the evidence hold is crowding capture, no published segment outside it is left to retire (only held or unpublished segments remain); asks again every minute;${counts}`
+          : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment left to retire (only unpublished segments remain); asks again every minute;${counts}`;
     case 'starting':
       return 'not running yet: the writer has not said READY';
     case 'recovering':
       return 'not running: the writer is being restarted';
     case 'failed':
-      return `not running: capture stopped for good at ${h.lastFailureReason} since ${h.failedSince};${counts}`;
+      return rearmable(h.lastFailureReason)
+        ? `not running: capture stopped at ${h.lastFailureReason} since ${h.failedSince}; a fresh writer is started every minute until one captures;${counts}`
+        : `not running: capture stopped for good at ${h.lastFailureReason} since ${h.failedSince};${counts}`;
     case 'stopped':
       return 'not running: the journal was stopped for shutdown';
     case 'unavailable':
@@ -286,6 +329,10 @@ export class HorseDecisionJournalPublisher {
   private recoveryPending = false;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private termination: Promise<boolean> = Promise.resolve(true);
+  /** Whether the last retired writer has actually exited: its terminate()
+   * promise, with no fence. A re-arm waits on this, never on the fence. */
+  private writerGone: Promise<boolean> = Promise.resolve(true);
+  private rearmTimer?: ReturnType<typeof setTimeout>;
   private stopping = false;
   private stopSent = false;
   private shutdownUnverified = false;
@@ -294,7 +341,7 @@ export class HorseDecisionJournalPublisher {
   private stopped?: () => void;
   private readonly producerId = randomUUID();
   private readonly sourceRelease = resolveReleaseIdentity().releaseSha;
-  private readonly watchdog: ReturnType<typeof setInterval>;
+  private watchdog: ReturnType<typeof setInterval>;
   private lastProgress: number;
   private lastFailureReason: HorseJournalFailureReason | null = null;
   private pausedReason: HorseJournalCapacityReason | null = null;
@@ -326,14 +373,18 @@ export class HorseDecisionJournalPublisher {
   ) {
     this.lastProgress = this.now();
     this.attach(worker);
-    this.watchdog = setInterval(() => {
+    this.watchdog = this.startWatchdog();
+  }
+  private startWatchdog(): ReturnType<typeof setInterval> {
+    const watchdog = setInterval(() => {
       if (
         (this.mode === 'starting' || (this.mode === 'ready' && this.inFlight > 0)) &&
         this.now() - this.lastProgress > 5000
       )
         this.recover();
     }, 1000);
-    this.watchdog.unref?.();
+    watchdog.unref?.();
+    return watchdog;
   }
   private now(): number {
     return this.options.now?.() ?? performance.now();
@@ -378,20 +429,22 @@ export class HorseDecisionJournalPublisher {
     if (!worker) return this.termination;
     this.worker = null;
     this.epoch++;
+    let gone: Promise<boolean>;
+    try {
+      gone = worker.terminate().then(
+        () => true,
+        () => false
+      );
+    } catch {
+      gone = Promise.resolve(false);
+    }
+    this.writerGone = gone;
     this.termination = new Promise((resolve) => {
       const timer = setTimeout(() => resolve(false), 1000);
-      const finish = (confirmed: boolean) => {
+      void gone.then((confirmed) => {
         clearTimeout(timer);
         resolve(confirmed);
-      };
-      try {
-        void worker
-          .terminate()
-          .then(() => finish(true))
-          .catch(() => finish(false));
-      } catch {
-        finish(false);
-      }
+      });
     });
     return this.termination;
   }
@@ -410,9 +463,9 @@ export class HorseDecisionJournalPublisher {
     this.endLockWait();
     this.count('unavailable');
     if (reason === 'start_failed') this.count('start_failed');
-    // Exactly one line per publisher lifetime. Until now a terminal writer
-    // failure only bumped a counter, so capture stopped with nothing in the
-    // log to say why until the next restart. Reason and mode only.
+    // One line per stop (at most one a minute once re-arming). Until
+    // 2026-09-26 a terminal writer failure only bumped a counter, so capture
+    // stopped with nothing in the log to say why. Reason and mode only.
     console.warn(
       `[HorseDecisionJournal] capture stopped mode=${this.reportedMode()} reason=${reason}`
     );
@@ -425,6 +478,8 @@ export class HorseDecisionJournalPublisher {
     }
     clearInterval(this.watchdog);
     clearTimeout(this.retryTimer);
+    if (rearmable(reason) && this.options.restart && !this.stopping && this.everReady)
+      this.scheduleRearm();
     void this.retireWriter()
       .then((confirmed) => {
         if (!confirmed) this.count('termination_unverified');
@@ -440,6 +495,45 @@ export class HorseDecisionJournalPublisher {
           this.stopped?.();
         }
       });
+  }
+  /** In a minute, once the retired writer has actually exited, start a fresh
+   * writer with a fresh budget. See HORSE_JOURNAL_REARM_MS. */
+  private scheduleRearm(): void {
+    clearTimeout(this.rearmTimer);
+    this.rearmTimer = setTimeout(() => {
+      this.rearmTimer = undefined;
+      void this.writerGone.then((gone) => {
+        if (gone) this.rearm();
+        // A writer whose terminate() rejected may still be alive: never start
+        // a second one beside it. Ask again in a minute.
+        else if (this.mode === 'failed' && !this.stopping) this.scheduleRearm();
+      });
+    }, HORSE_JOURNAL_REARM_MS);
+    this.rearmTimer.unref?.();
+  }
+  private rearm(): void {
+    if (this.mode !== 'failed' || this.stopping || !rearmable(this.lastFailureReason)) return;
+    let replacement: HorseJournalWorker;
+    try {
+      replacement = this.options.restart!();
+    } catch {
+      this.scheduleRearm();
+      return;
+    }
+    const after = this.lastFailureReason;
+    // A publisher that stopped at its budget still counts the batch it had in
+    // flight; nothing is in flight to a writer that has exited.
+    this.inFlight = 0;
+    this.retries = 0;
+    this.recoveryPending = true;
+    this.count('rearm_started');
+    // Reason and a count only.
+    console.warn(
+      `[HorseDecisionJournal] capture re-armed with a fresh writer after=${after} queued=${this.queue.length}`
+    );
+    clearInterval(this.watchdog);
+    this.watchdog = this.startWatchdog();
+    this.attach(replacement);
   }
   /** A quota refusal of an in-flight APPEND. The writer refused before it
    * committed anything, so the batch is still unacknowledged: keep it, keep the
@@ -773,6 +867,9 @@ export class HorseDecisionJournalPublisher {
       retiredSegments: number('retiredSegments'),
       retiredRecords: number('retiredRecords'),
       heldSegments: number('heldSegments'),
+      heldBytes: number('heldBytes'),
+      holdBudgetBytes: number('holdBudgetBytes'),
+      holdTrimmedSegments: number('holdTrimmedSegments'),
       compressedBytes: number('compressedBytes'),
       maxBytes: number('maxBytes'),
       records: number('records'),
@@ -831,6 +928,7 @@ export class HorseDecisionJournalPublisher {
         clearTimeout(timer);
         clearInterval(this.watchdog);
         clearTimeout(this.retryTimer);
+        clearTimeout(this.rearmTimer);
         clearInterval(this.probeTimer);
         this.endLockWait();
         resolve();

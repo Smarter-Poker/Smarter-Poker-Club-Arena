@@ -966,9 +966,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_solver_agreement_v31_decisions',
     'nightly',
     'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions; ca_horse_solver_agreement_v31_decisions',
-    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal',
-    'Phase4',
-    { dayColumn: 'run_date', freshnessDays: 2 }
+    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal. NO FRESHNESS WINDOW (2026-09-28): rows exist only while a gto_v31_datasets row is active, and none has ever been (0 rows, ever, on 2026-09-28). A two-day window filed data_stale critical every night for a pipeline that was never started; certified_v31_missing is the reader for that fact. Restore { dayColumn: run_date, freshnessDays: 2 } in the commit that commissions V31.',
+    'Phase4'
   ),
   table(
     'gto_v31_runtime_cells',

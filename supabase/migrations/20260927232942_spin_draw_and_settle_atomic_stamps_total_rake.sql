@@ -75,6 +75,13 @@
 -- requires a live PostgreSQL harness this session could not run locally
 -- (CLAUDE.md 11.5 rule 5 - the logic is reasoned about and proved by probe
 -- instead, stated here plainly).
+--
+-- This migration replaces a function body via string surgery on its own
+-- pg_get_functiondef text (EXECUTE v_new) rather than a static CREATE
+-- statement, so check-migrations-are-live.mjs's declaredObjects scan finds
+-- no object to watch. tests/a-merged-migration-must-be-live.law.test.ts
+-- requires a live-proof line for exactly that shape:
+-- @live-proof: NOT EXISTS (SELECT 1 FROM public.tournaments t JOIN public.tournament_escrow e ON e.tournament_id = t.id WHERE t.id IN ('2aa4cba1-506f-426b-a1ba-d8e22e018533','6d359f61-d681-49ba-82f3-00493178e5b3','7284506c-093c-491a-8da7-5816bf1ccccf','44d7e2d8-66ed-48ae-a1cb-306ae92b6dfa','482e90bb-ef9d-4135-9067-9f0332c94142','8904c10b-6a47-4934-bdf2-def1b1e76f0b','8d5969da-df76-44fa-8c83-5608b844ca06','95e43b6e-c1c9-445e-a1d9-cbe711e3bac1','efd5455d-d188-4171-becb-1d35b016d06a','c2fd1c7e-9572-4b95-90dd-3b999777a145','9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8','b3b65e07-6b3a-4b6c-b5d1-aeb5af17fa99','b67ab0cb-e2d6-4955-8f43-4bff32551400') AND t.total_rake IS DISTINCT FROM e.fee_balance)
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';

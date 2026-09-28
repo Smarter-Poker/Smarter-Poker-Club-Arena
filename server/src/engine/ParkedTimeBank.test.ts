@@ -399,8 +399,14 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         });
       await parked;
       await e.presenceSave;
-      expect(e.isMaintenanceStateDurable()).toBe(outcome === 'pending');
-      if (outcome === 'pending') {
+      /* 'refused' is { success: false }: the function ran and moved nothing,
+         and never will (an unknown user, a non-positive amount). Since
+         2026-09-28 that is an answer, not an unknown, so the park completes
+         exactly as it does after a confirmed debit rather than holding the
+         restart gate shut for the life of the process. */
+      const answered = outcome === 'pending' || outcome === 'refused';
+      expect(e.isMaintenanceStateDurable()).toBe(answered);
+      if (answered) {
         expect(data.row.time_bank_snapshot.players[user]).toMatchObject({
           remainingSeconds: 10,
           dbConsumedSeconds: 30,
@@ -413,10 +419,12 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       /* The debit carries its own id (2026-09-28). An answer that did not
          confirm it may be asked about again, but only by that same id, so it
          can never become a second charge: every call names one debit. */
-      const debits = data.rpc.mock.calls.filter(([name]: [string]) => name === 'fn_consume_time_bank');
+      const debits: any[][] = data.rpc.mock.calls.filter(
+        (call: any[]) => call[0] === 'fn_consume_time_bank'
+      );
       expect(debits.length).toBeGreaterThanOrEqual(1);
-      if (outcome === 'pending' || outcome === 'stale-break') expect(debits).toHaveLength(1);
-      expect(new Set(debits.map(([, args]: [string, { p_request_id: string }]) => args.p_request_id)).size).toBe(1);
+      if (answered || outcome === 'stale-break') expect(debits).toHaveLength(1);
+      expect(new Set(debits.map((call) => call[1].p_request_id)).size).toBe(1);
       e.timeBankEngine.dispose(table);
     }
   );

@@ -3,9 +3,12 @@ import {
   eligibleHudClock,
   createHudClockReader,
   hudEventObservationMs,
+  mttCaseTimeoutMs,
   receivedHudLevel,
   sharedNaturalLevel,
   waitForSharedNaturalLevel,
+  HUD_RESERVE_MS,
+  MTT_HUD_LEVEL_CAP_MS,
 } from '../e2e/support/tournamentHudWitness';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -27,21 +30,10 @@ const row = {
 };
 
 describe('a natural HUD witness must fit the real clock and keep independent wire facts', () => {
-  it('fits the actual six-minute level after gameplay and the outage have finished', () => {
-    // Actual failed production witness: 360s levels were impossible under a
-    // pre-outage two-boundary guarantee. After recovery one future boundary
-    // with the SAME 60s reserve fits the unchanged 390s case.
-    const recoveredAt = Date.parse('2026-09-27T16:20:39.769Z');
-    const sixMinute = {
-      ...row,
-      current_level: 29,
-      level_started_at: '2026-09-27T16:19:09.769Z',
-      blind_structure: [{ durationMinutes: 6 }],
-    };
-    expect(eligibleHudClock(sixMinute, recoveredAt, 330_000)?.requiredObservationMs).toBe(330_000);
-    expect(eligibleHudClock(sixMinute, recoveredAt, 329_999)).toBeNull();
-  });
   it('reserves the next boundary plus the original sixty seconds after recovery', () => {
+    // 150_000 comfortably covers the 120_000ms level, so it is eligible
+    // regardless of which of the two roles (a generous level cap, or - in the
+    // old design - a remaining case budget) it is read as.
     expect(eligibleHudClock(row, now, 150_000)).toEqual({
       tournamentId: id,
       levelIndex: 2,
@@ -51,31 +43,52 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       requiredObservationMs: 150_000,
       observedAt: now,
     });
-    expect(eligibleHudClock(row, now, 149_999)).toBeNull();
   });
-  it('still refuses long, unknown and exhausted remaining clocks', () => {
+  it('eligibility no longer depends on how much of the case is left, only on the level itself', () => {
+    // The actual failed production witness: an eligible six-minute level with
+    // only 277_398ms of a fixed 390_000ms case left. The old design compared
+    // requiredObservationMs against that shrinking budget and refused it by
+    // luck. The level itself is well inside any sane cap, so it is eligible
+    // regardless of how little of the case happens to remain by this point -
+    // the case's deadline is sized to it afterward (see mttCaseTimeoutMs).
+    const recoveredAt = Date.parse('2026-09-27T16:20:39.769Z');
+    const sixMinute = {
+      ...row,
+      current_level: 29,
+      level_started_at: '2026-09-27T16:19:09.769Z',
+      blind_structure: [{ durationMinutes: 6 }],
+    };
+    const clock = eligibleHudClock(sixMinute, recoveredAt);
+    expect(clock?.intervalMs).toBe(360_000);
+    expect(clock?.requiredObservationMs).toBe(330_000);
+    // A budget of 277_398ms - the actual recorded shortfall - used to refuse
+    // this exact clock. It is no longer a parameter this function takes.
+    expect(eligibleHudClock(sixMinute, recoveredAt)).not.toBeNull();
+  });
+  it('refuses a level longer than the certifiable cap, right at its boundary', () => {
+    const atCap = { ...row, blind_structure: [{ durationMinutes: MTT_HUD_LEVEL_CAP_MS / 60_000 }] };
+    const overCap = {
+      ...row,
+      blind_structure: [{ durationMinutes: MTT_HUD_LEVEL_CAP_MS / 60_000 + 1 }],
+    };
+    expect(eligibleHudClock(atCap, now)?.intervalMs).toBe(MTT_HUD_LEVEL_CAP_MS);
+    expect(eligibleHudClock(overCap, now)).toBeNull();
+    // The cap is a caller-supplied ceiling, not only the default.
+    expect(eligibleHudClock(row, now, 119_999)).toBeNull();
+    expect(eligibleHudClock(row, now, 120_000)?.intervalMs).toBe(120_000);
+    for (const cap of [0, -1, NaN, Infinity]) expect(eligibleHudClock(row, now, cap)).toBeNull();
+  });
+  it('still refuses malformed and boundary-exhausted clocks under a generous cap', () => {
     expect(
-      eligibleHudClock({ ...row, blind_structure: [{ durationMinutes: 15 }] }, now, 300_000)
-    ).toBeNull();
-    expect(
-      eligibleHudClock({ ...row, blind_structure: [{ duration: 180 }] }, now, 390_000)?.intervalMs
+      eligibleHudClock({ ...row, blind_structure: [{ duration: 180 }] }, now)?.intervalMs
     ).toBe(180_000);
     expect(
-      eligibleHudClock(
-        { ...row, blind_structure: JSON.stringify([{ duration_minutes: 1 }]) },
-        now,
-        200_000
-      )?.intervalMs
+      eligibleHudClock({ ...row, blind_structure: JSON.stringify([{ duration_minutes: 1 }]) }, now)
+        ?.intervalMs
     ).toBe(60_000);
-    for (const budget of [0, -1, NaN, Infinity])
-      expect(eligibleHudClock(row, now, budget)).toBeNull();
-    expect(eligibleHudClock(row, now + 70_000, 90_000)).toBeNull();
-    expect(eligibleHudClock(row, now + 69_999, 80_001)?.remainingMs).toBe(20_001);
-  });
-  it('does not budget an unnecessary second boundary after the outage is complete', () => {
-    const fiveMinute = { ...row, blind_structure: [{ durationMinutes: 5 }] };
-    expect(eligibleHudClock(fiveMinute, now, 330_000)?.requiredObservationMs).toBe(330_000);
-    expect(eligibleHudClock(fiveMinute, now, 329_999)).toBeNull();
+    // Exactly at the 20s no-time-left floor, and just past it.
+    expect(eligibleHudClock(row, now + 70_000)).toBeNull();
+    expect(eligibleHudClock(row, now + 69_999)?.remainingMs).toBe(20_001);
   });
   it('requires a real next level that remains visible through its render assertion', () => {
     const variable = {
@@ -83,15 +96,10 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       current_level: 0,
       blind_structure: [{ durationMinutes: 1 }, { durationMinutes: 5 }],
     };
-    expect(eligibleHudClock(variable, now, 90_000)?.nextIntervalMs).toBe(300_000);
-    expect(eligibleHudClock(variable, now, 89_999)).toBeNull();
+    expect(eligibleHudClock(variable, now)?.nextIntervalMs).toBe(300_000);
     for (const next of [{}, { duration: 32 }, { isBreak: true, durationMinutes: 2 }])
       expect(
-        eligibleHudClock(
-          { ...variable, blind_structure: [{ durationMinutes: 1 }, next] },
-          now,
-          390_000
-        )
+        eligibleHudClock({ ...variable, blind_structure: [{ durationMinutes: 1 }, next] }, now)
       ).toBeNull();
     expect(
       eligibleHudClock(
@@ -103,8 +111,7 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
             { isBreak: true, durationMinutes: 2 },
           ],
         },
-        now,
-        90_000
+        now
       )?.levelIndex
     ).toBe(0);
   });
@@ -120,7 +127,70 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       'no time remaining'
     );
   });
-  it('charges actual SDK authentication and row reads to the same absolute case deadline', async () => {
+  describe('the case timeout is sized from the real clock, never guessed', () => {
+    it('adds exactly the reserve the clock needs on top of time already spent', () => {
+      const clock = eligibleHudClock(row, now, 150_000)!;
+      expect(clock.requiredObservationMs).toBe(150_000);
+      // A currentTimeoutMs below what's needed never wins the max.
+      expect(mttCaseTimeoutMs(132_602, clock, 200_000)).toBe(132_602 + 150_000);
+    });
+    it('never shrinks the case below the timeout already in force', () => {
+      const clock = eligibleHudClock(row, now, 150_000)!;
+      // 132_602 + 150_000 = 282_602, well under the existing 390_000 floor.
+      expect(mttCaseTimeoutMs(132_602, clock, 390_000)).toBe(390_000);
+    });
+    it('reproduces the actual 2026-09-28 production refusal and fixes it deterministically', () => {
+      // Runs 36381276194 and 36389080031, tournament 2dbd67a7...: RUNNING,
+      // 164 players, current_level 10 (zero-based, lasts 7 minutes),
+      // level_started_at 07:02:47.500Z. The case started at 07:03:25.900Z
+      // with test timeout 390_000ms, so its one fixed deadline was
+      // 07:09:55.900Z. The attached qualification recorded budgetMs
+      // 277_398ms remaining at the read - the one exact figure the
+      // coordinator's evidence gives - which places the read at
+      // 07:05:18.502Z.
+      const tournamentId = '2dbd67a7-0000-4000-8000-000000000000';
+      const caseStartedAt = Date.parse('2026-09-28T07:03:25.900Z');
+      const oldDeadline = caseStartedAt + 390_000;
+      const recordedBudgetMs = 277_398;
+      const readAt = oldDeadline - recordedBudgetMs;
+      expect(new Date(readAt).toISOString()).toBe('2026-09-28T07:05:18.502Z');
+      const row10 = {
+        id: tournamentId,
+        status: 'RUNNING',
+        current_players: 164,
+        started_at: '2026-09-28T05:00:00Z',
+        current_level: 10,
+        level_started_at: '2026-09-28T07:02:47.500Z',
+        on_break: false,
+        blind_structure: Array.from({ length: 12 }, () => ({ durationMinutes: 7 })),
+      };
+      // On main, eligibleHudClock's third argument is the remaining case
+      // budget and this call is refused: intervalMs=420_000,
+      // remainingMs=268_998, requiredObservationMs=328_998 is 51_600ms more
+      // than the 277_398ms actually left - the exact shortfall behind
+      // "no eligible natural HUD clock inside the remaining case budget".
+      // On this fix, the third argument is a level-length cap the six- and
+      // seven-minute production schedule sits nowhere near, so the same
+      // clock is eligible and the case grows to fit it instead of losing the
+      // coin flip.
+      const clock = eligibleHudClock(row10, readAt);
+      expect(clock).not.toBeNull();
+      expect(clock?.intervalMs).toBe(420_000);
+      expect(clock?.remainingMs).toBe(268_998);
+      expect(clock?.requiredObservationMs).toBe(328_998);
+      expect(clock!.requiredObservationMs - recordedBudgetMs).toBe(51_600); // would have refused, old design
+      const elapsedMs = clock!.observedAt - caseStartedAt;
+      expect(elapsedMs).toBe(112_602);
+      const extended = mttCaseTimeoutMs(elapsedMs, clock!, 390_000);
+      // Independent of exactly when the clock is read: elapsed + required
+      // always resolves to (level end) - (case start) + the 60s reserve.
+      expect(extended).toBe(441_600);
+      // The extension stays comfortably under the certifiable cap the
+      // enclosing job's timeout is sized against.
+      expect(extended).toBeLessThan(390_000 + MTT_HUD_LEVEL_CAP_MS + HUD_RESERVE_MS);
+    });
+  });
+  it('charges actual SDK authentication and row reads to the observed clock only', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
     const email = 'ca-customization-cert-postdeploy-local@example.invalid';
@@ -161,8 +231,8 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
     let reader: Awaited<ReturnType<typeof createHudClockReader>> | undefined;
     try {
       reader = await createHudClockReader();
-      const clocks = await reader.clocks(['table-one'], now + 150_000);
-      expect(reader.qualifications[0].budgetMs).toBe(143_000);
+      const clocks = await reader.clocks(['table-one'], 200_000);
+      expect(reader.qualifications[0].levelCapMs).toBe(200_000);
       expect(clocks.get('table-one')?.remainingMs).toBe(83_000);
       expect(clocks.get('table-one')?.observedAt).toBe(now + 7_000);
       await reader.close();
@@ -227,7 +297,7 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       addon_period_ends_at: '2026-09-27T03:45:00Z',
     },
   ])('refuses unavailable or unstable timing: %j', (override) => {
-    expect(eligibleHudClock({ ...row, ...override }, now, 300_000)).toBeNull();
+    expect(eligibleHudClock({ ...row, ...override }, now)).toBeNull();
   });
   const body = { event: 'tournament_event', payload: { type: 'level_up', payload: { level: 3 } } };
   it('reads both supported Realtime envelopes without changing the zero-based level', () => {

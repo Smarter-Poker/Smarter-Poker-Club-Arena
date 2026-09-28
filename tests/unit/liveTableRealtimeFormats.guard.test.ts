@@ -105,22 +105,29 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(tournamentHelper).toContain('await context.setOffline(false)');
     expect(tournamentHelper).toContain('did not resubscribe after network restoration');
     expect(tournamentHelper).toContain('did not recover exactly one multiplexed transport');
-    expect(tournamentHelper).toContain('const observationDeadline = Date.now() + testInfo.timeout');
+    expect(tournamentHelper).toContain('const caseStartedAt = Date.now()');
+    expect(tournamentHelper).toContain(
+      'const observationDeadline = caseStartedAt + testInfo.timeout'
+    );
     expect(tournamentHelper.match(/remainingObservationMs\(observationDeadline\)/g)).toHaveLength(
       2
     );
     // Both causal hands use the remaining case budget. After recovery the
-    // clock reader and event witness receive the same absolute deadline.
+    // clock reader is read unconditionally, and only then is the case's one
+    // deadline sized to what that real clock needs (never a fixed guess).
     expect(tournamentHelper).toContain('waitForSharedNaturalLevel(');
-    expect(tournamentHelper).toContain('reader.clocks([candidate.id], observationDeadline)');
+    expect(tournamentHelper).toContain('reader.clocks([candidate.id])');
     const recovered = tournamentHelper.indexOf('did not recover exactly one multiplexed transport');
     const clock = tournamentHelper.indexOf('await createHudClockReader()');
+    const sized = tournamentHelper.indexOf('mttCaseTimeoutMs(');
     const level = tournamentHelper.indexOf('await waitForSharedNaturalLevel(');
     expect(recovered).toBeGreaterThan(-1);
     expect(clock).toBeGreaterThan(recovered);
-    expect(level).toBeGreaterThan(clock);
+    expect(sized).toBeGreaterThan(clock);
+    expect(level).toBeGreaterThan(sized);
     expect(tournamentHelper.slice(clock)).not.toContain('setOffline(true)');
-    expect(tournamentHelper).toContain('hudEventObservationMs(hudClock, observationDeadline)');
+    expect(tournamentHelper).toContain('testInfo.setTimeout(mttTimeoutMs)');
+    expect(tournamentHelper).toContain('hudEventObservationMs(hudClock, mttDeadline)');
     expect(tournamentHelper).toContain('hudSince = hudClock.observedAt');
     expect(tournamentHelper).toContain('hudBaseline = hudClock.levelIndex');
     expect(spec).toContain('const MAX_GAMEPLAY_SILENCE_MS = 45_000');

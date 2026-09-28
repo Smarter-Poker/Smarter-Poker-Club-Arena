@@ -2427,6 +2427,38 @@ export class GameServer {
     return this.tournamentEnginesOnFleet(tournamentId).length === 0;
   }
 
+  /**
+   * THE ORIGINAL MANAGER'S OWN CHECK IS READ AT THE PROCESS ROOT (2026-09-28).
+   *
+   * #5478 moved the fleet scan in the mixed admission's `current()` to the
+   * process root and left the other cross-manager read in the same closure:
+   * `packet.current()`, the in-process drained packet's staleness check. That
+   * closure belongs to the ORIGINAL manager and calls its own methods, which
+   * are bound to the original lease generation. The admission's `current()`
+   * is re-checked by `reservation.assertCurrent` from inside
+   * `manager.recoverMixedF06Custody`, i.e. inside the SUCCESSOR's bound
+   * authority - same tournament, another generation - so the first bound call
+   * threw "Tournament data authority cannot be rebound inside another manager
+   * context" and the admission was retained on
+   * `GameServer.mixed_original_recovery_retained`.
+   *
+   * Measured on engine 763e4cec: tournament 4e2de62d lost generation 9e2be701
+   * at 13:49:49Z on 2026-09-28 with its four stopped engines still in this
+   * process, the successor 658aba20 prepared transfer 2b5b36ff at 13:50:32Z,
+   * and every re-admission after that (13:50:39Z, 14:04:58Z, 15:32Z, ...) threw
+   * here at its first `assertCurrent()`. The event dealt nothing again.
+   *
+   * Asking whether the original's drained custody is still exactly what it
+   * captured is custody bookkeeping, not the successor's data access, so it is
+   * read at the root: the original enters only its own authority, the caller's
+   * context is restored on return, and the predicate is unchanged. The durable
+   * path (no in-process packet) never reached this read and is unaffected.
+   */
+  drainedOriginalIsCurrent(packet: DrainedF06Custody | null | undefined): boolean {
+    if (!packet) return true;
+    return bindToProcessRoot(() => packet.current())();
+  }
+
   hasCompleteMixedF06PhysicalMap(
     tournamentId: string,
     manager: TournamentManager,
@@ -2881,7 +2913,7 @@ export class GameServer {
           manager.isF06RecoveryOwner() &&
           this.durableMixedF06Custody.get(tournamentId) === transfer &&
           (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet &&
-          (!packet || packet.current()) &&
+          this.drainedOriginalIsCurrent(packet) &&
           this.noTournamentEngineOnFleet(tournamentId);
         const reservation = this.tournamentRetirementCustody.reserveMixed(
           transfer.transferId,

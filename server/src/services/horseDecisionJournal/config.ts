@@ -86,6 +86,26 @@ export const HORSE_JOURNAL_ARCHIVE_RECORDS = 8_000_000;
  * this: 16 a segment, never above the catalog's sizing. */
 export const archiveRecordCap = (maxSegments: number): number =>
   Math.min(maxSegments * 16, HORSE_JOURNAL_ARCHIVE_RECORDS);
+/* THE HOLD HAS ITS OWN BUDGET (2026-09-28). Held segments count against every
+   quota, so a hold as large as the allocation leaves the ring nothing to
+   retire and capture stops at the quota. The hold may keep at most half of
+   each quota (bytes, segments and records); the other half always belongs to
+   new capture. A window whose segments exceed the budget keeps its OLDEST
+   segments up to the budget (for the default window, the start of the only
+   Phase 6A/6B capture) and the writer says so in its log line and on
+   /health (holdTrimmedSegments); the rest become the ring's, retired oldest
+   first like any other segment. On production the default hold is about
+   1.49 GB of the 8 GiB bound and 237,613 of 2,000,000 segments, well inside
+   its budget, so nothing is trimmed there. */
+export const HORSE_JOURNAL_HOLD_BUDGET_SHARE = 2;
+export const horseJournalHoldBudget = (
+  maxBytes: number,
+  maxSegments: number
+): { bytes: number; segments: number; records: number } => ({
+  bytes: Math.floor(maxBytes / HORSE_JOURNAL_HOLD_BUDGET_SHARE),
+  segments: Math.floor(maxSegments / HORSE_JOURNAL_HOLD_BUDGET_SHARE),
+  records: Math.floor(archiveRecordCap(maxSegments) / HORSE_JOURNAL_HOLD_BUDGET_SHARE),
+});
 // The former 2 GiB catalog filled at 262387 segments / 4.99 GB compressed,
 // before either archive allocation was reached. That catalog indexed its
 // records at ~639 bytes each, so the 4 GiB that replaced it covered ~6.7M

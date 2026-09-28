@@ -269,6 +269,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Mirror PR of 2026-09-28. Run on the full mirror set before this row existed, check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding against this file. md5 read live the same day from public.fn_ca_migration_text('20260922022319') equals the file md5."
+    },
+    {
+      "version": "20260928142429",
+      "name": "an_unconfirmed_debit_is_written_down_not_held_in_memory_forever",
+      "file": "supabase/migrations/20260928142429_an_unconfirmed_debit_is_written_down_not_held_in_memory_forever.sql",
+      "md5": "ac0edf9635e0711e8c549a6110a32ccf",
+      "appliedToProductionAt": "2026-09-28T14:24:29Z",
+      "recoveredOn": "2026-09-28",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, E';\\n'), byte for byte (the fn_ca_migration_text body)",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Recording of 2026-09-28. Applied to production from PR #5522 before it merged; the engine half of #5522 was never merged, so nothing calls these objects: smarter_private.time_bank_consume_unconfirmed holds 0 rows and fn_record_unconfirmed_time_bank_consume is service_role-only (proacl read live {postgres=X/postgres,service_role=X/postgres}) and refuses any caller whose auth.role() is not service_role. Byte length 9470 and md5 ac0edf96... read live the same day from public.fn_ca_migration_text('20260928142429') equal the file. check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding."
     }
   ]
 }

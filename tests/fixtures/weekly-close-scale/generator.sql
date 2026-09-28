@@ -39,12 +39,12 @@ BEGIN
    credit:=round(0.01+wcs_r('credit:'||h||':'||k)*3,2);
    src:=wcs_u('src:'||h||':'||k);
    INSERT INTO wcs_src VALUES('cash_rake_accrual',src,rr,pl,credit,ts,NULL);
+   INSERT INTO public.rake_attributions(hand_id,player_id,rake_amount,rake_record_id,club_id,weighted_rake_credit,created_at)
+    VALUES(wcs_u('handid:'||h),wcs_u('player:'||pl),credit,rr,c,credit,ts);
    total:=total+credit;
   END LOOP;
   INSERT INTO public.rake_records(id,hand_id,table_id,club_id,rake_amount,created_at,is_tournament,tournament_id,metadata)
    VALUES(rr,wcs_u('handid:'||h),wcs_u('table:'||(h%9)),c,total,ts,false,NULL,jsonb_build_object('hand_number',(1000000+h)::text));
-  INSERT INTO public.rake_attributions(hand_id,player_id,rake_amount,rake_record_id,club_id,weighted_rake_credit,created_at)
-   SELECT wcs_u('handid:'||h),wcs_u('player:'||s.player),s.credit,rr,c,s.credit,ts FROM wcs_src s WHERE s.rake_record_id=rr;
   INSERT INTO public.accounting_cash_accrual_batches(rake_record_id,hand_id,earned_at,source_fingerprint,status,plan) VALUES(rr,wcs_u('handid:'||h),ts,md5(rr::text),'accrued','{}');
   IF u IS NULL THEN
    INSERT INTO public.chip_ledger(id,from_type,to_type,amount,category,club_id,created_at,status,metadata)

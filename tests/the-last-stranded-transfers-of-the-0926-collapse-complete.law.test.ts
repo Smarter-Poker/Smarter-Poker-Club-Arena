@@ -82,6 +82,9 @@ describe('the last stranded transfers of the 09-26 collapse complete', () => {
     expect(SQL.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(SQL).toMatch(/SET LOCAL lock_timeout = '2s';/);
     expect(SQL).not.toMatch(/\bGRANT\b/);
+    expect(SQL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_f06_void_stranded_mixed_original\(uuid\)\s+FROM PUBLIC, anon, authenticated, service_role;/
+    );
     expect(SQL.match(/p\.proacl::text = '\{postgres=X\/postgres\}'/g)?.length).toBe(4);
     expect(SQL).toContain(
       "has_function_privilege('service_role', 'public.fn_f06_void_stranded_mixed_original(uuid)', 'EXECUTE')"

@@ -594,6 +594,9 @@ BEGIN
 END
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_f06_void_stranded_mixed_original(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 DO $post_fn$
 BEGIN
   IF NOT EXISTS (

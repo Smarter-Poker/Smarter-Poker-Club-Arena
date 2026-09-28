@@ -179,7 +179,9 @@ describe('a qualifier settlement refused by a table break finishes the break', (
     );
     const balance = source.indexOf('balanceStage: {');
     expect(balance).toBeGreaterThan(source.indexOf('finishStage: {'));
-    expect(source.slice(balance, balance + 1200)).toContain('await this.checkTableBalance()');
+    const balanceEnd = source.indexOf('// The old five-second manager interval', balance);
+    expect(balanceEnd).toBeGreaterThan(balance);
+    expect(source.slice(balance, balanceEnd)).toContain('await this.checkTableBalance()');
   });
 });
 

@@ -350,7 +350,11 @@ function sourceReceipt(source: RakeRow, s: Scenario): Record<string, unknown> {
   };
 }
 const FAR_HORIZON = '2999-12-31 00:00:00.000000+00';
-function success(name: string, args: Record<string, any>) {
+/** One RPC answer as supabase-js hands it back. A scenario's horizon answer is
+ *  deliberately arbitrary (it probes malformed payloads), so every answer is
+ *  typed by the envelope, not by one RPC's payload. */
+type RpcAnswer = { data: any; error: { message: string } | null };
+function success(name: string, args: Record<string, any>): RpcAnswer {
   if (name === 'fn_rakeback_settler_read_horizon') {
     const h = (scenario.current.definition as Scenario | undefined)?.horizon;
     if (typeof h === 'function') return { data: { horizon: h() }, error: null };

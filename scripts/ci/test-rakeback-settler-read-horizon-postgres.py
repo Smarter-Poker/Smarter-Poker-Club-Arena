@@ -19,6 +19,7 @@ proves, with real concurrent transactions rather than a mock:
    held horizon names the transaction that holds it.
 """
 import argparse
+import re
 import json
 import os
 from pathlib import Path
@@ -154,7 +155,10 @@ def uid(n):
 
 try:
     version = run([pg / 'postgres', '--version'])
-    assert int(version.split()[-1].split('.')[0]) >= 16, version
+    # "postgres (PostgreSQL) 17.6 (Ubuntu 17.6-1.pgdg24.04+1)" on the runner,
+    # "postgres (PostgreSQL) 17.11 (Homebrew)" on a Mac: read the major by name.
+    major = re.search(r'\(PostgreSQL\) (\d+)', version)
+    assert major and int(major.group(1)) >= 16, version
     run([pg / 'initdb', '-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=reject',
          '--no-locale', '--encoding=UTF8'])
     with (data / 'postgresql.conf').open('a') as f:

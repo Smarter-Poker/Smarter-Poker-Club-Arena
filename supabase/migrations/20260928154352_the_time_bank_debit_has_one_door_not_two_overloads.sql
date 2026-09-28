@@ -65,6 +65,10 @@
 -- the running process (the flag is in memory). Clearing those needs the
 -- engine side of PR #5527 / #5530 and a restart; this stops the count growing.
 
+-- The door is live when exactly one fn_consume_time_bank remains, which is
+-- true both where the drop ran and where there was nothing to drop.
+-- @live-proof: (SELECT count(*) = 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_consume_time_bank')
+
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 

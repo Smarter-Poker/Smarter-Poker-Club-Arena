@@ -247,6 +247,24 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   tag('weak_kicker_trips_stackoff', 'measurement', 'board trips, dominated kicker, 40bb+', 'V24'),
   tag(
+    'one_pair_river_stackoff',
+    'measurement',
+    'one pair of hero own (overpair or a good-kicker hit) committed on the river on an unpaired, not three-suited board, 40bb+',
+    'V24'
+  ),
+  tag(
+    'board_paired_two_pair_stackoff',
+    'measurement',
+    'two pair where one pair is the board own, so board cards counterfeit or outkick it, 40bb+',
+    'V24'
+  ),
+  tag(
+    'plo_paired_board_nut_stackoff',
+    'measurement',
+    'Omaha nut flush or nut straight lost at showdown on a paired board, where every raise is a full house',
+    'V15'
+  ),
+  tag(
     'straight_into_flush_stackoff',
     'measurement',
     'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',

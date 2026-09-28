@@ -75,14 +75,14 @@ function currentDefiner(qualified: string): string {
 }
 
 function projector(): { file: string; stmt: string } {
-  const file = currentDefiner('public.fn_project_hand_side_effects_after_post_commit_20260908');
-  return {
-    file,
-    stmt: sliceSqlStatement(
-      BODY.get(file) as string,
-      'CREATE OR REPLACE FUNCTION public.fn_project_hand_side_effects_after_post_commit_20260908'
-    ),
-  };
+  const name = 'fn_project_hand_side_effects_after_post_commit_20260908';
+  const file = currentDefiner(`public.${name}`);
+  const body = BODY.get(file) as string;
+  // sliceSqlStatement anchors on an exact string, and migrations spell the
+  // keywords in either case: take the anchor as written in the file.
+  const found = new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${name}`, 'i').exec(body);
+  expect(found, `${file}: the ${name} definition must be found`).not.toBeNull();
+  return { file, stmt: sliceSqlStatement(body, (found as RegExpExecArray)[0]) };
 }
 
 describe('player_stats projection locks in deterministic order', () => {

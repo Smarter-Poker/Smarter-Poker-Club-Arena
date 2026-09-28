@@ -80,10 +80,16 @@ describe('the park writes the active bank too', () => {
     });
     expect(e.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
     expect(data.rpc).toHaveBeenCalledTimes(1);
-    expect(data.rpc).toHaveBeenCalledWith('fn_consume_time_bank', {
-      p_user_id: user,
-      p_seconds: 20,
-    });
+    // A p_request_id now rides every call (2026-09-28) so a resolving retry
+    // can never double-deduct - see aTimeBankAmbiguityIsResolvedBeforeItTaintsCustody.law.test.ts.
+    expect(data.rpc).toHaveBeenCalledWith(
+      'fn_consume_time_bank',
+      expect.objectContaining({
+        p_user_id: user,
+        p_seconds: 20,
+        p_request_id: expect.any(String),
+      })
+    );
   });
 
   it('keeps an initialized bank with missing metadata behind the restart gate', async () => {

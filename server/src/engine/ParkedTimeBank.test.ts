@@ -341,9 +341,15 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       await next.readParkedTimeBanks();
       next.adoptSeatRoster(next.seatedPlayers);
       next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
-      expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')).toEqual([
-        ['fn_consume_time_bank', { p_user_id: user, p_seconds: 20 }],
-      ]);
+      const consumeCalls = data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank');
+      expect(consumeCalls).toHaveLength(1);
+      expect(consumeCalls[0][1]).toEqual(
+        expect.objectContaining({
+          p_user_id: user,
+          p_seconds: 20,
+          p_request_id: expect.any(String),
+        })
+      );
       expect(next.timeBankMeta.get(user).dbConsumedSeconds).toBe(30);
       expect(old.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
     } finally {
@@ -407,7 +413,13 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         await e.persistPresenceForRestart('parked');
         expect(e.isMaintenanceStateDurable()).toBe(true);
       }
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      // An ambiguous first answer (refused/thrown/a missing receipt) is asked
+      // again once, with the same request_id, before the flag is set
+      // (2026-09-28, CLAUDE.md 10.86) - the mock's single shared promise
+      // answers the resolving retry identically, so the outcome is unchanged
+      // but the call count is not: exactly one retry, never a loop.
+      const resolvingRetryHappens = ['refused', 'thrown', 'missing-receipt'].includes(outcome);
+      expect(data.rpc).toHaveBeenCalledTimes(resolvingRetryHappens ? 2 : 1);
       e.timeBankEngine.dispose(table);
     }
   );
@@ -782,6 +794,14 @@ describe('stopped tournament bank custody', () => {
     expect(original.timeBankEngine.getPlayerBank(table, user)).not.toBeNull();
     expect(data.rpc).toHaveBeenCalledOnce();
     finish({ data: null, error: new Error('response lost') });
+    // An ambiguous first answer is asked again once, with the same
+    // request_id, before it taints custody forever (2026-09-28, CLAUDE.md
+    // 10.86) - resolve that resolving retry too, just as ambiguously, so the
+    // custody still ends up correctly unconfirmed rather than replayed a
+    // second time by a later stop().
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(data.rpc).toHaveBeenCalledTimes(2);
+    finish({ data: null, error: new Error('response lost') });
     await stopping;
     expect(original.captureParkedTimeBanks()[user]).toMatchObject({
       remainingSeconds: 10,
@@ -793,7 +813,7 @@ describe('stopped tournament bank custody', () => {
     expect(next.adoptStoppedTimeBankCustody(original)).toBe(false);
     expect(original.retireStoppedTimeBanksForClosedSession()).toBe(false);
     await original.stop();
-    expect(data.rpc).toHaveBeenCalledOnce();
+    expect(data.rpc).toHaveBeenCalledTimes(2);
   });
 
   it('refuses incomplete capture without disposing the original value', async () => {

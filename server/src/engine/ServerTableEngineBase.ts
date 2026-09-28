@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
@@ -7894,17 +7895,83 @@ export abstract class ServerTableEngineBase {
       meta.dbConsumedSeconds += owed;
       // Keep the issued amount reserved against duplicate terminal events.
       // The park must also wait for its acknowledgment: issued is not durable.
-      const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
-      )
-        .then(({ data, error }) => {
-          if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
-          }
+      this.consumeTimeBankSecondsResolved(event.playerId, owed);
+    } catch (err) {
+      this.timeBankAccountingUnconfirmed = true;
+      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
+    }
+  }
+
+  /**
+   * AN AMBIGUOUS ANSWER IS ASKED AGAIN, ONCE, BEFORE IT IS BELIEVED FOREVER
+   * (2026-09-28).
+   *
+   * `fn_consume_time_bank` deducts a real, finite resource
+   * (`feature_purchases.uses_remaining`, `vip_feature_usage_monthly`) with no
+   * idempotency key, so an ambiguous answer (a timeout, a dropped response)
+   * used to be believed forever: `timeBankAccountingUnconfirmed = true`, with
+   * nothing anywhere that ever sets it back. That flag alone makes
+   * `hasUnretiredStoppedTimeBankCustody()` refuse for the life of the
+   * process - not because the CUSTODY is in doubt (the frozen
+   * `stoppedTimeBankCustody.banks` this gates is captured from this
+   * process's own in-memory `timeBankEngine` state; `meta.dbConsumedSeconds`
+   * above is already bumped before the RPC is even sent, so the snapshot
+   * never depends on this call's outcome) but because a best-effort ledger
+   * write - the function's own comment: "accounting must never break
+   * gameplay" - was never resolved. On production 2026-09-28 exactly one such
+   * `supabase_timeout` left one table's custody permanently "unreadable",
+   * which quarantined its tournament manager
+   * (`GameServer.quarantined_tournament_manager_stop_retry`,
+   * `mixed:originals_not_drained:engine_stops_not_all_fulfilled`) forever, 43
+   * sibling tables of the same tournament sat stalled behind it, and the
+   * hourly maintenance certificate refused every cutover since
+   * (`unparkedReasons.stopped_bank_custody_unreadable`) - by DESIGN, per the
+   * binding law in
+   * tests/a-stopped-bank-that-can-never-be-released-does-not-hold-the-restart-shut.law.test.ts,
+   * which this does not loosen: the certificate is still right to refuse an
+   * unresolved custody. What was missing is a way to RESOLVE it.
+   *
+   * `supabase/migrations/20260928144831_time_bank_consume_is_idempotent_by_request_id.sql`
+   * gives the RPC an idempotency receipt keyed on `p_request_id`: a replay of
+   * the same request_id returns the stored result instead of deducting
+   * again. That makes retrying safe, so an ambiguous first answer is now
+   * asked again, ONCE, with the SAME request_id, before the flag is set -
+   * "I could not tell" resolved by asking again, not by refusing forever
+   * (CLAUDE.md 10.86). Only when the resolving retry is ALSO ambiguous does
+   * this fall back to exactly the prior behaviour: permanent, fail-closed,
+   * unconfirmed. Best-effort and gameplay never waits for any of this - nothing
+   * here is awaited by a caller, only chained onto the pending-accounting
+   * promise the stop path already drains.
+   */
+  private consumeTimeBankSecondsResolved(userId: string, seconds: number): void {
+    const requestId = randomUUID();
+    const attempt = () =>
+      Promise.resolve(
+        supabase.rpc('fn_consume_time_bank', {
+          p_user_id: userId,
+          p_seconds: seconds,
+          p_request_id: requestId,
+        })
+      ).then(
+        ({ data, error }) => ({ data, error: error ?? null }),
+        (err: unknown) => ({ data: null, error: err as { message?: string } })
+      );
+    try {
+      const pending = attempt()
+        .then(async (first) => {
+          if (!first.error && first.data?.success === true) return;
+          // AMBIGUOUS: the same request_id makes a second attempt a safe
+          // no-op if the first one actually landed (it replays the receipt
+          // rather than deducting again), and a genuine second attempt
+          // otherwise. One retry only - this is a resolving question, not a
+          // retry loop (CLAUDE.md 10.12).
+          const retry = await attempt();
+          if (!retry.error && retry.data?.success === true) return;
+          this.timeBankAccountingUnconfirmed = true;
+          console.warn(
+            '[TimeBank] consume unconfirmed after resolving retry:',
+            retry.error?.message ?? retry.data?.error ?? first.error?.message ?? 'missing receipt'
+          );
         })
         .catch((err: unknown) => {
           this.timeBankAccountingUnconfirmed = true;
@@ -7920,29 +7987,7 @@ export abstract class ServerTableEngineBase {
 
   /** Best-effort ledger/audit write. Gameplay never waits for this call. */
   private consumeTimeBankSeconds(userId: string, seconds: number): void {
-    try {
-      const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
-      )
-        .then(({ data, error }) => {
-          if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
-          }
-        })
-        .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        })
-        .finally(() => this.timeBankAccountingPending.delete(pending));
-      this.timeBankAccountingPending.add(pending);
-    } catch (err) {
-      this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
-    }
+    this.consumeTimeBankSecondsResolved(userId, seconds);
   }
 
   /**

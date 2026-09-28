@@ -123,7 +123,7 @@ describe('engine accounting: base first, DB for the excess', () => {
     const engine = new ServerTableEngine(TABLE) as any;
     const rpc = vi
       .spyOn(supabase, 'rpc')
-      .mockReturnValue(Promise.resolve({ data: null, error: null }) as any);
+      .mockReturnValue(Promise.resolve({ data: { success: true }, error: null }) as any);
     engine.timeBankEngine.configure(TABLE, { secondsPerUse: 15 });
     engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
       remainingSeconds: opts.initialSeconds,
@@ -162,7 +162,9 @@ describe('engine accounting: base first, DB for the excess', () => {
     h.useOnce(); // 45s used → 15s beyond base
     const calls = h.consumeCalls();
     expect(calls).toHaveLength(1);
-    expect(calls[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 15 });
+    expect(calls[0][1]).toEqual(
+      expect.objectContaining({ p_user_id: 'u1', p_seconds: 15, p_request_id: expect.any(String) })
+    );
   });
 
   it('a player with no meta (pre-wiring session) never triggers DB writes', () => {
@@ -178,7 +180,7 @@ describe('engine accounting: base first, DB for the excess', () => {
     const engine = new ServerTableEngine(TABLE) as any;
     const rpc = vi
       .spyOn(supabase, 'rpc')
-      .mockReturnValue(Promise.resolve({ data: null, error: null }) as any);
+      .mockReturnValue(Promise.resolve({ data: { success: true }, error: null }) as any);
     engine.timeBankEngine.configure(TABLE, { secondsPerUse: 20 });
     engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
       remainingSeconds: 0,
@@ -195,14 +197,16 @@ describe('engine accounting: base first, DB for the excess', () => {
     engine.timeBankEngine.playerActed(TABLE, 'u1');
     const consume = rpc.mock.calls.filter((call: unknown[]) => call[0] === 'fn_consume_time_bank');
     expect(consume).toHaveLength(1);
-    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 20 });
+    expect(consume[0][1]).toEqual(
+      expect.objectContaining({ p_user_id: 'u1', p_seconds: 20, p_request_id: expect.any(String) })
+    );
   });
 
   it('records an expired Lifetime activation once with its actual standard seconds', () => {
     const engine = new ServerTableEngine(TABLE) as any;
     const rpc = vi
       .spyOn(supabase, 'rpc')
-      .mockReturnValue(Promise.resolve({ data: null, error: null }) as any);
+      .mockReturnValue(Promise.resolve({ data: { success: true }, error: null }) as any);
     engine.timeBankEngine.configure(TABLE, { secondsPerUse: 20 });
     engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
       remainingSeconds: 0,
@@ -222,7 +226,9 @@ describe('engine accounting: base first, DB for the excess', () => {
 
     const consume = rpc.mock.calls.filter((call: unknown[]) => call[0] === 'fn_consume_time_bank');
     expect(consume).toHaveLength(1);
-    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 20 });
+    expect(consume[0][1]).toEqual(
+      expect.objectContaining({ p_user_id: 'u1', p_seconds: 20, p_request_id: expect.any(String) })
+    );
   });
 });
 
@@ -243,7 +249,7 @@ describe('mid-session refresh (diamond top-up)', () => {
           error: null,
         });
       }
-      return Promise.resolve({ data: null, error: null });
+      return Promise.resolve({ data: { success: true }, error: null });
     }) as any);
 
     engine.timeBankEngine.configure(TABLE, { secondsPerUse: 15 });
@@ -273,7 +279,9 @@ describe('mid-session refresh (diamond top-up)', () => {
     engine.timeBankEngine.playerActed(TABLE, 'u1');
     const consume = rpc.mock.calls.filter((c: unknown[]) => c[0] === 'fn_consume_time_bank');
     expect(consume).toHaveLength(1);
-    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 15 });
+    expect(consume[0][1]).toEqual(
+      expect.objectContaining({ p_user_id: 'u1', p_seconds: 15, p_request_id: expect.any(String) })
+    );
   });
 
   it('fails closed (base only) when the allowance fetch errors', async () => {

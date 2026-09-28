@@ -60,7 +60,10 @@ describe('the tuner hand stream seeks instead of skipping', () => {
 
   it('a failed stream costs the gap-filled horses, not the whole night', () => {
     const at = src.indexOf("reportError(err, 'HorseSelfTuner.stream')");
-    const after = src.slice(at, at + 200);
+    // The catch ends where the coverage bookkeeping begins.
+    const end = src.indexOf('// What the sample ACTUALLY covered', at);
+    expect(end, 'the stream catch lost its closing landmark').toBeGreaterThan(at);
+    const after = src.slice(at, end);
     expect(after).toContain('streamed.clear()');
     expect(after).not.toMatch(/throw /);
   });

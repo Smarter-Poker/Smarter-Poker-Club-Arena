@@ -75,6 +75,24 @@ post_checks = '\n'.join(
  f"  IF md5(pg_get_functiondef('public.{sig}'::regprocedure)) IS DISTINCT FROM '{h}' THEN RAISE EXCEPTION 'postimage mismatch: {sig}' USING ERRCODE='55000'; END IF;"
  for sig, h in sorted(post.items())) or "  RAISE EXCEPTION 'postimage digests not generated yet';"
 
+ACL = {  # proacl read from production 2026-09-28; the new functions: owner only
+ 'fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres}',
+ 'fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres}',
+ 'fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres}',
+ 'fn_process_weekly_accounting_scope(uuid,uuid)': '{postgres=X/postgres}',
+ 'fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres}',
+ 'fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres,service_role=X/postgres}',
+ 'fn_club_weekly_accounting_summary(uuid)': '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}',
+ 'fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres}',
+ 'fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)': '{postgres=X/postgres}',
+ 'fn_weekly_accounting_attempt_begin(boolean)': '{postgres=X/postgres}',
+ 'fn_weekly_accounting_deadline_check()': '{postgres=X/postgres}',
+ 'fn_weekly_accounting_attempt_end()': '{postgres=X/postgres}',
+}
+acl_checks = '\n'.join(
+ f"  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.{sig}'::regprocedure) IS DISTINCT FROM '{acl}' THEN RAISE EXCEPTION 'access mismatch: {sig}' USING ERRCODE='55000'; END IF;"
+ for sig, acl in ACL.items())
+
 out = f"""-- A WEEKLY CLOSE PROVES EACH BOOK ONCE AND NEVER HOLDS A LONG TRANSACTION (2026-09-28).
 --
 -- WHAT WAS SLOW (measured read-only on production 2026-09-28, week 2026-09-21)
@@ -192,6 +210,16 @@ BEGIN
 {patch_block('fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone)', CASCADE_PATCHES)}
 END $patch$;
 
+-- Every replaced function keeps exactly the access production gives it today.
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_process_weekly_accounting_scope(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_club_weekly_accounting_summary(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_club_weekly_accounting_summary(uuid) TO authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_weekly_accounting_attempt_begin(boolean) FROM PUBLIC, anon, authenticated, service_role;
@@ -216,6 +244,7 @@ END $cron$;
 DO $post$
 BEGIN
 {post_checks}
+{acl_checks}
 END $post$;
 COMMIT;
 """

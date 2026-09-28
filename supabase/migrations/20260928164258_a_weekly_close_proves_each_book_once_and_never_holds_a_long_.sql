@@ -1160,6 +1160,16 @@ BEGIN
  EXECUTE src;
 END $patch$;
 
+-- Every replaced function keeps exactly the access production gives it today.
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_process_weekly_accounting_scope(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_club_weekly_accounting_summary(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_club_weekly_accounting_summary(uuid) TO authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_weekly_accounting_attempt_begin(boolean) FROM PUBLIC, anon, authenticated, service_role;
@@ -1195,5 +1205,17 @@ BEGIN
   IF md5(pg_get_functiondef('public.fn_weekly_accounting_attempt_begin(boolean)'::regprocedure)) IS DISTINCT FROM '96e8c69092908fbe9526963e9012b3e0' THEN RAISE EXCEPTION 'postimage mismatch: fn_weekly_accounting_attempt_begin(boolean)' USING ERRCODE='55000'; END IF;
   IF md5(pg_get_functiondef('public.fn_weekly_accounting_attempt_end()'::regprocedure)) IS DISTINCT FROM 'b7d27aa978a1b8db3a98921d6af82588' THEN RAISE EXCEPTION 'postimage mismatch: fn_weekly_accounting_attempt_end()' USING ERRCODE='55000'; END IF;
   IF md5(pg_get_functiondef('public.fn_weekly_accounting_deadline_check()'::regprocedure)) IS DISTINCT FROM 'cc0ab45c0c4fdcfed6dd050580d47acf' THEN RAISE EXCEPTION 'postimage mismatch: fn_weekly_accounting_deadline_check()' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_process_weekly_accounting_scope(uuid,uuid)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_club_weekly_accounting_summary(uuid)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_club_weekly_accounting_summary(uuid)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_weekly_accounting_attempt_begin(boolean)'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_weekly_accounting_attempt_begin(boolean)' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_weekly_accounting_deadline_check()'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_weekly_accounting_deadline_check()' USING ERRCODE='55000'; END IF;
+  IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_weekly_accounting_attempt_end()'::regprocedure) IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'access mismatch: fn_weekly_accounting_attempt_end()' USING ERRCODE='55000'; END IF;
 END $post$;
 COMMIT;

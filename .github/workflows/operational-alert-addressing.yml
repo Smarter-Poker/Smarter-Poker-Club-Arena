@@ -10,6 +10,20 @@ name: Operational alert addressing
 # the operational inbox through fn_record_operational_alert, never edits the
 # rows it reports, and exits 3 COULD NOT TELL when it cannot get an answer.
 # On pull requests touching this path it runs the decision-rule regression test.
+#
+# The same rule is enforced BEFORE a row can exist (2026-09-28): a SQL function
+# that calls fn_record_operational_alert must prove the fleet address on every
+# call, as its latest body and in every migration on its own (20260927143752
+# shipped exactly that gap, and nothing checked it). The rule lives in
+# tests/helpers/operational-sender-addressing.mjs, and the BLOCKING readings run
+# inside the required Client Unit Tests (vitest) check:
+# tests/an-operational-alert-sender-addresses-the-fleet.law.test.ts (the corpus)
+# and ...decisions.test.ts (the rule's own cases), which classify-ci-changes.mjs
+# reaches from any change under tests/. This workflow is not a required check.
+# sql-senders-address-the-fleet stays for the one reading only it can make, the
+# migrations the branch adds (--added-since: an added file never gets the
+# history exemption); it is also the reader tests/every-guard-has-a-reader.law.test.ts
+# requires for scripts/ci/check-operational-sender-addressing.mjs.
 on:
   workflow_run:
     workflows: ['Production Integrity Audit']
@@ -18,6 +32,10 @@ on:
     paths:
       - scripts/ci/check-operational-alert-addressing.mjs
       - scripts/ci/check-operational-alert-addressing.test.mjs
+      - scripts/ci/check-operational-sender-addressing.mjs
+      - tests/helpers/operational-sender-addressing.mjs
+      - tests/helpers/sql-reader.mjs
+      - supabase/migrations/**
       - .github/workflows/operational-alert-addressing.yml
 
 permissions:
@@ -57,3 +75,19 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/ci/check-operational-alert-addressing.mjs
+
+  sql-senders-address-the-fleet:
+    name: Every SQL sender of a Production Alerts event addresses the fleet
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The pull request's merge commit and its first parent (the base),
+          # so the check can name the migrations this branch adds.
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/ci/check-operational-sender-addressing.mjs --added-since HEAD^1

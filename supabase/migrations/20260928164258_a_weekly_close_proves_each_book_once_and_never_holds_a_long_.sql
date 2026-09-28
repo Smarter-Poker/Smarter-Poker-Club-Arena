@@ -77,6 +77,12 @@ END $pre$;
 COMMENT ON INDEX public.chip_ledger_accounting_payout_legs IS
  'The rakeback and commission legs of a club, for the weekly statement (fn_club_weekly_accounting_summary) instead of a scan of all of chip_ledger. Do not drop it.';
 
+-- A function that can move money is registered before it exists (the
+-- fn_ca_money_rpc_registry_guard rule of 2026-09-11).
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes)
+SELECT 'fn_settle_accounting_commission_stage_v3','approved','The original round 2 commission payment body, byte-for-byte under a new name, called only by fn_settle_accounting_commission_stage when its set path refuses or cannot read a book. Same earning contracts, account locks, funding, receipts and source invoices; no rates or history changed.'
+WHERE NOT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_settle_accounting_commission_stage_v3');
+
 -- The original round 2, byte-for-byte under a new name: the answer to every
 -- book the set path refuses or cannot read.
 CREATE OR REPLACE FUNCTION public.fn_settle_accounting_commission_stage_v3(p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone)

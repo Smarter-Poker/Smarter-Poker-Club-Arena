@@ -503,9 +503,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.pendingTournamentBreakBegins.get(breakId),
       this.rejectedTournamentBreakBegins.get(breakId),
       ...(this.resolvedTournamentBreakProposals.get(breakId) ?? []),
-    ].filter((proposal): proposal is readonly TableBreakMemberInput[] =>
-      Array.isArray(proposal)
-    );
+    ].filter((proposal): proposal is readonly TableBreakMemberInput[] => Array.isArray(proposal));
     for (const proposal of sent) {
       try {
         this.assertBreakMembership(proposal, actual);
@@ -678,6 +676,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (state.state !== 'park_requested') this.breakPreparationRefusals.delete(state.break_id);
     if (state.state === 'acknowledged') {
       this.durableTournamentBreaks.delete(state.break_id);
+      this.breakDispatchRefusals.delete(state.break_id);
       this.resolvedTournamentBreakProposals.delete(state.break_id);
       this.tournamentBreakArrivalWakes.delete(state.break_id);
     } else this.durableTournamentBreaks.set(state.break_id, state);
@@ -803,16 +802,18 @@ export class TournamentManager extends TournamentManagerEliminations {
   /** Dispatch stored active identities only; SQL's unavoidable guard owns winners. */
   protected async dispatchTournamentBreakMembers(state: TournamentTableBreakState): Promise<void> {
     if (!state.ok || state.state !== 'begun' || state.terminal_handoff_required) return;
+    const refuse = (reason: string): void => this.noteBreakDispatchRefusal(state.break_id, reason);
     await this.runWithTournamentSeatMoveAuthority(async () => {
       // An unrelated unknown movement still invalidates this board's plan.
-      if (this.pendingTournamentSeatMoveOutcomes.size > 0) return;
+      if (this.pendingTournamentSeatMoveOutcomes.size > 0)
+        return refuse(`seat_move_outcome_pending:${this.pendingTournamentSeatMoveOutcomes.size}`);
       const engine = this.tableEngines.get(state.source_table_id);
       if (
         !this.receiptOwnsSource(state.source_table_id) &&
         (!engine ||
           !this.retainTournamentBreakSource(state.break_id, state.source_table_id, engine))
       )
-        return;
+        return refuse(engine ? 'source_retention_refused' : 'source_engine_absent');
       for (const member of state.members) {
         if (member.winner_request_id) continue;
         if (
@@ -821,7 +822,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           member.destination_seat_number === null
         )
           throw new Error('F06 active attempt has no exact destination');
-        if (!this.eliminationMutationAllowed()) return;
+        if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
         const move: MoveInstruction = {
           playerId: member.user_id,
           fromTableId: state.source_table_id,
@@ -831,7 +832,8 @@ export class TournamentManager extends TournamentManagerEliminations {
           reason: 'table_break',
         };
         const boundary = await this.claimTournamentMoveBoundary(move, 'live_source');
-        if (!boundary || !this.eliminationMutationAllowed()) return;
+        if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
+        if (!boundary) return refuse('source_boundary_unclaimed');
         const input: TournamentSeatMoveInput = {
           requestId: member.active_request_id,
           tournamentId: this.tournamentId,
@@ -861,7 +863,38 @@ export class TournamentManager extends TournamentManagerEliminations {
           return;
         }
       }
+      this.noteBreakDispatchRefusal(state.break_id, null);
     });
+  }
+
+  /**
+   * WHY THE LAST DISPATCH MOVED NOBODY (2026-09-28).
+   *
+   * A begun break's members are moved only here, and every guard above used to
+   * answer a bare `return`. Production 2026-09-28: break fae96c1e (event
+   * 6a18ddaa) was begun by lease generation bb31566e with five active attempts
+   * to five single-player tables and not one was ever dispatched; 44 players on
+   * 40 tables sat frozen and the log said nothing, because nothing here could
+   * say which guard had declined. Breaks 0d1ff042 (event 2dbd67a7) and b7c61dda
+   * (event 0e1d340e) sat the same way. Each guard keeps its exact condition and
+   * order; it names itself here, once per change, and a full dispatch clears it.
+   */
+  lastBreakDispatchRefusal(breakId: string): string | null {
+    return this.breakDispatchRefusals.get(breakId) ?? null;
+  }
+
+  private readonly breakDispatchRefusals = new Map<string, string>();
+
+  private noteBreakDispatchRefusal(breakId: string, reason: string | null): void {
+    if (reason === null) {
+      this.breakDispatchRefusals.delete(breakId);
+      return;
+    }
+    if (this.breakDispatchRefusals.get(breakId) === reason) return;
+    this.breakDispatchRefusals.set(breakId, reason);
+    console.warn(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${breakId.slice(0, 8)} members not dispatched: ${reason}`
+    );
   }
 
   private readonly pendingTournamentParkRequests = new Map<
@@ -1783,7 +1816,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       if (member.winner_request_id) continue;
       if (!this.eliminationMutationAllowed()) return current;
       destinations ??= await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
-      if (!destinations || !this.eliminationMutationAllowed()) return current;
+      if (!destinations || !this.eliminationMutationAllowed()) {
+        this.noteBreakDispatchRefusal(
+          state.break_id,
+          destinations ? 'mutation_not_allowed' : 'destinations_unread'
+        );
+        return current;
+      }
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
       );
@@ -1809,6 +1848,10 @@ export class TournamentManager extends TournamentManagerEliminations {
         destinations
       )[0];
       if (!replacement) {
+        this.noteBreakDispatchRefusal(
+          state.break_id,
+          `destination_unplaceable:${String(member.destination_table_id).slice(0, 8)}#${String(member.destination_seat_number)}`
+        );
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return current;
       }
@@ -1833,7 +1876,14 @@ export class TournamentManager extends TournamentManagerEliminations {
       return;
     }
     let current = await this.reconcileTournamentBreak(state);
-    if (!this.eliminationMutationAllowed() || !current.ok) return;
+    if (!this.eliminationMutationAllowed()) return;
+    if (!current.ok) {
+      this.noteBreakDispatchRefusal(
+        current.break_id,
+        `reconcile_refused:${current.reason ?? 'no_reason'}`
+      );
+      return;
+    }
     if (!current.terminal_handoff_required && this.bindStoppedOriginalBreak(current)) {
       await this.retireTournamentBreak(current);
       return;
@@ -1860,7 +1910,14 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     if (current.state === 'begun') {
       current = await this.repairTournamentBreakDestinations(current);
-      if (!current.ok || !this.eliminationMutationAllowed()) return;
+      if (!this.eliminationMutationAllowed()) return;
+      if (!current.ok) {
+        this.noteBreakDispatchRefusal(
+          current.break_id,
+          `amendment_refused:${current.reason ?? 'no_reason'}`
+        );
+        return;
+      }
       await this.dispatchTournamentBreakMembers(current);
       if (!this.eliminationMutationAllowed()) return;
       current = await this.reconcileTournamentBreak(current);

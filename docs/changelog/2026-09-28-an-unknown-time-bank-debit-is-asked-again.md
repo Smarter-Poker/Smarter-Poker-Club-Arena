@@ -2,52 +2,39 @@
 
 ## What happened
 
-- 12:17:06Z: one `fn_consume_time_bank` call from the engine returned `supabase_timeout` during a database slowdown.
-- The engine could not tell whether the debit had committed, and could not ask again, because the debit had no key and a second call could charge the player twice. It set `timeBankAccountingUnconfirmed = true` on the table, and nothing in the engine ever set it back.
-- 12:19:51Z: tournament `87a68e55` ("$100 Freeroll 6:00 AM", 335 players on 43 tables) lost its lease. Its manager's stop refused on table `9333d016` with "retained time-bank custody", because a stopped engine never writes its time bank custody while a debit is unconfirmed. The manager was quarantined and retried every minute (80+ times). The event dealt nothing from 12:19Z.
-- `/health` `maintenance.unparkedReasons` read `stopped_bank_custody_unreadable: 1`, then `accounting_unconfirmed: 55`. The restart gate was shut for three consecutive breaks, so no engine release, including one carrying a fix, could land.
+- 12:17:06Z: one engine `fn_consume_time_bank` call returned `supabase_timeout`. The engine set `timeBankAccountingUnconfirmed = true` on that table, and nothing ever set it back.
+- 12:19:51Z: tournament `87a68e55` ("$100 Freeroll 6:00 AM", 335 players, 43 tables) lost its lease. Its manager's stop refused on table `9333d016` ("retained time-bank custody"). The manager was quarantined and retried 80+ times, and the event dealt nothing.
+- 14:49Z-16:18Z: migration 20260928144831 (PR #5527) was applied from an unmerged branch and created a second overload of `fn_consume_time_bank`. Every engine debit then failed with PGRST203, and each failure set the same permanent flag. `/health` showed `accounting_unconfirmed` 55, then 37. The restart gate stayed shut, and about 60 decided heads-up events could not finish. #5533 dropped the stale overload at 16:18Z.
 
 ## Root cause
 
-`ServerTableEngineBase.onTimeBankAccounting` and `consumeTimeBankSeconds` sent an unkeyed, non-idempotent debit. On any failed or lost answer they set a flag whose only clearing path was a new process.
+The engine treated any lost or failed debit answer as unknowable forever, because the debit had no key and asking again risked a double charge.
 
 ## Fix
 
-- **Database** (`20260928152513_a_time_bank_debit_carries_its_own_id_and_a_receipt.sql`):
-  - New `fn_consume_time_bank_once(user, seconds, debit_id)`. It takes the same per-user advisory lock as the debit, then returns the stored receipt if that id has already committed.
-  - Otherwise it runs the unchanged `fn_consume_time_bank` and records the receipt in `smarter_private.time_bank_debit_receipts`, in the same transaction.
-  - It is engine-only, and the receipts are append-only. `fn_consume_time_bank` is guarded on its production pre-image and is not redefined.
-- **Engine**:
-  - Every debit gets a fresh id.
-  - A lost answer keeps its id in `unresolvedTimeBankDebits`.
-  - `resolveUnconfirmedTimeBankDebits()` asks again with the same id, one resolution at a time. The flag clears only once every kept debit has a definite answer.
-  - It is asked from the two places the answer matters: the restart gate census (`maintenanceDurabilityReason`) and the manager's stop (`persistStoppedTimeBankCustody`, before it decides whether the custody can be written).
-  - No timer, sweep or cron. This is the live debit completing from its own record.
+- **Database:** `20260928144831_time_bank_consume_is_idempotent_by_request_id.sql` (from PR #5527, already applied in production and carried here byte for byte; its function md5 `6adbdcd86c910c09e56b4f10193d2e55` equals production) gives `fn_consume_time_bank` a `p_request_id`.
+  - A repeated id is answered from `public.time_bank_consume_receipts`, checked again under the per-user lock.
+  - #5533 already removed the old two-argument overload.
+- **Engine:**
+  - Every debit sends a fresh request id.
+  - A debit whose answer was lost keeps its id in `unresolvedTimeBankDebits`.
+  - `resolveUnconfirmedTimeBankDebits()` asks again with that same id, one resolution at a time, from the restart gate census (`maintenanceDurabilityReason`) and from the manager stop (`persistStoppedTimeBankCustody`, before it decides whether the custody can be written).
+  - Any well-formed reply is an answer:
+    - `success: true` means applied, or a replayed receipt.
+    - `success: false` means refused (unknown user, non-positive amount); nothing was charged and nothing ever will be.
+  - The flag clears only when every kept debit is answered. A flag with no kept debit is never cleared.
+  - No timers, sweeps or crons.
+- **Compared with #5527's engine change:** #5527 retries once, immediately, and then falls back to the permanent flag. During a sustained database slowdown both attempts time out, which is the case that froze 87a68e55. Here the id is kept and asked about again at every census and stop until the database answers.
 
 ## Proof
 
-The migration was applied to a local PostgreSQL 16 copy of production's `fn_consume_time_bank` (prosrc md5 `7832bfb717daaeb625372bdd3ccc7d60`, same owner/ACL/config). Results:
+Applying the migration file to a local PostgreSQL copy of production's original `fn_consume_time_bank` (prosrc md5 `7832bfb7...`) produces the production function md5 `6adbdcd8...`. The same run reproduces the two-overload state that #5533 fixed.
 
-| Case | Result |
-|---|---|
-| First call | Applied, `replayed:false` |
-| Same id again | `replayed:true`, usage unchanged (20) |
-| Original rolled back | No receipt left; the re-ask applied once (usage 40) |
-| Re-ask while the original was still in flight | Waited 2.0 s for the lock, then returned the original's receipt; charged once (40 to 60) |
-| Id reused with a different amount | Refused |
-| Non-engine caller | Refused |
-| Receipt DELETE | Refused |
-| Unknown user | Answered as a receipted refusal |
-| Migration re-applied | Refused by the pre-image guard |
+## Deploy
 
-## Rollout order
-
-Apply the migration first (`apply-merged-migration.yml`), then release the engine, because the engine calls the new function.
-
-The process running at the time (763e4cec) cannot clear its stuck flag without being replaced, and its restart gate is shut by that same flag.
+Merge, then the engine release. The migration is already recorded in production. The running process (763e4cec) cannot clear flags it already holds; only its replacement can.
 
 ## Tests
 
 - `server/src/engine/anUnknownTimeBankDebitIsAskedAgain.law.test.ts`
-- `tests/a-time-bank-debit-carries-its-own-id.law.test.ts`
-- Existing time bank tests now expect `fn_consume_time_bank_once` with a debit id.
+- The existing time bank tests now expect `p_request_id`, and `ParkedTimeBank.test.ts` pins that any re-ask names the same id.

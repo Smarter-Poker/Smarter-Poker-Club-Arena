@@ -8,7 +8,7 @@
  * manager could never finish its stop (87a68e55, 335 players, frozen from
  * 12:19Z), and 55 tables held the restart gate shut.
  *
- * Every debit now carries an id through fn_consume_time_bank_once, which
+ * Every debit now carries an id through fn_consume_time_bank, which
  * records a receipt in the debit's own transaction. A lost answer keeps its
  * id, and the engine asks again with that same id where the answer matters.
  */
@@ -44,9 +44,9 @@ const settle = async (engine: any) => {
 };
 
 describe('a time bank debit whose answer was lost', () => {
-  it('is sent with its own id through the receipted door, never the unkeyed one', async () => {
+  it('is sent with its own request id, never without one', async () => {
     const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
-      data: { success: true, receipted: true, replayed: false },
+      data: { success: true },
       error: null,
     } as any);
     const h = harness();
@@ -54,8 +54,9 @@ describe('a time bank debit whose answer was lost', () => {
     await settle(h.engine);
     const calls = rpc.mock.calls.filter((c: unknown[]) => String(c[0]).startsWith('fn_consume_time_bank'));
     expect(calls).toHaveLength(1);
-    expect(calls[0][0]).toBe('fn_consume_time_bank_once');
-    expect(calls[0][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_debit_id: expect.any(String) });
+    expect(calls[0][0]).toBe('fn_consume_time_bank');
+    expect(typeof calls[0][1].p_request_id).toBe('string');
+    expect(calls[0][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_request_id: expect.any(String) });
     expect(h.engine.timeBankAccountingUnconfirmed).toBe(false);
     expect(h.engine.unresolvedTimeBankDebits.size).toBe(0);
   });
@@ -68,35 +69,35 @@ describe('a time bank debit whose answer was lost', () => {
     await settle(h.engine);
     expect(h.engine.timeBankAccountingUnconfirmed).toBe(true);
     expect(h.engine.unresolvedTimeBankDebits.size).toBe(1);
-    const firstId = rpc.mock.calls[0][1].p_debit_id;
+    const firstId = rpc.mock.calls[0][1].p_request_id;
 
     // Still unknown on the first re-ask: the id is kept and the flag holds.
     rpc.mockRejectedValueOnce(new Error('fetch failed'));
     await h.engine.resolveUnconfirmedTimeBankDebits();
     expect(h.engine.timeBankAccountingUnconfirmed).toBe(true);
-    expect(rpc.mock.calls[1][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_debit_id: firstId });
+    expect(rpc.mock.calls[1][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_request_id: firstId });
 
     // The database answers from its receipt: the debit had committed.
     rpc.mockResolvedValueOnce({
-      data: { success: true, receipted: true, replayed: true, debit_id: firstId },
+      data: { success: true, idempotent_replay: true },
       error: null,
     } as any);
     await h.engine.resolveUnconfirmedTimeBankDebits();
-    expect(rpc.mock.calls[2][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_debit_id: firstId });
+    expect(rpc.mock.calls[2][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_request_id: firstId });
     expect(h.engine.unresolvedTimeBankDebits.size).toBe(0);
     expect(h.engine.timeBankAccountingUnconfirmed).toBe(false);
     // Nothing else was sent: one debit, asked about three times, one id.
-    expect(new Set(rpc.mock.calls.map((c: any[]) => c[1].p_debit_id))).toEqual(new Set([firstId]));
+    expect(new Set(rpc.mock.calls.map((c: any[]) => c[1].p_request_id))).toEqual(new Set([firstId]));
   });
 
-  it('treats a receipted refusal as an answer: nothing was charged, nothing is pending', async () => {
+  it('treats a refusal as an answer: nothing was charged, nothing is pending', async () => {
     const rpc = vi.spyOn(supabase, 'rpc');
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'supabase_timeout' } } as any);
     const h = harness();
     h.use();
     await settle(h.engine);
     rpc.mockResolvedValueOnce({
-      data: { success: false, error: 'unknown user', receipted: true, replayed: false },
+      data: { success: false, error: 'unknown user' },
       error: null,
     } as any);
     await h.engine.resolveUnconfirmedTimeBankDebits();
@@ -109,7 +110,7 @@ describe('a time bank debit whose answer was lost', () => {
     const h = harness();
     h.use();
     await settle(h.engine);
-    rpc.mockResolvedValue({ data: { success: true, receipted: true }, error: null } as any);
+    rpc.mockResolvedValue({ data: { success: true }, error: null } as any);
     const a = h.engine.resolveUnconfirmedTimeBankDebits();
     const b = h.engine.resolveUnconfirmedTimeBankDebits();
     expect(a).toBe(b);
@@ -146,7 +147,9 @@ describe('the answer is asked for where it matters', () => {
     expect(kick).toBeLessThan(firstCustody);
   });
 
-  it('no engine code sends the unkeyed debit any more', () => {
-    expect(source).not.toMatch(/rpc\(\s*'fn_consume_time_bank'/);
+  it('no engine code sends the debit without its request id', () => {
+    const calls = [...source.matchAll(/rpc\(\s*'fn_consume_time_bank',\s*\{([^}]*)\}/g)];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    for (const [, args] of calls) expect(args).toContain('p_request_id');
   });
 });

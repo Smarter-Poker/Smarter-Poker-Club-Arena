@@ -2564,8 +2564,9 @@ export abstract class ServerTableEngineBase {
   private maintenanceCheckpointGeneration = 0;
   private readonly timeBankAccountingPending = new Set<Promise<void>>();
   /* AN UNKNOWN TIME-BANK DEBIT IS ASKED AGAIN, BY ITS OWN ID (2026-09-28).
-     Every debit now carries an id and goes through fn_consume_time_bank_once,
-     which records a receipt in the same transaction as the debit. So an
+     Every debit now carries a request id to fn_consume_time_bank, which
+     (20260928144831) records a receipt in the same transaction as the debit
+     and answers a repeated id from that receipt. So an
      answer lost to a timeout is no longer a permanent mystery: asking again
      with the same id returns the receipt if the debit committed and applies it
      exactly once if it did not. This flag is true exactly while such a debit
@@ -7925,18 +7926,23 @@ export abstract class ServerTableEngineBase {
     this.submitTimeBankDebit(userId, seconds);
   }
 
-  /** The database gave a definite answer: applied, or refused and never to apply. */
+  /**
+   * The function ran to its end and answered: applied (success true, or a
+   * receipt replayed) or refused (success false: an unknown user or a
+   * non-positive amount, which moves nothing and never will). A transport
+   * error or an unreadable body is not an answer.
+   */
   private static timeBankDebitAnswered(data: unknown): boolean {
     if (!data || typeof data !== 'object') return false;
-    const reply = data as { success?: unknown; receipted?: unknown };
-    return reply.success === true || reply.receipted === true;
+    return typeof (data as { success?: unknown }).success === 'boolean';
   }
 
   /**
    * Send one debit under its own id. A lost or failed answer leaves the debit
    * in `unresolvedTimeBankDebits` with that id, so the question can be asked
    * again (resolveUnconfirmedTimeBankDebits) without any risk of charging the
-   * player twice: the receipt is written in the debit's own transaction.
+   * player twice: fn_consume_time_bank writes the request id's receipt in the
+   * debit's own transaction and answers a repeat from it.
    */
   private submitTimeBankDebit(userId: string, seconds: number, debitId: string = randomUUID()): void {
     const unanswered = (reason: string) => {
@@ -7946,10 +7952,10 @@ export abstract class ServerTableEngineBase {
     };
     try {
       const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank_once', {
+        supabase.rpc('fn_consume_time_bank', {
           p_user_id: userId,
           p_seconds: seconds,
-          p_debit_id: debitId,
+          p_request_id: debitId,
         })
       )
         .then(({ data, error }) => {
@@ -7979,18 +7985,18 @@ export abstract class ServerTableEngineBase {
     const run = (async () => {
       for (const [debitId, debit] of [...this.unresolvedTimeBankDebits]) {
         try {
-          const { data, error } = await supabase.rpc('fn_consume_time_bank_once', {
+          const { data, error } = await supabase.rpc('fn_consume_time_bank', {
             p_user_id: debit.userId,
             p_seconds: debit.seconds,
-            p_debit_id: debitId,
+            p_request_id: debitId,
           });
           if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) continue;
           this.unresolvedTimeBankDebits.delete(debitId);
-          const reply = data as { success?: unknown; replayed?: unknown; error?: unknown };
+          const reply = data as { success?: unknown; idempotent_replay?: unknown; error?: unknown };
           console.warn(
             `[TimeBank] debit ${debitId} (table ${this.tableId}) answered on re-ask: ` +
               (reply.success === true
-                ? reply.replayed === true
+                ? reply.idempotent_replay === true
                   ? 'it had committed'
                   : 'applied now, once'
                 : `refused (${String(reply.error ?? 'no reason')}), never applied`)

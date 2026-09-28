@@ -341,10 +341,10 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       await next.readParkedTimeBanks();
       next.adoptSeatRoster(next.seatedPlayers);
       next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
-      expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank_once')).toEqual([
+      expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')).toEqual([
         [
-          'fn_consume_time_bank_once',
-          { p_user_id: user, p_seconds: 20, p_debit_id: expect.any(String) },
+          'fn_consume_time_bank',
+          { p_user_id: user, p_seconds: 20, p_request_id: expect.any(String) },
         ],
       ]);
       expect(next.timeBankMeta.get(user).dbConsumedSeconds).toBe(30);
@@ -413,10 +413,10 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       /* The debit carries its own id (2026-09-28). An answer that did not
          confirm it may be asked about again, but only by that same id, so it
          can never become a second charge: every call names one debit. */
-      const debits = data.rpc.mock.calls.filter(([name]: [string]) => name === 'fn_consume_time_bank_once');
+      const debits = data.rpc.mock.calls.filter(([name]: [string]) => name === 'fn_consume_time_bank');
       expect(debits.length).toBeGreaterThanOrEqual(1);
       if (outcome === 'pending' || outcome === 'stale-break') expect(debits).toHaveLength(1);
-      expect(new Set(debits.map(([, args]: [string, { p_debit_id: string }]) => args.p_debit_id)).size).toBe(1);
+      expect(new Set(debits.map(([, args]: [string, { p_request_id: string }]) => args.p_request_id)).size).toBe(1);
       e.timeBankEngine.dispose(table);
     }
   );

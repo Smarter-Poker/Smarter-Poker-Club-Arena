@@ -40,7 +40,12 @@
 --
 -- Every other line of the function is byte-identical to the live definition
 -- (verified via pg_get_functiondef before writing this migration).
-begin;
+--
+-- The function is engine/service only (it refuses any current_user other
+-- than postgres/service_role). Its live ACL is postgres-only ({postgres=X/postgres});
+-- the REVOKE below states that closed door in-branch so the definer
+-- authorization gate sees it, and changes no live privilege.
+BEGIN;
 
 create or replace function public.fn_project_hand_side_effects_after_post_commit_20260908(p_hand_id uuid)
  returns jsonb
@@ -270,10 +275,12 @@ BEGIN
 END;
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_project_hand_side_effects_after_post_commit_20260908(uuid) FROM PUBLIC, anon, authenticated;
+
 comment on function public.fn_project_hand_side_effects_after_post_commit_20260908(uuid) is
   'Projection 2''s player_stats insert now orders its source rows by uid so lock '
   'acquisition is deterministic and matches fn_process_cash_accounting_source''s '
   'per-club player_id order, closing the deadlock read live 2026-09-28T16:05:54Z-16:06:11Z '
   '(DatabaseDeadlocksElevated). See docs/changelog/2026-09-28-player-stats-projection-lock-order.md.';
 
-commit;
+COMMIT;

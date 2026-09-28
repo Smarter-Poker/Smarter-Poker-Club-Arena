@@ -1,0 +1,7 @@
+-- UNRECOVERABLE STUB: production applied version 20260420 under the name
+-- "20260420_vercel_autofix_columns.sql" with NULL
+-- supabase_migrations.schema_migrations.statements and no created_by. No file,
+-- commit or branch in this repository or World Hub carries that name, and the name
+-- does not identify which columns it added, so the SQL cannot be recovered or
+-- reconstructed. This file exists only so the repository records that the
+-- version ran. Do NOT invent SQL here and do NOT re-run anything.

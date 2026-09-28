@@ -7,13 +7,13 @@
 Five RUNNING events with no hand for hours, read at 16:30Z on engine 763e4cec
 (instance 1-6c9b5f69):
 
-| Event | Name | Playing | Last hand | Open table break |
-| --- | --- | --- | --- | --- |
-| b165b22f | Sunday Funday Main Event Satellite | 6 (7 full tickets) | 01:16:58Z | 8fea2a2b `park_requested`, 0 members, source de4f9a82 (2 seats), since 23:25Z |
-| 0e1d340e | Sunday Funday Six-Card Closer Satellite | 6 (6 full tickets) | 01:35:27Z | b7c61dda `begun`, 4 active attempts e9dcfa9c -> e700e241, since 23:27Z |
-| e8cc6c78 | DSS Tuesday $22 NLH Deepstack Satellite | 5 (5 full tickets) | 05:12:08Z | 5586c18d `park_requested`, 0 members, source 9e87e287 (3 seats), since 03:51Z |
-| 2dbd67a7 | $100 Freeroll 12:00 AM | 10 on 11 tables, one each | 13:28:18Z | 0d1ff042 `begun`, 1 active attempt 569f8bc1 -> 6004b0b7; 60c9887a `begun`, its one member already moved, source 40f38110 now empty |
-| 6a18ddaa | Morning Free Buy (NLH) | 44 on 40 tables (39 hold one player) | 15:07:36Z | fae96c1e `begun` under lease generation bb31566e, 5 active attempts from 9245b2c9 to five single-player tables |
+| Event    | Name                                    | Playing                              | Last hand | Open table break                                                                                                                   |
+| -------- | --------------------------------------- | ------------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| b165b22f | Sunday Funday Main Event Satellite      | 6 (7 full tickets)                   | 01:16:58Z | 8fea2a2b `park_requested`, 0 members, source de4f9a82 (2 seats), since 23:25Z                                                      |
+| 0e1d340e | Sunday Funday Six-Card Closer Satellite | 6 (6 full tickets)                   | 01:35:27Z | b7c61dda `begun`, 4 active attempts e9dcfa9c -> e700e241, since 23:27Z                                                             |
+| e8cc6c78 | DSS Tuesday $22 NLH Deepstack Satellite | 5 (5 full tickets)                   | 05:12:08Z | 5586c18d `park_requested`, 0 members, source 9e87e287 (3 seats), since 03:51Z                                                      |
+| 2dbd67a7 | $100 Freeroll 12:00 AM                  | 10 on 11 tables, one each            | 13:28:18Z | 0d1ff042 `begun`, 1 active attempt 569f8bc1 -> 6004b0b7; 60c9887a `begun`, its one member already moved, source 40f38110 now empty |
+| 6a18ddaa | Morning Free Buy (NLH)                  | 44 on 40 tables (39 hold one player) | 15:07:36Z | fae96c1e `begun` under lease generation bb31566e, 5 active attempts from 9245b2c9 to five single-player tables                     |
 
 Every event had exactly one current lease on the live instance, heartbeating,
 and every table engine was running: sources "Parked between hands", the rest

@@ -166,7 +166,10 @@ describe('a qualifier settlement refused by a table break finishes the break', (
   });
 
   it("'continue' is the answer the sweep turns into the balance stage, not a cursor reset", () => {
-    const source = readFileSync(new URL('./TournamentManagerEliminations.ts', import.meta.url), 'utf8');
+    const source = readFileSync(
+      new URL('./TournamentManagerEliminations.ts', import.meta.url),
+      'utf8'
+    );
     const finish = source.slice(
       source.indexOf('const satelliteFinish = await this.checkSatelliteQualifierCompletion();'),
       source.indexOf('// Check remaining players AFTER all eliminations processed')

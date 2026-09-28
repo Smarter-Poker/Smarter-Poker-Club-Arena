@@ -503,9 +503,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.pendingTournamentBreakBegins.get(breakId),
       this.rejectedTournamentBreakBegins.get(breakId),
       ...(this.resolvedTournamentBreakProposals.get(breakId) ?? []),
-    ].filter((proposal): proposal is readonly TableBreakMemberInput[] =>
-      Array.isArray(proposal)
-    );
+    ].filter((proposal): proposal is readonly TableBreakMemberInput[] => Array.isArray(proposal));
     for (const proposal of sent) {
       try {
         this.assertBreakMembership(proposal, actual);
@@ -804,8 +802,7 @@ export class TournamentManager extends TournamentManagerEliminations {
   /** Dispatch stored active identities only; SQL's unavoidable guard owns winners. */
   protected async dispatchTournamentBreakMembers(state: TournamentTableBreakState): Promise<void> {
     if (!state.ok || state.state !== 'begun' || state.terminal_handoff_required) return;
-    const refuse = (reason: string): void =>
-      this.noteBreakDispatchRefusal(state.break_id, reason);
+    const refuse = (reason: string): void => this.noteBreakDispatchRefusal(state.break_id, reason);
     await this.runWithTournamentSeatMoveAuthority(async () => {
       // An unrelated unknown movement still invalidates this board's plan.
       if (this.pendingTournamentSeatMoveOutcomes.size > 0)

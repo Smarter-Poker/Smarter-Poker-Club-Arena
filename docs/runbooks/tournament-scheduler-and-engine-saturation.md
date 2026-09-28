@@ -29,6 +29,7 @@ series together:
 poker_tournament_elimination_scheduler_registered
 poker_tournament_elimination_scheduler_queue_depth
 poker_tournament_elimination_scheduler_slots_inflight
+poker_tournament_elimination_scheduler_adaptive_limit
 poker_tournament_elimination_scheduler_stalled_slots
 poker_tournament_elimination_scheduler_oldest_wait_ms
 sum by (outcome) (rate(poker_tournament_elimination_scheduler_dispatch_total[10m]))
@@ -60,6 +61,14 @@ table, or player IDs to them.
 5. A process restart is justified only by the shared engine liveness verdict,
    not by queue depth. Preserve the in-flight hands whenever the process is
    still making progress.
+6. `adaptive_limit` is the slot count before stall compensation. Four is the
+   floor and never lowered; the scheduler earns a fifth and sixth slot only
+   while a backlog exists, no slot is stalled, and the median sweep admitted
+   under the current limit stays within 1.2x of the median measured at four
+   (and under 2.5 s). It gives a slot back when that median passes 1.5x, and
+   drops to four on any failed sweep or stalled slot. `adaptive_limit` pinned at
+   four with a long queue means the database is already slow: raising the
+   ceiling will not help, find what is slowing the sweep's reads.
 
 ## All Elimination Slots Stalled
 

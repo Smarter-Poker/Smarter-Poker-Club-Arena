@@ -23,6 +23,36 @@ import { reportError } from '../services/errorReporter.js';
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 
 export const DEFAULT_MAX_CONCURRENT_SWEEPS = 4;
+/**
+ * THE CAP GROWS ONLY WHILE THE DATABASE KEEPS UP (2026-09-28).
+ *
+ * Four slots is the floor, never lowered. On 2026-09-27/28 the engine held
+ * 309 registered managers with 264 queued, all four slots busy, a mean sweep
+ * of ~1.9 s and the oldest waiter at 441 s, so a bust was recorded 8-30
+ * minutes after the hand that caused it. The database is two cores and was
+ * IO/WAL-bound at the same time, so a bigger fixed number is not safe: extra
+ * sweeps would only queue inside Postgres and slow every hand commit.
+ *
+ * So the extra slots are earned, one at a time, from the sweeps' own
+ * latency, which is almost entirely database round trips:
+ *   - grow by one only while there is a backlog, no slot is stalled, and the
+ *     median sweep admitted under the current limit is within 1.2x of the
+ *     median measured at the floor and under an absolute 2.5 s;
+ *   - give one back as soon as that median passes 1.5x the floor's, and fall
+ *     straight to the floor on any failed sweep or any stalled slot;
+ *   - after giving one back, hold for several windows before probing again;
+ *   - never above DEFAULT_MAX_ADAPTIVE_SWEEPS (6): at most +50% of today's
+ *     sweep load, and only while that load visibly costs the database nothing.
+ * A window only counts sweeps DISPATCHED under the limit it judges.
+ */
+export const DEFAULT_MAX_ADAPTIVE_SWEEPS = 6;
+export const ADAPTIVE_WINDOW_SWEEPS = 20;
+export const ADAPTIVE_GROW_RATIO = 1.2;
+export const ADAPTIVE_SHRINK_RATIO = 1.5;
+export const ADAPTIVE_HEALTHY_MEDIAN_CEILING_MS = 2_500;
+export const ADAPTIVE_COOLDOWN_WINDOWS = 5;
+/** Ratios are judged against at least this baseline, so a near-zero floor median cannot freeze growth or flap. */
+export const ADAPTIVE_BASELINE_MIN_MS = 50;
 // The engine signals only after its awaited stack-sync step now. A zero-delay
 // process timer keeps the callback fire-and-forget without guessing how long
 // settlement will take under load.
@@ -45,6 +75,10 @@ const slotsInflightGauge = alwaysOnRegistry.gauge(
 const stalledSlotsGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_stalled_slots',
   'Physical tournament elimination promises still unresolved after the sweep warning budget.'
+);
+const adaptiveLimitGauge = alwaysOnRegistry.gauge(
+  'poker_tournament_elimination_scheduler_adaptive_limit',
+  'Slots the elimination scheduler currently allows before stall compensation: the floor (DEFAULT_MAX_CONCURRENT_SWEEPS) plus any slots earned while sweep latency stayed flat.'
 );
 const oldestWaitGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_oldest_wait_ms',
@@ -125,6 +159,12 @@ export interface TournamentEliminationRegistration {
 
 export interface TournamentEliminationSchedulerOptions {
   maxConcurrent?: number;
+  /**
+   * Hard ceiling the adaptive limit may grow to. Defaults to maxConcurrent,
+   * i.e. a fixed cap; the process singleton passes DEFAULT_MAX_ADAPTIVE_SWEEPS.
+   */
+  maxAdaptiveConcurrent?: number;
+  adaptiveWindow?: number;
   eventWakeDelayMs?: number;
   sweepWarnMs?: number;
   urgentBurst?: number;
@@ -148,6 +188,9 @@ interface Entry extends TournamentEliminationRegistration {
   pendingWakeAs: QueueKind | null;
   pendingWakeOrder: number | null;
   abortController: AbortController | null;
+  /** The adaptive-limit epoch this entry's current physical run was dispatched under. */
+  dispatchedEpoch: number;
+  dispatchedAt: number;
 }
 
 /**
@@ -189,6 +232,8 @@ interface QueuedPlace {
 
 export interface TournamentEliminationSchedulerSnapshot {
   capacity: number;
+  /** Current limit before stall compensation; capacity <= adaptiveLimit <= the adaptive ceiling. */
+  adaptiveLimit: number;
   registered: number;
   queued: number;
   running: number;
@@ -204,6 +249,14 @@ function strongerQueueKind(a: QueueKind | null, b: QueueKind): QueueKind {
 
 export class TournamentEliminationScheduler {
   private readonly maxConcurrent: number;
+  private readonly maxAdaptiveConcurrent: number;
+  private readonly adaptiveWindow: number;
+  private adaptiveLimit: number;
+  /** Bumped on every limit change; a sample counts only for the epoch it was dispatched under. */
+  private adaptiveEpoch = 0;
+  private adaptiveSamples: number[] = [];
+  private adaptiveBaselineMs: number | null = null;
+  private adaptiveCooldownWindows = 0;
   private readonly eventWakeDelayMs: number;
   private readonly sweepWarnMs: number;
   private readonly urgentBurst: number;
@@ -229,6 +282,12 @@ export class TournamentEliminationScheduler {
       1,
       Math.floor(options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT_SWEEPS)
     );
+    this.maxAdaptiveConcurrent = Math.max(
+      this.maxConcurrent,
+      Math.floor(options.maxAdaptiveConcurrent ?? this.maxConcurrent)
+    );
+    this.adaptiveWindow = Math.max(1, Math.floor(options.adaptiveWindow ?? ADAPTIVE_WINDOW_SWEEPS));
+    this.adaptiveLimit = this.maxConcurrent;
     this.eventWakeDelayMs = Math.max(0, options.eventWakeDelayMs ?? DEFAULT_EVENT_WAKE_DELAY_MS);
     this.sweepWarnMs = Math.max(0, options.sweepWarnMs ?? DEFAULT_SWEEP_WARN_MS);
     this.urgentBurst = Math.max(1, Math.floor(options.urgentBurst ?? DEFAULT_URGENT_BURST));
@@ -270,7 +329,62 @@ export class TournamentEliminationScheduler {
   }
 
   private capacityNow(): number {
-    return this.maxConcurrent + Math.min(this.stalledCount(), this.maxConcurrent);
+    return this.adaptiveLimit + Math.min(this.stalledCount(), this.maxConcurrent);
+  }
+
+  private setAdaptiveLimit(next: number): void {
+    const bounded = Math.min(this.maxAdaptiveConcurrent, Math.max(this.maxConcurrent, next));
+    if (bounded < this.adaptiveLimit) this.adaptiveCooldownWindows = ADAPTIVE_COOLDOWN_WINDOWS;
+    if (bounded !== this.adaptiveLimit) {
+      this.adaptiveLimit = bounded;
+      this.adaptiveEpoch++;
+    }
+    this.adaptiveSamples = [];
+  }
+
+  /**
+   * One finished sweep, timed from dispatch to settlement. Decisions are made
+   * once per full window of sweeps that were dispatched under the current
+   * limit; see DEFAULT_MAX_ADAPTIVE_SWEEPS for the rule.
+   */
+  private observeSweep(entry: Entry, outcome: 'completed' | 'failed'): void {
+    if (this.maxAdaptiveConcurrent === this.maxConcurrent) return;
+    if (outcome === 'failed') {
+      this.setAdaptiveLimit(this.maxConcurrent);
+      return;
+    }
+    if (entry.dispatchedEpoch !== this.adaptiveEpoch) return;
+    this.adaptiveSamples.push(Math.max(0, this.now() - entry.dispatchedAt));
+    if (this.adaptiveSamples.length < this.adaptiveWindow) return;
+
+    const sorted = [...this.adaptiveSamples].sort((a, b) => a - b);
+    const median = sorted[Math.floor((sorted.length - 1) / 2)];
+    this.adaptiveSamples = [];
+    if (this.adaptiveCooldownWindows > 0) this.adaptiveCooldownWindows--;
+    if (this.adaptiveLimit === this.maxConcurrent) this.adaptiveBaselineMs = median;
+    const baseline = Math.max(ADAPTIVE_BASELINE_MIN_MS, this.adaptiveBaselineMs ?? median);
+
+    if (this.stalledCount() > 0) {
+      this.setAdaptiveLimit(this.maxConcurrent);
+      return;
+    }
+    if (
+      this.adaptiveLimit > this.maxConcurrent &&
+      (median > baseline * ADAPTIVE_SHRINK_RATIO || median > ADAPTIVE_HEALTHY_MEDIAN_CEILING_MS)
+    ) {
+      this.setAdaptiveLimit(this.adaptiveLimit - 1);
+      return;
+    }
+    const backlog = this.urgentQueue.length > 0 || this.routineQueue.length > 0;
+    if (
+      backlog &&
+      this.adaptiveCooldownWindows === 0 &&
+      this.adaptiveLimit < this.maxAdaptiveConcurrent &&
+      median <= ADAPTIVE_HEALTHY_MEDIAN_CEILING_MS &&
+      median <= baseline * ADAPTIVE_GROW_RATIO
+    ) {
+      this.setAdaptiveLimit(this.adaptiveLimit + 1);
+    }
   }
 
   register(registration: TournamentEliminationRegistration): () => void {
@@ -309,6 +423,8 @@ export class TournamentEliminationScheduler {
       pendingWakeAs: null,
       pendingWakeOrder: null,
       abortController: null,
+      dispatchedEpoch: -1,
+      dispatchedAt: 0,
     };
     this.entries.set(entry.tournamentId, entry);
     // Manager admission is itself a causal event. Its first pass reconstructs
@@ -391,6 +507,7 @@ export class TournamentEliminationScheduler {
     }
     return {
       capacity: this.maxConcurrent,
+      adaptiveLimit: this.adaptiveLimit,
       registered: this.entries.size,
       queued,
       running: this.runningCount,
@@ -493,6 +610,9 @@ export class TournamentEliminationScheduler {
     this.activeEntries.clear();
     this.runningCount = 0;
     this.allSlotsStalledReported = false;
+    this.setAdaptiveLimit(this.maxConcurrent);
+    this.adaptiveBaselineMs = null;
+    this.adaptiveCooldownWindows = 0;
     this.refreshMetrics(true);
   }
 
@@ -710,6 +830,8 @@ export class TournamentEliminationScheduler {
     entry.running = true;
     entry.diagnosticOperationId = null;
     entry.abortController = new AbortController();
+    entry.dispatchedEpoch = this.adaptiveEpoch;
+    entry.dispatchedAt = this.now();
     this.activeTournamentIds.add(entry.tournamentId);
     this.activeEntries.add(entry);
     this.runningCount++;
@@ -730,6 +852,7 @@ export class TournamentEliminationScheduler {
       this.runningCount = Math.max(0, this.runningCount - 1);
       dispatchTotal.inc(1, { outcome });
       this.allSlotsStalledReported = false;
+      this.observeSweep(entry, outcome);
 
       const rerun = entry.dirtyAs;
       entry.dirtyAs = null;
@@ -751,6 +874,9 @@ export class TournamentEliminationScheduler {
         // genuinely quarantined slot is exceptional and visible through
         // slots_inflight + oldest_wait_ms.
         entry.warned = true;
+        // A stalled slot is the loudest signal the database is not keeping
+        // up: every earned slot is given back at once.
+        this.setAdaptiveLimit(this.maxConcurrent);
         dispatchTotal.inc(1, { outcome: 'timed_out' });
         // Preserve the established incident series while changing its
         // ownership semantics: a warning is observable, but no live promise
@@ -817,10 +943,14 @@ export class TournamentEliminationScheduler {
     registeredGauge.set(snapshot.registered);
     queueDepthGauge.set(snapshot.queued);
     slotsInflightGauge.set(snapshot.running);
+    adaptiveLimitGauge.set(snapshot.adaptiveLimit);
     stalledSlotsGauge.set(snapshot.stalled);
     oldestWaitGauge.set(snapshot.oldestWaitMs);
   }
 }
 
 /** The only live scheduler in this Node process. */
-export const tournamentEliminationScheduler = new TournamentEliminationScheduler();
+export const tournamentEliminationScheduler = new TournamentEliminationScheduler({
+  maxConcurrent: DEFAULT_MAX_CONCURRENT_SWEEPS,
+  maxAdaptiveConcurrent: DEFAULT_MAX_ADAPTIVE_SWEEPS,
+});

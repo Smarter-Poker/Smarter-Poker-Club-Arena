@@ -1218,7 +1218,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'gto_*',
     'HorseLogic (solver lookups)',
-    'gto_miss_* / gto_skip_too_deep / gto_depth_fallback; NLH solver misses by reason',
+    'gto_miss_* / gto_skip_too_deep / gto_served_beyond_depth_ceiling / gto_depth_fallback; NLH solver misses by reason',
     'V27'
   ),
   receipt(

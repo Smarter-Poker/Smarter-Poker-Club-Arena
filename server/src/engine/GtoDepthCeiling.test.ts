@@ -82,12 +82,22 @@ describe('the wiring in HorseLogic', () => {
     'utf8'
   );
 
-  it('all three consults are gated, and the flag defaults on', () => {
-    expect(src).toContain('(opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling');
+  it('all three consults are gated, and the flag defaults OFF (league, 2026-09-28)', () => {
+    // 23 nightly runs of v33_depth_ceiling_400bb pooled: -2.97 +/- 1.09
+    // bb/100 with the ceiling on. It is opt-in until a measurement says
+    // otherwise.
+    expect(src).not.toContain('(opts.v33DepthCeiling ?? true) !== false');
+    expect((src.match(/opts\.v33DepthCeiling === true/g) ?? []).length).toBe(3);
     // Once for certified V31, once for V32 facing, and once for the legacy
     // V29/V30 open-node fallback.
     const gates = src.match(/beyondGtoDepthCeiling\(/g) ?? [];
     expect(gates.length).toBe(3);
+  });
+
+  it('a spot beyond the ceiling is still counted when the answer is served', () => {
+    // V33 existed because a 400bb hero was served 150bb strategy SILENTLY.
+    // Turning the decline off must not bring the silence back.
+    expect((src.match(/noteFire\('gto_served_beyond_depth_ceiling'\)/g) ?? []).length).toBe(3);
   });
 
   it('a skip for depth is not counted as a coverage miss', () => {
@@ -124,15 +134,11 @@ describe('the solver stack is measurable at all', () => {
     // Before 2026-09-01 none of them did: V29 through V32 shipped, displaced
     // the V15-V23 layers on the spots they answer, and nothing on the card
     // could say whether the trade was positive.
-    for (const flag of [
-      'v29GtoFlop',
-      'v30GtoTurnRiver',
-      'v31GtoSuitAware',
-      'v32FacingDefense',
-      'v33DepthCeiling',
-    ]) {
+    for (const flag of ['v29GtoFlop', 'v30GtoTurnRiver', 'v31GtoSuitAware', 'v32FacingDefense']) {
       expect(league, `${flag} needs a league matchup`).toContain(`{ ${flag}: false }`);
     }
+    // V33 is default OFF, so its matchup turns it ON against today's brain.
+    expect(league).toContain('{ v33DepthCeiling: true }');
   });
 
   it('the depth-ceiling matchup is dealt deeper than the ceiling', () => {

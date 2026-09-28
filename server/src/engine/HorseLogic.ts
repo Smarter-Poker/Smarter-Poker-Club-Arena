@@ -1851,8 +1851,12 @@ export interface HorseDecideOpts {
    *  silently, with no miss recorded. Above GTO_MAX_DEPTH_BB (twice the
    *  deepest bucket - the same log-distance this file already tolerates for a
    *  one-bucket fallback) the consult declines and the heuristic layers,
-   *  which scale continuously with depth, play the spot. Disable to ablate
-   *  (default: enabled) */
+   *  which scale continuously with depth, play the spot.
+   *  DEFAULT OFF since 2026-09-28: the v33_depth_ceiling_400bb league
+   *  matchup, pooled over all 23 nightly runs (276,000 hands), measured the
+   *  ceiling at -2.97 +/- 1.09 bb/100 (2.7 stderr) against serving the
+   *  bucketed answer. Spots beyond the ceiling still fire
+   *  gto_served_beyond_depth_ceiling. Set true to measure it again. */
   v33DepthCeiling?: boolean;
   /** V37 (2026-09-02): satellite play — flat prizes are survival, not a
    *  ladder. A locked seat folds everything, a stack below the line jams
@@ -5374,11 +5378,13 @@ export class HorseLogic {
           ? Math.min(heroRootStack31, opponentRootStack31)
           : null;
       const stackBB31 = effective31 !== null && gs.bigBlind > 0 ? effective31 / gs.bigBlind : null;
-      const tooDeep31 =
-        stackBB31 !== null &&
-        (opts.v33DepthCeiling ?? true) !== false &&
-        beyondGtoDepthCeiling(stackBB31);
+      // V33 is default OFF since 2026-09-28 (league: 23 runs, -2.97 +/- 1.09
+      // bb/100 with it on). Beyond the ceiling the bucketed answer is served,
+      // and every such spot is still counted so the staleness stays visible.
+      const beyond31 = stackBB31 !== null && beyondGtoDepthCeiling(stackBB31);
+      const tooDeep31 = beyond31 && opts.v33DepthCeiling === true;
       if (tooDeep31 && tele15) noteFire('gto_skip_too_deep');
+      else if (beyond31 && tele15) noteFire('gto_served_beyond_depth_ceiling');
 
       const direct31 =
         context31 &&
@@ -5667,9 +5673,10 @@ export class HorseLogic {
        * 150bb. Above the ceiling the answer would be extrapolated rather than
        * looked up, so the layer declines and the heuristics play the spot.
        */
-      const tooDeep32 =
-        (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB32);
+      const beyond32 = beyondGtoDepthCeiling(stackBB32);
+      const tooDeep32 = beyond32 && opts.v33DepthCeiling === true;
       if (tooDeep32 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+      else if (beyond32 && telemetryOn(opts)) noteFire('gto_served_beyond_depth_ceiling');
 
       // V34: a drawing hand — no pair yet, but real equity from the runout.
       // It realizes a little better than its raw number (implied odds, and
@@ -5814,9 +5821,10 @@ export class HorseLogic {
 
         // Legacy V29/V30 remains a safe open-only fallback while no certified
         // V31 cell matches. It never answers a response node.
-        const tooDeep29 =
-          (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB29);
+        const beyond29 = beyondGtoDepthCeiling(stackBB29);
+        const tooDeep29 = beyond29 && opts.v33DepthCeiling === true;
         if (tooDeep29 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+        else if (beyond29 && telemetryOn(opts)) noteFire('gto_served_beyond_depth_ceiling');
 
         // The open-node consult reads the same warehouse and the same depth
         // buckets, so the ceiling applies to it identically.

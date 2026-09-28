@@ -826,8 +826,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
     seats: 2,
     stackBB: 400,
     pairs: 6000,
-    a: {},
-    b: { v33DepthCeiling: false },
+    // Default OFF since 2026-09-28 (23 runs pooled: -2.97 +/- 1.09 with it
+    // on), so a turns it on and b is today's brain. A negative result here
+    // now confirms the default.
+    a: { v33DepthCeiling: true },
+    b: {},
   },
   { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
   /*

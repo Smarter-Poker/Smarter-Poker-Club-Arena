@@ -136,34 +136,56 @@ export interface DiamondInvitationOptions {
   onFailure?: (error: unknown) => void;
 }
 
+export interface DiamondInvitationDismissal {
+  /**
+   * Resolves once no decline is in flight. The handler's own budget (a 10s
+   * Not Now click plus an 8s hidden check) can outlast the action that
+   * triggered it: Playwright abandons the wait at that action's timeout and
+   * leaves the handler running. A caller that turns a failed action into its
+   * verdict waits here first, so the verdict names a decline that was still
+   * failing instead of reporting only the action's timeout.
+   */
+  idle(): Promise<void>;
+}
+
 /** The optional offer may cover either the club greeting or a later cash action. */
 export async function registerDiamondInvitationDismissal(
   page: Page,
   { onFailure }: DiamondInvitationOptions = {}
-): Promise<void> {
+): Promise<DiamondInvitationDismissal> {
   const diamondPrompt = diamondInvitation(page);
+  let inFlight: Promise<void> = Promise.resolve();
+  const handle = async () => {
+    try {
+      const cover = await layerCovering(
+        diamondPrompt.getByRole('button', { name: 'Not Now', exact: true })
+      );
+      if (cover?.dialog && CLUB_ENTRY_MESSAGE_NAME.test(cover.dialog)) {
+        // The greeting answered after the offer and is the top layer. Its
+        // owner is the action that triggered this handler; let it act. The
+        // action's own intercept check still fails loudly if nobody does.
+        return;
+      }
+      await declineDiamondInvitation(page);
+    } catch (error) {
+      if (!onFailure) throw error;
+      onFailure(error);
+    }
+  };
   await page.addLocatorHandler(
     diamondPrompt,
-    async () => {
-      try {
-        const cover = await layerCovering(
-          diamondPrompt.getByRole('button', { name: 'Not Now', exact: true })
-        );
-        if (cover?.dialog && CLUB_ENTRY_MESSAGE_NAME.test(cover.dialog)) {
-          // The greeting answered after the offer and is the top layer. Its
-          // owner is the action that triggered this handler; let it act. The
-          // action's own intercept check still fails loudly if nobody does.
-          return;
-        }
-        await declineDiamondInvitation(page);
-      } catch (error) {
-        if (!onFailure) throw error;
-        onFailure(error);
-      }
+    () => {
+      const run = handle();
+      inFlight = run.then(
+        () => undefined,
+        () => undefined
+      );
+      return run;
     },
     // No `times`: a handler that yields to the greeting must run again once
     // the invitation is on top. No wait-after: this handler proves the offer
     // hidden itself when it acts, and must not wait on it when it yields.
     { noWaitAfter: true }
   );
+  return { idle: () => inFlight };
 }

@@ -130,7 +130,10 @@ test('cash navigation finishes a late invitation before its short visibility ass
 async function mountLobbyDoors(
   page: Page,
   first: 'invitation' | 'greeting',
-  { invitationCloses = true }: { invitationCloses?: boolean } = {}
+  {
+    invitationCloses = true,
+    notNowDelayMs = 0,
+  }: { invitationCloses?: boolean; notNowDelayMs?: number } = {}
 ) {
   const { javascript, css } = await stackedLobbyDoorsFixture();
   await page.route('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', (route) =>
@@ -146,12 +149,11 @@ async function mountLobbyDoors(
   );
   await page.addScriptTag({ content: javascript });
   await page.evaluate(
-    ([order, closes]) =>
-      (window as unknown as { mountLobbyDoors: (f: string, c: boolean) => void }).mountLobbyDoors(
-        order as string,
-        closes as boolean
-      ),
-    [first, invitationCloses] as const
+    ([order, closes, delay]) =>
+      (
+        window as unknown as { mountLobbyDoors: (f: string, c: boolean, d: number) => void }
+      ).mountLobbyDoors(order as string, closes as boolean, delay as number),
+    [first, invitationCloses, notNowDelayMs] as const
   );
   // Both doors are up before any owner acts, so the stack is decided by
   // which one opened second, never by how fast this test clicks.
@@ -196,18 +198,24 @@ for (const first of ['invitation', 'greeting'] as const) {
   });
 }
 
-test('an invitation that stays open after Not Now fails setup with its own error', async ({
-  page,
-}) => {
-  test.setTimeout(60_000);
-  await mountLobbyDoors(page, 'greeting', { invitationCloses: false });
-  // The honest outcome is a loud failure naming the invitation, delivered as
-  // this call's rejection rather than an unhandled one that kills the runner.
-  await expect(dismissClubEntryMessage(page)).rejects.toThrow(
-    /Diamond Spins invitation could not be declined: .*stayed open after Not Now/
-  );
-  expect((await lobbyDoorCounts(page)).dismissals).toBe(0);
-});
+for (const notNowDelayMs of [0, 3_000]) {
+  test(`an invitation that stays open after Not Now fails setup with its own error (Not Now ready after ${notNowDelayMs}ms)`, async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    // With a 3s wait for Not Now, the decline (click, then an 8s hidden
+    // check) outlasts the greeting click's 10s budget, as WebKit did on CI in
+    // run 36374239289. Playwright abandons the handler at that timeout; setup
+    // must still wait for it and report the invitation, not a bare timeout.
+    await mountLobbyDoors(page, 'greeting', { invitationCloses: false, notNowDelayMs });
+    // The honest outcome is a loud failure naming the invitation, delivered as
+    // this call's rejection rather than an unhandled one that kills the runner.
+    await expect(dismissClubEntryMessage(page)).rejects.toThrow(
+      /Diamond Spins invitation could not be declined: .*stayed open after Not Now/
+    );
+    expect((await lobbyDoorCounts(page)).dismissals).toBe(0);
+  });
+}
 
 test('an unowned layer over the invitation is reported, never clicked through', async ({
   page,

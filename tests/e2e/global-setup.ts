@@ -123,7 +123,7 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   // global setup is an unhandled rejection that kills Node and hides the
   // error of the click that was actually running (run 36364137556).
   const invitationFailures: unknown[] = [];
-  await registerDiamondInvitationDismissal(page, {
+  const invitationHandler = await registerDiamondInvitationDismissal(page, {
     onFailure: (error) => invitationFailures.push(error),
   });
   const invitationFailure = () =>
@@ -148,6 +148,10 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
       dismiss.click({ timeout: 10_000 }),
     ]);
   } catch (error) {
+    // A decline still in flight when this click timed out is part of the
+    // verdict: let it finish (its own budget is bounded) before choosing
+    // which error to report.
+    await invitationHandler.idle();
     if (!invitationFailures.length) throw error;
     throw new Error(`Club entry message dismissal failed${invitationFailure()}`, { cause: error });
   }

@@ -65,3 +65,16 @@ Against the previous `cashLobbyOverlays.ts` and `global-setup.ts`, the two
 (`<div class="ca-modal-content"> from <div class="ca-modal-portal"> subtree
 intercepts pointer events` on the invitation's Not Now); with this change all
 21 cases in the spec pass in Chromium and WebKit.
+
+## Follow-up: a decline still in flight is part of the verdict
+
+CSS Beat run 36374239289 failed the new "stays open after Not Now" case in
+WebKit only: setup rejected with a bare `locator.click: Timeout 10000ms
+exceeded` instead of naming the invitation. The handler's budget (Not Now
+click, then an 8s hidden check) can outlast the greeting click's 10s budget;
+Playwright abandons its wait at the action's timeout and leaves the handler
+running, so no failure had been collected yet when setup chose its error.
+`registerDiamondInvitationDismissal` now returns `idle()`, and setup waits for
+an in-flight decline before deciding what to report. The case now also runs
+with Not Now enabled only after 3s, which reproduces the CI timing on any
+machine (without `idle()` it fails exactly as CI did), plus a unit test.

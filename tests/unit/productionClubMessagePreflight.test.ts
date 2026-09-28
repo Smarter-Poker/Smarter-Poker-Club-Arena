@@ -101,6 +101,37 @@ describe('production club-message setup', () => {
     await setImmediate();
   });
 
+  it('waits for a decline still in flight when the click times out, and names it', async () => {
+    // CSS Beat run 36374239289 (WebKit): the handler's Not Now click plus its
+    // 8s hidden check outlasted the greeting click's 10s budget. Playwright
+    // abandons the wait at the action's timeout and leaves the handler
+    // running, so the verdict was a bare click timeout naming nothing.
+    const NodePromise = runInNewContext('Promise') as PromiseConstructor;
+    const clubClickTimeout = new Error('locator.click: Timeout 10000ms exceeded');
+    const click = vi.fn(async () => {
+      // Triggered, not awaited: the action gives up before the handler ends.
+      void fx.handlers[0]().catch(() => undefined);
+      throw clubClickTimeout;
+    });
+    const fx = fixture(new NodePromise(() => undefined), click);
+    fx.notNow.evaluate.mockImplementation(
+      () =>
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('the Diamond Spins invitation stayed open after Not Now')),
+            20
+          )
+        )
+    );
+
+    const failure = await dismissClubEntryMessage(fx.page).catch((error: unknown) => error);
+    expect((failure as Error).message).toBe(
+      'Club entry message dismissal failed; the Diamond Spins invitation could not be declined: ' +
+        'the Diamond Spins invitation stayed open after Not Now'
+    );
+    expect((failure as Error).cause).toBe(clubClickTimeout);
+  });
+
   it('yields to a greeting stacked above the invitation, then declines it once on top', async () => {
     const { page, handlers, notNow, dialog } = fixture(
       Promise.resolve({

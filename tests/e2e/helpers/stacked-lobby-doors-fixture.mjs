@@ -21,9 +21,15 @@ export function stackedLobbyDoorsFixture() {
           import {Modal} from './src/components/common/Modal';
           const counts = { declines: 0, dismissals: 0 };
           window.lobbyDoorCounts = counts;
-          function Fixture({ first, invitationCloses }) {
+          function Fixture({ first, invitationCloses, notNowDelayMs }) {
             const [greeting, setGreeting] = React.useState(first === 'greeting');
             const [invitation, setInvitation] = React.useState(first === 'invitation');
+            const [notNowReady, setNotNowReady] = React.useState(notNowDelayMs === 0);
+            React.useEffect(() => {
+              if (notNowDelayMs === 0) return undefined;
+              const ready = setTimeout(() => setNotNowReady(true), notNowDelayMs);
+              return () => clearTimeout(ready);
+            }, []);
             React.useEffect(() => {
               const later = setTimeout(() => {
                 if (first === 'greeting') setInvitation(true);
@@ -50,7 +56,7 @@ export function stackedLobbyDoorsFixture() {
                 <Modal isOpen={invitation} onClose={() => setInvitation(false)} size="small"
                        showCloseButton={false} ariaLabel="Diamond Spins">
                   <p>You Have Diamonds Ready To Play</p>
-                  <button type="button" onClick={() => {
+                  <button type="button" disabled={!notNowReady} onClick={() => {
                     counts.declines += 1;
                     if (invitationCloses) setInvitation(false);
                   }}>Not Now</button>
@@ -58,9 +64,10 @@ export function stackedLobbyDoorsFixture() {
               </>
             );
           }
-          window.mountLobbyDoors = (first, invitationCloses = true) =>
+          window.mountLobbyDoors = (first, invitationCloses = true, notNowDelayMs = 0) =>
             createRoot(document.getElementById('root')).render(
-              <Fixture first={first} invitationCloses={invitationCloses} />
+              <Fixture first={first} invitationCloses={invitationCloses}
+                       notNowDelayMs={notNowDelayMs} />
             );
         `,
       },

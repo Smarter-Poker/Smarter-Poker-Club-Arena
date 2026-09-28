@@ -209,6 +209,8 @@ import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import {
   DECIDED_RECOVERY_STAGGER_MS,
+  decidedOwnerAction,
+  type DecidedOwnerAction,
   decidedRunningVerdicts,
   readPlayingCounts,
   verdictFor,
@@ -1599,6 +1601,10 @@ export class GameServer {
    * read healthy. See tournament/quarantinedTournamentManagers.ts.
    */
   private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
+  /** Decided events a quarantined manager holds: the key last reported per event. */
+  private decidedEventsHeldReported = new Map<string, string>();
+  /** How many decided events the last sweep pass found held by a quarantined manager. */
+  private decidedEventsHeldByQuarantine = 0;
   /** Bookkeeping that could not be recorded; never a reason to change a stop. */
   private tournamentQuarantineBookkeepingFailures?: number;
   /**
@@ -4667,6 +4673,10 @@ export class GameServer {
          the only hint either existed was that activeTournaments (472) quietly
          exceeded the lease rows (465), and nothing compared those two. */
       tournamentManagersQuarantined: this.tournamentManagerQuarantine?.size ?? 0,
+      /* Decided events (one player or none left) the last decided sweep found
+         held by a quarantined manager: unpaid until that manager retires.
+         2026-09-28 (decidedRunningBoard.ts decidedOwnerAction). */
+      decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine,
       tournamentManagerQuarantineOldestMs:
         this.tournamentManagerQuarantine?.oldestAgeMs(Date.now()) ?? 0,
       quarantinedTournamentManagers:
@@ -8047,6 +8057,7 @@ export class GameServer {
         );
         let decidedUnread = 0;
         let decidedRecoveries = 0;
+        const decidedHeld = new Set<string>();
         for (const t of decidedBoard) {
           const verdict = verdictFor(decidedVerdicts, String(t.id));
           // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
@@ -8056,6 +8067,12 @@ export class GameServer {
           }
           if (verdict.kind === 'live') continue; // still a live contest
           const playingCount = verdict.playingCount;
+          const decidedAction = this.decidedOwnerActionFor(String(t.id));
+          if (decidedAction.kind === 'held') {
+            decidedHeld.add(String(t.id));
+            this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
+            continue;
+          }
           /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
@@ -8083,6 +8100,10 @@ export class GameServer {
               { tournamentId: String(t.id) }
             );
           }
+        }
+        this.decidedEventsHeldByQuarantine = decidedHeld.size;
+        for (const id of [...this.decidedEventsHeldReported.keys()]) {
+          if (!decidedHeld.has(id)) this.decidedEventsHeldReported.delete(id);
         }
         if (decidedUnread > 0) {
           console.warn(
@@ -9914,6 +9935,42 @@ export class GameServer {
     }
   }
 
+  /** What a decided-event sweep may truthfully do with this tournament's owner. */
+  private decidedOwnerActionFor(tournamentId: string): DecidedOwnerAction {
+    const manager = this.tournamentEngines.get(tournamentId);
+    const quarantine = this.tournamentManagerQuarantine;
+    const record =
+      manager && quarantine && quarantine.heldBy(tournamentId) === manager
+        ? (quarantine.snapshot(Date.now()).find((row) => row.tournamentId === tournamentId) ?? {
+            reason: 'quarantined',
+            custodyRefusal: null,
+          })
+        : null;
+    return decidedOwnerAction({ managerRegistered: Boolean(manager), quarantine: record });
+  }
+
+  /**
+   * A decided event its quarantined manager holds is said ONCE per distinct
+   * reason, never "recovering the winner" on every pass (CLAUDE.md 10.86).
+   */
+  private noteDecidedEventHeld(
+    tournamentId: string,
+    name: string,
+    playingCount: number,
+    action: Extract<DecidedOwnerAction, { kind: 'held' }>
+  ): void {
+    if (this.decidedEventsHeldReported.get(tournamentId) === action.key) return;
+    this.decidedEventsHeldReported.set(tournamentId, action.key);
+    const message =
+      `[GameServer] RUNNING tournament ${name} (${tournamentId.slice(0, 8)}) is decided ` +
+      `(${playingCount} playing) but cannot finish: ${action.because}. ` +
+      `No finish runs until that manager retires.`;
+    console.warn(message);
+    reportError(new Error(message), 'GameServer.decided_event_held_by_quarantined_manager', {
+      tournamentId,
+    });
+  }
+
   /**
    * ═══════════════════════════════════════════════════════════════════════
    *  FINISH THE SEAT-FIRST GAMES THAT ARE ALREADY OVER (round 18)
@@ -10003,7 +10060,10 @@ export class GameServer {
         // bounded elimination transaction owns standings and the immutable
         // RUNNING -> COMPLETING claim.
         const claimedManager = this.tournamentEngines.get(id);
-        if (claimedManager) {
+        const seatFirstAction = this.decidedOwnerActionFor(id);
+        if (seatFirstAction.kind === 'held') {
+          this.noteDecidedEventHeld(id, String(t.name), liveStacks, seatFirstAction);
+        } else if (claimedManager) {
           claimedManager.requestEliminationSweep('seat_first_terminal_stack');
         } else {
           await this.ensureTournamentManagerAdmission(

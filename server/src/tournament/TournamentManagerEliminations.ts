@@ -120,6 +120,15 @@ interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
 }
 
 /**
+ * The settlement door refused because a table break still names one of this
+ * event's tables as its source (`f06_source_guard`). Only the balance stage
+ * can finish that break, so the refusal must not keep the sweep from it.
+ */
+export function isTableBreakExclusion(error: unknown): boolean {
+  return error instanceof Error && /\bF06_SOURCE_EXCLUDED\b/.test(error.message);
+}
+
+/**
  * The money threshold is a finishing place, not the number of rows in a
  * payout ladder. A valid stored ladder may be sparse (for example 1, 2, 3,
  * and 5), so hand-for-hand must begin with six players rather than five.
@@ -4351,7 +4360,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           } catch (error) {
             if (error instanceof SatelliteSettlementRefusedError) {
               this.tournamentFinished = false;
-              reportError(error, 'Tournament.satellite_qualifiers_refused');
+              reportError(error, 'Tournament.satellite_qualifiers_refused', {
+                tournamentId: this.tournamentId,
+                qualifierCount: state.qualifierIds.length,
+              });
+              /*
+               * A TABLE BREAK THAT EXCLUDES A SOURCE IS FINISHED, NOT WAITED
+               * ON (2026-09-28).
+               *
+               * `f06_source_guard` refuses the settlement's own seat and
+               * registration writes (`F06_SOURCE_EXCLUDED`) while this event
+               * still has a table break open on one of its tables. That break
+               * is finished by exactly one thing: the balance stage, which
+               * begins it, moves its members and retires its source. This
+               * branch used to answer 'pending', and 'pending' resets the
+               * sweep cursor to the elimination stage, so the balance stage
+               * was never reached again: the settlement waited for the break
+               * and the break waited for the settlement, with every table
+               * parked for the qualifier boundary. Production 2026-09-28:
+               * satellites b165b22f (break 8fea2a2b park_requested since
+               * 23:25Z), 0e1d340e (break b7c61dda begun since 23:27Z) and
+               * e8cc6c78 (break 5586c18d park_requested since 03:51Z) each had
+               * every remaining player qualifying and sat frozen for 11 to 15
+               * hours.
+               *
+               * The qualifier boundary stays held, so no hand is dealt; the
+               * sweep only goes on to the stage that owns the break, and the
+               * next pass asks the settlement door again. Every other refusal
+               * keeps its old answer.
+               */
+              if (isTableBreakExclusion(error)) {
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return 'continue';
+              }
               return 'pending';
             }
             reportError(error, 'Tournament.satellite_qualifiers_outcome_unknown');

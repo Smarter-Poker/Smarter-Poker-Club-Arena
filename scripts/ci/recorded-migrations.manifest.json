@@ -247,25 +247,6 @@
       "liveVerdict": "Installed once after native PostgreSQL 17 qualification. Dynamic EXECUTE replaces only two CTE materialization boundaries in the existing read-only audit; the installed SQL lacks a parsed object or @live-proof comment and cannot be edited afterward. Live OID 25456281 retains postgres owner, STABLE SECURITY DEFINER, search_path=public and only postgres/service_role EXECUTE; anon and authenticated EXECUTE are both false. Function definition MD5 is 8c36b14e14eb5b39c09ebd5b72120030, matching the qualified postimage. Original predicates, stack rounding, result ordering and financial records are unchanged. Complete read-only function measured 2437.865ms with zero findings at 15:06. This records immutable installed SQL without replay; source delivery and the next naturally scheduled complete conservation job remain separate pending evidence."
     },
     {
-      "version": "20260917181100",
-      "name": "union_weekly_accounting_atomic_activation_20260917",
-      "file": "supabase/migrations/20260917181100_union_weekly_accounting_atomic_activation_20260917.sql",
-      "md5": "b244edf6ee9ef6552d7103020bc8b732",
-      "appliedToProductionAt": "2026-09-17T18:11:00Z",
-      "recoveredOn": "2026-09-23",
-      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
-      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
-      "refusedBy": [
-        "check-definer-authorization: writer rule",
-        "check-definer-authorization: anon rule",
-        "check-definer-authorization: roster rule",
-        "check-money-trigger-declared",
-        "check-no-new-band-aids",
-        "a-declared-guard-change-is-recorded-not-raised"
-      ],
-      "liveVerdict": "1.67 MB, 180 functions, every finding read against production on 2026-09-23. NOT ONE function it declares is reachable by anon. Three are reachable by authenticated: fn_reduce_agent_credit_v1 and fn_retire_agent_credit_reduction_v1, which write AND consult auth.uid()/auth.role()/auth.jwt() so the writer rule is satisfied, and fn_notification_has_personal_destination, covered under 20260916111614. Every other flagged name holds {postgres=X/postgres} or {postgres=X/postgres,service_role=X/postgres}. fn_cashout_request, fn_cashout_approve and fn_cashout_release are not SECURITY DEFINER at all any more: each one's entire body is RAISE EXCEPTION 'cashier_v2_intent_required'. Of the 25 money-trigger findings, 24 are text inside a $catalog$ JSON literal the migration asserts against; the one real CREATE TRIGGER on a watched table, accounting_tournament_recognized_bank_immutable on chip_ledger, is bound by the reviewed contract in scripts/ci/money-trigger-recovery-policy.json and was declared in public.ca_declared_money_triggers at 2026-09-18 04:18:09Z by migration 20260918041452. The two band-aid names, fn_repair_tournament_rake_attribution and fn_backpay_tournament_rake_attribution, were first declared on 2026-08-28 and 2026-08-31 and both hold a row in docs/BAND-AIDS-REGISTER.md; this file replaces bodies, it creates neither. The guard redefinition of fn_ca_post_correction it did not declare was recorded forward on 2026-09-21 by 20260921022420, and public.ca_guard_defs.declared_ref has named this exact migration since 02:25:53Z that day."
-    },
-    {
       "version": "20260920060705",
       "name": "a_dispute_can_be_filed_by_the_person_who_has_one",
       "file": "supabase/migrations/20260920060705_a_dispute_can_be_filed_by_the_person_who_has_one.sql",

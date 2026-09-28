@@ -14,8 +14,31 @@ export type HudClock = {
 };
 export type HudLevel = { tournamentId: string; levelIndex: number; at: number };
 
-/** Qualification only: unknown, paused, terminal and long clocks are not witnesses. */
-export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudClock | null {
+/** Event delivery (15s) + both rendered assertions (15s) + final health/evidence/cleanup (30s). */
+export const HUD_RESERVE_MS = 60_000;
+
+/** A level longer than this is refused outright rather than sizing the case
+ *  timeout to fit it: a genuinely "long" clock, not a witness. Production
+ *  blind schedules run well under this (observed 5-10 minutes); anything
+ *  past it is treated the same as a paused or terminal tournament. Chosen so
+ *  the worst case (this plus the existing 390s case budget plus the 60s
+ *  reserve) still leaves the enclosing 60-minute job its required five
+ *  minutes of cleanup margin - see the arithmetic law in
+ *  tests/await-engine-gameplay.test.ts. */
+export const MTT_HUD_LEVEL_CAP_MS = 15 * 60_000;
+
+/**
+ * Qualification only: unknown, paused, terminal, malformed and longer-than-
+ * the-certifiable-cap clocks are not witnesses. A level that fits under
+ * `levelCapMs` is eligible regardless of how much of the case's own deadline
+ * remains - the caller sizes its deadline from `requiredObservationMs`
+ * (see `mttCaseTimeoutMs`) instead of this function guessing whether it fits.
+ */
+export function eligibleHudClock(
+  row: Row,
+  now: number,
+  levelCapMs: number = MTT_HUD_LEVEL_CAP_MS
+): HudClock | null {
   if (row.status !== 'RUNNING' || row.on_break === true || row.accelerated_mtt === true)
     return null;
   if (
@@ -57,14 +80,14 @@ export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudCl
   // Keep the original 60s reserve: 15s for event delivery, 15s for both
   // rendered assertions and 30s for final health/evidence/cleanup. The outage
   // and peer setup have already consumed the case's ONE fixed deadline.
-  const requiredObservationMs = remainingMs + 60_000;
+  const requiredObservationMs = remainingMs + HUD_RESERVE_MS;
   if (
     !Number.isFinite(intervalMs) ||
     intervalMs <= 0 ||
     !Number.isFinite(nextIntervalMs) ||
     nextIntervalMs <= 32_000 ||
-    !Number.isFinite(budgetMs) ||
-    requiredObservationMs > budgetMs ||
+    !Number.isFinite(levelCapMs) ||
+    intervalMs > levelCapMs ||
     !Number.isFinite(startedAt) ||
     startedAt > now ||
     remainingMs <= 20_000
@@ -80,6 +103,23 @@ export function eligibleHudClock(row: Row, now: number, budgetMs: number): HudCl
     requiredObservationMs,
     observedAt: now,
   };
+}
+
+/**
+ * The case's ONE deadline, sized from a real clock instead of guessed. A
+ * qualified level is never a matter of luck against a fixed budget: whatever
+ * this level's own reserve requires (`requiredObservationMs`, already capped
+ * by `eligibleHudClock` refusing anything longer than `MTT_HUD_LEVEL_CAP_MS`)
+ * is added to the time the case has already spent, on top of - never less
+ * than - the deadline already in force. This can only grow a case's timeout,
+ * never shrink one.
+ */
+export function mttCaseTimeoutMs(
+  elapsedMs: number,
+  clock: HudClock,
+  currentTimeoutMs: number
+): number {
+  return Math.max(currentTimeoutMs, elapsedMs + clock.requiredObservationMs);
 }
 
 /** Clock reads and rendered setup never restart the case or event budget. */
@@ -117,11 +157,14 @@ export async function createHudClockReader() {
     tableId: string;
     clock: HudClock | null;
     row: Row | null;
-    budgetMs: number;
+    levelCapMs: number;
   }> = [];
   return {
     qualifications,
-    async clocks(tableIds: string[], deadline: number): Promise<Map<string, HudClock>> {
+    async clocks(
+      tableIds: string[],
+      levelCapMs: number = MTT_HUD_LEVEL_CAP_MS
+    ): Promise<Map<string, HudClock>> {
       const tables = await client.from('tables').select('id,tournament_id').in('id', tableIds);
       if (tables.error) throw tables.error;
       const ids = [...new Set((tables.data || []).map((row) => row.tournament_id).filter(Boolean))];
@@ -134,13 +177,11 @@ export async function createHudClockReader() {
         .in('id', ids);
       if (tournaments.error) throw tournaments.error;
       const now = Date.now();
-      // Auth and both database reads consume the original deadline too.
-      const budgetMs = remainingObservationMs(deadline, now);
       const clocks = new Map<string, HudClock>();
       for (const table of tables.data || []) {
         const row = tournaments.data?.find((entry) => entry.id === table.tournament_id);
-        const clock = row ? eligibleHudClock(row, now, budgetMs) : null;
-        qualifications.push({ tableId: table.id, clock, row: row || null, budgetMs });
+        const clock = row ? eligibleHudClock(row, now, levelCapMs) : null;
+        qualifications.push({ tableId: table.id, clock, row: row || null, levelCapMs });
         if (clock) clocks.set(table.id, clock);
       }
       return clocks;

@@ -753,6 +753,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // plays. Exploratory pairs counts keep the whole card inside the budget;
   // stderr ~4.6 bb/100 at 6000 pairs — enough to catch layer-scale edges. ──
   { name: 'plo4_v15_discipline', variant: 'plo4', pairs: 6000, a: {}, b: { v15: false } },
+  // V15 BOATS (2026-09-28): default OFF. a turns it on, b is today's brain.
+  // Ship it default ON only after this resolves significant positive.
+  { name: 'plo5_v15_boats', variant: 'plo5', pairs: 6000, a: { v15Boats: true }, b: {} },
   { name: 'plo8_hilo_layer', variant: 'plo8', pairs: 6000, a: {}, b: { v8HiLo: false } },
   { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },

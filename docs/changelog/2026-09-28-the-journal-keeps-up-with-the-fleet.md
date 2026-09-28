@@ -4,7 +4,7 @@ Horse Brain journal only; no money path, no schema version bump, no engine confi
 
 ## What happened
 
-Read-only on the serving release (`763e4cec`, which contains #5480 "a journal lock is not a dead writer" and #5505 "retirement no longer scans archive_events via FK"): `/health` showed the archive at its byte ceiling (`compressedBytes` 8,589,933,089 of `maxBytes` 8,589,934,592, `retiredSegments` 401,321). `horse_brain_flush_receipts` (`phase15_journal_*`, per shard, per 15 minutes) showed 20-40% of decisions shed at `queue_capacity` at peak, e.g. 14:15Z: `enqueued` 92,691, `queue_capacity` 60,237, `lock_retry` 424. Of 137 captured decision chains in a sample window, 75 were marked incomplete (`shed_within_60s_of_decision`).
+Read-only on the serving release (`763e4cec`, which contains #5480 "a journal lock is not a dead writer" and #5505 "retirement no longer scans archive*events via FK"): `/health` showed the archive at its byte ceiling (`compressedBytes` 8,589,933,089 of `maxBytes` 8,589,934,592, `retiredSegments` 401,321). `horse_brain_flush_receipts` (`phase15_journal*\*`, per shard, per 15 minutes) showed 20-40% of decisions shed at `queue_capacity`at peak, e.g. 14:15Z:`enqueued`92,691,`queue_capacity`60,237,`lock_retry` 424. Of 137 captured decision chains in a sample window, 75 were marked incomplete (`shed_within_60s_of_decision`).
 
 ## Cause, measured
 
@@ -12,10 +12,10 @@ Both Horse decision-shard writers open the same base journal directory, but befo
 
 Reproduced locally: two real writer threads (the same `worker.ts`/`HorseDecisionJournalStore` used in production) hammering one shared catalog at production's byte ceiling, vs one apiece:
 
-| Configuration     | records/sec | BUSY retries (4s run) | p95 batch latency |
-| ------------------ | ----------- | ---------------------- | ------------------ |
-| Shared catalog      | 1,368       | 9                      | ~252ms             |
-| One catalog / shard | 2,204       | 0                      | ~18ms              |
+| Configuration       | records/sec | BUSY retries (4s run) | p95 batch latency |
+| ------------------- | ----------- | --------------------- | ----------------- |
+| Shared catalog      | 1,368       | 9                     | ~252ms            |
+| One catalog / shard | 2,204       | 0                     | ~18ms             |
 
 +61% aggregate throughput and zero lock retries once each shard owns its own file - directly explaining the `queue_capacity`/`lock_retry` pattern above. Retirement cost itself does not grow with catalog size (confirmed separately at 5,000,000 real rows: mean 19.6ms per retiring append, matching the small-scale figure), so per-shard catalogs alone, without further retirement-path work, remove the bottleneck.
 
@@ -47,3 +47,12 @@ The engine picks this up at its next `:55` maintenance-break cutover.
 - In `horse_brain_flush_receipts`: `queue_capacity` and `lock_retry` should both fall to near zero at the same peak load that previously produced the 20-40% shed rate; `enqueued`/`recorded` should track combined intake without the prior gap.
 - Drops that still occur (a genuine sustained overload, a disk/quota condition) remain counted and named on `/health`, never silently absorbed - the fix removes the false-positive contention, not the shedding safety valve itself.
 - A shard's `catalogBytes`/`compressedBytes` for `archive-shard-1` (and any later shard) start at zero and grow independently of shard 0's; total on-host disk footprint is now up to N times a single shard's allocation for N shards, per the sizing note above.
+
+## Correction to the bootstrap lock, found by CI (Server Engine shard 1/4, 2026-09-28)
+
+The first version of `bootstrapLegacyJournalOnce` was not yet race-free, and CI said so. Two defects, both in that function:
+
+1. **The lock was taken before its directory existed.** The lock file lives inside the journal directory, and the legacy constructor (which used to be the thing that created the directory) now runs only after the bootstrap. A fresh directory therefore failed with `ENOENT: ... horse-decisions.sqlite.bootstrap-lock` (`horseCorrectiveReview/cli.test.ts`, the one failing test in the shard). The function now creates the directory (mode 0700, absolute paths only) before taking the lock.
+2. **"The file exists" was treated as "the file is ready".** The legacy file exists from the instant its bootstrapper creates it, before its schema and `user_version` are written. A sibling shard arriving in that window returned early, opened a half-written database and captured its identity too soon: the same permanent `writer_unavailable` the lock was written to prevent, reproduced in roughly 3 of 8 runs of `legacyBootstrapIsRaceFree.test.ts` (which is why the earlier "12 consecutive trials" was luck, not proof). The fast path is now "the file exists and nobody holds the lock"; the lock owner re-checks under the lock so a second bootstrapper never re-opens a ready database for writing; a waiter that outlives the lock still times out loudly.
+
+Pinned by two new cases in `legacyBootstrapIsRaceFree.test.ts` (a directory that does not exist yet; a relative directory is refused without creating anything) and by the existing concurrent cold-start trials, now green 12 of 12 runs (72 trials) where they failed 3 of 8 runs before. A failed trial now names what the writer said.

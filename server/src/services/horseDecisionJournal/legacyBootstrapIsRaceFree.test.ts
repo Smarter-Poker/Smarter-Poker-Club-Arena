@@ -27,7 +27,7 @@
  * cold-start shape across several fresh directories and requires it to
  * succeed cleanly every time. */
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,9 +35,12 @@ import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { HorseDecisionJournalPublisher, type HorseJournalWorker } from '../HorseDecisionJournal.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
+import { HorseDecisionJournalStore } from './store.js';
 
 const dirs: string[] = [];
 const workers: Worker[] = [];
+/** What each writer refused with, so a failed trial names its cause. */
+const refusals: string[] = [];
 afterEach(async () => {
   for (const w of workers.splice(0)) {
     try {
@@ -46,6 +49,7 @@ afterEach(async () => {
       /* best effort teardown */
     }
   }
+  refusals.length = 0;
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 const directory = () => {
@@ -87,6 +91,10 @@ function spawnShardWriter(
   const create = (): HorseJournalWorker => {
     const worker = spawnJournalWorker({ directory: dir, archive });
     workers.push(worker);
+    worker.on('message', (m) => {
+      if (m?.type === 'UNAVAILABLE' || m?.type === 'RETRYABLE') refusals.push(JSON.stringify(m));
+    });
+    worker.on('error', (e) => refusals.push(`error:${e?.message}`));
     return worker as unknown as HorseJournalWorker;
   };
   const notes: string[] = [];
@@ -123,14 +131,46 @@ describe('legacy database bootstrap on a brand-new shared directory', () => {
         expect(count(notes, 'phase15_journal_enqueued'), `${name} enqueued`).toBe(
           RECORDS_PER_SHARD
         );
-        expect(count(notes, 'phase15_journal_capture_unavailable'), `${name} capture_unavailable`).toBe(
-          0
-        );
-        expect(publisher.health().mode, `${name} final mode`).toBe('stopped');
+        expect(
+          count(notes, 'phase15_journal_capture_unavailable'),
+          `${name} capture_unavailable`
+        ).toBe(0);
+        expect(
+          publisher.health().mode,
+          `${name} final mode (last failure: ${publisher.health().lastFailureReason}; notes: ${notes.filter((n) => n !== 'phase15_journal_enqueued').join(',')}; writer said: ${refusals.join(' | ')})`
+        ).toBe('stopped');
         expect(publisher.health().lastFailureReason, `${name} last failure reason`).toBeNull();
         expect(publisher.health().queued, `${name} left queued at stop`).toBe(0);
       }
     },
     15000
   );
+});
+
+describe('legacy database bootstrap creates the directory it locks inside', () => {
+  it('constructs an archive store against a directory that does not exist yet, leaving no lock behind', () => {
+    // The corrective-review CLI test and a fresh host both open a base
+    // directory that has never existed. The bootstrap lock lives inside it, so
+    // taking the lock before the directory exists failed with ENOENT (CI, Server
+    // Engine shard 1/4, 2026-09-28).
+    const base = directory();
+    const dir = join(base, 'journal-not-yet-created');
+    expect(existsSync(dir)).toBe(false);
+    const store = new HorseDecisionJournalStore(dir, {
+      archive: runtimeHorseJournalArchiveOptions(dir, {}),
+    });
+    store.close();
+    expect(existsSync(join(dir, 'horse-decisions.sqlite'))).toBe(true);
+    expect(existsSync(join(dir, 'horse-decisions.sqlite.bootstrap-lock'))).toBe(false);
+  });
+
+  it('refuses a relative directory with the constructor message instead of creating one under the working directory', () => {
+    expect(
+      () =>
+        new HorseDecisionJournalStore('relative-journal-dir', {
+          archive: runtimeHorseJournalArchiveOptions(join(tmpdir(), 'x'), {}),
+        })
+    ).toThrow(/Invalid Horse (journal|archive) configuration/);
+    expect(existsSync('relative-journal-dir')).toBe(false);
+  });
 });

@@ -484,8 +484,21 @@ function bootstrapLegacyJournalOnce(
   limits: { maxBytes?: number; maxRecords?: number; readOnly?: boolean }
 ): void {
   const legacyPath = join(directory, 'horse-decisions.sqlite');
-  if (existsSync(legacyPath)) return;
   const lockPath = `${legacyPath}.bootstrap-lock`;
+  // The legacy file EXISTS the instant its bootstrapper creates it, seconds
+  // before its schema and user_version are written, so "the file exists" is not
+  // "the file is ready": only "the file exists and nobody holds the lock" is.
+  // (The first version of this function returned on existsSync alone, and a
+  // sibling shard that arrived in that window opened a half-written database
+  // and captured its identity before the owner's schema write settled - the
+  // intermittent 'writer_unavailable' this fix exists for.)
+  if (existsSync(legacyPath) && !existsSync(lockPath)) return;
+  // The lock lives inside the directory, so the directory must exist before the
+  // lock can be taken - the legacy constructor used to be what created it, and
+  // it now runs only after this bootstrap. A relative path is refused here with
+  // the constructor's own message rather than creating a directory under cwd.
+  if (!isAbsolute(directory)) throw Error('Invalid Horse journal configuration');
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
   let owner = false;
   try {
     closeSync(openSync(lockPath, 'wx', 0o600));
@@ -495,8 +508,13 @@ function bootstrapLegacyJournalOnce(
   }
   if (owner) {
     try {
-      const initial = new LegacyHorseJournalStore(directory, limits);
-      initial.close();
+      // Re-check under the lock: a sibling may have finished the whole
+      // bootstrap between the check above and taking the lock. A ready legacy
+      // database is never re-opened for writing by a second bootstrapper.
+      if (!existsSync(legacyPath)) {
+        const initial = new LegacyHorseJournalStore(directory, limits);
+        initial.close();
+      }
     } finally {
       try {
         unlinkSync(lockPath);
@@ -514,7 +532,8 @@ function bootstrapLegacyJournalOnce(
   while ((existsSync(lockPath) || !existsSync(legacyPath)) && Date.now() < deadlineMs) {
     Atomics.wait(idle, 0, 0, 20);
   }
-  if (!existsSync(legacyPath)) throw Error('Horse archive legacy bootstrap timed out');
+  if (existsSync(lockPath) || !existsSync(legacyPath))
+    throw Error('Horse archive legacy bootstrap timed out');
 }
 
 /** Archive records retain the original v1 envelope. The legacy database is

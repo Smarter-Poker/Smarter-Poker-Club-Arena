@@ -65,6 +65,16 @@ a3a95a1b void={"ok": true, "credit": 0, "outcome": "aborted_unsettled",
   snapshot_pending=[] adopt=OK n=22 refused=619d99fd:f06_mixed_presence_holds_nothing
 ```
 
+A second run (04:40 UTC) carried a3a95a1b through the whole chain inside the
+same rolled-back transaction: the void, then a protocol-2 lease row at the
+transfer's successor generation, the LIVE `fn_f06_admit_mixed_manager_custody`,
+and the completion with the new presence body:
+
+```
+snapshot_pending=[] canonical_equal=true differing_keys=-
+admit=true terminal_proof=3 complete=true refused=619d99fd:f06_mixed_presence_holds_nothing
+```
+
 The live bodies refuse the same inputs: completion `F06_MIXED_PRESENCE_ARRIVAL_UNPROVEN`,
 void `F06_STRANDED_ORIGINALS_CHANGED` (both probed, rolled back).
 

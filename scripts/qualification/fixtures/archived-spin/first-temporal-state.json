@@ -54,8 +54,8 @@
           "coordinator_union_id": "fade0000-0000-0000-0000-000000000001"
         }
       ],
-      "week_end": "2026-09-28T07:00:00+00:00",
-      "week_start": "2026-09-21T07:00:00+00:00",
+      "week_end": "2026-10-05T07:00:00+00:00",
+      "week_start": "2026-09-28T07:00:00+00:00",
       "observed_at": "2026-09-27T00:22:27.735724+00:00",
       "runs_blocking_now": 0,
       "runs_overlapping_week": []

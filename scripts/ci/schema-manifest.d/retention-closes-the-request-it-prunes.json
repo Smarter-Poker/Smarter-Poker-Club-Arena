@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/cowork-claude-disposal-0928/fix/retention-closes-the-request-it-prunes",
+  "_comment": "Mirror of recorded migration 20260928031344_retention_closes_the_settlement_request_it_prunes, applied to production before this branch existed. Verified against production on 2026-09-28: the repo file is byte-identical to supabase_migrations.schema_migrations.statements, smarter_private.hand_submission_retention_disposal(uuid[],text) body md5 96e9073772870148e41f6a5fbc3c7144 and public.sp_prune_hand_history(integer) body md5 806608447aefdb6ed4e64dbfe9b86d20 both match pg_proc.prosrc, and the in-place edit to sp_prune_hand_history is present exactly once in the live definition. The migration also ALTERs smarter_private.hand_submission_disposals (already declared by a-superseded-retained-hand-is-disposed.json) to drop its witness-is-later CHECK and add a witness-is-not-earlier one; ALTER TABLE ... ADD/DROP CONSTRAINT declares no new column and needs no entry here.",
+  "functions": [
+    "smarter_private.hand_submission_retention_disposal"
+  ]
+}

@@ -30,7 +30,9 @@ if(pr)for(const p of policy){const file=`supabase/migrations/${p.declarationVers
 if(!/^[a-f0-9]{40}$/.test(headSha))throw Error('invalid SHA');
 let live=null;if(inputs.some(x=>offenders(x.sql).length)){
  const url=process.env.SUPABASE_URL;if(url!=='https://kuklfnapbkmacvwxktbh.supabase.co')throw Error('wrong database');
- const versions=[...new Set(policy.flatMap(x=>[x.originalVersion,x.declarationVersion]))];
+ // Recordings are proved from the same catalogue: ask for each offending file's own version too.
+ const own=inputs.filter(x=>offenders(x.sql).length).map(x=>/^supabase\/migrations\/(\d{14})_/.exec(x.path)?.[1]).filter(Boolean);
+ const versions=[...new Set([...policy.flatMap(x=>[x.originalVersion,x.declarationVersion]),...own])];
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!key)throw Error('missing trusted credential');
  const r=await fetch(url+'/rest/v1/rpc/fn_ci_money_trigger_recovery',{method:'POST',headers:supabaseServerHeaders(key,{'Content-Type':'application/json'}),body:JSON.stringify({p_versions:versions})});if(!r.ok)throw Error(`catalog unavailable ${r.status}`);live=await r.json();
 }

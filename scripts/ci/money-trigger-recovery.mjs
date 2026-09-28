@@ -10,6 +10,7 @@ export function verifyRecovery({ path, sql, policy, live, headSha, files, now = 
   if (!hits.length) return { path, sha256: sha256(sql), recovered: false };
   requireThat(live?.version === 1 && Number.isFinite(Date.parse(live.observed_at)) && Math.abs(now - Date.parse(live.observed_at)) < 300000, 'missing or stale live proof');
   const rows = policy.filter((p) => p.path === path);
+  if (rows.length === 0) return verifyRecording({ path, sql, hits, live, headSha });
   requireThat(rows.length === 1, 'no unique independently reviewed recovery contract');
   const p = rows[0];
   requireThat(typeof p.review === 'string' && p.review.length > 10 && p.originalSha256 === sha256(sql), 'changed historical SQL or missing review');
@@ -30,4 +31,60 @@ export function verifyRecovery({ path, sql, policy, live, headSha, files, now = 
     requireThat(reg.length === 1 && reg[0].note === t.note && t.note.length >= 40, 'registry declaration differs');
   }
   return { path, sha256: p.originalSha256, recovered: true, headSha, declarationVersion: p.declarationVersion };
+}
+
+/**
+ * A RECORDING OF AN APPLIED MIGRATION NEEDS NO RECOVERY CONTRACT (2026-09-28).
+ *
+ * A recovery contract exists for a migration that created a money trigger and
+ * never declared it: somebody reviews the trigger and a later migration
+ * declares it. A byte-exact RECORDING of a migration production already applied
+ * creates nothing - the trigger was created (and often since dropped) when the
+ * SQL ran - so demanding a reviewed contract for it refused 22 recordings of
+ * April-September history whose triggers are either declared live or gone.
+ *
+ * The proof is taken from the same trusted live catalogue, never from the PR:
+ *   1. the file's version is in schema_migrations with exactly one statement,
+ *      and that statement's sha256 equals the file (headerless recording) or
+ *      the file after its frozen legacy `-- BACKFILLED` header and final
+ *      newline. A new migration cannot hash to SQL production already holds.
+ *   2. every trigger the file names that still exists live is registered in
+ *      ca_declared_money_triggers. One that is live and undeclared still fails:
+ *      a recording is not a way to launder an undeclared trigger.
+ *   3. a named trigger that no longer exists live is history, and is reported.
+ */
+export function recordedStatementCandidates(sql) {
+  const out = [sql];
+  if (!/^--\s*BACKFILLED\b/.test(sql)) return out;
+  let at = 0;
+  while (at < sql.length) {
+    const end = sql.indexOf('\n', at);
+    if (end < 0) break;
+    const line = sql.slice(at, end);
+    if (!(line === '' || line.startsWith('--'))) break;
+    at = end + 1;
+    const rest = sql.slice(at);
+    if (rest.endsWith('\n')) out.push(rest.slice(0, -1));
+  }
+  return out;
+}
+
+function verifyRecording({ path, sql, hits, live, headSha }) {
+  const m = /^supabase\/migrations\/(\d{14})_[^/]+\.sql$/.exec(path);
+  requireThat(m, 'no unique independently reviewed recovery contract');
+  const version = m[1];
+  const history = (live.history || []).filter((h) => h.version === version);
+  requireThat(history.length === 1 && history[0].statementCount === 1, 'no unique independently reviewed recovery contract');
+  requireThat(
+    recordedStatementCandidates(sql).some((c) => sha256(c) === history[0].sha256),
+    'not a recording: file differs from the SQL production applied under its version'
+  );
+  const key = (x) => `${x.table}.${x.trigger}`;
+  const gone = [];
+  for (const h of hits) {
+    const present = (live.triggers || []).filter((t) => key(t) === key(h));
+    if (present.length === 0) { gone.push(key(h)); continue; }
+    requireThat((live.declarations || []).some((d) => key(d) === key(h)), 'recorded trigger is live and undeclared');
+  }
+  return { path, sha256: sha256(sql), recovered: true, recording: true, headSha, version, triggersNoLongerLive: gone };
 }

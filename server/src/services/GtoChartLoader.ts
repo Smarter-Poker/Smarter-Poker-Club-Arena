@@ -33,17 +33,26 @@ const REFRESH_MS = 60 * 60_000;
 const RETRY_MS = 30_000;
 const MAX_RETRY_MS = 5 * 60_000;
 
+/**
+ * The one read of the chart source. The live load and the offline Phase 6C
+ * store snapshot (scripts/phase6c-store-snapshot.mjs) both use it, so a
+ * snapshot is the exact row set a worker would hydrate.
+ */
+export async function fetchGtoChartRows(): Promise<GtoChartRow[]> {
+  const { data, error } = await supabase
+    .from('memory_charts_gold')
+    .select(
+      'chart_id, game_type, stack_depth, hero_position, villain_action, hand_matrix, created_at'
+    );
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as GtoChartRow[];
+  assertCompleteGtoChartCorpus(rows);
+  return rows;
+}
+
 async function loadGtoChartsAttempt(): Promise<{ ok: boolean; count: number }> {
   try {
-    const { data, error } = await supabase
-      .from('memory_charts_gold')
-      .select(
-        'chart_id, game_type, stack_depth, hero_position, villain_action, hand_matrix, created_at'
-      );
-    if (error) throw new Error(error.message);
-
-    const rows = (data ?? []) as GtoChartRow[];
-    assertCompleteGtoChartCorpus(rows);
+    const rows = await fetchGtoChartRows();
     const applied = setGtoCharts(rows);
     console.log(
       `[GtoChartLoader] ${applied} solver charts loaded (${gtoChartCount()} rows, ` +

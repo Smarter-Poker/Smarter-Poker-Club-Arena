@@ -1435,6 +1435,12 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
 
+      - name: The rakeback settler reads only what every writer has committed
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rakeback-settler-read-horizon-postgres.py
+
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
         env:

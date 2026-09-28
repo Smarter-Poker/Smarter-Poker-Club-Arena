@@ -2305,6 +2305,63 @@ describe('HorseDecisionWorkerRuntime', () => {
     );
   });
 
+  it('planted red: journals the governor scale the decision ran at, not a reading taken after it (Phase 6C)', async () => {
+    const h = harness();
+    // Each read of the live governor may take a new reading (one a second).
+    const readings = [0.6, 1, 0.35, 0.2];
+    let pinned: number | null = null;
+    const live = () => pinned ?? readings.shift() ?? 0.08;
+    const seenByDecision: number[] = [];
+    const journaled: number[] = [];
+    h.deps.governorScale = live;
+    h.deps.atGovernorScale = <T>(fn: () => T) => {
+      const scale = live();
+      pinned = scale;
+      try {
+        return { value: fn(), scale };
+      } finally {
+        pinned = null;
+      }
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      // Two Monte Carlo reads inside the one decision.
+      seenByDecision.push(live(), live());
+      return decide(...args);
+    };
+    h.deps.journalEnabled = () => true;
+    h.deps.journalDecision = (_request, payload) => {
+      journaled.push((payload as { governorScale: number }).governorScale);
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    expect(seenByDecision).toEqual([0.6, 0.6]);
+    expect(journaled).toEqual([0.6]);
+    expect(result).toMatchObject({ governorScale: 0.6 });
+  });
+
+  it('without a decision-scale hook, reads the governor once, before the decision', async () => {
+    const h = harness();
+    const reads: string[] = [];
+    let phase = 'before';
+    h.deps.governorScale = () => {
+      reads.push(phase);
+      return 0.35;
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      phase = 'during';
+      const out = decide(...args);
+      phase = 'after';
+      return out;
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    expect(reads).toEqual(['before']);
+    expect(h.messages.find((m) => m.type === 'FAST_RESULT')).toMatchObject({ governorScale: 0.35 });
+  });
+
   it('captures actual fast/deep journal inputs privately and retains decisions when capture fails', async () => {
     const h = harness(),
       records: any[] = [];

@@ -114,15 +114,24 @@ describe('a seat does not move under a release walk', () => {
   });
 
   /* And the gate is the FIRST thing the method does, so no debit, no cap
-     arithmetic and no seat lookup happens on a frozen tick. */
+     arithmetic and no seat lookup happens on a frozen tick.
+     2026-09-28: a chip top-up now decides seat versus queue in
+     addChipsDecided, after it owns the seat boundary (the Midway weekly-close
+     race). The boundary wait can span a freeze announcement, so the gate is
+     read again there, first, before the seat and before the debit; the entry
+     method itself performs no chip debit. */
   it('the freeze gate precedes the seat and the debit in a top-up', () => {
-    const body = blankNonCode(sliceMethod(read(SEATING), 'public async addChips('));
-    const gate = body.indexOf('isMaintenanceFrozen()');
-    const seat = body.indexOf('this.seatedPlayers.find(');
-    const debit = body.indexOf('supabase.rpc(');
+    const entry = blankNonCode(sliceMethod(read(SEATING), 'public async addChips('));
+    const gate = entry.indexOf('isMaintenanceFrozen()');
+    const seat = entry.indexOf('this.seatedPlayers.find(');
     expect(gate).toBeGreaterThanOrEqual(0);
     expect(seat).toBeGreaterThan(gate);
-    expect(debit).toBeGreaterThan(gate);
+    expect(entry.indexOf('supabase.rpc(')).toBe(-1);
+    const decided = blankNonCode(sliceMethod(read(SEATING), 'private async addChipsDecided('));
+    const regate = decided.indexOf('isMaintenanceFrozen()');
+    expect(regate).toBeGreaterThanOrEqual(0);
+    expect(decided.indexOf('this.seatedPlayers.find(')).toBeGreaterThan(regate);
+    expect(decided.indexOf('supabase.rpc(')).toBeGreaterThan(regate);
   });
 
   /* GATE TWO: the roster sweep. The wait-for-players loop re-reads the seats

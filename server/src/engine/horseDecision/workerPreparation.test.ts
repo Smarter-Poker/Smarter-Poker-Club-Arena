@@ -39,6 +39,8 @@ import {
   stopHorseMindPersistence,
 } from '../../services/HorseMindPersistence.js';
 import { loadGtoCharts } from '../../services/GtoChartLoader.js';
+import { gtoChartStoreIdentity } from '../GtoCharts.js';
+import { gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 
 afterEach(async () => {
   await worker.stopServices();
@@ -80,6 +82,17 @@ describe('real worker-owned startup preparation', () => {
     await worker.startServices();
     expect(hydrateHorseMindFromDb).toHaveBeenCalledTimes(1);
     expect(prepare).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the content identity of the stores it decides with, at READY and beside every decision', async () => {
+    vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
+    vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});
+    vi.spyOn(future, 'prepareTournamentFutureHandFacts').mockImplementation(() => {});
+    const readiness = await worker.startServices();
+    const expected = { charts: gtoChartStoreIdentity(), postflop: gtoPostflopStoreIdentity() };
+    expect(readiness.solverStoreIdentity).toEqual(expected);
+    expect(worker.workerReadiness().solverStoreIdentity).toEqual(expected);
+    expect(expected.charts.digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('rejects readiness and drains owned services if preparation fails', async () => {

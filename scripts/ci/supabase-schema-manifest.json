@@ -2849,6 +2849,7 @@
     "fn_f06_begin_hand",
     "fn_f06_break_state",
     "fn_f06_claim_custody",
+    "fn_f06_close_abandoned_manager_transfer",
     "fn_f06_close_break",
     "fn_f06_discover_breaks",
     "fn_f06_finish_hand",

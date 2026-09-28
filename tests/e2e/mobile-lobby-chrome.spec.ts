@@ -23,8 +23,12 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import {
+  prepareCashLobbyActions,
+  registerDiamondInvitationDismissal,
+} from './support/cashLobbyOverlays';
 import { sharedPopupFixture } from './helpers/shared-popup-fixture.mjs';
+import { stackedLobbyDoorsFixture } from './helpers/stacked-lobby-doors-fixture.mjs';
 import { dismissClubEntryMessage } from './global-setup';
 
 const css = (p: string) => readFileSync(p, 'utf8');
@@ -109,6 +113,125 @@ test('cash navigation finishes a late invitation before its short visibility ass
   await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
   await expect(page.locator('#declines')).toHaveText('1');
   await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+});
+
+/**
+ * TWO LOBBY DOORS, WHICHEVER ANSWERED LAST ON TOP (2026-09-28).
+ *
+ * Post-deploy run 36364137556 never reached the live table. Its fresh
+ * certificate account got both optional doors, the greeting answered after
+ * the Diamond invitation and so sat above it, and the setup's invitation
+ * handler clicked a Not Now that the greeting's own "Do Not Show Me This
+ * Message Again" intercepted on every retry. The handler outlived the setup,
+ * its rejection was unhandled, and Node exited with that instead of the real
+ * error. These mount both doors on the real shared Modal in both orders and
+ * require each door to be closed through its own control, once.
+ */
+async function mountLobbyDoors(
+  page: Page,
+  first: 'invitation' | 'greeting',
+  { invitationCloses = true }: { invitationCloses?: boolean } = {}
+) {
+  const { javascript, css } = await stackedLobbyDoorsFixture();
+  await page.route('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+  await page.setContent(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<style>${css}</style></head><body><div id="root"></div></body></html>`
+  );
+  await page.addScriptTag({ content: javascript });
+  await page.evaluate(
+    ([order, closes]) =>
+      (window as unknown as { mountLobbyDoors: (f: string, c: boolean) => void }).mountLobbyDoors(
+        order as string,
+        closes as boolean
+      ),
+    [first, invitationCloses] as const
+  );
+  // Both doors are up before any owner acts, so the stack is decided by
+  // which one opened second, never by how fast this test clicks.
+  await expect(page.getByRole('dialog')).toHaveCount(2);
+  const topLabel = await page.evaluate(() => {
+    const portals = [...document.querySelectorAll('.ca-modal-portal')];
+    return portals.at(-1)?.querySelector('[role="dialog"]')?.getAttribute('aria-label');
+  });
+  expect(topLabel).toBe(
+    first === 'invitation' ? 'Club Message From Fixture Club' : 'Diamond Spins'
+  );
+}
+
+const lobbyDoorCounts = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { lobbyDoorCounts: { declines: number; dismissals: number } })
+        .lobbyDoorCounts
+  );
+
+for (const first of ['invitation', 'greeting'] as const) {
+  test(`production setup persists the greeting and declines the invitation when the ${first} opened first`, async ({
+    page,
+  }) => {
+    await mountLobbyDoors(page, first);
+    await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 1 });
+  });
+
+  test(`cash lobby actions close both stacked doors when the ${first} opened first`, async ({
+    page,
+  }) => {
+    await mountLobbyDoors(page, first);
+    await prepareCashLobbyActions(page);
+    const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+    await tab.click({ timeout: 10_000 });
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The X closes the greeting for now; only the setup's control persists it.
+    expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
+  });
+}
+
+test('an invitation that stays open after Not Now fails setup with its own error', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await mountLobbyDoors(page, 'greeting', { invitationCloses: false });
+  // The honest outcome is a loud failure naming the invitation, delivered as
+  // this call's rejection rather than an unhandled one that kills the runner.
+  await expect(dismissClubEntryMessage(page)).rejects.toThrow(
+    /Diamond Spins invitation could not be declined: .*stayed open after Not Now/
+  );
+  expect((await lobbyDoorCounts(page)).dismissals).toBe(0);
+});
+
+test('an unowned layer over the invitation is reported, never clicked through', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setContent(`
+    <button role="tab" aria-selected="false"
+      onclick="this.setAttribute('aria-selected', 'true')">NLH</button>
+    <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
+      <button onclick="this.parentElement.remove()">Not Now</button>
+    </div>
+    <div id="unowned" style="position:fixed;inset:0;z-index:5"></div>
+  `);
+  const failures: unknown[] = [];
+  await registerDiamondInvitationDismissal(page, { onFailure: (error) => failures.push(error) });
+  const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+  await expect(tab.click({ timeout: 12_000 })).rejects.toThrow(/Timeout 12000ms exceeded/);
+  expect(String((failures[0] as Error)?.message)).toMatch(/intercepts pointer events/);
+  // Retire the handler so these reads do not re-run it: the invitation was
+  // never clicked through, and the action behind it never happened.
+  const invitation = page.getByRole('dialog', { name: 'Diamond Spins', exact: true });
+  await page.removeLocatorHandler(invitation);
+  await expect(invitation).toBeVisible();
+  await expect(tab).toHaveAttribute('aria-selected', 'false');
 });
 
 /**

@@ -521,26 +521,61 @@ async function main() {
       ]) {
         const indices = pick((v) => cites(v, store));
         const snap = snapshots[store];
-        await run(
-          `${store}:no_pin`,
-          `a count-only record meeting a loaded store of the same size, with no pin, is refused as reference_unavailable:${store}`,
-          indices,
-          (record) => replay(record, { pins: {} }),
-          (v) => v.status === 'refused' && v.reason === `reference_unavailable:${store}`
-        );
-        if (pins[key])
+        // A record that journaled its store identity is matched by digest; one
+        // that journaled a count only is matched to a pin. Each gets its own controls.
+        const journaledIdentity = (i) => {
+          try {
+            return JSON.parse(batch[i].record.body)?.readiness?.solverStoreIdentity?.[key] ?? null;
+          } catch {
+            return null;
+          }
+        };
+        const countOnly = indices.filter((i) => !journaledIdentity(i));
+        const withIdentity = indices.filter((i) => journaledIdentity(i));
+        if (countOnly.length) {
           await run(
-            `${store}:release_predates_pin`,
-            `a release that could have loaded its store before the pinned window opened is refused as reference_unavailable:${store}`,
-            indices,
-            (record) =>
-              replay(record, {
-                releaseNotBeforeMs: Object.fromEntries(
-                  Object.keys(releaseNotBeforeMs).map((r) => [r, pins[key].unchangedFromMs - 1])
-                ),
-              }),
+            `${store}:no_pin`,
+            `a count-only record meeting a loaded store of the same size, with no pin, is refused as reference_unavailable:${store}`,
+            countOnly,
+            (record) => replay(record, { pins: {} }),
             (v) => v.status === 'refused' && v.reason === `reference_unavailable:${store}`
           );
+          if (pins[key])
+            await run(
+              `${store}:release_predates_pin`,
+              `a release that could have loaded its store before the pinned window opened is refused as reference_unavailable:${store}`,
+              countOnly,
+              (record) =>
+                replay(record, {
+                  releaseNotBeforeMs: Object.fromEntries(
+                    Object.keys(releaseNotBeforeMs).map((r) => [r, pins[key].unchangedFromMs - 1])
+                  ),
+                }),
+              (v) => v.status === 'refused' && v.reason === `reference_unavailable:${store}`
+            );
+        }
+        if (withIdentity.length) {
+          await run(
+            `${store}:journaled_identity_substituted`,
+            `a re-signed record whose journaled ${store} digest names a different store of the same size is refused as reference_unavailable:${store}, even with the true store loaded`,
+            withIdentity,
+            (record) =>
+              replay(
+                resign(record, (body) => {
+                  const id = body.readiness.solverStoreIdentity[key];
+                  id.digest = (id.digest[0] === '0' ? '1' : '0') + id.digest.slice(1);
+                })
+              ),
+            (v) => v.status === 'refused' && v.reason === `reference_unavailable:${store}`
+          );
+          await run(
+            `${store}:journaled_identity_without_pin`,
+            'a record that journaled its store identity reproduces against the loaded store by digest alone, with no pin',
+            withIdentity,
+            (record) => replay(record, { pins: {} }),
+            (v) => v.status === 'reproduced'
+          );
+        }
         if (snap && indices.length) {
           // Same number of entries, one frequency moved: a count cannot see it.
           const tampered = structuredClone(snap.rows);
@@ -905,8 +940,15 @@ async function main() {
   }
 }
 
+// The decision code this replays imports production singletons that own
+// intervals (the lobby broadcast in hub/ChannelHub, reached through
+// workerRuntime -> HorseMindHydrator -> services/supabase). The replay is a
+// command: once its evidence is written it exits with its own status, rather
+// than waiting on a timer it never started.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  main().catch((error) => {
-    console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    process.exitCode = 1;
-  });
+  main()
+    .catch((error) => {
+      console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      process.exitCode = 1;
+    })
+    .finally(() => process.exit());

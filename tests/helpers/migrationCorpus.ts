@@ -22,6 +22,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { classifyMigration, loadManifest } from '../../scripts/ci/recording-only.mjs';
 
 export const MIGRATIONS_DIR = resolve(__dirname, '..', '..', 'supabase', 'migrations');
 
@@ -57,4 +58,31 @@ export const migrationText = (name: string): string => {
   const hit = migrationCorpus().find((migration) => migration.name === name);
   if (!hit) throw new Error(`migrationText: ${name} is not in supabase/migrations`);
   return hit.sql;
+};
+
+/**
+ * IS THIS FILE A VERIFIED RECORDING OF SQL PRODUCTION ALREADY RAN? (2026-09-28)
+ *
+ * A law that asks "does this migration INTRODUCE X" has already had its answer
+ * from the database when the file is a byte-exact recording of an applied
+ * migration: the SQL ran before the file existed, so refusing the file protects
+ * nothing and only keeps the repository unable to describe its own database.
+ * scripts/ci/recording-only.mjs is the one place that decides this for the
+ * file-text guards (manifest row + md5 of the file bytes, checked live by
+ * check-recorded-migrations-evidence.mjs; or the legacy marker below its frozen
+ * cutoff). Laws that scan the corpus for newly introduced shapes use the same
+ * answer, so a recording is judged the same way everywhere. 'unknown' (an
+ * unreadable manifest) is never a recording.
+ */
+let recordingManifest: ReturnType<typeof loadManifest> | null = null;
+const recordingVerdicts = new Map<string, boolean>();
+export const isVerifiedRecording = (name: string): boolean => {
+  const cached = recordingVerdicts.get(name);
+  if (cached !== undefined) return cached;
+  recordingManifest ??= loadManifest();
+  const verdict =
+    classifyMigration(`supabase/migrations/${name}`, { manifest: recordingManifest }).state ===
+    'recorded';
+  recordingVerdicts.set(name, verdict);
+  return verdict;
 };

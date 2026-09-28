@@ -38,6 +38,7 @@ import {
   HorseDecisionJournalPublisher,
   horseDecisionJournalHealth,
   relayHorseDecisionJournalHealth,
+  HORSE_JOURNAL_QUEUE_MAX_RECORDS,
   type HorseJournalWorker,
 } from './HorseDecisionJournal.js';
 import {
@@ -302,9 +303,12 @@ describe('bounded isolated Horse journal publisher', () => {
     const w = new FakeWorker(),
       notes: string[] = [],
       p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
-    for (let i = 0; i < 65; i++) p.record('decision', 'hand', 'turn', {});
+    for (let i = 0; i < HORSE_JOURNAL_QUEUE_MAX_RECORDS + 1; i++)
+      p.record('decision', 'hand', 'turn', {});
     p.record('decision', null, 'turn', {});
-    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(64);
+    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(
+      HORSE_JOURNAL_QUEUE_MAX_RECORDS
+    );
     expect(notes).toContain('phase15_journal_queue_capacity');
     expect(notes).toContain('phase15_journal_capture_unavailable');
     w.emit({ type: 'UNAVAILABLE' });
@@ -1581,10 +1585,16 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'READY' });
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
-      for (let i = 0; i < 70; i++) p.record('decision', 'hand', 'turn', { i });
-      expect(p.health().queued).toBe(64);
-      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(7);
-      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(70);
+      // Queue starts at 1 (the batch in flight when the pause landed); fill it
+      // to its bound and run a fixed 7 more past it.
+      const overflow = 7;
+      const iterations = HORSE_JOURNAL_QUEUE_MAX_RECORDS - 1 + overflow;
+      for (let i = 0; i < iterations; i++) p.record('decision', 'hand', 'turn', { i });
+      expect(p.health().queued).toBe(HORSE_JOURNAL_QUEUE_MAX_RECORDS);
+      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(overflow);
+      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(
+        iterations
+      );
       // Stopping while paused is prompt and names the gap it leaves.
       const stopping = p.stop();
       expect(w.sent.at(-1)).toEqual({ type: 'STOP' });

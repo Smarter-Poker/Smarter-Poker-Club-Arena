@@ -160,9 +160,14 @@ function horseSolverStoreIdentity() {
 /**
  * Start every mutable service consumed by HorseLogic inside the worker that
  * owns HorseLogic. READY is withheld until the durable mind and all solver
- * stores have completed their initial hydration.
+ * stores have completed their initial hydration. `shard` names this worker's
+ * position among its decision-lane peers (worker.ts reads it from
+ * `workerData`), so its journal writer opens its own archive rather than the
+ * one every shard shared before 2026-09-28.
  */
-async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
+export async function startOwnedServices(shard?: {
+  index: number;
+}): Promise<HorseDecisionWorkerReadiness> {
   if (ownedServicesStarted) {
     return {
       solverStores: {
@@ -183,7 +188,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
     // a slow read may never prevent newly learned rows from becoming flushable.
     startHorseMindPersistence();
     startBrainTelemetryFlush();
-    startHorseDecisionJournal();
+    startHorseDecisionJournal(shard);
     equityGovernor.startSampling();
     startSolverPolicyArtifactLoader();
 

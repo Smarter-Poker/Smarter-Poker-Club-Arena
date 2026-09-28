@@ -434,6 +434,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v12River', 'OOP block bets, nut overbets, blocker catches', 'V12'),
   flag('v13', 'V13 position read (actsLastPostflop) and preflop chart depth', 'V13'),
   flag('v15', 'Omaha nut discipline: which flush/straight, caps, small ball', 'V15'),
+  flag(
+    'v15Boats',
+    'Omaha boat dominance: a full house a bigger boat beats calls a raise (default OFF, league plo5_v15_boats)',
+    'V15'
+  ),
   flag('v16Reads', 'deep reads: fold-to-c-bet, fold-to-3-bet, big-bet tells', 'V16'),
   flag('v16Icm', 'real ICM (Malmuth-Harville) in tournaments', 'V16'),
   flag('v16Hu', 'heads-up overlay', 'V16'),
@@ -1256,6 +1261,20 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V15',
     'decide_omaha',
     0.0003
+  ),
+  // No floor: v15Boats is default OFF, so silence is the expected state until
+  // the plo5_v15_boats league matchup resolves and the default changes.
+  receipt(
+    'v15_boat_dominated',
+    'HorseLogic (V15 boats)',
+    'Omaha full house read as dominated by a bigger boat or quads',
+    'V15'
+  ),
+  receipt(
+    'v15_boat_gate',
+    'HorseLogic (V15 boats)',
+    'dominated boat raised after betting called instead of re-raising',
+    'V15'
   ),
   receipt(
     'v16_hu_overlay',

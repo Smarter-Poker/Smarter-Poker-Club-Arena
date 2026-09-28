@@ -178,6 +178,8 @@ import {
   omahaDrawQuality,
   type OmahaDrawInfo,
   omahaNutStatus,
+  omahaBoatsAbove,
+  omahaBoatDominated,
   type OmahaNutStatus,
   omahaMadeClass,
   type OmahaMadeInfo,
@@ -1726,6 +1728,11 @@ export interface HorseDecideOpts {
    *  per hole count, plo5/plo6 value sizing plays small ball, and PLO
    *  aggressors are sampled toward board contact (default: enabled) */
   v15?: boolean;
+  /** V15 BOATS (2026-09-28, default OFF until the league resolves it): an
+   *  Omaha full house that a bigger boat or quads beats stops being nut-class,
+   *  and when raised after betting it calls instead of re-raising or jamming.
+   *  Measured by the plo5_v15_boats league matchup. */
+  v15Boats?: boolean;
   /** disable the V12 river-sizing polish: OOP block bets, nut-advantage
    *  overbets + blocker overbet bluffs, extended blocker-aware catches
    *  (defaults to the v12 master flag) */
@@ -4853,8 +4860,19 @@ export class HorseLogic {
       for (const n of suitN.values()) if (n >= 3) boardMono15 = true;
       for (const n of rankN.values()) if (n >= 2) boardPaired15 = true;
     }
+    // V15 BOATS (2026-09-28): a full house is not the nuts when a bigger boat
+    // or quads is live. Off by default until plo5_v15_boats resolves.
+    let boatDominated15 = false;
+    if (useV15 && opts.v15Boats === true && vi.isOmaha && cat === 7) {
+      try {
+        boatDominated15 = omahaBoatDominated(omahaBoatsAbove(player.cards, board));
+        if (tele15 && boatDominated15) noteFire('v15_boat_dominated');
+      } catch {
+        boatDominated15 = false;
+      }
+    }
     const nutClass15 =
-      cat >= 7 ||
+      (cat >= 7 && !boatDominated15) ||
       (nuts15 != null &&
         ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
           (cat === 5 && nuts15.straightIsNut && !boardMono15)));
@@ -6759,6 +6777,7 @@ export class HorseLogic {
         // shove. The plan the bet made is honored here too.
         const preferFlat15 =
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
+          (boatDominated15 && raisedAfterAggr) ||
           (useV21 && dominated21) ||
           planCallOnly23;
         return toCall >= stack || preferFlat15
@@ -6814,6 +6833,13 @@ export class HorseLogic {
         eq15 - dominationPenalty < 0.85
       ) {
         if (tele15) noteFire('v15_raise_gate');
+        return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
+      // V15 BOATS: a full house that a bigger boat beats, raised after it
+      // bet, calls. The range that raises a boat on a paired board is the
+      // bigger boat; re-raising only ever gets called by it.
+      if (boatDominated15 && raisedAfterAggr) {
+        if (tele15) noteFire('v15_boat_gate');
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       // ═══ V21 RIVER RAISE-WAR GOVERNOR ═══ once hero's river aggression

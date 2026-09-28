@@ -57,7 +57,7 @@ def run(args,e,sessions,deadline,R,A):
     def service(client):
         client.begin(service_role=True)
         client.no_errors(client.command("SET LOCAL request.headers='{\"x-smarter-data-actor\":\"service\",\"x-smarter-data-protocol\":\"1\"}'; SET LOCAL request.method='POST'; SET LOCAL request.path='/rpc/fn_complete_first_archived_spin'; SELECT smarter_private.fn_smarter_data_api_pre_request();"))
-        client.no_errors(client.command("DO $$ BEGIN IF transaction_timestamp()<'2026-09-21T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-09-28T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;"))
+        client.no_errors(client.command("DO $$ BEGIN IF transaction_timestamp()<'2026-09-28T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-05T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;"))
     call="SELECT public.fn_complete_first_archived_spin('"+args.execution+"','"+C.SOURCE+"');"
     def inside_financial(raw):
         worker.no_errors(raw);A.validate_fee_notice(raw)

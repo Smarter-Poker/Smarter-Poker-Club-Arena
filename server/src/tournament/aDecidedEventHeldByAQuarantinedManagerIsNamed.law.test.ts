@@ -100,11 +100,11 @@ describe('a decided event held by a quarantined manager is named, not woken', ()
 
   it('a held event is said once per distinct reason and counted on /health', () => {
     const fn = blockAfter(GAME_SERVER, 'private noteDecidedEventHeld(', 1200);
-    expect(fn).toContain('if (this.decidedEventsHeldReported.get(tournamentId) === action.key) return;');
+    expect(fn).toContain('if (reported.get(tournamentId) === action.key) return;');
     expect(fn).toContain("'GameServer.decided_event_held_by_quarantined_manager'");
     expect(fn).not.toContain('recovering the winner');
     expect(GAME_SERVER).toContain(
-      'decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine,'
+      'decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine ?? 0,'
     );
   });
 });

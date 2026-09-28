@@ -1602,9 +1602,9 @@ export class GameServer {
    */
   private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
   /** Decided events a quarantined manager holds: the key last reported per event. */
-  private decidedEventsHeldReported = new Map<string, string>();
+  private decidedEventsHeldReported?: Map<string, string>;
   /** How many decided events the last sweep pass found held by a quarantined manager. */
-  private decidedEventsHeldByQuarantine = 0;
+  private decidedEventsHeldByQuarantine?: number;
   /** Bookkeeping that could not be recorded; never a reason to change a stop. */
   private tournamentQuarantineBookkeepingFailures?: number;
   /**
@@ -4676,7 +4676,7 @@ export class GameServer {
       /* Decided events (one player or none left) the last decided sweep found
          held by a quarantined manager: unpaid until that manager retires.
          2026-09-28 (decidedRunningBoard.ts decidedOwnerAction). */
-      decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine,
+      decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine ?? 0,
       tournamentManagerQuarantineOldestMs:
         this.tournamentManagerQuarantine?.oldestAgeMs(Date.now()) ?? 0,
       quarantinedTournamentManagers:
@@ -8102,8 +8102,9 @@ export class GameServer {
           }
         }
         this.decidedEventsHeldByQuarantine = decidedHeld.size;
-        for (const id of [...this.decidedEventsHeldReported.keys()]) {
-          if (!decidedHeld.has(id)) this.decidedEventsHeldReported.delete(id);
+        const heldReported = (this.decidedEventsHeldReported ??= new Map());
+        for (const id of [...heldReported.keys()]) {
+          if (!decidedHeld.has(id)) heldReported.delete(id);
         }
         if (decidedUnread > 0) {
           console.warn(
@@ -9959,8 +9960,9 @@ export class GameServer {
     playingCount: number,
     action: Extract<DecidedOwnerAction, { kind: 'held' }>
   ): void {
-    if (this.decidedEventsHeldReported.get(tournamentId) === action.key) return;
-    this.decidedEventsHeldReported.set(tournamentId, action.key);
+    const reported = (this.decidedEventsHeldReported ??= new Map());
+    if (reported.get(tournamentId) === action.key) return;
+    reported.set(tournamentId, action.key);
     const message =
       `[GameServer] RUNNING tournament ${name} (${tournamentId.slice(0, 8)}) is decided ` +
       `(${playingCount} playing) but cannot finish: ${action.because}. ` +

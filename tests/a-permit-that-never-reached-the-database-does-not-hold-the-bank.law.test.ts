@@ -59,7 +59,7 @@ const PARKS = definitions('fn_park_stopped_time_bank_custody');
 const BEGINS = definitions('fn_f06_begin_hand');
 const PARK = body(PARKS[PARKS.length - 1].sql, 'fn_park_stopped_time_bank_custody');
 const BEGIN = body(BEGINS[BEGINS.length - 1].sql, 'fn_f06_begin_hand');
-const PARK_PRIOR = body(PARKS[PARKS.length - 2].sql, 'fn_park_stopped_time_bank_custody');
+const OWN_FILE = '20260928001128_a_permit_that_never_reached_the_database_does_not_hold_the_b.sql';
 const BEGIN_PRIOR = body(BEGINS[BEGINS.length - 2].sql, 'fn_f06_begin_hand');
 
 /** The branch the park takes when no permit row carries the attested id. */
@@ -185,16 +185,23 @@ describe('a permit that never reached the database does not hold the bank', () =
   });
 
   it('the migration guards its pre-image and post-image by the bodies it replaces and installs, in one transaction', () => {
-    const file = PARKS[PARKS.length - 1];
+    // Pinned on this change's OWN migration: a later one (20260928154327, a
+    // superseded mixed custody row) redefines the park and guards its own
+    // pre-image, which is this file's post-image.
+    const at = PARKS.findIndex((d) => d.file === OWN_FILE);
+    expect(at).toBeGreaterThan(0);
+    const file = PARKS[at];
+    const ownPark = body(file.sql, 'fn_park_stopped_time_bank_custody');
+    const ownPrior = body(PARKS[at - 1].sql, 'fn_park_stopped_time_bank_custody');
     expect(BEGINS[BEGINS.length - 1].file).toBe(file.file);
     const sql = file.sql;
     expect(sql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
     const pre = sql.slice(sql.indexOf('DO $pre$'), sql.indexOf('$pre$;'));
     const post = sql.slice(sql.indexOf('DO $post$'), sql.indexOf('$post$;'));
-    expect(pre).toContain(`'${md5(PARK_PRIOR)}'`);
+    expect(pre).toContain(`'${md5(ownPrior)}'`);
     expect(pre).toContain(`'${md5(BEGIN_PRIOR)}'`);
-    expect(post).toContain(`'${md5(PARK)}'`);
+    expect(post).toContain(`'${md5(ownPark)}'`);
     expect(post).toContain(`'${md5(BEGIN)}'`);
     for (const g of [pre, post]) {
       expect(g).toContain("ARRAY['postgres=X/postgres', 'service_role=X/postgres']");

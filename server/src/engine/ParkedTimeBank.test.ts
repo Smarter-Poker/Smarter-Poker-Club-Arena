@@ -341,8 +341,11 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       await next.readParkedTimeBanks();
       next.adoptSeatRoster(next.seatedPlayers);
       next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
-      expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')).toEqual([
-        ['fn_consume_time_bank', { p_user_id: user, p_seconds: 20 }],
+      expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank_once')).toEqual([
+        [
+          'fn_consume_time_bank_once',
+          { p_user_id: user, p_seconds: 20, p_debit_id: expect.any(String) },
+        ],
       ]);
       expect(next.timeBankMeta.get(user).dbConsumedSeconds).toBe(30);
       expect(old.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);

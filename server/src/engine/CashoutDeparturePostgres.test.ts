@@ -773,7 +773,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         INSERT INTO vip_feature_usage_monthly VALUES('${USER}','time_bank_seconds',to_char(now() AT TIME ZONE 'UTC','YYYY-MM'),10,now())`);
         const previousRpc = transport.rpc.getMockImplementation()!;
         transport.rpc.mockImplementation((name: string, args: any) =>
-          name === 'fn_consume_time_bank'
+          name === 'fn_consume_time_bank_once'
             ? Promise.resolve({
                 data: sql(`SELECT fn_consume_time_bank('${args.p_user_id}',${args.p_seconds})`),
                 error: null,
@@ -820,7 +820,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
           playerId: USER,
         });
         expect(
-          transport.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')
+          transport.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank_once')
         ).toHaveLength(1);
         expect(
           sql(`SELECT usage_count FROM vip_feature_usage_monthly WHERE user_id='${USER}'`)

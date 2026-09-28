@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/claude-timebank/fix/an-unknown-time-bank-debit-is-resolved - migration 20260928152513_a_time_bank_debit_carries_its_own_id_and_a_receipt",
+  "_comment": "Installed by 20260928152513 through apply-merged-migration.yml after this PR merges, BEFORE the engine release that calls fn_consume_time_bank_once. Proved on a PostgreSQL 16 copy of production's fn_consume_time_bank (prosrc md5 7832bfb717daaeb625372bdd3ccc7d60): replay returns the receipt without a second charge, a rolled-back original leaves no receipt and the re-ask applies once, a re-ask during an in-flight original waits and reads its receipt.",
+  "tables": ["smarter_private.time_bank_debit_receipts"],
+  "functions": ["fn_consume_time_bank_once", "smarter_private.time_bank_debit_receipt_immutable"]
+}

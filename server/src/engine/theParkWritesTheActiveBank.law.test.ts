@@ -80,9 +80,10 @@ describe('the park writes the active bank too', () => {
     });
     expect(e.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
     expect(data.rpc).toHaveBeenCalledTimes(1);
-    expect(data.rpc).toHaveBeenCalledWith('fn_consume_time_bank', {
+    expect(data.rpc).toHaveBeenCalledWith('fn_consume_time_bank_once', {
       p_user_id: user,
       p_seconds: 20,
+      p_debit_id: expect.any(String),
     });
   });
 

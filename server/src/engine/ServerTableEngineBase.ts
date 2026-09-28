@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
@@ -2562,8 +2563,19 @@ export abstract class ServerTableEngineBase {
   private parkedBankSaveComplete = false;
   private maintenanceCheckpointGeneration = 0;
   private readonly timeBankAccountingPending = new Set<Promise<void>>();
-  // An unacknowledged non-idempotent debit must not be retried or certified.
+  /* AN UNKNOWN TIME-BANK DEBIT IS ASKED AGAIN, BY ITS OWN ID (2026-09-28).
+     Every debit now carries an id and goes through fn_consume_time_bank_once,
+     which records a receipt in the same transaction as the debit. So an
+     answer lost to a timeout is no longer a permanent mystery: asking again
+     with the same id returns the receipt if the debit committed and applies it
+     exactly once if it did not. This flag is true exactly while such a debit
+     is still unanswered, and it clears when every one of them has an answer.
+     Before this it could never clear, and on 2026-09-28 one timeout at
+     12:17:06Z froze a 335-player freeroll (its manager could not finish its
+     stop) and held the restart gate shut for 55 tables. */
   private timeBankAccountingUnconfirmed = false;
+  private readonly unresolvedTimeBankDebits = new Map<string, { userId: string; seconds: number }>();
+  private timeBankDebitResolution: Promise<void> | null = null;
   /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
   protected parkWriteRetryMs = 5_000;
   /**
@@ -6812,6 +6824,9 @@ export abstract class ServerTableEngineBase {
        `unwritten` is a real bank at stake, `unreadable` is "I could not tell",
        and the durable case returns no reason at all because there is nothing
        left to report. */
+    // The census asks about unknown debits again (by id, exactly once each);
+    // the answer lands before the next census reads this table.
+    if (this.unresolvedTimeBankDebits.size > 0) void this.resolveUnconfirmedTimeBankDebits();
     if (this.hasUnretiredStoppedTimeBankCustody()) {
       // Accounting still in flight is the one case we cannot even ASK about:
       // a debit whose outcome is unknown must not be frozen into a snapshot.
@@ -7133,6 +7148,10 @@ export abstract class ServerTableEngineBase {
    * acknowledgement only when the database confirms the custody is on disk.
    */
   async persistStoppedTimeBankCustody(): Promise<void> {
+    // A debit whose answer was lost is asked again first, by its own id, so
+    // the custody below is written once every debit it depends on is known.
+    // Without this a single timeout kept this stop refused for ever.
+    if (this.unresolvedTimeBankDebits.size > 0) await this.resolveUnconfirmedTimeBankDebits();
     if (!this.shouldPersistStoppedCustody()) return;
     this.presenceSavePending++;
     const generation = this.maintenanceCheckpointGeneration;
@@ -7894,24 +7913,7 @@ export abstract class ServerTableEngineBase {
       meta.dbConsumedSeconds += owed;
       // Keep the issued amount reserved against duplicate terminal events.
       // The park must also wait for its acknowledgment: issued is not durable.
-      const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
-      )
-        .then(({ data, error }) => {
-          if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
-          }
-        })
-        .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        })
-        .finally(() => this.timeBankAccountingPending.delete(pending));
-      this.timeBankAccountingPending.add(pending);
+      this.submitTimeBankDebit(event.playerId, owed);
     } catch (err) {
       this.timeBankAccountingUnconfirmed = true;
       console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
@@ -7920,29 +7922,89 @@ export abstract class ServerTableEngineBase {
 
   /** Best-effort ledger/audit write. Gameplay never waits for this call. */
   private consumeTimeBankSeconds(userId: string, seconds: number): void {
+    this.submitTimeBankDebit(userId, seconds);
+  }
+
+  /** The database gave a definite answer: applied, or refused and never to apply. */
+  private static timeBankDebitAnswered(data: unknown): boolean {
+    if (!data || typeof data !== 'object') return false;
+    const reply = data as { success?: unknown; receipted?: unknown };
+    return reply.success === true || reply.receipted === true;
+  }
+
+  /**
+   * Send one debit under its own id. A lost or failed answer leaves the debit
+   * in `unresolvedTimeBankDebits` with that id, so the question can be asked
+   * again (resolveUnconfirmedTimeBankDebits) without any risk of charging the
+   * player twice: the receipt is written in the debit's own transaction.
+   */
+  private submitTimeBankDebit(userId: string, seconds: number, debitId: string = randomUUID()): void {
+    const unanswered = (reason: string) => {
+      this.unresolvedTimeBankDebits.set(debitId, { userId, seconds });
+      this.timeBankAccountingUnconfirmed = true;
+      console.warn('[TimeBank] consume unconfirmed:', reason, `(debit ${debitId}, table ${this.tableId})`);
+    };
     try {
       const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
+        supabase.rpc('fn_consume_time_bank_once', {
+          p_user_id: userId,
+          p_seconds: seconds,
+          p_debit_id: debitId,
+        })
       )
         .then(({ data, error }) => {
-          if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
+          if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) {
+            unanswered(String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt'));
           }
         })
-        .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        })
+        .catch((err: unknown) => unanswered(String((err as Error)?.message ?? err)))
         .finally(() => this.timeBankAccountingPending.delete(pending));
       this.timeBankAccountingPending.add(pending);
     } catch (err) {
-      this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
+      unanswered('could not start: ' + String((err as Error)?.message ?? err));
     }
+  }
+
+  /**
+   * Ask the database again, by id, about every debit whose answer was lost.
+   * The same id returns the committed receipt or applies the debit exactly
+   * once, so this is the debit completing, not a second charge. Callers are
+   * the two places the answer matters: the restart gate's census
+   * (maintenanceDurabilityReason) and the owning manager's stop
+   * (persistStoppedTimeBankCustody). One resolution runs at a time.
+   */
+  resolveUnconfirmedTimeBankDebits(): Promise<void> {
+    if (this.timeBankDebitResolution) return this.timeBankDebitResolution;
+    if (this.unresolvedTimeBankDebits.size === 0) return Promise.resolve();
+    const run = (async () => {
+      for (const [debitId, debit] of [...this.unresolvedTimeBankDebits]) {
+        try {
+          const { data, error } = await supabase.rpc('fn_consume_time_bank_once', {
+            p_user_id: debit.userId,
+            p_seconds: debit.seconds,
+            p_debit_id: debitId,
+          });
+          if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) continue;
+          this.unresolvedTimeBankDebits.delete(debitId);
+          const reply = data as { success?: unknown; replayed?: unknown; error?: unknown };
+          console.warn(
+            `[TimeBank] debit ${debitId} (table ${this.tableId}) answered on re-ask: ` +
+              (reply.success === true
+                ? reply.replayed === true
+                  ? 'it had committed'
+                  : 'applied now, once'
+                : `refused (${String(reply.error ?? 'no reason')}), never applied`)
+          );
+        } catch {
+          /* still unknown: the id stays, and the next ask uses it again */
+        }
+      }
+      if (this.unresolvedTimeBankDebits.size === 0) this.timeBankAccountingUnconfirmed = false;
+    })().finally(() => {
+      this.timeBankDebitResolution = null;
+    });
+    this.timeBankDebitResolution = run;
+    return run;
   }
 
   /**

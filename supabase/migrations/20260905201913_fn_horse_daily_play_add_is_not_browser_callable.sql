@@ -1,0 +1,43 @@
+-- BACKFILLED 2026-09-12 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260905201913; the .sql file was never committed at the
+-- time. Content below is byte-exact to what ran. Do NOT re-apply; it is already live.
+--
+-- ===========================================================================
+--  THIS IS A MIRROR. IT DESCRIBES DDL PRODUCTION ALREADY HAS.
+-- ===========================================================================
+--
+-- LEDGER ROW
+--   version     20260905201913   (the stamp IS the apply time, UTC: 2026-09-05 20:19:13)
+--   name        fn_horse_daily_play_add_is_not_browser_callable
+--   created_by  daniel@bekavactrading.com
+--   statements  1 statement(s), 90 bytes
+--
+-- WHY THE FILENAME VERSION WAS NOT RESERVED
+--
+-- CLAUDE.md 4.5 says never hand-pick a migration version and always run
+-- scripts/new-migration.mjs. A mirror is the one sanctioned exception, and the
+-- exception is what makes it safe: 20260905201913 IS ALREADY IN
+-- supabase_migrations.schema_migrations under the name above. Reserving a fresh
+-- version would open a SECOND ledger row for DDL that has run once, and a
+-- rebuild would then apply it twice. The file must carry the version the ledger
+-- already holds, or it is not a mirror of anything.
+--
+-- WHAT IT CREATES OR CHANGES (read out of the recorded statements, not guessed)
+--     (no CREATE/DROP of a named object; see the body)
+--
+--   NOTE: it also changes GRANT/REVOKE on what it touches.
+--
+-- HOW FAITHFUL THIS IS
+--
+-- RECOVERED, NOT RECONSTRUCTED. The body is the ledger's own `statements`
+-- array joined by newlines - the same text Supabase split the original file
+-- INTO - so it is the SQL that ran, not a re-derivation from pg_proc. Nothing
+-- below was typed by hand. The header is the only added text, and every fact
+-- in it comes from the ledger row or from the body.
+--
+-- DO NOT APPLY THIS FILE BY HAND. It is already live. Where the body contains
+-- DML, re-running it would repeat a live data change that nobody asked this
+-- bookkeeping branch to make.
+-- ===========================================================================
+
+revoke execute on function public.fn_horse_daily_play_add(jsonb) from authenticated, anon;

@@ -1717,6 +1717,20 @@ jobs:
           path: artifacts/hand-submission/
           if-no-files-found: error
           retention-days: 7
+      - name: A hand the table has already dealt past is disposed, and stops blocking the start
+        id: hand_submission_disposal
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-submission-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-disposal
+      - name: Retain superseded hand disposal proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_disposal.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-disposal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission-disposal/
+          if-no-files-found: error
+          retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency
         if: matrix.shard == 3
         env:

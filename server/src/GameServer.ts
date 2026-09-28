@@ -209,6 +209,8 @@ import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import {
   DECIDED_RECOVERY_STAGGER_MS,
+  decidedOwnerAction,
+  type DecidedOwnerAction,
   decidedRunningVerdicts,
   readPlayingCounts,
   verdictFor,
@@ -1599,6 +1601,10 @@ export class GameServer {
    * read healthy. See tournament/quarantinedTournamentManagers.ts.
    */
   private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
+  /** Decided events a quarantined manager holds: the key last reported per event. */
+  private decidedEventsHeldReported?: Map<string, string>;
+  /** How many decided events the last sweep pass found held by a quarantined manager. */
+  private decidedEventsHeldByQuarantine?: number;
   /** Bookkeeping that could not be recorded; never a reason to change a stop. */
   private tournamentQuarantineBookkeepingFailures?: number;
   /**
@@ -2427,6 +2433,38 @@ export class GameServer {
     return this.tournamentEnginesOnFleet(tournamentId).length === 0;
   }
 
+  /**
+   * THE ORIGINAL MANAGER'S OWN CHECK IS READ AT THE PROCESS ROOT (2026-09-28).
+   *
+   * #5478 moved the fleet scan in the mixed admission's `current()` to the
+   * process root and left the other cross-manager read in the same closure:
+   * `packet.current()`, the in-process drained packet's staleness check. That
+   * closure belongs to the ORIGINAL manager and calls its own methods, which
+   * are bound to the original lease generation. The admission's `current()`
+   * is re-checked by `reservation.assertCurrent` from inside
+   * `manager.recoverMixedF06Custody`, i.e. inside the SUCCESSOR's bound
+   * authority - same tournament, another generation - so the first bound call
+   * threw "Tournament data authority cannot be rebound inside another manager
+   * context" and the admission was retained on
+   * `GameServer.mixed_original_recovery_retained`.
+   *
+   * Measured on engine 763e4cec: tournament 4e2de62d lost generation 9e2be701
+   * at 13:49:49Z on 2026-09-28 with its four stopped engines still in this
+   * process, the successor 658aba20 prepared transfer 2b5b36ff at 13:50:32Z,
+   * and every re-admission after that (13:50:39Z, 14:04:58Z, 15:32Z, ...) threw
+   * here at its first `assertCurrent()`. The event dealt nothing again.
+   *
+   * Asking whether the original's drained custody is still exactly what it
+   * captured is custody bookkeeping, not the successor's data access, so it is
+   * read at the root: the original enters only its own authority, the caller's
+   * context is restored on return, and the predicate is unchanged. The durable
+   * path (no in-process packet) never reached this read and is unaffected.
+   */
+  drainedOriginalIsCurrent(packet: DrainedF06Custody | null | undefined): boolean {
+    if (!packet) return true;
+    return bindToProcessRoot(() => packet.current())();
+  }
+
   hasCompleteMixedF06PhysicalMap(
     tournamentId: string,
     manager: TournamentManager,
@@ -2881,7 +2919,7 @@ export class GameServer {
           manager.isF06RecoveryOwner() &&
           this.durableMixedF06Custody.get(tournamentId) === transfer &&
           (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet &&
-          (!packet || packet.current()) &&
+          this.drainedOriginalIsCurrent(packet) &&
           this.noTournamentEngineOnFleet(tournamentId);
         const reservation = this.tournamentRetirementCustody.reserveMixed(
           transfer.transferId,
@@ -4667,6 +4705,10 @@ export class GameServer {
          the only hint either existed was that activeTournaments (472) quietly
          exceeded the lease rows (465), and nothing compared those two. */
       tournamentManagersQuarantined: this.tournamentManagerQuarantine?.size ?? 0,
+      /* Decided events (one player or none left) the last decided sweep found
+         held by a quarantined manager: unpaid until that manager retires.
+         2026-09-28 (decidedRunningBoard.ts decidedOwnerAction). */
+      decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine ?? 0,
       tournamentManagerQuarantineOldestMs:
         this.tournamentManagerQuarantine?.oldestAgeMs(Date.now()) ?? 0,
       quarantinedTournamentManagers:
@@ -8047,6 +8089,7 @@ export class GameServer {
         );
         let decidedUnread = 0;
         let decidedRecoveries = 0;
+        const decidedHeld = new Set<string>();
         for (const t of decidedBoard) {
           const verdict = verdictFor(decidedVerdicts, String(t.id));
           // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
@@ -8056,6 +8099,12 @@ export class GameServer {
           }
           if (verdict.kind === 'live') continue; // still a live contest
           const playingCount = verdict.playingCount;
+          const decidedAction = this.decidedOwnerActionFor(String(t.id));
+          if (decidedAction.kind === 'held') {
+            decidedHeld.add(String(t.id));
+            this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
+            continue;
+          }
           /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
@@ -8083,6 +8132,11 @@ export class GameServer {
               { tournamentId: String(t.id) }
             );
           }
+        }
+        this.decidedEventsHeldByQuarantine = decidedHeld.size;
+        const heldReported = (this.decidedEventsHeldReported ??= new Map());
+        for (const id of [...heldReported.keys()]) {
+          if (!decidedHeld.has(id)) heldReported.delete(id);
         }
         if (decidedUnread > 0) {
           console.warn(
@@ -9914,6 +9968,43 @@ export class GameServer {
     }
   }
 
+  /** What a decided-event sweep may truthfully do with this tournament's owner. */
+  private decidedOwnerActionFor(tournamentId: string): DecidedOwnerAction {
+    const manager = this.tournamentEngines.get(tournamentId);
+    const quarantine = this.tournamentManagerQuarantine;
+    const record =
+      manager && quarantine && quarantine.heldBy(tournamentId) === manager
+        ? (quarantine.snapshot(Date.now()).find((row) => row.tournamentId === tournamentId) ?? {
+            reason: 'quarantined',
+            custodyRefusal: null,
+          })
+        : null;
+    return decidedOwnerAction({ managerRegistered: Boolean(manager), quarantine: record });
+  }
+
+  /**
+   * A decided event its quarantined manager holds is said ONCE per distinct
+   * reason, never "recovering the winner" on every pass (CLAUDE.md 10.86).
+   */
+  private noteDecidedEventHeld(
+    tournamentId: string,
+    name: string,
+    playingCount: number,
+    action: Extract<DecidedOwnerAction, { kind: 'held' }>
+  ): void {
+    const reported = (this.decidedEventsHeldReported ??= new Map());
+    if (reported.get(tournamentId) === action.key) return;
+    reported.set(tournamentId, action.key);
+    const message =
+      `[GameServer] RUNNING tournament ${name} (${tournamentId.slice(0, 8)}) is decided ` +
+      `(${playingCount} playing) but cannot finish: ${action.because}. ` +
+      `No finish runs until that manager retires.`;
+    console.warn(message);
+    reportError(new Error(message), 'GameServer.decided_event_held_by_quarantined_manager', {
+      tournamentId,
+    });
+  }
+
   /**
    * ═══════════════════════════════════════════════════════════════════════
    *  FINISH THE SEAT-FIRST GAMES THAT ARE ALREADY OVER (round 18)
@@ -10003,7 +10094,10 @@ export class GameServer {
         // bounded elimination transaction owns standings and the immutable
         // RUNNING -> COMPLETING claim.
         const claimedManager = this.tournamentEngines.get(id);
-        if (claimedManager) {
+        const seatFirstAction = this.decidedOwnerActionFor(id);
+        if (seatFirstAction.kind === 'held') {
+          this.noteDecidedEventHeld(id, String(t.name), liveStacks, seatFirstAction);
+        } else if (claimedManager) {
           claimedManager.requestEliminationSweep('seat_first_terminal_stack');
         } else {
           await this.ensureTournamentManagerAdmission(

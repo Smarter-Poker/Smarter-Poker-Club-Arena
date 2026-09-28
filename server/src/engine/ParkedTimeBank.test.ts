@@ -342,7 +342,10 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       next.adoptSeatRoster(next.seatedPlayers);
       next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
       expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')).toEqual([
-        ['fn_consume_time_bank', { p_user_id: user, p_seconds: 20 }],
+        [
+          'fn_consume_time_bank',
+          { p_user_id: user, p_seconds: 20, p_request_id: expect.any(String) },
+        ],
       ]);
       expect(next.timeBankMeta.get(user).dbConsumedSeconds).toBe(30);
       expect(old.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
@@ -396,8 +399,14 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         });
       await parked;
       await e.presenceSave;
-      expect(e.isMaintenanceStateDurable()).toBe(outcome === 'pending');
-      if (outcome === 'pending') {
+      /* 'refused' is { success: false }: the function ran and moved nothing,
+         and never will (an unknown user, a non-positive amount). Since
+         2026-09-28 that is an answer, not an unknown, so the park completes
+         exactly as it does after a confirmed debit rather than holding the
+         restart gate shut for the life of the process. */
+      const answered = outcome === 'pending' || outcome === 'refused';
+      expect(e.isMaintenanceStateDurable()).toBe(answered);
+      if (answered) {
         expect(data.row.time_bank_snapshot.players[user]).toMatchObject({
           remainingSeconds: 10,
           dbConsumedSeconds: 30,
@@ -407,7 +416,15 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         await e.persistPresenceForRestart('parked');
         expect(e.isMaintenanceStateDurable()).toBe(true);
       }
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      /* The debit carries its own id (2026-09-28). An answer that did not
+         confirm it may be asked about again, but only by that same id, so it
+         can never become a second charge: every call names one debit. */
+      const debits: any[][] = data.rpc.mock.calls.filter(
+        (call: any[]) => call[0] === 'fn_consume_time_bank'
+      );
+      expect(debits.length).toBeGreaterThanOrEqual(1);
+      if (answered || outcome === 'stale-break') expect(debits).toHaveLength(1);
+      expect(new Set(debits.map((call) => call[1].p_request_id)).size).toBe(1);
       e.timeBankEngine.dispose(table);
     }
   );

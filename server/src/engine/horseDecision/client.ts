@@ -79,6 +79,11 @@ export interface HorseDecisionJobOptions {
 
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
+  /** This client's position among its decision-lane peers (LiveHorseDecisionWorkerPool
+   * passes it); reaches the spawned worker so its journal writer opens its own
+   * archive instead of sharing one with every other shard. Absent is shard 0,
+   * unchanged from before sharding existed. */
+  shard?: { index: number };
   readyTimeoutMs?: number;
   /** Caller deadline from enqueue and worker-integrity deadline from dispatch. */
   jobTimeoutMs?: number;
@@ -184,12 +189,18 @@ interface QueuedJob {
   executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
 }
 
-function defaultWorkerFactory(): WorkerLike {
+/** `shard` reaches the spawned thread as `workerData.shardIndex`, which
+ * worker.ts reads so its journal writer opens its own archive/catalog
+ * instead of the one every shard shared until 2026-09-28 (see
+ * runtimeHorseJournalArchiveOptions and HORSE_DECISION_WORKERS in lane.ts). */
+function defaultWorkerFactory(shard?: { index: number }): WorkerLike {
   // Production executes compiled JS; `npm run dev` executes this source via
   // tsx and workers inherit that loader. Point each runtime at an entry it can
   // actually open rather than making the development engine fail at boot.
   const entry = import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js';
-  return new Worker(new URL(entry, import.meta.url)) as WorkerLike;
+  return new Worker(new URL(entry, import.meta.url), {
+    workerData: shard ? { shardIndex: shard.index } : undefined,
+  }) as WorkerLike;
 }
 
 function errorMessage(error: unknown): string {
@@ -374,7 +385,9 @@ export class LiveHorseDecisionWorkerClient {
     // A caller may queue immediately and await the job rather than ready().
     // Keep the readiness rejection observed without altering its semantics.
     void this.readyPromise.catch(() => undefined);
-    this.worker = (options.workerFactory ?? defaultWorkerFactory)();
+    this.worker = options.workerFactory
+      ? options.workerFactory()
+      : defaultWorkerFactory(options.shard);
     this.worker.on('message', (message) => {
       if (!this.startupCancellationInProgress) this.onMessage(message);
     });

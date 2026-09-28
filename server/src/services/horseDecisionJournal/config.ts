@@ -1,4 +1,4 @@
-import { lstatSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 /** A closed window of capture time whose published segments the ring never
@@ -146,15 +146,66 @@ function evidenceHold(value: string | undefined): HorseJournalArchiveHold | null
   return { fromMs, untilMs };
 }
 
+/** ONE CATALOG PER DECISION-SHARD WRITER (2026-09-28). Every Horse decision
+ * worker shard runs its own journal publisher and, until now, its own writer
+ * on the SAME catalog file (one shared `archive/horse-journal-archive.sqlite`
+ * for every shard). SQLite allows one writer per file: a shard's `BEGIN
+ * IMMEDIATE` routinely found the other shard's commit already holding the
+ * write lock, and at the archive's steady-state byte ceiling - where every
+ * append also retires a segment inside that same transaction (see
+ * HORSE_ARCHIVE_CATALOG_CONNECTION in store.ts) - the loser paid a 250 ms
+ * busy wait plus the lock-retry ladder (HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS)
+ * before its batch was retried, long enough to overflow the publisher's
+ * 64-record queue. Measured locally (two writers hammering one shared
+ * catalog at production's byte ceiling vs one apiece): 0 lock retries and
+ * +69% aggregate throughput once each shard owns its own file - see
+ * docs/horse-brain-journal-retention-2026-09-26.md, "the journal keeps up
+ * with the fleet" (2026-09-28).
+ *
+ * Shard 0 always resolves to 'archive', the one directory every deployment
+ * - single-worker or the first shard of a sharded one - has ever written to,
+ * so turning on a second decision-worker shard never orphans existing
+ * evidence: shard 0 keeps the exact catalog and allocation it already had.
+ * Later shards (1, 2, ...) get their own fresh 'archive-shard-<index>'
+ * catalog, each with the SAME full byte/segment allocation as shard 0 (not a
+ * fraction of it): a lowered per-shard allocation would retire a chunk of
+ * shard 0's existing archive - including possibly the Phase 6A/6B evidence
+ * hold - the moment this ships, which is a self-inflicted version of the
+ * exact ring-eviction risk this change exists to reduce, not increase.
+ * Running N shards therefore multiplies the archive's WORST-CASE total disk
+ * footprint by N; operators raising HORSE_DECISION_WORKERS should size
+ * HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES/SEGMENTS with that in mind, or
+ * watch each shard's own /health figures (now reported per shard). */
+export interface HorseJournalArchiveShard {
+  /** 0-based position among this engine's decision-worker shards. */
+  index: number;
+}
+function archiveDirectoryName(index: number): string {
+  if (!Number.isSafeInteger(index) || index < 0) throw Error('Invalid Horse journal shard');
+  return index === 0 ? 'archive' : `archive-shard-${index}`;
+}
+/** Every archive directory name a shard index could ever resolve to, ordered
+ * for a reader to try: shard 0's ('archive') first if it exists, then any
+ * later shards' that exist, lowest index first. Empty when neither exists
+ * yet (a fresh or disabled journal) - never a guess at a layout nobody wrote. */
+export function horseJournalArchiveDirectoryNames(directory: string): string[] {
+  const names: string[] = [];
+  if (existsSync(join(directory, 'archive'))) names.push('archive');
+  for (let i = 1; existsSync(join(directory, `archive-shard-${i}`)); i++)
+    names.push(`archive-shard-${i}`);
+  return names;
+}
+
 /** This runs in the existing journal owner before its dedicated writer starts.
  * The archive stays under the already sealed persistent private bind mount. */
 export function runtimeHorseJournalArchiveOptions(
   directory: string,
-  environment: Readonly<Record<string, string | undefined>> = process.env
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  shard: HorseJournalArchiveShard = { index: 0 }
 ): HorseJournalArchiveOptions {
   if (!isAbsolute(directory)) throw Error('Invalid Horse journal directory');
   return {
-    directory: join(directory, 'archive'),
+    directory: join(directory, archiveDirectoryName(shard.index)),
     maxBytes: positiveInteger(
       environment.HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES,
       HORSE_JOURNAL_ARCHIVE_BYTES,
@@ -172,12 +223,20 @@ export function runtimeHorseJournalArchiveOptions(
 /** Historical journal-only directories stay readable. A present archive,
  * including a broken symlink or an incomplete/corrupt catalog, must reach the
  * strict store validator rather than silently returning legacy-only evidence.
- * Reading never creates a directory, opens a writer or completes pending work. */
-export function readonlyHorseJournalStoreOptions(directory: string): {
+ * Reading never creates a directory, opens a writer or completes pending work.
+ * `archiveDirectory` selects which shard's catalog to open ('archive' by
+ * default, exactly as before sharding existed); a caller iterating shards
+ * passes a name from horseJournalArchiveDirectoryNames. */
+export function readonlyHorseJournalStoreOptions(
+  directory: string,
+  archiveDirectory = 'archive'
+): {
   readOnly: true;
   archive?: HorseJournalArchiveOptions;
 } {
-  const archive = runtimeHorseJournalArchiveOptions(directory, {});
+  const index = archiveDirectory === 'archive' ? 0 : Number(archiveDirectory.slice('archive-shard-'.length));
+  if (archiveDirectory !== archiveDirectoryName(index)) throw Error('Invalid Horse journal shard directory');
+  const archive = runtimeHorseJournalArchiveOptions(directory, {}, { index });
   try {
     lstatSync(archive.directory);
   } catch (error) {

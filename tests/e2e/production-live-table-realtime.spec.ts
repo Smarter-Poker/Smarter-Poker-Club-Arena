@@ -28,6 +28,7 @@ import { remainingInitialTableReadinessMs } from './support/initialTableReadines
 import {
   createHudClockReader,
   hudEventObservationMs,
+  mttCaseTimeoutMs,
   observeHudLevels,
   sharedNaturalLevel,
   waitForSharedNaturalLevel,
@@ -530,7 +531,8 @@ async function certifyReadOnlyTournamentFormat(
   // Poker's action clock bounds each turn, not the whole hand. Keep the
   // existing runner's hard case limit and one fixed observation deadline;
   // live poker events still must satisfy the unchanged silence limit.
-  const observationDeadline = Date.now() + testInfo.timeout;
+  const caseStartedAt = Date.now();
+  const observationDeadline = caseStartedAt + testInfo.timeout;
   let hudClock: HudClock | undefined;
   const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo);
   const { candidate, evidence } = selected;
@@ -859,7 +861,7 @@ async function certifyReadOnlyTournamentFormat(
       // A level emitted during the outage cannot satisfy this new baseline.
       const reader = await createHudClockReader();
       try {
-        hudClock = (await reader.clocks([candidate.id], observationDeadline)).get(candidate.id);
+        hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
       } finally {
         await testInfo.attach('mtt-hud-clock-qualification', {
           body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),
@@ -869,14 +871,25 @@ async function certifyReadOnlyTournamentFormat(
       }
       if (!hudClock)
         throw new Error(
-          'The recovered MTT has no eligible natural HUD clock inside the remaining case budget'
+          'The recovered MTT has no eligible natural HUD clock (absent, paused, terminal, ' +
+            'malformed, or its level is longer than the certifiable cap)'
         );
+      // Whatever this real clock needs is what the case gets: never a fixed
+      // guess a natural blind level can outrun by luck. This only ever grows
+      // the case's one deadline (never shrinks it) - see mttCaseTimeoutMs.
+      const mttTimeoutMs = mttCaseTimeoutMs(
+        hudClock.observedAt - caseStartedAt,
+        hudClock,
+        testInfo.timeout
+      );
+      testInfo.setTimeout(mttTimeoutMs);
+      const mttDeadline = caseStartedAt + mttTimeoutMs;
       hudBaseline = hudClock.levelIndex;
       hudSince = hudClock.observedAt;
       const transition = await waitForSharedNaturalLevel(
         () =>
           sharedNaturalLevel(hudLevels, peerLevels, hudClock!.tournamentId, hudBaseline, hudSince),
-        hudEventObservationMs(hudClock, observationDeadline),
+        hudEventObservationMs(hudClock, mttDeadline),
         hudObservation.signal
       );
       // Actual source contract: payload.level is the zero-based engine index;

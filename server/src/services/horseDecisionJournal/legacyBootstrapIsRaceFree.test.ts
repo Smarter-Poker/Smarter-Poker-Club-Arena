@@ -28,8 +28,10 @@
  * succeed cleanly every time. */
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { HorseDecisionJournalPublisher, type HorseJournalWorker } from '../HorseDecisionJournal.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
@@ -52,23 +54,45 @@ const directory = () => {
   return d;
 };
 
-const workerEntry = new URL(
-  import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js',
-  import.meta.url
-);
+// A worker thread does its own module resolution from scratch and does not
+// inherit vitest/vite-node's transform, so a plain `new Worker(url)` pointed
+// at worker.ts fails on that file's own `./store.js` import under vitest
+// specifically (ERR_MODULE_NOT_FOUND) even though the identical file loads
+// fine in production, where either the compiled .js is loaded directly or
+// `tsx watch` has registered a process-wide loader new threads inherit. This
+// is the same `tsImport` bootstrap HorseDecisionJournal.test.ts already uses
+// to run the real worker.ts under vitest ("the actual dedicated worker writes
+// configured archive custody..."); a compiled worker.js (CI's built output)
+// needs no bootstrap at all.
+const isTs = import.meta.url.endsWith('.ts');
+const workerEntryUrl = new URL(isTs ? './worker.ts' : './worker.js', import.meta.url).href;
+const tsxApiUrl = isTs
+  ? pathToFileURL(createRequire(import.meta.url).resolve('tsx/esm/api')).href
+  : undefined;
+function spawnJournalWorker(workerData: unknown): Worker {
+  if (!isTs) return new Worker(new URL(workerEntryUrl), { workerData });
+  const code = `import { tsImport } from ${JSON.stringify(tsxApiUrl)}; await tsImport(${JSON.stringify(workerEntryUrl)}, ${JSON.stringify(import.meta.url)});`;
+  return new Worker(new URL('data:text/javascript,' + encodeURIComponent(code)), { workerData });
+}
 
+/** Matches startHorseDecisionJournal's actual production wiring, which always
+ * passes `restart: createWriter` (see HorseDecisionJournal.ts), so a writer
+ * the publisher's watchdog judges dead is replaced rather than left
+ * permanently failed - the same resilience a real deployment has. */
 function spawnShardWriter(
   dir: string,
   index: number
 ): { publisher: HorseDecisionJournalPublisher; notes: string[] } {
   const archive = runtimeHorseJournalArchiveOptions(dir, {}, { index });
-  const worker = new Worker(workerEntry, { workerData: { directory: dir, archive } });
-  workers.push(worker);
+  const create = (): HorseJournalWorker => {
+    const worker = spawnJournalWorker({ directory: dir, archive });
+    workers.push(worker);
+    return worker as unknown as HorseJournalWorker;
+  };
   const notes: string[] = [];
-  const publisher = new HorseDecisionJournalPublisher(
-    worker as unknown as HorseJournalWorker,
-    (note) => notes.push(note)
-  );
+  const publisher = new HorseDecisionJournalPublisher(create(), (note) => notes.push(note), {
+    restart: create,
+  });
   return { publisher, notes };
 }
 

@@ -43,8 +43,12 @@ const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
 function body(sql: string, signature: string): string {
   const start = sql.indexOf(`CREATE OR REPLACE FUNCTION ${signature}(`);
   expect(start).toBeGreaterThanOrEqual(0);
-  const open = sql.indexOf('$function$', start) + '$function$'.length;
-  const close = sql.indexOf('$function$', open);
+  // Each migration picks its own dollar-quote tag; read the one this body uses.
+  const tag = /AS (\$\w*\$)/.exec(sql.slice(start));
+  expect(tag).not.toBeNull();
+  const open = start + tag!.index + tag![0].length;
+  const close = sql.indexOf(tag![1], open);
+  expect(close).toBeGreaterThan(open);
   return sql.slice(open, close);
 }
 

@@ -371,6 +371,39 @@ describe('a publisher stopped at a fence re-arms itself with a fresh writer', ()
       warn.mockRestore();
     }
   });
+  it('a re-arm that throws is counted and logged, never unhandled, and the next minute tries again', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const writers: Writer[] = [],
+        fresh = new Writer();
+      const { first, p, notes, restart } = setup(writers);
+      p.record('decision', 'hand', 'turn', { n: 1 });
+      first.emit({ type: 'READY' });
+      // The replacement start throws: restart_failed, a re-armable stop.
+      first.listeners.get('error')?.(new Error('died'));
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(p.health()).toMatchObject({ mode: 'failed', lastFailureReason: 'restart_failed' });
+      // The first re-arm is handed a writer this publisher already owned:
+      // attaching it throws inside the re-arm's continuation.
+      writers.push(first, fresh);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(notes).toContain('phase15_journal_rearm_failed');
+      expect(warn.mock.calls.flat().join(' ')).toMatch(
+        /capture re-arm failed after=restart_failed queued=1; trying again in a minute/
+      );
+      expect(p.health().mode).toBe('failed');
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(restart).toHaveBeenCalledTimes(3);
+      fresh.emit({ type: 'READY' });
+      fresh.ack();
+      expect(p.health().mode).toBe('ready');
+      const stop = p.stop();
+      fresh.emit({ type: 'STOPPED' });
+      await stop;
+    } finally {
+      warn.mockRestore();
+    }
+  });
   it('a stop while waiting to re-arm starts nothing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

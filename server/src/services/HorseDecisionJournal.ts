@@ -441,10 +441,17 @@ export class HorseDecisionJournalPublisher {
     this.writerGone = gone;
     this.termination = new Promise((resolve) => {
       const timer = setTimeout(() => resolve(false), 1000);
-      void gone.then((confirmed) => {
-        clearTimeout(timer);
-        resolve(confirmed);
-      });
+      void gone
+        .then((confirmed) => {
+          clearTimeout(timer);
+          resolve(confirmed);
+        })
+        .catch(() => {
+          // `gone` settles to a boolean and never rejects; if it ever did,
+          // the writer's exit is unconfirmed, which is what the fence says.
+          clearTimeout(timer);
+          resolve(false);
+        });
     });
     return this.termination;
   }
@@ -502,12 +509,23 @@ export class HorseDecisionJournalPublisher {
     clearTimeout(this.rearmTimer);
     this.rearmTimer = setTimeout(() => {
       this.rearmTimer = undefined;
-      void this.writerGone.then((gone) => {
-        if (gone) this.rearm();
-        // A writer whose terminate() rejected may still be alive: never start
-        // a second one beside it. Ask again in a minute.
-        else if (this.mode === 'failed' && !this.stopping) this.scheduleRearm();
-      });
+      void this.writerGone
+        .then((gone) => {
+          if (gone) this.rearm();
+          // A writer whose terminate() rejected may still be alive: never start
+          // a second one beside it. Ask again in a minute.
+          else if (this.mode === 'failed' && !this.stopping) this.scheduleRearm();
+        })
+        .catch(() => {
+          // A re-arm that threw (a replacement that cannot be attached) is
+          // neither silent nor a crash: it is counted, logged, and tried
+          // again in a minute while capture is still stopped.
+          this.count('rearm_failed');
+          console.warn(
+            `[HorseDecisionJournal] capture re-arm failed after=${this.lastFailureReason} queued=${this.queue.length}; trying again in a minute`
+          );
+          if (this.mode === 'failed' && !this.stopping) this.scheduleRearm();
+        });
     }, HORSE_JOURNAL_REARM_MS);
     this.rearmTimer.unref?.();
   }

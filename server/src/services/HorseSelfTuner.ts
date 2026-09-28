@@ -955,21 +955,57 @@ export async function runSelfTune(
     const streamed = new Map<string, PlayStats>();
     let fetched = 0;
     let oldestSeen: string | null = null;
-    // V12.3: this used to page with `.lt('created_at', before)`. created_at is
-    // NOT unique — the fleet writes several hands per second and inserts are
-    // batched — so every row sharing the page-boundary timestamp that did not
-    // fit was skipped and never read. A stable secondary sort plus range()
-    // paging cannot drop or repeat a row.
-    for (let offset = 0; offset < MAX_HANDS_TO_STUDY; offset += PAGE_SIZE) {
+    /* THE PAGE THAT RE-READS EVERY PAGE BEFORE IT (2026-09-28)
+       ────────────────────────────────────────────────────────
+       V12.3 was right about the bug it fixed: `.lt('created_at', before)`
+       alone SKIPS rows, because created_at is not unique — the fleet writes
+       several hands per second and inserts are batched. Its remedy was a
+       stable sort plus `range()`, and that is correct and also quadratic.
+       OFFSET does not seek; it counts. Page N re-walks and re-filters every
+       row of pages 0..N-1, and this scan discards tournament hands one at a
+       time, so the cost per page grows with the offset AND with how far the
+       fleet has tilted towards tournaments.
+
+       Measured on production 2026-09-28, this exact query, 7-day window:
+
+         OFFSET 0        12 ms
+         OFFSET 119,000  96,190 ms, 1,029,222 rows removed by filter
+
+       PostgREST's statement timeout is far below 96 s, so the last pages
+       errored, the error was thrown out of runSelfTune, and the study ended
+       before `prepareHorseTunerStudy` wrote anything. That is why
+       horse_tuner_study_rosters, horse_tuner_write_receipts and
+       horse_tuner_study_completions all stop dead at 2026-09-25 08:10 while
+       the nightly job goes on claiming (and taking over) its slot every day:
+       684 horses were over the 300-hand bar the whole time, and every leak
+       read since has run on three-day-stale profiles.
+
+       Keyset paging seeks. The cursor is the FULL sort key, so the tie that
+       V12.3 was fixing cannot drop or repeat a row, and `created_at <=
+       cursor` is a range condition the index applies rather than a filter:
+
+         keyset at the same depth   16 ms, 10,114 rows removed by filter
+
+       The page size, the window, the cap and the ordering are unchanged. */
+    let cursor: { createdAt: string; id: string } | null = null;
+    for (let page = 0; page * PAGE_SIZE < MAX_HANDS_TO_STUDY; page++) {
       if (!shouldContinue()) return { studied: 0, tuned: 0 };
-      const { data, error } = await supabase
+      let query = supabase
         .from('hand_history')
-        .select('actions, players, winners, big_blind, button_seat, created_at')
+        .select('id, actions, players, winners, big_blind, button_seat, created_at')
         .is('tournament_id', null) // cash only: tournament strategy differs by design
         .gt('created_at', since)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+        .limit(PAGE_SIZE);
+      if (cursor) {
+        // `lte` is what the index can narrow on; the `or` settles the tie
+        // among the rows that share the cursor's exact timestamp.
+        query = query
+          .lte('created_at', cursor.createdAt)
+          .or(`created_at.lt.${cursor.createdAt},id.lt.${cursor.id}`);
+      }
+      const { data, error } = await query;
       if (!shouldContinue()) return { studied: 0, tuned: 0 };
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
@@ -984,7 +1020,9 @@ export async function runSelfTune(
       );
       accumulatePlayStats(ring, tracked, streamed);
       fetched += data.length;
-      oldestSeen = (data[data.length - 1] as { created_at: string }).created_at;
+      const last = data[data.length - 1] as { created_at: string; id: string };
+      oldestSeen = last.created_at;
+      cursor = { createdAt: last.created_at, id: last.id };
       if (data.length < PAGE_SIZE) break;
     }
     // What the sample ACTUALLY covered, for the log line and the audit rows.
@@ -1005,7 +1043,21 @@ export async function runSelfTune(
     const eligibleHorses = [...stats]
       .filter(([, s]) => s.hands >= MIN_HANDS_TO_TUNE)
       .map(([id]) => id);
-    if (stats.size === 0) return { studied: 0, tuned: 0 };
+    if (stats.size === 0) {
+      /* The same lesson as `horses.size === 0` above, one level down: this
+         returned in silence, and silence is what let a broken study run every
+         night from 2026-09-25 to 2026-09-28 while the job claimed its slot,
+         wrote no roster, no receipt and no completion, and said nothing. A
+         night that studied nobody is not a night that had nothing to say. */
+      reportError(
+        new Error(
+          `no horse produced a single studied hand (${tracked.size} tracked, ` +
+            `${fromPlayRows} from play rows, ${fetched} hands streamed) - self-tune did nothing`
+        ),
+        'HorseSelfTuner.noStats'
+      );
+      return { studied: 0, tuned: 0 };
+    }
     const cohort = await prepareHorseTunerStudy(date, stats.size, eligibleHorses);
     if (!shouldContinue()) return { studied: stats.size, tuned: 0 };
     if (cohort.status !== 'prepared') throw new Error('Tuner study roster is unconfirmed');

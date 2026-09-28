@@ -20,7 +20,12 @@ import {
 import { jointPolicyFixture } from '../../engine/multiway/JointRangeFixture.test-support.js';
 import { journalHash, makeHorseJournalRecord, type HorseJournalRecord } from './record.js';
 import { HorseDecisionJournalStore } from './store.js';
-import { readHorseJournalHand, reconcileHorseJournalHand } from './review.js';
+import {
+  readHorseJournalHand,
+  readHorseJournalHandRecords,
+  reconcileHorseJournalHand,
+} from './review.js';
+import { runtimeHorseJournalArchiveOptions } from './config.js';
 
 const table = '10000000-0000-4000-8000-000000000001',
   hand = '30000000-0000-4000-8000-000000000001',
@@ -653,5 +658,100 @@ describe('private retained-hand journal consumer', () => {
       status: 'unavailable',
       gaps: ['accepted_hand_missing'],
     });
+  });
+});
+
+describe('readHorseJournalHandRecords shard fan-out', () => {
+  // A hand's records live in exactly one decision-shard's catalog. These
+  // records are deliberately minimal (a bare 'decision' record) - the
+  // fan-out under test only cares which shard directory holds a given
+  // handKey, not whether a full hand reconciles.
+  const shardProducer = '40000000-0000-4000-8000-000000000009';
+  const record = (forHandKey: string, sequence: number): HorseJournalRecord =>
+    makeHorseJournalRecord(
+      {
+        producerId: shardProducer,
+        sequence,
+        atMs: 1000,
+        sourceRelease: null,
+        kind: 'decision',
+        handKey: forHandKey,
+        turnKey: journalHash(`shard-fanout-turn:${forHandKey}:${sequence}`),
+      },
+      { shardFanoutFixture: true, sequence }
+    );
+  const openArchive = (dir: string, index: number) =>
+    new HorseDecisionJournalStore(dir, {
+      archive: runtimeHorseJournalArchiveOptions(dir, {}, { index }),
+    });
+
+  it('finds a hand whose records live in a later shard, not shard 0', () => {
+    const dir = directory();
+    const handInShard0 = journalHash('shard-fanout:lives-in-shard-0'),
+      handInShard1 = journalHash('shard-fanout:lives-in-shard-1');
+    const s0 = openArchive(dir, 0);
+    try {
+      s0.appendBatch([record(handInShard0, 1)]);
+    } finally {
+      s0.close();
+    }
+    const s1 = openArchive(dir, 1);
+    try {
+      s1.appendBatch([record(handInShard1, 1)]);
+    } finally {
+      s1.close();
+    }
+    expect(readHorseJournalHandRecords(dir, handInShard0)).toEqual([record(handInShard0, 1)]);
+    expect(readHorseJournalHandRecords(dir, handInShard1)).toEqual([record(handInShard1, 1)]);
+  });
+
+  it('finds a hand in a later shard even when shard 0 has never been written', () => {
+    const dir = directory();
+    const handKeyHere = journalHash('shard-fanout:only-shard-1-exists');
+    const s1 = openArchive(dir, 1);
+    try {
+      s1.appendBatch([record(handKeyHere, 1)]);
+    } finally {
+      s1.close();
+    }
+    expect(readHorseJournalHandRecords(dir, handKeyHere)).toEqual([record(handKeyHere, 1)]);
+  });
+
+  it('returns empty, not an error, when every existing shard is readable but none holds the hand', () => {
+    const dir = directory();
+    const s0 = openArchive(dir, 0);
+    try {
+      s0.appendBatch([record(journalHash('shard-fanout:present'), 1)]);
+    } finally {
+      s0.close();
+    }
+    expect(readHorseJournalHandRecords(dir, journalHash('shard-fanout:absent'))).toEqual([]);
+  });
+
+  it('is byte-for-byte the single-store behavior when only the unsharded archive exists', () => {
+    const dir = directory();
+    const handKeyHere = journalHash('shard-fanout:unsharded');
+    const s0 = openArchive(dir, 0);
+    try {
+      s0.appendBatch([record(handKeyHere, 1)]);
+    } finally {
+      s0.close();
+    }
+    const reader = new HorseDecisionJournalStore(dir, {
+      readOnly: true,
+      archive: runtimeHorseJournalArchiveOptions(dir, {}, { index: 0 }),
+    });
+    let direct: readonly HorseJournalRecord[];
+    try {
+      direct = reader.readHand(handKeyHere);
+    } finally {
+      reader.close();
+    }
+    expect(readHorseJournalHandRecords(dir, handKeyHere)).toEqual(direct);
+  });
+
+  it('throws rather than silently returning nothing when no shard can be read at all', () => {
+    const dir = join(directory(), 'never-created');
+    expect(() => readHorseJournalHandRecords(dir, journalHash('shard-fanout:no-storage'))).toThrow();
   });
 });

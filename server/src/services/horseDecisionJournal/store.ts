@@ -456,6 +456,67 @@ function segmentsFor(records: HorseJournalRecord[]): Segment[] {
   });
 }
 
+/** SHARD WRITERS SHARE ONE BASE DIRECTORY'S LEGACY DATABASE, DELIBERATELY
+ * (2026-09-28): it is pre-archive history every shard's reader must still see
+ * (readonlyHorseJournalStoreOptions), so it stays one file rather than being
+ * copied or split per shard. Before sharding, exactly one HorseDecisionJournalStore
+ * ever opened a given directory in its process's lifetime, so "create the v1
+ * legacy database if it is missing" could never run twice at once. Two decision-
+ * worker shards constructing their stores concurrently against a brand-new
+ * directory (a fresh host, a wiped test fixture - never the already-bootstrapped
+ * production archive this change ships onto) broke that assumption: both saw the
+ * file missing, both independently bootstrapped it, and whichever's construction
+ * captured legacyIdentity() before the other's later-settling write finished
+ * persisted a since-stale hash into its own catalog's archive_meta.legacy_sha -
+ * failing assertLegacy() on its very next append and then every future open of
+ * that catalog for good, since the mismatch is written down. That is a startup
+ * race, not the write contention this file's sharding removes, and unlike a
+ * lock-retry it never recovers on its own (fail() has no restart path for a
+ * mismatch this deterministic). Fixed by making the bootstrap itself single-
+ * writer again, with the same exclusive-create primitive this file already
+ * uses for the sqlite files themselves: whichever construction wins a short
+ * lock file performs the one bootstrap; every other one waits for that lock to
+ * clear and the database to exist, then reads the one settled result. Never
+ * taken at all once the legacy database exists, which is every production
+ * open. */
+function bootstrapLegacyJournalOnce(
+  directory: string,
+  limits: { maxBytes?: number; maxRecords?: number; readOnly?: boolean }
+): void {
+  const legacyPath = join(directory, 'horse-decisions.sqlite');
+  if (existsSync(legacyPath)) return;
+  const lockPath = `${legacyPath}.bootstrap-lock`;
+  let owner = false;
+  try {
+    closeSync(openSync(lockPath, 'wx', 0o600));
+    owner = true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+  }
+  if (owner) {
+    try {
+      const initial = new LegacyHorseJournalStore(directory, limits);
+      initial.close();
+    } finally {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        /* best effort: a lock file that is already gone is not a failure */
+      }
+    }
+    return;
+  }
+  // Another construction (this process or a sibling shard's) is bootstrapping
+  // right now. Block this synchronous constructor path on it rather than
+  // racing it: Atomics.wait works on Node's main thread as well as a worker's.
+  const idle = new Int32Array(new SharedArrayBuffer(4));
+  const deadlineMs = Date.now() + 5000;
+  while ((existsSync(lockPath) || !existsSync(legacyPath)) && Date.now() < deadlineMs) {
+    Atomics.wait(idle, 0, 0, 20);
+  }
+  if (!existsSync(legacyPath)) throw Error('Horse archive legacy bootstrap timed out');
+}
+
 /** Archive records retain the original v1 envelope. The legacy database is
  * immutable in this mode; quota reservation precedes file creation. At most one
  * pending batch is completed by startup/append, never a timer or directory scan.
@@ -506,10 +567,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       throw Error('Invalid Horse archive configuration');
     // A fresh installation gets the same empty v1 legacy database once. Existing
     // spools, including a full spool, are opened read-only without a migration.
-    if (archive && !limits.readOnly && !existsSync(join(directory, 'horse-decisions.sqlite'))) {
-      const initial = new LegacyHorseJournalStore(directory, limits);
-      initial.close();
-    }
+    if (archive && !limits.readOnly) bootstrapLegacyJournalOnce(directory, limits);
     super(directory, { ...limits, readOnly: archive ? true : limits.readOnly });
     this.archiveReadOnly = limits.readOnly === true;
     this.legacyPath = join(realpathSync(directory), 'horse-decisions.sqlite');

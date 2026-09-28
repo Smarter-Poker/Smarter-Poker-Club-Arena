@@ -89,6 +89,29 @@ export type HorseJournalFailureReason = (typeof HORSE_JOURNAL_FAILURE_REASONS)[n
  * refused write and never spends the restart budget. */
 export const HORSE_JOURNAL_CAPACITY_PROBE_MS = 60_000;
 
+/* THE QUEUE OUTLIVES A STALL, NOT JUST ONE LOCK RETRY (2026-09-28). The old
+   bound - 64 records, 4 MiB - was sized for a writer that never stalls; every
+   Horse decision worker shard wrote to the SAME catalog file
+   (runtimeHorseJournalArchiveOptions, before this date), so a shard's writer
+   routinely met SQLITE_BUSY behind the other's commit, and at the archive's
+   steady-state byte ceiling - where a batch also retires a segment inside the
+   same transaction - that was frequent enough to overflow 64 records in well
+   under a second. On the worst 15-minute window measured on the release this
+   fixes (763e4cec, source_release-filtered horse_brain_flush_receipts,
+   2026-09-28 14:30Z UTC), one shard enqueued about 120,000 decisions -
+   roughly 134 a second - while shedding 20-40% of its attempts at
+   queue_capacity. Splitting the shared catalog per shard (config.ts) removes
+   the frequent cause; this bound is what a shard's queue must still survive
+   on its own: a lock-retry ladder that can run up to
+   HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS's ~7.6 s total before falling back to a
+   full writer restart, or a restart itself. Sized at 2x that measured peak
+   rate (~270/s) for the whole ladder plus a restart: about 4096 records
+   (~15 s of headroom), a count a typical few-hundred-byte decision keeps to a
+   few megabytes. 16 MiB is a hard backstop against an unusually large record
+   mix, never the everyday limiter. */
+export const HORSE_JOURNAL_QUEUE_MAX_RECORDS = 4096;
+export const HORSE_JOURNAL_QUEUE_MAX_BYTES = 16 * 1024 * 1024;
+
 /* A LOCK IS NOT A DEAD WRITER (2026-09-27). Every Horse decision worker shard
    runs its own publisher and writer on the one shared archive, so a writer
    routinely finds the catalog locked by the other shard's commit: SQLite
@@ -713,7 +736,10 @@ export class HorseDecisionJournalPublisher {
       // Preflight the same complete envelope bound as the durable writer. A
       // too-large record is a capture gap; it must not poison later writes.
       const bytes = Buffer.byteLength(horseJournalJson(record));
-      if (this.queue.length >= 64 || this.queuedBytes + bytes > 4 * 1024 * 1024) {
+      if (
+        this.queue.length >= HORSE_JOURNAL_QUEUE_MAX_RECORDS ||
+        this.queuedBytes + bytes > HORSE_JOURNAL_QUEUE_MAX_BYTES
+      ) {
         this.count('queue_capacity');
         return;
       }
@@ -1087,7 +1113,12 @@ export function horseDecisionJournalHealth(): HorseJournalHealth {
   if (relayed.size) return combinedRelayedHealth();
   return idleHealth('starting');
 }
-export function startHorseDecisionJournal(): void {
+/** `shard` names this Horse decision worker's position among its peers so its
+ * writer opens its OWN archive/catalog instead of the one every shard shared
+ * until 2026-09-28 (see runtimeHorseJournalArchiveOptions). Absent (a single
+ * decision worker, or a caller that predates sharding), shard 0 is assumed:
+ * byte-for-byte today's one-archive layout. */
+export function startHorseDecisionJournal(shard?: { index: number }): void {
   if (publisher) return;
   const directory = process.env.HORSE_DECISION_JOURNAL_DIR;
   if (!directory) {
@@ -1098,7 +1129,7 @@ export function startHorseDecisionJournal(): void {
     const entry = import.meta.url.endsWith('.ts')
       ? './horseDecisionJournal/worker.ts'
       : './horseDecisionJournal/worker.js';
-    const archive = runtimeHorseJournalArchiveOptions(directory);
+    const archive = runtimeHorseJournalArchiveOptions(directory, process.env, shard);
     const createWriter = () =>
       new Worker(new URL(entry, import.meta.url), { workerData: { directory, archive } });
     // `lifecycle` says only that construction did not throw. A writer module

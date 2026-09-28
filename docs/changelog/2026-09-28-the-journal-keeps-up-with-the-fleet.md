@@ -1,0 +1,49 @@
+# 2026-09-28: the journal keeps up with the fleet - one catalog per decision-shard writer
+
+Horse Brain journal only; no money path, no schema version bump, no engine configuration change (existing `HORSE_DECISION_JOURNAL_ARCHIVE_*` env vars are unaffected; per-shard directories are computed, not configured).
+
+## What happened
+
+Read-only on the serving release (`763e4cec`, which contains #5480 "a journal lock is not a dead writer" and #5505 "retirement no longer scans archive_events via FK"): `/health` showed the archive at its byte ceiling (`compressedBytes` 8,589,933,089 of `maxBytes` 8,589,934,592, `retiredSegments` 401,321). `horse_brain_flush_receipts` (`phase15_journal_*`, per shard, per 15 minutes) showed 20-40% of decisions shed at `queue_capacity` at peak, e.g. 14:15Z: `enqueued` 92,691, `queue_capacity` 60,237, `lock_retry` 424. Of 137 captured decision chains in a sample window, 75 were marked incomplete (`shed_within_60s_of_decision`).
+
+## Cause, measured
+
+Both Horse decision-shard writers open the same base journal directory, but before this change every shard also resolved to the **same archive subdirectory** (`runtimeHorseJournalArchiveOptions` always returned `join(directory, 'archive')` regardless of which shard called it). SQLite allows one writer per file, so at steady state - where every append at the byte ceiling also retires a segment inside the same `BEGIN IMMEDIATE` transaction (#5505) - a shard's commit routinely still held the catalog's write lock when the other shard's writer tried to begin its own. The loser paid SQLite's 250ms `busy_timeout` and then the full lock-retry ladder (`HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS`, about 7.6s total) before its batch was retried, long enough to overflow the publisher's 64-record in-memory queue.
+
+Reproduced locally: two real writer threads (the same `worker.ts`/`HorseDecisionJournalStore` used in production) hammering one shared catalog at production's byte ceiling, vs one apiece:
+
+| Configuration     | records/sec | BUSY retries (4s run) | p95 batch latency |
+| ------------------ | ----------- | ---------------------- | ------------------ |
+| Shared catalog      | 1,368       | 9                      | ~252ms             |
+| One catalog / shard | 2,204       | 0                      | ~18ms              |
+
++61% aggregate throughput and zero lock retries once each shard owns its own file - directly explaining the `queue_capacity`/`lock_retry` pattern above. Retirement cost itself does not grow with catalog size (confirmed separately at 5,000,000 real rows: mean 19.6ms per retiring append, matching the small-scale figure), so per-shard catalogs alone, without further retirement-path work, remove the bottleneck.
+
+## Fix
+
+1. **One archive per decision-shard writer.** `runtimeHorseJournalArchiveOptions(directory, environment, shard)` takes an optional `{ index }` and resolves shard 0 to `'archive'` (unchanged - the directory every deployment has ever written to, so turning on a second shard never orphans existing evidence) and later shards to their own `'archive-shard-<index>'`, each with the **same full** byte/segment allocation as shard 0 (not a fraction of it, which would retire a chunk of shard 0's existing archive the moment this ships). Running N shards multiplies the archive's worst-case disk footprint by N; operators raising `HORSE_DECISION_WORKERS` should size `HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES`/`MAX_SEGMENTS` accordingly, or watch each shard's own `/health` figures (now reported per shard, as before).
+2. **The shard index threads end to end**, backward compatible by an absent-means-shard-0 default at every hop: `LiveHorseDecisionWorkerPool` passes each client's position to `LiveHorseDecisionWorkerClient`, which posts it as `workerData.shardIndex` to its `Worker`; `engine/horseDecision/worker.ts` reads it and passes it through `startOwnedServices` to `startHorseDecisionJournal(shard)`, which passes it to `runtimeHorseJournalArchiveOptions`.
+3. **Five read-only review call sites now fan out across shards.** A hand's records live in exactly one shard's catalog (the lane shards by table id, and every fence for a table begins with it), so a new `readHorseJournalHandRecords` in `review.ts` tries each existing archive directory (`horseJournalArchiveDirectoryNames`, itself new) in turn and keeps the first that actually holds the hand. `horseCorrectiveReview.ts`, `horseAcceptedRosterExport.ts`, `horseAcceptedRosterReview.ts`, `horseJournalReview.ts` and `readHorseJournalHand` all use it; for the overwhelming common case (only `'archive'` exists) this is byte-for-byte what a single `new HorseDecisionJournalStore` + `readHand` always did.
+4. **Queue headroom.** `HORSE_JOURNAL_QUEUE_MAX_RECORDS`/`_BYTES` raised from 64 records / 4MiB to 4,096 records / 16MiB - about 2x the measured per-shard peak (~134/s) sustained across the full ~7.6s lock-retry ladder - so a transient stall (a lock retry, a paused-at-quota writer) no longer sheds decisions the drained catalog would otherwise have delivered a moment later. Drops that still happen at this bound remain counted (`phase15_journal_queue_capacity`) and visible on `/health`.
+
+## Found and fixed along the way: the legacy database's bootstrap raced under two shards
+
+`HorseDecisionJournalStore` shares one base directory's pre-archive legacy database (`horse-decisions.sqlite`) across every shard, deliberately: it is history every shard's reader must still be able to see. Before sharding, exactly one store ever opened a directory in a process's lifetime, so "create the v1 legacy database if it is missing" could never run twice at once. Two shards constructing concurrently against a **brand-new** directory broke that: both could see the file missing and both independently bootstrap it, and whichever construction captured `legacyIdentity()` before the other's later-settling write finished persisted a since-stale hash into its own catalog's `archive_meta.legacy_sha` - failing `assertLegacy()` on its very next append, and then on every future open of that same catalog for good (not a lock-retry away: the mismatch itself is what got written down).
+
+Reproduced directly with two real worker threads racing on a fresh temp directory (intermittent, roughly 1 run in 3-5 of a tight loop). **This does not affect the host this change is deploying to** - it has carried `horse-decisions.sqlite`, and shard 0's `archive/`, for weeks, so the "file missing" branch is never taken there - but it would have struck any fresh multi-shard bring-up (a new host, a wiped environment) stone dead at first boot, which is exactly the "self re-arm" guarantee this change is required to keep. Fixed with the same race-free primitive this file already uses for the sqlite files themselves: `bootstrapLegacyJournalOnce` in `store.ts` takes an exclusive-create lock file before bootstrapping, so exactly one construction ever performs it; any concurrent one waits for the lock to clear and the database to exist, then reads the one settled result.
+
+## Pinned by
+
+- `server/src/services/horseDecisionJournal/theJournalKeepsUpWithTheFleet.throughput.test.ts`: drives the real writer worker module in real OS worker threads through two concurrent shard writers submitting 320 decisions each (~2x the measured per-shard peak, scaled to a single burst) and asserts `queue_capacity` drops and `lock_retry` both land at 0. Confirmed red against the pre-fix combination (shared catalog + the old 64-record queue): only 64 of 320 enqueued per shard before shedding began. Green with the fix, across repeated runs (0 drops, 0 lock retries, full drain, `mode: 'stopped'`).
+- `server/src/services/horseDecisionJournal/legacyBootstrapIsRaceFree.test.ts`: the cold-start fix above, directly. Confirmed red without `bootstrapLegacyJournalOnce` (a shard permanently `failed` at `writer_unavailable`, reproduced within a handful of fresh-directory trials); green with it across 12 consecutive fresh-directory trials.
+- New unit coverage: `horseDecisionJournal/config.test.ts` (shard directory naming/discovery, `runtimeHorseJournalArchiveOptions`'s per-shard resolution and shared allocation, `readonlyHorseJournalStoreOptions`'s shard-name validation) and additions to `horseDecisionJournal/review.test.ts` (the shard fan-out: a hand in a later shard, a later shard with no shard 0, no match in any existing shard, and byte-for-byte parity with the unsharded single-store path).
+- Three existing tests that hardcoded the old 64-record queue bound (`HorseDecisionJournal.test.ts` x2, `horseDecisionJournal/retry.test.ts` x1) now use the named `HORSE_JOURNAL_QUEUE_MAX_RECORDS` constant, with the same iteration/assertion relationships preserved at the new scale.
+
+## What to watch after the release
+
+The engine picks this up at its next `:55` maintenance-break cutover.
+
+- `/health.horseJournal.publishers` reports each shard's own `mode`, and each shard's `archive.directory` differs (shard 0 still `archive`, shard 1 `archive-shard-1`, ...); shard 0's `compressedBytes`/`retiredSegments` continue exactly where they left off (same directory, same catalog).
+- In `horse_brain_flush_receipts`: `queue_capacity` and `lock_retry` should both fall to near zero at the same peak load that previously produced the 20-40% shed rate; `enqueued`/`recorded` should track combined intake without the prior gap.
+- Drops that still occur (a genuine sustained overload, a disk/quota condition) remain counted and named on `/health`, never silently absorbed - the fix removes the false-positive contention, not the shedding safety valve itself.
+- A shard's `catalogBytes`/`compressedBytes` for `archive-shard-1` (and any later shard) start at zero and grow independently of shard 0's; total on-host disk footprint is now up to N times a single shard's allocation for N shards, per the sizing note above.

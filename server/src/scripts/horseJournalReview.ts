@@ -2,7 +2,10 @@ import { pathToFileURL } from 'node:url';
 import { isAbsolute } from 'node:path';
 import { readHorseJournalHand } from '../services/horseDecisionJournal/review.js';
 import { HorseDecisionJournalStore } from '../services/horseDecisionJournal/store.js';
-import { readonlyHorseJournalStoreOptions } from '../services/horseDecisionJournal/config.js';
+import {
+  horseJournalArchiveDirectoryNames,
+  readonlyHorseJournalStoreOptions,
+} from '../services/horseDecisionJournal/config.js';
 
 /** Explicit private local inspection only. Arguments never select a remote
  * service, create a spool, update a review or activate a policy. */
@@ -17,6 +20,13 @@ export function runHorseJournalReview(args: readonly string[]): { code: number; 
     try {
       store = new HorseDecisionJournalStore(args[1]!, readonlyHorseJournalStoreOptions(args[1]!));
       const storage = store.storageStats();
+      // One archive per decision-shard writer (2026-09-28): shard 0's stats
+      // are `storage`, unchanged from before sharding existed; every archive
+      // directory this journal actually has on disk (shard 0's plus any
+      // later shards') is named here too, so an operator knows to inspect
+      // `archive-shard-1`, `archive-shard-2`, ... with their own runs of this
+      // same flag rather than assuming `storage` is the whole picture.
+      const archiveDirectories = horseJournalArchiveDirectoryNames(args[1]!);
       return {
         code: 0,
         output:
@@ -25,6 +35,7 @@ export function runHorseJournalReview(args: readonly string[]): { code: number; 
             scope: 'private_storage_resources',
             status: 'observed',
             storage,
+            archiveDirectories,
             completePopulation: false,
           }) + '\n',
       };

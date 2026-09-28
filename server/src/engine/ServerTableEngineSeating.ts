@@ -99,6 +99,55 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
     }
 
+    /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
+
+       `midHand` above is read before any await, but dealHand() snapshots the
+       roster's stacks under the seat boundary and only then sets
+       `handController`, after the original cash manifest has been captured.
+       An add-on that read "between hands" while a hand was being prepared
+       applied its chips to table_seats.stack while the prepared roster still
+       held the old stack, so fn_cash_capture_hand_manifest found the seat row
+       disagreeing with the dealt stack and recorded
+       original_seat_or_starting_stack_unproven. Production, book 2026-09-21:
+       85 accepted Midway hands, each with exactly one direct add-on committed
+       0.006-6.7s before the manifest, blocked the union's weekly close.
+
+       The fix is ordering, not tolerance. A seat credit takes the same FIFO
+       seat boundary that hand preparation and departures hold, and decides
+       seat-versus-queue only once it owns it: either it lands before the
+       roster is snapshotted (and the dealt stack includes it), or the hand has
+       started and it is queued in table_pending_addons for settlement. A
+       mid-hand request never touches the seat and does not wait. */
+    if (!midHand) {
+      let releaseSeatBoundary: () => void;
+      try {
+        releaseSeatBoundary = await this.acquireSeatBoundary();
+      } catch {
+        return { success: false, error: 'Add-on failed' };
+      }
+      try {
+        return await this.addChipsDecided(userId, amount, opId);
+      } finally {
+        releaseSeatBoundary();
+      }
+    }
+    return this.addChipsDecided(userId, amount, opId);
+  }
+
+  /** The chip add-on once the seat-versus-queue decision can no longer race hand preparation. */
+  private async addChipsDecided(
+    userId: string,
+    amount: number,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (isMaintenanceFrozen()) {
+      return { success: false, error: 'Scheduled maintenance is in progress' };
+    }
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    const maxBuyIn = this.getMaxBuyIn();
+    const midHand = !!this.handController;
+
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
     //

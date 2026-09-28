@@ -962,11 +962,25 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
     // allocator, same contributions, so bbj_bb agrees with the money pipeline
     // exactly as rake_bb does.
     const bbjShares = allocateWeightedShareCents(Number(input.bbjAmount ?? 0), contributions);
+    // A HAND IS EVERY HAND DEALT (2026-09-28). This used to skip a horse whose
+    // invested and returned were both zero ("dealt in but never posted"), so
+    // every hand a horse folded preflop without posting a blind vanished from
+    // `hands`. Measured 2026-09-27 on one horse against hand_history: 3,101
+    // cash hands dealt, horse_daily_play 3,101, horse_daily_nets 2,136 - and
+    // fleet-wide nets ran at ~0.6x play every day. net_bb was right (such a
+    // hand nets zero); the denominator was not, so every bb/100 built on it
+    // was inflated about 1.45x, the tuner's 1,500-hand gate read two thirds
+    // of the sample, and REGRESS_BB100 (-15) fired on horses near -10.
+    // Dealt-in now means what horse_daily_play means by it: holding cards,
+    // or - when the caller supplied no deal - having put chips in or taken
+    // chips out. A seated player who was not dealt still does not count.
+    const dealt = input.holeCardsAll;
     for (const p of input.roster) {
       if (!p.isHorse || !p.userId) continue;
       const invested = input.contributions.get(p.userId) ?? 0;
       const returned = returnedBy.get(p.userId) ?? 0;
-      if (invested === 0 && returned === 0) continue; // dealt in but never posted
+      const dealtIn = dealt.size > 0 ? dealt.has(p.userId) : invested !== 0 || returned !== 0;
+      if (!dealtIn) continue;
       const key = `${p.userId}|${day}|${input.gameVariant}|${format}`;
       const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0, bbjBB: 0 };
       acc.hands += 1;

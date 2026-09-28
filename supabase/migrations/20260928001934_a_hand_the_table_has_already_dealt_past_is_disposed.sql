@@ -159,6 +159,9 @@ BEGIN
   CREATE TEMP TABLE IF NOT EXISTS _hand_disposal_batch (
     submission_id uuid, hand_number bigint, retained_at timestamptz,
     lease_generation uuid, request_hash text, blocked text) ON COMMIT DROP;
+  -- unqualified-write-ok: _hand_disposal_batch because it is a transaction-local
+  -- ON COMMIT DROP temp table private to this call, reachable by nothing else;
+  -- migration 20260928133817 writes the predicate out in the live definition.
   DELETE FROM _hand_disposal_batch;
 
   INSERT INTO _hand_disposal_batch (submission_id, hand_number, retained_at, lease_generation, request_hash, blocked)

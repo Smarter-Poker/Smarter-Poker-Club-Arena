@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 172000,
-      "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
+      "bytes": 172246,
+      "sha256": "7513401792ce6846705d46c6cb37f013cf82d39aa6222e296ea11eb09f811209"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1115,5 +1115,17 @@
       "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
     },
     "scope": "Adds one CI step (shard 1) running scripts/dev/test-accounting-push-bridge.sh, the accounting push receipt harness, so the owner-accounting Production Alerts routing (migration 20260927143752) is enforced. No cash input, native pg_cron route or financial assertion changed; only the ci.yml pin moves."
+  },
+  "rakebackSettlerReadHorizonIntegration20260927": {
+    "protectedMain": "a572ef3d061bc6a0f22a5820fd643b4989ba567f",
+    "previousCiPin": {
+      "bytes": 172000,
+      "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
+    },
+    "newCiPin": {
+      "bytes": 172246,
+      "sha256": "7513401792ce6846705d46c6cb37f013cf82d39aa6222e296ea11eb09f811209"
+    },
+    "scope": "Adds one CI step (accounting_postgres shard 4) running scripts/ci/test-rakeback-settler-read-horizon-postgres.py, the native harness for the rakeback settler committed read horizon (migration 20260927144455, applied as 20260927220353). No cash input, native pg_cron route or financial assertion changed; only the ci.yml pin moves."
   }
 }

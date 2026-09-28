@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
@@ -122,6 +123,7 @@ import {
   resumeRetainedHandSubmission,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
+  recordUnconfirmedTimeBankConsume,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
   type ParkedTimeBank,
@@ -2562,8 +2564,44 @@ export abstract class ServerTableEngineBase {
   private parkedBankSaveComplete = false;
   private maintenanceCheckpointGeneration = 0;
   private readonly timeBankAccountingPending = new Set<Promise<void>>();
-  // An unacknowledged non-idempotent debit must not be retried or certified.
+  /**
+   * An unacknowledged non-idempotent debit must not be retried or certified.
+   * It CAN be written down, and until it has been this flag is set.
+   *
+   * It had no clearing path at all before 2026-09-28, and every reader treats
+   * it as "this table's stopped time bank is not on disk":
+   * `shouldPersistStoppedCustody()` refuses over it, so the bank is never
+   * written; `persistPresenceForRestart('parked')` throws over it, so it is
+   * not written that way either; `hasUnretiredStoppedTimeBankCustody()`
+   * returns true from it directly, so every manager stop fails "retained
+   * time-bank custody"; and `maintenanceDurabilityReason()` answers
+   * `stopped_bank_custody_*`, which refuses the platform restart.
+   *
+   * ONE `fn_consume_time_bank` reply lost to `supabase_timeout` therefore
+   * froze tournament 87a68e55 on 2026-09-28: its manager failed to stop 112
+   * times over 115 minutes, its 43 tables and 335 seated players were held
+   * from 12:19Z, and the table reported `stopped_bank_custody_stuck` past its
+   * 600s bound - which refuses the hourly restart, so the one mechanism that
+   * would have cleared it was shut by it. An unbounded fail-closed gate on a
+   * resource the whole platform shares is the defect MaintenanceBreak's census
+   * bounded for the F06 class in #4909: "a stuck table never recovers" is the
+   * worse bug.
+   *
+   * So the unknown is made durable instead of held. Every entry below carries
+   * the id this engine chose BEFORE it sent the debit, so recording it is
+   * exactly-once however often the write is retried and no player is charged
+   * twice. When the last one is on disk the seconds are owed where a
+   * reconciler can see them, this process is no longer the only place that
+   * knows, and there is nothing left for the flag to protect.
+   */
   private timeBankAccountingUnconfirmed = false;
+  /** Unknown debits not yet on disk. Emptying it is what clears the flag. */
+  private readonly timeBankAccountingUnrecorded = new Map<
+    string,
+    { userId: string; seconds: number; reason: string }
+  >();
+  /** One resolve at a time; a second caller awaits the first. */
+  private timeBankAccountingRecordChain: Promise<void> | null = null;
   /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
   protected parkWriteRetryMs = 5_000;
   /**
@@ -7133,6 +7171,17 @@ export abstract class ServerTableEngineBase {
    * acknowledgement only when the database confirms the custody is on disk.
    */
   async persistStoppedTimeBankCustody(): Promise<void> {
+    /* Before the gate, not after: `shouldPersistStoppedCustody()` refuses
+       while an unknown debit is held, so asking first would refuse forever on
+       exactly the engines this call exists to drain.
+
+       GUARDED, and synchronous when there is nothing to resolve. An `await`
+       taken unconditionally here adds a microtask to the ordinary path and
+       changes the interleaving of a concurrent announcement and park - which
+       persistPresenceForRestart's own note forbids in these words: "A fix has
+       no business shifting the timing of the paths it is not fixing." */
+    if (this.timeBankAccountingUnconfirmed)
+      await this.resolveUnconfirmedTimeBankAccounting().catch(() => undefined);
     if (!this.shouldPersistStoppedCustody()) return;
     this.presenceSavePending++;
     const generation = this.maintenanceCheckpointGeneration;
@@ -7189,6 +7238,18 @@ export abstract class ServerTableEngineBase {
           await Promise.all(this.timeBankAccountingPending);
         }
         if (generation !== this.maintenanceCheckpointGeneration) return;
+        /* An unknown that is on disk is no longer unconfirmed: the seconds are
+           recorded as owed where a reconciler can settle them, and this
+           snapshot is as true as it was ever going to be. Only an unknown
+           that could not be written down still stops the park.
+
+           Guarded, for the reason written at the top of this method: an engine
+           with no unknown debit must take no extra microtask on its way to the
+           write, or a concurrent announcement and park reorder. */
+        if (this.timeBankAccountingUnconfirmed) {
+          await this.resolveUnconfirmedTimeBankAccounting().catch(() => undefined);
+          if (generation !== this.maintenanceCheckpointGeneration) return;
+        }
         if (this.timeBankAccountingUnconfirmed) {
           throw new Error('Time bank accounting outcome is unconfirmed');
         }
@@ -7875,6 +7936,9 @@ export abstract class ServerTableEngineBase {
     ) {
       return;
     }
+    /* Raised the instant `meta.dbConsumedSeconds` is, so the catch below
+       knows whether these seconds were already counted as spent locally. */
+    let committedOwed = 0;
     try {
       const meta = this.timeBankMeta.get(event.playerId);
       const unlimited =
@@ -7892,56 +7956,136 @@ export abstract class ServerTableEngineBase {
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
+      committedOwed = owed;
       // Keep the issued amount reserved against duplicate terminal events.
       // The park must also wait for its acknowledgment: issued is not durable.
+      // Chosen BEFORE the debit is sent, so an outcome that never arrives can
+      // still be recorded exactly once. See timeBankAccountingUnconfirmed.
+      const attemptId = randomUUID();
       const pending = Promise.resolve(
         supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
       )
         .then(({ data, error }) => {
           if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
+            const reason = String(error?.message ?? data?.error ?? 'missing receipt');
+            this.holdUnconfirmedTimeBankConsume(attemptId, event.playerId, owed, reason);
+            console.warn('[TimeBank] consume unconfirmed:', reason);
           }
         })
         .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
+          const reason = String((err as Error)?.message ?? err);
+          this.holdUnconfirmedTimeBankConsume(attemptId, event.playerId, owed, reason);
+          console.warn('[TimeBank] consume threw:', reason);
         })
         .finally(() => this.timeBankAccountingPending.delete(pending));
       this.timeBankAccountingPending.add(pending);
     } catch (err) {
+      const reason = String((err as Error)?.message ?? err);
+      /* Only once `meta.dbConsumedSeconds` has been raised are these seconds
+         owed: before that the next terminal event computes them again, and
+         recording them here would owe them twice. `hold` is a no-op at zero,
+         but the flag must still go up - something went wrong in accounting
+         and this engine cannot say what. */
       this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
+      this.holdUnconfirmedTimeBankConsume(randomUUID(), event.playerId, committedOwed, reason);
+      console.warn('[TimeBank] consume could not start:', reason);
     }
   }
 
   /** Best-effort ledger/audit write. Gameplay never waits for this call. */
   private consumeTimeBankSeconds(userId: string, seconds: number): void {
     try {
+      const attemptId = randomUUID();
       const pending = Promise.resolve(
         supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
       )
         .then(({ data, error }) => {
           if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
+            const reason = String(error?.message ?? data?.error ?? 'missing receipt');
+            this.holdUnconfirmedTimeBankConsume(attemptId, userId, seconds, reason);
+            console.warn('[TimeBank] consume unconfirmed:', reason);
           }
         })
         .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
+          const reason = String((err as Error)?.message ?? err);
+          this.holdUnconfirmedTimeBankConsume(attemptId, userId, seconds, reason);
+          console.warn('[TimeBank] consume threw:', reason);
         })
         .finally(() => this.timeBankAccountingPending.delete(pending));
       this.timeBankAccountingPending.add(pending);
     } catch (err) {
-      this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
+      const reason = String((err as Error)?.message ?? err);
+      this.holdUnconfirmedTimeBankConsume(randomUUID(), userId, seconds, reason);
+      console.warn('[TimeBank] consume could not start:', reason);
+    }
+  }
+
+  /**
+   * Hold one unknown debit: the flag goes up, and the attempt joins the set
+   * that must reach disk before it can come down again. Never retries the
+   * debit - that is the one thing a non-idempotent write may not do.
+   */
+  private holdUnconfirmedTimeBankConsume(
+    attemptId: string,
+    userId: string,
+    seconds: number,
+    reason: string
+  ): void {
+    if (!(seconds > 0) || !userId) return;
+    this.timeBankAccountingUnconfirmed = true;
+    this.timeBankAccountingUnrecorded.set(attemptId, { userId, seconds, reason });
+    // Promptness only. Every gate that reads the flag also calls this, so a
+    // failure here costs latency rather than the resolution itself.
+    void this.resolveUnconfirmedTimeBankAccounting().catch(() => undefined);
+  }
+
+  /**
+   * Write every held unknown down, then lower the flag.
+   *
+   * This is the clearing path the flag never had. It answers the question the
+   * flag asks - "does anyone but this process know these seconds are owed?" -
+   * rather than answering the question it was being READ as, which is whether
+   * this table's stopped time bank is on disk. Those are different facts, and
+   * conflating them is what let one lost reply hold 43 tables, 335 players and
+   * the whole platform's restart certificate.
+   *
+   * Fail-closed is preserved exactly: an attempt that does not reach disk
+   * stays in the set and the flag stays up. The difference is that the next
+   * gate retries it under the same id, so it converges instead of latching.
+   */
+  private async resolveUnconfirmedTimeBankAccounting(): Promise<void> {
+    if (this.timeBankAccountingUnrecorded.size === 0) {
+      this.timeBankAccountingUnconfirmed = false;
+      return;
+    }
+    // Serialize: two gates arriving together must not each send the same row.
+    while (this.timeBankAccountingRecordChain) {
+      const inFlight = this.timeBankAccountingRecordChain;
+      await inFlight.catch(() => undefined);
+      if (this.timeBankAccountingRecordChain === inFlight)
+        this.timeBankAccountingRecordChain = null;
+    }
+    const run = (async () => {
+      for (const [attemptId, held] of [...this.timeBankAccountingUnrecorded]) {
+        const recorded = await recordUnconfirmedTimeBankConsume({
+          attemptId,
+          userId: held.userId,
+          seconds: held.seconds,
+          tableId: this.tableId,
+          engineInstance: `${INSTANCE_ID}:time_bank`,
+          reason: held.reason,
+          tournamentId: this.engineLeaseTournamentId ?? this.tableInfo?.tournament_id ?? null,
+          handNumber: this.handCount,
+        });
+        if (recorded) this.timeBankAccountingUnrecorded.delete(attemptId);
+      }
+      if (this.timeBankAccountingUnrecorded.size === 0) this.timeBankAccountingUnconfirmed = false;
+    })();
+    this.timeBankAccountingRecordChain = run;
+    try {
+      await run;
+    } finally {
+      if (this.timeBankAccountingRecordChain === run) this.timeBankAccountingRecordChain = null;
     }
   }
 

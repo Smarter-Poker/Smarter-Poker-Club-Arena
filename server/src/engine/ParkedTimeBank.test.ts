@@ -56,6 +56,22 @@ import {
   unregisterOwnedTournamentTableEngine,
 } from '../tournament/TournamentManagerOwnership.js';
 import { loadPresenceFromPark, loadTimeBanksFromPark } from '../services/supabase/snapshots.js';
+/**
+ * THE DEBIT, NOT EVERY RPC (2026-09-28).
+ *
+ * These counts used to read `expect(data.rpc).toHaveBeenCalledTimes(1)`, which
+ * meant "the non-idempotent debit was never re-sent" only because the debit was
+ * once the sole RPC on this path. An unknown debit is now WRITTEN DOWN
+ * (fn_record_unconfirmed_time_bank_consume) so it can stop holding the table's
+ * custody, the restart certificate and its manager's stop - see
+ * anUnknownDebitIsWrittenDownNotHeldForever.law.test.ts. That record is a
+ * different RPC and it is retried on purpose; the debit still must not be. So
+ * the pin names the call it is actually about, exactly as the double-billing
+ * test above it already does.
+ */
+const debits = () => data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank');
+const records = () =>
+  data.rpc.mock.calls.filter(([name]) => name === 'fn_record_unconfirmed_time_bank_consume');
 const table = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const user = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const stay = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -381,9 +397,9 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       await Promise.resolve();
       expect(e.isMaintenanceStateDurable()).toBe(false);
       expect(data.row).toBeNull();
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      expect(debits()).toHaveLength(1);
       e.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      expect(debits()).toHaveLength(1);
       if (outcome === 'stale-break') {
         e.resumeFromMaintenance();
         e.pauseForMaintenance(120000);
@@ -407,7 +423,12 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         await e.persistPresenceForRestart('parked');
         expect(e.isMaintenanceStateDurable()).toBe(true);
       }
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      expect(debits(), 'the debit is never re-sent, whatever the outcome').toHaveLength(1);
+      /* An unknown outcome is written down so it stops holding the park; it is
+         the record that could not land here (this mock answers every RPC with
+         the debit's own reply), which is why the park above still refuses. */
+      if (outcome === 'refused' || outcome === 'thrown' || outcome === 'missing-receipt')
+        expect(records().length, 'the unknown was offered to disk').toBeGreaterThan(0);
       e.timeBankEngine.dispose(table);
     }
   );
@@ -780,7 +801,7 @@ describe('stopped tournament bank custody', () => {
     const stopping = original.stop();
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(original.timeBankEngine.getPlayerBank(table, user)).not.toBeNull();
-    expect(data.rpc).toHaveBeenCalledOnce();
+    expect(debits()).toHaveLength(1);
     finish({ data: null, error: new Error('response lost') });
     await stopping;
     expect(original.captureParkedTimeBanks()[user]).toMatchObject({
@@ -793,7 +814,7 @@ describe('stopped tournament bank custody', () => {
     expect(next.adoptStoppedTimeBankCustody(original)).toBe(false);
     expect(original.retireStoppedTimeBanksForClosedSession()).toBe(false);
     await original.stop();
-    expect(data.rpc).toHaveBeenCalledOnce();
+    expect(debits(), 'a lost debit reply is never replayed').toHaveLength(1);
   });
 
   it('refuses incomplete capture without disposing the original value', async () => {

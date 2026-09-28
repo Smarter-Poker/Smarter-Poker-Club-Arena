@@ -383,6 +383,71 @@ export const parkStoppedTimeBankCustody = bindToProcessRoot(
 );
 
 /**
+ * WRITE DOWN A DEBIT WHOSE OUTCOME NOBODY KNOWS (2026-09-28).
+ *
+ * `fn_consume_time_bank` is non-idempotent: it spends a player's account
+ * entitlement and carries no key of its own, so a lost reply may not be
+ * retried and may not be certified. The engine's flag for that -
+ * `timeBankAccountingUnconfirmed` - had no clearing path anywhere, and every
+ * reader treats it as "this table's stopped bank is not on disk". One
+ * `supabase_timeout` on 2026-09-28 therefore froze tournament 87a68e55: 112
+ * failed manager stops over 115 minutes, 43 tables and 335 seated players
+ * held from 12:19Z, and `stopped_bank_custody_stuck` refusing the very
+ * restart that would have cleared it.
+ *
+ * An unknown that cannot be retried and cannot be certified can still be
+ * recorded. The caller chooses `attemptId` BEFORE it sends the debit, so
+ * recording it afterwards is exactly-once no matter how often the write is
+ * retried, and nobody is charged twice. This records that seconds are owed
+ * and unverified. It debits nothing.
+ */
+export const recordUnconfirmedTimeBankConsume = bindToProcessRoot(
+  async (params: {
+    attemptId: string;
+    userId: string;
+    seconds: number;
+    tableId: string;
+    engineInstance: string;
+    reason: string;
+    tournamentId?: string | null;
+    handNumber?: number | null;
+  }): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.rpc('fn_record_unconfirmed_time_bank_consume', {
+        p_attempt_id: params.attemptId,
+        p_user_id: params.userId,
+        p_seconds: params.seconds,
+        p_table_id: params.tableId,
+        p_engine_instance: params.engineInstance,
+        p_reason: params.reason,
+        p_tournament_id: params.tournamentId ?? null,
+        p_hand_number: params.handNumber ?? null,
+      });
+      if (error) {
+        console.warn(`[TimeBank] unconfirmed debit not recorded: ${error.message}`);
+        return false;
+      }
+      const reply = data as { ok?: unknown; refused?: unknown } | null;
+      if (reply?.ok === true) return true;
+      /* A NAMED refusal is the database's final answer about THIS attempt, not
+         a transport failure: recording it again can only be refused again, so
+         a permanent refusal must not become a permanent hold. Anything else is
+         an answer this code could not read, and an unreadable answer is never
+         coerced into a readable one - it is retried under the same id. */
+      if (reply?.ok === false && typeof reply.refused === 'string') {
+        console.warn(`[TimeBank] unconfirmed debit refused: ${reply.refused}`);
+        return true;
+      }
+      console.warn('[TimeBank] unconfirmed debit got an unreadable reply; holding');
+      return false;
+    } catch (e) {
+      console.warn('[TimeBank] unconfirmed debit record threw:', (e as Error)?.message ?? e);
+      return false;
+    }
+  }
+);
+
+/**
  * The presence FSM a table parked with, if it parked recently. Null when
  * there is no row or the row is older than PARKED_PRESENCE_FRESH_MS.
  */

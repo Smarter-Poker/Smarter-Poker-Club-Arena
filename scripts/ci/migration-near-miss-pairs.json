@@ -1,0 +1,275 @@
+{
+  "_read_this_first": "Near-miss pairs found while recording the applied-but-unrecorded migrations on 2026-09-28. Each production version below now has its own byte-exact file (the recording). The repo file named beside it is the author's copy of the same change under a stamp or name the ledger never recorded: a letter-suffixed stamp, a hand-picked stamp, or a name production stored differently. Production's schema_migrations never ran that file under its own version, so it is superseded by the recording; it is kept unchanged because editing it would make the file-text gates judge it as new work. Matched by name similarity within three days; read both files before relying on a pair.",
+  "pairs": [
+    {
+      "appliedVersion": "20260415014641",
+      "appliedName": "atomic_table_rebuy_v2",
+      "recording": "supabase/migrations/20260415014641_atomic_table_rebuy_v2.sql",
+      "supersededRepoFile": "supabase/migrations/20260415_atomic_table_rebuy.sql"
+    },
+    {
+      "appliedVersion": "20260415121023",
+      "appliedName": "fix_agent_commission_credit_bug009_v2",
+      "recording": "supabase/migrations/20260415121023_fix_agent_commission_credit_bug009_v2.sql",
+      "supersededRepoFile": "supabase/migrations/20260415_fix_agent_commission_credit.sql"
+    },
+    {
+      "appliedVersion": "20260415204005",
+      "appliedName": "bug_018_atomic_table_rpcs_balance_after",
+      "recording": "supabase/migrations/20260415204005_bug_018_atomic_table_rpcs_balance_after.sql",
+      "supersededRepoFile": "supabase/migrations/20260415_bug_018_balance_after.sql"
+    },
+    {
+      "appliedVersion": "20260416001954",
+      "appliedName": "bug_021_hand_history_rls_authenticated_select",
+      "recording": "supabase/migrations/20260416001954_bug_021_hand_history_rls_authenticated_select.sql",
+      "supersededRepoFile": "supabase/migrations/20260416_bug_021_hand_history_authenticated_select.sql"
+    },
+    {
+      "appliedVersion": "20260428204959",
+      "appliedName": "x2_001_audit_trail",
+      "recording": "supabase/migrations/20260428204959_x2_001_audit_trail.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000001_audit_trail.sql"
+    },
+    {
+      "appliedVersion": "20260428205023",
+      "appliedName": "x2_002_chip_escrow_holds",
+      "recording": "supabase/migrations/20260428205023_x2_002_chip_escrow_holds.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000002_chip_escrow_holds.sql"
+    },
+    {
+      "appliedVersion": "20260428205039",
+      "appliedName": "x2_003_settlement_idempotency_keys",
+      "recording": "supabase/migrations/20260428205039_x2_003_settlement_idempotency_keys.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000003_settlement_idempotency_keys.sql"
+    },
+    {
+      "appliedVersion": "20260428205122",
+      "appliedName": "x2_004_club_wallets",
+      "recording": "supabase/migrations/20260428205122_x2_004_club_wallets.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000004_club_wallets.sql"
+    },
+    {
+      "appliedVersion": "20260428205157",
+      "appliedName": "x2_005_rakeback_period_payouts",
+      "recording": "supabase/migrations/20260428205157_x2_005_rakeback_period_payouts.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000005_rakeback_period_payouts.sql"
+    },
+    {
+      "appliedVersion": "20260428205223",
+      "appliedName": "x2_006_sub_agents",
+      "recording": "supabase/migrations/20260428205223_x2_006_sub_agents.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000006_sub_agents.sql"
+    },
+    {
+      "appliedVersion": "20260428205257",
+      "appliedName": "x2_007_seed_reveals",
+      "recording": "supabase/migrations/20260428205257_x2_007_seed_reveals.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000007_seed_reveals.sql"
+    },
+    {
+      "appliedVersion": "20260428205349",
+      "appliedName": "x2_008_chat_moderation",
+      "recording": "supabase/migrations/20260428205349_x2_008_chat_moderation.sql",
+      "supersededRepoFile": "supabase/migrations/20260428000008_chat_moderation.sql"
+    },
+    {
+      "appliedVersion": "20260724040251",
+      "appliedName": "rake_audit_sweep2_db_fixes",
+      "recording": "supabase/migrations/20260724040251_rake_audit_sweep2_db_fixes.sql",
+      "supersededRepoFile": "supabase/migrations/20260724b_rake_audit_sweep2_db_fixes.sql"
+    },
+    {
+      "appliedVersion": "20260724163603",
+      "appliedName": "atomic_distribute_rake",
+      "recording": "supabase/migrations/20260724163603_atomic_distribute_rake.sql",
+      "supersededRepoFile": "supabase/migrations/20260724f_atomic_distribute_rake.sql"
+    },
+    {
+      "appliedVersion": "20260724164425",
+      "appliedName": "rakeback_credit_idempotency",
+      "recording": "supabase/migrations/20260724164425_rakeback_credit_idempotency.sql",
+      "supersededRepoFile": "supabase/migrations/20260724g_rakeback_credit_idempotency.sql"
+    },
+    {
+      "appliedVersion": "20260724164501",
+      "appliedName": "rakeback_player_stats_idempotent",
+      "recording": "supabase/migrations/20260724164501_rakeback_player_stats_idempotent.sql",
+      "supersededRepoFile": "supabase/migrations/20260724h_rakeback_player_stats_idempotent.sql"
+    },
+    {
+      "appliedVersion": "20260724170850",
+      "appliedName": "auto_cashout_on_cash_table_close",
+      "recording": "supabase/migrations/20260724170850_auto_cashout_on_cash_table_close.sql",
+      "supersededRepoFile": "supabase/migrations/20260724i_auto_cashout_on_cash_table_close.sql"
+    },
+    {
+      "appliedVersion": "20260818201108",
+      "appliedName": "drop_dead_time_bank_seconds_columns",
+      "recording": "supabase/migrations/20260818201108_drop_dead_time_bank_seconds_columns.sql",
+      "supersededRepoFile": "supabase/migrations/20260818b_drop_time_bank_seconds.sql"
+    },
+    {
+      "appliedVersion": "20260820020442",
+      "appliedName": "user_rank_derives_from_board",
+      "recording": "supabase/migrations/20260820020442_user_rank_derives_from_board.sql",
+      "supersededRepoFile": "supabase/migrations/20260820a_user_rank_derives_from_board.sql"
+    },
+    {
+      "appliedVersion": "20260820021554",
+      "appliedName": "challenge_catalog_is_single_source_of_truth",
+      "recording": "supabase/migrations/20260820021554_challenge_catalog_is_single_source_of_truth.sql",
+      "supersededRepoFile": "supabase/migrations/20260820c_challenge_catalog_single_source_of_truth.sql"
+    },
+    {
+      "appliedVersion": "20260820060709",
+      "appliedName": "rakeback_recompute_conflict_target",
+      "recording": "supabase/migrations/20260820060709_rakeback_recompute_conflict_target.sql",
+      "supersededRepoFile": "supabase/migrations/20260820f_rakeback_recompute_conflict_target.sql"
+    },
+    {
+      "appliedVersion": "20260820221746",
+      "appliedName": "spin_tier_availability_public_view",
+      "recording": "supabase/migrations/20260820221746_spin_tier_availability_public_view.sql",
+      "supersededRepoFile": "supabase/migrations/20260820p_spin_tier_availability_public_view.sql"
+    },
+    {
+      "appliedVersion": "20260821031405",
+      "appliedName": "release_seats_when_tournament_finishes_trigger",
+      "recording": "supabase/migrations/20260821031405_release_seats_when_tournament_finishes_trigger.sql",
+      "supersededRepoFile": "supabase/migrations/20260821_release_seats_on_tournament_finish_trigger.sql"
+    },
+    {
+      "appliedVersion": "20260821163244",
+      "appliedName": "raise_cash_table_cap_to_six",
+      "recording": "supabase/migrations/20260821163244_raise_cash_table_cap_to_six.sql",
+      "supersededRepoFile": "supabase/migrations/20260821f_raise_cash_table_cap_to_six.sql"
+    },
+    {
+      "appliedVersion": "20260821174930",
+      "appliedName": "fn_batch_active_player_counts_v3_one_club_at_a_time",
+      "recording": "supabase/migrations/20260821174930_fn_batch_active_player_counts_v3_one_club_at_a_time.sql",
+      "supersededRepoFile": "supabase/migrations/20260821_active_counts_one_club_at_a_time.sql"
+    },
+    {
+      "appliedVersion": "20260821194938",
+      "appliedName": "retire_500x_spin_tier",
+      "recording": "supabase/migrations/20260821194938_retire_500x_spin_tier.sql",
+      "supersededRepoFile": "supabase/migrations/20260821g_retire_500x_spin_tier.sql"
+    },
+    {
+      "appliedVersion": "20260821201702",
+      "appliedName": "spin_availability_can_draw_500x_compat_shim",
+      "recording": "supabase/migrations/20260821201702_spin_availability_can_draw_500x_compat_shim.sql",
+      "supersededRepoFile": "supabase/migrations/20260821h_spin_availability_500x_compat_shim.sql"
+    },
+    {
+      "appliedVersion": "20260821204940",
+      "appliedName": "reapply_500x_retirement_view",
+      "recording": "supabase/migrations/20260821204940_reapply_500x_retirement_view.sql",
+      "supersededRepoFile": "supabase/migrations/20260822000000_reapply_500x_retirement.sql"
+    },
+    {
+      "appliedVersion": "20260821213042",
+      "appliedName": "leaderboard_by_dates_functions",
+      "recording": "supabase/migrations/20260821213042_leaderboard_by_dates_functions.sql",
+      "supersededRepoFile": "supabase/migrations/20260821_leaderboard_by_dates_rpcs.sql"
+    },
+    {
+      "appliedVersion": "20260822181607",
+      "appliedName": "credit_player_wallet_once_and_credit_and_log",
+      "recording": "supabase/migrations/20260822181607_credit_player_wallet_once_and_credit_and_log.sql",
+      "supersededRepoFile": "supabase/migrations/20260822190000_credit_player_wallet_once.sql"
+    },
+    {
+      "appliedVersion": "20260823135842",
+      "appliedName": "player_number_guarantee",
+      "recording": "supabase/migrations/20260823135842_player_number_guarantee.sql",
+      "supersededRepoFile": "supabase/migrations/20260823_01_player_number_guarantee.sql"
+    },
+    {
+      "appliedVersion": "20260823140123",
+      "appliedName": "member_fee_rollup",
+      "recording": "supabase/migrations/20260823140123_member_fee_rollup.sql",
+      "supersededRepoFile": "supabase/migrations/20260823_02_member_fee_rollup.sql"
+    },
+    {
+      "appliedVersion": "20260823140232",
+      "appliedName": "club_bank_cashier_access_and_send",
+      "recording": "supabase/migrations/20260823140232_club_bank_cashier_access_and_send.sql",
+      "supersededRepoFile": "supabase/migrations/20260823140000_club_bank_cashier.sql"
+    },
+    {
+      "appliedVersion": "20260823141550",
+      "appliedName": "club_members_overview",
+      "recording": "supabase/migrations/20260823141550_club_members_overview.sql",
+      "supersededRepoFile": "supabase/migrations/20260823_03_club_members_overview.sql"
+    },
+    {
+      "appliedVersion": "20260823142707",
+      "appliedName": "member_management_rpcs",
+      "recording": "supabase/migrations/20260823142707_member_management_rpcs.sql",
+      "supersededRepoFile": "supabase/migrations/20260823_04_member_management_rpcs.sql"
+    },
+    {
+      "appliedVersion": "20260823143025",
+      "appliedName": "club_bank_membership_status_accepts_approved",
+      "recording": "supabase/migrations/20260823143025_club_bank_membership_status_accepts_approved.sql",
+      "supersededRepoFile": "supabase/migrations/20260823180000_club_bank_membership_status.sql"
+    },
+    {
+      "appliedVersion": "20260823144055",
+      "appliedName": "promo_vault",
+      "recording": "supabase/migrations/20260823144055_promo_vault.sql",
+      "supersededRepoFile": "supabase/migrations/20260823_05_promo_vault.sql"
+    },
+    {
+      "appliedVersion": "20260824034344",
+      "appliedName": "reconcile_tournament_denormals_recurring",
+      "recording": "supabase/migrations/20260824034344_reconcile_tournament_denormals_recurring.sql",
+      "supersededRepoFile": "supabase/migrations/20260824020200_reconcile_tournament_denormals.sql"
+    },
+    {
+      "appliedVersion": "20260903073351",
+      "appliedName": "the_union_branch_belongs_to_production_not_to_every_club_rpc",
+      "recording": "supabase/migrations/20260903073351_the_union_branch_belongs_to_production_not_to_every_club_rpc.sql",
+      "supersededRepoFile": "supabase/migrations/20260903150000_the_union_branch_belongs_to_production.sql"
+    },
+    {
+      "appliedVersion": "20260905103820",
+      "appliedName": "a_horse_is_stamped_on_its_seat_functions",
+      "recording": "supabase/migrations/20260905103820_a_horse_is_stamped_on_its_seat_functions.sql",
+      "supersededRepoFile": "supabase/migrations/20260905103622_a_horse_is_stamped_on_its_seat_and_the_felt_can_see_it.sql"
+    },
+    {
+      "appliedVersion": "20260905103832",
+      "appliedName": "a_horse_is_stamped_on_its_seat_trigger",
+      "recording": "supabase/migrations/20260905103832_a_horse_is_stamped_on_its_seat_trigger.sql",
+      "supersededRepoFile": "supabase/migrations/20260905103622_a_horse_is_stamped_on_its_seat_and_the_felt_can_see_it.sql"
+    },
+    {
+      "appliedVersion": "20260906021005",
+      "appliedName": "leaderboard_settlement_follows_published_period",
+      "recording": "supabase/migrations/20260906021005_leaderboard_settlement_follows_published_period.sql",
+      "supersededRepoFile": "supabase/migrations/20260906022137_leaderboard_settlement_follows_the_published_period.sql"
+    },
+    {
+      "appliedVersion": "20260906160809",
+      "appliedName": "a_cloned_table_joins_its_game_as_a_feeder_never_as_a_second_main_one",
+      "recording": "supabase/migrations/20260906160809_a_cloned_table_joins_its_game_as_a_feeder_never_as_a_second_main_one.sql",
+      "supersededRepoFile": "supabase/migrations/20260906160550_a_cloned_table_joins_its_game_as_a_feeder_never_as_a_second_.sql"
+    },
+    {
+      "appliedVersion": "20260909012215",
+      "appliedName": "retire_the_stranded_half_chips_on_the_felt",
+      "recording": "supabase/migrations/20260909012215_retire_the_stranded_half_chips_on_the_felt.sql",
+      "supersededRepoFile": "supabase/migrations/20260909012046_retire_the_six_stranded_half_chips_on_the_felt.sql"
+    },
+    {
+      "appliedVersion": "20260911230657",
+      "appliedName": "an_arena_table_is_governed_by_the_diamond_boundary_not_a_cluster",
+      "recording": "supabase/migrations/20260911230657_an_arena_table_is_governed_by_the_diamond_boundary_not_a_cluster.sql",
+      "supersededRepoFile": "supabase/migrations/20260911230621_an_arena_table_is_governed_by_the_diamond_boundary_not_a_clu.sql"
+    }
+  ]
+}

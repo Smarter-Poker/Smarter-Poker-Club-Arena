@@ -45,6 +45,61 @@ function input(over: Partial<HorseReviewInput> = {}): HorseReviewInput {
   };
 }
 
+describe('a hand is every hand dealt (2026-09-28)', () => {
+  it('counts a hand a horse folded without posting, at zero net', () => {
+    drainHorseNets(10_000);
+    // horse-b was dealt in and folded preflop: no contribution, no return.
+    accumulateHorseNets(
+      input({
+        contributions: new Map([
+          ['horse-a', 10],
+          ['human-1', 4],
+        ]),
+        winners: [{ userId: 'horse-a', amount: 14 }],
+      })
+    );
+    const rows = drainHorseNets();
+    const b = rows.find((r) => r.horse_user_id === 'horse-b');
+    expect(b).toMatchObject({ hands: 1, net_bb: 0 });
+  });
+
+  it('does not count a seated horse that was not dealt', () => {
+    drainHorseNets(10_000);
+    accumulateHorseNets(
+      input({
+        holeCardsAll: new Map([
+          ['horse-a', { seat: 1, cards: [] }],
+          ['human-1', { seat: 3, cards: [] }],
+        ]),
+        contributions: new Map([
+          ['horse-a', 10],
+          ['human-1', 4],
+        ]),
+        winners: [{ userId: 'horse-a', amount: 14 }],
+      })
+    );
+    const rows = drainHorseNets();
+    expect(rows.find((r) => r.horse_user_id === 'horse-b')).toBeUndefined();
+  });
+
+  it('with no deal recorded, falls back to having moved chips', () => {
+    drainHorseNets(10_000);
+    accumulateHorseNets(
+      input({
+        holeCardsAll: new Map(),
+        contributions: new Map([
+          ['horse-a', 10],
+          ['human-1', 4],
+        ]),
+        winners: [{ userId: 'horse-a', amount: 14 }],
+      })
+    );
+    const rows = drainHorseNets();
+    expect(rows.find((r) => r.horse_user_id === 'horse-a')).toMatchObject({ hands: 1 });
+    expect(rows.find((r) => r.horse_user_id === 'horse-b')).toBeUndefined();
+  });
+});
+
 describe('accumulateHorseNets + drainHorseNets', () => {
   it('aggregates exact nets in bb per horse/day/variant/format', () => {
     drainHorseNets(10_000); // clear anything from other tests

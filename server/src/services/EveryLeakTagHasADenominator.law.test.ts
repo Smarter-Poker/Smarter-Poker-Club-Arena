@@ -62,6 +62,7 @@ const MIRRORED = [
   'underfull_stackoff',
   'weak_kicker_trips_stackoff',
   'top_pair_weak_kicker_stackoff',
+  'one_pair_deep_stackoff',
   'plo_underfull_stackoff',
   'plo_toppair_no_redraw_stackoff',
 ];

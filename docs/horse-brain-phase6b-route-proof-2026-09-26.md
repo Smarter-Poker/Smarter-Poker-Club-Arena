@@ -203,3 +203,85 @@ This is a defect in the Horse journal, not in the 6B routes: every retained reco
 | Horse journal lock and `/health` shard fix (this branch) | implemented but unverified | planted-red tests above; not in a serving release                                                                                                          |
 
 G1, G2, G3, G7, G8 and G9 are unchanged from the table above. The population in this window is partial for the journal reason stated, so these counts certify the retained records only; they are not a complete population and not a replay (6C) or population (6D) result.
+
+## 2026-09-28: Re-Verified on the Serving Release 763e4cec
+
+The release that serves at the time of this read is `763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f`
+(container `club-arena-engine` started 2026-09-28T06:55:53Z at the time of the read; it contains
+the journal lock-retry and per-shard `/health` fix from the 2026-09-27 section above, #5480,
+already deployed). The bounded observed route proof was rerun against it, same window as the
+6A/6D sections of this branch's evidence. Evidence: `docs/evidence/phase6b/phase6b-route-proof-20260928T155630Z.json`
+(the committed, successful run) and `docs/evidence/phase6b/phase6b-route-proof-20260928T154841Z.json`
+(a first attempt that failed transiently; see below).
+
+Command:
+
+```
+python3 server/scripts/phase6b-route-proof-observe.py 763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f 2026-09-28T14:12:00Z 2026-09-28T15:12:00Z docs/evidence/phase6b
+```
+
+**A first attempt failed transiently and was retried; the retry succeeded cleanly with the
+identical selector.** The first run (15:48:41Z to 15:49:25Z) exited 3, `{"status":"unavailable","reason":"observation_failed"}`,
+with no further detail (the observer only emits a stack trace under `PHASE6B_ROUTE_PROOF_DEBUG=1`,
+which the production wrapper does not set). A manual reproduction with that debug flag set,
+same image, same script bytes, same window, ran cleanly to completion in about 4 minutes,
+producing the full observation with no error. The wrapper was then re-run through its normal
+path (unchanged, no debug flag) and completed cleanly in about 3 minutes. Both successful runs
+(the manual debug reproduction and the committed retry) agree; nothing about the failure was
+reproducible on retry with identical inputs, so this reads as a transient condition in the
+observer's own read path (most plausibly momentary contention opening the shared SQLite catalog
+while the two live production journal writers are appending to it), not a Horse Brain decision
+or route defect: no decision was misjudged, because the failed attempt never got far enough to
+classify one. This is a property of the read-only evidence tool, not of production code, so no
+Horse Brain fix or planted-red test applies here.
+
+Engine `/health` before the successful run: release `763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f`,
+Horse journal `ready`, 2 of 2 decision-shard publishers running, 4,984,135 records. The
+observer's own serving-identity check (container, image, start time, release label) was verified
+equal before the run and immediately after the container exited.
+
+**The scheduled hourly engine restart landed seconds after this run finished, and the wrapper's
+own post-run health read raced it.** The observation itself finished at 15:59:18.693Z;
+`club-arena-engine` restarted (same release, same image) at 15:59:24Z as the documented :55/:00
+hourly maintenance break (CLAUDE.md section 13) cut the new instance over. The wrapper's
+post-run `/health` read landed in that window and got `{"ok": false}`, so the tool's own
+`completedObservation` flag is `false` on the committed file even though the container's own
+exit code, OOM state, identity check and cleanup were all clean (`exitCode: 0`,
+`containerExitCode: 0`, `oomKilled: false`, `sameServingIdentityAfter: true`,
+`observerRemoved: true`) and the 671 KB observation payload is complete. A read taken 20 seconds
+later shows the same release, journal `ready` again, 1 of 1 publisher reporting so far (the
+restart's normal warm-up; the second shard was still coming back). This is the platform freeze
+behaving as documented, not a defect in the route proof or in 6B.
+
+| Measure                                                  |                   Count |
+| -------------------------------------------------------- | ----------------------: |
+| Tournament preflop decisions on 763e4cec                 |                  35,644 |
+| v2 receipts with a lookup / matching their snapshot      |         35,644 / 35,644 |
+| Mismatch refusals                                        |                       0 |
+| Depth bracket disagreements / coordinates outside domain |                   0 / 0 |
+| Atlas evaluated / unavailable / bypassed receipts        | 10,403 / 19,354 / 5,887 |
+| Accepted actions bound to the completed hand             |                  20,971 |
+| Cells observed / unobserved (of 5,643)                   |             608 / 5,035 |
+
+Domain digest: `atlas.pinnedDigest` and `atlas.recomputedDigest` are both `4a8918a0f015e9e96b31dc63e0a7ab45eca503698c514c82f55627bec7864305`
+(`digestMatches: true`), recomputed on the deployed 763e4cec image from the frozen descriptor.
+Dealt size 10 and branch `open_facing` are again wholly unobserved, the same axes noted
+unobserved on 2026-09-27; the deployed matcher again exports named mismatch reasons
+(`mismatchReasonsNamed: true`) and again saw zero mismatches, so no named reason was produced on
+a natural mismatch in this window either.
+
+### Gate Status on 763e4cec (Bounded to 6B)
+
+| Gate                    | Status       | Evidence                                                                                                                                                   |
+| ----------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G4 Immutable authority  | verified now | domain digest `4a8918a0...` recomputed by the observer on the deployed 763e4cec image from the frozen descriptor and equal to the pin                      |
+| G5 Reachability         | verified now | 35,644 natural tournament preflop lookups on 763e4cec matching their snapshot, 20,971 accepted actions bound to the completed hand (retained records only) |
+| G6 Outcome receipts     | verified now | baseline, named refusals, routes and accepted joins counted per cell on 763e4cec: 608 cells observed, 5,035 unobserved and listed, 0 mismatches            |
+| G10 Publication and use | verified now | 763e4cec serves and its deployed matcher (named reasons exported) judged the release's own natural receipts; identity verified before and after the run    |
+
+G1, G2, G3, G7, G8 and G9 are unchanged from the tables above and from this branch's 6A/6D
+section. This window's counts are of retained journal records only inside the declared 14:12Z to
+15:12Z hour, on the exact serving release; they are not a complete population and not a replay
+(6C) or population (6D) result -- those are covered separately in this branch's 6D evidence
+(`docs/horse-brain-phase6d-serving-release-2026-09-27.md`, 2026-09-28 section), which draws from
+the same window on the same release.

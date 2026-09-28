@@ -29,6 +29,7 @@ import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
 import {
   TournamentTableBreakRpc,
   TournamentTableBreakCapacityError,
+  TournamentTableBreakRosterChangedError,
   TournamentNoStartContinuationRefusedError,
   type TableBreakMemberInput,
   type TournamentTableBreakState,
@@ -442,6 +443,105 @@ export class TournamentManager extends TournamentManagerEliminations {
   >();
   private readonly resolvedTournamentBreakProposals = new Map<string, unknown[]>();
 
+  /**
+   * THE ROSTER A REFUSED BEGIN NAMED IS RE-READ, NOT RE-SENT (2026-09-28).
+   *
+   * `pendingTournamentBreakBegins` keeps an exact proposal so that a LOST reply
+   * is replayed with the same identities. It was also keeping proposals the
+   * database had definitively refused because the source roster was no longer
+   * the one they named, and `prepareParkedTournamentBreak` replays a retained
+   * proposal before it reads anything, so that break re-sent the same refused
+   * roster on every pass for ever. Production 2026-09-28 03:20-03:51 UTC: eleven
+   * breaks in nine events refused `F06_WHOLE_ROSTER_REQUIRED` over and over;
+   * break cf0e43f3 (event 700df3bc, table c04d29c0) kept refusing while its
+   * source held exactly one live seat and one playing registration, which a
+   * one-member proposal passes, so the proposal being re-sent named a player
+   * who was no longer there. Its source was parked and excluded from every
+   * other plan the whole time, one more table nobody could merge.
+   *
+   * The refusal proves the operation was still unbegun (the door checks the
+   * manifest first) and rolled back. So the refused proposal moves into the
+   * resolved-proposal history (a delayed begin of it can still be adopted by
+   * reconciliation) and the next pass reads the roster again.
+   */
+  private async releaseRefusedBreakRoster(
+    breakId: string,
+    sourceId: string,
+    refused: readonly TableBreakMemberInput[],
+    code: string
+  ): Promise<TournamentTableBreakState> {
+    const state = await this.tableBreakRpc().reconcile(breakId);
+    if (
+      state.source_table_id !== sourceId ||
+      state.break_id !== breakId ||
+      state.tournament_id !== this.tournamentId
+    )
+      throw new Error('F06 refused roster resolution identity mismatch');
+    const known = this.durableTournamentBreaks.get(breakId);
+    if (known && state.lifecycle !== known.lifecycle)
+      throw new Error('F06 refused roster resolution lifecycle mismatch');
+    if (state.state === 'park_requested' && state.members.length === 0) {
+      this.retainResolvedBreakProposal(breakId, refused);
+      if (this.pendingTournamentBreakBegins.get(breakId) === refused)
+        this.pendingTournamentBreakBegins.delete(breakId);
+      // A capacity-rejected proposal pins placement only; its membership is
+      // exactly what the database has just refused, so it is dropped too.
+      this.rejectedTournamentBreakBegins.delete(breakId);
+      this.noteBreakPreparationRefusal(breakId, `begin_refused:${code}`);
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+    } else this.assertSentBreakMembership(breakId, state.members);
+    this.rememberTournamentBreak(state);
+    return state;
+  }
+
+  /** A durable manifest must be one this manager actually sent for this break. */
+  private assertSentBreakMembership(
+    breakId: string,
+    actual: readonly TableBreakMemberInput[]
+  ): void {
+    const sent = [
+      this.pendingTournamentBreakBegins.get(breakId),
+      this.rejectedTournamentBreakBegins.get(breakId),
+      ...(this.resolvedTournamentBreakProposals.get(breakId) ?? []),
+    ].filter((proposal): proposal is readonly TableBreakMemberInput[] =>
+      Array.isArray(proposal)
+    );
+    for (const proposal of sent) {
+      try {
+        this.assertBreakMembership(proposal, actual);
+        return;
+      } catch {
+        // Try the next proposal this manager sent.
+      }
+    }
+    throw new Error('F06 original source membership mismatch');
+  }
+
+  /**
+   * WHY THE LAST BREAK PREPARATION DID NOTHING (2026-09-28).
+   *
+   * `prepareParkedTournamentBreak` ended in a dozen guards that all answered a
+   * bare `null`, and `recoverTournamentBreak` turned that null into silence, so
+   * a park that never began left no line saying which guard had refused it.
+   * Each guard keeps its exact condition and order; it names itself here, and
+   * the name is logged once per change so a stuck break reads its own reason.
+   */
+  lastBreakPreparationRefusal(breakId: string): string | null {
+    return this.breakPreparationRefusals.get(breakId) ?? null;
+  }
+
+  private readonly breakPreparationRefusals = new Map<string, string>();
+
+  private noteBreakPreparationRefusal(breakId: string, reason: string): null {
+    if (this.breakPreparationRefusals.get(breakId) !== reason) {
+      this.breakPreparationRefusals.set(breakId, reason);
+      console.warn(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${breakId.slice(0, 8)} not begun: ${reason}`
+      );
+    }
+    return null;
+  }
+
   private retainResolvedBreakProposal(breakId: string, proposal: unknown): void {
     const history = this.resolvedTournamentBreakProposals.get(breakId) ?? [];
     history.push(proposal);
@@ -575,6 +675,7 @@ export class TournamentManager extends TournamentManagerEliminations {
   }
 
   private rememberTournamentBreak(state: TournamentTableBreakState): void {
+    if (state.state !== 'park_requested') this.breakPreparationRefusals.delete(state.break_id);
     if (state.state === 'acknowledged') {
       this.durableTournamentBreaks.delete(state.break_id);
       this.resolvedTournamentBreakProposals.delete(state.break_id);
@@ -632,7 +733,19 @@ export class TournamentManager extends TournamentManagerEliminations {
       throw new Error('F06 original begin membership changed');
     const exact = prior ?? Object.freeze(canonical.map((member) => Object.freeze({ ...member })));
     const rejected = this.rejectedTournamentBreakBegins.get(breakId);
-    if (rejected) this.assertBreakMembership(rejected, exact);
+    if (rejected && prior) this.assertBreakMembership(rejected, exact);
+    else if (rejected) {
+      try {
+        this.assertBreakMembership(rejected, exact);
+      } catch {
+        // The capacity refusal rolled back, and the source roster has changed
+        // since (a bust landed). Its membership can never be accepted again, so
+        // it stops pinning this break; the whole-roster door judges the new one
+        // and reconciliation still adopts the old one if it ever committed.
+        this.retainResolvedBreakProposal(breakId, rejected);
+        this.rejectedTournamentBreakBegins.delete(breakId);
+      }
+    }
     this.pendingTournamentBreakBegins.set(breakId, exact);
     if (this.mixedRecovery && this.isF06RecoveryOwner())
       await retainMixedF06Intent(
@@ -647,6 +760,12 @@ export class TournamentManager extends TournamentManagerEliminations {
     try {
       state = await this.tableBreakRpc().begin(breakId, exact);
     } catch (error) {
+      if (
+        error instanceof TournamentTableBreakRosterChangedError &&
+        error.parameters.p_break_id === breakId &&
+        JSON.stringify(error.parameters.p_members) === JSON.stringify(exact)
+      )
+        return this.releaseRefusedBreakRoster(breakId, sourceId, exact, error.code);
       if (
         !(error instanceof TournamentTableBreakCapacityError) ||
         error.rpc !== 'fn_f06_begin_break' ||
@@ -791,12 +910,12 @@ export class TournamentManager extends TournamentManagerEliminations {
       return state;
     const receiptOwned = this.receiptOwnsSource(state.source_table_id);
     const engine = this.tableEngines.get(state.source_table_id);
+    const refuse = (reason: string): null =>
+      this.noteBreakPreparationRefusal(state.break_id, reason);
     if (!receiptOwned) {
-      if (
-        !engine ||
-        !this.retainTournamentBreakSource(state.break_id, state.source_table_id, engine)
-      )
-        return null;
+      if (!engine) return refuse('source_engine_absent');
+      if (!this.retainTournamentBreakSource(state.break_id, state.source_table_id, engine))
+        return refuse('source_retention_refused');
       // The durable park row is the claim this pause waits for; only the
       // break's acknowledgement or withdrawal releases it, never an expiry.
       const parked = await engine.parkForTournamentMove(
@@ -804,23 +923,43 @@ export class TournamentManager extends TournamentManagerEliminations {
         TournamentManager.MOVE_BOUNDARY_PROBE_MS,
         true
       );
+      if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
+      if (!parked) return refuse('source_park_probe_missed');
       if (
-        !this.eliminationMutationAllowed() ||
-        !parked ||
         this.tableEngines.get(state.source_table_id) !== engine ||
         !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine)
       )
-        return null;
+        return refuse('source_engine_replaced');
     }
     const retained = this.pendingTournamentBreakBegins.get(state.break_id);
-    if (retained) return this.beginTournamentBreak(state.break_id, state.source_table_id, retained);
+    if (retained) {
+      const replayed = await this.beginTournamentBreak(
+        state.break_id,
+        state.source_table_id,
+        retained
+      );
+      // Only a definitive roster refusal releases the retained proposal (see
+      // releaseRefusedBreakRoster); anything else is answered exactly as before.
+      if (
+        !replayed.ok ||
+        replayed.state !== 'park_requested' ||
+        replayed.members.length !== 0 ||
+        this.pendingTournamentBreakBegins.has(state.break_id) ||
+        this.rejectedTournamentBreakBegins.has(state.break_id)
+      )
+        return replayed;
+      // The database refused the roster that proposal named: read the one it
+      // holds now, in this same pass, instead of waiting for the next visit.
+    }
 
     const { data, error } = await supabase
       .from('table_seats')
       .select('id, user_id, seat_number, stack, occupancy_id')
       .eq('table_id', state.source_table_id)
       .is('left_at', null);
-    if (!this.eliminationMutationAllowed() || error || !data || data.length === 0) return null;
+    if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
+    if (error || !data) return refuse(`source_roster_unread:${error?.message ?? 'no data'}`);
+    if (data.length === 0) return refuse('source_roster_empty');
     const rows = data as {
       id: string;
       user_id: string;
@@ -837,9 +976,10 @@ export class TournamentManager extends TournamentManagerEliminations {
           Number(row.stack) <= 0
       )
     )
-      return null;
+      return refuse('source_seat_unfunded_or_unbound');
     const others = await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
-    if (!this.eliminationMutationAllowed() || !others) return null;
+    if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
+    if (!others) return refuse('destinations_unread');
     const source: BalancerTable = {
       tableId: state.source_table_id,
       playerCount: rows.length,
@@ -853,7 +993,10 @@ export class TournamentManager extends TournamentManagerEliminations {
     const moves = this.tableBalancer.breakTable(source, others);
     if (moves.length !== rows.length) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      return null; // Existing capacity owner must supply legal space.
+      // Existing capacity owner must supply legal space.
+      return refuse(
+        `destinations_full:${moves.length}_of_${rows.length}_placed_across_${others.length}_tables`
+      );
     }
     const members = rows.map((row) => {
       const move = moves.find((candidate) => candidate.playerId === row.user_id);
@@ -877,7 +1020,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.tableEngines.get(state.source_table_id) !== engine ||
         !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine))
     )
-      return null;
+      return refuse('source_engine_replaced');
     if (receiptOwned) this.mixedRecovery!.assertCurrent();
     return this.beginTournamentBreak(state.break_id, state.source_table_id, members);
   }
@@ -969,7 +1112,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.pendingTournamentBreakBegins.get(state.break_id) ??
       this.rejectedTournamentBreakBegins.get(state.break_id);
     if (original && next.state !== 'park_requested') {
-      this.assertBreakMembership(original, next.members);
+      this.assertSentBreakMembership(state.break_id, next.members);
       this.pendingTournamentBreakBegins.delete(state.break_id);
       this.rejectedTournamentBreakBegins.delete(state.break_id);
       this.resolvedTournamentBreakProposals.delete(state.break_id);

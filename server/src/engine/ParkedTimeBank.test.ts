@@ -410,7 +410,13 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         await e.persistPresenceForRestart('parked');
         expect(e.isMaintenanceStateDurable()).toBe(true);
       }
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      /* The debit carries its own id (2026-09-28). An answer that did not
+         confirm it may be asked about again, but only by that same id, so it
+         can never become a second charge: every call names one debit. */
+      const debits = data.rpc.mock.calls.filter(([name]: [string]) => name === 'fn_consume_time_bank_once');
+      expect(debits.length).toBeGreaterThanOrEqual(1);
+      if (outcome === 'pending' || outcome === 'stale-break') expect(debits).toHaveLength(1);
+      expect(new Set(debits.map(([, args]: [string, { p_debit_id: string }]) => args.p_debit_id)).size).toBe(1);
       e.timeBankEngine.dispose(table);
     }
   );

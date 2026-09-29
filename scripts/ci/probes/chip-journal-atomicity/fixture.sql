@@ -62,6 +62,16 @@ END $$;
 CREATE TRIGGER fault BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION injected_journal_failure();
 
 -- Journal-only fixtures omit escrow; test_satellite_split.py exercises the real escrow.
+-- The earning-club reader, stubbed. This probe is about chip-journal
+-- atomicity - that a ledger write survives failure and replay - not about
+-- which club a seat earned for. The real fn_cash_earning_club resolves that
+-- from table_seats against the hand's start and drags accounting tables this
+-- fixture has no reason to carry. Naming it here stops the closure walker at
+-- this boundary, the same way auth.uid() and auth.role() are stopped above.
+-- The ordinary answer is the club that hosted the hand.
+CREATE FUNCTION public.fn_cash_earning_club(p_hand_id uuid, p_table_id uuid, p_player_id uuid, p_source_club uuid, p_union_id uuid)
+  RETURNS uuid LANGUAGE sql AS 'SELECT $4';
+
 CREATE OR REPLACE FUNCTION public.fn_ca_escrow_apply(p_tournament_id uuid, p_what text, p_gross_in numeric DEFAULT 0, p_fee_entries_in numeric DEFAULT 0, p_satellite_fee_in numeric DEFAULT 0, p_bounty_in numeric DEFAULT 0, p_overlay_in numeric DEFAULT 0, p_satellite_in numeric DEFAULT 0, p_prize_out numeric DEFAULT 0, p_bounty_out numeric DEFAULT 0, p_fee_out numeric DEFAULT 0, p_refund numeric DEFAULT 0, p_reserve_out numeric DEFAULT 0, p_reserve_in numeric DEFAULT 0)
  RETURNS void
  LANGUAGE plpgsql

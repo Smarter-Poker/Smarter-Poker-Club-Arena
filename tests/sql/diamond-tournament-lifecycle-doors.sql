@@ -35,6 +35,11 @@
 -- pins rather than by assuming. Two were transported from production in this
 -- session. The manifest beside this file records which, per door.
 --
+-- On 2026-09-21 four pure pricing doors joined them for the Phase 9
+-- cross-format conservation cases - the prize ladder at both units and the
+-- final-field payout generator - transported from production by a read-only
+-- pg_get_functiondef(). The file now carries twenty-six.
+--
 -- Load order does not matter: check_function_bodies is off, exactly as
 -- pg_dump and the estate's other captured overlays load functions.
 -- ============================================================================
@@ -994,6 +999,249 @@ REVOKE ALL ON FUNCTION public.fn_union_pnl_original_frame() FROM PUBLIC, anon, a
 -- @@END fn_union_pnl_original_frame()
 
 -- ---------------------------------------------------------------------------
+-- THE PRIZE LADDER, ADDED 2026-09-21 FOR THE PHASE 9 CONSERVATION CASES
+-- ---------------------------------------------------------------------------
+-- The terminal prices every paid place through fn_ca_prize_ladder_versioned
+-- (version 1 is fn_ca_prize_ladder, version 2 is fn_ca_prize_ladder_v2), and
+-- entry close regenerates an event's committed ladder from its final field
+-- with fn_ca_payout_structure. All four are pure functions. The rounding case
+-- in diamond-tournament-lifecycle-cases.sql reaches all four, so they are
+-- captured first, the same md5-pinned way ("If a future case reaches either,
+-- capture it first"). All four were transported from production on
+-- 2026-09-21 by a read-only pg_get_functiondef().
+-- ---------------------------------------------------------------------------
+-- @@DOOR fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)
+-- @@PIN md5=55d6a74569415d5d51ffac0d5704361f len=2618 owner=postgres
+CREATE OR REPLACE FUNCTION public.fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer DEFAULT 1)
+ RETURNS TABLE(place integer, cents bigint)
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_unit bigint;
+  v_total_bp bigint;
+  v_count integer;
+  v_places integer[];
+  v_bps bigint[];
+  v_remaining bigint;
+  v_share bigint;
+  i integer;
+BEGIN
+  v_unit := CASE WHEN p_unit_cents IS NOT NULL AND p_unit_cents >= 1
+                 THEN p_unit_cents::bigint ELSE 1 END;
+  IF p_pool_cents IS NULL OR p_pool_cents <= 0
+     OR p_entries IS NULL OR jsonb_typeof(p_entries) IS DISTINCT FROM 'array'
+     OR jsonb_array_length(p_entries) = 0 THEN
+    RETURN;
+  END IF;
+
+  SELECT array_agg((e->>'place')::integer ORDER BY (e->>'place')::integer),
+         array_agg((e->>'bp')::bigint ORDER BY (e->>'place')::integer),
+         COALESCE(sum((e->>'bp')::bigint), 0),
+         count(*)
+    INTO v_places, v_bps, v_total_bp, v_count
+    FROM jsonb_array_elements(p_entries) e;
+  IF v_total_bp <= 0 OR v_count = 0 THEN RETURN; END IF;
+
+  -- THE SHORT FIELD. A pool holding fewer units than there are places pays the
+  -- places it CAN, one unit each from the top. Left alone, every share below
+  -- rounds to zero and the last place absorbs the pool as its "residual": the
+  -- whole prize to the last finisher and nothing to the first. An indivisible
+  -- unit cannot be split nine ways, and every other answer pays somebody more
+  -- than the player who beat them.
+  IF v_unit > 1 AND (p_pool_cents / v_unit) < v_count THEN
+    FOR i IN 1..v_count LOOP
+      place := v_places[i];
+      cents := CASE WHEN i <= (p_pool_cents / v_unit) THEN v_unit ELSE 0 END;
+      RETURN NEXT;
+    END LOOP;
+    RETURN;
+  END IF;
+
+  -- Spend down in place order; the LAST paid place takes whatever remains, so
+  -- the places sum to the pool exactly rather than by hoping the rounding
+  -- cancels, and the adjustment lands on the smallest prize.
+  v_remaining := p_pool_cents;
+  FOR i IN 1..v_count LOOP
+    IF i = v_count THEN
+      v_share := v_remaining;
+    ELSE
+      v_share := LEAST(v_remaining,
+        (round(round((p_pool_cents::numeric * v_bps[i]::numeric) / v_total_bp::numeric)
+               / v_unit::numeric) * v_unit)::bigint);
+    END IF;
+    v_share := GREATEST(v_share, 0);
+    v_remaining := v_remaining - v_share;
+    place := v_places[i];
+    cents := v_share;
+    RETURN NEXT;
+  END LOOP;
+
+  IF v_remaining <> 0 THEN
+    RAISE EXCEPTION 'prize ladder left % cents undistributed', v_remaining
+      USING ERRCODE = '23514';
+  END IF;
+END;
+$function$;
+ALTER FUNCTION public.fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer) FROM PUBLIC, anon, authenticated, service_role;
+-- @@END fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)
+
+-- @@DOOR fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)
+-- @@PIN md5=6a5ce2617cee7606b2151aea29d865c0 len=2911 owner=postgres
+CREATE OR REPLACE FUNCTION public.fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)
+ RETURNS TABLE(place integer, cents bigint)
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_entry jsonb;
+  v_place numeric;
+  v_bp numeric;
+  v_total numeric;
+  v_units bigint;
+BEGIN
+  IF p_pool_cents IS NULL OR p_pool_cents<0
+     OR p_unit_cents IS NULL OR p_unit_cents<1 THEN
+    RAISE EXCEPTION 'Prize pool must contain whole payout units' USING ERRCODE='22023';
+  END IF;
+  IF p_pool_cents%p_unit_cents<>0 THEN
+    RAISE EXCEPTION 'Prize pool must contain whole payout units' USING ERRCODE='22023';
+  END IF;
+  IF p_entries IS NULL OR jsonb_typeof(p_entries)<>'array'
+     OR jsonb_array_length(p_entries)=0 THEN
+    RAISE EXCEPTION 'Version 2 requires a canonical payout ladder' USING ERRCODE='22023';
+  END IF;
+  FOR v_entry IN SELECT value FROM jsonb_array_elements(p_entries) LOOP
+    IF jsonb_typeof(v_entry)<>'object'
+       OR jsonb_typeof(v_entry->'place') IS DISTINCT FROM 'number'
+       OR jsonb_typeof(v_entry->'bp') IS DISTINCT FROM 'number' THEN
+      RAISE EXCEPTION 'Canonical payout entries must contain numeric places and basis points'
+        USING ERRCODE='22023';
+    END IF;
+    v_place:=(v_entry->>'place')::numeric;
+    v_bp:=(v_entry->>'bp')::numeric;
+    IF v_place<1 OR v_place>2147483647 OR v_place<>trunc(v_place)
+       OR v_bp<=0 OR v_bp>10000 OR v_bp<>trunc(v_bp) THEN
+      RAISE EXCEPTION 'Invalid canonical payout place or basis points' USING ERRCODE='22023';
+    END IF;
+  END LOOP;
+  IF EXISTS (
+    WITH entries AS (
+      SELECT (e->>'place')::integer AS finish,(e->>'bp')::bigint AS bp
+      FROM jsonb_array_elements(p_entries) e
+    ), ranked AS (
+      SELECT i.*,row_number() OVER(ORDER BY i.finish) AS ordinal,
+        lag(i.bp) OVER(ORDER BY i.finish) AS prior_bp FROM entries i
+    ) SELECT 1 FROM ranked r WHERE r.finish<>r.ordinal OR r.bp>r.prior_bp
+  ) THEN
+    RAISE EXCEPTION 'Version 2 requires contiguous places and nonincreasing percentages'
+      USING ERRCODE='22023';
+  END IF;
+  IF p_pool_cents=0 THEN RETURN; END IF;
+  SELECT sum((e->>'bp')::numeric) INTO v_total FROM jsonb_array_elements(p_entries) e;
+  v_units:=p_pool_cents/p_unit_cents;
+  RETURN QUERY
+    WITH quotas AS (
+      SELECT (e->>'place')::integer AS finish,
+        floor(v_units::numeric*(e->>'bp')::numeric/v_total) AS units,
+        mod(v_units::numeric*(e->>'bp')::numeric,v_total) AS remainder
+      FROM jsonb_array_elements(p_entries) e
+    ), ordered AS (
+      SELECT q.*,row_number() OVER(ORDER BY q.remainder DESC,q.finish) AS priority
+      FROM quotas q
+    ), residual AS (SELECT v_units-sum(q.units) AS units FROM quotas q)
+    SELECT q.finish,((q.units+CASE WHEN q.priority<=r.units THEN 1 ELSE 0 END)*p_unit_cents)::bigint
+    FROM ordered q CROSS JOIN residual r ORDER BY q.finish;
+END;
+$function$;
+ALTER FUNCTION public.fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer) TO service_role;
+-- @@END fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)
+
+-- @@DOOR fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer)
+-- @@PIN md5=cb73955cbc90b47b36fd818631691303 len=668 owner=postgres
+CREATE OR REPLACE FUNCTION public.fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer)
+ RETURNS TABLE(place integer, cents bigint)
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  IF p_version=1 THEN
+    RETURN QUERY SELECT l.place,l.cents FROM public.fn_ca_prize_ladder(p_pool_cents,p_entries,p_unit_cents) l;
+  ELSIF p_version=2 THEN
+    RETURN QUERY SELECT l.place,l.cents FROM public.fn_ca_prize_ladder_v2(p_pool_cents,p_entries,p_unit_cents) l;
+  ELSE
+    RAISE EXCEPTION 'Unsupported tournament payout math version' USING ERRCODE='22023';
+  END IF;
+END;
+$function$;
+ALTER FUNCTION public.fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer) TO service_role;
+-- @@END fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer)
+
+-- @@DOOR fn_ca_payout_structure(p_entrants integer, p_percent integer)
+-- @@PIN md5=320527cd5203efab28b465d2b56ca567 len=1594 owner=postgres
+CREATE OR REPLACE FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent integer DEFAULT 10)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_places int;
+  v_pct    numeric;
+  v_out    jsonb;
+BEGIN
+  v_pct := CASE WHEN p_percent IN (10,15,20) THEN p_percent ELSE 10 END;
+
+  -- at least one place, never more places than players
+  v_places := GREATEST(1, LEAST(COALESCE(p_entrants,0),
+                                ceil(COALESCE(p_entrants,0) * v_pct / 100.0)::int));
+  IF COALESCE(p_entrants,0) <= 0 THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  WITH w AS (
+    SELECT i AS place, 1.0 / power(i, 0.8) AS weight
+      FROM generate_series(1, v_places) i
+  ), n AS (
+    SELECT place, weight, 100.0 * weight / SUM(weight) OVER () AS exact
+      FROM w
+  ), f AS (
+    SELECT place, exact,
+           floor(exact * 100) / 100 AS floored,
+           (exact * 100) - floor(exact * 100) AS frac
+      FROM n
+  ), r AS (
+    -- largest remainder: hand the leftover cents to the biggest fractions, so
+    -- the structure sums to exactly 100.00 for any field size
+    SELECT place, floored,
+           row_number() OVER (ORDER BY frac DESC, place ASC) AS rk,
+           round((100.0 - SUM(floored) OVER ()) * 100)::int AS cents_left
+      FROM f
+  )
+  SELECT jsonb_agg(
+           jsonb_build_object('place', place,
+                              'percentage', floored + CASE WHEN rk <= cents_left THEN 0.01 ELSE 0 END)
+           ORDER BY place)
+    INTO v_out
+    FROM r;
+
+  RETURN COALESCE(v_out, '[]'::jsonb);
+END;
+$function$;
+ALTER FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent integer) TO authenticated, service_role;
+-- @@END fn_ca_payout_structure(p_entrants integer, p_percent integer)
+
+-- ---------------------------------------------------------------------------
 -- THE TRIGGER SET ON public.tournaments, AS PRODUCTION CARRIES IT
 -- ---------------------------------------------------------------------------
 -- Twelve triggers production attaches that the historical base does not, in
@@ -1054,7 +1302,11 @@ BEGIN
     ('fn_tournaments_creation_guard()','f5dcb63005864b24bf422c6628cb169e'),
     ('fn_union_pnl_inventory_observe()','11c7c788d943a11375a15819e78873ba'),
     ('fn_union_pnl_inventory_project(p_source text, p_row jsonb)','cc819d2476a0252326e7bdd4e72d468f'),
-    ('fn_union_pnl_original_frame()','9a6559774cc1ed4ed49b315a3428abdb')
+    ('fn_union_pnl_original_frame()','9a6559774cc1ed4ed49b315a3428abdb'),
+    ('fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)','55d6a74569415d5d51ffac0d5704361f'),
+    ('fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)','6a5ce2617cee7606b2151aea29d865c0'),
+    ('fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer)','cb73955cbc90b47b36fd818631691303'),
+    ('fn_ca_payout_structure(p_entrants integer, p_percent integer)','320527cd5203efab28b465d2b56ca567')
   ) AS t(ident, want)
   LOOP
     v_seen := v_seen + 1;
@@ -1071,8 +1323,8 @@ BEGIN
     END IF;
     v_oid := NULL;
   END LOOP;
-  IF v_seen <> 22 THEN
-    RAISE EXCEPTION 'the lifecycle capture declares % doors but this file carries %', 22, v_seen;
+  IF v_seen <> 26 THEN
+    RAISE EXCEPTION 'the lifecycle capture declares % doors but this file carries %', 26, v_seen;
   END IF;
   IF v_bad <> 0 THEN
     RAISE EXCEPTION '% of % captured Diamond tournament lifecycle doors do not match their pins', v_bad, v_seen;

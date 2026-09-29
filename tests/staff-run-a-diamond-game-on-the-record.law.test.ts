@@ -26,6 +26,11 @@ const NAME = migrationNames()
   .at(-1);
 if (!NAME) throw new Error('the staff doors migration is missing');
 const MIG = migrationText(NAME);
+const DOCTRINE_NAME = migrationNames()
+  .filter((n) => n.endsWith('_the_staff_diamond_cancellation_is_a_reviewed_lane_authority.sql'))
+  .at(-1);
+if (!DOCTRINE_NAME) throw new Error('the lane doctrine follow-up migration is missing');
+const DOCTRINE = migrationText(DOCTRINE_NAME);
 
 const code = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
 const section = (from: string, to: string) => sliceBetween(MIG, from, to);
@@ -312,6 +317,20 @@ describe('LAW: staff run a Diamond game, on the record', () => {
     expect(body).toContain("RAISE EXCEPTION 'diamond_board_requires_exactly_one_joinable_table'");
     expect(body).not.toMatch(/INSERT\s+INTO\s+public\.tournaments/i);
     expect(body).not.toContain('poker_diamond_spin_reserve_source');
+  });
+
+  it("puts the staff cancellation on the settlement lane doctrine's reviewed list, in place", () => {
+    // the cancellation door is the one new caller of the global lane
+    expect(count(code(MIG), 'PERFORM public.fn_ca_lock_settlement_lane_global();')).toBe(1);
+    expect(code(CANCEL)).toContain('PERFORM public.fn_ca_lock_settlement_lane_global();');
+    expect(pinnedEdits(DOCTRINE)).toEqual({ pins: 1, reversals: 1 });
+    expect(DOCTRINE).toContain("'9508891e4815a9bdb13a51f231a75de5'");
+    expect(DOCTRINE).toContain(
+      "'fn_get_tournament_deal_consensus','fn_mystery_bounty_settle','fn_poker_diamond_cancel_tournament',"
+    );
+    expect(DOCTRINE).toContain('v_answer := public.fn_ca_settlement_lane_doctrine();');
+    expect(DOCTRINE).toContain('the settlement lane doctrine does not hold');
+    expect(DOCTRINE).not.toMatch(/CREATE (OR REPLACE )?FUNCTION/);
   });
 
   it('asserts at the end that the identity is whole and every watched guard is on its baseline', () => {

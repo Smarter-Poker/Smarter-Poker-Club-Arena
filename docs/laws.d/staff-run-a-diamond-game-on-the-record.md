@@ -37,5 +37,8 @@ would hand Diamond games to club roles and undo Phase 2. The shared creation
 door changes only by asserted substitution, and so does the one chip function
 that changes, the managed lifecycle guard. That guard now admits a
 cancellation after registration for one event only: the one the staff
-cancellation door names, in that door's own transaction. No switch opens and
-nothing is priced.
+cancellation door names, in that door's own transaction. The cancellation door
+takes the global settlement lane before the event row, as the authority it
+calls does, so a follow-up migration adds it to the settlement lane doctrine's
+reviewed list and proves the doctrine still holds. No switch opens and nothing
+is priced.

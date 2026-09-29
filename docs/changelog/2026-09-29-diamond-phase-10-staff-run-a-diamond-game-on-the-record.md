@@ -17,6 +17,8 @@ Migration `staff_run_a_diamond_game_on_the_record` (`20260929213000`):
 - **The managed lifecycle guard** (`fn_guard_managed_game_lifecycle`) refused to cancel an event with a registration unless the engine did it, so the staff cancellation could not reach an event with a player in it. It now also admits the one event `fn_poker_diamond_cancel_tournament` names, in that door's own transaction. Every other caller meets the same refusal. It is changed by asserted substitution.
 - `fn_can_create_games` is not touched and is asserted unchanged. Staff lobby posting stays refused (Dan's decision 4).
 
+Migration `the_staff_diamond_cancellation_is_a_reviewed_lane_authority` (`20260929213100`): `fn_poker_diamond_cancel_tournament` takes the global settlement lane before the event row, as the authority it calls does. The live-catalog lane doctrine (`fn_ca_settlement_lane_doctrine`, asked by CI) requires every such caller to be on its reviewed list, and this door was not. It is added by asserted substitution, next to `atomic_cancel_tournament` and `fn_close_managed_game`, and the migration proves the doctrine answers ok. The rehearsal also proved it still refuses an unreviewed caller.
+
 ## The Engine
 
 - `authorizeTableAdmin` (`server/src/handlers/admin.ts`): at a Diamond table, the caller's platform role (admin, superadmin or god, the list `fn_is_platform_admin` holds) is the whole answer. The arena's only club rows are automatic players, so before this change pause, resume and kick were refused to everyone there. A chip table is unchanged, and platform staff gain nothing at one. A Diamond tournament chair is still sent to registration management (409), where the staff removal door now works.

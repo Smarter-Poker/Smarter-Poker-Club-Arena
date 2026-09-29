@@ -320,6 +320,20 @@
   transform: translate(-50%, -50%);
 }
 
+/* THE HAND GETS 44px (2026-09-29). A plate is a fixed slice of its master, so
+   on a phone the shark's single plate came out 39px tall and the spade's pair
+   little better. The painted face keeps its size; the button reaches out to
+   44px through a transparent pad, exactly as the close word above does. */
+.sc-plate::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
 .sc__close:focus-visible {
   outline: 0.6cqw solid #8fd4ff;
   outline-offset: 0.6cqw;
@@ -490,6 +504,8 @@
    recolours and rounds every button with !important, and its primary /
    danger rule is a `background` shorthand at specificity 0,2,1. The plate
    is painted in the master; the button over it paints nothing. */
+[role='dialog'] .sc__close.sc__close,
+[aria-modal='true'] .sc__close.sc__close,
 [role='dialog'] .sc-plate.sc-plate,
 [aria-modal='true'] .sc-plate.sc-plate {
   min-width: 0;

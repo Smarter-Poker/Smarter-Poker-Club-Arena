@@ -1415,7 +1415,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         <SpadeConsole
           eyebrow="Security Check"
           title="Table Management"
-          subtitle="Verifying Game-Management Access"
+          subtitle="Reading Your Management Authority"
           pill="Checking"
           crest="flat"
           className={styles.stateConsole}
@@ -1432,7 +1432,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         <SpadeConsole
           eyebrow="Management Locked"
           title={scope === 'club' ? 'This Club Is Managed By Its Union' : 'Union Admin Required'}
-          subtitle="Game Creation And Management Are Restricted"
+          subtitle="Game Management Is Restricted"
           pill="Locked"
           pillInk="red"
           family="shark"
@@ -1504,7 +1504,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
 
       {surface === 'games' && !creatorStage && (
         <SpadeConsole
-          eyebrow={scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
+          eyebrow={scope === 'union' ? 'Union Command' : 'Club Command'}
           title="Table Management"
           titleId="table-management-title"
           /* The club or union name alone: with a suffix, a long union name

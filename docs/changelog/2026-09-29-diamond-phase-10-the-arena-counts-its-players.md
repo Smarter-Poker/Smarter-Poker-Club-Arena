@@ -29,6 +29,8 @@ The rehearsal ran the migration and its fixture as one rolled-back transaction o
 
 The Diamond Players page wears the chip roster's look. Its four tiles print "..." while loading, the number once read (a real 0 included) and "Unavailable" when the arena could not tell, with a line saying Unavailable is not zero. The list has All Players and At Tables, search, refresh and Show More Players. There is no agent, admin, downline, fee, wallet, sort, column, selection or export control, no field says which players are horses, and a row opens nothing, because the member page under it is the chip club's management screen.
 
+Both pages share one chunk. The Diamond page wears the chip roster's class names, so beside it it compresses to about 1.5 kB gzipped instead of 3.9 kB alone; the whole-app bundle measured 2,880.19 kB against Dan's 2,880 kB ceiling with it, so the next page anyone adds will need that ceiling raised, which is his call.
+
 The counts are on the Players page. The lobby rail stays exactly as Dan set it on September 11 ("JUST 'ACTIVE' AND THE NUMBER UNDER IT. AND THE FREE ROLL STARTS CLOCK"). Where the counts live is Dan's decision 1 in the audit, and they can move if he wants them elsewhere.
 
 Law: the-arena-counts-its-players.

@@ -295,9 +295,7 @@ export default function DiamondPlayersPage() {
         ) : players.length === 0 ? (
           <EmptyPlayers filter={filter} searching={searching} />
         ) : (
-          players.map((player) => (
-            <PlayerRow key={player.user_id} player={player} query={debouncedSearch} />
-          ))
+          players.map((player) => <PlayerRow key={player.user_id} player={player} />)
         )}
       </div>
 
@@ -332,21 +330,7 @@ function Figure({ label, value, modifier }: { label: string; value: string; modi
   );
 }
 
-function highlight(value: string, query: string) {
-  const clean = query.trim();
-  if (!clean) return value;
-  const index = value.toLocaleLowerCase().indexOf(clean.toLocaleLowerCase());
-  if (index < 0) return value;
-  return (
-    <>
-      {value.slice(0, index)}
-      <mark>{value.slice(index, index + clean.length)}</mark>
-      {value.slice(index + clean.length)}
-    </>
-  );
-}
-
-function PlayerRow({ player, query }: { player: DiamondRosterPlayer; query: string }) {
+function PlayerRow({ player }: { player: DiamondRosterPlayer }) {
   const initial = (player.alias || '?')[0]?.toUpperCase() ?? '?';
   const presence = player.is_seated ? 'At A Table' : player.is_online ? 'Online' : null;
   return (
@@ -374,14 +358,14 @@ function PlayerRow({ player, query }: { player: DiamondRosterPlayer; query: stri
         </span>
         <span className="member-main">
           <span className="member-identity">
-            <span className="member-alias">{highlight(player.alias, query)}</span>
+            <span className="member-alias">{player.alias}</span>
             {player.username && player.username.toLowerCase() !== player.alias.toLowerCase() && (
-              <span className="member-username">{highlight(player.username, query)}</span>
+              <span className="member-username">{player.username}</span>
             )}
           </span>
           <span className="member-subline">
             {player.player_number && (
-              <span className="member-number">No. {highlight(player.player_number, query)}</span>
+              <span className="member-number">No. {player.player_number}</span>
             )}
             {player.is_seated ? (
               <span className="member-seated">At Table</span>

@@ -10,12 +10,16 @@
  *
  * A chip club renders ClubMembersPage exactly as it did before this door
  * existed: same component, no props, nothing wrapped around it.
+ *
+ * ONE CHUNK FOR BOTH PAGES, ON PURPOSE. The Diamond page wears the chip
+ * roster's stylesheet and class names, so beside it in one file it compresses
+ * to a fraction of its size alone, and the whole-app bundle sits at the
+ * ceiling Dan set (scripts/ci/bundle-size.mjs). As its own lazy chunk it
+ * weighed 3.9 kB gzipped; here it costs much less.
  */
 import { useAutomaticArenaMembership } from '../components/arena/arenaAccess';
-import { lazyWithRetry } from '../utils/lazyWithRetry';
 import ClubMembersPage from './ClubMembersPage';
-
-const DiamondPlayersPage = lazyWithRetry(() => import('./DiamondPlayersPage'));
+import DiamondPlayersPage from './DiamondPlayersPage';
 
 export default function ClubPlayersDoor() {
   return useAutomaticArenaMembership() ? <DiamondPlayersPage /> : <ClubMembersPage />;

@@ -24,7 +24,7 @@ import {
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 // The two caches sign-out has to be able to reach. They live in a leaf module
 // so clearUserCaches can purge them without importing this page - that import
@@ -79,7 +79,9 @@ import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 import { StatsFactsService, type PlayerRakeStats } from '../services/StatsFactsService';
-import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
+import { CHIP_STATS, DIAMOND_STATS, statsScopeArgs, type StatsScope } from '../services/statsScope';
+import { readClubContextParam } from '../utils/clubScopedPath';
+import { isDiamondArenaClubKey } from '../lib/constants';
 import { normalizeStatsContractMetadata } from '../services/statsContract';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
@@ -466,6 +468,25 @@ export default function PlayerStatsPage() {
   const { userId } = useParams();
   const { user } = useAuthUser();
   const navigate = useNavigate();
+  const location = useLocation();
+  /* THE ARENA YOU CAME FROM IS THE ASSET YOU ARE SHOWN (Phase 10, line 1).
+     The Diamond Arena's footer opens this page as /stats?club=diamond-arena;
+     every other door opens it without a club or with a chip club. Every read
+     below names this asset, so a player in the arena sees the hands they
+     played in Diamonds and never their chip figures under the Diamond
+     footer. The caches are keyed by it too, so neither asset can be served
+     from the other's cache. */
+  const statsScope: StatsScope = isDiamondArenaClubKey(readClubContextParam(location.search))
+    ? DIAMOND_STATS
+    : CHIP_STATS;
+  const scopedKey = useCallback(
+    (key: string) => (statsScope === CHIP_STATS ? key : `${statsScope}:${key}`),
+    [statsScope]
+  );
+  const statsEyebrow =
+    statsScope === DIAMOND_STATS
+      ? 'Diamond Arena // Player Analytics In Diamonds'
+      : 'Club Arena // Player Analytics';
 
   const targetUserId = userId || user?.id;
   const isOwnProfile = !userId || userId === user?.id;
@@ -663,7 +684,9 @@ export default function PlayerStatsPage() {
 
   useEffect(() => {
     setAgentRolesError(false);
-    if (!isOwnProfile || !user?.id) {
+    /* The Diamond Arena is one open club with no agents (ruling 16): a
+       downline's rake is a chip-club book and has no place on its page. */
+    if (!isOwnProfile || !user?.id || statsScope !== CHIP_STATS) {
       setAgentRoles([]);
       return;
     }
@@ -681,7 +704,7 @@ export default function PlayerStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id, agentRolesReload]);
+  }, [isOwnProfile, user?.id, agentRolesReload, statsScope]);
 
   // POLISH 1 (Dan 2026-08-30): the player's OWN weighted rake. Cent-exact,
   // from the same allocator the money pipeline uses. Own profile only — the
@@ -717,7 +740,7 @@ export default function PlayerStatsPage() {
       setRakeError(true);
     };
     void load
-      .call(StatsFactsService, CHIP_STATS, windowDays)
+      .call(StatsFactsService, statsScope, windowDays)
       .then((r) => {
         // `error` is set only when the read FAILED; an empty ledger has none.
         if (r?.error) fail(r.error);
@@ -730,7 +753,7 @@ export default function PlayerStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id, windowDays, rakeReload]);
+  }, [isOwnProfile, user?.id, windowDays, rakeReload, statsScope]);
 
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
@@ -832,7 +855,7 @@ export default function PlayerStatsPage() {
       if (opts?.fresh) {
         clearStatsRangeMemo();
       } else {
-        const memo = readStatsRangeMemo(targetUserId, rangeKey) as FullStats | null;
+        const memo = readStatsRangeMemo(targetUserId, scopedKey(rangeKey)) as FullStats | null;
         if (memo) {
           setFull(memo);
           loadedRangeKeyRef.current = rangeKey;
@@ -859,15 +882,11 @@ export default function PlayerStatsPage() {
           () =>
             supabase
               .rpc('ca_player_stats_overview_v2', {
-                /* SCOPED (2026-09-20). ca_hand_player_stat carries no asset
-                   column and this RPC takes only p_user, so the day Diamond
-                   cash opens an ungated projection 4 would sum Diamond and
-                   chip profit into this one figure. statsScopeArgs names the
-                   asset the page is asking about; it is empty until the
-                   scoped RPCs land, and the law test is what keeps the
-                   unscoped answer chip-only until then. See
-                   src/services/statsScope.ts. */
-                ...statsScopeArgs(CHIP_STATS),
+                /* SCOPED (2026-09-20, answered 2026-09-29). The RPC reads
+                   one asset (p_asset): chips, or Diamonds when the page was
+                   opened from the Diamond Arena. A chip figure and a Diamond
+                   figure are never summed. See src/services/statsScope.ts. */
+                ...statsScopeArgs(statsScope),
                 p_user: targetUserId,
                 p_days: windowDays,
                 // Day buckets are cut in the player's zone, server-side
@@ -904,8 +923,8 @@ export default function PlayerStatsPage() {
           setServingCache(false);
           // Only the unbounded view is cached — otherwise a 7-day payload could be
           // rehydrated on the next visit and read as all-time.
-          if (windowDays === null) setCachedFull(targetUserId, resolved);
-          writeStatsRangeMemo(targetUserId, rangeKey, resolved);
+          if (windowDays === null) setCachedFull(scopedKey(targetUserId), resolved);
+          writeStatsRangeMemo(targetUserId, scopedKey(rangeKey), resolved);
           capture('stats_rpc_load', {
             duration_ms: Math.round(performance.now() - loadStartedAt),
             payload_bytes: (() => {
@@ -1004,7 +1023,7 @@ export default function PlayerStatsPage() {
       }
       // toast comes from context and isMounted is a ref wrapper: both stable.
     },
-    [targetUserId, isOwnProfile, rangeKey, windowDays, toast, isMounted]
+    [targetUserId, isOwnProfile, rangeKey, windowDays, toast, isMounted, statsScope, scopedKey]
   );
 
   // Notable hands. Loaded only when the Analysis tab is actually open — the
@@ -1016,6 +1035,7 @@ export default function PlayerStatsPage() {
     setHandsError(false);
     supabase
       .rpc('ca_player_hands_v2', {
+        ...statsScopeArgs(statsScope),
         p_user: targetUserId,
         p_mode: handMode,
         p_limit: 10,
@@ -1055,7 +1075,7 @@ export default function PlayerStatsPage() {
     // range change fired an identical, expensive query whose result could not
     // differ. The list is all-time and the empty state now says so.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId, isOwnProfile, category, handMode, handsReload]);
+  }, [targetUserId, isOwnProfile, category, handMode, handsReload, statsScope]);
 
   /**
    * Keep the selected pill visible. The strip scrolls now (see the CSS), and
@@ -1147,12 +1167,13 @@ export default function PlayerStatsPage() {
     userId: targetUserId,
     enabled: Boolean(targetUserId && isOwnProfile),
     onChange: scheduleRefresh,
+    scope: statsScope,
   });
 
   // SWR: show cached stats instantly on mount
   useEffect(() => {
     if (!targetUserId || !isOwnProfile) return;
-    const cached = getCachedFull(targetUserId);
+    const cached = getCachedFull(scopedKey(targetUserId));
     if (cached) {
       setFull(cached.full);
       loadedRangeKeyRef.current = 'all';
@@ -1165,7 +1186,7 @@ export default function PlayerStatsPage() {
       hasStatsRef.current = true;
       setLoading(false);
     }
-  }, [targetUserId, isOwnProfile]);
+  }, [targetUserId, isOwnProfile, scopedKey]);
 
   // Safety net so a hung auth/Supabase call cannot pin the skeleton forever.
   // 20s, not 10s: retryFetch does up to 3 attempts with 1s + 2s backoff and a
@@ -1221,7 +1242,7 @@ export default function PlayerStatsPage() {
   const wantsAllTime = category === 'trophies' || category === 'overview' || printing;
   useEffect(() => {
     if (!targetUserId || !isOwnProfile || !wantsAllTime || rangeKey === 'all') return;
-    const memo = readStatsRangeMemo(targetUserId, 'all') as FullStats | null;
+    const memo = readStatsRangeMemo(targetUserId, scopedKey('all')) as FullStats | null;
     if (memo) {
       setAllTimeFetched(memo);
       setAllTimeError(false);
@@ -1232,7 +1253,7 @@ export default function PlayerStatsPage() {
     supabase
       .rpc('ca_player_stats_overview_v2', {
         /* Scoped: see the note on the windowed read above. */
-        ...statsScopeArgs(CHIP_STATS),
+        ...statsScopeArgs(statsScope),
         p_user: targetUserId,
         p_days: null,
         p_tz: resolvedTimeZone(),
@@ -1247,7 +1268,7 @@ export default function PlayerStatsPage() {
             return;
           }
           const resolved = normalizeFull(data);
-          writeStatsRangeMemo(targetUserId, 'all', resolved);
+          writeStatsRangeMemo(targetUserId, scopedKey('all'), resolved);
           setAllTimeFetched(resolved);
         },
         (err: unknown) => {
@@ -1259,7 +1280,16 @@ export default function PlayerStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [targetUserId, isOwnProfile, wantsAllTime, rangeKey, allTimeReload, isMounted]);
+  }, [
+    targetUserId,
+    isOwnProfile,
+    wantsAllTime,
+    rangeKey,
+    allTimeReload,
+    isMounted,
+    statsScope,
+    scopedKey,
+  ]);
   const allTimeStats: FullStats | null = rangeKey === 'all' ? full : allTimeFetched;
 
   // Style label for the share card. Shared with TrophyRoom so the two can
@@ -1511,7 +1541,7 @@ export default function PlayerStatsPage() {
             decoding="async"
           />
           <div className="stats-command-copy">
-            <span className="stats-eyebrow">Club Arena // Player Analytics</span>
+            <span className="stats-eyebrow">{statsEyebrow}</span>
             <h1>Player Intelligence</h1>
             <p>Opening Your Performance Dossier...</p>
           </div>
@@ -1586,7 +1616,7 @@ export default function PlayerStatsPage() {
         />
 
         <div className="stats-command-copy">
-          <span className="stats-eyebrow">Club Arena // Player Analytics</span>
+          <span className="stats-eyebrow">{statsEyebrow}</span>
           <h1 id="stats-page-title">Player Intelligence</h1>
           <p>Every Recorded Hand, Distilled Into Patterns You Can Use At The Next Table.</p>
 
@@ -1891,6 +1921,7 @@ export default function PlayerStatsPage() {
 
             {showTab('overview') && hasData && (
               <OverviewTab
+                scope={statsScope}
                 overall={overall}
                 full={full}
                 rangeKey={rangeKey}
@@ -1911,6 +1942,7 @@ export default function PlayerStatsPage() {
 
             {showTab('performance') && hasData && (
               <PerformanceTab
+                scope={statsScope}
                 overall={overall}
                 showdownWinRate={showdownWinRate}
                 isOwnProfile={isOwnProfile}
@@ -1934,6 +1966,7 @@ export default function PlayerStatsPage() {
             {/* Owner only, see the PRIVACY note on BASE_TABS */}
             {showTab('hands') && isOwnProfile && hasData && (
               <HandsTab
+                scope={statsScope}
                 panelResetKey={panelResetKey}
                 targetUserId={targetUserId}
                 windowDays={windowDays}

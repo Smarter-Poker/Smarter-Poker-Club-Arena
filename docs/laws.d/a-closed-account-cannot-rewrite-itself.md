@@ -13,3 +13,10 @@ trigger - whichever path it takes, a direct write or a definer function acting
 for the caller - while the service role, the database's own jobs and staff
 tools, whose auth.uid() is not the row, are unaffected. This law holds the
 trigger to that single condition and to rows whose status is 'deleted'.
+Its other half: `authenticated` holds UPDATE on profiles.status, so an open
+profile's own session could mark itself 'deleted' and then not undo it - one
+call locked a player out (measured). A second trigger refuses the owner's
+token setting 'deleted' on a profile that is not closed; closing belongs to
+fn_close_account, called with the service role. That trigger is its own,
+never a DROP and recreate of the first: DROP TRIGGER takes an ACCESS
+EXCLUSIVE lock on profiles, and it deadlocked against live traffic.

@@ -55,6 +55,21 @@ trigger and was refused after it (42501); the service role, a database job and
 an open profile's own token all still updated. Applied 05:44 UTC; the live
 body's md5 matches the file's.
 
+## Only Close Account closes an account
+
+`authenticated` holds UPDATE on `profiles.status`. With the guard above, an
+open profile's own session setting `deleted` - by mistake or from a script in
+the session - could not undo it, and the app would sign it out at every
+sign-in. Measured in a rolled-back transaction: exactly that. Migration
+`20260929061606_only_close_account_closes_an_account` adds a second trigger
+that refuses the owner's token setting `deleted` on a profile that is not
+closed; `fn_close_account`, called with the service role, is unaffected.
+Its own trigger rather than a wider WHEN on the first, because recreating
+that one needs DROP TRIGGER - an ACCESS EXCLUSIVE lock on `profiles` - and the
+rehearsal deadlocked against live traffic (Postgres chose the rehearsal, which
+rolled back). Applied 06:16 UTC with a 3 second lock timeout; the live body's
+md5 matches the file's, and the owner-token mark is refused live.
+
 ## Left for a decision
 
 The tokens themselves: this project issues access tokens that live about seven

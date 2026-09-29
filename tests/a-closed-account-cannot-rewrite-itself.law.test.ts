@@ -15,6 +15,12 @@
  * account's own token (auth.uid() = the row) is refused, whatever path it takes;
  * everyone else - the service role, jobs, staff - is unaffected.
  *
+ * AND ITS OTHER HALF: `authenticated` holds UPDATE on profiles.status, so an
+ * open profile's own session could mark itself 'deleted' and then not undo it -
+ * a one-call lockout (measured). Only fn_close_account, called with the
+ * service role, closes an account: fn_only_close_account_closes_an_account
+ * refuses the owner's token setting 'deleted'.
+ *
  * Registry: docs/laws.d/a-closed-account-cannot-rewrite-itself.md
  */
 import { describe, expect, it } from 'vitest';
@@ -41,5 +47,29 @@ describe(`${FN} (in force: ${MIGRATION})`, () => {
       /CREATE TRIGGER trg_a_closed_account_cannot_rewrite_itself\s+BEFORE UPDATE ON public\.profiles\s+FOR EACH ROW\s+WHEN \(OLD\.status = 'deleted'\)\s+EXECUTE FUNCTION public\.fn_a_closed_account_cannot_rewrite_itself\(\);/
     );
     expect(SQL).not.toMatch(/SECURITY DEFINER/);
+  });
+});
+
+const CLOSER = 'fn_only_close_account_closes_an_account';
+const { name: CLOSER_MIGRATION, sql: CLOSER_SQL } = latestDeclaring(CLOSER);
+
+describe(`${CLOSER} (in force: ${CLOSER_MIGRATION})`, () => {
+  it('refuses the owner’s own token marking its open profile closed, and nothing else', () => {
+    const start = CLOSER_SQL.indexOf('AS $function$');
+    const body = CLOSER_SQL.slice(start, CLOSER_SQL.indexOf('$function$;', start + 13));
+    expect(body).toMatch(
+      /IF auth\.uid\(\) IS NOT DISTINCT FROM OLD\.id THEN\s+RAISE EXCEPTION 'ACCOUNT_CLOSE_REQUIRED/
+    );
+    expect(body.match(/\bIF\b/g)?.length).toBe(2);
+    expect(CLOSER_SQL).not.toMatch(/SECURITY DEFINER/);
+  });
+
+  it('fires only when an update would close a profile that is not closed', () => {
+    expect(CLOSER_SQL).toMatch(
+      /CREATE OR REPLACE TRIGGER trg_only_close_account_closes_an_account\s+BEFORE UPDATE ON public\.profiles\s+FOR EACH ROW\s+WHEN \(NEW\.status = 'deleted' AND OLD\.status IS DISTINCT FROM 'deleted'\)\s+EXECUTE FUNCTION public\.fn_only_close_account_closes_an_account\(\);/
+    );
+    // Its own trigger, never a DROP of the first one: that is an ACCESS
+    // EXCLUSIVE lock on profiles, and it deadlocked against live traffic.
+    expect(CLOSER_SQL.replace(/--[^\n]*/g, '')).not.toMatch(/DROP TRIGGER/i);
   });
 });

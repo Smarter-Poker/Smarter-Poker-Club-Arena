@@ -97,6 +97,16 @@ function parkedSource(m: any, seats: () => ReturnType<typeof inputMember>[]) {
       })),
       error: null,
     }),
+    // The registrations the door also counts agree with the seats.
+    in: async () => ({
+      data: seats().map((s) => ({
+        user_id: s.user_id,
+        status: 'playing',
+        chips: 100,
+        seat_number: s.source_seat_number,
+      })),
+      error: null,
+    }),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(query);
   return engine;
@@ -259,9 +269,13 @@ describe('a break preparation that does nothing says why', () => {
       },
     ],
     [
-      'destinations_unread',
+      // The read names why it answered null (2026-09-29, 10.86 rule 1).
+      'destinations_unread:tables_unread:canceling statement due to statement timeout',
       (m: any) => {
-        m.eligibleBreakDestinations = vi.fn(async () => null);
+        m.eligibleBreakDestinations = vi.fn(async () => {
+          m.destinationReadRefusal = 'tables_unread:canceling statement due to statement timeout';
+          return null;
+        });
       },
     ],
     [

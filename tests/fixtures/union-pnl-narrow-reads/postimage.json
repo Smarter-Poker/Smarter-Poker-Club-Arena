@@ -1,0 +1,22 @@
+{
+  "fn_union_pnl_boundary(uuid,timestamp with time zone)": "9692532c4253287b2a79fde4690642c9",
+  "fn_union_pnl_cash_outcome_touch()": "4b54f6fd75c38d0e9695cee75b330407",
+  "fn_union_pnl_cash_outcome_touch_row(uuid,bigint,timestamp with time zone,jsonb,jsonb)": "ac9e2cb0b61b4335c9ceae308a1bfe26",
+  "fn_union_pnl_compact_participants(jsonb)": "5fc79416982e2cebdb59c970da1c8da4",
+  "fn_union_pnl_credit_touch()": "3d52386d79eb9bc88107fb81f3c7da6e",
+  "fn_union_pnl_evidence_report(uuid,timestamp with time zone,timestamp with time zone)": "e56b7e668d49ae06191cdfeca5933b86",
+  "fn_union_pnl_first_inventory_operation(text,uuid,boolean)": "edb416e15385bedbc271033141502456",
+  "fn_union_pnl_inventory_touch()": "656eb1b8a853324b3276bcb1bfb95b23",
+  "fn_union_pnl_projection_build_guard()": "f34477baca1efd790ed540b1aa833fb1",
+  "fn_union_pnl_projection_build_pending()": "a85ba9e7af6d8003cfe8547f3fd250bb",
+  "fn_union_pnl_projection_build_step(text,integer)": "32f93dd34c864069cb28ae148166fdb7",
+  "fn_union_pnl_projection_ready(text)": "5f643c03d3595c20354d753087988476",
+  "fn_union_pnl_projection_status()": "4589823f3961d1c682f29ab5361d6e53",
+  "fn_union_pnl_projection_verify(real)": "38e1f4f0249423b4d87913cb3792fc6a",
+  "fn_union_pnl_touched_registrations(timestamp with time zone,timestamp with time zone,boolean)": "e45d89f53048f070a3ddc9264d1ecdff",
+  "fn_union_pnl_tournament_entry_club_of(text,numeric,uuid,uuid,uuid,jsonb)": "b875ae9c879c65cd1db5ae207af9f3c3",
+  "fn_union_pnl_tournament_in_union(text,uuid,boolean)": "e46d1253e8fc17f3fb8616d8a3e13793",
+  "fn_union_pnl_week_hand_lines(uuid,timestamp with time zone,timestamp with time zone,boolean)": "8826ad945a9af4f9534ebd4c31bad4f7",
+  "fn_union_pnl_week_shaped_hands(uuid,timestamp with time zone,timestamp with time zone,boolean)": "393e98309bb57d2cb914d581e5da201a",
+  "fn_union_pnl_week_union_credits(uuid,timestamp with time zone,timestamp with time zone,boolean)": "b74693f685ad4b69b2738d1f3abfba19"
+}

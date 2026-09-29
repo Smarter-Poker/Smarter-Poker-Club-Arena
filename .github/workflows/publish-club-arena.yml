@@ -654,11 +654,19 @@ jobs:
           NATIVE=$(tr -d '[:space:]' < native.version)
           VERSION="${NATIVE}.${{ github.run_number }}"
           echo "uploading bundle ${VERSION} (${SHA:0:7}) to channel ${CHANNEL}"
-          npx --yes @capgo/cli@latest bundle upload \
+          # --delta: phones download only the files that changed. The app
+          # bundle is ~172 MB (1,951 files, mostly art that rarely changes)
+          # and this job runs on every merge to main, so a full zip would be
+          # 172 MB per release per phone, over cellular. Delta caps at 10,000
+          # files and refuses paths with spaces; dist-native has neither.
+          # The CLI is pinned to its major so a breaking release cannot turn
+          # every publish red overnight.
+          npx --yes @capgo/cli@8 bundle upload \
             --apikey "$CAPGO_TOKEN" \
             --path dist-native \
             --channel "$CHANNEL" \
             --bundle "$VERSION" \
+            --delta \
             --no-key
           echo "- OTA: bundle \`${VERSION}\` (\`${SHA:0:7}\`) uploaded to channel \`${CHANNEL}\`" >> $GITHUB_STEP_SUMMARY
 

@@ -1,0 +1,112 @@
+{
+  "release": "c0c986aded5d25e952cb154c46599b6307f165bd",
+  "containerStartedAtUtc": "2026-09-29T03:55:58Z",
+  "readAtUtc": "2026-09-29T05:56Z",
+  "source": "public.horse_brain_flush_receipts, source_release like 'c0c986ad%', collected_at >= 03:56Z, 15-minute bins by collected_at; the 04:45 bin has no receipts from 04:55:28Z to 05:03:27Z (hourly maintenance break)",
+  "bins": [
+    {
+      "binStartUtc": "04:00",
+      "enqueued": 122077,
+      "recorded": 122048,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 547,
+      "captureUnavailablePercentOfEnqueued": 0.45
+    },
+    {
+      "binStartUtc": "04:15",
+      "enqueued": 108248,
+      "recorded": 108251,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 6825,
+      "captureUnavailablePercentOfEnqueued": 6.3
+    },
+    {
+      "binStartUtc": "04:30",
+      "enqueued": 143019,
+      "recorded": 143029,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 5284,
+      "captureUnavailablePercentOfEnqueued": 3.69
+    },
+    {
+      "binStartUtc": "04:45",
+      "enqueued": 96135,
+      "recorded": 96151,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "captureUnavailablePercentOfEnqueued": 0.0
+    },
+    {
+      "binStartUtc": "05:00",
+      "enqueued": 109864,
+      "recorded": 109838,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "captureUnavailablePercentOfEnqueued": 0.0
+    },
+    {
+      "binStartUtc": "05:15",
+      "enqueued": 106646,
+      "recorded": 106657,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 21304,
+      "captureUnavailablePercentOfEnqueued": 19.98
+    },
+    {
+      "binStartUtc": "05:30",
+      "enqueued": 105474,
+      "recorded": 105448,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 21143,
+      "captureUnavailablePercentOfEnqueued": 20.05
+    },
+    {
+      "binStartUtc": "05:45",
+      "enqueued": 97492,
+      "recorded": 97533,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 598,
+      "captureUnavailablePercentOfEnqueued": 0.61
+    }
+  ],
+  "totals": {
+    "enqueued": 888955,
+    "recorded": 888955,
+    "queueCapacity": 0,
+    "lockRetry": 0,
+    "captureUnavailable": 55701,
+    "captureUnavailablePercentOfEnqueued": 6.27
+  },
+  "correlation": {
+    "minuteSeriesN": 105,
+    "minutes": "04:05Z to 05:49Z",
+    "captureUnavailablePerMinuteVsExpiredCompletedHandObservationsPerMinute_pearson": 0.949,
+    "captureUnavailableTotal": 55701,
+    "expiredCompletedHandObservationLogLines": 22794,
+    "note": "the log line is HandHistory.horse_mind_observation_failed, HorseDecisionExpiredError after 8000ms; counted from the engine log read-only, minute by minute against the same minute's receipts; a correlation and a code path, not a per-type counter"
+  },
+  "prometheus": {
+    "note": "5-minute samples of the engine's Prometheus series, read 2026-09-29T05:50Z, UTC HHMM",
+    "queueDepthPerWorkerSum": "0400=0 0405=125 0410=587 0415=91 0420=8 0425=30 0430=666 0435=587 0440=710 0445=456 0450=122 0455=0 0500=0 0505=2 0510=20 0515=497 0520=743 0525=700 0530=830 0535=757 0540=682 0545=156 0550=25",
+    "oldestQueuedAgeMs": "0400=0 0405=1192 0410=6592 0415=1437 0420=207 0425=346 0430=7609 0435=5798 0440=8499 0445=5810 0450=2277 0455=0 0500=0 0505=0 0510=304 0515=6539 0520=8538 0525=13730 0530=12420 0535=13559 0540=9509 0545=2377 0550=157",
+    "expiredJobsPerSecond": "0415=2.6 0430=33.8 0435=8.1 0440=12.5 0445=2.7 0520=23.4 0525=39.3 0530=47.5 0535=45.7 0540=40.8 0545=9.4 (0 in every other sample)",
+    "decisionFallbacksPerMinute": "0430=38.4 0520=5.5 0525=137.5 0530=165.7 0535=153.5 0540=165.3 (0 in every other sample)",
+    "hostCpu": "engine-01 (4 vCPU): 1.0% idle, 59.8% user, 24.9% system, 12.9% nice at 05:49Z; main thread 63%, the two niced decision-worker threads 22% and 30% of a core"
+  },
+  "engineHealthAt0545Z": {
+    "horseJournalMode": "ready",
+    "publishers": "2 of 2",
+    "liveHorseDecisionExpiredJobsSinceStart": 79200,
+    "liveHorseDecisionCompletedJobsSinceStart": 432366,
+    "lastExpiredRequestType": "OBSERVE_COMPLETED_HAND",
+    "lastExpiredPhase": "queued"
+  }
+}

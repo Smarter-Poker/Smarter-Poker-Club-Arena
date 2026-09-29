@@ -14,6 +14,7 @@ import { confirmDialog } from '../../components/common/confirmDialog';
 import { masterBus } from '../../core/MasterBus';
 import { fmt, formatDate } from '../../utils/format';
 import { formatPopupText } from '../../utils/popupStyle';
+import { IS_NATIVE_BUILD } from '../../lib/appBase';
 import styles from '../MarketplacePage.module.css';
 import {
   isVerifiedCheckoutPrecommitRefusal,
@@ -178,7 +179,9 @@ export default function MembershipTab({
       activeOwnerRef.current.userId === userId &&
       activeOwnerRef.current.clubId === clubId;
     try {
-      const { restoreNativePurchases } = await import('../../lib/native/purchases');
+      const { restoreNativePurchases } = await (IS_NATIVE_BUILD
+        ? import('../../lib/native/purchases')
+        : Promise.reject(new Error('The app store lives in the app build only.')));
       const result = await restoreNativePurchases(userId);
       if (!attemptIsCurrent()) return;
       if (result.ok) {
@@ -217,7 +220,9 @@ export default function MembershipTab({
       activeOwnerRef.current.userId === userId &&
       activeOwnerRef.current.clubId === clubId;
     try {
-      const { openNativeSubscriptionManagement } = await import('../../lib/native/purchases');
+      const { openNativeSubscriptionManagement } = await (IS_NATIVE_BUILD
+        ? import('../../lib/native/purchases')
+        : Promise.reject(new Error('The app store lives in the app build only.')));
       await openNativeSubscriptionManagement();
     } catch {
       if (attemptIsCurrent()) toast.error('Could Not Open Subscription Settings.');

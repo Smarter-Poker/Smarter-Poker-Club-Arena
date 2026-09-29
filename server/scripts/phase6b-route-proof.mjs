@@ -100,6 +100,25 @@ const bump = (map, key, by = 1) => {
   map[key] = (map[key] ?? 0) + by;
 };
 
+/* THE ARCHIVE IS ONE CATALOG PER DECISION SHARD (2026-09-29). #5541 gave each
+   decision-shard writer its own catalog: shard 0 stays in 'archive', later
+   shards are 'archive-shard-N'. This tool used to open 'archive' only, so the
+   hands and producers of every other shard were never observed. These helpers
+   are the only place it builds a path into the archive, and the names come from
+   the journal's own directory listing. Identical to the helpers in
+   phase6d-population.mjs and phase6d-chain-export.mjs (each tool ships alone
+   into the observer container, so it cannot import them); a law test keeps the
+   three in step. */
+function archiveShardNames(config, directory) {
+  const names = config.horseJournalArchiveDirectoryNames(directory);
+  if (!Array.isArray(names) || !names.length) throw Error('archive_custody_unavailable');
+  return names;
+}
+const shardCatalogPath = (directory, shardName) =>
+  directory + '/' + shardName + '/horse-journal-archive.sqlite';
+const shardSegmentPath = (directory, shardName, sha) =>
+  directory + '/' + shardName + '/segments/' + sha + '.ndjson.gz';
+
 async function observe(args) {
   const startedAt = Date.now();
   const release = args.release;
@@ -120,12 +139,13 @@ async function observe(args) {
   if (!Number.isSafeInteger(maxRows) || maxRows < 1) throw Error('max_rows_invalid');
   if (!Number.isSafeInteger(marginRows) || marginRows < 0) throw Error('margin_rows_invalid');
 
-  const [{ DatabaseSync }, atlas, attribution, binding, record] = await Promise.all([
+  const [{ DatabaseSync }, atlas, attribution, binding, record, config] = await Promise.all([
     import('node:sqlite'),
     import(`${dist}/engine/HorseTournamentPreflop.js`),
     import(`${dist}/engine/HorsePhase6Attribution.js`),
     import(`${dist}/engine/HorseDecisionHandBinding.js`),
     import(`${dist}/services/horseDecisionJournal/record.js`),
+    import(`${dist}/services/horseDecisionJournal/config.js`),
   ]);
   const domain = atlas.TOURNAMENT_PREFLOP_ATLAS_DOMAIN;
   const anchors = [...domain.depth.anchorsBB];
@@ -144,80 +164,9 @@ async function observe(args) {
     'services/horseDecisionJournal/record',
     'services/horseDecisionJournal/store',
     'services/horseDecisionJournal/review',
+    'services/horseDecisionJournal/config',
   ])
     compiledHashes[file] = compiledHash(`${dist}/${file}.js`);
-
-  const archivePath = join(journalDir, 'archive', 'horse-journal-archive.sqlite');
-  const db = new DatabaseSync(archivePath, { readOnly: true, allowExtension: false });
-  db.exec('PRAGMA busy_timeout=250; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
-  const segmentMeta = db.prepare(
-    'SELECT sha, compressed_sha, bytes, decoded_bytes, records FROM archive_segments WHERE sha=?'
-  );
-  const cache = new Map();
-  let segmentsDecoded = 0;
-  const readSegment = (sha) => {
-    const hit = cache.get(sha);
-    if (hit) return hit;
-    if (!SHA64.test(sha)) throw Error('segment_sha_invalid');
-    const meta = segmentMeta.get(sha);
-    if (!meta) throw Error('segment_meta_missing');
-    const compressed = readFileSync(join(journalDir, 'archive', 'segments', `${sha}.ndjson.gz`));
-    if (compressed.length !== Number(meta.bytes) || sha256(compressed) !== meta.compressed_sha)
-      throw Error('segment_bytes_mismatch');
-    const decoded = gunzipSync(compressed, { maxOutputLength: DECODE_BYTES });
-    if (decoded.length !== Number(meta.decoded_bytes) || sha256(decoded) !== sha)
-      throw Error('segment_decoded_mismatch');
-    const lines = decoded.toString('utf8').slice(0, -1).split('\n');
-    const records = lines.map((line) => {
-      const value = JSON.parse(line);
-      record.validateHorseJournalRecord(value);
-      return value;
-    });
-    if (records.length !== Number(meta.records)) throw Error('segment_record_count_mismatch');
-    segmentsDecoded++;
-    cache.set(sha, records);
-    if (cache.size > 256) cache.delete(cache.keys().next().value);
-    return records;
-  };
-  const rowAtOrAfter = db.prepare(
-    'SELECT rowid, segment_sha, ordinal FROM archive_events WHERE rowid>=? ORDER BY rowid LIMIT 1'
-  );
-  const rowAtOrBefore = db.prepare(
-    'SELECT rowid, segment_sha, ordinal FROM archive_events WHERE rowid<=? ORDER BY rowid DESC LIMIT 1'
-  );
-  const atMsOf = (row) => Number(readSegment(row.segment_sha)[Number(row.ordinal)].atMs);
-  const maxRowid = Number(db.prepare('SELECT coalesce(max(rowid),0) AS n FROM archive_events').get().n);
-  const minRowid = Number(db.prepare('SELECT coalesce(min(rowid),0) AS n FROM archive_events').get().n);
-  const catalogRecords = Number(db.prepare('SELECT records FROM archive_meta WHERE id=1').get().records);
-  if (maxRowid < 1) throw Error('archive_empty');
-
-  // Binary search the first row whose record time is at or after `ms`. Row order
-  // and record time agree only approximately (several producers append), so the
-  // scan below widens the range by --margin-rows and filters by exact atMs.
-  const firstRowAtOrAfter = (ms) => {
-    let lo = minRowid,
-      hi = maxRowid + 1;
-    while (lo < hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      const row = rowAtOrAfter.get(mid);
-      if (!row) {
-        hi = mid;
-        continue;
-      }
-      if (atMsOf(row) >= ms) hi = Number(row.rowid);
-      else lo = Number(row.rowid) + 1;
-    }
-    return lo;
-  };
-  const sinceRowid = firstRowAtOrAfter(sinceMs);
-  const untilRowid = firstRowAtOrAfter(untilMs);
-  const scanFrom = Math.max(minRowid, sinceRowid - marginRows);
-  const scanTo = Math.min(maxRowid, untilRowid + marginRows);
-  const edgeAtMs = {
-    firstRowAtOrAfterSince: sinceRowid,
-    firstRowAtOrAfterUntil: untilRowid,
-    lastArchivedAtMs: atMsOf(rowAtOrBefore.get(maxRowid)),
-  };
 
   const counts = {
     rowsScanned: 0,
@@ -306,191 +255,292 @@ async function observe(args) {
   };
   const mismatchNamed = typeof attribution.horsePhase6AttributionMismatch === 'function';
 
-  let cursor = scanFrom - 1;
-  const page = db.prepare(
-    'SELECT rowid, event_id, hand_key, segment_sha, ordinal FROM archive_events WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT 2048'
-  );
-  scan: for (;;) {
-    const rows = page.all(cursor, scanTo);
-    if (!rows.length) break;
-    for (const row of rows) {
-      cursor = Number(row.rowid);
-      if (counts.rowsScanned >= maxRows) {
-        counts.truncated = true;
-        break scan;
-      }
-      counts.rowsScanned++;
-      const rec = readSegment(row.segment_sha)[Number(row.ordinal)];
-      if (!rec || rec.handKey !== row.hand_key || rec.eventId !== row.event_id)
-        throw Error('archive_index_disagrees_with_segment');
-      const atMs = Number(rec.atMs);
-      if (atMs < sinceMs) {
-        counts.rowsBeforeWindow++;
-        continue;
-      }
-      if (atMs >= untilMs) {
-        counts.rowsAfterWindow++;
-        continue;
-      }
-      counts.rowsInWindow++;
-      if (rec.sourceRelease !== recordsRelease) {
-        counts.rowsOtherRelease++;
-        bump(counts.otherReleases, String(rec.sourceRelease));
-        continue;
-      }
-      bump(counts.byKind, rec.kind);
-      if (rec.kind === 'decision') {
-        decisions.total++;
-        const capture = JSON.parse(rec.body);
-        const snapshot = capture?.snapshot;
-        const gs = snapshot?.gameState;
-        const decision = capture?.decision;
-        if (gs?.gameMode !== 'tournament') {
-          decisions.cash++;
+  const shardNames = archiveShardNames(config, journalDir);
+  const shardReports = [];
+  let segmentsDecodedTotal = 0;
+  for (const shardName of shardNames) {
+    const archivePath = shardCatalogPath(journalDir, shardName);
+    const db = new DatabaseSync(archivePath, { readOnly: true, allowExtension: false });
+    db.exec('PRAGMA busy_timeout=250; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
+    const segmentMeta = db.prepare(
+      'SELECT sha, compressed_sha, bytes, decoded_bytes, records FROM archive_segments WHERE sha=?'
+    );
+    const cache = new Map();
+    let segmentsDecoded = 0;
+    const rowsBeforeShard = counts.rowsScanned;
+    const readSegment = (sha) => {
+      const hit = cache.get(sha);
+      if (hit) return hit;
+      if (!SHA64.test(sha)) throw Error('segment_sha_invalid');
+      const meta = segmentMeta.get(sha);
+      if (!meta) throw Error('segment_meta_missing');
+      const compressed = readFileSync(shardSegmentPath(journalDir, shardName, sha));
+      if (compressed.length !== Number(meta.bytes) || sha256(compressed) !== meta.compressed_sha)
+        throw Error('segment_bytes_mismatch');
+      const decoded = gunzipSync(compressed, { maxOutputLength: DECODE_BYTES });
+      if (decoded.length !== Number(meta.decoded_bytes) || sha256(decoded) !== sha)
+        throw Error('segment_decoded_mismatch');
+      const lines = decoded.toString('utf8').slice(0, -1).split('\n');
+      const records = lines.map((line) => {
+        const value = JSON.parse(line);
+        record.validateHorseJournalRecord(value);
+        return value;
+      });
+      if (records.length !== Number(meta.records)) throw Error('segment_record_count_mismatch');
+      segmentsDecoded++;
+      segmentsDecodedTotal++;
+      cache.set(sha, records);
+      if (cache.size > 256) cache.delete(cache.keys().next().value);
+      return records;
+    };
+    const rowAtOrAfter = db.prepare(
+      'SELECT rowid, segment_sha, ordinal FROM archive_events WHERE rowid>=? ORDER BY rowid LIMIT 1'
+    );
+    const rowAtOrBefore = db.prepare(
+      'SELECT rowid, segment_sha, ordinal FROM archive_events WHERE rowid<=? ORDER BY rowid DESC LIMIT 1'
+    );
+    const atMsOf = (row) => Number(readSegment(row.segment_sha)[Number(row.ordinal)].atMs);
+    const maxRowid = Number(db.prepare('SELECT coalesce(max(rowid),0) AS n FROM archive_events').get().n);
+    const minRowid = Number(db.prepare('SELECT coalesce(min(rowid),0) AS n FROM archive_events').get().n);
+    const catalogRecords = Number(db.prepare('SELECT records FROM archive_meta WHERE id=1').get().records);
+    if (maxRowid < 1) {
+      // An empty shard has nothing to scan; only every shard being empty is an error.
+      db.close();
+      shardReports.push({ shard: shardName, empty: true, catalogRecords });
+      continue;
+    }
+
+    // Binary search the first row whose record time is at or after `ms`. Row order
+    // and record time agree only approximately (several producers append), so the
+    // scan below widens the range by --margin-rows and filters by exact atMs.
+    const firstRowAtOrAfter = (ms) => {
+      let lo = minRowid,
+        hi = maxRowid + 1;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const row = rowAtOrAfter.get(mid);
+        if (!row) {
+          hi = mid;
           continue;
         }
-        if (gs?.stage !== 'preflop') {
-          decisions.tournamentNotPreflop++;
-          continue;
-        }
-        if (gs?.tournament?.schemaVersion !== 1) {
-          decisions.tournamentSchemaUnavailable++;
-          continue;
-        }
-        decisions.tournamentPreflop++;
-        if (decision?.policyFallback === 'brain_exception') decisions.brainException++;
-        const receipt = decision?.tournamentPreflopAttribution;
-        if (!receipt) {
-          decisions.receiptAbsent++;
-          continue;
-        }
-        if (receipt.version === 'horse-phase6-attribution-v1') decisions.receiptV1++;
-        else if (receipt.version === 'horse-phase6-attribution-v2') decisions.receiptV2++;
-        bump(decisions.receiptByRoute, String(receipt.route));
-        bump(decisions.receiptByStatus, String(receipt.status));
-        bump(decisions.receiptByReason, String(receipt.reason));
-        if (
-          receipt.inputSource?.atlasRevision !== undefined &&
-          receipt.inputSource.atlasRevision !== domain.atlasRevision
-        )
-          decisions.atlasRevisionOther++;
-        const matched = attribution.horsePhase6AttributionMatchesSnapshot(decision, snapshot);
-        if (matched) decisions.matchedSnapshot++;
-        else {
-          decisions.mismatchRefused++;
-          if (mismatchNamed)
-            bump(
-              decisions.mismatchByReason,
-              String(attribution.horsePhase6AttributionMismatch(decision, snapshot))
-            );
-        }
-        const lookup = receipt.lookup;
-        if (!lookup) {
-          decisions.withoutLookup++;
-          continue;
-        }
-        decisions.withLookup++;
-        const c = lookup.coordinate,
-          p = lookup.policy;
-        bump(decisions.lookupBySource, String(p.source));
-        bump(decisions.lookupByFamily, String(c.gameFamily));
-        bump(decisions.lookupByContextStatus, String(c.contextStatus));
-        if (p.fallbackReason) bump(decisions.lookupRefusedByReason, String(p.fallbackReason));
-        const size = Number(c.tableSize);
-        const band = bandOf(Number(c.stackBB), anchors);
-        const inDomain =
-          sizes.includes(size) && branches.includes(c.branch) && anteTypes.includes(c.anteType);
-        if (!inDomain) decisions.outsideDomainCoordinate++;
-        const expectedDepth = atlas.interpolateTournamentDepth(Number(c.stackBB));
-        if (
-          p.depth?.lower !== expectedDepth.lower ||
-          p.depth?.upper !== expectedDepth.upper ||
-          p.depth?.weight !== expectedDepth.weight
-        )
-          decisions.depthBracketDisagreements++;
-        const key = cellKey(
-          inDomain ? size : `outside-${String(size)}`,
-          String(c.branch),
-          String(c.anteType),
-          band
-        );
-        const cell = cellFor(key, {
-          size: inDomain ? size : null,
-          branch: String(c.branch),
-          anteType: String(c.anteType),
-          band,
-          inDomain,
-        });
-        cell.observed++;
-        if (p.fallbackReason) bump(cell.refused, String(p.fallbackReason));
-        else cell.baseline++;
-        if (!matched) cell.mismatchRefused++;
-        const hand = handState(rec.handKey);
-        if (completed.has(rec.handKey)) joins.recordsAfterCompletedHand++;
-        if (hand.decisions.has(rec.turnKey)) joins.handsWithMultipleDecisionsForTurn++;
-        hand.decisions.set(rec.turnKey, { key, matched });
-        continue;
+        if (atMsOf(row) >= ms) hi = Number(row.rowid);
+        else lo = Number(row.rowid) + 1;
       }
-      if (rec.kind === 'execution') {
-        joins.executionsSeen++;
-        const witness = JSON.parse(rec.body);
-        if (witness?.identity?.stage !== 'preflop' || witness?.identity?.gameMode !== 'tournament')
+      return lo;
+    };
+    const sinceRowid = firstRowAtOrAfter(sinceMs);
+    const untilRowid = firstRowAtOrAfter(untilMs);
+    const scanFrom = Math.max(minRowid, sinceRowid - marginRows);
+    const scanTo = Math.min(maxRowid, untilRowid + marginRows);
+    const edgeAtMs = {
+      firstRowAtOrAfterSince: sinceRowid,
+      firstRowAtOrAfterUntil: untilRowid,
+      lastArchivedAtMs: atMsOf(rowAtOrBefore.get(maxRowid)),
+    };
+
+    let cursor = scanFrom - 1;
+    const page = db.prepare(
+      'SELECT rowid, event_id, hand_key, segment_sha, ordinal FROM archive_events WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT 2048'
+    );
+    scan: for (;;) {
+      const rows = page.all(cursor, scanTo);
+      if (!rows.length) break;
+      for (const row of rows) {
+        cursor = Number(row.rowid);
+        if (counts.rowsScanned >= maxRows) {
+          counts.truncated = true;
+          break scan;
+        }
+        counts.rowsScanned++;
+        const rec = readSegment(row.segment_sha)[Number(row.ordinal)];
+        if (!rec || rec.handKey !== row.hand_key || rec.eventId !== row.event_id)
+          throw Error('archive_index_disagrees_with_segment');
+        const atMs = Number(rec.atMs);
+        if (atMs < sinceMs) {
+          counts.rowsBeforeWindow++;
           continue;
-        joins.executionsPreflopTournament++;
-        if (completed.has(rec.handKey)) joins.recordsAfterCompletedHand++;
-        handState(rec.handKey).executions.set(rec.turnKey, witness);
-        continue;
-      }
-      if (rec.kind === 'accepted_hand') {
-        joins.completedHandsSeen++;
-        completed.add(rec.handKey);
-        if (completed.size > 200000) completed.delete(completed.keys().next().value);
-        const hand = hands.get(rec.handKey);
-        if (!hand) continue;
-        hands.delete(rec.handKey);
-        const body = JSON.parse(rec.body);
-        if (hand.executions.size) joins.completedHandsWithPreflopTournamentExecutions++;
-        for (const [turnKey, witness] of hand.executions) {
-          const decision = hand.decisions.get(turnKey);
-          let bound;
-          try {
-            bound = binding.bindHorseDecisionToCommittedHand(witness, body);
-          } catch {
-            bound = { status: 'unavailable', reason: 'binder_exception' };
-          }
-          if (!decision) {
-            joins.executionsWithoutDecision++;
-            if (bound.status === 'bound') joins.acceptedBoundWithoutLookup++;
+        }
+        if (atMs >= untilMs) {
+          counts.rowsAfterWindow++;
+          continue;
+        }
+        counts.rowsInWindow++;
+        if (rec.sourceRelease !== recordsRelease) {
+          counts.rowsOtherRelease++;
+          bump(counts.otherReleases, String(rec.sourceRelease));
+          continue;
+        }
+        bump(counts.byKind, rec.kind);
+        if (rec.kind === 'decision') {
+          decisions.total++;
+          const capture = JSON.parse(rec.body);
+          const snapshot = capture?.snapshot;
+          const gs = snapshot?.gameState;
+          const decision = capture?.decision;
+          if (gs?.gameMode !== 'tournament') {
+            decisions.cash++;
             continue;
           }
-          hand.decisions.delete(turnKey);
-          const cell = cells.get(decision.key);
-          if (bound.status === 'bound') {
-            joins.acceptedBound++;
-            cell.accepted++;
-          } else {
-            const reason = String(bound.reason ?? bound.status);
-            bump(joins.bindingUnavailableByReason, reason);
-            bump(cell.acceptedUnavailable, reason);
+          if (gs?.stage !== 'preflop') {
+            decisions.tournamentNotPreflop++;
+            continue;
           }
+          if (gs?.tournament?.schemaVersion !== 1) {
+            decisions.tournamentSchemaUnavailable++;
+            continue;
+          }
+          decisions.tournamentPreflop++;
+          if (decision?.policyFallback === 'brain_exception') decisions.brainException++;
+          const receipt = decision?.tournamentPreflopAttribution;
+          if (!receipt) {
+            decisions.receiptAbsent++;
+            continue;
+          }
+          if (receipt.version === 'horse-phase6-attribution-v1') decisions.receiptV1++;
+          else if (receipt.version === 'horse-phase6-attribution-v2') decisions.receiptV2++;
+          bump(decisions.receiptByRoute, String(receipt.route));
+          bump(decisions.receiptByStatus, String(receipt.status));
+          bump(decisions.receiptByReason, String(receipt.reason));
+          if (
+            receipt.inputSource?.atlasRevision !== undefined &&
+            receipt.inputSource.atlasRevision !== domain.atlasRevision
+          )
+            decisions.atlasRevisionOther++;
+          const matched = attribution.horsePhase6AttributionMatchesSnapshot(decision, snapshot);
+          if (matched) decisions.matchedSnapshot++;
+          else {
+            decisions.mismatchRefused++;
+            if (mismatchNamed)
+              bump(
+                decisions.mismatchByReason,
+                String(attribution.horsePhase6AttributionMismatch(decision, snapshot))
+              );
+          }
+          const lookup = receipt.lookup;
+          if (!lookup) {
+            decisions.withoutLookup++;
+            continue;
+          }
+          decisions.withLookup++;
+          const c = lookup.coordinate,
+            p = lookup.policy;
+          bump(decisions.lookupBySource, String(p.source));
+          bump(decisions.lookupByFamily, String(c.gameFamily));
+          bump(decisions.lookupByContextStatus, String(c.contextStatus));
+          if (p.fallbackReason) bump(decisions.lookupRefusedByReason, String(p.fallbackReason));
+          const size = Number(c.tableSize);
+          const band = bandOf(Number(c.stackBB), anchors);
+          const inDomain =
+            sizes.includes(size) && branches.includes(c.branch) && anteTypes.includes(c.anteType);
+          if (!inDomain) decisions.outsideDomainCoordinate++;
+          const expectedDepth = atlas.interpolateTournamentDepth(Number(c.stackBB));
+          if (
+            p.depth?.lower !== expectedDepth.lower ||
+            p.depth?.upper !== expectedDepth.upper ||
+            p.depth?.weight !== expectedDepth.weight
+          )
+            decisions.depthBracketDisagreements++;
+          const key = cellKey(
+            inDomain ? size : `outside-${String(size)}`,
+            String(c.branch),
+            String(c.anteType),
+            band
+          );
+          const cell = cellFor(key, {
+            size: inDomain ? size : null,
+            branch: String(c.branch),
+            anteType: String(c.anteType),
+            band,
+            inDomain,
+          });
+          cell.observed++;
+          if (p.fallbackReason) bump(cell.refused, String(p.fallbackReason));
+          else cell.baseline++;
+          if (!matched) cell.mismatchRefused++;
+          const hand = handState(rec.handKey);
+          if (completed.has(rec.handKey)) joins.recordsAfterCompletedHand++;
+          if (hand.decisions.has(rec.turnKey)) joins.handsWithMultipleDecisionsForTurn++;
+          hand.decisions.set(rec.turnKey, { key, matched });
+          continue;
         }
-        for (const [, decision] of hand.decisions) {
-          const cell = cells.get(decision.key);
-          bump(cell.acceptedUnavailable, 'execution_missing');
-          bump(joins.bindingUnavailableByReason, 'execution_missing');
+        if (rec.kind === 'execution') {
+          joins.executionsSeen++;
+          const witness = JSON.parse(rec.body);
+          if (witness?.identity?.stage !== 'preflop' || witness?.identity?.gameMode !== 'tournament')
+            continue;
+          joins.executionsPreflopTournament++;
+          if (completed.has(rec.handKey)) joins.recordsAfterCompletedHand++;
+          handState(rec.handKey).executions.set(rec.turnKey, witness);
+          continue;
         }
-        continue;
+        if (rec.kind === 'accepted_hand') {
+          joins.completedHandsSeen++;
+          completed.add(rec.handKey);
+          if (completed.size > 200000) completed.delete(completed.keys().next().value);
+          const hand = hands.get(rec.handKey);
+          if (!hand) continue;
+          hands.delete(rec.handKey);
+          const body = JSON.parse(rec.body);
+          if (hand.executions.size) joins.completedHandsWithPreflopTournamentExecutions++;
+          for (const [turnKey, witness] of hand.executions) {
+            const decision = hand.decisions.get(turnKey);
+            let bound;
+            try {
+              bound = binding.bindHorseDecisionToCommittedHand(witness, body);
+            } catch {
+              bound = { status: 'unavailable', reason: 'binder_exception' };
+            }
+            if (!decision) {
+              joins.executionsWithoutDecision++;
+              if (bound.status === 'bound') joins.acceptedBoundWithoutLookup++;
+              continue;
+            }
+            hand.decisions.delete(turnKey);
+            const cell = cells.get(decision.key);
+            if (bound.status === 'bound') {
+              joins.acceptedBound++;
+              cell.accepted++;
+            } else {
+              const reason = String(bound.reason ?? bound.status);
+              bump(joins.bindingUnavailableByReason, reason);
+              bump(cell.acceptedUnavailable, reason);
+            }
+          }
+          for (const [, decision] of hand.decisions) {
+            const cell = cells.get(decision.key);
+            bump(cell.acceptedUnavailable, 'execution_missing');
+            bump(joins.bindingUnavailableByReason, 'execution_missing');
+          }
+          continue;
+        }
       }
     }
-  }
-  for (const [, hand] of hands) {
-    joins.decisionsWithoutCompletedHand += hand.decisions.size;
-    for (const [, decision] of hand.decisions) {
-      const cell = cells.get(decision.key);
-      bump(cell.acceptedUnavailable, 'completed_hand_not_in_window');
+    for (const [, hand] of hands) {
+      joins.decisionsWithoutCompletedHand += hand.decisions.size;
+      for (const [, decision] of hand.decisions) {
+        const cell = cells.get(decision.key);
+        bump(cell.acceptedUnavailable, 'completed_hand_not_in_window');
+      }
     }
+    db.close();
+    // A hand lives in exactly one shard, so what was still open above has been
+    // settled and will not be completed by a later shard: keep the join state bounded.
+    hands.clear();
+    shardReports.push({
+      shard: shardName,
+      empty: false,
+      minRowid,
+      maxRowid,
+      catalogRecords,
+      scanFromRowid: scanFrom,
+      scanToRowid: scanTo,
+      ...edgeAtMs,
+      segmentsDecoded,
+      rowsScannedInShard: counts.rowsScanned - rowsBeforeShard,
+    });
+    if (counts.truncated) break;
   }
-  db.close();
+  if (shardReports.every((r) => r.empty)) throw Error('archive_empty');
 
   const observed = [...cells.values()].sort((a, b) => (a.cell < b.cell ? -1 : a.cell > b.cell ? 1 : 0));
   const unobserved = [];
@@ -550,13 +600,11 @@ async function observe(args) {
     },
     compiledHashes,
     archive: {
-      minRowid,
-      maxRowid,
-      catalogRecords,
-      scanFromRowid: scanFrom,
-      scanToRowid: scanTo,
-      ...edgeAtMs,
-      segmentsDecoded,
+      shardCount: shardNames.length,
+      shardsRead: shardReports.map((r) => r.shard),
+      shards: shardReports,
+      catalogRecords: shardReports.reduce((n, r) => n + Number(r.catalogRecords ?? 0), 0),
+      segmentsDecoded: segmentsDecodedTotal,
       ...counts,
     },
     decisions,
@@ -614,7 +662,7 @@ function render(args) {
   }
   lines.push(`Selector: observer release \`${o.selector.release}\`, records release \`${o.selector.recordsRelease}\`${o.selector.historicalOnly ? ' (historical only)' : ''}, window ${o.selector.since} to ${o.selector.until} (UTC), journal \`${o.selector.journalDir}\`.`);
   lines.push('');
-  lines.push(`Archive rows scanned ${o.archive.rowsScanned} (rowid ${o.archive.scanFromRowid} to ${o.archive.scanToRowid}); rows inside the window ${o.archive.rowsInWindow}; other-release rows inside the window ${o.archive.rowsOtherRelease}; truncated: ${o.archive.truncated}.`);
+  lines.push(`Archive shards read ${(o.archive.shardsRead ?? []).join(', ')}; rows scanned ${o.archive.rowsScanned} (${(o.archive.shards ?? []).map((r) => (r.empty ? `${r.shard}: empty` : `${r.shard}: rowid ${r.scanFromRowid} to ${r.scanToRowid}`)).join('; ')}); rows inside the window ${o.archive.rowsInWindow}; other-release rows inside the window ${o.archive.rowsOtherRelease}; truncated: ${o.archive.truncated}.`);
   lines.push('');
   lines.push(`Tournament preflop decisions on this release: ${o.decisions.tournamentPreflop}; receipts with a lookup ${o.decisions.withLookup}; matched snapshot ${o.decisions.matchedSnapshot}; mismatch refused ${o.decisions.mismatchRefused}; accepted actions bound ${o.joins.acceptedBound}.`);
   lines.push('');

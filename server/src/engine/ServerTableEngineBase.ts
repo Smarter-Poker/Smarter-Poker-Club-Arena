@@ -121,6 +121,7 @@ import {
   completeHandSnapshot,
   getActiveHandSnapshotFull,
   resumeRetainedHandSubmission,
+  RetainedHandSubmissionRefusedError,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
   loadPresenceFromPark,
@@ -285,6 +286,16 @@ export abstract class ServerTableEngineBase {
 
   getStartupPolicyRefusal(): Readonly<CashTablePolicyRefusal> | null {
     return this.startupPolicyRefusal;
+  }
+  /**
+   * The retained-hand door refused this cash table's start from durable
+   * state (RETAINED_HAND_STANDING_REFUSALS). Published before ready=false so
+   * the owner holds the table instead of rebuilding it into the same answer.
+   */
+  private startupRetainedHandRefusal: Readonly<{ code: string; tableId: string }> | null = null;
+
+  getStartupRetainedHandRefusal(): Readonly<{ code: string; tableId: string }> | null {
+    return this.startupRetainedHandRefusal;
   }
   /** Passive first fence only; never used to authorize or schedule work. */
   private firstTerminalObservation: ReturnType<typeof leavePendingTerminalReason> | null = null;
@@ -2575,7 +2586,10 @@ export abstract class ServerTableEngineBase {
      12:17:06Z froze a 335-player freeroll (its manager could not finish its
      stop) and held the restart gate shut for 55 tables. */
   private timeBankAccountingUnconfirmed = false;
-  private readonly unresolvedTimeBankDebits = new Map<string, { userId: string; seconds: number }>();
+  private readonly unresolvedTimeBankDebits = new Map<
+    string,
+    { userId: string; seconds: number }
+  >();
   private timeBankDebitResolution: Promise<void> | null = null;
   /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
   protected parkWriteRetryMs = 5_000;
@@ -3835,6 +3849,20 @@ export abstract class ServerTableEngineBase {
           arenaId: err.arenaId,
         });
         this.fenceTerminalEngine('startup_policy_closed', false);
+        throw err;
+      }
+      if (
+        err instanceof RetainedHandSubmissionRefusedError &&
+        err.tableId === this.tableId &&
+        this.engineLeaseScope === 'cash'
+      ) {
+        // A STANDING REFUSAL IS NOT A CRASH (2026-09-29). The door answered
+        // from rows a rebuilt engine would read again; a watchdog kill here
+        // was a rebuild every five seconds into the same answer. Fence this
+        // generation without a watchdog record and let the owner hold the
+        // table and say so once (GameServer.holdRetainedHandRefusal).
+        this.startupRetainedHandRefusal = Object.freeze({ code: err.code, tableId: err.tableId });
+        this.fenceTerminalEngine('startup_retained_hand_refused', false);
         throw err;
       }
       this.settleReady(false);
@@ -7467,9 +7495,58 @@ export abstract class ServerTableEngineBase {
     resolve();
   }
 
+  /**
+   * True while an `untilResumed` pause is still unreleased by the authority
+   * that armed it.
+   *
+   * `pauseRequiresExplicitResume` is raised by `pauseAfterHand(..., {
+   * untilResumed: true })` and by nothing else, and every caller of that shape
+   * is a tournament manager arming its own break or day-end hold. So this is
+   * exactly the question "does that manager still owe this table a release?" -
+   * raised by the arm, lowered by `resumeDealing()`, and readable by the
+   * manager at the table's own park edge.
+   */
+  requiresExplicitPauseResume(): boolean {
+    return this.handForHandPaused && this.pauseRequiresExplicitResume;
+  }
+
   /** Resume dealing (all tables finished their hand-for-hand hand) */
   resumeDealing(): void {
     this.handForHandPaused = false;
+    /**
+     * THE CLAIM DIES WITH THE RELEASE (2026-09-28).
+     *
+     * `untilResumed` is not a pause, it is a CLAIM: "only the authority that
+     * armed this may lift it", and awaitPauseGate's safety timeout honours it
+     * by refusing to self-resume - ONCE, after which it nulls its own timer
+     * and nothing re-arms it. The claim is load-bearing for the rest of the
+     * engine's life, and it had exactly one writer able to lower it:
+     * `releasePauseGate()` below, which the deferral underneath skips.
+     *
+     * So a break that released while ANY other authority co-held the table
+     * dropped its own flag and walked away leaving the claim raised. Nothing
+     * could lower it afterwards: `resumeFromBreak()` had already written
+     * `onBreak = false` and early-returns on every later call, for the rest of
+     * that event's life. The engine was left asserting that a manager would
+     * come back for it when no manager ever would, with its last-resort
+     * self-resume disabled on the strength of that assertion.
+     *
+     * Measured in production 2026-09-28: satellites b165b22f, 0e1d340e and
+     * e8cc6c78 came off an expired break onto brand-new dealers (engine
+     * restart 15:59:24Z, a fresh process), each table co-held by the qualifier
+     * boundary `admitManagedTableEngine` arms for a cohort satellite.
+     * `resumeDealing()` took this deferral on every one of them and the events
+     * sat on "Parked between hands - waiting for the pause to lift..." for 14
+     * to 18 hours with 2-4 dealable seats and `status = 'running'`.
+     *
+     * The claim is surrendered here, on the deferral path as well as on the
+     * release path. What still holds the table is the co-authority's OWN flag,
+     * checked immediately below, published by `isNextHandPaused()`, and
+     * released by that authority through `releasePauseGate()` exactly as
+     * before. The break gives back what the break took; it no longer speaks
+     * for whoever is left holding the table.
+     */
+    this.pauseRequiresExplicitResume = false;
     // THE MAINTENANCE BREAK OUTRANKS HAND-FOR-HAND HERE. Hand-for-hand's
     // 500ms sync loop calls this the moment every table is waiting, which
     // during a break is immediately — and without this line it would deal a
@@ -7944,11 +8021,19 @@ export abstract class ServerTableEngineBase {
    * player twice: fn_consume_time_bank writes the request id's receipt in the
    * debit's own transaction and answers a repeat from it.
    */
-  private submitTimeBankDebit(userId: string, seconds: number, debitId: string = randomUUID()): void {
+  private submitTimeBankDebit(
+    userId: string,
+    seconds: number,
+    debitId: string = randomUUID()
+  ): void {
     const unanswered = (reason: string) => {
       this.unresolvedTimeBankDebits.set(debitId, { userId, seconds });
       this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume unconfirmed:', reason, `(debit ${debitId}, table ${this.tableId})`);
+      console.warn(
+        '[TimeBank] consume unconfirmed:',
+        reason,
+        `(debit ${debitId}, table ${this.tableId})`
+      );
     };
     try {
       const pending = Promise.resolve(
@@ -7960,7 +8045,9 @@ export abstract class ServerTableEngineBase {
       )
         .then(({ data, error }) => {
           if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) {
-            unanswered(String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt'));
+            unanswered(
+              String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt')
+            );
           }
         })
         .catch((err: unknown) => unanswered(String((err as Error)?.message ?? err)))

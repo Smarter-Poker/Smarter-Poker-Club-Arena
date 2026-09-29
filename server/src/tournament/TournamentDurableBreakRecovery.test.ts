@@ -171,7 +171,9 @@ describe('actual Manager durable close through actual Lease custody', () => {
     // Stop after recovery so unrelated board fixtures cannot supply completion.
     f.manager.redrivePendingTournamentSeatMoveOutcomes = vi.fn(async () => false);
     await f.manager.checkTableBalance();
-    expect(f.api.discover).toHaveBeenCalledWith('0', 1);
+    // The manager asks for the whole page and still visits one operation per
+    // unit; see aBalancerIsNotStarvedByBreakDiscovery.law.test.ts.
+    expect(f.api.discover).toHaveBeenCalledWith('0', 32);
     expect(f.api.close).toHaveBeenCalledTimes(1);
     expect(f.api.ackCleanup).toHaveBeenCalledTimes(1);
   });

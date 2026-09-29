@@ -65,7 +65,7 @@
 .limitKey {
   max-width: 30cqw;
   font:
-    600 2.3cqw/1.3 'Roboto Condensed',
+    600 max(9px, 2.3cqw) / 1.3 'Roboto Condensed',
     sans-serif;
   letter-spacing: 0.08em;
   text-align: right;
@@ -173,10 +173,13 @@
   grid-column: 1 / -1;
 }
 
-/* Fields are cut into the glass like the kit's tick well: a groove, no box. */
-.fields input,
+/* Fields are cut into the glass like the kit's tick well: a groove, no box.
+   TEXT FIELDS ONLY. Without the guard this rule also caught the two switches
+   in the composer, and the kit's 21px tick well became a 299px text field with
+   its label shoved off the glass (2026-09-29 render review). */
+.fields input:not([type='checkbox']),
 .fields textarea,
-.composer input,
+.composer input:not([type='checkbox']),
 .composer textarea {
   width: 100%;
   min-height: 44px;
@@ -195,6 +198,14 @@
     inset 0 1px 0 rgb(255 255 255 / 8%),
     inset 0 0 0 1px rgb(0 0 0 / 88%),
     inset 0 -1px 0 rgb(255 255 255 / 4%);
+}
+
+/* border-box takes the padding out of the rows, so the last line was cut
+   through the middle of its letters. The height is the line boxes plus the
+   padding, which ends the well between lines. */
+.fields textarea,
+.composer textarea {
+  height: calc(4 * 1.35em + 3.2cqw);
 }
 
 .fields small,
@@ -350,9 +361,10 @@
 }
 
 .announcementList article.inactive {
-  opacity: 0.58;
+  opacity: 0.74;
 }
 
+.announcementList article > .announcementActions,
 .announcementActions {
   display: flex;
   flex-wrap: wrap;

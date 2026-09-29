@@ -54,8 +54,8 @@ const TESTS = join(ROOT, 'tests');
  * their screen by instruction: src/services/DiamondAdjustmentService.ts (the
  * Diamond adjustment doors, migration 20260929220000) and
  * src/services/DiamondIncidentReviewService.ts (the incident review doors,
- * migration 20260929211500, its own branch). The Phase 10 staff surface
- * (audit item 8) imports both and lowers this back to 32.
+ * migration 20260929211500). The Phase 10 staff surface (audit item 8) imports
+ * both and lowers this back to 32.
  */
 const BASELINE_ORPHANS = 34;
 

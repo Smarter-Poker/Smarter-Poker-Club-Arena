@@ -265,7 +265,9 @@ try {
     if (leakedError) {
       // An unreadable answer is not an empty one.
       cleanupFailures.push(
-        new Error(`Certification could not verify its fixture clubs are gone: ${leakedError.message}`)
+        new Error(
+          `Certification could not verify its fixture clubs are gone: ${leakedError.message}`
+        )
       );
     } else if (leaked?.length) {
       cleanupFailures.push(

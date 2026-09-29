@@ -84,10 +84,14 @@ describe('retryTransient', () => {
 
   it('does not retry a definitive result or a definitive error', async () => {
     const wait = vi.fn();
-    const refusal = vi.fn(async () => ({ data: { success: false, error: 'has played' }, error: null }));
-    await expect(
-      retryTransient(refusal, { failureOf: (r) => r.error, wait })
-    ).resolves.toEqual({ data: { success: false, error: 'has played' }, error: null });
+    const refusal = vi.fn(async () => ({
+      data: { success: false, error: 'has played' },
+      error: null,
+    }));
+    await expect(retryTransient(refusal, { failureOf: (r) => r.error, wait })).resolves.toEqual({
+      data: { success: false, error: 'has played' },
+      error: null,
+    });
     expect(refusal).toHaveBeenCalledTimes(1);
 
     const denied = vi.fn(async () => ({ data: null, error: { code: '42501', message: 'nope' } }));
@@ -108,7 +112,10 @@ describe('retryTransient', () => {
 });
 
 describe('certify-club-create routes its retirement through the retry', () => {
-  const source = readFileSync(resolve(__dirname, '../../scripts/ci/certify-club-create.mjs'), 'utf8');
+  const source = readFileSync(
+    resolve(__dirname, '../../scripts/ci/certify-club-create.mjs'),
+    'utf8'
+  );
 
   it('retires each fixture club inside retryTransient, on the sanctioned door, mapping the returned error', () => {
     expect(source).toContain("import { retryTransient } from './transient-retry.mjs'");

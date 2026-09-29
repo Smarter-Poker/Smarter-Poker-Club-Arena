@@ -617,9 +617,7 @@ describe('a certification fixture that leaked must not wedge the next certificat
       }
       if (url.includes('/rest/v1/clubs?')) {
         calls.push('clubs-read');
-        return Response.json(
-          [...owned.values()].map((club) => ({ ...club, owner_id: USER_ID }))
-        );
+        return Response.json([...owned.values()].map((club) => ({ ...club, owner_id: USER_ID })));
       }
       if (url.includes('/rpc/fn_ca_retire_certification_club')) {
         calls.push('retire');
@@ -639,7 +637,8 @@ describe('a certification fixture that leaked must not wedge the next certificat
           ? Response.json(HAS_CUSTODY, { status: 500 })
           : Response.json({ success: true });
       }
-      if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) return new Response(null, { status: 404 });
+      if (url.includes(`/auth/v1/admin/users/${USER_ID}`))
+        return new Response(null, { status: 404 });
       return new Response('unexpected request ' + url, { status: 500 });
     });
     return { fetchImpl, calls, retireBodies, retireCallCount: () => retireCalls };

@@ -222,8 +222,15 @@ the reviewer notes with Dan's chips sentence) written once for both stores.
 Give the reviewer a demo account (the service identity is NOT for this - make
 a review account) and, in the notes, Dan's sentence about chips above, plus:
 sign-in is email + password; purchases are diamonds (consumable) and VIP
-(subscription) through the store; account deletion is in Settings; the age
-gate asks a date of birth and refuses under 18. Budget two rounds.
+(subscription) through the store; account deletion is Menu > App Settings >
+Account Data & Closure > Close Account; the age gate asks a date of birth and
+refuses under 18. Budget two rounds.
+
+Give a SECOND review account with no chips for the deletion test and say so in
+the notes: closing an account that still holds chips, a seat, an open cashout
+or a tournament entry is refused until it is settled
+(docs/changelog/2026-09-29-an-account-can-be-closed-and-its-person-leaves-with-it.md),
+and a reviewer who closes the demo account would see that refusal.
 
 ## Where things stand
 

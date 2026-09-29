@@ -1,9 +1,10 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { writeFileSync } from 'fs';
 import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
+import { assertNativeBackend } from './scripts/native/require-native-backend.mjs';
 
 /**
  * NATIVE BUILD TARGET (2026-09-07, docs/changelog/2026-09-07-capacitor-shell.md)
@@ -20,6 +21,12 @@ import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
  * place the two targets differ at build time.
  */
 const NATIVE = process.env.VITE_NATIVE === '1';
+// A native bundle is only ever built to be installed; one that cannot reach
+// its backend opens to "Loading Failed" on every phone (2026-09-29, see
+// scripts/native/require-native-backend.mjs). Same variables Vite will read.
+if (NATIVE) {
+  assertNativeBackend({ ...loadEnv('production', process.cwd(), 'VITE_'), ...process.env });
+}
 const WEB_BASE = '/hub/club-arena/';
 const maxParallelFileOps = process.env.ROLLUP_MAX_FILE_OPS
   ? Number(process.env.ROLLUP_MAX_FILE_OPS)

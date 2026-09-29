@@ -158,6 +158,9 @@ export default function CreateTournamentModal({
 
   // ── Core Config ──
   const [name, setName] = useState('');
+  // A blank form is not a refusal: the name field only takes the red ink once
+  // the operator has been in it (2026-09-29 render review).
+  const [nameTouched, setNameTouched] = useState(false);
   const [format, setFormat] = useState<TournamentFormat>(initialFormat || 'mtt_freezeout');
   const [mttEntryRules, setMttEntryRules] = useState<MttEntryRules>('freezeout');
   const [gameVariant, setGameVariant] = useState<TournamentGameVariant>('NLH');
@@ -1153,11 +1156,15 @@ export default function CreateTournamentModal({
                 Tournament Name <span className={styles.required}>*</span>
               </label>
               <input
-                className={`${styles.input}${!name.trim() ? ` ${styles.invalid}` : ''}`}
+                className={`${styles.input}${nameTouched && !name.trim() ? ` ${styles.invalid}` : ''}`}
                 aria-invalid={!name.trim()}
                 value={name}
                 maxLength={44}
-                onChange={(e) => setName(e.target.value.slice(0, 44))}
+                onBlur={() => setNameTouched(true)}
+                onChange={(e) => {
+                  setNameTouched(true);
+                  setName(e.target.value.slice(0, 44));
+                }}
                 placeholder="E.G. Saturday Night Turbo"
                 required
               />

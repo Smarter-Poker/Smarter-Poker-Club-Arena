@@ -246,7 +246,7 @@ export default function ClubMessageManagementPanel({
     <SpadeConsole
       family="riveted"
       className={styles.panel}
-      eyebrow="Identity & Announcements"
+      eyebrow="Club Copy Control"
       title="Club Messages"
       titleId="club-message-management-title"
       subtitle={clubName}

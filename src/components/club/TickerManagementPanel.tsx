@@ -227,7 +227,10 @@ export default function TickerManagementPanel({
       eyebrow="Broadcast Control"
       title="Ticker Management"
       titleId="ticker-management-title"
-      subtitle={scopeName ? `${scopeName} · Live Message Rail` : 'Live Message Rail'}
+      /* The club or union name alone: with the suffix the shark's narrow
+         subtitle zone fitted a long name down to nine pixels. The heading
+         below the head says what the rail is. */
+      subtitle={scopeName || 'Live Message Rail'}
       pill={pill}
       pillInk={pillInk}
       aria-labelledby="ticker-management-title"

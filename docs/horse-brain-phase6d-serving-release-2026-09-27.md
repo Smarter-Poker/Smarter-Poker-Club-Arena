@@ -420,3 +420,47 @@ Neither the population, the replay nor the route proof was run on fa480b9b: no d
 | G8 Performance and replay  | implemented but unverified | Replay not run on fa480b9b (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only                                                                                                             |
 | G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                |
 | G10 Publication and use    | implemented but unverified | fa480b9b serves (its receipts run 21:13Z to 03:05Z); its own archive was not read by its own image, so publication and use are not shown                                                                                          |
+
+## 2026-09-29 (later): capture health on the serving release c0c986ad stops the evidence run again, and the cause is a different one
+
+Release `c0c986aded5d25e952cb154c46599b6307f165bd` (container started 2026-09-29T03:55:58Z; contains #5563, #5541, #5530, #5490 and #5513). Aggregate only; no hand key, player or table id, card or record content. `/health` read 2026-09-29T05:45Z and 05:49Z: `releaseSha` c0c986ad, `horseJournal.mode` ready, 2 of 2 publishers, `capture` naming both, stalled 0.
+
+### Capture health first (the rule that stopped the evidence run)
+
+Read 2026-09-29T05:56Z from `public.horse_brain_flush_receipts` (`source_release like 'c0c986ad%'`, collected 03:56Z onward, 15-minute bins by receipt time). Aggregate only: `docs/evidence/phase6d/capture-health-2026-09-29-c0c986ad.json`.
+
+| Bin start (UTC) | enqueued | recorded | queue_capacity | lock_retry | capture_unavailable | % of enqueued |
+| --------------- | -------: | -------: | -------------: | ---------: | ------------------: | ------------: |
+| 04:00           |  122,077 |  122,048 |              0 |          0 |                 547 |          0.45 |
+| 04:15           |  108,248 |  108,251 |              0 |          0 |               6,825 |          6.31 |
+| 04:30           |  143,019 |  143,029 |              0 |          0 |               5,284 |          3.69 |
+| 04:45           |   96,135 |   96,151 |              0 |          0 |                   0 |          0.00 |
+| 05:00           |  109,864 |  109,838 |              0 |          0 |                   0 |          0.00 |
+| 05:15           |  106,646 |  106,657 |              0 |          0 |              21,304 |         19.98 |
+| 05:30           |  105,474 |  105,448 |              0 |          0 |              21,143 |         20.05 |
+| 05:45 (to 05:55) |  97,492 |   97,533 |              0 |          0 |                 598 |          0.61 |
+
+Bins at or above 140,000 enqueued: 04:30 (143,019). Over the whole read: 888,955 enqueued and 888,955 recorded, `queue_capacity` 0 and `lock_retry` 0 in every bin (the previous lane's queue, catalog and validation fixes did what they were for), and `capture_unavailable` 55,701, 6.27% of enqueued, 20% in the worst bins, against the 0.5% line. The 04:45 bin has no receipts from 04:55:28Z to 05:03:27Z, the hourly maintenance break.
+
+### Root cause and fix
+
+Cause, read from the engine log, Prometheus and /health (read only), and the code: the journal did not shed; the records never reached it. `capture_unavailable` here is the client-side `.catch` of a capture job (a finalized execution, a discard execution, or the retirement record of an undispatched request) that expired at the tail of the decision worker's FIFO under the decision deadline of 8 seconds. In the two bursts (04:25Z to 04:45Z and 05:15Z to 05:45Z) the decision worker's queue was 500 to 830 deep with its head 8.5 to 13.7 seconds old, 23 to 48 jobs a second expired, and decisions fell back at 137 to 165 a minute; engine-01 was at 1.0% idle with its two niced decision workers at 22% and 30% of a core. Per minute, `capture_unavailable` correlates with the log's completed-hand observation expiries at 0.949 over 105 minutes (55,701 against 22,794, 2.44 per expiry). The expiry also lost the completed-hand observation itself, which carries the `accepted_hand` record, so the chains would have shown `missing:accepted_hand` and `missing:execution_witness`. The host saturation is a capacity condition and is not fixed here. Full measurements, the mechanism and the code changes: `docs/changelog/2026-09-29-horse-journal-capture-lane.md`.
+
+Fix, in this branch: capture jobs are queued ahead of every unposted decision (a bounded lane of 1,024, behind each other, a barrier commit keeping its place) and they and the completed-hand observation take a 60 second observation deadline instead of the decision's 8 seconds. Six tests in `client.test.ts`, five red on the previous client.
+
+Neither the population, the replay nor the route proof was run on c0c986ad: no declaration was committed and no record was read, because their capture gates cannot be verified on a journal whose capture lost 20% of the offered records in the busy half hours. The runs are owed on the first release that contains the fix and whose own receipts show `capture_unavailable` near zero at comparable load. The fa480b9b `capture_unavailable` bursts (57,554) run the same code and show the same shape; that was not measured against the host.
+
+### Gate status, 6A and 6D on c0c986ad
+
+| Gate                       | Status                     | Evidence                                                                                                                                                                                                                                                   |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | No population was walked on c0c986ad; 64 cells observed on 763e4cec is historical only                                                                                                                                                                    |
+| G2 Inputs                  | implemented but unverified | Request-link and v2 context-receipt presence not read on c0c986ad                                                                                                                                                                                          |
+| G3 Computation             | implemented but unverified | Calculation link and independent qualification not read on c0c986ad                                                                                                                                                                                        |
+| G4 Immutable authority     | implemented but unverified | No declaration committed for c0c986ad because no record was read; the 763e4cec declaration is historical only                                                                                                                                              |
+| G5 Reachability            | defective                  | capture_unavailable 55,701 of 888,955 enqueued (6.27%), 20% in the 05:15Z and 05:30Z bins: execution witnesses and completed-hand observations expire in the decision worker's queue; five-link chains cannot be completed on that capture. Fixed in this branch; unverified |
+| G6 Outcome receipts        | defective                  | Same cause and same fix: the execution and accepted-hand records outcome receipts join to are the ones lost                                                                                                                                                |
+| G7 Independent correctness | verified now               | `TournamentBrainContextCache.test.ts` 25, `TournamentBlindSnapshot.test.ts` 22, `HorsePhase6Tournament.test.ts` 44, 91 of 91 passed 2026-09-29 on main a0cf141c, whose Horse Brain, brain-context, blind and journal sources equal c0c986ad                 |
+| G8 Performance and replay  | implemented but unverified | Replay not run on c0c986ad (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only                                                                                                                                      |
+| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                                         |
+| G10 Publication and use    | implemented but unverified | c0c986ad serves (its receipts run 04:03Z onward); its own archive was not read by its own image, and the fix is not on it                                                                                                                                  |

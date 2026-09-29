@@ -152,6 +152,10 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   protected override eliminationMutationAllowed(): boolean {
     if (super.eliminationMutationAllowed()) return true;
+    // One discovered break's visit finishes once started; stop and abort
+    // still end it (see visitTournamentBreakPage).
+    if (this.tournamentBreakVisitOpen && this.running && !this.eliminationSweepSignal?.aborted)
+      return true;
     if (!this.mixedRecovery || !this.isF06RecoveryOwner() || this.mixedRecovery.completion)
       return false;
     try {
@@ -751,6 +755,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (state.state === 'acknowledged') {
       this.durableTournamentBreaks.delete(state.break_id);
       this.breakDispatchRefusals.delete(state.break_id);
+      this.breakRetirementRefusals.delete(state.break_id);
       this.resolvedTournamentBreakProposals.delete(state.break_id);
       this.tournamentBreakArrivalWakes.delete(state.break_id);
     } else this.durableTournamentBreaks.set(state.break_id, state);
@@ -971,6 +976,21 @@ export class TournamentManager extends TournamentManagerEliminations {
     );
   }
 
+  /** Why the last retirement attempt left this break open (logged once per change). */
+  lastBreakRetirementRefusal(breakId: string): string | null {
+    return this.breakRetirementRefusals.get(breakId) ?? null;
+  }
+
+  private readonly breakRetirementRefusals = new Map<string, string>();
+
+  private noteBreakRetirementRefusal(breakId: string, reason: string): void {
+    if (this.breakRetirementRefusals.get(breakId) === reason) return;
+    this.breakRetirementRefusals.set(breakId, reason);
+    console.warn(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${breakId.slice(0, 8)} not retired: ${reason}`
+    );
+  }
+
   private readonly pendingTournamentParkRequests = new Map<
     string,
     { breakId: string; lifecycle: string; boundaryId: string }
@@ -1086,7 +1106,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       return refuse('source_seat_unfunded_or_unbound');
     const others = await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
     if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
-    if (!others) return refuse('destinations_unread');
+    if (!others) return refuse(`destinations_unread:${this.destinationReadRefusal}`);
     const source: BalancerTable = {
       tableId: state.source_table_id,
       playerCount: rows.length,
@@ -1236,20 +1256,105 @@ export class TournamentManager extends TournamentManagerEliminations {
     return next;
   }
 
+  /**
+   * THE BREAK A SWEEP DISCOVERED IS THE BREAK IT FINISHES (2026-09-29).
+   *
+   * Every step of a break visit asks `eliminationMutationAllowed()`, and that
+   * answer turns false the moment the sweep's five-second work budget is
+   * spent. So a visit that began late in an admission stopped wherever the
+   * clock ran out - after `fn_f06_break_state`, inside the destination read
+   * (`destinations_unread`), between the custody claim and the close - and the
+   * next admission's discovery had already advanced the server cursor to the
+   * NEXT operation. A half-visited break then waited one whole round of every
+   * open operation, one operation per admitted balance stage, before anyone
+   * looked at it again.
+   *
+   * Production 2026-09-29, engine 41b91390 after the 03:55Z restart: the
+   * elimination scheduler had 223 managers queued on four slots with an
+   * oldest wait of 277 s. $100 Freeroll 6:00 AM (87a68e55) held seven open
+   * operations and its discovery cursor went from revision 28 to 29 in
+   * fifteen minutes (04:22-04:37Z): break 390e1e90 was visited once and moved
+   * its three players, and nothing else was looked at. $100 Freeroll 6:00 PM
+   * (cb8f2dd1) held five and was visited once, at 04:30:36Z, where the budget
+   * ran out inside the destination read (`Break f1af44bb members not
+   * dispatched: destinations_unread`). Two begun breaks whose every member
+   * had already moved (192437a7, 4576ca30) and three close_confirmed breaks
+   * still in the custody of dead generations (7b44499f, 086b55a3, eb53ed4f)
+   * needed only their claim, close and ACK, and got none of them. The path
+   * itself works: aec45ff6 (source 54f49f08), held by dead generation
+   * b16497dd, was claimed, acknowledged and released the moment the live
+   * generation reached it.
+   *
+   * The bust stage fixed the same livelock on 2026-09-27 with its batch
+   * window: the clock decides only whether a pass may START. Breaks now follow
+   * the same rule. Discovering one operation and visiting it is one unit: the
+   * window opens before the discovery call advances the cursor and closes
+   * when that one operation's visit returns, so the budget can no longer
+   * strand a discovered break half-visited. The unit is bounded - one
+   * operation, at most ten members, a fixed sequence of receipted doors - and
+   * manager stop and the sweep's abort still end it. After each unit the clock
+   * is asked again, so further operations are visited in the same admission
+   * only while budget remains, each at most once per pass. The balancer's own
+   * planning reads (checkTableBalance steps 1 and 2) and every other stage
+   * still answer to the budget exactly as before. A cursor conflict
+   * (every new lease generation starts at revision 0) returns the cursor's
+   * revision, and the adopted revision is used at once instead of costing the
+   * whole admission.
+   */
+  private tournamentBreakVisitOpen = false;
+
   /** A refused prefix never prevents the next discovered operation being visited. */
   protected async visitTournamentBreakPage(
     visit: (state: TournamentTableBreakState) => Promise<void>
   ): Promise<boolean> {
-    const page = await this.discoverTournamentBreaks();
-    if (page === null) return false;
-    // One durable page item per pass prevents a slow first item from forever
-    // hiding the rest of a pre-advanced page. Alternate retained ACK cleanup
-    // with discovery so a committed/lost ACK can release its local reservation.
-    const retainedId = [...this.pendingTournamentCleanupKinds.keys()].find(
-      (id) => !page.some((op) => op.break_id === id)
-    );
+    const visited = new Set<string>();
+    let pages = 0;
+    for (;;) {
+      if (!this.eliminationMutationAllowed()) return pages > 0;
+      if (pages > 0 && this.eliminationWorkBudgetExpired()) return true;
+      this.tournamentBreakVisitOpen = true;
+      let fresh = 0;
+      try {
+        let page = await this.discoverTournamentBreaks();
+        // The conflict carried the cursor's revision; ask once more with it.
+        if (page === null && this.eliminationMutationAllowed())
+          page = await this.discoverTournamentBreaks();
+        if (page === null) {
+          this.noteBreakDiscoveryRefusal('cursor_revision_conflict_twice');
+          return pages > 0;
+        }
+        this.noteBreakDiscoveryRefusal(null);
+        pages += 1;
+        const unseen = page.filter((op) => !visited.has(op.break_id));
+        fresh = unseen.length;
+        if (!(await this.visitTournamentBreakWork(unseen, pages === 1, visit, visited)))
+          return pages > 1;
+      } finally {
+        this.tournamentBreakVisitOpen = false;
+      }
+      // An empty page, or a wrap back to an operation already visited in this
+      // pass, means every open operation has had its visit.
+      if (fresh === 0) return true;
+    }
+  }
+
+  private async visitTournamentBreakWork(
+    page: TournamentTableBreakState[],
+    includeRetained: boolean,
+    visit: (state: TournamentTableBreakState) => Promise<void>,
+    visited: Set<string>
+  ): Promise<boolean> {
+    // One durable page item per discovery prevents a slow first item from
+    // forever hiding the rest of a pre-advanced page. Alternate retained ACK
+    // cleanup with discovery so a committed/lost ACK can release its local
+    // reservation.
+    const retainedId = includeRetained
+      ? [...this.pendingTournamentCleanupKinds.keys()].find(
+          (id) => !page.some((op) => op.break_id === id)
+        )
+      : undefined;
     const retained = retainedId ? this.durableTournamentBreaks.get(retainedId) : undefined;
-    this.tournamentBreakCleanupFirst = !this.tournamentBreakCleanupFirst;
+    if (includeRetained) this.tournamentBreakCleanupFirst = !this.tournamentBreakCleanupFirst;
     const work = retained
       ? this.tournamentBreakCleanupFirst
         ? [retained, ...page]
@@ -1262,6 +1367,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     for (const state of work) {
       if (!this.eliminationMutationAllowed()) return false;
+      visited.add(state.break_id);
       try {
         await visit(state);
       } catch (error) {
@@ -1274,6 +1380,17 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (page.length)
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
     return true;
+  }
+
+  private breakDiscoveryRefusal: string | null = null;
+
+  private noteBreakDiscoveryRefusal(reason: string | null): void {
+    if (this.breakDiscoveryRefusal === reason) return;
+    this.breakDiscoveryRefusal = reason;
+    if (reason)
+      console.warn(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Break discovery did not run: ${reason}`
+      );
   }
 
   /** Exact original source kept through no-start, movement and final ACK. */
@@ -1571,11 +1688,15 @@ export class TournamentManager extends TournamentManagerEliminations {
       await this.finishAcknowledgedTournamentBreak(state);
       return;
     }
-    if (state.terminal_handoff_required) return;
+    // Every early exit below names itself (CLAUDE.md 10.86 rule 1): a break
+    // that is not retired says why, once per change of reason.
+    const refuse = (reason: string): void =>
+      this.noteBreakRetirementRefusal(state.break_id, reason);
+    if (state.terminal_handoff_required) return refuse('terminal_handoff_required');
     const stoppedOriginal = this.bindStoppedOriginalBreak(state);
     const managerLifecycle = this.captureLifecycleToken();
     if (stoppedOriginal && (!managerLifecycle || !this.lifecycleIsCurrent(managerLifecycle)))
-      return;
+      return refuse('original_owner_lifecycle_changed');
     if (
       !stoppedOriginal &&
       state.state !== 'close_confirmed' &&
@@ -1583,12 +1704,19 @@ export class TournamentManager extends TournamentManagerEliminations {
         !state.members.length ||
         state.members.some((member) => !member.winner_request_id))
     )
-      return;
+      return refuse(
+        state.state === 'begun'
+          ? `members_unresolved:${state.members.filter((m) => !m.winner_request_id).length}_of_${state.members.length}`
+          : `state_not_retirable:${state.state}`
+      );
     const generation = this.getTournamentLeaseGeneration();
-    if (!generation || !this.eliminationMutationAllowed()) return;
+    if (!generation || !this.eliminationMutationAllowed())
+      return refuse('manager_authority_unavailable');
     const rpc = this.tableBreakRpc();
     const fresh = await this.reconcileTournamentBreak(state);
-    if (!fresh.ok || fresh.terminal_handoff_required || !this.eliminationMutationAllowed()) return;
+    if (!fresh.ok) return refuse(`reconcile_refused:${fresh.reason ?? 'no_reason'}`);
+    if (fresh.terminal_handoff_required) return refuse('terminal_handoff_required');
+    if (!this.eliminationMutationAllowed()) return refuse('manager_authority_unavailable');
     if (stoppedOriginal && (!managerLifecycle || !this.lifecycleIsCurrent(managerLifecycle)))
       throw new Error('F06 original retirement owner changed');
     if (fresh.state === 'acknowledged') {
@@ -1861,6 +1989,12 @@ export class TournamentManager extends TournamentManagerEliminations {
     return openTables.length === 1 && openTables[0]?.id === tableId;
   }
 
+  /**
+   * Why the last destination read answered null. `destinations_unread` used to
+   * be the whole message; it now carries this (CLAUDE.md 10.86 rule 1).
+   */
+  private destinationReadRefusal = 'unknown';
+
   private async eligibleBreakDestinations(
     sourceId: string,
     breakId: string
@@ -1871,9 +2005,21 @@ export class TournamentManager extends TournamentManagerEliminations {
       .eq('tournament_id', this.tournamentId)
       .in('status', ['running', 'waiting', 'active'])
       .or('is_deleted.is.null,is_deleted.eq.false');
-    if (!this.eliminationMutationAllowed() || error || !data) return null;
+    if (!this.eliminationMutationAllowed()) {
+      this.destinationReadRefusal = 'mutation_not_allowed';
+      return null;
+    }
+    if (error || !data) {
+      this.destinationReadRefusal = `tables_unread:${error?.message ?? 'no data'}`;
+      return null;
+    }
     const eligible = data.map((row) => String(row.id)).filter((id) => id !== sourceId);
-    return this.loadBalancerTables(eligible, 'breakReplacement', breakId);
+    const board = await this.loadBalancerTables(eligible, 'breakReplacement', breakId);
+    if (!board)
+      this.destinationReadRefusal = this.eliminationMutationAllowed()
+        ? 'balancer_snapshot_incomplete'
+        : 'mutation_not_allowed';
+    return board;
   }
 
   protected async repairTournamentBreakDestinations(
@@ -1893,7 +2039,9 @@ export class TournamentManager extends TournamentManagerEliminations {
       if (!destinations || !this.eliminationMutationAllowed()) {
         this.noteBreakDispatchRefusal(
           state.break_id,
-          destinations ? 'mutation_not_allowed' : 'destinations_unread'
+          destinations
+            ? 'mutation_not_allowed'
+            : `destinations_unread:${this.destinationReadRefusal}`
         );
         return current;
       }

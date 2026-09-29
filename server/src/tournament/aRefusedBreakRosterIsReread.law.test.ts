@@ -259,9 +259,13 @@ describe('a break preparation that does nothing says why', () => {
       },
     ],
     [
-      'destinations_unread',
+      // The read names why it answered null (2026-09-29, 10.86 rule 1).
+      'destinations_unread:tables_unread:canceling statement due to statement timeout',
       (m: any) => {
-        m.eligibleBreakDestinations = vi.fn(async () => null);
+        m.eligibleBreakDestinations = vi.fn(async () => {
+          m.destinationReadRefusal = 'tables_unread:canceling statement due to statement timeout';
+          return null;
+        });
       },
     ],
     [

@@ -447,4 +447,3 @@ describe('a held level on a spread field asks for its balance pass', () => {
     expect(held).toContain('this.askForConsolidationIfSpread();');
   });
 });
-

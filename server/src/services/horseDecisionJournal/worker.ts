@@ -1,6 +1,5 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { HorseDecisionJournalStore, horseJournalCapacityReason } from './store.js';
-import { validateHorseJournalRecord } from './record.js';
 import { horseJournalFailureKind } from './failure.js';
 
 if (isMainThread || !parentPort) throw Error('Horse journal requires its private worker');
@@ -51,7 +50,9 @@ try {
       const batch = message as { type?: string; records?: unknown[] };
       if (batch?.type !== 'APPEND' || !Array.isArray(batch.records) || batch.records.length > 16)
         throw Error('Invalid batch');
-      for (const record of batch.records) validateHorseJournalRecord(record);
+      // appendBatch validates every record before it writes anything (the
+      // legacy spool and the archive both do), so this thread does not walk
+      // each record's body a second time on its way in.
       const records = batch.records as import('./record.js').HorseJournalRecord[];
       const statuses = store.appendBatch(records);
       port.postMessage({

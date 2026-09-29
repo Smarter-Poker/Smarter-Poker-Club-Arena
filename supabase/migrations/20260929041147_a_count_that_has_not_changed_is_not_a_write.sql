@@ -124,7 +124,7 @@ BEGIN
 END $function$;
 
 REVOKE ALL ON FUNCTION public.fn_sync_club_table_counts() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_sync_club_table_counts() FROM anon;
+REVOKE ALL ON FUNCTION public.fn_sync_club_table_counts() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.fn_sync_club_table_counts() FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_sync_club_table_counts() TO service_role;
 

@@ -78,6 +78,19 @@ CREATE TRIGGER fault BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION 
 CREATE FUNCTION public.fn_cash_earning_club(p_hand_id uuid, p_table_id uuid, p_player_id uuid, p_source_club uuid, p_union_id uuid)
   RETURNS uuid LANGUAGE sql AS 'SELECT $4';
 
+-- The weekly accounting lane, stubbed at the fixture boundary. The real
+-- fn_lock_cash_bank_accounting_week reads the accounting agreement and routed
+-- settlement tables, and each one this fixture adds only reveals the next:
+-- accounting_agreement_history, then accounting_routed_settlement_runs. That
+-- whole subsystem is not what this probe proves. Naming the function here
+-- stops the closure walker at it, the same way auth.uid() and auth.role() are
+-- stopped above, and leaves the probe on its actual subject: a chip-journal
+-- write surviving failure and replay. The lane's own lock mode is guarded by
+-- scripts/ci/check-accounting-week-lock-mode.mjs and proved by
+-- scripts/ci/test-accounting-week-lane-shared.py.
+CREATE FUNCTION public.fn_lock_cash_bank_accounting_week(p_club_id uuid, p_game_union_id uuid, p_banked_at timestamptz)
+  RETURNS void LANGUAGE sql AS 'SELECT NULL::void';
+
 CREATE OR REPLACE FUNCTION public.fn_ca_escrow_apply(p_tournament_id uuid, p_what text, p_gross_in numeric DEFAULT 0, p_fee_entries_in numeric DEFAULT 0, p_satellite_fee_in numeric DEFAULT 0, p_bounty_in numeric DEFAULT 0, p_overlay_in numeric DEFAULT 0, p_satellite_in numeric DEFAULT 0, p_prize_out numeric DEFAULT 0, p_bounty_out numeric DEFAULT 0, p_fee_out numeric DEFAULT 0, p_refund numeric DEFAULT 0, p_reserve_out numeric DEFAULT 0, p_reserve_in numeric DEFAULT 0)
  RETURNS void
  LANGUAGE plpgsql

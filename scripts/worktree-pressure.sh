@@ -63,6 +63,21 @@ tree_count() {
 read -r FREE TIGHTEST_FS <<< "$(free_gib)"
 TREES="$(tree_count)"
 
+# WHERE THIS TREE LIVES (2026-09-29). 490 of the 659 trees on this machine were
+# on the boot disk, because scripts/agent-workspace.sh defaulted there while
+# AGENTS.md said the SSD. The default is fixed; this says so to anyone still
+# pushing from a tree that was made before it was.
+THIS_TREE="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+case "${THIS_TREE:-}" in
+  /Volumes/*) ;;
+  "") ;;
+  *)
+    if [ -d /Volumes/SmarterWork/agent-work ]; then
+      echo "[worktree-pressure] this tree is on the boot disk ($THIS_TREE); new trees go to /Volumes/SmarterWork/agent-work (scripts/agent-workspace.sh does that now)." >&2
+    fi
+    ;;
+esac
+
 # "Could not tell" is its own outcome and is never reported as healthy.
 if [ -z "${FREE:-}" ] || [ -z "${TREES:-}" ] || [ "${TREES:-0}" = "0" ]; then
   echo "[worktree-pressure] could not read free space or the worktree list; not judging." >&2
@@ -78,9 +93,14 @@ if [ "$FREE" -lt "$FREE_GIB_FLOOR" ] || [ "$TREES" -gt "$TREE_CEILING" ]; then
 
     bash scripts/prune-stale-worktrees.sh --dry-run   # what would go
     bash scripts/prune-stale-worktrees.sh             # clean, pushed, idle 72h
+    bash scripts/agent-tree-janitor.sh                # and the weight inside
+    bash scripts/agent-tree-janitor.sh --apply        # trees that keep their files
 
   Trees held as (dirty) or (unpushed!) are somebody's unsaved work and are
-  never removed. Push them, or say why they are staying.
+  never removed. Push them, or say why they are staying. The janitor above is
+  for exactly those: it takes node_modules and dist out of a tree nobody has
+  touched for days, which is what the disk is actually full of, and leaves
+  every file the agent wrote where it is.
 MSG
 fi
 exit 0

@@ -1,0 +1,30 @@
+{
+  "_owner": "perf/union-pnl-inventory-touches. NOT YET APPLIED when pushed (2026-09-29): migration 20260929044303_a_union_close_reads_narrow_projections_not_wide_rows is applied by the accounting coordinator after 20260929001003 (its preimage guard refuses any other order), then its throttled backfill runs to completion before the Midway close. Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": [
+    "union_pnl_inventory_touches",
+    "union_pnl_cash_outcome_touches",
+    "union_pnl_credit_touches",
+    "union_pnl_projection_build"
+  ],
+  "functions": [
+    "fn_union_pnl_compact_participants",
+    "fn_union_pnl_cash_outcome_touch_row",
+    "fn_union_pnl_inventory_touch",
+    "fn_union_pnl_cash_outcome_touch",
+    "fn_union_pnl_credit_touch",
+    "fn_union_pnl_projection_build_guard",
+    "fn_union_pnl_projection_ready",
+    "fn_union_pnl_projection_build_step",
+    "fn_union_pnl_projection_build_pending",
+    "fn_union_pnl_projection_status",
+    "fn_union_pnl_projection_verify",
+    "fn_union_pnl_touched_registrations",
+    "fn_union_pnl_tournament_in_union",
+    "fn_union_pnl_first_inventory_operation",
+    "fn_union_pnl_week_shaped_hands",
+    "fn_union_pnl_week_hand_lines",
+    "fn_union_pnl_week_union_credits",
+    "fn_union_pnl_tournament_entry_club_of",
+    "sp_union_pnl_projection_build"
+  ]
+}

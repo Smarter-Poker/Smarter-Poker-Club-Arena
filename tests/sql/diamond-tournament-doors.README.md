@@ -4,7 +4,7 @@
 > README, under "The lifecycle cases".** Run them with
 > `python3 tests/sql/run-diamond-tournament-lifecycle.py`. This first half
 > describes the base and its 79 doors; that runner loads the base, this
-> capture, a second delta, a second capture of 22 more doors, a seed and the
+> capture, a second delta, a second capture of 26 more doors, a seed and the
 > cases.
 
 This is the base of the Diamond tournament lifecycle fixture: a private
@@ -134,7 +134,7 @@ is on when the cases finish.
 | #   | File                                      | What it is                                                                                                          |
 | --- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 5   | `diamond-tournament-lifecycle-schema.sql` | two relations, four `tournaments` columns and four `tournaments` constraints the base lacks, sliced verbatim        |
-| 6   | `diamond-tournament-lifecycle-doors.sql`  | 22 more installed doors, md5-pinned, plus the nine `tournaments` triggers production carries that the base does not |
+| 6   | `diamond-tournament-lifecycle-doors.sql`  | 26 more installed doors, md5-pinned, plus the nine `tournaments` triggers production carries that the base does not |
 | 7   | `diamond-tournament-lifecycle-seed.sql`   | one Diamond arena, four synthetic accounts, the staff account, the arena settings row and the MTT admission ABI     |
 | 8   | `diamond-tournament-lifecycle-cases.sql`  | the cases                                                                                                           |
 
@@ -158,6 +158,14 @@ runs. So the 22 functions the create path needs are captured the same md5-pinned
 way, 20 of them recovered from bytes already committed in this repository and 2
 transported from production in this session, and the nine INSERT triggers are
 installed in production's own `pg_get_triggerdef()` text.
+
+Four more joined them for the Phase 9 cross-format conservation cases: the
+prize ladder the terminal prices every paid place with
+(`fn_ca_prize_ladder_versioned` and its two versions, `fn_ca_prize_ladder` and
+`fn_ca_prize_ladder_v2`) and the final-field generator entry close commits
+(`fn_ca_payout_structure`). All four are pure functions, transported from
+production by a read-only `pg_get_functiondef()` and re-checked against the
+live md5 on 2026-09-29; the capture carries 26.
 
 ## The arena's membership boundary, and how the seed satisfies it
 
@@ -196,3 +204,11 @@ The changelog,
 `docs/changelog/2026-09-20-the-diamond-tournament-lifecycle-cases-run.md`,
 lists case by case what runs, what each one asserts, and the exact place the
 funded half stops.
+
+Cases 9 to 13 are the Phase 9 cross-format conservation cases: one table of
+every Diamond format the create door admits (adding a format is adding a row),
+capped exposure, the closed switch, cancellation before launch and the prize
+ladder's rounding at both units.
+`docs/changelog/2026-09-29-diamond-phase-9-cross-format-conservation.md` says
+what they prove, what the funded half still waits on, and the ladder defect
+they found.

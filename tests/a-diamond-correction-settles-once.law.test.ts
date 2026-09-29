@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { migrationNames, migrationText } from './helpers/migrationCorpus';
-import { sliceBetween } from './helpers/sourceWindow';
+import { sliceBetween, sliceSqlStatement } from './helpers/sourceWindow';
 
 const NAME = migrationNames()
   .filter((n) => n.endsWith('_a_diamond_correction_settles_once.sql'))
@@ -52,14 +52,9 @@ const WRAPPERS = section(
 );
 const FINAL = code(section('-- 5. THE ESTATE IS AS IT WAS', 'RAISE NOTICE'));
 
-/** One function's text, from its CREATE to the end of its dollar-quoted body. */
-const fn = (src: string, name: string): string => {
-  const open = src.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
-  expect(open, `${name} is missing`).toBeGreaterThan(-1);
-  const start = src.indexOf('$function$', open);
-  const end = src.indexOf('$function$', start + 10);
-  return src.slice(open, end + 10);
-};
+/** One function's text: its CREATE statement, through the semicolon after its body. */
+const fn = (src: string, name: string): string =>
+  sliceSqlStatement(src, `CREATE OR REPLACE FUNCTION public.${name}(`);
 const DOORS = [
   'fn_ca_diamond_adjustment_propose',
   'fn_ca_diamond_adjustment_approve',
@@ -186,9 +181,10 @@ describe('LAW: a Diamond correction settles once', () => {
   });
 
   it('the legs, the receipt and the settled status stand or fall together, and a refusal is named', () => {
-    const block = SETTLE_CODE.slice(
-      SETTLE_CODE.indexOf('FOREACH v_step IN ARRAY v_plan LOOP'),
-      SETTLE_CODE.indexOf("EXCEPTION WHEN SQLSTATE 'P0961' THEN")
+    const block = sliceBetween(
+      SETTLE_CODE,
+      'FOREACH v_step IN ARRAY v_plan LOOP',
+      "EXCEPTION WHEN SQLSTATE 'P0961' THEN"
     );
     expect(block).toContain(
       "RAISE EXCEPTION 'a Diamond adjustment leg was refused' USING ERRCODE = 'P0961';"

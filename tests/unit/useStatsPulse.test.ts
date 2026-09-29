@@ -72,7 +72,7 @@ describe('useStatsPulse', () => {
     renderHook(() => useStatsPulse({ userId: 'u1', enabled: true, onChange }));
     await flush();
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('ca_player_stats_pulse', { p_user: 'u1' });
+    expect(rpc).toHaveBeenCalledWith('ca_player_stats_pulse', { p_user: 'u1', p_asset: 'chips' });
     expect(onChange).not.toHaveBeenCalled();
 
     rpc.mockResolvedValueOnce(payload('h1#t1'));

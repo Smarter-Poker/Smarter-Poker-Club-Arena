@@ -208,6 +208,10 @@ async function mounted(ui: ReactNode): Promise<HTMLElement> {
 const MIGRATIONS = resolve(__dirname, '../../supabase/migrations');
 const CREATES_FULL = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.ca_player_stats_full\s*\(/i;
 
+/* The newest migration that CARRIES the body. A later migration may edit the
+   function by asserted substitution against the live catalogue, and then its
+   text holds the header line as a fragment but not the body (2026-09-29:
+   20260920065728 added p_asset that way); the scanner must skip it. */
 function latestStatsFullSql(): { file: string; body: string } {
   let latest: { file: string; body: string } | null = null;
   for (const file of readdirSync(MIGRATIONS)
@@ -215,7 +219,7 @@ function latestStatsFullSql(): { file: string; body: string } {
     .sort()) {
     const sql = readFileSync(join(MIGRATIONS, file), 'utf8');
     const at = sql.search(CREATES_FULL);
-    if (at >= 0) latest = { file, body: sql.slice(at) };
+    if (at >= 0 && sql.includes('totals AS (', at)) latest = { file, body: sql.slice(at) };
   }
   if (!latest) throw new Error('no migration creates public.ca_player_stats_full');
   return latest;

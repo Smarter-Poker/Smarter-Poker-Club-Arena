@@ -39,29 +39,31 @@
  *
  * WHAT THIS LAW PINS, AND WHY IT IS SHAPED THIS WAY:
  *
- * The repair has two halves that MUST land together: a migration that gives
- * the fact table an asset dimension and gates projection 4, and a client that
- * asks for a scope. Only the client half can ship in this pull request (a
- * production migration is applied through its own route). A law demanding the
- * SQL alone would simply be red, which teaches everyone to ignore it.
+ * The repair had two halves that MUST land together: a migration that gives
+ * the fact tables an asset dimension and scopes every reader, and a client
+ * that asks for a scope. Until 2026-09-29 only the client half existed, so
+ * this law pinned the two halves to EACH OTHER rather than demanding SQL that
+ * was not there. Both halves landed together on 2026-09-29
+ * (20260920065728_a_diamond_hand_keeps_its_own_statistics): the two tables
+ * carry `asset`, set from the hand by a BEFORE INSERT trigger for every
+ * writer, and every reader takes `p_asset`. So this now pins:
  *
- * So this pins the two halves to EACH OTHER:
+ *   - every stats read in the client carries a scope, always, and sends it;
+ *   - `STATS_RPCS_ARE_SCOPED` is true exactly while that migration is in the
+ *     repository, and the migration labels both tables and scopes all seven
+ *     RPCs;
+ *   - the other three projections still keep Diamond hands out of the chip
+ *     aggregates that have no asset dimension.
  *
- *   - every stats read in the client carries a scope, always;
- *   - a scope the database cannot separate is refused, never answered with
- *     the unscoped figure wearing that scope's label;
- *   - `STATS_RPCS_ARE_SCOPED` is false exactly while the newest definition of
- *     the projection leaves `ca_hand_player_stat` ungated, and true exactly
- *     once it is gated.
- *
- * That last one is the load-bearing part. Land the migration and forget the
- * client, and this goes red. Flip the client flag without the migration, and
- * this goes red. The remaining SQL is written out in
+ * The design is in the migration's header and in
  * `docs/runbooks/diamond-stats-asset-dimension-2026-09-20.md`.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+const rpc = vi.hoisted(() => vi.fn());
+vi.mock('../src/lib/supabase', () => ({ supabase: { rpc } }));
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -116,15 +118,6 @@ function newestProjectionBody(): { file: string; sql: string } {
   throw new Error(`no migration in supabase/migrations/ carries the body of ${PROJECTION}`);
 }
 
-/** The text of projection 4: from its banner to the end of its stat insert. */
-function projectionFourOf(sql: string): string {
-  const start = sql.search(/--\s*Projection 4/i);
-  expect(start, 'projection 4 must be findable by its banner comment').toBeGreaterThan(-1);
-  const after = sql.slice(start);
-  const end = after.search(/DELETE FROM public\.hand_projection_outbox/i);
-  return end === -1 ? after : after.slice(0, end);
-}
-
 describe('chip and Diamond figures never sum', () => {
   describe('every stats read carries a scope', () => {
     it('the scope contract states which asset a figure is denominated in', async () => {
@@ -134,31 +127,43 @@ describe('chip and Diamond figures never sum', () => {
       expect(DIAMOND_STATS).toBe('diamonds');
       expect(CHIP_STATS).not.toBe(DIAMOND_STATS);
 
-      /* A scope the database cannot separate is refused outright. Answering it
-         with the unscoped figure would hand back a chip total under a Diamond
-         heading, which renders perfectly and is a lie. */
+      /* The RPCs separate the assets, so both scopes are answerable, and each
+         read sends the asset it is about - never nothing, which would be the
+         RPC's default and therefore a chip figure whatever the heading. */
       expect(statsScopeIsReadable(CHIP_STATS)).toBe(true);
-      expect(
-        statsScopeIsReadable(DIAMOND_STATS),
-        'until the RPCs can separate the assets, a Diamond read has no answer'
-      ).toBe(false);
-
-      /* And nothing may be sent that the RPCs do not declare: an undeclared
-         argument is a PGRST202 on every stats read in the app. */
-      expect(statsScopeArgs(CHIP_STATS)).toEqual({});
+      expect(statsScopeIsReadable(DIAMOND_STATS)).toBe(true);
+      expect(statsScopeArgs(CHIP_STATS)).toEqual({ p_asset: 'chips' });
+      expect(statsScopeArgs(DIAMOND_STATS)).toEqual({ p_asset: 'diamonds' });
     });
 
-    it('a refused scope returns an unknown and no figures', async () => {
+    it('a Diamond read asks the database for Diamonds and keeps its scope', async () => {
       const { StatsFactsService } = await import('../src/services/StatsFactsService');
-      const { DIAMOND_STATS, STATS_SCOPE_UNREADABLE } = await import('../src/services/statsScope');
+      const { DIAMOND_STATS } = await import('../src/services/statsScope');
 
+      rpc.mockReset();
+      rpc.mockResolvedValueOnce({ data: { points: [], summary: null }, error: null });
       const payload = await StatsFactsService.getEVCurve('some-user', DIAMOND_STATS);
-      expect(payload.error).toBe(STATS_SCOPE_UNREADABLE);
+      expect(rpc).toHaveBeenCalledWith('ca_player_ev_curve', {
+        p_user: 'some-user',
+        p_days: null,
+        p_limit: 5000,
+        p_asset: 'diamonds',
+      });
       expect(payload.scope).toBe(DIAMOND_STATS);
-      expect(
-        payload.points ?? [],
-        'a refused scope must carry no rows at all, not chip rows'
-      ).toHaveLength(0);
+      expect(payload.error).toBeUndefined();
+    });
+
+    it('a one-hand read sends no scope its RPC does not declare', async () => {
+      const { StatsFactsService } = await import('../src/services/StatsFactsService');
+      const { DIAMOND_STATS } = await import('../src/services/statsScope');
+
+      rpc.mockReset();
+      rpc.mockResolvedValueOnce({ data: { found: false }, error: null });
+      const payload = await StatsFactsService.getHandRakeShare('some-hand', DIAMOND_STATS);
+      /* ca_player_hand_rake_share(p_hand_id) reads one hand, which is in one
+         asset already; an undeclared p_asset would be a PGRST202. */
+      expect(rpc).toHaveBeenCalledWith('ca_player_hand_rake_share', { p_hand_id: 'some-hand' });
+      expect(payload.scope).toBe(DIAMOND_STATS);
     });
 
     it('no stats RPC is called anywhere in src/ without a scope', () => {
@@ -191,38 +196,59 @@ describe('chip and Diamond figures never sum', () => {
     });
   });
 
-  describe('ca_hand_player_stat writes are gated per asset', () => {
-    it('the client flag and the projection agree about whether the assets are separable', () => {
-      const { file, sql } = newestProjectionBody();
-      const projectionFour = projectionFourOf(sql);
+  describe('ca_hand_player_stat writes are labelled per asset', () => {
+    it('the client flag and the migration agree that the assets are separable', () => {
+      const dir = join(ROOT, 'supabase', 'migrations');
+      const file = readdirSync(dir)
+        .filter((f) => f.endsWith('_a_diamond_hand_keeps_its_own_statistics.sql'))
+        .sort()
+        .at(-1);
+      expect(
+        file,
+        'the migration that labels and scopes the stats is in the repository'
+      ).toBeTruthy();
+      const sql = readFileSync(join(dir, file!), 'utf8');
 
-      const writesTheFactTable = /INSERT INTO public\.ca_hand_player_stat/i.test(projectionFour);
-      expect(writesTheFactTable, `${file} projection 4 should write ca_hand_player_stat`).toBe(
-        true
+      /* Both tables learn the asset, and it is set from the hand for EVERY
+         writer - not stamped by one writer that another can race. */
+      for (const table of ['ca_hand_player_idx', 'ca_hand_player_stat']) {
+        expect(sql).toMatch(
+          new RegExp(
+            `ALTER TABLE public\\.${table}\\s+ADD COLUMN asset text NOT NULL DEFAULT 'chips'`
+          )
+        );
+        expect(sql).toMatch(
+          new RegExp(
+            `BEFORE INSERT OR UPDATE OF asset, hand_id ON public\\.${table}\\s+FOR EACH ROW EXECUTE FUNCTION public\\.fn_ca_hand_player_row_takes_its_hands_asset\\(\\)`
+          )
+        );
+      }
+
+      /* Every reader takes the asset, its old signature is dropped (an extra
+         defaulted parameter would otherwise be an overload and every call
+         ambiguous), and an unknown asset is refused. */
+      for (const rpcName of UNSCOPED_STATS_RPCS) {
+        expect(sql, `${rpcName} is redefined with p_asset`).toMatch(
+          new RegExp(
+            `\\$f\\$CREATE OR REPLACE FUNCTION public\\.${rpcName}\\([^\\n]*p_asset text DEFAULT 'chips'::text\\)`
+          )
+        );
+        expect(sql, `${rpcName}'s old signature is dropped`).toMatch(
+          new RegExp(`DROP FUNCTION public\\.${rpcName}\\(`)
+        );
+      }
+      expect(sql).toContain(
+        "RAISE EXCEPTION 'unknown stats asset: %', p_asset USING ERRCODE = '22023';"
       );
-
-      /* Gated means projection 4 itself is conditional on the asset, the same
-         way projections 1, 2 and 3 are - or the row it writes carries an asset
-         column so a reader can separate them afterwards. Either repair makes
-         the figures separable; neither has landed yet. */
-      const gatedByFlag = /\bv_diamond\b/.test(projectionFour);
-      const carriesAsset = /\basset\b/i.test(projectionFour);
-      const separable = gatedByFlag || carriesAsset;
 
       const scoped = /export const STATS_RPCS_ARE_SCOPED\s*=\s*true/.test(
         read('src/services/statsScope.ts')
       );
-
       expect(
         scoped,
-        separable
-          ? `${file} now separates Diamond hands in projection 4, so the client must ask for a ` +
-              'scope: set STATS_RPCS_ARE_SCOPED = true in src/services/statsScope.ts and send ' +
-              'p_asset. See docs/runbooks/diamond-stats-asset-dimension-2026-09-20.md.'
-          : `${file} still writes ca_hand_player_stat for Diamond hands with no asset dimension, ` +
-              'so the scoped RPCs cannot exist yet and STATS_RPCS_ARE_SCOPED must stay false. ' +
-              'The remaining SQL is in docs/runbooks/diamond-stats-asset-dimension-2026-09-20.md.'
-      ).toBe(separable);
+        `${file} scopes every stats RPC, so the client must send p_asset: ` +
+          'STATS_RPCS_ARE_SCOPED must be true in src/services/statsScope.ts.'
+      ).toBe(true);
     });
 
     it('the other three projections still keep Diamond hands out', () => {
@@ -239,7 +265,7 @@ describe('chip and Diamond figures never sum', () => {
       const runbook = read('docs/runbooks/diamond-stats-asset-dimension-2026-09-20.md');
       expect(runbook).toContain(PROJECTION);
       expect(runbook).toContain('ca_hand_player_stat');
-      for (const rpc of UNSCOPED_STATS_RPCS) expect(runbook).toContain(rpc);
+      for (const name of UNSCOPED_STATS_RPCS) expect(runbook).toContain(name);
     });
   });
 });

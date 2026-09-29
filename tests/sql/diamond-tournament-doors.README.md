@@ -4,7 +4,7 @@
 > README, under "The lifecycle cases".** Run them with
 > `python3 tests/sql/run-diamond-tournament-lifecycle.py`. This first half
 > describes the base and its 79 doors; that runner loads the base, this
-> capture, a second delta, a second capture of 26 more doors, a seed and the
+> capture, a second delta, a second capture of 41 more doors, a seed and the
 > cases.
 
 This is the base of the Diamond tournament lifecycle fixture: a private
@@ -94,15 +94,16 @@ reason, pinned as a list by the law so none can join quietly:
 - two estate-wide guards that are not tournament doors.
 
 Two further closure members are left at the historical base's text rather than
-captured, because a Diamond event cannot reach either:
-`fn_ca_register_for_tournament_with_ticket_for` (satellite-ticket admission; a
-satellite target is refused at creation) and
+captured, because no case reaches either:
+`fn_ca_register_for_tournament_with_ticket_for` (satellite-ticket admission) and
 `fn_ensure_late_registration_capacity` (late-registration seating; not on the
 pre-start path). If a future case reaches either, capture it first. **Neither
-was reached by the lifecycle cases** (2026-09-20): a satellite target is still
-refused at the creation door, and no case in the lifecycle file seats a late
-registrant, because reaching RUNNING needs the UPDATE half of the trigger chain
-that is not captured yet. Both remain uncaptured, for the same stated reasons.
+was reached by the lifecycle cases** (re-checked 2026-09-29, when the create
+door began admitting satellites): no case registers anybody, with a ticket or
+without, because the closed switch refuses every entry, and no case seats a
+late registrant, because reaching RUNNING needs the UPDATE half of the trigger
+chain that is not captured yet. Both remain uncaptured, for the same stated
+reasons.
 
 ## What this is NOT
 
@@ -164,8 +165,50 @@ prize ladder the terminal prices every paid place with
 (`fn_ca_prize_ladder_versioned` and its two versions, `fn_ca_prize_ladder` and
 `fn_ca_prize_ladder_v2`) and the final-field generator entry close commits
 (`fn_ca_payout_structure`). All four are pure functions, transported from
-production by a read-only `pg_get_functiondef()` and re-checked against the
-live md5 on 2026-09-29; the capture carries 26.
+production by a read-only `pg_get_functiondef()`.
+
+## The refresh of 2026-09-29, and how a capture is refreshed
+
+Three migrations changed the create door that day (the money-key fence,
+satellites, Spins) and others changed doors the capture holds. A refresh reads
+every pin of both captures against production (`md5(pg_get_functiondef(oid))`,
+read-only), re-transports each door that moved with a read-only
+`pg_get_functiondef()`, and rewrites its block, its line in the file's own
+proof list and its manifest entry in one step, so the three can never disagree.
+Twelve doors had moved and were re-pinned (eleven in the first capture, the
+satellite-target guard in the second). Fifteen joined the second capture: the
+satellite and Spin creation paths (`fn_ca_diamond_satellite_target_accepts_new_feeder`,
+`fn_poker_diamond_create_spin`, `fn_poker_diamond_spin_contract`,
+`fn_ca_tournament_recorded_seat_first`), the two INSERT triggers production
+attached to `tournaments` after 2026-09-20 (installed, with their functions),
+and every function the cases execute that rendered differently from production
+(the management-contract and readiness readers the insert chain calls, the blind
+resolver the blind clock calls, the freeze reader, the `tables` counters and
+closing cash-out a Spin's own table reaches, the table-origin validator and the
+Spin draw-contract guard). The retired `a0_tournament_manager_write_scope` is
+dropped from `tables`, `table_seats` and `tournament_players` as it already was
+from `tournaments`. The Spin row needs two tables and the acceptance trigger two
+more; all four are sliced verbatim into the lifecycle delta, and the seed slices
+the published Spin table from the migrations that seed it.
+
+**Measured, not assumed.** With `track_functions` on, the refreshed cases
+execute 174 production functions. 165 render byte-identical to production. The
+other nine are named here so they cannot be mistaken for covered: five run on
+the seed's signup path, which builds the synthetic accounts and is not under
+test (`fn_ca_autoledger`, `fn_ca_mint`, `fn_guard_profile_privileged_columns`,
+`fn_reject_horse_name_on_human`, `generate_referral_code`), and four on the
+UPDATE half of the `tournaments` trigger chain that the cancellation cases
+reach and this capture does not stand up (`fn_ca_fund_overlay_on_lock`,
+`fn_guard_managed_game_lifecycle`, `trg_lock_atomic_final_table_deal_status`,
+and `fn_guard_tournament_completing_claim`, whose trigger production keeps
+disabled). The Spin row's table is written through the base's `tables` trigger
+chain: production attaches 36 triggers there and the base 24 once the retired
+one is dropped, and six production INSERT triggers do not fire on it here
+(`a00_f06_lifecycle`, `tournament_table_inherits_committed_blinds`,
+`union_pnl_original_inventory`, `zz_tables_kill_pot_guard`,
+`zzzz_stamp_table_game_scope`, `zzzz_stamp_table_seat_admission`). The funded
+rehearsal in `docs/evidence/diamond-phase-9-funded-conservation/` runs all of
+them in production.
 
 ## The arena's membership boundary, and how the seed satisfies it
 
@@ -206,9 +249,12 @@ lists case by case what runs, what each one asserts, and the exact place the
 funded half stops.
 
 Cases 9 to 13 are the Phase 9 cross-format conservation cases: one table of
-every Diamond format the create door admits (adding a format is adding a row),
-capped exposure, the closed switch, cancellation before launch and the prize
-ladder's rounding at both units.
-`docs/changelog/2026-09-29-diamond-phase-9-cross-format-conservation.md` says
-what they prove, what the funded half still waits on, and the ladder defect
-they found.
+every Diamond format the create door admits - all seven since 2026-09-29,
+satellites and Spins included (adding a format is adding a row) - capped
+exposure, the closed switch, cancellation before launch and the prize ladder's
+rounding at both units. The funded half, which needs an entry the closed switch
+refuses, is proved by the rolled-back production rehearsal kept in
+`docs/evidence/diamond-phase-9-funded-conservation/`.
+`docs/changelog/2026-09-29-diamond-phase-9-cross-format-conservation.md` and
+`docs/changelog/2026-09-29-diamond-phase-9-every-diamond-format-conserves.md`
+say what each half proves, and the ladder defect the cases found.

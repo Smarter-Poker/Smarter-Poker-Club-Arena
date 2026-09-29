@@ -103,16 +103,23 @@ BEGIN
 END $case1$;
 
 -- The door's refusals, every one of them reached before any row is written.
+-- A satellite and a Spin are formats the door admits (Phase 9, 2026-09-29),
+-- each by its own rules: a satellite names its one target, a Spin takes
+-- nothing a Spin does not keep - an MTT's payout structure least of all.
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('type','satellite'))$q$,
-  'diamond_tournament_format_not_open');
+  'diamond_satellite_requires_a_target');
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('type','spin'))$q$,
-  'diamond_tournament_format_not_open');
+  'diamond_spin_rejects_a_non_spin_configuration');
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('guarantee',1))$q$,
   'diamond_tournament_format_not_open');
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('freeBuy',true))$q$,
   'diamond_tournament_format_not_open');
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('satelliteTargetId','20000000-0000-0000-0000-0000000000aa'))$q$,
-  'diamond_tournament_format_not_open');
+  'diamond_tournament_target_requires_a_satellite_format');
+-- A money key the estate's builder sends and this door does not read is
+-- refused by name rather than dropped (the_chip_legs_refuse_a_diamond_row).
+SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('isRebuy',true))$q$,
+  'diamond_tournament_money_key_not_read');
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('buyIn',20.5))$q$,
   'diamond_tournament_requires_a_whole_positive_buy_in');
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('buyIn',0))$q$,
@@ -144,7 +151,7 @@ SELECT set_config('request.jwt.claims','{}',false);
 SELECT fixture_refuses($q$SELECT fixture_create(fixture_mtt_config())$q$,
   'authentication required');
 SELECT fixture_assert((SELECT count(*)=1 FROM public.tournaments),
-  'registration: fifteen refused configurations and two refused callers wrote no event');
+  'registration: sixteen refused configurations and two refused callers wrote no event');
 SELECT fixture_as('10000000-0000-0000-0000-00000000000f');
 
 -- ===========================================================================
@@ -450,11 +457,11 @@ UPDATE public.tournaments SET started_at=NULL
 -- installed ladder arithmetic at both units (case 13). WHAT ONLY A FUNDED EVENT
 -- CAN PROVE - entries taken, knockouts paid, a terminal settled, a started event
 -- refusing cancellation with every Diamond still in custody - needs
--- tournaments_enabled, which this fixture never opens, and doors this fixture
--- does not capture yet (the launch, the knockout collectors and the terminal).
--- That half is NOT proved here;
--- docs/changelog/2026-09-29-diamond-phase-9-cross-format-conservation.md says
--- exactly what it waits on.
+-- tournaments_enabled, which this fixture never opens. That half is proved by
+-- a rolled-back production rehearsal through the installed doors, kept as
+-- evidence in docs/evidence/diamond-phase-9-funded-conservation/; the changelog
+-- docs/changelog/2026-09-29-diamond-phase-9-every-diamond-format-conserves.md
+-- says which half proves what.
 --
 -- NO NUMBER HERE IS INVENTED. Each row is one of the estate's own committed
 -- configurations:
@@ -465,10 +472,26 @@ UPDATE public.tournaments SET started_at=NULL
 --   pko_under_ten        "Blitz Bounty": buyIn 3, bountyAmount 1
 --   mystery_bounty       "Mystery Wednesday": buyIn 20, bountyAmount 9,
 --                        mysteryBountyMin 0.5, mysteryBountyMax 13
--- the last four from supabase/migrations/20260822110000_midway_weekly_schedule_seed.sql
--- (lines 59, 153, 121 and 148). Thursday Thrill's 25 does not divide by ten,
--- Blitz Bounty's 3 is too small to carry a fee at all, and half of Mystery
--- Wednesday's 9 is 4.5: those are the rounding rows.
+--   satellite            "Sunday Major Satellite": buyIn 5, startingStack 8000,
+--                        maxPlayers 100, minPlayers 4 - without its promised
+--                        satelliteSeats 5, a guarantee, which the door
+--                        refuses by name (asserted below); its target is the
+--                        mtt row, and it starts before it, as a satellite must
+--   spin                 the estate's Spin board: buy-in 1 (the smallest of
+--                        SPIN_BOARD_BUYINS, server/src/services/
+--                        TournamentRecurringService.ts), the Deep Stack of
+--                        SPIN_STACKS (1000, server/src/config/spinSpec.ts) and
+--                        the twelve-level blind ladder the draw receipt carries
+--                        (server/src/tournament/SpinDrawReceipt.ts); its
+--                        multiplier table is the published one the seed
+--                        slices from the migrations
+-- the bounty, PKO, mystery and satellite rows from
+-- supabase/migrations/20260822110000_midway_weekly_schedule_seed.sql (lines 59,
+-- 153, 121, 148 and 114). Thursday Thrill's 25 does not divide by ten, Blitz
+-- Bounty's 3 and the satellite's 5 are too small to carry a fee at all, half of
+-- Mystery Wednesday's 9 is 4.5, and a Spin at a buy-in of one Diamond is the
+-- smallest pool every tier and place must still pay whole: those are the
+-- rounding rows.
 -- ===========================================================================
 SELECT fixture_as('10000000-0000-0000-0000-00000000000f');
 CREATE TABLE fixture_formats(label text PRIMARY KEY, ord int UNIQUE NOT NULL, config jsonb NOT NULL, tournament_id uuid);
@@ -485,17 +508,68 @@ INSERT INTO fixture_formats(label, ord, config) VALUES
    || jsonb_build_object('name','Diamond Fixture Conservation Small PKO','type','progressive_bounty','buyIn',3,'bountyAmount',1)),
  ('mystery_bounty', 6, fixture_mtt_config()
    || jsonb_build_object('name','Diamond Fixture Conservation Mystery','type','mystery_bounty','buyIn',20,'bountyAmount',9,
-                         'mysteryBountyMin',0.5,'mysteryBountyMax',13));
-UPDATE fixture_formats SET tournament_id = fixture_create(config);
+                         'mysteryBountyMin',0.5,'mysteryBountyMax',13)),
+ ('satellite', 7, fixture_mtt_config()
+   || jsonb_build_object('name','Diamond Fixture Conservation Satellite','type','satellite','buyIn',5,
+                         'startingStack',8000,'maxPlayers',100,'minPlayers',4)),
+ ('spin', 8, jsonb_build_object('name','Diamond Fixture Conservation Spin','type','spin','gameVariant','NLH','buyIn',1,
+   'startingStack',1000,'blindStructure',
+   '[{"level":1,"smallBlind":10,"bigBlind":20,"ante":0,"duration":180},{"level":2,"smallBlind":15,"bigBlind":30,"ante":0,"duration":180},{"level":3,"smallBlind":20,"bigBlind":40,"ante":0,"duration":180},{"level":4,"smallBlind":30,"bigBlind":60,"ante":0,"duration":180},{"level":5,"smallBlind":40,"bigBlind":80,"ante":0,"duration":180},{"level":6,"smallBlind":50,"bigBlind":100,"ante":0,"duration":180},{"level":7,"smallBlind":60,"bigBlind":120,"ante":0,"duration":180},{"level":8,"smallBlind":75,"bigBlind":150,"ante":0,"duration":180},{"level":9,"smallBlind":90,"bigBlind":180,"ante":0,"duration":180},{"level":10,"smallBlind":105,"bigBlind":210,"ante":0,"duration":180},{"level":11,"smallBlind":145,"bigBlind":290,"ante":0,"duration":180},{"level":12,"smallBlind":205,"bigBlind":410,"ante":0,"duration":180,"spinContinuation":{"version":1,"anchorLevel":10,"anchorBigBlind":210,"growth":1.4,"roundBigTo":10}}]'::jsonb));
+
+-- A Diamond Spin is created only against an authorized reserve source
+-- (a_diamond_spin_draws_a_whole_prize). Production holds none, so the first
+-- attempt is refused by name. The fixture then authorizes, in this disposable
+-- cluster only, exactly the published table's own worst excess at this buy-in
+-- as the source's cap, and gives the house exactly the cover the table needs -
+-- both read from the contract the create door applies, neither typed here.
+SELECT fixture_refuses($q$SELECT fixture_create((SELECT config FROM fixture_formats WHERE label='spin'))$q$,
+  'diamond_spin_reserve_source_not_authorized');
+DO $spin_source$
+DECLARE c jsonb := (SELECT config FROM fixture_formats WHERE label='spin'); v jsonb;
+BEGIN
+  v := public.fn_poker_diamond_spin_contract((c->>'buyIn')::bigint, (c->>'startingStack')::integer,
+         (SELECT jsonb_agg(jsonb_build_object('multiplier', s.multiplier, 'freq', s.freq,
+                                              'reserveThresholdX', s.reserve_threshold_x) ORDER BY s.multiplier)
+            FROM public.spin_tier_spec s),
+         c->'blindStructure');
+  INSERT INTO public.poker_diamond_spin_reserve_source (id, source_account, max_underwrite_per_spin, authorized_by, ruling)
+  VALUES (1, 'diamond_house', (v->>'worst_excess')::bigint, 'lifecycle fixture',
+          'Disposable fixture cluster only: the published table''s own worst excess, read from its contract. Not a ruling.');
+  INSERT INTO public.ca_diamond_house (id, balance) VALUES (1, (v->>'required_cover')::bigint)
+  ON CONFLICT (id) DO UPDATE SET balance = EXCLUDED.balance;
+END $spin_source$;
+
+-- Created in order: the satellite names the mtt row as its target and starts
+-- before it (the door's own default start for the target is a minute out).
+DO $create$
+DECLARE f record; c jsonb;
+BEGIN
+  FOR f IN SELECT * FROM fixture_formats ORDER BY ord LOOP
+    c := f.config;
+    IF f.label = 'satellite' THEN
+      c := c || jsonb_build_object('satelliteTargetId', (SELECT tournament_id FROM fixture_formats WHERE label='mtt'),
+                                   'startTime', now());
+    END IF;
+    UPDATE fixture_formats SET config = c, tournament_id = fixture_create(c) WHERE label = f.label;
+  END LOOP;
+END $create$;
+-- The committed satellite as the estate wrote it promises five seats: a
+-- guarantee, which is Dan's, refused by name rather than created.
+SELECT fixture_refuses($q$SELECT fixture_create((SELECT config FROM fixture_formats WHERE label='satellite')
+  || jsonb_build_object('satelliteSeats',5))$q$, 'diamond_satellite_seat_guarantee_not_open');
 
 DO $case9$
 DECLARE f record; t public.tournaments%ROWTYPE; s record; v_total numeric; v_ratio numeric;
         v_chip_fee numeric; v_fee numeric; v_is_bounty boolean;
+        g public.tournaments%ROWTYPE; k public.poker_diamond_spin_contracts%ROWTYPE;
 BEGIN
   FOR f IN SELECT * FROM fixture_formats ORDER BY ord LOOP
     SELECT * INTO t FROM public.tournaments WHERE id=f.tournament_id;
     v_total := (f.config->>'buyIn')::numeric;
-    v_ratio := CASE WHEN t.max_players IS NOT NULL AND t.max_players <= 2 THEN 0.05 ELSE 0.10 END;
+    -- A Spin carries no per-entry fee at any unit (its table's expectation is
+    -- the edge); every other format's fee is the estate's ratio.
+    v_ratio := CASE WHEN t.variant = 'spin' THEN 0
+                    WHEN t.max_players IS NOT NULL AND t.max_players <= 2 THEN 0.05 ELSE 0.10 END;
     -- What a chip event keeps as its fee (unit 1) and what the Diamond unit
     -- keeps (unit 100), both from the installed floor, never from this file.
     v_chip_fee := public.fn_ca_unit_floor_cents(round(v_total*100*v_ratio)::bigint, 1) / 100.0;
@@ -525,15 +599,44 @@ BEGIN
         format('%s: the advertised chest range is %s to %s whole Diamonds; the fraction of %s x %s is cut, not paid',
                f.label, t.mystery_bounty_min, t.mystery_bounty_max, t.bounty_amount, f.config->>'mysteryBountyMin'));
     END IF;
+    IF t.variant = 'satellite' THEN
+      SELECT * INTO g FROM public.tournaments WHERE id = t.satellite_target_id;
+      PERFORM fixture_assert(t.tournament_type = 'SATELLITE' AND t.satellite_seats = 0 AND t.late_reg_levels = 0
+        AND NOT t.is_rebuy AND NOT t.is_reentry AND NOT t.add_on_available
+        AND g.id = (SELECT tournament_id FROM fixture_formats WHERE label = 'mtt')
+        AND public.fn_poker_diamond_tournament(g.id) AND t.start_time < g.start_time
+        AND g.buy_in_amount + g.buy_in_fee = trunc(g.buy_in_amount + g.buy_in_fee),
+        format('%s: a freezeout feeding one Diamond target, starting before it; its ticket is the target''s whole %s-Diamond entry',
+               f.label, g.buy_in_amount + g.buy_in_fee));
+    END IF;
+    IF t.variant = 'spin' THEN
+      SELECT * INTO k FROM public.poker_diamond_spin_contracts WHERE tournament_id = t.id;
+      PERFORM fixture_assert(t.tournament_type = 'SPIN' AND t.max_players = 3 AND t.min_players = 3 AND t.table_size = 3
+        AND public.fn_ca_tournament_recorded_format(t.id) = 'spin-v1' AND COALESCE(t.prize_pool, 0) = 0
+        AND k.buy_in = v_total AND k.rule_sha256 ~ '^[0-9a-f]{64}$'
+        AND k.worst_excess = (SELECT max_underwrite_per_spin FROM public.poker_diamond_spin_reserve_source WHERE id = 1),
+        format('%s: three seats, undrawn, its multiplier table pinned by sha256 in its contract, the source''s cap its own worst excess (%s)',
+               f.label, k.worst_excess));
+      PERFORM fixture_assert(jsonb_array_length(k.rule_manifest->'tiers') = (SELECT count(*) FROM public.spin_tier_spec)
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(k.rule_manifest->'tiers') tier
+           CROSS JOIN LATERAL jsonb_array_elements(tier->'payout_structure') pl
+           WHERE (tier->>'multiplier')::numeric * k.buy_in <> trunc((tier->>'multiplier')::numeric * k.buy_in)
+              OR (tier->>'multiplier')::numeric * k.buy_in * (pl->>'percentage')::numeric / 100
+                 <> trunc((tier->>'multiplier')::numeric * k.buy_in * (pl->>'percentage')::numeric / 100)),
+        format('%s: rounding at the Diamond unit - every tier''s pool and every place of its ladder is a whole Diamond at a buy-in of %s',
+               f.label, k.buy_in));
+    END IF;
   END LOOP;
-  PERFORM fixture_assert((SELECT count(*) = 6 FROM fixture_formats WHERE tournament_id IS NOT NULL),
+  PERFORM fixture_assert((SELECT count(*) = 8 FROM fixture_formats WHERE tournament_id IS NOT NULL),
     'every format in the table was created through the door');
 END $case9$;
 
 -- The table is held to the door: every tournament type the estate names is
--- either a row above or refused by the create door by name. Satellites and
--- spins are refused today; the day the captured door admits one, this fails
--- until its row is added, so no format can join the arena untested.
+-- either a row above or refused by the create door by name. Since 2026-09-29
+-- the door admits all seven and every one is a row; a format the door stops
+-- admitting fails here until its row goes, and a new one cannot join the arena
+-- without a row, so no format joins untested.
 DO $case9b$
 DECLARE v_type text;
 BEGIN
@@ -588,7 +691,7 @@ BEGIN
     AND (SELECT count(*) = 0 FROM public.poker_diamond_movements)
     AND (SELECT count(*) = 0 FROM public.poker_diamond_custody)
     AND (SELECT sum(diamonds) = 2000 FROM public.profiles),
-    'capped exposure: thirty-six refused over-payments wrote no ledger line, no movement, no custody and moved no wallet');
+    'capped exposure: forty-eight refused over-payments wrote no ledger line, no movement, no custody and moved no wallet');
 END $case10$;
 
 -- ===========================================================================
@@ -657,8 +760,8 @@ BEGIN
   END LOOP;
   PERFORM fixture_assert((SELECT count(*) = 0 FROM public.poker_diamond_tournament_ledger)
     AND (SELECT count(*) = 0 FROM public.poker_diamond_movements)
-    AND (SELECT count(*) = 6 FROM public.tournament_cancellation_receipts r JOIN fixture_formats ff USING (tournament_id)),
-    'cancellation: six cancellations, six replays and twelve zero fee settlements wrote exactly six receipts and no money line');
+    AND (SELECT count(*) = 8 FROM public.tournament_cancellation_receipts r JOIN fixture_formats ff USING (tournament_id)),
+    'cancellation: eight cancellations, eight replays and sixteen zero fee settlements wrote exactly eight receipts and no money line');
 END $case12$;
 
 -- ===========================================================================

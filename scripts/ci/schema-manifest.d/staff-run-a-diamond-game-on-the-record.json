@@ -1,0 +1,15 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/feat/staff-run-a-diamond-game",
+  "_comment": "20260929213000 staff_run_a_diamond_game_on_the_record: five platform-staff Diamond doors (edit and close a cash table, remove a player, cancel an event, open a seat-first board) and the two owner-only audit helpers every Diamond configuration door files its admin_audit_log row through. No new table or column.",
+  "tables": [],
+  "functions": [
+    "fn_poker_diamond_staff_audit",
+    "fn_poker_diamond_audit_tournament_created",
+    "fn_poker_diamond_edit_cash_table",
+    "fn_poker_diamond_close_cash_table",
+    "fn_poker_diamond_remove_tournament_player",
+    "fn_poker_diamond_cancel_tournament",
+    "fn_poker_diamond_create_seat_first_board"
+  ],
+  "columns": {}
+}

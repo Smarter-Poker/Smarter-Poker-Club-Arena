@@ -50,8 +50,12 @@ const TESTS = join(ROOT, 'tests');
  * law test, a ratchet, a CI script or a docs/laws.d entry still reads by path.
  * Lower this when an orphan is routed or deleted. Raising it requires saying
  * why in the PR body.
+ * Raised to 33 on 2026-09-29 for src/services/DiamondIncidentReviewService.ts,
+ * the typed client of the Diamond incident review doors (migration
+ * 20260929211500), built without its screen by instruction. The Phase 10 staff
+ * surface (audit item 8) imports it and lowers this back.
  */
-const BASELINE_ORPHANS = 32;
+const BASELINE_ORPHANS = 33;
 
 /** Entry points: reachable by definition, whatever imports them.
  * src/diamond-test.tsx is the module diamond-test.html loads: the standalone

@@ -818,8 +818,10 @@ GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_cancel_tournament(uuid) TO aut
 -- every seat, waiting. A Spin's door (fn_poker_diamond_create_spin) already
 -- opens a Spin's table; a heads-up sit-and-go had none, so it could be listed
 -- and never sat. Anything that is not a Spin or a two-seat sit-and-go is
--- refused before anything is written. A Diamond Spin is still refused by the
--- creation door until a reserve source is authorized.
+-- refused before anything is written. A board leaves two audit rows, one per
+-- door: the creation door's for the event and this door's for its table. A
+-- Diamond Spin is still refused by the creation door until a reserve source is
+-- authorized.
 CREATE FUNCTION public.fn_poker_diamond_create_seat_first_board(p_config jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql

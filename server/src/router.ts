@@ -203,6 +203,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'running',
   'warned',
   'queuedAs',
+  'consolidating',
+  'runningLane',
   'dirtyAs',
   'queueTicket',
   'enqueuedAt',

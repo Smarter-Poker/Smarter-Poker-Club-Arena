@@ -1452,17 +1452,30 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // engines has proved the platform thawed.
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
+          // A retry asked for inside the balancer is a break or a seat move
+          // that is not finished. While one is outstanding, every sweep this
+          // manager is owed comes from the scheduler's consolidation lane,
+          // because a field spread one player to a table cannot deal until
+          // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
+          const redrivesBeforeBalance = this.urgentRedrivesRequested;
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired()) return;
+            if (this.eliminationWorkBudgetExpired()) {
+              this.declareConsolidationOutstanding(true);
+              return;
+            }
             // Only a fully receipted retirement permits another fresh plan
             // inside this admission. Unknown/blocked work returns through the
             // remaining stages, so the next sweep can process new busts and
             // release their reserved roster chairs. Each success removes one
             // table; the existing deadline bounds even a changing field.
           } while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());
+          this.declareConsolidationOutstanding(
+            this.urgentRedrivesRequested !== redrivesBeforeBalance ||
+              progress?.kind === 'table-retired'
+          );
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second

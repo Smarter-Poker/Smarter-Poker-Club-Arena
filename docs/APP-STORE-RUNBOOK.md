@@ -186,7 +186,8 @@ launch - Capgo REQUIRES that call or it rolls the bundle back as broken.
 
 `publish-club-arena.yml` has a `publish-to-app` job: after the origin is
 verified serving a merge, it builds `dist-native` (`npm run build:native`)
-and runs `npx @capgo/cli bundle upload --channel production`. It is switched
+and runs `npx @capgo/cli@8 bundle upload --channel production --delta` (phones
+download only the files that changed, not the whole ~172 MB bundle). It is switched
 on by the repository VARIABLE `CAPGO_OTA_ENABLED=true` (a job-level `if` can
 read variables, not secrets); until then the job is skipped and the web
 publish is never held by a store account that does not exist. To turn it on:

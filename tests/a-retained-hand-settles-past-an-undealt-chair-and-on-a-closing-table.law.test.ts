@@ -53,7 +53,7 @@ describe('a retained hand settles past an undealt chair and on a closing table',
   it('installs only over the verified live body and only the proved result', () => {
     const c = code(FILE);
     expect(c).toContain("md5(p.prosrc) = '32cfcc987acdab387067f80ec3704c9b'");
-    expect(c).toContain("IS DISTINCT FROM 'e2c4c0da28aa24c244951906f0d9d9b6'");
+    expect(c).toContain("IS DISTINCT FROM '1949cf2d020c48dd1a64c2bfdee433d8'");
     expect(c).toMatch(/IF n <> 1 THEN\s+RAISE EXCEPTION 'CLAUSE %/);
     expect(c).toContain('EXECUTE d;');
     expect(c).not.toMatch(/CREATE OR REPLACE FUNCTION/);
@@ -76,7 +76,9 @@ describe('a retained hand settles past an undealt chair and on a closing table',
     // Present at the deal still refuses when the hand's record names the player...
     expect(next).toContain("late.joined_at<=(q->'p_hand_row'->>'started_at')::timestamptz");
     expect(next).toContain("strpos((q->'p_hand_row')::text,late.user_id::text)>0");
-    // ...or when the record is not a player array, or names a player missing from the stacks.
+    // ...or when the hand declares inflow, the record is not a player array,
+    // or the record names a player missing from the stacks.
+    expect(next).toContain("OR COALESCE((q->>'p_inflow')::numeric,0)<>0");
     expect(next).toContain("jsonb_typeof(q->'p_hand_row'->'players') IS DISTINCT FROM 'array'");
     expect(next).toMatch(
       /EXISTS\(SELECT 1 FROM jsonb_array_elements\(q->'p_hand_row'->'players'\) hp\s+WHERE NOT EXISTS\(SELECT 1 FROM jsonb_array_elements\(q->'p_stacks'\) x WHERE x->>'user_id'=hp->>'userId'\)\)/

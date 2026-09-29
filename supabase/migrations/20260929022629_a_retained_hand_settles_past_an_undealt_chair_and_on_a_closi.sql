@@ -46,8 +46,9 @@
 --    keep NULL lifecycle and a RUNNING event.
 -- 2. A live chair missing from the submission that was present at the deal is
 --    admitted only when (a) the hand's own record never names its player,
---    (b) the record's players is an array, and (c) every player the record
---    names is in the submission's stacks. A hand player seated twice still
+--    (b) the record's players is an array, (c) every player the record
+--    names is in the submission's stacks, and (d) the hand declares no
+--    inflow, so a declared inflow can never absorb an omitted player's loss. A hand player seated twice still
 --    refuses; an undated deal still refuses; every other state proof is
 --    unchanged. The settlement core still refuses any stack set that does not
 --    conserve (deltas = inflow - rake - bbj), so a dealt player left out of the
@@ -65,7 +66,13 @@
 --   680.35 = net deltas -4.25 = rake 3.75 + bbj 0.50; a second call returned
 --   found false.
 -- * 6c9ee4b6 (read-only evaluation of the new clause against the live rows):
---   blocking chairs 2 under the old clause, 0 under the new; net deltas 0.00.
+--   blocking chairs 2 under the old clause, 0 under the new; net deltas 0.00,
+--   inflow 0.
+-- * The body was hardened after that proof with the inflow clause (d), which
+--   neither case exercises (499aa67a has no undealt chair; 6c9ee4b6 has inflow
+--   0). The post-image md5 1949cf2d was computed read-only from the live body
+--   and the replacement method was independently re-derived by a separate
+--   reviewer.
 --
 -- Nobody is paid twice: the handoff claim row is unique per submission and
 -- hand_atomic_commits is keyed (table_id, hand_number).
@@ -73,7 +80,7 @@
 -- Law: tests/a-retained-hand-settles-past-an-undealt-chair-and-on-a-closing-table.law.test.ts
 -- Changelog: docs/changelog/2026-09-29-a-retained-hand-settles-past-an-undealt-chair-and-on-a-closing-table.md
 --
--- @live-proof: (SELECT md5(prosrc) = 'e2c4c0da28aa24c244951906f0d9d9b6' FROM pg_proc WHERE oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure)
+-- @live-proof: (SELECT md5(prosrc) = '1949cf2d020c48dd1a64c2bfdee433d8' FROM pg_proc WHERE oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure)
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -98,16 +105,18 @@ DECLARE
   -- twice, still refuses; an undated deal refuses.$o$,
           $n$A chair that was present at
   -- the deal and is missing from the submission is admitted only when the
-  -- hand's own record never names its player and every player the record
-  -- names is in the submission (2026-09-29, 6c9ee4b6: two horses seated
-  -- 43 s and 18 s before the deal, not dealt in, froze the table for six
-  -- days). The settlement still refuses any non-conserving stack set, so a
-  -- dealt player left out of the stacks can never settle. A hand player
-  -- seated twice still refuses; an undated deal refuses.$n$],
+  -- hand declares no inflow, the hand's own record never names its player,
+  -- and every player the record names is in the submission (2026-09-29,
+  -- 6c9ee4b6: two horses seated 43 s and 18 s before the deal, not dealt in,
+  -- froze the table for six days). The settlement still refuses any
+  -- non-conserving stack set, so a dealt player left out of the stacks can
+  -- never settle. A hand player seated twice still refuses; an undated deal
+  -- refuses.$n$],
     ARRAY[$o$     AND (late.joined_at<=(q->'p_hand_row'->>'started_at')::timestamptz
        OR late.user_id IN (SELECT (x->>'user_id')::uuid FROM jsonb_array_elements(q->'p_stacks') x)))$o$,
           $n$     AND ((late.joined_at<=(q->'p_hand_row'->>'started_at')::timestamptz
          AND (strpos((q->'p_hand_row')::text,late.user_id::text)>0
+           OR COALESCE((q->>'p_inflow')::numeric,0)<>0
            OR jsonb_typeof(q->'p_hand_row'->'players') IS DISTINCT FROM 'array'
            OR EXISTS(SELECT 1 FROM jsonb_array_elements(q->'p_hand_row'->'players') hp
              WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(q->'p_stacks') x WHERE x->>'user_id'=hp->>'userId'))))
@@ -137,8 +146,8 @@ BEGIN
 
   SELECT md5(prosrc) INTO src FROM pg_proc
    WHERE oid = 'public.fn_ca_resume_hand_submission(uuid,text,uuid)'::regprocedure;
-  IF src IS DISTINCT FROM 'e2c4c0da28aa24c244951906f0d9d9b6' THEN
-    RAISE EXCEPTION 'POSTIMAGE: installed body md5 % is not the proved e2c4c0da', src;
+  IF src IS DISTINCT FROM '1949cf2d020c48dd1a64c2bfdee433d8' THEN
+    RAISE EXCEPTION 'POSTIMAGE: installed body md5 % is not the proved 1949cf2d', src;
   END IF;
 END
 $migrate$;

@@ -21,15 +21,18 @@ unchanged to this handoff, so nothing else could release either table.
 
 Migration 20260929022629 makes two clause-level changes to
 `fn_ca_resume_hand_submission`, applied by exact replacement of the verified
-live body. The pre-image md5 is 32cfcc98 and the post-image md5 is e2c4c0da.
+live body. The pre-image md5 is 32cfcc98 and the post-image md5 is 1949cf2d.
 
 1. A cash table in 'breaking' is admitted. 'closed' still refuses, and so
    does any tournament table outside its existing rules.
 2. A chair that was present at the deal but is missing from the submission
-   is admitted only when all three hold:
+   is admitted only when all four hold:
    - the hand's own record never names its player;
    - the record's `players` is an array;
-   - every player it names is in the stacks.
+   - every player it names is in the stacks;
+   - the hand declares no inflow, so an inflow can never absorb the loss of a
+     player left out of the stacks. This was added after an independent
+     review; neither table exercises it.
 
 Everything else is unchanged:
 
